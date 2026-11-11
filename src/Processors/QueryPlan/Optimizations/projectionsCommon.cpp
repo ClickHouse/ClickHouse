@@ -711,22 +711,58 @@ std::optional<ProjectionFilteringEffect> filterPartsAndCollectProjectionCandidat
             }
         }
 
-        auto & stats = parent_reading_select_result.projection_stats.emplace_back();
-        stats.name = projection.name;
-        stats.description = description;
-        stats.condition = condition;
-        stats.search_algorithm = search_algorithm;
-        stats.selected_parts = projection_result_ptr->selected_parts;
-        stats.selected_marks = projection_result_ptr->selected_marks;
-        stats.selected_ranges = projection_result_ptr->selected_ranges;
-        stats.selected_rows = projection_result_ptr->selected_rows;
-        stats.filtered_parts = filtered_parts;
+        /// A previous rewrite already recorded part pruning for this projection. Those counts
+        /// describe the parent read at that stage. The same read is analyzed again after a full
+        /// projection takes some parts, and replacing the record would either duplicate it or
+        /// swap in the reduced part set.
+        const bool part_pruning_already_recorded = std::any_of(
+            parent_reading_select_result.projection_stats.begin(),
+            parent_reading_select_result.projection_stats.end(),
+            [&](const auto & stat) { return stat.name == projection.name && stat.filtered_parts > 0; });
+        if (part_pruning_already_recorded)
+            return effect;
+
+        ReadFromMergeTree::ProjectionStat * projection_stat = nullptr;
+        for (auto & stat : parent_reading_select_result.projection_stats)
+        {
+            if (stat.name == projection.name)
+            {
+                projection_stat = &stat;
+                break;
+            }
+        }
+        if (!projection_stat)
+            projection_stat = &parent_reading_select_result.projection_stats.emplace_back();
+
+        projection_stat->name = projection.name;
+        projection_stat->description = description;
+        projection_stat->condition = condition;
+        projection_stat->search_algorithm = search_algorithm;
+        projection_stat->selected_parts = projection_result_ptr->selected_parts;
+        projection_stat->selected_marks = projection_result_ptr->selected_marks;
+        projection_stat->selected_ranges = projection_result_ptr->selected_ranges;
+        projection_stat->selected_rows = projection_result_ptr->selected_rows;
+        projection_stat->filtered_parts = filtered_parts;
 
         /// Record as an IndexStat so EXPLAIN indexes = 1 surfaces projection filtering.
         /// `num_parts_after` / `num_granules_after` describe the parent-table read after this
         /// stage, including parts that still fall back to the base read. Projection marks are
         /// ordered by the projection key, so they are not a substitute for parent granules.
-        parent_reading_select_result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+        /// A later rewrite of the same read overwrites a row-filter entry in place. A part-pruning
+        /// entry is left as recorded above.
+        ReadFromMergeTree::IndexStat * index_stat = nullptr;
+        for (auto & stat : parent_reading_select_result.index_stats)
+        {
+            if (stat.type == ReadFromMergeTree::IndexType::Projection && stat.name == projection.name)
+            {
+                index_stat = &stat;
+                break;
+            }
+        }
+        if (!index_stat)
+            index_stat = &parent_reading_select_result.index_stats.emplace_back();
+
+        *index_stat = ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Projection,
             .name = projection.name,
             .description = std::move(description),
@@ -734,7 +770,7 @@ std::optional<ProjectionFilteringEffect> filterPartsAndCollectProjectionCandidat
             .num_parts_after = parent_reading_select_result.selected_parts,
             .num_granules_after = parent_reading_select_result.selected_marks,
             .search_algorithm = search_algorithm,
-        });
+        };
 
         return effect;
     }
