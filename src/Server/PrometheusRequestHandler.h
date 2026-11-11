@@ -52,7 +52,6 @@ private:
 
     String http_method;
 
-    /// The tracing context passed by the client in the `traceparent` and `tracestate` HTTP headers.
     OpenTelemetry::TracingContext client_trace_context;
 
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;

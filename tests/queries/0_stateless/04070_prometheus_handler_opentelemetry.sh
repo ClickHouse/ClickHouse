@@ -4,9 +4,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Check that the Prometheus HTTP handler reads the `traceparent` header
-# and writes a server span to `system.opentelemetry_span_log`.
-
 # Generate some random trace id so that the previous runs of the test do not interfere.
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 parent_span_id="5150000000000515"
