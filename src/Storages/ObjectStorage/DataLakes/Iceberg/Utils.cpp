@@ -105,8 +105,6 @@ namespace DB::DataLakeStorageSetting
 namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
-extern const SettingsTimezone iceberg_timezone_for_timestamptz;
-extern const SettingsTimezone session_timezone;
 }
 
 namespace ProfileEvents
@@ -2406,17 +2404,6 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     if (iceberg_transform_name.starts_with("identity") || iceberg_transform_name.starts_with("truncate"))
         return source_type;
     return std::make_shared<DataTypeInt32>();
-}
-
-String getTimezoneForTimestamptz(const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    String timezone = settings[Setting::iceberg_timezone_for_timestamptz];
-    if (timezone.empty())
-        timezone = settings[Setting::session_timezone];
-    if (timezone.empty())
-        timezone = DateLUT::serverTimezoneInstance().getTimeZone();
-    return timezone;
 }
 
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)

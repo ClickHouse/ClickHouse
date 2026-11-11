@@ -119,6 +119,7 @@ extern const DataLakeStorageSettingsUInt32 iceberg_metadata_async_prefetch_perio
 extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
+extern const DataLakeStorageSettingsTimezone iceberg_timezone_for_timestamptz;
 }
 
 namespace ErrorCodes
@@ -234,10 +235,15 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
                 std::call_once(cell->table_metadata_validated, [&] { IcebergSchemaProcessor::checkTableSchemas(*metadata_object); });
                 return cell;
             });
+    String timezone_for_timestamptz
+        = (*configuration->getDataLakeSettings())[DataLakeStorageSetting::iceberg_timezone_for_timestamptz].value;
+    if (timezone_for_timestamptz.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `iceberg_timezone_for_timestamptz` must not be empty");
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     PersistentTableComponents persistent_components{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg]),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(
+            context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg], timezone_for_timestamptz),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -736,7 +742,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     return {data_snapshot, table_state_snapshot};
 }
 
-std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const
+std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
@@ -744,21 +750,18 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
-        ? persistent_components.schema_processor->getClickHouseTableSchemaById(
-              iceberg_object_info->info.underlying_format_read_schema_id, getTimezoneForTimestamptz(local_context))
+        ? persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
         : nullptr;
 }
 
-std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const
+std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
         ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
-              iceberg_object_info->info.underlying_format_read_schema_id,
-              iceberg_object_info->info.schema_id_relevant_to_iterator,
-              getTimezoneForTimestamptz(local_context))
+              iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)
         : nullptr;
 }
 
@@ -1978,26 +1981,6 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
         ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
-    return result;
-}
-
-StorageMetadataPtr IcebergMetadata::adaptMetadataForQuery(const StorageMetadataPtr & metadata, ContextPtr local_context) const
-{
-    const auto timezone = getTimezoneForTimestamptz(local_context);
-    if (timezone == "UTC")
-        return metadata;
-
-    auto columns = metadata->getColumns();
-    for (const auto & column : metadata->getColumns().getAll())
-        columns.modify(
-            column.name,
-            [&](ColumnDescription & description)
-            { description.type = IcebergSchemaProcessor::setTimezoneForTimestamptz(description.type, timezone); });
-
-    auto result = std::make_shared<StorageInMemoryMetadata>(*metadata);
-    result->setColumns(columns);
-    if (result->sorting_key.definition_ast)
-        result->sorting_key.recalculateWithNewColumns(columns, metadata->virtuals, local_context);
     return result;
 }
 

@@ -91,8 +91,6 @@ public:
     SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot & state) const override;
     bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
 
-    StorageMetadataPtr adaptMetadataForQuery(const StorageMetadataPtr & metadata, ContextPtr local_context) const override;
-
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
     static void createInitial(

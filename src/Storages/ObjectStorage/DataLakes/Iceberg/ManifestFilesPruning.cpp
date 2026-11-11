@@ -69,8 +69,7 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
     Int32 target_schema_id,
     const DB::ActionsDAG * source_dag,
     std::vector<Int32> & used_columns_in_filter,
-    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter,
-    const String & timezone)
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter)
 {
     const auto & inputs = source_dag->getInputs();
 
@@ -111,7 +110,7 @@ std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(target_schema_id, column_id, timezone);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(target_schema_id, column_id);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -146,13 +145,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
     transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor,
-        current_schema_id,
-        initial_schema_id,
-        filter_dag,
-        used_columns_in_filter,
-        row_lineage_columns,
-        getTimezoneForTimestamptz(context));
+        schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
     chassert(transformed_dag != nullptr);
 
     if (partition_key_)
@@ -194,7 +187,7 @@ ManifestFilesPruner::ManifestFilesPruner(
         }
         else
         {
-            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id, getTimezoneForTimestamptz(context));
+            name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
             if (!name_and_type.has_value())
                 continue;
 
@@ -248,8 +241,7 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        std::optional<DB::NameAndTypePair> column_characteristics
-            = schema_processor.tryGetFieldCharacteristics(schema_id, source_id, getTimezoneForTimestamptz(context));
+        std::optional<DB::NameAndTypePair> column_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, source_id);
         if (!column_characteristics.has_value())
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);

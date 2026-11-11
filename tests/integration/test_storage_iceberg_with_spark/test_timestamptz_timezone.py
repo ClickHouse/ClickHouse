@@ -9,7 +9,7 @@ from helpers.iceberg_utils import (
     get_uuid_str,
 )
 
-BERLIN = {"iceberg_timezone_for_timestamptz": "Europe/Berlin"}
+BERLIN = "iceberg_timezone_for_timestamptz = 'Europe/Berlin'"
 
 
 def test_timestamptz_timezone(started_cluster_iceberg_with_spark):
@@ -28,34 +28,35 @@ def test_timestamptz_timezone(started_cluster_iceberg_with_spark):
         )
 
         default_upload_directory(started_cluster_iceberg_with_spark, storage_type, f"{table_path}/", f"{table_path}/")
-        create_iceberg_table(storage_type, instance, table_name, started_cluster_iceberg_with_spark)
+        create_iceberg_table(
+            storage_type, instance, table_name, started_cluster_iceberg_with_spark, additional_settings=[BERLIN]
+        )
+        utc_table_function = f"icebergLocal(local, path = '{table_path}', format = Parquet)"
 
-        assert instance.query(f"SELECT toTypeName(ts) FROM {table_name} LIMIT 1 FORMAT TSVRaw") == "Nullable(DateTime64(6, 'UTC'))\n"
         assert (
-            instance.query(f"SELECT toTypeName(ts) FROM {table_name} LIMIT 1 FORMAT TSVRaw", settings=BERLIN)
+            instance.query(f"SELECT toTypeName(ts) FROM {utc_table_function} LIMIT 1 FORMAT TSVRaw")
+            == "Nullable(DateTime64(6, 'UTC'))\n"
+        )
+        assert (
+            instance.query(f"SELECT toTypeName(ts) FROM {table_name} LIMIT 1 FORMAT TSVRaw")
             == "Nullable(DateTime64(6, 'Europe/Berlin'))\n"
         )
         assert (
-            instance.query(f"SELECT id, ts FROM {table_name} ORDER BY id", settings=BERLIN)
+            instance.query(f"SELECT id, ts FROM {table_name} ORDER BY id")
             == "1\t2024-01-02 00:30:00.000000\n2\t2024-01-02 13:00:00.000000\n"
         )
 
-        filter_query = f"SELECT groupArray(id) FROM (SELECT id FROM {table_name} WHERE ts >= '2024-01-02 00:00:00' ORDER BY id)"
-        assert instance.query(filter_query) == "[2]\n"
-        assert instance.query(filter_query, settings=BERLIN) == "[1,2]\n"
-        assert (
-            instance.query(
-                f"SELECT count() FROM {table_name} WHERE ts = '2024-01-02 00:30:00'", settings=BERLIN
-            )
-            == "1\n"
-        )
+        filter_condition = "WHERE ts >= '2024-01-02 00:00:00'"
+        assert instance.query(f"SELECT groupArray(id) FROM (SELECT id FROM {utc_table_function} {filter_condition} ORDER BY id)") == "[2]\n"
+        assert instance.query(f"SELECT groupArray(id) FROM (SELECT id FROM {table_name} {filter_condition} ORDER BY id)") == "[1,2]\n"
+        assert instance.query(f"SELECT count() FROM {table_name} WHERE ts = '2024-01-02 00:30:00'") == "1\n"
 
         instance.query(
             f"INSERT INTO {table_name} VALUES (3, '2024-01-03 00:30:00')",
-            settings={**BERLIN, "allow_insert_into_iceberg": 1},
+            settings={"allow_insert_into_iceberg": 1},
         )
         assert (
-            instance.query(f"SELECT ts FROM {table_name} WHERE id = 3")
+            instance.query(f"SELECT ts FROM {utc_table_function} WHERE id = 3")
             == "2024-01-02 23:30:00.000000\n"
         )
 

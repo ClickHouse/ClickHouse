@@ -37,7 +37,12 @@
 #if USE_AWS_S3 && USE_SSL
 #include <Databases/DataLake/S3TablesCatalog.h>
 #endif
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
@@ -79,6 +84,7 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
+    extern const DatabaseDataLakeSettingsTimezone iceberg_timezone_for_timestamptz;
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsString auth_header;
@@ -172,12 +178,44 @@ namespace FailPoints
 namespace
 {
 
-NamesAndTypesList getTableSchema(const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const ContextPtr & context)
+DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
 {
-    if (catalog.getTableEngineName(table_metadata) == "Iceberg")
-        return Iceberg::IcebergSchemaProcessor::setTimezoneForTimestamptz(
-            table_metadata.getSchema(), Iceberg::getTimezoneForTimestamptz(context));
-    return table_metadata.getSchema();
+    if (const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+    {
+        if (datetime->hasExplicitTimeZone() && datetime->getTimeZone().getTimeZone() == "UTC")
+            return std::make_shared<DataTypeDateTime64>(datetime->getScale(), timezone);
+        return type;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return makeNullable(setTimezoneForTimestamptz(nullable->getNestedType(), timezone));
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(setTimezoneForTimestamptz(array->getNestedType(), timezone));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(
+            setTimezoneForTimestamptz(map->getKeyType(), timezone), setTimezoneForTimestamptz(map->getValueType(), timezone));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple->getElements())
+            elements.push_back(setTimezoneForTimestamptz(element, timezone));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    return type;
+}
+
+NamesAndTypesList getTableSchema(
+    const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const DatabaseDataLakeSettings & settings)
+{
+    const String & timezone = settings[DatabaseDataLakeSetting::iceberg_timezone_for_timestamptz];
+    auto schema = table_metadata.getSchema();
+    if (catalog.getTableEngineName(table_metadata) != "Iceberg" || timezone == "UTC")
+        return schema;
+    NamesAndTypesList result;
+    for (const auto & column : schema)
+        result.emplace_back(column.name, setTimezoneForTimestamptz(column.type, timezone));
+    return result;
 }
 
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
@@ -1325,7 +1363,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto storage_type = table_engine_args.storage_type;
     const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
-    const auto columns = ColumnsDescription(table_metadata.getSchema());
+    const auto columns = ColumnsDescription(getTableSchema(*catalog, table_metadata, settings));
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
@@ -1920,7 +1958,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr context_,
+    ContextPtr /* context_ */,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -1960,7 +1998,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : getTableSchema(*catalog, table_metadata, context_))
+    for (const auto & column_type_and_name : getTableSchema(*catalog, table_metadata, settings))
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();

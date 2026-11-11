@@ -13,11 +13,10 @@ ts	Nullable(DateTime64(6, \'Europe/Berlin\'))
 local	Nullable(DateTime64(6))
 arr	Array(Nullable(DateTime64(6, \'Europe/Berlin\')))
 Nullable(DateTime64(6, \'Europe/Berlin\'))
--- the time zone of a query does not stick to the table
+-- the setting of one table does not affect the other
 Nullable(DateTime64(6, \'UTC\'))
--- session time zone
-Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000
-Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000
+-- an empty time zone
+BAD_ARGUMENTS
 -- filters
 [1,2]	[1,2]	[1,2]	[1,2]
 [1,2]	[1,2]	[1,2]	[1,2]
@@ -27,4 +26,4 @@ Nullable(DateTime64(6, \'Asia/Tokyo\'))	2024-01-02 08:30:00.000000
 [1,2]	[1,2]	[1,2]	[1,2]
 []
 -- DROP PARTITION of an identity partition
-2	2024-01-02 00:30:00.000000
+1	2024-01-01 23:30:00.000000

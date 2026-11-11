@@ -286,14 +286,6 @@ bool StorageObjectStorageCluster::optimize(
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
-StorageMetadataHandle StorageObjectStorageCluster::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
-{
-    auto metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-    if (!query_context)
-        return metadata;
-    return configuration->adaptMetadataForQuery(metadata, query_context);
-}
-
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
 {
     updateExternalDynamicMetadataIfExists(context);
@@ -327,7 +319,7 @@ void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands
 
 void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
-    auto metadata_snapshot = IStorage::getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
@@ -536,7 +528,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto current_metadata = IStorage::getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
     new_metadata.setDataLakeTableState(*state);
 

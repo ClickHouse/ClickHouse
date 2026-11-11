@@ -9775,12 +9775,6 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 Query Iceberg table using the specific snapshot id.
 )", 0, \
         {"25.4", 0, 0, "New setting."}) \
-    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
-The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns are mapped to. The stored values are instants and do not depend on this setting, it only changes how they are displayed and how `DateTime64` literals without an explicit time zone are interpreted in queries.
-
-An empty value means the [session_timezone](#session_timezone), or the server time zone if it is not set.
-)", 0, \
-        {"26.11", "UTC", "UTC", "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, allow_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0, allow_experimental_geo_types_in_iceberg, \

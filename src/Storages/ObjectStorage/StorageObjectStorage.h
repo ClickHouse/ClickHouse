@@ -176,8 +176,6 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
-
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
