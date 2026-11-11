@@ -50,6 +50,11 @@ class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
+/// True for statements that change only metadata, judged by the kind of statement: e.g. DROP, RENAME,
+/// access control, SYSTEM, CREATE without a `SELECT` or a table function, and ALTER without commands
+/// that copy parts. Such queries are exempt from workload scheduling.
+bool isMetadataQuery(const IAST & ast);
+
 /// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
 /// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
 struct MemoryReservation;
