@@ -33,6 +33,15 @@ WHERE 1;
 
 SELECT k, v FROM t ORDER BY k;
 
+-- The join still converts: the new set source builds the set in the key first.
+SET explain_query_plan_default = 'legacy';
+SELECT countIf(trimLeft(explain) LIKE 'Join%')
+FROM
+(
+    EXPLAIN description = 0
+    SELECT a.k FROM l AS a ANY INNER JOIN r AS b ON a.k = b.k + toUInt64(b.k IN (SELECT number FROM numbers(2)))
+);
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE t;

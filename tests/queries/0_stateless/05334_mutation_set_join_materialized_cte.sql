@@ -76,6 +76,17 @@ FROM
     ANY INNER JOIN mutation_cte_ready AS r ON l.k = r.k
 );
 
+-- The join whose right side reads the CTE converts as well: its new set source materializes the CTE.
+SET query_plan_convert_join_to_in = 1;
+SELECT countIf(trimLeft(explain) LIKE 'Join%')
+FROM
+(
+    EXPLAIN description = 0
+    WITH c AS MATERIALIZED (SELECT number AS k FROM numbers(2))
+    SELECT l.k FROM mutation_cte_keys AS l
+    ALL INNER JOIN (SELECT k FROM c UNION ALL SELECT k FROM c) AS r ON l.k = r.k
+);
+
 DROP TABLE mutation_cte_target;
 DROP TABLE mutation_cte_keys;
 DROP TABLE mutation_cte_ready;

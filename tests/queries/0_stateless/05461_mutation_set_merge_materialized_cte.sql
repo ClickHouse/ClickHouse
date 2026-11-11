@@ -20,7 +20,8 @@ CREATE TABLE mutation_merge_dist AS mutation_merge_rows
 CREATE VIEW mutation_merge_view AS SELECT toUInt64(1) AS k;
 
 -- The filter is pushed into the `Merge` child plans, which rely on the outer CTE gate.
--- `JOIN` -> `IN` must not extract them into a set built synchronously by index analysis.
+-- `JOIN` -> `IN` moves them into the source of a set that index analysis builds synchronously,
+-- so that source must materialize the CTE first; `ReadFromMerge` reports it from its query tree.
 ALTER TABLE mutation_merge_target UPDATE v = k IN
 (
     WITH c AS MATERIALIZED (SELECT number AS k FROM numbers(2))
@@ -47,6 +48,21 @@ ALTER TABLE mutation_merge_target UPDATE v = k IN
 )
 WHERE 1;
 SELECT k, v FROM mutation_merge_target ORDER BY k;
+
+-- The join converts.
+SET query_plan_convert_join_to_in = 1;
+SET explain_query_plan_default = 'legacy';
+SELECT countIf(trimLeft(explain) LIKE 'Join%')
+FROM
+(
+    EXPLAIN description = 0
+    WITH c AS MATERIALIZED (SELECT number AS k FROM numbers(2))
+    SELECT a.k FROM mutation_merge_keys AS a ANY INNER JOIN
+    (
+        SELECT k FROM merge(currentDatabase(), '^mutation_merge_(view|dist)$')
+        WHERE k IN (SELECT k FROM c UNION ALL SELECT k FROM c)
+    ) AS b ON a.k = b.k
+);
 
 DROP VIEW mutation_merge_view;
 DROP TABLE mutation_merge_dist;
