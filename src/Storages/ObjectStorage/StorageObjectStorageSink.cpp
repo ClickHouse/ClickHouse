@@ -108,7 +108,10 @@ void StorageObjectStorageSink::initialize()
     auto write_settings = context->getWriteSettings();
     /// HDFS rejects conditional writes, so it keeps writing unconditionally.
     if (fail_if_exists && object_storage->getType() != ObjectStorageType::HDFS)
+    {
         write_settings.object_storage_write_if_none_match = "*";
+        write_settings.object_storage_write_if_none_match_best_effort = true;
+    }
 
     /// The sink keeps the ownership of the buffer that writes into the object storage, so that the amount
     /// of the data written into the object can be checked for splitting. The compressing wrapper, if any,
