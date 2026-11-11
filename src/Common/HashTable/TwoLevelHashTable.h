@@ -109,6 +109,28 @@ public:
     /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
     std::vector<size_t> bucket_cells_prefix;
 
+    /// The cells of one bucket, for a lookup that walks the cells itself (`Interpreters/HashJoin/AmacLookup.h`).
+    /// 32 bytes and aligned to 32, so that an entry is in one cache line.
+    struct alignas(32) BucketCells
+    {
+        const Cell * cells;     /// the first cell
+        const Cell * cells_end; /// one past the last cell
+        size_t mask;            /// the home cell of a key is the cell `hash & mask`
+        size_t prefix;          /// `bucket_cells_prefix` of the bucket
+    };
+
+    /// Which buckets are in the Robin Hood mode.
+    enum class RobinHoodBuckets : uint8_t
+    {
+        None,
+        All,
+        Mixed,
+    };
+
+    /// Set by `computeBucketPrefix`. Valid until the next insert, which may move the cells of a bucket.
+    std::vector<BucketCells> bucket_cells;
+    RobinHoodBuckets robin_hood_buckets = RobinHoodBuckets::None;
+
 
     TwoLevelHashTable() = default;
 
@@ -439,17 +461,28 @@ public:
         return res;
     }
 
-    /// Prefix sums that `offsetInternal` uses to number cells across all buckets.
+    /// Prefix sums that `offsetInternal` uses to number cells across all buckets, and the cells and the mode of every bucket.
     /// Call it after the last insert and before reading offsets, never while another thread reads them.
     void computeBucketPrefix()
     {
         bucket_cells_prefix.assign(NUM_BUCKETS, 0);
+        bucket_cells.resize(NUM_BUCKETS);
         size_t run = 0;
+        size_t robin_hood = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
         {
+            const size_t cells = impls[i].getBufferSizeInCells();
             bucket_cells_prefix[i] = run;
-            run += impls[i].getBufferSizeInCells();
+            bucket_cells[i] = {impls[i].buf, impls[i].buf + cells, cells - 1, run};
+            robin_hood += impls[i].isRobinHood();
+            run += cells;
         }
+        if (robin_hood == 0)
+            robin_hood_buckets = RobinHoodBuckets::None;
+        else if (robin_hood == NUM_BUCKETS)
+            robin_hood_buckets = RobinHoodBuckets::All;
+        else
+            robin_hood_buckets = RobinHoodBuckets::Mixed;
     }
 
     /// Number of the cell over all buckets. The zero cell gets 0. Any other cell gets its position in the
