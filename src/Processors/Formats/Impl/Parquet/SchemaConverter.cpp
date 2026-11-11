@@ -2127,8 +2127,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
             auto converter = std::make_shared<Int96Converter>();
             converter->overflow_behavior = options.format.date_time_overflow_behavior;
-            /// Decode at the precision of the requested type, so that a value it holds is not limited to the
-            /// nanosecond range; the rounding matches the cast that follows.
+            /// Decode at the requested precision; the rounding must match the cast to the requested type that follows.
             const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr;
             if (dt64_hint && dt64_hint->getScale() < 9)
             {
