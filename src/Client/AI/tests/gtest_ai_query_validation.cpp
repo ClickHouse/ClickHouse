@@ -283,6 +283,25 @@ TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
     EXPECT_FALSE(isServerOwnedDatabaseForAIAgent(""));
 }
 
+TEST(AIQueryValidation, DistinguishesPredefinedServerOwnedTables)
+{
+    /// The tables the server defines in `system` have engines no `CREATE` can use.
+    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("system", "numbers", "SystemNumbers"));
+    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("system", "one", "SystemOne"));
+    /// A user object in `system`, and a log table, are checked like any other table.
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("system", "ai_view", "View"));
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("system", "renamed", "Memory"));
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("system", "query_log", "MergeTree"));
+    /// The views of `information_schema` have fixed names, in both spellings and in both databases.
+    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("information_schema", "tables", "View"));
+    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "TABLES", "View"));
+    EXPECT_TRUE(isPredefinedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "columns", "View"));
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("information_schema", "ai_view", "View"));
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("information_schema", "tables", "URL"));
+    /// No other database has predefined tables.
+    EXPECT_FALSE(isPredefinedServerOwnedTableForAIAgent("default", "numbers", "SystemNumbers"));
+}
+
 TEST(AIQueryValidation, AllowsOnlyLocalTableEngines)
 {
     /// The whole MergeTree family, however it is prefixed.
@@ -431,9 +450,14 @@ TEST(AIQueryValidation, CollectsTheDatabaseOfShowTables)
 
     /// The spellings that name no database at all.
     EXPECT_EQ(collect("SHOW DATABASES"), std::vector<String>{});
-    EXPECT_EQ(collect("SHOW CLUSTERS"), std::vector<String>{});
     EXPECT_EQ(collect("SHOW SETTINGS ILIKE '%max%'"), std::vector<String>{});
     EXPECT_EQ(collect("SHOW TEMPORARY TABLES"), std::vector<String>{});
+
+    /// `SHOW CLUSTERS` and `SHOW CLUSTER` read `system.clusters`, which reaches Keeper for the
+    /// `Replicated` databases, so their implicit source is collected to be checked by name.
+    EXPECT_EQ(collect("SHOW CLUSTERS"), std::vector<String>{"system/clusters"});
+    EXPECT_EQ(collect("SHOW CLUSTERS LIKE 'test%'"), std::vector<String>{"system/clusters"});
+    EXPECT_EQ(collect("SHOW CLUSTER 'default'"), std::vector<String>{"system/clusters"});
 }
 
 TEST(AIQueryValidation, RejectsApplyMutationsOnFly)

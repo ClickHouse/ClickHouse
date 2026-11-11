@@ -5652,7 +5652,8 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             add_lookup(database_expression, name_literal);
             if (table.database.empty())
                 add_lookup("''", name_literal);
-            /// The tables of the server-owned databases are judged by name, not by what they hold.
+            /// The predefined tables of the server-owned databases are judged by name, not by what
+            /// they hold. The policies of a user object there are looked up after this query.
             if (!isServerOwnedDatabaseForAIAgent(table.database))
                 add_row_policy_lookup(database_expression, name_literal);
         }
@@ -5708,6 +5709,7 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     /// the server like those of the query, so they are collected for the same check of
     /// `checkFunctionsForAIReadOnlyTool`.
     std::set<String> stored_expression_functions;
+    std::vector<std::pair<String, String>> user_objects_in_server_owned_databases;
     const auto check_stored_expressions = [&](const String & database, const String & table)
     {
         const auto [begin, end] = column_expressions.equal_range({database, table});
@@ -5750,8 +5752,12 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             database = current_database;
         }
 
-        /// The databases owned by the server hold no user definitions; their tables are judged
-        /// by name, because their engines are one per table (`SystemTables`, `SystemNumbers`, ...).
+        /// The tables the server defines in the databases it owns are judged by name, because their
+        /// engines are one per table (`SystemTables`, `SystemNumbers`, ...) and the views of
+        /// `information_schema` read `system` by design. These databases can also hold objects
+        /// that a user created there (`CREATE VIEW system.v AS ...`), and those are checked below
+        /// like a table of any other database, in addition to the check by name.
+        bool is_user_object_in_server_owned_database = false;
         if (isServerOwnedDatabaseForAIAgent(database))
         {
             /// The server-owned databases list all of their tables in `system.tables`, so an
@@ -5778,7 +5784,11 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                     "Use the run_query tool for this query",
                     database,
                     reference.table);
-            continue;
+
+            const auto table_it = reference.table.empty() ? table_engines.end() : table_engines.find({database, reference.table});
+            if (table_it == table_engines.end() || isPredefinedServerOwnedTableForAIAgent(database, reference.table, table_it->second))
+                continue;
+            is_user_object_in_server_owned_database = true;
         }
 
         const auto database_it = database_engines.find(database);
@@ -5788,8 +5798,7 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                 "The database `{}` was not found in `system.databases`, so it could not be checked. "
                 "Use the run_query tool for this query",
                 database);
-
-        if (!isAllowedDatabaseEngineForAIAgent(database_it->second))
+        else if (!isAllowedDatabaseEngineForAIAgent(database_it->second))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The database `{}` has the `{}` engine, so its tables are backed by an external catalog rather "
@@ -5823,6 +5832,36 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                 table_it->second);
 
         check_stored_expressions(database, reference.table);
+        if (is_user_object_in_server_owned_database)
+            user_objects_in_server_owned_databases.emplace_back(database, reference.table);
+    }
+
+    /// The row policies of the tables of the server-owned databases are not looked up by the query
+    /// above, because reading `system.row_policies` needs a grant of its own, and the predefined
+    /// tables would require it for no reason. A user object there is checked like any other table,
+    /// so its policies are looked up now, in a second round trip that only such an object costs.
+    if (!user_objects_in_server_owned_databases.empty())
+    {
+        branches.clear();
+        seen_lookups.clear();
+        for (const auto & [database, table] : user_objects_in_server_owned_databases)
+            add_row_policy_lookup(quoteString(database), quoteString(table));
+
+        const Block policies = materializeBlock(
+            fetchInternalQueryResult(fmt::to_string(fmt::join(branches, " UNION ALL ")), {}, /*from_ai_agent=*/ true));
+        if (policies.rows() > 0 && policies.columns() < 4)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of the row policy query of the AI agent");
+
+        row_policy_filters.clear();
+        column_expressions.clear();
+        for (size_t row = 0; row < policies.rows(); ++row)
+            row_policy_filters.emplace_back(
+                String(policies.getByPosition(1).column->getDataAt(row)),
+                String(policies.getByPosition(2).column->getDataAt(row)),
+                String(policies.getByPosition(3).column->getDataAt(row)));
+
+        for (const auto & [database, table] : user_objects_in_server_owned_databases)
+            check_stored_expressions(database, table);
     }
 
     checkFunctionsForAIReadOnlyTool(Strings(stored_expression_functions.begin(), stored_expression_functions.end()));
@@ -6360,6 +6399,28 @@ Block ClientBase::fetchInternalQueryResult(
     settings_to_send->set("limit", Float64(0));
     settings_to_send->set("offset", Float64(0));
     settings_to_send->set("page", Float64(0));
+    /// A limit of the session with an overflow mode other than `throw` (`max_result_rows = 1,
+    /// result_overflow_mode = 'break'`, `max_execution_time` with `timeout_overflow_mode = 'break'`,
+    /// `group_by_overflow_mode = 'any'`, ...) makes the server stop early and still finish the
+    /// query successfully, with a partial result. A safety probe of the agent cannot tell such a
+    /// result from a complete one, and would take the rows it did not get for a table or a function
+    /// that is not there. So every overflow mode is set to `throw`: the limits of the session still
+    /// apply, but exceeding one fails the internal query instead of truncating it. These are the
+    /// defaults, so this is a no-op accepted at any `readonly` level unless the session changed one,
+    /// and a session that changed one and cannot change it back fails the query.
+    for (const auto * name :
+         {"read_overflow_mode",
+          "read_overflow_mode_leaf",
+          "result_overflow_mode",
+          "timeout_overflow_mode",
+          "timeout_overflow_mode_leaf",
+          "group_by_overflow_mode",
+          "sort_overflow_mode",
+          "set_overflow_mode",
+          "join_overflow_mode",
+          "distinct_overflow_mode",
+          "transfer_overflow_mode"})
+        settings_to_send->set(name, String("throw"));
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed

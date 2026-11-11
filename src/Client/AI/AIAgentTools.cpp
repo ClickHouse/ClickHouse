@@ -112,18 +112,16 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                         /// table, so it is not read without the user seeing it. A table that is not
                         /// in `system.tables` - one of a database backed by an external system,
                         /// which is not enumerated there - has no definition of a view of this server.
-                        /// The views of the server-owned databases are defined by the server itself.
-                        if (!isServerOwnedDatabaseForAIAgent(database))
-                        {
-                            String engine = hooks->execute_scalar(
-                                "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
-                                {{"database", database}, {"table", table}});
-                            if (isStoredQueryTableEngineForAIAgent(engine))
-                                return errorResult(
-                                    "The table " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table) + " has the " + engine
-                                    + " engine: its definition is the text of a stored query, which is not read without "
-                                      "the user seeing it. Use the run_query tool to read it");
-                        }
+                        /// The views the server defines in the databases it owns (`information_schema`)
+                        /// are its own; a view a user created there is a stored query like any other.
+                        String engine = hooks->execute_scalar(
+                            "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
+                            {{"database", database}, {"table", table}});
+                        if (!isPredefinedServerOwnedTableForAIAgent(database, table, engine) && isStoredQueryTableEngineForAIAgent(engine))
+                            return errorResult(
+                                "The table " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table) + " has the " + engine
+                                + " engine: its definition is the text of a stored query, which is not read without "
+                                  "the user seeing it. Use the run_query tool to read it");
 
                         return successResult(hooks->execute_internal_masking_secrets(
                             "SHOW CREATE TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table), {}));

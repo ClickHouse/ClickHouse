@@ -110,6 +110,16 @@ bool isServerOwnedDatabaseForAIAgent(const String & database);
 /// access metadata, which may carry secrets.
 bool isAllowedServerOwnedTableForAIAgent(const String & database, const String & table);
 
+/// Whether a table of a server-owned database, with the engine `system.tables` reports for it, is
+/// one the server defines itself, rather than an object a user created there: both `system` and
+/// `information_schema` accept `CREATE TABLE` and `CREATE VIEW`. Only the predefined ones are
+/// judged by name; a user object is checked like a table of any other database. The tables of
+/// `system` the server defines have engines of their own (`SystemNumbers`, `SystemTables`, ...),
+/// which no `CREATE` can use; the log tables (`query_log`, ...) are `MergeTree` and are checked by
+/// engine like any user table. The views of `information_schema` have the fixed names of
+/// `DatabaseCatalog::isPredefinedTable`.
+bool isPredefinedServerOwnedTableForAIAgent(const String & database, const String & table, const String & engine);
+
 /// Whether a table with this engine holds data of this server only, so that the unconfirmed
 /// read-only tool can read it: the MergeTree and Log families and the simple in-memory engines.
 /// Rejected are the engines that read another server or an external system (`Distributed`, `S3`,

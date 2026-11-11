@@ -749,6 +749,13 @@ void collectNamedTables(const IAST & ast, std::vector<AIQueryTableReference> & r
         if (!show_tables->databases && !show_tables->clusters && !show_tables->cluster && !show_tables->m_settings
             && !show_tables->merges && !show_tables->caches && !show_tables->temporary)
             add(show_tables->getFrom(), "");
+
+        /// `SHOW CLUSTERS` and `SHOW CLUSTER` are rewritten by `InterpreterShowTablesQuery` into
+        /// reads of `system.clusters`, which reads the replica states of the `Replicated`
+        /// databases from Keeper: the implicit source is collected for the same check as a
+        /// direct read of it.
+        if (show_tables->clusters || show_tables->cluster)
+            add("system", "clusters");
     }
 
     for (const auto & child : ast.children)
@@ -782,6 +789,29 @@ bool isServerOwnedDatabaseForAIAgent(const String & database)
 {
     /// `information_schema` exists in both spellings, and its tables are views over `system`.
     return database == "system" || database == "information_schema" || database == "INFORMATION_SCHEMA";
+}
+
+bool isPredefinedServerOwnedTableForAIAgent(const String & database, const String & table, const String & engine)
+{
+    if (database == "system")
+        return engine.starts_with("System");
+
+    if (database == "information_schema" || database == "INFORMATION_SCHEMA")
+    {
+        /// Each view is attached under both its lowercase and its uppercase name in both databases.
+        static const std::unordered_set<std::string_view> information_schema_views
+        {
+            "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
+            "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges",
+            "column_privileges",
+            "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
+            "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES",
+            "COLUMN_PRIVILEGES",
+        };
+        return engine == "View" && information_schema_views.contains(table);
+    }
+
+    return false;
 }
 
 bool isAllowedServerOwnedTableForAIAgent(const String & database, const String & table)
