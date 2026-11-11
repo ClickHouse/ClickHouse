@@ -142,6 +142,9 @@ element field	(10,([9]))
 element field	[9]
 readd in list	([(10,9)])	[((10,9))]	(1,[(10,9)])
 readd in list	[9]	[9]	[9]
+rename list	([(9)],7)
+rename list	[9]	7
+rename list	[9]	7
 struct in struct	1	(10,(6,9),[(1,2),(3,9)])
 struct in struct	1	9
 struct in struct	1	10	6

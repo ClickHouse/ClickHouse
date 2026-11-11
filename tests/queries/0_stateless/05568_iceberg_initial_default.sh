@@ -82,6 +82,11 @@ elif mode == "readd_in_list":
     for struct in (by_name["t"]["type"]["fields"][0]["type"]["element"], by_name["l"]["type"]["element"]["fields"][0]["type"], u):
         struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
         struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9})
+elif mode == "rename_list":
+    by_name = {f["name"]: f for f in next(f for f in fields if f["name"] == "t")["type"]["fields"]}
+    by_name["z"]["name"] = "k"
+    by_name["s"]["name"] = "z"
+    by_name["s"]["type"]["element"]["fields"] = [{"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9}]
 elif mode == "struct_in_struct":
     def xy():
         return {"type": "struct", "fields": [{"id": new_id(), "name": "x", "required": False, "type": "int", "initial-default": 6},
@@ -414,6 +419,22 @@ for format in Parquet ORC Avro; do
         ${LOCAL} -q "
             SELECT 'readd in list', t, l, u FROM icebergLocal('${table}/');
             SELECT 'readd in list', t.s.j, l.s.j, u.a.j FROM icebergLocal('${table}/');
+        "
+    fi
+
+    # A list renamed to the old name of a renamed field is matched by field id also when that field is read too.
+    if [ "${format}" = ORC ]; then
+        table="${format}_rename_list"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(s Array(Tuple(j Nullable(Int32))), z Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES (([(100)], 7));
+        "
+        add_fields "${table}" rename_list
+        bind_to_current_schema "${table}"
+        ${LOCAL} -q "
+            SELECT 'rename list', t FROM icebergLocal('${table}/');
+            SELECT 'rename list', t.z.j, t.k FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
+            SELECT 'rename list', t.z.j, t.k FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 0;
         "
     fi
 

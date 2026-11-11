@@ -1441,7 +1441,8 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     const ORC::Type * orc_type,
     VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns,
     const ColumnMapper & column_mapper,
-    bool ignore_case);
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache);
 
 /// The ORC type of the column `path` of the data lake schema, matching each struct on its way from the root by Iceberg field
 /// id, as the reader selects it: nullptr if it is absent from the file, nullopt if this cannot be told (a struct on the way
@@ -1557,7 +1558,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
                             nested_table_orc_type,
                             std::move(subcolumns),
                             *column_mapper,
-                            ignore_case);
+                            ignore_case,
+                            field_ids_cache);
                         updateIncludeTypeIds(
                             nested_table_type, nested_table_orc_type, ignore_case, include_typeids, column_mapper, nested_table_name);
                     }
@@ -3287,7 +3289,8 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     const ORC::Type * orc_type,
     VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns,
     const ColumnMapper & column_mapper,
-    bool ignore_case)
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache)
 {
     /// A subcolumn below a list is an array of the subcolumn of its element.
     bool is_list = false;
@@ -3302,7 +3305,12 @@ static DataTypePtr makeTypeHintFromSubcolumns(
         for (auto & [_, type] : subcolumns)
             type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
         return std::make_shared<DataTypeArray>(makeTypeHintFromSubcolumns(
-            path + ".element", orc_type ? orc_type->getSubtype(0) : nullptr, std::move(subcolumns), column_mapper, ignore_case));
+            path + ".element",
+            orc_type ? orc_type->getSubtype(0) : nullptr,
+            std::move(subcolumns),
+            column_mapper,
+            ignore_case,
+            field_ids_cache));
     }
 
     Names names;
@@ -3328,12 +3336,21 @@ static DataTypePtr makeTypeHintFromSubcolumns(
             types.push_back(it->second);
             continue;
         }
+        /// The field of the element as `updateIncludeTypeIds` selects it: by field id if the struct has them, else by name.
         const ORC::Type * element_orc_type = nullptr;
         if (orc_type && orc_type->getKind() == ORC::STRUCT)
-            if (auto field = findORCStructFieldByName(orc_type, name, ignore_case))
+        {
+            std::optional<const ORC::Type *> field_by_id;
+            const auto & encoding = column_mapper.getStorageColumnEncoding();
+            if (auto it = encoding.find(path + "." + name); it != encoding.end())
+                field_by_id = findORCFieldByIcebergId(*orc_type, it->second, field_ids_cache);
+            if (field_by_id)
+                element_orc_type = *field_by_id;
+            else if (auto field = findORCStructFieldByName(orc_type, name, ignore_case))
                 element_orc_type = orc_type->getSubtype(*field);
-        types.push_back(
-            makeTypeHintFromSubcolumns(path + "." + name, element_orc_type, nested_subcolumns.at(name), column_mapper, ignore_case));
+        }
+        types.push_back(makeTypeHintFromSubcolumns(
+            path + "." + name, element_orc_type, nested_subcolumns.at(name), column_mapper, ignore_case, field_ids_cache));
     }
     return std::make_shared<DataTypeTuple>(types, names);
 }
@@ -3399,12 +3416,14 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                         VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns;
                         for (const auto & name_and_type : nested_columns)
                             subcolumns.emplace_back(name_and_type.name.substr(nested_table_name.size() + 1), name_and_type.type);
+                        ORCFieldIdsCache field_ids_cache;
                         nested_table_type = makeTypeHintFromSubcolumns(
                             nested_table_name,
                             orc_column_with_type.second,
                             std::move(subcolumns),
                             *column_mapper,
-                            case_insensitive_matching);
+                            case_insensitive_matching,
+                            field_ids_cache);
                     }
                     ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
                         orc_column_with_type.first,
