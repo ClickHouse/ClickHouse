@@ -16,7 +16,7 @@ INSERT INTO logs_04811 VALUES
     ('2024-01-02 12:00:00', 'late error', 'error', 'u1'),
     ('2024-01-02 18:00:00', 'late info', 'info', 'u3');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04811';
 SET dialect = 'logsql';
 

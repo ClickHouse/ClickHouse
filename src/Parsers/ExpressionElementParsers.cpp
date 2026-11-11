@@ -1948,6 +1948,8 @@ bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Exp
         return false;
 
     ++pos;
+    /// Nested collections do not go through `IParserBase::parse`, so their depth is counted here.
+    pos.increaseDepth();
     return true;
 }
 
@@ -2049,7 +2051,10 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
             return false;
 
         if (node)
+        {
             collections.pop_back();
+            pos.decreaseDepth();
+        }
     }
 
     return true;
@@ -2089,6 +2094,7 @@ const char * ParserAlias::restricted_keywords[] =
     "BETWEEN",
     "CROSS",
     "PASTE",
+    "FETCH",
     "FINAL",
     "FORMAT",
     "FROM",
@@ -2115,6 +2121,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "SHUFFLE",
     "SIMILAR",
     "STREAM",
     "UNION",
@@ -2155,6 +2162,32 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
+
+        /// `LOCAL` before a join clause is the join-locality qualifier, not an alias: the join grammar
+        /// admits only these keywords between the qualifier and `JOIN`, so one of them following proves
+        /// the token belongs to the join. `GLOBAL` needs no check, it is a restricted keyword above.
+        if (0 == strcasecmp(name.data(), "LOCAL"))
+        {
+            static constexpr Keyword join_continuations[]
+                = {Keyword::NATURAL, Keyword::ANY,   Keyword::ALL,   Keyword::ASOF,  Keyword::SEMI,
+                   Keyword::ANTI,    Keyword::ONLY,  Keyword::INNER, Keyword::LEFT,  Keyword::RIGHT,
+                   Keyword::FULL,    Keyword::CROSS, Keyword::PASTE, Keyword::JOIN};
+
+            Expected peek_expected;
+
+            /// `LEFT` and `INNER` also introduce `ARRAY JOIN`, which is a sibling of the join clause
+            /// and carries no locality, so the alias stands in front of it.
+            Pos after_inner = pos;
+            ParserKeyword(Keyword::INNER).ignore(after_inner, peek_expected);
+            const bool array_join_follows
+                = ParserKeyword(Keyword::LEFT_ARRAY_JOIN).checkWithoutMoving(pos, peek_expected)
+                || ParserKeyword(Keyword::ARRAY_JOIN).checkWithoutMoving(after_inner, peek_expected);
+
+            if (!array_join_follows)
+                for (Keyword keyword : join_continuations)
+                    if (ParserKeyword(keyword).checkWithoutMoving(pos, peek_expected))
+                        return false;
+        }
 
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
         /// when it is immediately followed by a string literal at the very end of the
@@ -2204,7 +2237,24 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            auto * func = lambda->as<ASTFunction>();
+            if (!func || func->name != "lambda")
+            {
+                /// ParserExpression also takes an operator after `lambda(...)`, as in `APPLY lambda(tuple(x), f(x)) > 1`.
+                func = nullptr;
+                pos = opos;
+                ASTPtr name;
+                auto after_name = pos;
+                if (ParserIdentifier().parse(after_name, name, expected) && getIdentifierName(name) == "lambda"
+                    && after_name->type == TokenType::OpeningRoundBracket && ParserFunction().parse(pos, lambda, expected))
+                    func = lambda->as<ASTFunction>();
+
+                /// Only the plain call: a lambda drops parameters, `RESPECT NULLS`/`IGNORE NULLS` and `OVER`.
+                if (func && (func->parameters || func->getNullsAction() != NullsAction::EMPTY || func->isWindowFunction()))
+                    func = nullptr;
+            }
+
+            if (func && func->name == "lambda")
             {
                 if (!isASTLambdaFunction(*func))
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");

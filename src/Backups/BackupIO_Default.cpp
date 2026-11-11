@@ -5,15 +5,38 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Poco/Exception.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace fs = std::filesystem;
+
+/// OSX does not have O_DIRECTORY
+#ifndef O_DIRECTORY
+#define O_DIRECTORY O_RDONLY
+#endif
+
+namespace ProfileEvents
+{
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
+    extern const Event DirectorySync;
+    extern const Event DirectorySyncElapsedMicroseconds;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
 }
 
@@ -21,6 +44,65 @@ std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & 
 {
     return writeFile(file_name);
 }
+
+void fsyncBackupFileContents(const fs::path & path)
+{
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} for fsync", path.string());
+
+    ProfileEvents::increment(ProfileEvents::FileSync);
+    Stopwatch watch;
+    try
+    {
+#if defined(OS_DARWIN)
+        if (-1 == ::fsync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync {}", path.string());
+#else
+        if (-1 == ::fdatasync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fdatasync {}", path.string());
+#endif
+    }
+    catch (...)
+    {
+        [[maybe_unused]] int err = ::close(fd);
+        throw;
+    }
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (-1 == ::close(fd))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close file {} after fsync", path.string());
+}
+
+void fsyncBackupDirectory(const fs::path & path)
+{
+    int fd = ::open(path.c_str(), O_DIRECTORY | O_CLOEXEC);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open directory {} for fsync", path.string());
+
+    ProfileEvents::increment(ProfileEvents::DirectorySync);
+    Stopwatch watch;
+    try
+    {
+#if defined(OS_DARWIN)
+        if (-1 == ::fsync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync directory {}", path.string());
+#else
+        if (-1 == ::fdatasync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fdatasync directory {}", path.string());
+#endif
+    }
+    catch (...)
+    {
+        [[maybe_unused]] int err = ::close(fd);
+        throw;
+    }
+    ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (-1 == ::close(fd))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close directory {} after fsync", path.string());
+}
+
 
 BackupReaderDefault::BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)

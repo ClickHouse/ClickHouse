@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 -- The pass disables itself for the whole query when a join can wrap results in Nullable, so a
 -- comma-join arm below would assert 0 instead. Stress workers set join_use_nulls = 1.
@@ -112,7 +111,7 @@ INSERT INTO t_array_tuple_file VALUES
     (3, [(30, 'thirty')], []);
 
 CREATE TABLE t_array_tuple_merge AS t_array_tuple_file
-ENGINE = Merge(currentDatabase(), '^t_array_tuple_file$');
+ENGINE = Merge(currentDatabase(), '^t_array_tuple_file);
 
 SELECT '-- file Array(Tuple) values and types without rewriting';
 SELECT id, tupleElement(a, 'code'), tupleElement(a, 1), tupleElement(a, -1),

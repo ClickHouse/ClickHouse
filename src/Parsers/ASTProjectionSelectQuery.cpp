@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <base/EnumReflection.h>
@@ -115,9 +117,14 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     {
         /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
+        /// The parser builds a `tuple` only from two or more top-level expressions without aliases.
+        /// A `tuple` of one argument or with an aliased argument was written as such and has to stay one:
+        /// unwrapping it would change the AST or produce a definition which cannot be parsed back.
         ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && !func->arguments->children.empty())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments
+            && func->arguments->children.size() > 1
+            && std::ranges::none_of(func->arguments->children, [](const ASTPtr & argument) { return !argument->tryGetAlias().empty(); }))
             order_by = func->arguments;
         else
         {

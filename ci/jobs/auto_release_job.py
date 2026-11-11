@@ -176,6 +176,8 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
     version = _release_version_for_commit(commit_sha)
     with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
     print(f"   signed macOS artifacts expected: {with_signed_macos}")
+    with_illumos = release_packages.commit_has_illumos_build(commit_sha)
+    print(f"   illumos artifacts expected: {with_illumos}")
     return release_packages.release_build_artifacts_ready(
         S3,
         os.getenv("S3_BUILDS_BUCKET", Settings.S3_ARTIFACT_BUCKET),
@@ -183,6 +185,7 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
         commit_sha,
         version,
         with_signed_macos,
+        with_illumos,
     )
 
 
