@@ -6,6 +6,7 @@ SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS tab_keys;
 DROP TABLE IF EXISTS tab_both;
 DROP TABLE IF EXISTS tab_keys_post;
+DROP TABLE IF EXISTS tab_both_post;
 DROP TABLE IF EXISTS tab_json_paths;
 DROP TABLE IF EXISTS tab_json_both;
 DROP TABLE IF EXISTS tab_fixed;
@@ -43,6 +44,15 @@ INSERT INTO tab_keys_post VALUES (1, {'key': 'Hello world'}), (2, {'key': 'hello
 SELECT groupArray(id) FROM (SELECT id FROM tab_keys_post WHERE hasToken(m['key'], 'hello') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_keys_post WHERE hasToken(m['key'], 'hello') ORDER BY id SETTINGS use_skip_indexes = 0);
 
+SELECT '-- mapKeys and mapValues with a postprocessor';
+CREATE TABLE tab_both_post (id UInt32, m Map(String, String), INDEX ik mapKeys(m) TYPE text(tokenizer = array), INDEX iv mapValues(m) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(mapValues(m))))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_both_post VALUES (1, {'k': 'Hello there'}), (2, {'k': 'HELLO'}), (3, {'x': 'hello'});
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasAnyTokens(m['k'], 'hello') ORDER BY id SETTINGS use_skip_indexes = 0);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasToken(m['k'], 'hello') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE hasToken(m['k'], 'hello') ORDER BY id SETTINGS use_skip_indexes = 0);
+
 SELECT '-- JSONAllPaths';
 CREATE TABLE tab_json_paths (id UInt32, d JSON, INDEX ip JSONAllPaths(d) TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -70,6 +80,7 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_fixed WHERE hasAnyTokens(m['k'], 
 DROP TABLE tab_keys;
 DROP TABLE tab_both;
 DROP TABLE tab_keys_post;
+DROP TABLE tab_both_post;
 DROP TABLE tab_json_paths;
 DROP TABLE tab_json_both;
 DROP TABLE tab_fixed;

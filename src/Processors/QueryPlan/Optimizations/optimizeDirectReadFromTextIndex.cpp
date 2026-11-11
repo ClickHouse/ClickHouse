@@ -534,7 +534,7 @@ public:
 
         if (replacements.empty())
         {
-            /// A rewrite `processTextIndexFunction` dropped left nodes that would still be executed.
+            /// Remove the nodes of a rewrite that `processTextIndexFunction` dropped.
             if (actions_dag.getNodes().size() != nodes_ptrs.size())
                 actions_dag.removeUnusedActions(original_inputs);
 

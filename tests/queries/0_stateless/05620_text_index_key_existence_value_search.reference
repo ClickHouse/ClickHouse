@@ -18,6 +18,11 @@
 -- mapKeys with a postprocessor
 [2]
 [2]
+-- mapKeys and mapValues with a postprocessor
+[1,2]
+[1,2]
+[1,2]
+[1,2]
 -- JSONAllPaths
 [1,2]
 [1,2]
