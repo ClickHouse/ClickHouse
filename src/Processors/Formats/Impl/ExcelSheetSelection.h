@@ -5,7 +5,7 @@
 #include <base/types.h>
 
 #include <charconv>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -28,7 +28,7 @@ struct SheetInfo
 
 /// Selects a sheet by the value of the `input_format_excel_sheet` setting: a sheet name, or a 1-based index among all sheets
 /// if no sheet has this name. If the setting is empty, selects the first visible worksheet.
-inline size_t selectSheet(const std::vector<SheetInfo> & sheets, const String & sheet)
+inline size_t selectSheet(const VectorWithMemoryTracking<SheetInfo> & sheets, const String & sheet)
 {
     auto check_worksheet = [&](size_t index)
     {

@@ -1061,7 +1061,7 @@ bool RangeReader::readNonEmptyRow()
     }
 }
 
-bool RangeReader::next(std::vector<Cell> & cells)
+bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
 {
     if (finished)
         return false;
@@ -1113,7 +1113,7 @@ bool RangeReader::next(std::vector<Cell> & cells)
     return true;
 }
 
-bool isHeaderRow(const std::vector<Cell> & cells, const FormatSettings & format_settings)
+bool isHeaderRow(const VectorWithMemoryTracking<Cell> & cells, const FormatSettings & format_settings)
 {
     if (format_settings.excel.header)
         return *format_settings.excel.header;

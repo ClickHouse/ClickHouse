@@ -3,7 +3,7 @@
 #include <base/types.h>
 
 #include <string_view>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -74,7 +74,7 @@ private:
 
     String element_name;
     /// Attributes are reused between elements to avoid allocations; only the first `num_attributes` are valid.
-    std::vector<std::pair<String, String>> attributes;
+    VectorWithMemoryTracking<std::pair<String, String>> attributes;
     size_t num_attributes = 0;
     String text_data;
 

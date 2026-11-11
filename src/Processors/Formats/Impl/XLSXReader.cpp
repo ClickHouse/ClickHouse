@@ -14,7 +14,7 @@
 #include <Common/Exception.h>
 
 #include <charconv>
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -58,7 +58,7 @@ String resolvePartPath(const String & source_part, const String & target)
         path = slash == String::npos ? target : source_part.substr(0, slash + 1) + target;
     }
 
-    std::vector<std::string_view> segments;
+    VectorWithMemoryTracking<std::string_view> segments;
     std::string_view rest = path;
     while (true)
     {
@@ -306,9 +306,9 @@ private:
         return decodeXMLPart(archive->readFile(path, /* throw_on_not_found= */ true));
     }
 
-    std::unordered_map<String, Relationship> readRelationships(const String & part);
-    std::shared_ptr<const std::vector<String>> readSharedStrings(const String & path);
-    std::vector<NumberFormatKind> readStyles(const String & path);
+    UnorderedMapWithMemoryTracking<String, Relationship> readRelationships(const String & part);
+    std::shared_ptr<const VectorWithMemoryTracking<String>> readSharedStrings(const String & path);
+    VectorWithMemoryTracking<NumberFormatKind> readStyles(const String & path);
 
     std::shared_ptr<ZipArchiveReader> archive;
 };
@@ -319,8 +319,8 @@ class XLSXSheetReader final : public ISheetReader
 public:
     XLSXSheetReader(
         std::unique_ptr<ReadBuffer> in_,
-        std::shared_ptr<const std::vector<String>> shared_strings_,
-        std::vector<NumberFormatKind> style_kinds_,
+        std::shared_ptr<const VectorWithMemoryTracking<String>> shared_strings_,
+        VectorWithMemoryTracking<NumberFormatKind> style_kinds_,
         bool date1904_)
         : in(std::move(in_))
         , parser(*in)
@@ -343,8 +343,8 @@ private:
 
     std::unique_ptr<ReadBuffer> in;
     XMLPullParser parser;
-    std::shared_ptr<const std::vector<String>> shared_strings;
-    std::vector<NumberFormatKind> style_kinds;
+    std::shared_ptr<const VectorWithMemoryTracking<String>> shared_strings;
+    VectorWithMemoryTracking<NumberFormatKind> style_kinds;
     bool date1904;
 
     std::optional<CellRange> dimension;
@@ -356,9 +356,9 @@ private:
 };
 
 
-std::unordered_map<String, Relationship> XLSXWorkbook::readRelationships(const String & part)
+UnorderedMapWithMemoryTracking<String, Relationship> XLSXWorkbook::readRelationships(const String & part)
 {
-    std::unordered_map<String, Relationship> result;
+    UnorderedMapWithMemoryTracking<String, Relationship> result;
     auto path = relationshipsPath(part);
     if (!archive->fileExists(path))
         return result;
@@ -381,9 +381,9 @@ std::unordered_map<String, Relationship> XLSXWorkbook::readRelationships(const S
     return result;
 }
 
-std::shared_ptr<const std::vector<String>> XLSXWorkbook::readSharedStrings(const String & path)
+std::shared_ptr<const VectorWithMemoryTracking<String>> XLSXWorkbook::readSharedStrings(const String & path)
 {
-    auto result = std::make_shared<std::vector<String>>();
+    auto result = std::make_shared<VectorWithMemoryTracking<String>>();
     auto in = readPart(path);
     XMLPullParser parser(*in);
     forEachTopLevelElement(parser, [&]
@@ -400,10 +400,10 @@ std::shared_ptr<const std::vector<String>> XLSXWorkbook::readSharedStrings(const
     return result;
 }
 
-std::vector<NumberFormatKind> XLSXWorkbook::readStyles(const String & path)
+VectorWithMemoryTracking<NumberFormatKind> XLSXWorkbook::readStyles(const String & path)
 {
-    std::unordered_map<UInt64, String> custom_formats;
-    std::vector<UInt64> cell_format_ids;
+    UnorderedMapWithMemoryTracking<UInt64, String> custom_formats;
+    VectorWithMemoryTracking<UInt64> cell_format_ids;
 
     auto in = readPart(path);
     XMLPullParser parser(*in);
@@ -440,7 +440,7 @@ std::vector<NumberFormatKind> XLSXWorkbook::readStyles(const String & path)
             parser.skipElement();
     });
 
-    std::vector<NumberFormatKind> result;
+    VectorWithMemoryTracking<NumberFormatKind> result;
     result.reserve(cell_format_ids.size());
     for (UInt64 id : cell_format_ids)
     {
@@ -463,8 +463,8 @@ std::unique_ptr<ISheetReader> XLSXWorkbook::openSheet(const String & sheet)
     auto workbook_relationships = readRelationships(workbook_path);
 
     bool date1904 = false;
-    std::vector<SheetInfo> sheets;
-    std::vector<String> sheet_paths;
+    VectorWithMemoryTracking<SheetInfo> sheets;
+    VectorWithMemoryTracking<String> sheet_paths;
     {
         auto in = readPart(workbook_path);
         XMLPullParser parser(*in);
@@ -514,8 +514,8 @@ std::unique_ptr<ISheetReader> XLSXWorkbook::openSheet(const String & sheet)
 
     size_t sheet_index = selectSheet(sheets, sheet);
 
-    std::shared_ptr<const std::vector<String>> shared_strings = std::make_shared<std::vector<String>>();
-    std::vector<NumberFormatKind> style_kinds;
+    std::shared_ptr<const VectorWithMemoryTracking<String>> shared_strings = std::make_shared<VectorWithMemoryTracking<String>>();
+    VectorWithMemoryTracking<NumberFormatKind> style_kinds;
     for (const auto & [_, relationship] : workbook_relationships)
     {
         if (hasRelationshipType(relationship, "/sharedStrings"))

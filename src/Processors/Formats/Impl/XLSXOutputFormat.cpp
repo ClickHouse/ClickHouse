@@ -224,7 +224,7 @@ private:
 
     WriteBuffer & out;
     UInt64 offset = 0;
-    std::vector<Entry> entries;
+    VectorWithMemoryTracking<Entry> entries;
     Entry current;
     bool in_entry = false;
     z_stream zstream{};
@@ -920,12 +920,12 @@ private:
     const FormatSettings settings;
     DataTypes column_types;
     Serializations serializations;
-    std::vector<ColumnKind> column_kinds;
-    std::vector<String> column_names;
+    VectorWithMemoryTracking<ColumnKind> column_kinds;
+    VectorWithMemoryTracking<String> column_names;
 
     ZipStreamWriter zip;
     std::unique_ptr<ZipEntryWriteBuffer> sheet_buffer;
-    std::vector<String> sheet_names;
+    VectorWithMemoryTracking<String> sheet_names;
     /// The last suffix used in the names of the continuation sheets.
     size_t next_sheet_suffix = 1;
     UInt64 rows_in_sheet = 0;

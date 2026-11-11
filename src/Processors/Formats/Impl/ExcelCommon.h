@@ -5,7 +5,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <optional>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -69,7 +69,7 @@ struct Row
 {
     /// 0-based.
     UInt64 index = 0;
-    std::vector<std::pair<UInt32, Cell>> cells;
+    VectorWithMemoryTracking<std::pair<UInt32, Cell>> cells;
 };
 
 /// A rectangular range of cells. All indices are 0-based; the last row and column are inclusive.
@@ -184,7 +184,7 @@ public:
     RangeReader(std::unique_ptr<ISheetReader> sheet_reader_, const FormatSettings & format_settings);
 
     /// Returns the next row. `cells[i]` is the cell in the i-th column of the range; `cells` is only as long as needed.
-    bool next(std::vector<Cell> & cells);
+    bool next(VectorWithMemoryTracking<Cell> & cells);
 
     bool isDate1904() const { return date1904; }
 
@@ -205,7 +205,7 @@ private:
 };
 
 /// Decides whether the first row of the range is a header, according to the `input_format_excel_header` setting.
-bool isHeaderRow(const std::vector<Cell> & cells, const FormatSettings & format_settings);
+bool isHeaderRow(const VectorWithMemoryTracking<Cell> & cells, const FormatSettings & format_settings);
 
 }
 

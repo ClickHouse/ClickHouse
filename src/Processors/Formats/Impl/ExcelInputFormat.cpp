@@ -139,7 +139,7 @@ private:
 
     String data;
     std::unique_ptr<Excel::RangeReader> range_reader;
-    std::vector<Excel::Cell> cells;
+    VectorWithMemoryTracking<Excel::Cell> cells;
     const Excel::Cell empty_cell;
     /// The first row has already been read into `cells` to check if it is a header.
     bool has_current_row = false;
@@ -164,15 +164,15 @@ public:
         readStringUntilEOF(data, in);
         auto range_reader = openRange(file_format, data, settings);
 
-        std::vector<Excel::Cell> cells;
+        VectorWithMemoryTracking<Excel::Cell> cells;
         if (!range_reader->next(cells))
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                 "Cannot infer the table structure from {} data: the sheet (or the selected range) is empty",
                 formatName(file_format));
 
-        std::vector<String> names;
-        std::vector<Excel::ColumnTypeInferrer> inferrers;
+        VectorWithMemoryTracking<String> names;
+        VectorWithMemoryTracking<Excel::ColumnTypeInferrer> inferrers;
         size_t num_rows = 0;
         auto add_row = [&]
         {

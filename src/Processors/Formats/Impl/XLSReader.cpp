@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -79,7 +79,7 @@ void appendUTF8(UInt32 code_point, String & out)
     }
 }
 
-void appendUTF16(const std::vector<UInt16> & units, String & out)
+void appendUTF16(const VectorWithMemoryTracking<UInt16> & units, String & out)
 {
     for (size_t i = 0; i < units.size(); ++i)
     {
@@ -161,9 +161,9 @@ private:
     std::string_view data;
     UInt32 sector_size = 512;
     UInt32 mini_stream_cutoff = 4096;
-    std::vector<UInt32> fat;
-    std::vector<UInt32> mini_fat;
-    std::vector<Entry> entries;
+    VectorWithMemoryTracking<UInt32> fat;
+    VectorWithMemoryTracking<UInt32> mini_fat;
+    VectorWithMemoryTracking<Entry> entries;
     String mini_stream;
 };
 
@@ -189,7 +189,7 @@ CompoundFile::CompoundFile(std::string_view data_) : data(data_)
     if (num_difat_sectors > max_sectors)
         throwCorrupted("too many DIFAT sectors");
 
-    std::vector<UInt32> fat_sectors;
+    VectorWithMemoryTracking<UInt32> fat_sectors;
     auto add_fat_sector = [&](UInt32 id)
     {
         if (id == FREE_SECTOR)
@@ -202,7 +202,7 @@ CompoundFile::CompoundFile(std::string_view data_) : data(data_)
     for (size_t i = 0; i < 109; ++i)
         add_fat_sector(readU32(data, 76 + i * 4));
 
-    std::vector<bool> visited_difat_sectors(max_sectors);
+    VectorWithMemoryTracking<bool> visited_difat_sectors(max_sectors);
     UInt32 difat_sector = first_difat_sector;
     for (UInt32 i = 0; i < num_difat_sectors && difat_sector != END_OF_CHAIN && difat_sector != FREE_SECTOR; ++i)
     {
@@ -334,9 +334,9 @@ std::optional<String> CompoundFile::readStream(std::initializer_list<std::string
 {
     /// Names are scoped to their parent storage, so look only at the children of the root storage:
     /// a nested storage (like an embedded object) may contain another `Workbook` stream.
-    std::vector<const Entry *> root_streams;
-    std::vector<bool> visited(entries.size());
-    std::vector<UInt32> stack{entries[0].child};
+    VectorWithMemoryTracking<const Entry *> root_streams;
+    VectorWithMemoryTracking<bool> visited(entries.size());
+    VectorWithMemoryTracking<UInt32> stack{entries[0].child};
     while (!stack.empty())
     {
         UInt32 id = stack.back();
@@ -374,7 +374,7 @@ std::optional<String> CompoundFile::readStream(std::initializer_list<std::string
 class ContinuedRecordReader
 {
 public:
-    explicit ContinuedRecordReader(std::vector<std::string_view> segments_) : segments(std::move(segments_)) {}
+    explicit ContinuedRecordReader(VectorWithMemoryTracking<std::string_view> segments_) : segments(std::move(segments_)) {}
 
     UInt8 readU8()
     {
@@ -407,7 +407,7 @@ public:
 
     /// Reads `count` characters, each of 1 or 2 bytes. If the characters continue in the next `CONTINUE` record,
     /// it starts with a byte of flags that tells the size of the characters in that record.
-    void readCharacters(size_t count, bool two_byte_characters, std::vector<UInt16> & out)
+    void readCharacters(size_t count, bool two_byte_characters, VectorWithMemoryTracking<UInt16> & out)
     {
         while (count)
         {
@@ -463,10 +463,10 @@ private:
             throwCorrupted("unexpected end of a record");
     }
 
-    std::vector<std::string_view> segments;
+    VectorWithMemoryTracking<std::string_view> segments;
     size_t segment = 0;
     size_t pos = 0;
-    std::vector<UInt16> units;
+    VectorWithMemoryTracking<UInt16> units;
 };
 
 
@@ -522,9 +522,9 @@ public:
     }
 
     /// Returns the record and all following `CONTINUE` records.
-    std::vector<std::string_view> readContinuations(std::string_view first)
+    VectorWithMemoryTracking<std::string_view> readContinuations(std::string_view first)
     {
-        std::vector<std::string_view> segments{first};
+        VectorWithMemoryTracking<std::string_view> segments{first};
         while (pos + 4 <= stream.size() && readU16(stream, pos) == Record::CONTINUE)
         {
             UInt16 type = 0;
@@ -578,7 +578,7 @@ struct CellRecord
 class XLSSheetReader final : public ISheetReader
 {
 public:
-    XLSSheetReader(std::vector<CellRecord> cells_, std::optional<CellRange> dimension_, bool date1904_)
+    XLSSheetReader(VectorWithMemoryTracking<CellRecord> cells_, std::optional<CellRange> dimension_, bool date1904_)
         : cells(std::move(cells_)), dimension(dimension_), date1904(date1904_)
     {
     }
@@ -601,7 +601,7 @@ public:
     bool isDate1904() const override { return date1904; }
 
 private:
-    std::vector<CellRecord> cells;
+    VectorWithMemoryTracking<CellRecord> cells;
     size_t pos = 0;
     std::optional<CellRange> dimension;
     bool date1904;
@@ -623,12 +623,12 @@ private:
     bool biff8 = true;
     UInt16 code_page = 1252;
     bool date1904 = false;
-    std::unordered_map<UInt16, String> custom_formats;
-    std::vector<UInt16> xf_formats;
-    std::vector<NumberFormatKind> xf_kinds;
-    std::vector<SheetInfo> sheets;
-    std::vector<UInt32> sheet_offsets;
-    std::vector<String> shared_strings;
+    UnorderedMapWithMemoryTracking<UInt16, String> custom_formats;
+    VectorWithMemoryTracking<UInt16> xf_formats;
+    VectorWithMemoryTracking<NumberFormatKind> xf_kinds;
+    VectorWithMemoryTracking<SheetInfo> sheets;
+    VectorWithMemoryTracking<UInt32> sheet_offsets;
+    VectorWithMemoryTracking<String> shared_strings;
 };
 
 XLSWorkbook::XLSWorkbook(std::string_view data)
@@ -734,7 +734,7 @@ std::unique_ptr<ISheetReader> XLSWorkbook::openSheet(const String & sheet)
 {
     size_t sheet_index = selectSheet(sheets, sheet);
 
-    std::vector<CellRecord> cells;
+    VectorWithMemoryTracking<CellRecord> cells;
     std::optional<CellRange> dimension;
 
     auto format_kind = [&](UInt16 xf)
