@@ -4,10 +4,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
 
 namespace
 {
@@ -20,6 +16,7 @@ public:
     String getName() const override { return "randConstant"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -76,6 +73,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -85,14 +83,9 @@ public:
         return std::make_unique<RandomConstantOverloadResolver>();
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
+    String getSignatureString() const override
     {
-        size_t number_of_arguments = data_types.size();
-        if (number_of_arguments > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                            getName(), number_of_arguments);
-        return std::make_shared<DataTypeNumber<UInt32>>();
+        return "([Any]) -> UInt32";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

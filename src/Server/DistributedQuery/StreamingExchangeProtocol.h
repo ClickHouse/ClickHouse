@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Formats/NativeReaderTypeCache.h>
+#include <Formats/NativeWriterTypeCache.h>
 #include <Processors/Chunk.h>
 
 namespace Poco::Net
@@ -89,8 +91,12 @@ namespace StreamingExchangeProtocol
     /// columns of `header` compressed with `codec`. A chunk without rows or columns is a data packet
     /// too; only `writeEndOfStreamPacket` ends the stream. The body size in the packet header is known
     /// only after the block is serialized; the caller fills it in with `finishDataPacket` once it can
-    /// address the written bytes. Returns the offset of the packet in `out`.
-    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec);
+    /// address the written bytes. Returns the offset of the packet in `out`. A sender passes its own
+    /// `type_cache` with every packet, so that the type name and the serialization of each column type
+    /// are made only once (see `NativeWriterTypeCache`).
+    size_t writeDataPacket(
+        const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec,
+        NativeWriterTypeCache * type_cache = nullptr);
 
     /// Appends the end-of-stream packet to `out`: the end-of-stream flag, no rows, no columns and
     /// nothing else. The packet is complete, its header carries the body size. Returns the offset of
@@ -125,8 +131,10 @@ namespace StreamingExchangeProtocol
     /// Parses a Data packet body written by `writeDataPacket`: the flags, the counts, the aggregation
     /// chunk number and the compressed Native block with the columns of `header`. A final packet must
     /// be the empty end-of-stream marker, checked as in `readDataPacketPrefix`. `stream_name` is for
-    /// messages.
-    DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name);
+    /// messages. A receiver passes its own `type_cache` with every packet, so that the column types are
+    /// parsed only once (see `NativeReaderTypeCache`).
+    DataPacket readDataPacketBody(
+        ReadBuffer & body, const Block & header, const String & stream_name, NativeReaderTypeCache * type_cache = nullptr);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
     String describePeer(const Poco::Net::StreamSocket & socket);
@@ -147,5 +155,21 @@ namespace StreamingExchangeProtocol
     /// timeout: Poco reports it without the errno that would tell the send deadline from the kernel's
     /// connection timeout. `description` labels the call site in the exception message.
     void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size, const String & description);
+
+    /// Apply configured socket buffer sizes; zero leaves TCP autotuning enabled.
+    void applySocketBufferSizes(Poco::Net::StreamSocket & socket);
+
+    /// `setsockopt` takes `int`. Throw before the value is published.
+    void validateSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
+
+    /// Publish buffer sizes for new connections. The caller has already validated them.
+    void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
+
+    struct SocketBufferSizes
+    {
+        UInt64 sndbuf = 0;
+        UInt64 rcvbuf = 0;
+    };
+    SocketBufferSizes getSocketBufferSizes();
 }
 }

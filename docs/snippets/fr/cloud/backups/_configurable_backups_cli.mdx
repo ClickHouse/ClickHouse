@@ -70,6 +70,8 @@ clickhousectl cloud service backup-config update "$CH_ID" \
 }
 ```
 
+La fréquence détermine l&#39;ancienneté maximale du point de restauration le plus récent (votre RPO). La rétention définit la durée de conservation des données de sauvegarde ; elle n&#39;a aucune incidence sur la fraîcheur du point de restauration le plus récent. Par exemple, avec une rétention de 24 heures et une fréquence de 48 heures, le point de restauration le plus récent peut dater de près de 48 heures.
+
 La modification prend effet immédiatement ; relisez la configuration pour vous en assurer :
 
 ```bash

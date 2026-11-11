@@ -62,10 +62,7 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return removeNullable(arguments[0].type);
-    }
+    String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {

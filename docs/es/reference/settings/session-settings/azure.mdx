@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="azure_allow_parallel_part_upload">
-  ## azure_allow_parallel_part_upload
-</div>
+## azure_allow_parallel_part_upload {#azure_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Usa varios hilos para la carga multiparte de Azure.
 
-<div id="azure_check_objects_after_upload">
-  ## azure_check_objects_after_upload
-</div>
+## azure_check_objects_after_upload {#azure_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ Usa varios hilos para la carga multiparte de Azure.
 
 Comprobar cada objeto cargado en Azure blob storage para asegurarse de que la carga se haya realizado correctamente
 
-<div id="azure_connect_timeout_ms">
-  ## azure_connect_timeout_ms
-</div>
+## azure_connect_timeout_ms {#azure_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -43,17 +37,13 @@ Comprobar cada objeto cargado en Azure blob storage para asegurarse de que la ca
 
 Tiempo de espera de conexión al host de los discos de Azure.
 
-<div id="azure_create_new_file_on_insert">
-  ## azure_create_new_file_on_insert
-</div>
+## azure_create_new_file_on_insert {#azure_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita o deshabilita la creación de un archivo nuevo en cada inserción en las tablas del motor Azure
 
-<div id="azure_ignore_file_doesnt_exist">
-  ## azure_ignore_file_doesnt_exist
-</div>
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -66,17 +56,13 @@ Valores posibles:
 * 1 — `SELECT` devuelve un resultado vacío.
 * 0 — `SELECT` lanza una excepción.
 
-<div id="azure_list_object_keys_size">
-  ## azure_list_object_keys_size
-</div>
+## azure_list_object_keys_size {#azure_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Número máximo de archivos que se pueden devolver por lote mediante una solicitud ListObject
 
-<div id="azure_min_upload_part_size">
-  ## azure_min_upload_part_size
-</div>
+## azure_min_upload_part_size {#azure_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
@@ -84,9 +70,7 @@ Número máximo de archivos que se pueden devolver por lote mediante una solicit
 
 El tamaño mínimo de la parte que se va a subir durante una carga multiparte a Azure blob storage.
 
-<div id="azure_request_timeout_ms">
-  ## azure_request_timeout_ms
-</div>
+## azure_request_timeout_ms {#azure_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
@@ -94,9 +78,7 @@ El tamaño mínimo de la parte que se va a subir durante una carga multiparte a 
 
 Tiempo de espera de inactividad para enviar y recibir datos hacia/desde azure. La operación falla si una sola llamada TCP de lectura o escritura permanece bloqueada durante este tiempo.
 
-<div id="azure_skip_empty_files">
-  ## azure_skip_empty_files
-</div>
+## azure_skip_empty_files {#azure_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -109,9 +91,7 @@ Valores posibles:
 * 0 — `SELECT` genera una excepción si el archivo vacío no es compatible con el formato solicitado.
 * 1 — `SELECT` devuelve un resultado vacío para un archivo vacío.
 
-<div id="azure_strict_upload_part_size">
-  ## azure_strict_upload_part_size
-</div>
+## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -119,9 +99,7 @@ Valores posibles:
 
 El tamaño exacto de la parte que se va a subir durante una carga multiparte en Azure blob storage.
 
-<div id="azure_throw_on_zero_files_match">
-  ## azure_throw_on_zero_files_match
-</div>
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,23 +112,27 @@ Valores posibles:
 * 1 — `SELECT` genera una excepción.
 * 0 — `SELECT` devuelve un resultado vacío.
 
-<div id="azure_truncate_on_insert">
-  ## azure_truncate_on_insert
-</div>
+## azure_truncate_on_insert {#azure_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita o deshabilita TRUNCATE antes de inserción en las tablas del motor Azure.
 
-<div id="azure_use_adaptive_timeouts">
-  ## azure_use_adaptive_timeouts
-</div>
+## azure_use_adaptive_timeouts {#azure_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Nuevo ajuste"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Nueva configuración"}]}]} />
 
 Si se establece en `true`, para todas las solicitudes a Azure los dos primeros intentos se realizan con tiempos de espera de envío y recepción reducidos.
 Si se establece en `false`, todos los intentos se realizan con tiempos de espera idénticos.
+
+## azure_validate_etag_on_read {#azure_validate_etag_on_read}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para detectar sobrescrituras concurrentes de blobs de Azure en la misma ubicación durante una lectura, vinculando cada `GET` al `ETag` obtenido al enumerarlos mediante `If-Match` y validando el `ETag` de la respuesta, como hace `s3_validate_etag_on_read` para S3. `compatibility` con versiones anteriores a 26.10 restablece el comportamiento anterior (sin validación)."}]}]} />
+
+Al leer un blob de Azure Blob Storage mediante las funciones de tabla `azureBlobStorage` / `azureBlobStorageCluster` o el motor de tabla `AzureBlobStorage`, vincule cada solicitud `GET` a la generación del blob observada al enumerarlo, enviando su `ETag` en `If-Match`, y compruebe el `ETag` de la respuesta. La lectura de un único archivo genera múltiples solicitudes `GET` de rangos; si el blob se sobrescribe en la misma ubicación entre estas solicitudes (por ejemplo, si un proceso de escritura externo reescribe una clave fija), las lecturas podrían combinar datos de dos generaciones distintas del blob y dar lugar a una suma de comprobación incorrecta o a un error de análisis. El tamaño registrado durante la enumeración también se utiliza como límite superior de la lectura, por lo que solo es válido para la generación para la que se registró. Cuando se detecta una discrepancia, la lectura falla con `AZURE_OBJECT_CHANGED_DURING_READ` en lugar de devolver datos inconsistentes. Desactive esta opción únicamente para workload que lean intencionadamente blobs que se estén sobrescribiendo y puedan tolerar lecturas inconsistentes.
 
 {/*AUTOGENERATED_END*/}

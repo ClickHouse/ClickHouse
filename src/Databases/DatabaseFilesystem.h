@@ -49,13 +49,17 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     StoragePtr getTableImpl(const String & name, ContextPtr context, bool throw_on_error) const;
 
-    StoragePtr tryGetTableFromCache(const std::string & name) const;
+    StoragePtr tryGetTableFromCache(const std::string & name, const ContextPtr & context) const;
+
+    /// The key of a table in `loaded_tables`: the name together with the way it resolves, which the
+    /// settings of the context decide.
+    std::string getCacheKey(const std::string & table_name, const ContextPtr & context) const;
 
     std::string getTablePath(const std::string & table_name) const;
 
     /// Returns the storage that ended up in the cache: `table_storage`, or the one a concurrent call
     /// for the same name inserted first.
-    StoragePtr addTable(const std::string & table_name, StoragePtr table_storage) const;
+    StoragePtr addTable(const std::string & cache_key, StoragePtr table_storage) const;
 
     bool checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const;
 
