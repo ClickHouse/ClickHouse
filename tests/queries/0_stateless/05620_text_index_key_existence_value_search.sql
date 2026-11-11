@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS tab_keys;
 DROP TABLE IF EXISTS tab_both;
 DROP TABLE IF EXISTS tab_keys_post;
 DROP TABLE IF EXISTS tab_both_post;
+DROP TABLE IF EXISTS tab_both_post_nullable;
 DROP TABLE IF EXISTS tab_json_paths;
 DROP TABLE IF EXISTS tab_json_both;
 DROP TABLE IF EXISTS tab_fixed;
@@ -58,6 +59,15 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE if(hasAnyTokens(m
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE toString(hasAnyTokens(m['k'], 'hello')) = '1' ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_both_post WHERE toString(hasAnyTokens(m['k'], 'hello')) = '1' ORDER BY id SETTINGS use_skip_indexes = 0);
 
+SELECT '-- mapKeys and mapValues with a postprocessor, Nullable values';
+CREATE TABLE tab_both_post_nullable (id UInt32, m Map(String, Nullable(String)), INDEX ik mapKeys(m) TYPE text(tokenizer = array), INDEX iv mapValues(m) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(mapValues(m))))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_both_post_nullable VALUES (1, {'x': 'hello'}), (2, {'k': 'Hello'}), (3, {'k': NULL});
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE isNotNull(hasAnyTokens(m['k'], 'hello')) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE isNotNull(hasAnyTokens(m['k'], 'hello')) ORDER BY id SETTINGS use_skip_indexes = 0);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE hasAnyTokens(m['k'], 'hello') = 0 ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_both_post_nullable WHERE hasAnyTokens(m['k'], 'hello') = 0 ORDER BY id SETTINGS use_skip_indexes = 0);
+
 SELECT '-- JSONAllPaths';
 CREATE TABLE tab_json_paths (id UInt32, d JSON, INDEX ip JSONAllPaths(d) TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -86,6 +96,7 @@ DROP TABLE tab_keys;
 DROP TABLE tab_both;
 DROP TABLE tab_keys_post;
 DROP TABLE tab_both_post;
+DROP TABLE tab_both_post_nullable;
 DROP TABLE tab_json_paths;
 DROP TABLE tab_json_both;
 DROP TABLE tab_fixed;

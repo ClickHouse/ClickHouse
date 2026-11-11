@@ -957,23 +957,14 @@ private:
         if (!new_function_node->result_type->equals(*function_node.result_type))
             new_function_node = &actions_dag.addCast(*new_function_node, function_node.result_type, "", context);
 
-        /// The other selected conditions are key-existence ones: the index skipped granules and adds a hint assuming
-        /// the predicate is false for a missing key or path. Rewrite only if that still holds.
+        /// The other selected conditions are key-existence ones: the index skipped granules and adds hints assuming that
+        /// this predicate and the ones enclosing it are false for a missing key or path. Rewrite only if the value for
+        /// a missing key or path stays the same.
         if (selected_conditions.size() > 1)
         {
-            ActionsDAGWithInversionPushDown canonical_dag(new_function_node, context, /* boolean_context */ false);
-            const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : *new_function_node;
-
-            for (const auto & other_condition : selected_conditions)
-            {
-                if (&other_condition == condition)
-                    continue;
-
-                const auto & other_text = typeid_cast<const MergeTreeIndexConditionText &>(*other_condition.info->condition);
-                auto other_query = other_text.createTextSearchQuery(canonical_node);
-                if (!other_query || other_query->getHash() != other_condition.search_query->getHash())
-                    return &function_node;
-            }
+            auto default_value = condition_text.evaluateOnDefaultValue(function_node);
+            if (!default_value || default_value != condition_text.evaluateOnDefaultValue(*new_function_node))
+                return &function_node;
         }
 
         return &actions_dag.addAlias(*new_function_node, function_node.result_name);

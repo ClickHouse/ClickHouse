@@ -27,6 +27,11 @@
 [1,2]
 [1,2]
 [1,2]
+-- mapKeys and mapValues with a postprocessor, Nullable values
+[2]
+[2]
+[2]
+[2]
 -- JSONAllPaths
 [1,2]
 [1,2]
