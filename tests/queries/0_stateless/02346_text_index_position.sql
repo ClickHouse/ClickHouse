@@ -511,24 +511,49 @@ SELECT '-- A map key the map does not hold';
 CREATE TABLE tab
 (
     id UInt32,
-    m Map(String, FixedString(6)),
+    m Map(String, String),
     INDEX idx(mapValues(m)) TYPE text(tokenizer = ngrams(3))
 )
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
+INSERT INTO tab VALUES (1, map('other', 'hello')), (2, map('k', 'hello')), (3, map('k', 'world'));
 
--- Row 1 has no key 'k', so m['k'] is six NUL bytes and holds the needle. The index stores no term for it.
-SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], repeat(char(0), 4)) > 0 SETTINGS use_skip_indexes = 0;
-SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], repeat(char(0), 4)) > 0 SETTINGS optimize_functions_to_subcolumns = 1;
-SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], repeat(char(0), 4)) > 0 SETTINGS optimize_functions_to_subcolumns = 0;
+-- Row 1 has no key 'k', so m['k'] is ''. It holds 'hello' under another key and must not match.
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS optimize_functions_to_subcolumns = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS optimize_functions_to_subcolumns = 1, query_plan_direct_read_from_text_index = 1;
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS optimize_functions_to_subcolumns = 0, query_plan_direct_read_from_text_index = 0;
+SELECT 'absent key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS optimize_functions_to_subcolumns = 0, query_plan_direct_read_from_text_index = 1;
 
--- A needle the default does not hold still prunes.
+-- The index drops only row 3: it cannot tell the keys of rows 1 and 2 apart.
 SELECT count() > 0 FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], 'zzzz') > 0
-) WHERE explain LIKE '%Granules: 0/2%';
-SELECT 'present key', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], 'hell') > 0;
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS optimize_functions_to_subcolumns = 1
+) WHERE explain LIKE '%Granules: 2/3%';
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], 'hell') > 0 SETTINGS optimize_functions_to_subcolumns = 0
+) WHERE explain LIKE '%Granules: 2/3%';
+
+-- A needle no value holds drops every row.
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], 'zzzz') > 0 SETTINGS optimize_functions_to_subcolumns = 1
+) WHERE explain LIKE '%Granules: 0/3%';
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], 'zzzz') > 0 SETTINGS optimize_functions_to_subcolumns = 0
+) WHERE explain LIKE '%Granules: 0/3%';
+
+-- The empty needle is found in '' too, so row 1 matches and the index is not used.
+SELECT 'absent key, empty needle', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], '') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'absent key, empty needle', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], '') > 0 SETTINGS optimize_functions_to_subcolumns = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'absent key, empty needle', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], '') > 0 SETTINGS optimize_functions_to_subcolumns = 1, query_plan_direct_read_from_text_index = 1;
+SELECT 'absent key, empty needle', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], '') > 0 SETTINGS optimize_functions_to_subcolumns = 0, query_plan_direct_read_from_text_index = 0;
+SELECT 'absent key, empty needle', arraySort(groupArray(id)) FROM tab WHERE position(m['k'], '') > 0 SETTINGS optimize_functions_to_subcolumns = 0, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], '') > 0 SETTINGS optimize_functions_to_subcolumns = 1
+) WHERE explain LIKE '%Name: idx%';
+SELECT count() FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE position(m['k'], '') > 0 SETTINGS optimize_functions_to_subcolumns = 0
+) WHERE explain LIKE '%Name: idx%';
 
 DROP TABLE tab;
