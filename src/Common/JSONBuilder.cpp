@@ -1,4 +1,5 @@
 #include <Common/JSONBuilder.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 
