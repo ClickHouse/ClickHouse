@@ -157,14 +157,11 @@ Block makeTimeSeriesBlock(
             { return label.name() == TimeSeriesTagNames::MetricName && !label.value().empty(); });
 
         /// Like Prometheus, a series without a metric name or with invalid labels is skipped.
-        /// It gets an empty row, which `TimeSeriesSink` ignores.
+        /// It gets no row, so dependent materialized views do not see it either.
         if (metric_name_it == labels.end() || !hasValidLabels(labels, sorted_labels))
         {
             if (!num_skipped_series)
                 first_skipped_labels = formatLabels(labels);
-            metric_name_column->insertDefault();
-            tags_offsets->insert(tags_names->size());
-            time_series_offsets->insert(timestamps->size());
             ++num_skipped_series;
             continue;
         }
@@ -282,7 +279,7 @@ Block makeBlock(
     {
         appendBlock(
             block,
-            makeMetricsMetadataBlock(metrics_metadata, time_series.size(), metadata));
+            makeMetricsMetadataBlock(metrics_metadata, time_series.size() - num_skipped_series, metadata));
     }
     return block;
 }

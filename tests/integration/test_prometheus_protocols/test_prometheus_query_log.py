@@ -365,6 +365,67 @@ def test_remote_write_skips_named_time_series_with_bad_labels():
     assert int(node.query(skipped_series_sql)) == skipped_before + 3
 
 
+def test_remote_write_skipped_time_series_do_not_reach_materialized_views():
+    """
+    A skipped timeseries gets no row in the insert, so a materialized view on the
+    TimeSeries table does not see it and cannot fail the request because of it.
+    """
+    metric_name = "skip_view_test"
+    node.query(
+        "CREATE TABLE skip_view_dst "
+        "(metric_name String, metric_family String, num_samples UInt64) "
+        "ENGINE=MergeTree ORDER BY ()"
+    )
+    # The view fails the insert on a row that has neither a metric name nor metadata.
+    node.query(
+        "CREATE MATERIALIZED VIEW skip_view TO skip_view_dst AS "
+        "SELECT metric_name, metric_family, length(samples) AS num_samples "
+        "FROM prometheus "
+        "WHERE NOT throwIf(metric_name = '' AND metric_family = '')"
+    )
+    try:
+        write_request = remote_pb2.WriteRequest()
+        for labels in [
+            [("job", metric_name)],
+            [("__name__", metric_name), ("job", metric_name)],
+            [("__name__", metric_name), ("job", "a"), ("job", "b")],
+        ]:
+            timeseries = types_pb2.TimeSeries()
+            for name, value in labels:
+                timeseries.labels.append(types_pb2.Label(name=name, value=value))
+            timeseries.samples.append(
+                types_pb2.Sample(timestamp=1753176724 * 1000, value=1)
+            )
+            write_request.timeseries.append(timeseries)
+        metadata = convert_metrics_metadata_to_protobuf(
+            [(metric_name, "GAUGE", "Skip view test metric.", "")]
+        )
+        write_request.metadata.extend(metadata.metadata)
+
+        response = get_response_to_remote_write(
+            node.ip_address, 9093, "/write", write_request
+        )
+        assert response.status_code == requests.codes.no_content
+
+        # The view gets the valid series and the metadata, but no skipped series.
+        view_rows_sql = "SELECT * FROM skip_view_dst ORDER BY ALL"
+        expected_view_rows = f"\t{metric_name}\t0\n{metric_name}\t\t1\n"
+        assert node.query(view_rows_sql) == expected_view_rows
+
+        # A request with only skipped series is accepted and adds nothing to the view.
+        write_request = convert_time_series_to_protobuf(
+            [({"job": metric_name}, {1753176724.0: 1})]
+        )
+        response = get_response_to_remote_write(
+            node.ip_address, 9093, "/write", write_request
+        )
+        assert response.status_code == requests.codes.no_content
+        assert node.query(view_rows_sql) == expected_view_rows
+    finally:
+        node.query("DROP VIEW skip_view")
+        node.query("DROP TABLE skip_view_dst")
+
+
 def test_remote_write_accepts_empty_then_nonempty_metric_name():
     """
     An empty __name__ label before a non-empty one must still be accepted: the
