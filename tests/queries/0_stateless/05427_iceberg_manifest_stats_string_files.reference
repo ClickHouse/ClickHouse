@@ -3,4 +3,4 @@
 1000	0
 --- the Estimated statistics trace line of s
 Expect null 0.5: 1000 NULLs in 2000 rows; with the first file alone it was 1.
-__table1.s: 200 [null 0.5]
+__table1.s: 0 [null 0.5]

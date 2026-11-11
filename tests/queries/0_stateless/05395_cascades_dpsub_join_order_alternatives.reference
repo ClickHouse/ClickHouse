@@ -1,0 +1,22 @@
+-- one order: the fact table is joined last
+GatherExchange
+JoinLogical (Shuffle HashJoin )
+ShuffleExchange
+ReadFromMergeTree (ParallelRead default.t_dsa_fact)
+ShuffleExchange
+JoinLogical (Broadcast HashJoin )
+ReadFromMergeTree (ParallelRead default.t_dsa_bridge)
+ReadFromMergeTree (ReplicatedRead default.t_dsa_dim)
+-- other orders: the fact table is joined with the broadcast dimension before any shuffle
+GatherExchange
+JoinLogical (Shuffle HashJoin )
+ShuffleExchange
+ReadFromMergeTree (ParallelRead default.t_dsa_bridge)
+ShuffleExchange
+JoinLogical (Broadcast HashJoin )
+ReadFromMergeTree (ParallelRead default.t_dsa_fact)
+ReadFromMergeTree (ReplicatedRead default.t_dsa_dim)
+-- the same result with either order and on one node
+31398000	4000
+31398000	4000
+31398000	4000

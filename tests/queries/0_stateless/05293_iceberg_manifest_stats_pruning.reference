@@ -27,7 +27,7 @@ ResultRows: ~~2
 1
 --- T4: every file pruned, WHERE p.k >= 1000000
 Join: m[1000] ⋈ p[0]
-ResultRows: 1
+ResultRows: 0
 --- T5: a filter that prunes nothing, WHERE t.x = 5
 Join: m[1000] ⋈ t[no_stats~10]
 ResultRows: ~~10

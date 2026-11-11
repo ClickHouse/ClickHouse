@@ -17,6 +17,9 @@ SET distributed_plan_fallback_to_local_execution = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 -- A large table-size hint makes Cascades always read the table on several nodes.
 SET param__internal_join_table_stat_hints = '{"t_cascades_neg_limit": {"cardinality": 100000000, "avg_row_bytes": 8}}';
+-- With no price for the network and a low price for the rows that pass through one node, a gather of the whole
+-- table is cheaper than one node reading and sorting it.
+SET param__internal_cascades_cost_config = '{"network_weight":0,"sequential_weight":1}';
 
 SELECT '-- LIMIT -4' SETTINGS make_distributed_plan = 0;
 SELECT a FROM t_cascades_neg_limit ORDER BY a LIMIT -4 SETTINGS make_distributed_plan = 0;

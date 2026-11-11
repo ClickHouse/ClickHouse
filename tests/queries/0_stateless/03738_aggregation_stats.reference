@@ -7,15 +7,15 @@
           ReadFromMergeTree (default.t2)
 ===== Aggregation by 2 columns and NDV1*NDV2 < total rows ======
   JoinLogical
-  Join: t1[5] ⋈ tt2[30]
-  ResultRows: 15
+  Join: t1[5] ⋈ tt2[10]
+  ResultRows: 5
       ReadFromMergeTree (default.t1)
       Aggregating
           ReadFromMergeTree (default.t2)
 ===== Aggregation by 2 columns and NDV1*NDV2 > total rows ======
   JoinLogical
-  Join: t1[5] ⋈ tt2[100]
-  ResultRows: 50
+  Join: t1[5] ⋈ tt2[17]
+  ResultRows: 9
       ReadFromMergeTree (default.t1)
       Aggregating
           ReadFromMergeTree (default.t2)

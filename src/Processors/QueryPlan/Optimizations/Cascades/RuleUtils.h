@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/ReplicationEligibility.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -15,7 +16,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+class Group;
+struct OptimizerContext;
+
 /// Helpers shared by the optimization rules.
+
+/// `decideReplication` for a group's result under the context's byte budget; a replication that
+/// repeats the scan on every node also has to fit the bytes it scans. Logs the decision under `rule_name`.
+ReplicationDecision decideReplicationOf(const Group & group, const OptimizerContext & context, const String & rule_name, bool repeats_scan);
 
 /// A Full sort with a limit is a top-N: it reduces rows, so it stays in the memo as an operator
 /// (a limit-less Full sort is stripped into a sorting property). Only a Full sort takes unsorted

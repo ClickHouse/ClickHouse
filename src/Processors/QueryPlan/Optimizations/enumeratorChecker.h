@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
+#include <functional>
 #include <limits>
 #include <vector>
 
@@ -59,9 +61,12 @@ public:
 private:
     using Plan = typename DPTable::DPEntry::Plan;
 
+    /// The search value of the rows of a subset, which stands in for an unknown estimate, as `searchRows` counts it.
+    double searchRows(UInt relations) const;
+
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
-        const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges);
+        const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges);
 
     struct MergeInputCandidate
     {
@@ -78,6 +83,13 @@ private:
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
     MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
+    /// Offers the broadcast, shuffle, local and replicated hash joins of the plans of the two sides, see
+    /// `DistributedJoinCost`. Returns the cost of the cheapest one.
+    double acceptDistributedJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
+        const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges);
+    /// Keeps the plan as the cheapest plan of the subset, and as its plan in its distribution state, if it is cheaper.
+    void offerPlan(UInt subset, const Plan & plan);
+
     /// The cheapest plan of the subset for -1, else its plan in `ordered`.
     const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
 
@@ -85,6 +97,19 @@ private:
     Optimizer & optimizer;
     const size_t num_relations;
 };
+
+template <class TDPTable, class TOptimizer>
+double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::searchRows(const UInt relations) const
+{
+    const auto & entry = dp_table[relations];
+    if (entry.estimated_rows)
+        return static_cast<double>(*entry.estimated_rows);
+    if (entry.left != 0 || entry.right != 0)
+        return joinSearchRows(entry.sel, searchRows(entry.left), searchRows(entry.right), entry.kind, entry.strictness);
+    if (entry.max_rows)
+        return static_cast<double>(*entry.max_rows);
+    return 1;
+}
 
 template <class TDPTable, class TOptimizer>
 void
@@ -105,6 +130,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     };
     if (!is_buildable(lhs_subset) || !is_buildable(rhs_subset))
         return;
+
+    auto & recorded_splits = optimizer.query_graph.recorded_splits;
+    if (recorded_splits)
+        ++recorded_splits->considered_splits;
 
     const UInt32 left_mask = static_cast<UInt32>(lhs_subset);
     const UInt32 right_mask = static_cast<UInt32>(rhs_subset);
@@ -134,19 +163,58 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     else if (kind == JoinKind::Inner && !connected)
         kind = JoinKind::Cross;
 
-    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
+    auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     const auto & left_entry = dp_table[lhs_subset];
     const auto & right_entry = dp_table[rhs_subset];
-    const double joined_rows = estimateJoinedRows(selectivity, left_entry.estimated_rows, right_entry.estimated_rows);
+    const double left_search_rows = searchRows(lhs_subset);
+    const double right_search_rows = searchRows(rhs_subset);
+    const double joined_rows = joinedRowsSearchValue(
+        keys, left_entry.estimated_rows, right_entry.estimated_rows, left_search_rows, right_search_rows, kind, strictness);
     const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
-    const double plan_cost = left_entry.cost + right_entry.cost + joined_rows
-        + optimizer.hashJoinWork(left_mask, left_entry.estimated_rows, right_mask, right_entry.estimated_rows);
+    /// The hash work counts an input without an estimate by its search value, as the rows do.
+    double plan_cost = left_entry.cost + right_entry.cost + joined_rows
+        + optimizer.hashJoinWork(left_mask, left_search_rows, right_mask, right_search_rows);
+
+    if (recorded_splits)
+    {
+        RecordedJoinSplits::Split split{.left = lhs_subset, .right = rhs_subset, .edges = {}, .local_cost = joined_rows};
+        for (const auto * recorded_edge : edge)
+            split.edges.push_back(recorded_edge - optimizer.query_graph.edges.data());
+        recorded_splits->splits.push_back(std::move(split));
+    }
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
-             selectivity.value,
+             keys.selectivity,
              plan_cost,
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
+
+    if (optimizer.useDistribution())
+        plan_cost = acceptDistributedJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, keys, edge);
+
+    /// The full set is enumerated last, so the plans of its parts are final: every costed split of it can be kept as
+    /// another join order.
+    const UInt full_set = (static_cast<UInt>(1) << num_relations) - 1;
+    if (result_subset == full_set && optimizer.query_graph.max_join_order_alternatives > 0)
+    {
+        optimizer.keepFullSetAlternative(left_mask, plan_cost, [&]
+        {
+            return typename Optimizer::FullSetAlternative{
+                .left = left_mask,
+                .right = right_mask,
+                .cost = plan_cost,
+                .rows_cost = rows_cost,
+                .sel = keys.selectivity,
+                .estimated_rows = optimizer.estimateCardinality(left_entry.estimated_rows, right_entry.estimated_rows, keys, kind, strictness),
+                .rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left_entry.estimated_rows, right_entry.estimated_rows),
+                .kind = kind,
+                .strictness = strictness,
+                .edges = {edge.begin(), edge.end()}};
+        });
+    }
+
+    if (optimizer.useDistribution())
+        return;
 
     if (!dp_table.isConnected(result_subset) || plan_cost < dp_table[result_subset].cost)
     {
@@ -155,10 +223,12 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.right = rhs_subset;
         entry.cost = plan_cost;
         entry.rows_cost = rows_cost;
-        entry.sel = selectivity.reported_value;
+        entry.sel = keys.selectivity;
         entry.kind = kind;
         entry.strictness = strictness;
-        entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind, strictness);
+        entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, keys, kind, strictness);
+        entry.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows);
+        entry.max_rows = estimateJoinRowsUpperBound(dp_table[lhs_subset].max_rows, dp_table[rhs_subset].max_rows, kind, strictness);
         entry.edges.assign(edge.begin(), edge.end());
         entry.method = JoinMethod::Hash;
         entry.sharded = false;
@@ -166,10 +236,172 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.order_class = -1;
         entry.left_plan = -1;
         entry.right_plan = -1;
+        entry.partition_class = -1;
     }
 
     if (optimizer.useInterestingOrders())
-        acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, selectivity, edge);
+        acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, keys, edge);
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subset, const Plan & plan)
+{
+    auto & entry = dp_table[subset];
+    if (optimizer.isInterestingState(plan.partition_class, static_cast<UInt32>(subset)))
+    {
+        auto it = std::ranges::find(entry.ordered, plan.partition_class, &Plan::partition_class);
+        if (it == entry.ordered.end())
+            entry.ordered.push_back(plan);
+        else if (plan.cost < it->cost)
+            *it = plan;
+    }
+    const bool has_plan = entry.left != 0 || entry.right != 0;
+    if (!has_plan || plan.cost < entry.cost)
+    {
+        static_cast<Plan &>(entry) = plan;
+        /// The partitioning of the cheapest plan by a class matters only while a later join may use it.
+        if (entry.partition_class >= 0 && !optimizer.isInterestingPartition(entry.partition_class, static_cast<UInt32>(subset)))
+            entry.partition_class = -1;
+    }
+}
+
+template <class TDPTable, class TOptimizer>
+double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
+    const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
+    const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges)
+{
+    const auto left_mask = static_cast<UInt32>(lhs_subset);
+    const auto right_mask = static_cast<UInt32>(rhs_subset);
+    const UInt64 key_classes = optimizer.partitionKeyClasses(left_mask, right_mask);
+    const auto join_cost = optimizer.distributedJoinCost();
+    const double nodes = join_cost.nodes;
+    const double left_bytes = optimizer.rowBytes(left_mask);
+    const double right_bytes = optimizer.rowBytes(right_mask);
+    constexpr Int8 replicated = Optimizer::replicated_state;
+    constexpr Int8 single_node = Optimizer::single_node_state;
+    const Int8 all_keys_state = std::popcount(key_classes) > 1 ? optimizer.compositeState(key_classes) : -1;
+    const bool all_relations = result_subset == (static_cast<UInt>(1) << num_relations) - 1;
+    const double all_relations_bytes = all_relations ? optimizer.rowBytes(static_cast<UInt32>(result_subset)) : 0;
+
+    /// The plans of a side: its cheapest plan and its plans in the other states.
+    auto side_plans = [&](UInt subset)
+    {
+        std::vector<Int8> plans{-1};
+        for (size_t i = 0; i < dp_table[subset].ordered.size(); ++i)
+            plans.push_back(static_cast<Int8>(i));
+        return plans;
+    };
+    const auto left_plans = side_plans(lhs_subset);
+    const auto right_plans = side_plans(rhs_subset);
+
+    double best_cost = std::numeric_limits<double>::infinity();
+    for (const Int8 left_index : left_plans)
+    {
+        const Plan & left = planAt(lhs_subset, left_index);
+        const double left_rows = left.estimated_rows ? static_cast<double>(*left.estimated_rows) : searchRows(lhs_subset);
+        const Int8 left_state = left.partition_class;
+        for (const Int8 right_index : right_plans)
+        {
+            const Plan & right = planAt(rhs_subset, right_index);
+            const double right_rows = right.estimated_rows ? static_cast<double>(*right.estimated_rows) : searchRows(rhs_subset);
+            const Int8 right_state = right.partition_class;
+            const double joined_rows = joinedRowsSearchValue(
+                keys, left.estimated_rows, right.estimated_rows, left_rows, right_rows, kind, strictness);
+            const double inputs_cost = left.cost + right.cost;
+
+            Plan plan;
+            plan.left = lhs_subset;
+            plan.right = rhs_subset;
+            plan.left_plan = left_index;
+            plan.right_plan = right_index;
+            plan.rows_cost = left.rows_cost + right.rows_cost + joined_rows;
+            plan.sel = keys.selectivity;
+            plan.kind = kind;
+            plan.strictness = strictness;
+            plan.estimated_rows = optimizer.estimateCardinality(left.estimated_rows, right.estimated_rows, keys, kind, strictness);
+            plan.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left.estimated_rows, right.estimated_rows);
+            plan.imprecise_rows = left.imprecise_rows || right.imprecise_rows || plan.rows_rest_on_assumption || !plan.estimated_rows;
+            plan.max_rows = estimateJoinRowsUpperBound(left.max_rows, right.max_rows, kind, strictness);
+            plan.edges.assign(edges.begin(), edges.end());
+            plan.method = JoinMethod::Hash;
+
+            auto offer = [&](double cost, Int8 state)
+            {
+                /// A plan of all relations also pays for the exchange the step above the graph needs.
+                if (all_relations)
+                    cost += optimizer.aboveExchangeCost(state, joined_rows, all_relations_bytes);
+                if (!std::isfinite(cost))
+                    return;
+                plan.cost = inputs_cost + cost;
+                plan.partition_class = state;
+                best_cost = std::min(best_cost, plan.cost);
+                offerPlan(result_subset, plan);
+            };
+
+            /// The smaller side builds the hash table where both sides are split the same way.
+            const bool build_right = right_rows <= left_rows;
+            const double probe_rows = build_right ? left_rows : right_rows;
+            const double build_rows = build_right ? right_rows : left_rows;
+            const double build_bytes = build_right ? right_bytes : left_bytes;
+
+            const bool replicate_left = optimizer.canReplicate(left_mask, left.imprecise_rows, left.max_rows, left_rows);
+            const bool replicate_right = optimizer.canReplicate(right_mask, right.imprecise_rows, right.max_rows, right_rows);
+
+            /// Broadcast: one side copied to every node, the other one partitioned; its partitioning is kept, a side on
+            /// one node is scattered first.
+            if (replicate_right)
+                offer(join_cost.toPartitioned(left_state, -1, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                        + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                    left_state == single_node ? -1 : left_state);
+            if (replicate_left)
+                offer(join_cost.toPartitioned(right_state, -1, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                        + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                    right_state == single_node ? -1 : right_state);
+
+            /// Broadcast with the partitioned side shuffled first by a column the step above the graph would like, as the keyed
+            /// broadcast of Cascades does: the result stays partitioned by it.
+            for (UInt64 classes = optimizer.aboveClassesIn(left_mask); classes && replicate_right; classes &= classes - 1)
+            {
+                const auto key = static_cast<Int8>(std::countr_zero(classes));
+                if (key != left_state)
+                    offer(join_cost.toPartitioned(left_state, key, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                            + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                        key);
+            }
+            for (UInt64 classes = optimizer.aboveClassesIn(right_mask); classes && replicate_left; classes &= classes - 1)
+            {
+                const auto key = static_cast<Int8>(std::countr_zero(classes));
+                if (key != right_state)
+                    offer(join_cost.toPartitioned(right_state, key, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                            + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                        key);
+            }
+
+            /// Shuffle: both sides partitioned by one key, or by all keys together as Cascades also does.
+            auto offer_shuffle = [&](Int8 key)
+            {
+                offer(join_cost.toPartitioned(left_state, key, left_rows, left_bytes) + join_cost.toPartitioned(right_state, key, right_rows, right_bytes)
+                        + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, nodes, nodes),
+                    key);
+            };
+            for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+                offer_shuffle(static_cast<Int8>(std::countr_zero(classes)));
+            if (all_keys_state >= 0)
+                offer_shuffle(all_keys_state);
+
+            /// Local: both sides on one node.
+            offer(join_cost.toSingleNode(left_state, left_rows, left_bytes) + join_cost.toSingleNode(right_state, right_rows, right_bytes)
+                    + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, 1, 1),
+                single_node);
+
+            /// Replicated: every node joins its copies of both sides, so its result is a copy too.
+            if (replicate_left && replicate_right)
+                offer(join_cost.toReplicated(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                        + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, 1, 1),
+                    replicated);
+        }
+    }
+    return best_cost;
 }
 
 template <class TDPTable, class TOptimizer>
@@ -206,13 +438,13 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UIn
 template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
-    const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
+    const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges)
 {
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);
-    for (UInt64 keys = optimizer.mergeKeyClasses(edges, left_mask, right_mask, kind, strictness); keys; keys &= keys - 1)
+    for (UInt64 key_classes = optimizer.mergeKeyClasses(edges, left_mask, right_mask, kind, strictness); key_classes; key_classes &= key_classes - 1)
     {
-        const auto key = static_cast<Int32>(std::countr_zero(keys));
+        const auto key = static_cast<Int32>(std::countr_zero(key_classes));
         const MergeInputCandidate * left = nullptr;
         const MergeInputCandidate * right = nullptr;
         double cost = std::numeric_limits<double>::infinity();
@@ -223,7 +455,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
             for (const auto & right_candidate : right_candidates)
             {
                 const double candidate_cost = optimizer.mergeJoinCost(
-                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, selectivity);
+                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, keys);
                 if (candidate_cost < cost)
                 {
                     cost = candidate_cost;
@@ -252,11 +484,14 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         plan.right_plan = right->plan;
         plan.cost = cost;
         plan.rows_cost = planAt(lhs_subset, left->plan).rows_cost + planAt(rhs_subset, right->plan).rows_cost
-            + estimateJoinedRows(selectivity, left->input.rows, right->input.rows);
-        plan.sel = selectivity.reported_value;
+            + estimateJoinedRows(keys, static_cast<double>(left->input.rows), static_cast<double>(right->input.rows));
+        plan.sel = keys.selectivity;
         plan.kind = kind;
         plan.strictness = strictness;
-        plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, selectivity, kind, strictness);
+        plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, keys, kind, strictness);
+        plan.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left->input.rows, right->input.rows);
+        plan.max_rows = estimateJoinRowsUpperBound(
+            planAt(lhs_subset, left->plan).max_rows, planAt(rhs_subset, right->plan).max_rows, kind, strictness);
         plan.edges.assign(edges.begin(), edges.end());
         plan.method = JoinMethod::Merge;
         plan.sharded = optimizer.isShardedMerge(left->input, left_mask, right->input, right_mask);

@@ -1,0 +1,3 @@
+default.t_src_fact	statistics
+default.t_src_hinted	hint
+default.t_src_plain	primary_index

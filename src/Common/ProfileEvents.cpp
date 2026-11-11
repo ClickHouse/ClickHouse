@@ -547,6 +547,10 @@
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
     M(IcebergRuntimeFilterPrunedFiles, "Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
+    M(JoinEnumerationSetPlans, "Number of join graphs that the Cascades optimizer got as one memo group per set of joined tables, see setting `cascades_join_enumeration`.", ValueType::Number) \
+    M(JoinEnumerationRuleExpansions, "Number of join graphs whose other joins the Cascades rule `JoinEnumeration` added during the search, see setting `cascades_join_enumeration`.", ValueType::Number) \
+    M(JoinEnumerationSplits, "Number of joins over a set of joined tables that the Cascades optimizer got with setting `cascades_join_enumeration`.", ValueType::Number) \
+    M(JoinOrderJoinsCostedWithoutRowEstimate, "Number of joins in the chosen join orders whose cost used an upper bound or a placeholder because the row estimate of an input was unknown.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
     M(JoinNonJoinedTransformBlockCount, "Number of blocks emitted by NonJoinedBlocksTransform.", ValueType::Number) \

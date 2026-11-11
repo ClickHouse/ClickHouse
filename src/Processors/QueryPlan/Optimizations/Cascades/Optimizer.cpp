@@ -1,4 +1,10 @@
 #include <Common/ThreadStatus.h>
+#include <Processors/QueryPlan/JoinGraphStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
+#include <functional>
+#include <Common/SipHash.h>
+#include <map>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -135,6 +141,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.max_bytes_to_broadcast = optimization_settings.distributed_plan_max_bytes_to_broadcast;
     context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
@@ -152,6 +159,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     memo.setContext(buildContext(getQueryContextOrThrow(), optimization_settings));
 
     addRule(createJoinCommutativity());
+    addRule(createJoinEnumeration());
     addRule(createHashJoinImplementation());
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
@@ -223,21 +231,184 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         return {child_group_id, stripped_props};
     }
 
+    if (const auto * graph_step = typeid_cast<const JoinGraphStep *>(node.step.get()))
+        return addJoinGraph(node, *graph_step);
+
     std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
 
+    /// The inputs are set before the expression enters the memo: the group indexes the expression by a
+    /// fingerprint that includes its inputs, so a later equal expression is found as a duplicate.
     auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
-    auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)
     {
         auto [input_group_id, pending_props] = addGroup(*child_node);
         group_expression->inputs.push_back({input_group_id, pending_props});
     }
+    auto group_id = memo.addGroup(group_expression);
 
     /// Set statistics on the group (shared by all expressions in the group)
     auto group = memo.getGroup(group_id);
     group->statistics = std::move(prepopulated_statistics);
 
     return {group_id, {}};
+}
+
+void CascadesOptimizer::logJoinSetStatistics() const
+{
+    /// The experiments of `cascades_join_enumeration` compare the plans of the modes only if every set that two modes
+    /// share has the same statistics in both.
+    for (const auto & [graph_group_id, expansion] : memo.getJoinGraphExpansions())
+    {
+        std::map<UInt64, GroupId> sorted_sets(expansion->set_groups.begin(), expansion->set_groups.end());
+        for (const auto & [relations, group_id] : sorted_sets)
+        {
+            if (std::popcount(relations) < 2)
+                continue;
+            const auto & set_statistics = memo.getGroup(group_id)->statistics;
+            LOG_DEBUG(log, "Join set statistics: graph of group #{}, set {}, rows {}, hash {}", graph_group_id, relations,
+                set_statistics ? set_statistics->estimated_row_count : -1.0, set_statistics ? sipHash64(set_statistics->dump()) : 0);
+        }
+    }
+}
+
+std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(
+    QueryPlan::Node & node, JoinGraphStep::SetPlan set_plan, const JoinGraphStep & graph_step)
+{
+    std::unordered_map<UInt64, GroupId> set_groups;
+    std::unordered_map<UInt64, ExpressionProperties> input_pending_props;
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        auto [group_id, pending_props] = addGroup(*node.children[i]);
+        set_groups[UInt64(1) << i] = group_id;
+        input_pending_props[UInt64(1) << i] = std::move(pending_props);
+    }
+
+    std::optional<GroupId> last_group_id;
+    for (auto & set : set_plan.sets)
+    {
+        std::optional<GroupId> group_id;
+        for (auto & split : set.splits)
+        {
+            auto expression = std::make_shared<GroupExpression>(std::move(split.step));
+            for (UInt64 side : {split.left, split.right})
+            {
+                auto it = input_pending_props.find(side);
+                expression->inputs.push_back({set_groups.at(side), it != input_pending_props.end() ? it->second : ExpressionProperties{}});
+            }
+            if (group_id)
+                memo.getGroup(*group_id)->addLogicalExpression(expression);
+            else
+                group_id = memo.addGroup(expression);
+        }
+        set_groups[set.relations] = *group_id;
+        last_group_id = group_id;
+    }
+    if (!last_group_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A join graph without sets of relations");
+
+    auto expansion = std::make_shared<JoinGraphExpansion>();
+    expansion->order_builder = graph_step.getOrderBuilderPtr();
+    expansion->set_groups = std::move(set_groups);
+    expansion->input_pending_props = std::move(input_pending_props);
+    expansion->expanded = !graph_step.getOrderBuilder().hasRemainingSets();
+    memo.addJoinGraphExpansion(*last_group_id, std::move(expansion));
+    return {*last_group_id, {}};
+}
+
+std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPlan::Node & node, const JoinGraphStep & graph_step)
+{
+    const std::vector<QueryPlan::Node *> inputs = node.children;
+
+    /// The joins are built before anything is imported: building reads the headers of the inputs, and importing moves
+    /// the steps out of the nodes.
+    if (auto set_plan = graph_step.getOrderBuilder().buildSetPlan(inputs))
+    {
+        if (!blocksHaveEqualStructure(*set_plan->sets.back().splits.front().step->getOutputHeader(), *graph_step.getOutputHeader()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The joins of all relations of a join graph have header {}, the graph has {}",
+                set_plan->sets.back().splits.front().step->getOutputHeader()->dumpStructure(), graph_step.getOutputHeader()->dumpStructure());
+        return addJoinSets(node, std::move(*set_plan), graph_step);
+    }
+
+    /// The plans of the other orders are built before anything is imported: building reads the headers of the inputs
+    /// and of the joins the orders share, and importing moves the steps out of the nodes.
+    std::vector<QueryPlan::Node *> roots{graph_step.getChosenOrderRoot()};
+    auto & order_builder = graph_step.getOrderBuilder();
+    for (size_t i = 0; i < order_builder.otherOrdersCount(); ++i)
+        roots.push_back(order_builder.buildOtherOrder(i, inputs, join_graph_nodes));
+
+    struct Imported
+    {
+        GroupId group_id;
+        ExpressionProperties pending_props;
+        /// Positions of the graph inputs below.
+        std::vector<size_t> inputs_below;
+    };
+
+    /// Every node is imported once: the orders share the inputs and the plans of their common subtrees.
+    std::unordered_map<const QueryPlan::Node *, Imported> imported_nodes;
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        auto [group_id, pending_props] = addGroup(*inputs[i]);
+        imported_nodes.emplace(inputs[i], Imported{group_id, std::move(pending_props), {i}});
+    }
+
+    /// The joins over the same inputs give the same rows; their expressions share a group when their output headers
+    /// are equal too, so that the search can choose between the orders below that point.
+    struct SetGroup
+    {
+        GroupId group_id;
+        SharedHeader header;
+    };
+    std::map<std::vector<size_t>, std::vector<SetGroup>> groups_by_inputs;
+
+    std::function<Imported(QueryPlan::Node &)> import_join = [&](QueryPlan::Node & join_node) -> Imported
+    {
+        if (auto it = imported_nodes.find(&join_node); it != imported_nodes.end())
+            return it->second;
+
+        std::vector<Imported> children;
+        for (auto * child : join_node.children)
+            children.push_back(import_join(*child));
+
+        std::vector<size_t> inputs_below;
+        for (const auto & child : children)
+            inputs_below.insert(inputs_below.end(), child.inputs_below.begin(), child.inputs_below.end());
+        std::ranges::sort(inputs_below);
+
+        const auto header = join_node.step->getOutputHeader();
+        auto expression = std::make_shared<GroupExpression>(std::move(join_node.step));
+        for (auto & child : children)
+            expression->inputs.push_back({child.group_id, std::move(child.pending_props)});
+
+        auto & candidates = groups_by_inputs[inputs_below];
+        std::optional<GroupId> group_id;
+        for (const auto & candidate : candidates)
+        {
+            if (blocksHaveEqualStructure(*candidate.header, *header))
+            {
+                memo.getGroup(candidate.group_id)->addLogicalExpression(expression);
+                group_id = candidate.group_id;
+                break;
+            }
+        }
+        if (!group_id)
+        {
+            group_id = memo.addGroup(expression);
+            candidates.push_back({*group_id, header});
+        }
+        Imported imported{*group_id, {}, std::move(inputs_below)};
+        imported_nodes.emplace(&join_node, imported);
+        return imported;
+    };
+
+    const auto chosen = import_join(*roots.front());
+    for (size_t i = 1; i < roots.size(); ++i)
+    {
+        const auto other = import_join(*roots[i]);
+        if (other.group_id != chosen.group_id)
+            LOG_DEBUG(log, "A join order of the graph has another output header than the chosen one, it is not considered");
+    }
+    return {chosen.group_id, {}};
 }
 
 void CascadesOptimizer::pushTask(OptimizationTaskPtr task)
@@ -378,6 +549,8 @@ void CascadesOptimizer::optimize()
             "or simplify the query.",
             executed_tasks_limit, root_group_id, root_required_properties.dump(),
             memo.getGroupCount(), tasks.size(), tasks.top()->describe());
+
+    logJoinSetStatistics();
 
     auto best_plan = buildBestPlan(root_group_id, root_required_properties);
 
@@ -531,16 +704,43 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         else
         {
             auto step = cloneStepForBestPlan(*frame.expression);
+            /// The runtime filters are placed on the chosen plan, so they must see its input estimates, not the ones
+            /// the join order optimizer stored for another order (or none, for a join made by a rewrite).
+            if (auto * join_step = typeid_cast<JoinStepLogical *>(step.get()); join_step && frame.expression->inputs.size() == 2)
+            {
+                /// The rows the selected input implementation emits, as its plan reports them: unknown when its physical
+                /// output is unknown, such as a partial aggregation's states.
+                auto input_estimate = [&](size_t input) -> JoinStepLogical::InputEstimate
+                {
+                    const auto & estimate = frame.child_plans.at(input)->getRootNode()->cost_estimation;
+                    if (!estimate || !estimate->rows)
+                        return {};
+                    return {.rows = roundToRowCount(*estimate->rows), .from_defaults = estimate->estimate_from_defaults};
+                };
+                join_step->setChosenInputEstimates(input_estimate(0), input_estimate(1));
+            }
             for (size_t i = 0; i < frame.child_plans.size(); ++i)
                 addConvertingExpression(*frame.child_plans[i], step->getInputHeaders().at(i));
             result = std::make_unique<QueryPlan>();
             result->unitePlans(std::move(step), std::move(frame.child_plans));
         }
 
+        const auto & group_statistics = *memo.getGroup(frame.group_id)->statistics;
+        /// The step emits the copies of the logical rows of its group (a partial aggregation a state per group on each
+        /// node); the bound of the group is a bound of the logical rows only.
+        const Float64 copies = frame.expression->physical_copies;
+        const bool copied = copies != 1.0 || frame.expression->physical_copies_unknown;
+        const bool rows_unknown = group_statistics.rows_unknown || frame.expression->physical_copies_unknown;
+        const Float64 rows = group_statistics.estimated_row_count * copies;
         result->getRootNode()->cost_estimation = CostEstimationInfo
             {
+                .rows = rows_unknown ? std::nullopt : std::optional<Float64>(rows),
                 .cost = frame.expression->cost->subtree_cost.total(cost_config),
-                .rows = memo.getGroup(frame.group_id)->statistics->estimated_row_count
+                .source = group_statistics.source,
+                .max_rows = !copied && group_statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max())
+                    ? std::optional<Float64>(group_statistics.max_row_count) : std::nullopt,
+                .estimate_from_defaults = group_statistics.estimate_from_defaults,
+                .search_rows = rows_unknown ? std::optional<Float64>(rows) : std::nullopt,
             };
         LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));
 

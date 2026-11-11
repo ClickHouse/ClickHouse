@@ -21,6 +21,10 @@ DPJoinEntryPtr evaluateJoin(
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
     std::vector<JoinActionRef *> & predicates,
-    LoggerPtr log);
+    LoggerPtr log,
+    RecordedJoinSplits * recorded_splits = nullptr);
+
+/// The relations of `relations` as a mask, bit `i` for relation `i`.
+UInt64 toRelationMask(const BitSet & relations);
 
 }

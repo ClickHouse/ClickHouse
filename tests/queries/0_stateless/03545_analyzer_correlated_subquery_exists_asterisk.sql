@@ -12,6 +12,7 @@ SET execute_exists_as_scalar_subquery = 0; -- test is about correlated EXISTS jo
 SET query_plan_remove_unused_columns = 1; -- unused join result columns leak into actions/positions when disabled
 SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0, skipping chooseJoinOrder which normally eliminates intermediate "Project only used columns" Expression steps
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; LEFT ANY stays as LEFT ANY instead of converting to LEFT SEMI, changing plan structure and WHERE fusion
+SET join_algorithm = 'hash'; -- the parallel hash join is chosen from the right side row estimate, which hash table statistics of an earlier run change; the test is about the join structure
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test(

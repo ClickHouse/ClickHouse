@@ -231,15 +231,17 @@ bool siteAdmitsRuntimeFilterTransport(
     /// sites above a nested exchange (and Cloud worker-scan steps) yield no estimate and
     /// take the no-estimate admission path.
     auto site_stats = estimateReadRowsCount(*site.node);
-    if (site_stats.estimated_rows && estimated_keys >= *site_stats.estimated_rows)
+    /// A site with no row estimate can still have a bound, e.g. a `LIMIT` over a source without statistics.
+    const auto site_rows = site_stats.estimated_rows ? site_stats.estimated_rows : site_stats.max_rows;
+    if (site_rows && estimated_keys >= *site_rows)
     {
         LOG_TRACE(
             getLogger("joinRuntimeFilter"),
-            "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} estimated site rows",
+            "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} site rows",
             producer.getFilterName(),
             site.node->step->getName(),
             estimated_keys,
-            *site_stats.estimated_rows);
+            *site_rows);
         return false;
     }
     if (auto it = site_stats.column_stats.find(site.key_column); !site.key_column.empty() && it != site_stats.column_stats.end()

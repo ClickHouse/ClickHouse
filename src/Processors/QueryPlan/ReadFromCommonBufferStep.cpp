@@ -10,10 +10,12 @@ namespace DB
 ReadFromCommonBufferStep::ReadFromCommonBufferStep(
     const SharedHeader & header_,
     ChunkBufferPtr chunk_buffer_,
-    size_t max_streams_)
+    size_t max_streams_,
+    QueryPlan::Node * subplan_root_)
     : ISourceStep(header_)
     , chunk_buffer(std::move(chunk_buffer_))
     , max_streams(max_streams_)
+    , subplan_root(subplan_root_)
 {}
 
 void ReadFromCommonBufferStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

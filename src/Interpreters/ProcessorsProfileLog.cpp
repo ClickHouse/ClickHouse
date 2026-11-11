@@ -60,6 +60,13 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
         {"step_uniq_id", std::make_shared<DataTypeString>(), "The uniq step id in plan."},
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of the exception if the query failed, otherwise 0."},
         {"exception", std::make_shared<DataTypeString>(), "Message of the exception if the query failed, otherwise empty."},
+        {"plan_step_estimated_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+            "The number of rows the query optimizer estimated for the output of the query plan step which created this processor. "
+            "NULL if the step has no estimate. Compare with the sum of `output_rows` over the processors of the step whose consumers belong to other steps."},
+        {"plan_step_estimate_source", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "Where the estimate came from: `statistics`, `primary_index`, `no_statistics`, `hint`, `randomized`, `hash_table_cache` or `data_lake_metadata`. "
+            "Empty if the step carries no annotation or the origin of its estimate is not recorded. "
+            "`no_statistics` with a NULL `plan_step_estimated_rows` means the optimizer found no statistics to estimate the step from."},
     };
 }
 
@@ -101,6 +108,11 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(step_uniq_id);
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
+    if (plan_step_estimated_rows)
+        columns[i++]->insert(*plan_step_estimated_rows);
+    else
+        columns[i++]->insertDefault();
+    columns[i++]->insert(plan_step_estimate_source);
 }
 
 VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors)
@@ -149,6 +161,8 @@ void logProcessorProfile(
                 processor_elem.plan_group = info.plan_group;
                 processor_elem.processor_uniq_id = info.processor_uniq_id;
                 processor_elem.step_uniq_id = info.step_uniq_id;
+                processor_elem.plan_step_estimated_rows = info.plan_step_estimated_rows;
+                processor_elem.plan_step_estimate_source = info.plan_step_estimate_source;
 
                 processor_elem.processor_name = info.processor_name;
 

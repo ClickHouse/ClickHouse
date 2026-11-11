@@ -45,7 +45,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
+    /// `row_fraction` scales the rows the conditions keep: the share of the table an index analysis has
+    /// already selected for conditions left out of `nodes`.
+    RelationProfile estimateRelationProfile(
+        const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes, Float64 row_fraction = 1.0) const;
     RelationProfile estimateRelationProfile() const;
 
     struct RPNElement
@@ -78,6 +81,8 @@ public:
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
+        /// The default selectivity stood in for this element or for an atom it absorbed.
+        bool used_default = false;
         Selectivity selectivity;
         /// Selectivity of the atoms that were absorbed by a conjunctive merge without contributing
         /// any range - currently only `FUNCTION_UNKNOWN`. Merging carries ranges across, so such an
@@ -115,6 +120,10 @@ public:
     static const AtomMap atom_map;
 
     UInt64 getTotalRows() const { return total_rows; }
+    /// Rows without statistics (parts without statistics of a column) are estimated from the other rows, as from a
+    /// sample: they can change the row estimate by up to their number, and add up to their number of distinct values
+    /// to a column. Records them in the columns of `profile`, and returns whether they could double its rows.
+    bool recordRowsWithoutStatistics(RelationProfile & profile) const;
 
 private:
     friend class ColumnStatistics;
@@ -123,11 +132,12 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        Selectivity estimateRanges(const PlainRanges & ranges) const;
+        /// `used_default` is set when a range took a default factor because the statistics could not estimate it.
+        Selectivity estimateRanges(const PlainRanges & ranges, bool & used_default) const;
         UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, Float64 row_fraction = 1.0) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
@@ -136,7 +146,7 @@ private:
     /// set into ranges costs a `Field` per element, a sort and one probe per element.
     Selectivity estimateSelectivityFromSetSize(
         const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
-        const DataTypePtr & set_type, bool negative) const;
+        const DataTypePtr & set_type, bool negative, bool & used_default) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
@@ -152,12 +162,15 @@ private:
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;
+    /// The rows of the parts that lack the statistics of some column.
+    UInt64 rows_without_statistics = 0;
     ColumnEstimators column_estimators;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
-/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
+/// `equals(x, x)` or `isNotDistinctFrom(x, x)` of one node (aliases are looked through) whose type makes it
+/// true on every row: no NaN or composite values, and no NULL for `equals`.
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 
 /// Builds an estimator for a set of data parts by merging their statistics column by column.
@@ -166,6 +179,8 @@ class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// Starts the next part; the statistics added after it are of this part.
+    void addPart(UInt64 rows);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
@@ -175,6 +190,8 @@ public:
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    /// The rows of each part and the number of columns it has statistics of.
+    std::vector<std::pair<UInt64, size_t>> parts_columns;
 };
 
 }

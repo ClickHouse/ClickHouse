@@ -2,6 +2,7 @@
 
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Common/EquivalenceClasses.h>
 #include <Core/Block.h>
 #include <base/types.h>
@@ -9,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 namespace DB
 {
@@ -20,6 +22,25 @@ struct ExpressionStatistics
 {
     /// Number of rows estimated using probabilities, histograms, heuristics, etc.
     Float64 estimated_row_count = 0;
+    /// No estimate exists for this result: `estimated_row_count` is a search value for the cost
+    /// model (the proven upper bound when there is one, else the largest known leaf of the query),
+    /// never reported as an estimate. Set for a read the estimator could not estimate and for
+    /// everything derived from it.
+    bool rows_unknown = false;
+    /// A default selectivity stood in for a predicate somewhere below: `estimated_row_count` is a
+    /// guess, which the replication budget does not take on its own.
+    bool estimate_from_defaults = false;
+    /// The estimate has another imprecise part, see `RelationStats::imprecise_estimate`: statistics that cover only
+    /// some parts of a table, a key without statistics, the rows of a past execution.
+    bool imprecise_estimate = false;
+    /// The search value of this unknown result is the product of an unknown join's inputs and a
+    /// stand-in key selectivity, which can be far below the rows the join produces; the cost model
+    /// does not price a gather of such a result on it. Kept by the operators that copy their
+    /// input's statistics, dropped by the ones that derive their own.
+    bool search_value_is_join_product = false;
+    /// Where `estimated_row_count` comes from, for `EXPLAIN estimates = 1` and the profile log. An
+    /// operator that copies its input's statistics keeps it; a join or a set operation has none.
+    RowEstimateSource source = RowEstimateSource::NoSource;
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
     /// Proven maximum number of rows. E.g. after a `LIMIT` step
@@ -46,6 +67,23 @@ struct ExpressionStatistics
 
     /// Classes of output columns that hold equal values on every row.
     EquivalenceClasses<String> equivalences;
+
+    /// The rows as the shared estimator sees them: none when unknown.
+    std::optional<UInt64> knownRows() const;
+    /// The bound as the shared estimator sees it: none when unbounded.
+    std::optional<UInt64> knownBound() const;
+    /// The statistics as a relation for the shared estimator.
+    RelationStats toRelationStats() const;
+    /// Takes the rows, the bound, the column statistics and the flags of a relation estimate; a
+    /// missing estimate leaves the bound as the search value.
+    void applyRelationStats(const RelationStats & relation_stats);
+
+    /// Takes the imprecision of an input this result is derived from.
+    void addImprecisionOf(const ExpressionStatistics & input)
+    {
+        estimate_from_defaults |= input.estimate_from_defaults;
+        imprecise_estimate |= input.imprecise_estimate;
+    }
 
     void dump(WriteBuffer & out) const;
     String dump() const;

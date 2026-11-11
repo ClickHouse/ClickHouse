@@ -1,0 +1,16 @@
+-- dpsub: the filter is added to the existing PREWHERE of the fact read
+1
+19000855	855
+-- dphyp: the same
+1
+19000855	855
+-- reference
+19000855	855
+-- the filter of the outer join is pushed through the inner join into the reads of both its inputs
+1
+19000900	900
+19000900	900
+-- two filters of one join in the same PREWHERE, with the second PREWHERE pass
+2
+19000855
+19000855

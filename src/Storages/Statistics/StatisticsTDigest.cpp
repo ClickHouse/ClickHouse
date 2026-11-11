@@ -63,6 +63,12 @@ std::optional<Float64> StatisticsTDigest::estimateEqual(const Field & val) const
     return t_digest.getCountEqual(*val_as_float);
 }
 
+bool StatisticsTDigest::hasCentroidPerValue(UInt64 distinct_values) const
+{
+    /// A centroid made of two values takes the place of two, so there are fewer different means than values then.
+    return t_digest.getCompressedDistinctMeanCount() >= distinct_values;
+}
+
 bool tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);

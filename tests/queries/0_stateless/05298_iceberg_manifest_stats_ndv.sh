@@ -3,7 +3,7 @@
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
 # Issue 120440: the NDV of an Iceberg read with `use_iceberg_manifest_statistics`, by the first rule applying:
-# 1. identity partition values, 2. `max - min + 1` of integer bounds, 3. 10% of rows.
+# 1. identity partition values, 2. `max - min + 1` of integer bounds, 3. otherwise no distinct count, as MergeTree without `uniq`.
 # Each join with a MergeTree table of 10 (or 1) keys estimates `rows * rows_dim / max(ndv, ndv_dim)`.
 # - T1: rule 1 on an identity partition.
 # - T2: rule 1 over the files left after partition pruning.
@@ -94,11 +94,11 @@ echo 'Expect no estimate for ice_keys and no result rows: the manifests are not 
 labels "${T4}" ${NO_STATS}
 
 echo '--- T6: rule 3, sparse integer: range above the rows'
-echo 'Expect 100: the range is far above the rows, so 10% of them: 100000 * 10 / 10000 (true NDV 2500, result 40).'
+echo 'Expect 100000: the range is far above the rows, so no distinct count: 100000 * 10 / 10 by dim10 alone (true NDV 2500, result 40).'
 labels "SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.sparse_int = dim10.int_key" ${ON}
 
-echo '--- T7: rule 3, String: 10% of the rows'
-echo 'Expect 100: 10% of the 100000 rows, as MergeTree without `uniq`: 100000 * 10 / 10000 (true NDV 2500, result 400).'
+echo '--- T7: rule 3, String: no distinct count'
+echo 'Expect 100000: no distinct count, as MergeTree without `uniq`: 100000 * 10 / 10 by dim10 alone (true NDV 2500, result 400).'
 labels "SELECT count() FROM ice_keys JOIN dim10 ON ice_keys.string_key = dim10.string_key" ${ON}
 echo '--- T8: int_key Int32, then Int64, then renamed to renamed_key: range 1000'
 echo 'Expect 20: int_key is 0..499 as Int32, then 500..999, range 1000: 2000 * 10 / 1000 (40 if the bounds were lost).'

@@ -1,4 +1,7 @@
 #include <Processors/IProcessor.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
+
+#include <cmath>
 
 #include <iostream>
 #include <IO/WriteBufferFromString.h>
@@ -56,6 +59,13 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
         plan_step_name = step->getName();
         plan_step_description = step->getStepDescription();
         step_uniq_id = step->getUniqID();
+        plan_step_estimated_rows.reset();
+        plan_step_estimate_source.clear();
+        if (const auto & estimation = step->getEstimation())
+        {
+            plan_step_estimated_rows = estimation->rows;
+            plan_step_estimate_source = String(rowEstimateSourceName(estimation->source));
+        }
         query_plan_step_id = step->getStepIndex() + 1;
     }
 }
@@ -74,6 +84,8 @@ void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_
     plan_step_name = parent.plan_step_name;
     plan_step_description = parent.plan_step_description;
     step_uniq_id = parent.step_uniq_id;
+    plan_step_estimated_rows = parent.plan_step_estimated_rows;
+    plan_step_estimate_source = parent.plan_step_estimate_source;
     query_plan_step_id = parent.query_plan_step_id;
 }
 
@@ -194,6 +206,8 @@ ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
     info.plan_group = query_plan_step_group;
     info.processor_uniq_id = getUniqID();
     info.step_uniq_id = step_uniq_id;
+    info.plan_step_estimated_rows = plan_step_estimated_rows;
+    info.plan_step_estimate_source = plan_step_estimate_source;
 
     info.processor_name = getName();
 

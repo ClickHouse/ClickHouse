@@ -1,0 +1,25 @@
+-- ten estimated rows, but 100000 rows to scan on every node: above a 1 MB budget the read is distributed
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_rs_big)
+            BroadcastExchange
+              GatherExchange
+                Expression ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.t_rs_small)
+-- within a 10 MB budget the small result is read by every node
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + ))
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_rs_big)
+            BroadcastExchange
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_rs_small)

@@ -84,12 +84,12 @@ relation()
 
 echo '--- T2: rows, then NDV [NULL fraction] per column'
 echo 'Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range; decimal_value, string_value and event_time'
-echo '(range above the rows) 10% of rows; nullable_int NULL every 4th row.'
+echo '(range above the rows) no distinct count (0); nullable_int NULL every 4th row.'
 relation ice_types "SELECT ice_types.nullable_int, ice_types.day, ice_types.event_time, ice_types.decimal_value,
     ice_types.string_value FROM ice_types JOIN dim10 ON ice_types.id = dim10.id"
 
 echo '--- T3: a file before ADD COLUMN and an all-NULL file, then values'
-echo 'Expect added 400, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is above the 2000 others: 10% of rows.'
+echo 'Expect added 0, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is above the 2000 others: no distinct count.'
 relation ice_added_column "SELECT ice_added_column.added FROM ice_added_column
     JOIN dim10 ON ice_added_column.id = dim10.id"
 

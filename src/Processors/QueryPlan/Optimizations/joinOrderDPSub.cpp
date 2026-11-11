@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/JoinOperator.h>
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
@@ -92,15 +94,46 @@ public:
     DPJoinEntryPtr solve();
 
 private:
+    /// A plan over all relations other than the best one, kept as another join order when
+    /// `QueryGraph::max_join_order_alternatives` asks for them: its top join and the masks of its two inputs.
+    struct FullSetAlternative
+    {
+        UInt32 left = 0;
+        UInt32 right = 0;
+        double cost = 0;
+        double rows_cost = 0;
+        double sel = 0;
+        std::optional<UInt64> estimated_rows;
+        bool rows_rest_on_assumption = false;
+        JoinKind kind = JoinKind::Inner;
+        JoinStrictness strictness = JoinStrictness::All;
+        std::vector<JoinActionRef *> edges;
+    };
+    /// The kept plans by cost, at most one per way to split the relations at the top join (a swap of the two inputs
+    /// is the same split), at most one more than `max_join_order_alternatives`: the best plan is among them.
+    std::vector<FullSetAlternative> full_set_alternatives;
+    void keepFullSetAlternative(UInt32 left, double cost, const std::function<FullSetAlternative()> & make_alternative);
+
+    /// The plans built so far, by subset and plan index, so that the orders share the plans of their common subsets.
+    template <std::unsigned_integral TUInt>
+    using BuiltPlans = std::map<std::pair<TUInt, Int32>, DPJoinEntryPtr>;
+
     /// `plan_index` selects a plan of `S` from `ordered`, -1 is its cheapest plan.
     template <typename DPTable, std::unsigned_integral TUInt>
-    DPJoinEntryPtr buildPhysicalPlan(const DPTable & dptable, const TUInt & S, Int32 plan_index = -1) const;
+    DPJoinEntryPtr buildPhysicalPlan(const DPTable & dptable, const TUInt & S, Int32 plan_index, BuiltPlans<TUInt> & built) const;
+    /// The join of one plan of the subset `S`, over the plans of its inputs.
+    template <typename DPTable, std::unsigned_integral TUInt, typename Plan>
+    DPJoinEntryPtr makeJoinEntry(const DPTable & dptable, TUInt S, const Plan & entry, BuiltPlans<TUInt> & built) const;
+    /// Fills the rest of `recorded_splits` once the search is done: the winner of every set with a split, the edges
+    /// and the relations each edge needs.
+    template <typename DPTable, std::unsigned_integral TUInt>
+    void recordWinners(RecordedJoinSplits & recorded_splits, const DPTable & dptable, BuiltPlans<TUInt> & built) const;
 
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
 
     std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const JoinKeyEstimate & keys, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
@@ -137,7 +170,7 @@ private:
     /// Cost model of a sort-merge join of two input plans on the equivalence class, see `computeMergeJoinCost`.
     double mergeJoinCost(
         MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
-        const SelectivityEstimate & selectivity) const;
+        const JoinKeyEstimate & keys) const;
     /// Whether a merge of the two inputs runs sharded by primary key ranges, as `optimizeJoinByShards` does.
     bool isShardedMerge(const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const;
     /// Whether the statistics show that a table splits into one key range for a merge on the classes: each leading primary
@@ -157,7 +190,7 @@ private:
     double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
     /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs
     /// count output rows only.
-    double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
+    double hashJoinWork(UInt32 left_mask, double left_rows, UInt32 right_mask, double right_rows) const;
     /// The overlap of the key range of the build side with the key range of a probe table sorted by a key of the join: what
     /// a hash join's runtime filter lets it read, and what a sharded merge reads. 1 when unknown.
     double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
@@ -170,6 +203,165 @@ private:
 
     bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
 
+    /// Whether joins are costed by the data they move between nodes, see `QueryGraph::distribution_node_count`.
+    bool useDistribution() const { return dpsub_data.distribution; }
+    /// The single-type equivalence classes with columns on both sides: the keys both sides may be partitioned by.
+    UInt64 partitionKeyClasses(UInt32 left_mask, UInt32 right_mask) const;
+    /// The states of a plan's rows over the nodes (`DPPlan::partition_class`): -1 is partitioned in any way, a class index
+    /// below `composite_state_base` is partitioned by that class, and a value from it on by several classes together, see
+    /// `compositeState`.
+    static constexpr Int8 replicated_state = -2;  /// A full copy on every node.
+    static constexpr Int8 single_node_state = -3; /// All rows on one node.
+    static constexpr Int8 composite_state_base = std::numeric_limits<UInt64>::digits;
+    static bool isClassState(Int8 state) { return state >= 0 && state < composite_state_base; }
+    /// The state of a partitioning by all the classes together, as a shuffle by all keys of a join makes it; registered on
+    /// first use. -1 when the states are used up.
+    Int8 compositeState(UInt64 classes)
+    {
+        auto & states = dpsub_data.composite_states;
+        if (auto it = std::ranges::find(states, classes); it != states.end())
+            return static_cast<Int8>(composite_state_base + (it - states.begin()));
+        if (composite_state_base + states.size() > static_cast<size_t>(std::numeric_limits<Int8>::max()))
+            return -1;
+        states.push_back(classes);
+        return static_cast<Int8>(composite_state_base + states.size() - 1);
+    }
+    /// Whether a later join may still use a result partitioned by the equivalence class.
+    bool isInterestingPartition(Int32 partition_class, UInt32 relations) const
+    {
+        if (partition_class >= composite_state_base)
+        {
+            /// A join by all of these keys can follow only while each of them still has a column outside.
+            for (UInt64 classes = dpsub_data.composite_states[partition_class - composite_state_base]; classes; classes &= classes - 1)
+                if (!(dpsub_data.class_relations[std::countr_zero(classes)] & ~relations))
+                    return false;
+            return true;
+        }
+        const UInt32 class_relations = dpsub_data.class_relations[partition_class];
+        const bool used_above = ((dpsub_data.above_classes >> partition_class) & 1) && (class_relations & relations);
+        return ((class_relations & ~relations) || used_above) && dpsub_data.class_single_type[partition_class];
+    }
+    /// The classes of `QueryGraph::partition_columns_above` with a column in the relations.
+    UInt64 aboveClassesIn(UInt32 relations) const
+    {
+        UInt64 classes = 0;
+        for (UInt64 remaining = dpsub_data.above_classes; remaining; remaining &= remaining - 1)
+        {
+            const auto c = std::countr_zero(remaining);
+            if (dpsub_data.class_relations[c] & relations)
+                classes |= static_cast<UInt64>(1) << c;
+        }
+        return classes;
+    }
+    /// The exchange the step above the graph needs over a plan of all relations: none when the plan is where the step
+    /// would like it, else a gather to one node, or a shuffle by a key, of the rows it sends: one per node after an
+    /// aggregation without keys, at most one per group and node after one with keys.
+    double aboveExchangeCost(Int8 state, double rows, double bytes) const
+    {
+        const auto join_cost = distributedJoinCost();
+        if (query_graph.single_node_above)
+            return state == single_node_state ? 0 : join_cost.toSingleNode(state, std::min(rows, join_cost.nodes), bytes);
+        if (!dpsub_data.above_classes || (isClassState(state) && ((dpsub_data.above_classes >> state) & 1)))
+            return 0;
+        double sent_rows = rows;
+        if (query_graph.partition_above_aggregates && dpsub_data.above_groups > 0)
+            sent_rows = std::min(rows, static_cast<double>(dpsub_data.above_groups) * join_cost.nodes);
+        const auto key = static_cast<Int8>(std::countr_zero(dpsub_data.above_classes));
+        return join_cost.toPartitioned(state, key, sent_rows, bytes);
+    }
+    /// Whether a set keeps its cheapest plan in a state besides its cheapest plan overall.
+    bool isInterestingState(Int8 state, UInt32 relations) const
+    {
+        if (state >= 0)
+            return isInterestingPartition(state, relations);
+        const UInt32 all_relations = (static_cast<UInt32>(1) << query_graph.relation_stats.size()) - 1;
+        return state == single_node_state || (state == replicated_state && relations != all_relations);
+    }
+
+    /// The costs of the hash joins of two sides on the nodes, in the units of the Cascades cost model (`CostConfig`): the
+    /// work per node, the bytes an exchange moves per node, and a fixed cost per exchange. Each side is first moved to the
+    /// state a join needs with the exchanges Cascades uses for it.
+    struct DistributedJoinCost
+    {
+        const CostConfig & config;
+        double nodes = 1;
+
+        static constexpr double impossible = std::numeric_limits<double>::infinity();
+        double fixedCost() const { return config.exchange_fixed_overhead * config.sequential_weight; }
+        double network(double rows, double bytes) const { return rows * bytes * config.network_weight; }
+        /// A gather or a scatter sends every row through one node.
+        double funnel(double rows) const { return config.funnel_sequential_cost_per_row * rows * config.sequential_weight; }
+
+        /// To partitioned by the class, or in any way for -1: a shuffle moves 1/N of the rows per node, a scatter from one
+        /// node sends them all. Copies cannot be split without multiplying the rows.
+        double toPartitioned(Int8 state, Int8 key, double rows, double bytes) const
+        {
+            if (state == replicated_state)
+                return impossible;
+            if (state == single_node_state)
+                return network(rows, bytes) + fixedCost() + funnel(rows);
+            if (key < 0 || state == key)
+                return 0;
+            return network(rows, bytes) / nodes + fixedCost();
+        }
+        /// To a copy on every node: a broadcast from one node, after a gather when the rows are on several nodes.
+        double toReplicated(Int8 state, double rows, double bytes) const
+        {
+            if (state == replicated_state)
+                return 0;
+            const double broadcast = network(rows, bytes) + fixedCost();
+            return state == single_node_state ? broadcast : broadcast + toSingleNode(state, rows, bytes);
+        }
+        /// To one node: a gather.
+        double toSingleNode(Int8 state, double rows, double bytes) const
+        {
+            if (state == single_node_state)
+                return 0;
+            if (state == replicated_state)
+                return impossible;
+            return network(rows, bytes) + fixedCost() + funnel(rows);
+        }
+        /// The work of a hash join: probing and the output divided by the parallelism of the probe side, and the hash
+        /// table by that of the build side.
+        double joinWork(double probe_rows, double build_rows, double build_bytes, double joined_rows, double probe_parallelism,
+            double build_parallelism) const
+        {
+            const double build = (config.hash_table_build_factor + build_bytes) * build_rows;
+            return config.work_weight * ((probe_rows + joined_rows) / probe_parallelism + build / build_parallelism);
+        }
+    };
+    DistributedJoinCost distributedJoinCost() const
+    {
+        return {cost_config, static_cast<double>(query_graph.distribution_node_count)};
+    }
+    /// Whether a plan may be used as a copy on every node: the input of a broadcast or of a replicated join. Cascades checks
+    /// the size of such an input whatever made it a copy, also when its own inputs were copies already.
+    bool canReplicate(UInt32 relations, bool imprecise_rows, std::optional<UInt64> max_rows, double rows) const
+    {
+        return canBroadcast(relations, imprecise_rows, max_rows, rows);
+    }
+    /// Adds the plans of a single relation besides its partitioned read: a read on one node, and a read of the whole table
+    /// on every node when its bytes fit `QueryGraph::max_bytes_to_broadcast`.
+    template <typename Entry>
+    void addLeafStates(UInt32 relation_mask, Entry & leaf) const;
+    /// The bytes of a row of the join of the relations: of their columns that are still needed above it.
+    double rowBytes(UInt32 relations) const;
+    /// The bytes of all input columns of the relations. Cascades may keep columns in a join result that no later join
+    /// needs, so the size check of a broadcast counts them all: a broadcast that it declines is not costed.
+    double allColumnBytes(UInt32 relations) const;
+    /// Whether a broadcast of a plan fits `QueryGraph::max_bytes_to_broadcast`, as Cascades decides it: by its estimated
+    /// rows when they are precise, else by its bound of rows.
+    bool canBroadcast(UInt32 relations, bool imprecise_rows, std::optional<UInt64> max_rows, double rows) const
+    {
+        if (query_graph.max_bytes_to_broadcast == 0)
+            return true;
+        if (imprecise_rows && !max_rows)
+            return false;
+        const double counted_rows = imprecise_rows ? static_cast<double>(*max_rows) : rows;
+        return counted_rows * allColumnBytes(relations) <= static_cast<double>(query_graph.max_bytes_to_broadcast);
+    }
+    CostConfig cost_config;
+
     bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
@@ -180,7 +372,7 @@ private:
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    JoinKeyEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -207,13 +399,14 @@ private:
         };
         std::vector<Restriction> restriction_by_rel; /// indexed by relation id
 
-        /// A member of an equivalence class, resolved once: its relation and the distinct values of
-        /// its column, which do not change during the search.
+        /// A member of an equivalence class, resolved once: its relation and the statistics of its
+        /// column, which do not change during the search.
         struct EquivMember
         {
             TUInt relation_bit = 0;
-            std::optional<UInt64> ndv;
-            UInt64 ndv_upper_bound = 0;
+            UInt64 column_id = 0;
+            KeyDistinctValues distinct_values;
+            UInt64 domain = 0;
         };
         std::vector<std::vector<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
@@ -246,6 +439,15 @@ private:
 
         /// Only with `use_interesting_orders`, which needs the classes to fit into a 64-bit mask.
         bool interesting_orders = false;
+        /// Only with `QueryGraph::distribution_node_count`, instead of `interesting_orders`. Needs the classes to fit into a
+        /// 64-bit mask.
+        bool distribution = false;
+        /// The classes of `QueryGraph::partition_columns_above`, and the most distinct values of one of them: the step
+        /// above has at least that many groups.
+        UInt64 above_classes = 0;
+        UInt64 above_groups = 0;
+        /// The class sets of the composite states, see `compositeState`.
+        std::vector<UInt64> composite_states;
         std::vector<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
         std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
@@ -270,10 +472,10 @@ private:
 };
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const JoinKeyEstimate & keys, JoinKind join_kind,
     JoinStrictness strictness) const
 {
-    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
+    return estimateJoinCardinality(left_rows, right_rows, keys, join_kind, strictness);
 }
 
 void DPSubJoinOrderOptimizer::initDPsubScratch()
@@ -424,20 +626,76 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 auto relation = sources.getSingleBit();
                 if (!relation || *relation >= num_relations)
                     continue;
-                auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
-                members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
+                const auto & column = equiv_member.getColumnName();
+                members.push_back({
+                    .relation_bit = static_cast<UInt32>(1) << *relation,
+                    .column_id = keyColumnId(column),
+                    .distinct_values = getColumnStats(query_graph, dp_table, sources, column),
+                    .domain = getColumnDomain(query_graph, dp_table, sources, column)});
                 relations |= members.back().relation_bit;
                 columns.push_back(equiv_member);
             }
         }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
     }
+
+    /// The columns the step above the graph would like its input partitioned by: their class, or a class of their own,
+    /// which no join compares, so that a plan can be partitioned by them.
+    dpsub_data.composite_states.clear();
+    dpsub_data.above_classes = 0;
+    dpsub_data.above_groups = 0;
+    if (query_graph.distribution_node_count > 1)
+    {
+        for (const auto & column : query_graph.partition_columns_above)
+        {
+            const auto relation = column.getSourceRelations().getSingleBit();
+            if (!relation || *relation >= num_relations)
+                continue;
+            UInt32 index = 0;
+            if (auto class_ptr = query_graph.column_equivalences.getClass(column))
+            {
+                auto it = class_index.find(class_ptr.get());
+                if (it == class_index.end())
+                    continue;
+                index = it->second;
+            }
+            else
+            {
+                index = static_cast<UInt32>(dpsub_data.equiv_classes.size());
+                const auto & sources = column.getSourceRelations();
+                dpsub_data.equiv_classes.push_back({{
+                    .relation_bit = static_cast<UInt32>(1) << *relation,
+                    .column_id = keyColumnId(column.getColumnName()),
+                    .distinct_values = getColumnStats(query_graph, dp_table, sources, column.getColumnName()),
+                    .domain = getColumnDomain(query_graph, dp_table, sources, column.getColumnName())}});
+                dpsub_data.class_relations.push_back(static_cast<UInt32>(1) << *relation);
+                dpsub_data.class_members.push_back({column});
+            }
+            if (index >= std::numeric_limits<UInt64>::digits)
+                continue;
+            dpsub_data.above_classes |= static_cast<UInt64>(1) << index;
+            for (const auto & member : dpsub_data.equiv_classes[index])
+                dpsub_data.above_groups = std::max(dpsub_data.above_groups, member.distinct_values.from_statistics);
+        }
+    }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
 
     const size_t num_classes = dpsub_data.class_members.size();
-    dpsub_data.interesting_orders = query_graph.use_interesting_orders && num_classes <= std::numeric_limits<UInt64>::digits;
+    dpsub_data.distribution = query_graph.distribution_node_count > 1 && num_classes <= std::numeric_limits<UInt64>::digits
+        && !query_graph.distribution_columns.empty();
+    dpsub_data.interesting_orders = !dpsub_data.distribution && query_graph.use_interesting_orders
+        && num_classes <= std::numeric_limits<UInt64>::digits;
     dpsub_data.class_single_type.assign(num_classes, 0);
+    for (size_t c = 0; c < num_classes; ++c)
+    {
+        const auto & columns = dpsub_data.class_members[c];
+        auto type = removeLowCardinalityAndNullable(columns.front().getType());
+        dpsub_data.class_single_type[c] = std::ranges::all_of(columns, [&](const JoinActionRef & column)
+        {
+            return removeLowCardinalityAndNullable(column.getType())->equals(*type);
+        });
+    }
     dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
@@ -453,12 +711,6 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         for (size_t c = 0; c < num_classes; ++c)
         {
             const auto & columns = dpsub_data.class_members[c];
-            auto type = removeLowCardinalityAndNullable(columns.front().getType());
-            dpsub_data.class_single_type[c] = std::ranges::all_of(columns, [&](const JoinActionRef & column)
-            {
-                return removeLowCardinalityAndNullable(column.getType())->equals(*type);
-            });
-
             std::unordered_map<size_t, size_t> columns_per_relation;
             for (const auto & column : columns)
                 ++columns_per_relation[*column.getSourceRelations().getSingleBit()];
@@ -793,6 +1045,36 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
     return classes;
 }
 
+UInt64 DPSubJoinOrderOptimizer::partitionKeyClasses(UInt32 left_mask, UInt32 right_mask) const
+{
+    UInt64 classes = 0;
+    for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)
+    {
+        const UInt32 relations = dpsub_data.class_relations[c];
+        if (dpsub_data.class_single_type[c] && (relations & left_mask) && (relations & right_mask))
+            classes |= static_cast<UInt64>(1) << c;
+    }
+    return classes;
+}
+
+double DPSubJoinOrderOptimizer::allColumnBytes(UInt32 relations) const
+{
+    double bytes = 0;
+    for (const auto & column : query_graph.distribution_columns)
+        if ((relations >> column.relation) & 1)
+            bytes += column.bytes;
+    return std::max(bytes, 1.0);
+}
+
+double DPSubJoinOrderOptimizer::rowBytes(UInt32 relations) const
+{
+    double bytes = 0;
+    for (const auto & column : query_graph.distribution_columns)
+        if (((relations >> column.relation) & 1) && (column.output || (column.compared_with & ~static_cast<UInt64>(relations))))
+            bytes += column.bytes;
+    return std::max(bytes, 1.0);
+}
+
 bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_class) const
 {
     const auto & prefix = dpsub_data.rel_prefix_classes[std::countr_zero(relation_mask)];
@@ -801,7 +1083,7 @@ bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_cl
 
 double DPSubJoinOrderOptimizer::mergeJoinCost(
     MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
-    const SelectivityEstimate & selectivity) const
+    const JoinKeyEstimate & keys) const
 {
     /// On several keys an input sorted by the merge key only is still sorted by the other keys within its groups.
     /// The keys follow the order of the left input if it covers them (see `buildPhysicalPlan`), else of the right one.
@@ -820,7 +1102,7 @@ double DPSubJoinOrderOptimizer::mergeJoinCost(
     double probe_fraction = 1.0;
     if (sharded)
         probe_fraction = left.rows >= right.rows ? probeReadFraction(left_mask, right_mask) : probeReadFraction(right_mask, left_mask);
-    return computeMergeJoinCost(left, right, selectivity, sharded, probe_fraction);
+    return computeMergeJoinCost(left, right, keys, sharded, probe_fraction);
 }
 
 bool DPSubJoinOrderOptimizer::isShardedMerge(
@@ -846,7 +1128,8 @@ bool DPSubJoinOrderOptimizer::hasConstantShardKey(UInt32 relation_mask, UInt64 k
         const auto & members = dpsub_data.equiv_classes[prefix[used]];
         const bool constant = std::ranges::any_of(members, [&](const auto & member)
         {
-            return (member.relation_bit & relation_mask) && member.ndv && *member.ndv <= 1;
+            return (member.relation_bit & relation_mask) && member.distinct_values.from_statistics
+                && member.distinct_values.from_statistics <= 1;
         });
         if (!constant)
             return false;
@@ -886,18 +1169,18 @@ double DPSubJoinOrderOptimizer::distinctValues(UInt32 relations, Int32 order_cla
 {
     UInt64 ndv = 0;
     for (const auto & member : dpsub_data.equiv_classes[order_class])
-        if ((member.relation_bit & relations) && member.ndv)
-            ndv = std::max(ndv, *member.ndv);
+        if (member.relation_bit & relations)
+            ndv = std::max(ndv, member.distinct_values.from_statistics);
     return static_cast<double>(std::clamp<UInt64>(ndv, 1, std::max<UInt64>(rows, 1)));
 }
 
 double DPSubJoinOrderOptimizer::hashJoinWork(
-    UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const
+    UInt32 left_mask, double left_rows, UInt32 right_mask, double right_rows) const
 {
     if (!dpsub_data.interesting_orders)
         return 0;
-    const UInt64 left = left_rows.value_or(0);
-    const UInt64 right = right_rows.value_or(0);
+    const double left = left_rows;
+    const double right = right_rows;
     double probe_fraction = 1.0;
     if (query_graph.runtime_filter_prunes_probe)
         probe_fraction = left < right ? probeReadFraction(right_mask, left_mask) : probeReadFraction(left_mask, right_mask);
@@ -963,7 +1246,7 @@ DPSubJoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) co
         return isValidJoinOrderMaskConflict(left_mask, right_mask);
 
     if (auto kind = isValidJoinOrderMask(left_mask, right_mask))
-        return std::make_pair(*kind, JoinStrictness::All);
+        return std::make_pair(*kind, query_graph.join_strictness);
     return std::nullopt;
 }
 
@@ -1035,10 +1318,12 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
     return out;
 }
 
-SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
+JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
-    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    JoinKeyEstimate keys;
+    keys.probe_keys_within_preserved_side = query_graph.probe_keys_within_preserved_side;
+    collectEdgeKeys(query_graph, dp_table, expression_selectivity, edges, BitSet::fromUInt(left_mask), keys);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -1055,36 +1340,122 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 max_ndv = 0;
-            UInt64 max_ndv_upper_bound = 0;
+            KeyDistinctValues left_distinct_values;
+            KeyDistinctValues right_distinct_values;
+            UInt64 domain_distinct_values = 0;
             bool has_left = false;
             bool has_right = false;
+            std::vector<UInt64> left_columns;
+            std::vector<UInt64> right_columns;
             for (const auto & equiv_member : dpsub_data.equiv_classes[class_idx])
             {
+                KeyDistinctValues * side = nullptr;
                 if (left_mask & equiv_member.relation_bit)
+                {
                     has_left = true;
+                    side = &left_distinct_values;
+                    left_columns.push_back(equiv_member.column_id);
+                }
                 else if (right_mask & equiv_member.relation_bit)
+                {
                     has_right = true;
+                    side = &right_distinct_values;
+                    right_columns.push_back(equiv_member.column_id);
+                }
                 else
                     continue;
-                max_ndv = std::max(max_ndv, equiv_member.ndv.value_or(0));
-                max_ndv_upper_bound = std::max(max_ndv_upper_bound, equiv_member.ndv_upper_bound);
+                side->from_statistics = std::max(side->from_statistics, equiv_member.distinct_values.from_statistics);
+                side->rows = std::max(side->rows, equiv_member.distinct_values.rows);
+                side->imprecise |= equiv_member.distinct_values.imprecise;
+                domain_distinct_values = std::max(domain_distinct_values, equiv_member.domain);
             }
             if (has_left && has_right)
-                applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+            {
+                keys.add(left_distinct_values, right_distinct_values, domain_distinct_values);
+                keys.countIndependentKey(left_distinct_values, right_distinct_values, left_columns, right_columns);
+            }
         }
     }
 
-    return estimate;
+    return keys;
+}
+
+void DPSubJoinOrderOptimizer::keepFullSetAlternative(
+    UInt32 left, double cost, const std::function<FullSetAlternative()> & make_alternative)
+{
+    auto & kept = full_set_alternatives;
+    auto same_split = std::ranges::find_if(kept, [&](const auto & alternative) { return left == alternative.left || left == alternative.right; });
+    if (same_split != kept.end())
+    {
+        if (cost >= same_split->cost)
+            return;
+        kept.erase(same_split);
+    }
+    else if (kept.size() > query_graph.max_join_order_alternatives && cost >= kept.back().cost)
+        return;
+
+    auto position = std::ranges::upper_bound(kept, cost, {}, [](const auto & alternative) { return alternative.cost; });
+    kept.insert(position, make_alternative());
+    if (kept.size() > query_graph.max_join_order_alternatives + 1)
+        kept.pop_back();
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>
-std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S, Int32 plan_index) const
+std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(
+    const DPTable & dptable, const TUInt & S, Int32 plan_index, BuiltPlans<TUInt> & built) const
 {
+    if (auto it = built.find({S, plan_index}); it != built.end())
+        return it->second;
+
     const auto & table_entry = dptable[S];
-    const auto & entry = plan_index < 0 ? table_entry : table_entry.ordered.at(plan_index);
+    const auto & entry = plan_index < 0 ? static_cast<const typename DPTable::DPEntry::Plan &>(table_entry) : table_entry.ordered.at(plan_index);
+    DPJoinEntryPtr result;
     if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), table_entry.estimated_rows, table_entry.column_stats);
+        result = std::make_shared<DPJoinEntry>(std::countr_zero(S), query_graph.relation_stats[std::countr_zero(S)]);
+    else
+        result = makeJoinEntry(dptable, S, entry, built);
+    built.emplace(std::pair{S, plan_index}, result);
+    return result;
+}
+
+template <typename DPTable, std::unsigned_integral TUInt>
+void DPSubJoinOrderOptimizer::recordWinners(
+    RecordedJoinSplits & recorded_splits, const DPTable & dptable, BuiltPlans<TUInt> & built) const
+{
+    for (const auto & split : recorded_splits.splits)
+    {
+        const auto relations = static_cast<TUInt>(split.left | split.right);
+        if (!recorded_splits.winners.contains(relations))
+            recorded_splits.winners.emplace(relations, buildPhysicalPlan(dptable, relations, -1, built));
+    }
+
+    if (useDistribution())
+    {
+        for (const auto & [relations, _] : recorded_splits.winners)
+        {
+            const auto & entry = dptable[static_cast<TUInt>(relations)];
+            auto & lefts = recorded_splits.frontier_lefts[relations];
+            lefts.push_back(entry.left);
+            for (const auto & plan : entry.ordered)
+                if (std::ranges::find(lefts, plan.left) == lefts.end() && std::ranges::find(lefts, plan.right) == lefts.end())
+                    lefts.push_back(plan.left);
+        }
+    }
+
+    recorded_splits.edges = query_graph.edges;
+    recorded_splits.edge_relations.resize(query_graph.edges.size());
+    for (size_t i = 0; i < query_graph.edges.size(); ++i)
+    {
+        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : dpsub_data.edge_outstanding_mask[i];
+        recorded_splits.edge_relations[i] = dpsub_data.edge_source_mask[i] | pin;
+    }
+    recorded_splits.complete = true;
+}
+
+template <typename DPTable, std::unsigned_integral TUInt, typename Plan>
+DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(const DPTable & dptable, TUInt S, const Plan & entry, BuiltPlans<TUInt> & built) const
+{
+    chassert((entry.left | entry.right) == S);
 
     /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the
     /// conflict detector (CD-A/CD-C), which must keep their strictness in the reordered tree.
@@ -1128,8 +1499,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
             join_operator.residual_filter.push_back(*e);
     }
 
-    auto left = buildPhysicalPlan(dptable, entry.left, entry.left_plan);
-    auto right = buildPhysicalPlan(dptable, entry.right, entry.right_plan);
+    auto left = buildPhysicalPlan(dptable, entry.left, entry.left_plan, built);
+    auto right = buildPhysicalPlan(dptable, entry.right, entry.right_plan, built);
 
     /// A semi/anti join leaves the search in whichever orientation the enumeration reached first:
     /// mirroring it changes neither its cost nor its result. Emit it the way the query wrote it, so the
@@ -1174,8 +1545,63 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
         }
     }
 
-    return std::make_shared<DPJoinEntry>(
+    auto join_entry = std::make_shared<DPJoinEntry>(
         left, right, entry.rows_cost, entry.sel, entry.estimated_rows, std::move(join_operator), entry.method);
+    join_entry->estimate_from_defaults |= entry.rows_rest_on_assumption;
+    return join_entry;
+}
+
+template <typename Entry>
+void DPSubJoinOrderOptimizer::addLeafStates(UInt32 relation_mask, Entry & leaf) const
+{
+    const size_t relation = std::countr_zero(relation_mask);
+    const auto leaf_state = relation < query_graph.relation_leaf_states.size() ? query_graph.relation_leaf_states[relation]
+                                                                               : QueryGraph::LeafState::Read;
+    if (leaf_state != QueryGraph::LeafState::Read)
+    {
+        /// The plan of a subquery is costed by Cascades the same way in every join order, so only moving its result is
+        /// costed here; it is never read again on every node.
+        const double rows = leaf.estimated_rows ? static_cast<double>(*leaf.estimated_rows)
+            : (leaf.max_rows ? static_cast<double>(*leaf.max_rows) : 1.0);
+        const double bytes = rowBytes(relation_mask);
+        const auto join_cost = distributedJoinCost();
+        typename Entry::Plan plan = leaf;
+        leaf.cost = 0;
+        if (leaf_state == QueryGraph::LeafState::SingleNode)
+        {
+            leaf.partition_class = single_node_state;
+            plan.partition_class = -1;
+            plan.cost = join_cost.toPartitioned(single_node_state, -1, rows, bytes);
+        }
+        else
+        {
+            leaf.partition_class = -1;
+            plan.partition_class = single_node_state;
+            plan.cost = leaf_state == QueryGraph::LeafState::Either ? 0 : join_cost.toSingleNode(-1, rows, bytes);
+        }
+        leaf.ordered.push_back(plan);
+        return;
+    }
+
+    /// Cascades costs a read by its bytes: 1/N of them per node for a partitioned read, all of them for the others.
+    const double rows = leaf.estimated_rows ? static_cast<double>(*leaf.estimated_rows)
+        : (leaf.max_rows ? static_cast<double>(*leaf.max_rows) : 1.0);
+    const double read_bytes = rows * allColumnBytes(relation_mask);
+    const double read = cost_config.work_weight * read_bytes;
+    leaf.cost = read / static_cast<double>(query_graph.distribution_node_count);
+    leaf.partition_class = -1;
+
+    typename Entry::Plan plan = leaf;
+    plan.cost = read;
+    plan.partition_class = single_node_state;
+    leaf.ordered.push_back(plan);
+    /// Every node reads the whole table, so the bytes it reads have to fit the budget too.
+    const bool scan_fits = query_graph.max_bytes_to_broadcast == 0 || read_bytes <= static_cast<double>(query_graph.max_bytes_to_broadcast);
+    if (scan_fits && canBroadcast(relation_mask, leaf.imprecise_rows, leaf.max_rows, rows))
+    {
+        plan.partition_class = replicated_state;
+        leaf.ordered.push_back(plan);
+    }
 }
 
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
@@ -1206,6 +1632,11 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
+        std::optional<UInt64> max_rows = {};
+        /// The rows rest on an assumption, see `joinRowsRestOnAssumption`.
+        bool rows_rest_on_assumption = false;
+        /// The rows of the plan or of one of its inputs rest on an assumption or on an imprecise estimate.
+        bool imprecise_rows = false;
         double cost{.0};
         /// What `EXPLAIN` reports: the output rows of its joins, as `EXPLAIN ANALYZE` measures them. `cost` adds the work
         /// of the join methods when merge joins compete.
@@ -1217,6 +1648,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         bool sharded{false};   /// a merge join sharded by primary key ranges
         Int8 merge_class{-1};  /// equivalence class of the merge key
         Int8 order_class{-1};  /// equivalence class the result is sorted by, if a later join may use it
+        Int8 partition_class{-1}; /// how the result is spread over the nodes, see `DPSubJoinOrderOptimizer::replicated_state`
         Int8 left_plan{-1};    /// plan of `left` in its `ordered`, -1 for its cheapest plan
         Int8 right_plan{-1};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
@@ -1226,7 +1658,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         using Plan = DPPlan;
         Bitvector neighbor{0};
         std::unordered_map<String, ColumnStats> column_stats = {};
-        /// The cheapest plan per interesting sort order, kept even when the cheapest plan overall is another one.
+        /// The cheapest plan per interesting sort order (or partitioning, see `useDistribution`), kept even when the
+        /// cheapest plan overall is another one.
         std::vector<DPPlan> ordered;
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
@@ -1252,6 +1685,19 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     }
 
     Checker checker(n, *this);
+    /// The table starts with empty leaves; without the relation estimates every leaf would be
+    /// costed as one row and every join cardinality would be unknown.
+    for (size_t i = 0; i < n; ++i)
+    {
+        auto & leaf = checker.getDPTable()[static_cast<Bitvector>(1) << i];
+        leaf.estimated_rows = query_graph.relation_stats[i].estimated_rows;
+        leaf.max_rows = query_graph.relation_stats[i].max_rows;
+        const auto & leaf_stats = query_graph.relation_stats[i];
+        leaf.imprecise_rows = !leaf_stats.estimated_rows || leaf_stats.imprecise_estimate || leaf_stats.estimate_from_defaults;
+        leaf.column_stats = query_graph.relation_stats[i].column_stats;
+        if (useDistribution())
+            addLeafStates(static_cast<UInt32>(1) << i, leaf);
+    }
     Enumerator enumerator(n, log);
     enumerator.enumerate(checker, query_graph);
 
@@ -1270,7 +1716,27 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         return nullptr;
     }
 
-    return buildPhysicalPlan(dptable, full_set);
+    BuiltPlans<Bitvector> built;
+    auto best = buildPhysicalPlan(dptable, full_set, -1, built);
+    if (auto & recorded_splits = query_graph.recorded_splits)
+        recordWinners(*recorded_splits, dptable, built);
+    for (const auto & alternative : full_set_alternatives)
+    {
+        /// Another top split over the cheapest plans of its two sides, joined by hash.
+        typename DPTable::DPEntry::Plan plan;
+        plan.left = alternative.left;
+        plan.right = alternative.right;
+        plan.estimated_rows = alternative.estimated_rows;
+        plan.rows_rest_on_assumption = alternative.rows_rest_on_assumption;
+        plan.cost = alternative.cost;
+        plan.rows_cost = alternative.rows_cost;
+        plan.sel = alternative.sel;
+        plan.kind = alternative.kind;
+        plan.strictness = alternative.strictness;
+        plan.edges = alternative.edges;
+        query_graph.full_set_alternatives.push_back(makeJoinEntry(dptable, full_set, plan, built));
+    }
+    return best;
 }
 
 }

@@ -345,12 +345,16 @@ funnels every row through one endpoint, so its transfer stays undivided and each
 also pays `funnel_sequential_cost_per_row`. A hash-table build counts as work, not as
 a sequential phase: `parallel_hash` shards the build across the threads of a node
 (a broadcast join still builds the full table on every node, a shuffle join `1/N`).
+Each built row costs `hash_table_build_factor` plus its bytes; an insert takes about
+twice the CPU of scanning a row, which costs its bytes, so the factor is about twice
+the bytes of a typical scanned row.
 `sequential_weight` is the per-node thread count: a serial phase holds one thread
 while work spreads over all of them, so one serial row costs about `threads` work
 rows (Brent's law).
 
 In addition, every exchange adds a fixed `exchange_fixed_overhead` to `sequential`
-(connection setup and metadata), which keeps a plan over a small input local. A
+(the stage of tasks it starts and their connections), which keeps a plan over a small
+input local and reads a small table on every node instead of gathering and broadcasting it. A
 partial top-N is charged for scanning its whole input while its sorted gather carries
 up to `limit * node_count` rows.
 
@@ -393,7 +397,14 @@ on TPC-H and would multiply the search space. The rule-based planner's
 `distributed_plan_default_shuffle_join_bucket_count`,
 `distributed_plan_default_reader_bucket_count`, and
 `distributed_plan_max_rows_to_broadcast` heuristics are not used: fan-out and
-broadcast-vs-shuffle are decided by estimated cost.
+broadcast-vs-shuffle are decided by estimated cost. The byte budget
+`distributed_plan_max_bytes_to_broadcast` does apply, as an admission check before the cost
+comparison: a result is replicated to every node (a broadcast join side, a replicated read, a
+replicated subplan) only when its estimated rows, or its proven row bound when the rows are
+unknown, times the row width fit the budget; a result with neither an estimate nor a bound is
+never replicated, and a replicated read also has to fit the bytes it scans. The check lives in
+`decideReplicationOf` (`RuleUtils.h`) over the shared `decideReplication`
+(`Optimizations/ReplicationEligibility.h`), which the rule-based planner uses as well.
 
 The per-query environment (cluster size, cost configuration, and the query settings the
 rules honor) is fixed before the search starts and lives on the memo
@@ -616,11 +627,12 @@ branch-and-bound pruning as the primary bound.
 9. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-10. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
-   (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
-   `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
-   receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
-   of Gretscher & Dittrich, PVLDB 2025) is future work.
+10. **Join ordering in Cascades**: the pre-Cascades join orderer (`dphyp`, `dpsub`, `dpsize`, `greedy`) chooses a
+   join order. With `cascades_join_order_alternatives`, DPhyp and DPsize also keep the cheapest complete orders that
+   split the joined relations differently at the top join; the graph then reaches Cascades as one `JoinGraphStep`
+   over its inputs, and the import adds the joins of every order over input groups imported once, sharing the group
+   of a set of inputs between orders whose joins have equal output headers. Orders that differ only below the top
+   join are not offered yet, and Cascades has no join associativity rule.
 11. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
 12. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using

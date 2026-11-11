@@ -1,0 +1,89 @@
+-- chain
+off	1860	50180
+candidates	1860	50180
+all_splits	1860	50180
+all_splits_rule	1860	50180
+topk	1860	50180
+winners	1860	50180
+winners_candidates	1860	50180
+best_splits	1860	50180
+all_splits dphyp	1860	50180
+best_splits dphyp	1860	50180
+best_splits budget	1860	50180
+distribution	1860	50180
+frontier	1860	50180
+frontier cycle	211	2497
+two keys	144	1320
+one node	144	1320
+window by a column	436105	1860
+window by a join key	369030	1860
+group by a column	1860
+one node	436105	1860
+frontier without distribution	1860	50180
+one node	1860	50180
+-- transitive chain, transitive predicates on and off
+all_splits on	1860	3985
+all_splits off	1860	3985
+one node	1860	3985
+-- cycle with several keys, nullable keys
+all_splits	211	2497
+all_splits_rule	211	2497
+one node	211	2497
+-- null-safe keys
+all_splits	900
+one node	900
+-- a predicate over three tables, a one-sided condition, a self-equality, a constant, computed outputs
+all_splits	433	4432	15
+all_splits_rule	433	4432	15
+one node	433	4432	15
+-- count over a cross product, and a cross product with an empty table
+all_splits	360
+one node	360
+all_splits	0
+-- graphs that keep their join orders
+two members	1060
+one node	1060
+float key	90
+two-table operand	22
+one node	22
+arrayJoin	3720
+one node	3720
+limit	1860
+-- sets given to Cascades
+join_enum_array_join	1	1	0
+join_enum_chain_all_splits	1	1	0
+join_enum_chain_best_splits	1	1	0
+join_enum_chain_best_splits_budget	1	1	0
+join_enum_chain_best_splits_dphyp	1	1	0
+join_enum_chain_candidates	1	1	0
+join_enum_chain_distribution	0	0	0
+join_enum_chain_dphyp	1	1	0
+join_enum_chain_frontier	1	1	0
+join_enum_chain_frontier_off	0	0	0
+join_enum_chain_off	0	0	0
+join_enum_chain_rule	1	1	1
+join_enum_chain_topk	1	1	0
+join_enum_chain_winners	1	1	0
+join_enum_chain_winners_candidates	1	1	0
+join_enum_cross	1	1	0
+join_enum_cross_empty	1	1	0
+join_enum_cycle	1	1	0
+join_enum_cycle_frontier	1	1	0
+join_enum_cycle_rule	1	1	1
+join_enum_float	0	0	0
+join_enum_group_column	1	1	0
+join_enum_limit	0	0	0
+join_enum_null_safe	1	1	0
+join_enum_predicates	1	1	0
+join_enum_predicates_rule	1	1	1
+join_enum_transitive_off	1	1	0
+join_enum_transitive_on	1	1	0
+join_enum_two_keys	1	1	0
+join_enum_two_members	0	0	0
+join_enum_two_table_operand	0	0	0
+join_enum_window_column	1	1	0
+join_enum_window_key	0	0	0
+-- the rule adds the joins that the import of all splits gets
+join_enum_chain	2	1
+join_enum_cycle	2	1
+join_enum_predicates	2	1

@@ -28,6 +28,8 @@ struct ProcessorProfileLogElement
     String processor_name;
     String processor_uniq_id;
     String step_uniq_id;
+    std::optional<Float64> plan_step_estimated_rows;
+    String plan_step_estimate_source;
 
     /// Milliseconds spend in IProcessor::work()
     UInt64 elapsed_us{};

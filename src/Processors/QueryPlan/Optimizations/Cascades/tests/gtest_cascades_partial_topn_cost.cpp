@@ -16,7 +16,7 @@ using namespace DB;
 
 /// A sorted gather over a partial top-N must be priced on the rows the partial physically
 /// emits - min(input_rows, L * node_count) - not on the group statistics trimmed to the
-/// final L. The partial records `physical_output_rows` when costed; the exchange reads it
+/// final L. The partial records its `physical_copies` when costed; the exchange reads them
 /// from its selected child. Also covers the cost estimator marking an expression whose input
 /// has no satisfying implementation as unbuildable.
 
@@ -83,8 +83,7 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
 
     partial->cost = estimator.estimateCost(partial);
     /// Costing the partial records its physical output: min(10000, 100 * 4) = 400.
-    ASSERT_TRUE(partial->physical_output_rows.has_value());
-    EXPECT_DOUBLE_EQ(*partial->physical_output_rows, limit * node_count);
+    EXPECT_DOUBLE_EQ(partial->physical_copies * limit, limit * node_count);
     partial_group->updateBestImplementation(partial, memo.getContext().cost_config);
 
     /// Sorted gather over the partial: its group statistics also say L, but the transfer
@@ -137,8 +136,7 @@ TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)
     memo.getGroup(partial_group_id)->statistics = makeStats(limit, 10);
 
     partial->cost = estimator.estimateCost(partial);
-    ASSERT_TRUE(partial->physical_output_rows.has_value());
-    EXPECT_DOUBLE_EQ(*partial->physical_output_rows, input_rows);
+    EXPECT_DOUBLE_EQ(partial->physical_copies * limit, input_rows);
 }
 
 /// An expression whose input has no implementation for the required properties cannot be

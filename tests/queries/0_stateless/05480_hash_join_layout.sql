@@ -13,19 +13,20 @@ CREATE TABLE r (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO l SELECT number FROM numbers(10);
 INSERT INTO r SELECT number FROM numbers(10);
 
--- With `query_plan_optimize_join_order_limit = 0` the right side has no estimate. With `10` its estimate is its 10 rows, below the default `parallel_hash_join_threshold`.
+-- The right side `rf` has no estimate: a filter that the primary key cannot use, without column statistics. `r` has its
+-- estimate of 10 rows, below the default `parallel_hash_join_threshold`.
+SELECT * FROM l JOIN (SELECT k FROM r WHERE k % 3 != 7) AS rf ON l.k = rf.k FORMAT Null
+SETTINGS hash_join_layout = 'serial', use_statistics = 0, log_comment = '05480_serial_no_estimate';
 SELECT * FROM l JOIN r ON l.k = r.k FORMAT Null
-SETTINGS hash_join_layout = 'serial', query_plan_optimize_join_order_limit = 0, log_comment = '05480_serial_no_estimate';
+SETTINGS hash_join_layout = 'serial', log_comment = '05480_serial_estimate';
+SELECT * FROM l JOIN (SELECT k FROM r WHERE k % 3 != 7) AS rf ON l.k = rf.k FORMAT Null
+SETTINGS hash_join_layout = 'parallel', use_statistics = 0, log_comment = '05480_parallel_no_estimate';
 SELECT * FROM l JOIN r ON l.k = r.k FORMAT Null
-SETTINGS hash_join_layout = 'serial', query_plan_optimize_join_order_limit = 10, log_comment = '05480_serial_estimate';
+SETTINGS hash_join_layout = 'parallel', log_comment = '05480_parallel_estimate';
+SELECT * FROM l JOIN (SELECT k FROM r WHERE k % 3 != 7) AS rf ON l.k = rf.k FORMAT Null
+SETTINGS use_statistics = 0, log_comment = '05480_auto_no_estimate';
 SELECT * FROM l JOIN r ON l.k = r.k FORMAT Null
-SETTINGS hash_join_layout = 'parallel', query_plan_optimize_join_order_limit = 0, log_comment = '05480_parallel_no_estimate';
-SELECT * FROM l JOIN r ON l.k = r.k FORMAT Null
-SETTINGS hash_join_layout = 'parallel', query_plan_optimize_join_order_limit = 10, log_comment = '05480_parallel_estimate';
-SELECT * FROM l JOIN r ON l.k = r.k FORMAT Null
-SETTINGS query_plan_optimize_join_order_limit = 0, log_comment = '05480_auto_no_estimate';
-SELECT * FROM l JOIN r ON l.k = r.k FORMAT Null
-SETTINGS query_plan_optimize_join_order_limit = 10, log_comment = '05480_auto_estimate';
+SETTINGS log_comment = '05480_auto_estimate';
 
 SYSTEM FLUSH LOGS query_log;
 

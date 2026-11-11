@@ -11423,6 +11423,10 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL, \
         {"25.7", 20000, 20000, "New experimental setting."}) \
+    DECLARE(UInt64, distributed_plan_max_bytes_to_broadcast, 1000000000, R"(
+Largest modeled size in bytes of a result that a distributed query plan replicates to every node: the right side of a broadcast join, a table read that every node repeats, a subplan that every node computes. The size is the estimated rows times the average row width; a result whose rows are unknown, or whose estimate took a default selectivity in place of a measurement, counts with its proven row bound instead, and a result with neither is never replicated. Above the budget the planner takes a shuffle or a local alternative. Applies to the rule-based distributed planner together with `distributed_plan_max_rows_to_broadcast`, and to the cost-based optimizer, which otherwise picks replication by cost alone. 0 disables the budget.
+)", EXPERIMENTAL, \
+        {"26.11", 1000000000, 1000000000, "New setting: byte budget for the data a distributed query plan replicates to every node."}) \
     DECLARE(Bool, distributed_plan_read_in_order, false, R"(
 Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
 table's sorting key can skip the sort and stop early instead of scanning and sorting.
@@ -11484,6 +11488,60 @@ Consider pushing partial aggregation below a join (eager aggregation) as a cost-
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", BETA, \
         {"26.9", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."}) \
+    DECLARE(UInt64, cascades_join_order_alternatives, 4, R"(
+How many join orders besides the chosen one the join order optimizer gives the Cascades optimizer to choose from:
+the cheapest complete orders that split the joined tables in other ways at the top join. The join order optimizer
+counts only rows, while Cascades also counts the data moved between nodes, so it can pick an order that moves less.
+0 gives Cascades only the chosen order.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", BETA, \
+        {"26.11", 0, 4, "New setting to give the Cascades optimizer other join orders to choose from."}) \
+    DECLARE(String, cascades_join_enumeration, "off", R"(
+Experimental. How the Cascades optimizer gets the join orders of a join graph:
+- `off`: the join order optimizer's chosen order and the orders of `cascades_join_order_alternatives`;
+- `candidates`: the same orders, imported with one memo group per set of joined tables;
+- `all_splits`: every split of every set of joined tables that the join order optimizer accepted, one memo group per
+  set, so that Cascades costs each split with the data moved between nodes.
+- `all_splits_rule`: the same joins as `all_splits`, but only those of `candidates` are imported; the rule
+  `JoinEnumeration` adds the others when the search explores the graph;
+- `topk`: the `cascades_join_order_alternatives + 1` cheapest complete join orders by the join order optimizer's cost,
+  found among all splits of every set (not only orders that differ in the top join), imported like `candidates`;
+- `winners`: the cheapest split by the join order optimizer's cost of every set of joined tables it reached, one join
+  per set;
+- `winners_candidates`: the joins of `winners` and of `candidates` together;
+- `best_splits`: the `cascades_join_enumeration_splits_per_set` cheapest splits of every set of joined tables by the
+  join order optimizer's cost, so that Cascades chooses between many orders at every level.
+- `frontier`: the splits of the plans that `query_plan_join_order_distribution` keeps for every set of joined tables:
+  its cheapest plan and its cheapest plan partitioned by each join key that a later join can use.
+
+`candidates` and `all_splits` take effect only for graphs of inner joins whose join keys compare the same way as
+hash keys and as values (no floating-point keys), and that `DPsub` plans; other graphs use `off`.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", EXPERIMENTAL, \
+        {"26.11", "off", "off", "New experimental setting."}) \
+    DECLARE(UInt64, cascades_join_enumeration_max_splits, 20000, R"(
+With `cascades_join_enumeration = 'all_splits'` or `'all_splits_rule'`: the largest number of join expressions (two per split) that a join
+graph may add to the Cascades memo. A larger graph uses `off`.
+)", EXPERIMENTAL, \
+        {"26.11", 20000, 20000, "New experimental setting."}) \
+    DECLARE(UInt64, cascades_join_enumeration_splits_per_set, 4, R"(
+With `cascades_join_enumeration = 'best_splits'`: how many of the cheapest splits of every set of joined tables
+Cascades gets. Each costs one join expression in the memo.
+)", EXPERIMENTAL, \
+        {"26.11", 4, 4, "New experimental setting."}) \
+    DECLARE(UInt64, cascades_join_enumeration_max_set_joins, 0, R"(
+With `cascades_join_enumeration = 'best_splits'`: the largest number of joins a join graph may import. Fewer splits
+per set are kept until the joins fit; a graph where one split per set does not fit gets the joins of `candidates`.
+0 means no limit.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New experimental setting."}) \
+    DECLARE(Bool, query_plan_join_order_distribution, false, R"(
+Experimental. Only affects the `dpsub` join order algorithm while the plan goes through the Cascades optimizer. Makes it
+aware of how the data is spread over the nodes: it costs every join as a local, shuffle or broadcast join with the
+cost model of Cascades, and keeps for every set of joined tables its cheapest plan partitioned by each join key that a
+later join can use. Replaces `query_plan_join_order_use_interesting_orders` for the graphs it plans.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \
@@ -11531,7 +11589,6 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
         {"26.6", false, true, "New setting."}) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
-Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
@@ -11539,9 +11596,9 @@ For an Iceberg table, the setting also allows skipping whole data files, see [us
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
-The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+With a distributed query plan (`make_distributed_plan = 1`), a task prunes the parts it reads with the runtime filters that are ready when it starts reading each part. A filter of a join in the same task is ready by then. A filter sent from another task (`distributed_plan_join_runtime_filters`) often arrives later, and then the part is read without granule pruning.
 
-The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
+The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. In these cases the query returns the same result, only without the granule pruning.
 )", 0, \
         {"26.10", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}, \
         {"26.9", false, false, "The JOIN runtime filters became a Production tier feature."}, \
@@ -11624,6 +11681,30 @@ Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,gree
 )", BETA, \
         {"26.11", "greedy", "dpsub,greedy", "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}, \
         {"25.12", "greedy", "greedy", "New experimental setting."}) \
+    DECLARE(MultiColumnDistinctModel, query_plan_join_multi_key_model, MultiColumnDistinctModel::Default, R"(
+For experiments that compare estimation models. Selects how the selectivity of a join on several key columns follows from the NDVs of the columns. The values:
+ - `default` - the model the estimate uses without the setting;
+ - `largest` - the largest NDV, as if the other columns depend on that one;
+ - `geometric_mean` - the geometric mean of `largest` and `product`;
+ - `backoff` - the NDVs from the largest down, raised to the powers 1, 1/2, 1/4 and so on, and multiplied;
+ - `product` - the product of the NDVs, as if the columns are independent;
+ - `per_table` - the largest NDV of the columns of each table, multiplied over the tables: the columns of one table are taken as dependent and columns of different tables as independent;
+ - `postgres` - as `estimate_num_groups` of PostgreSQL: the product of the NDVs of the columns of each table, at most 10% of the rows of the table but not below the largest NDV, scaled to the rows the read of the table selects, and multiplied over the tables.
+For a join, `default` is the geometric mean of the selectivities of the most selective key and of the key combinations, `per_table` keeps the most selective key, and `postgres` multiplies the selectivities of the keys.
+)", EXPERIMENTAL, \
+        {"26.11", "default", "default", "New experimental setting."}) \
+    DECLARE(MultiColumnDistinctModel, query_plan_group_multi_key_model, MultiColumnDistinctModel::Default, R"(
+For experiments that compare estimation models. Selects how the number of groups of `GROUP BY` or `DISTINCT` on several key columns follows from the NDVs of the columns. The values:
+ - `default` - the model the estimate uses without the setting;
+ - `largest` - the largest NDV, as if the other columns depend on that one;
+ - `geometric_mean` - the geometric mean of `largest` and `product`;
+ - `backoff` - the NDVs from the largest down, raised to the powers 1, 1/2, 1/4 and so on, and multiplied;
+ - `product` - the product of the NDVs, as if the columns are independent;
+ - `per_table` - the largest NDV of the columns of each table, multiplied over the tables: the columns of one table are taken as dependent and columns of different tables as independent;
+ - `postgres` - as `estimate_num_groups` of PostgreSQL: the product of the NDVs of the columns of each table, at most 10% of the rows of the table but not below the largest NDV, scaled to the rows the read of the table selects, and multiplied over the tables.
+For a group count, `default` is `largest`.
+)", EXPERIMENTAL, \
+        {"26.11", "default", "default", "New experimental setting."}) \
     DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::CD_C, R"(
 Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
 decide which join reorderings are valid. The following values are available:

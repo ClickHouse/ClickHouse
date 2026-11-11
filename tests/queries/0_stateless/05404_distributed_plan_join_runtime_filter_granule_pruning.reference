@@ -1,0 +1,7 @@
+-- the join is a broadcast join
+1
+-- the result is right
+9000450
+9000450
+-- the tasks prune granules
+1	1

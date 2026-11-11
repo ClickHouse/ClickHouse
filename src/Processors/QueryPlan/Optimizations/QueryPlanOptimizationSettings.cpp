@@ -39,6 +39,12 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
+    extern const SettingsUInt64 cascades_join_order_alternatives;
+    extern const SettingsString cascades_join_enumeration;
+    extern const SettingsUInt64 cascades_join_enumeration_max_splits;
+    extern const SettingsUInt64 cascades_join_enumeration_splits_per_set;
+    extern const SettingsUInt64 cascades_join_enumeration_max_set_joins;
+    extern const SettingsBool query_plan_join_order_distribution;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -153,6 +159,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsUInt64 distributed_plan_max_bytes_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsBool distributed_plan_join_runtime_filters;
@@ -409,6 +416,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_exchange_kind = "Persisted";
 #endif
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
+    distributed_plan_max_bytes_to_broadcast = from[Setting::distributed_plan_max_bytes_to_broadcast];
     distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_plan_partial_aggregation_before_shuffle = from[Setting::distributed_plan_partial_aggregation_before_shuffle];
@@ -419,6 +427,35 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
+    cascades_join_order_alternatives = from[Setting::cascades_join_order_alternatives];
+    const String & join_enumeration = from[Setting::cascades_join_enumeration].value;
+    if (join_enumeration == "off")
+        cascades_join_enumeration = JoinEnumeration::Off;
+    else if (join_enumeration == "candidates")
+        cascades_join_enumeration = JoinEnumeration::Candidates;
+    else if (join_enumeration == "all_splits")
+        cascades_join_enumeration = JoinEnumeration::AllSplits;
+    else if (join_enumeration == "all_splits_rule")
+        cascades_join_enumeration = JoinEnumeration::AllSplitsRule;
+    else if (join_enumeration == "topk")
+        cascades_join_enumeration = JoinEnumeration::TopK;
+    else if (join_enumeration == "winners")
+        cascades_join_enumeration = JoinEnumeration::Winners;
+    else if (join_enumeration == "winners_candidates")
+        cascades_join_enumeration = JoinEnumeration::WinnersCandidates;
+    else if (join_enumeration == "best_splits")
+        cascades_join_enumeration = JoinEnumeration::BestSplits;
+    else if (join_enumeration == "frontier")
+        cascades_join_enumeration = JoinEnumeration::Frontier;
+    else
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates', 'all_splits', 'all_splits_rule', "
+            "'topk', 'winners', 'winners_candidates', 'best_splits' or 'frontier'",
+            join_enumeration);
+    cascades_join_enumeration_max_splits = from[Setting::cascades_join_enumeration_max_splits];
+    cascades_join_enumeration_splits_per_set = from[Setting::cascades_join_enumeration_splits_per_set];
+    cascades_join_enumeration_max_set_joins = from[Setting::cascades_join_enumeration_max_set_joins];
+    join_order_distribution = from[Setting::query_plan_join_order_distribution];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

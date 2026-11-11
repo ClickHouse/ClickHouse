@@ -2,6 +2,10 @@
 
 #include <Common/CacheBase.h>
 
+#include <memory>
+#include <optional>
+#include <string>
+
 namespace DB
 {
 
@@ -37,10 +41,22 @@ struct StatsCollectingParams
     const size_t max_size_to_preallocate = 0;
 };
 
+/// Filled by the plan optimizer once join runtime filters are in place, and read when the join
+/// records the size of its build side.
+struct JoinBuildInputMark
+{
+    /// A runtime filter built outside the build side of the join drops rows of that side, so the
+    /// recorded size depends on the rest of the plan, not only on the build side itself.
+    bool filtered_from_outside = false;
+};
+
 struct HashJoinStatsCollectingParams
 {
     StatsCollectingParams build;
     StatsCollectingParams match;
+    std::shared_ptr<const JoinBuildInputMark> build_input_mark = {};
+
+    bool isBuildInputFilteredFromOutside() const { return build_input_mark && build_input_mark->filtered_from_outside; }
 };
 
 struct AggregationEntry
@@ -76,14 +92,39 @@ struct HashJoinEntry
 
     bool shouldBeUpdated(const HashJoinEntry & new_entry) const
     {
-        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
+        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size
+            || (new_entry.unfiltered_source_rows && !unfiltered_source_rows);
     }
 
-    std::string dump() const { return fmt::format("ht_size={}", ht_size); }
+    /// A run under an outside runtime filter does not know the unfiltered size, so it keeps the one
+    /// recorded before. Otherwise one plan would record a filtered size that a different plan reads.
+    void keepFieldsMissingIn(HashJoinEntry & new_entry) const
+    {
+        if (!new_entry.unfiltered_source_rows)
+            new_entry.unfiltered_source_rows = unfiltered_source_rows;
+    }
+
+    std::string dump() const
+    {
+        return fmt::format(
+            "ht_size={}, source_rows={}, unfiltered_source_rows={}",
+            ht_size, source_rows, unfiltered_source_rows ? std::to_string(*unfiltered_source_rows) : "unknown");
+    }
 
     size_t ht_size; // the size of the shared hash table
     size_t source_rows; // the number of rows in the source table
+    /// `source_rows` of the last run whose build side no outside runtime filter reduced.
+    std::optional<size_t> unfiltered_source_rows = {};
 };
+
+/// The entry a hash join records after its build phase.
+inline HashJoinEntry makeHashJoinEntry(size_t ht_size, size_t source_rows, const HashJoinStatsCollectingParams & params)
+{
+    return {
+        .ht_size = ht_size,
+        .source_rows = source_rows,
+        .unfiltered_source_rows = params.isBuildInputFilteredFromOutside() ? std::nullopt : std::optional<size_t>(source_rows)};
+}
 
 struct HashJoinMatchEntry
 {

@@ -59,3 +59,36 @@ TEST(HashTablesStatistics, ZeroMaxEntriesKeepsJoinStatisticsUsable)
 {
     checkZeroMaxEntriesKeepsStatisticsUsableForOtherQueries<HashJoinEntry>();
 }
+
+/// A join whose build side an outside runtime filter reduces records its observed size but not an
+/// unfiltered one. The unfiltered size recorded by an earlier run stays, and join ordering reads only it.
+TEST(HashTablesStatistics, FilteredJoinRunKeepsUnfilteredSize)
+{
+    HashTablesStatistics<HashJoinEntry> stats;
+    const StatsCollectingParams params{
+        /*key_=*/1, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/10, /*max_size_to_preallocate_=*/100'000};
+
+    auto unfiltered_mark = std::make_shared<JoinBuildInputMark>();
+    auto filtered_mark = std::make_shared<JoinBuildInputMark>(JoinBuildInputMark{.filtered_from_outside = true});
+    const HashJoinStatsCollectingParams unfiltered_run{.build = params, .match = {}, .build_input_mark = unfiltered_mark};
+    const HashJoinStatsCollectingParams filtered_run{.build = params, .match = {}, .build_input_mark = filtered_mark};
+
+    stats.update(makeHashJoinEntry(1000, 1000, unfiltered_run), params);
+    stats.update(makeHashJoinEntry(50, 50, filtered_run), params);
+
+    auto hint = stats.getSizeHint(params);
+    ASSERT_TRUE(hint.has_value());
+    EXPECT_EQ(hint->source_rows, 50);
+    EXPECT_EQ(hint->unfiltered_source_rows, 1000);
+
+    /// A first run under a filter leaves no unfiltered size, and the next unfiltered run sets it even
+    /// though its hash table is about the same size.
+    const StatsCollectingParams other_key{
+        /*key_=*/2, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/10, /*max_size_to_preallocate_=*/100'000};
+    const HashJoinStatsCollectingParams filtered_other{.build = other_key, .match = {}, .build_input_mark = filtered_mark};
+    const HashJoinStatsCollectingParams unfiltered_other{.build = other_key, .match = {}, .build_input_mark = unfiltered_mark};
+    stats.update(makeHashJoinEntry(100, 100, filtered_other), other_key);
+    EXPECT_FALSE(stats.getSizeHint(other_key)->unfiltered_source_rows.has_value());
+    stats.update(makeHashJoinEntry(90, 90, unfiltered_other), other_key);
+    EXPECT_EQ(stats.getSizeHint(other_key)->unfiltered_source_rows, 90);
+}

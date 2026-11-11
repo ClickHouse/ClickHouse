@@ -9,7 +9,7 @@
 # id = 0..2999: k = id, g = (id % 10) * 10, s = 's' || id % 50, dec = -5 - id % 6 (Decimal(5, 2)), d = (id % 11) / 2
 # (Float64), sid = id * 1000003, n = NULL for an even id, else 'n' || id % 7.
 # - T1: the current snapshot has statistics: they give s, dec, d, sid and n; g and k keep the range of their bounds.
-# - T2: T1 with the setting off: the estimator guesses 10% of the rows.
+# - T2: T1 with the setting off: d, dec, n, s and sid have no distinct count (0).
 # - T3: after an append, the current snapshot has no statistics, so they are not used.
 # - T4: time travel to the analyzed snapshot uses them again.
 # - T5: an equality on a Decimal and a join on a String, with the setting on and off.
@@ -92,7 +92,7 @@ echo 'Expect the theta NDV for d 11, dec 6, n 7, s 50, sid 3000; g 91 and k 3000
 ndv t "${T_COLUMNS}" "" ${ON}
 
 echo '--- T2: T1 with the setting off'
-echo 'Expect 300, 10% of the 3000 rows, for d, dec, n, s, sid; g 91 and k 3000 as in T1.'
+echo 'Expect 0 (no distinct count) for d, dec, n, s, sid; g 91 and k 3000 as in T1.'
 ndv t "${T_COLUMNS}" "" ${OFF}
 
 echo '--- T5: dec = -5'
@@ -102,7 +102,7 @@ labels "SELECT count() FROM t JOIN dim ON t.k = dim.k WHERE t.dec = -5" ${OFF} |
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t WHERE dec = -5"
 
 echo '--- T5: join on s with 10 of its values'
-echo 'Expect 600: 3000 * 10 / max(50, 10); off 100, by the guessed 300 (true 600).'
+echo 'Expect 600: 3000 * 10 / max(50, 10); off 3000, by the 10 values of dim_s alone (true 600).'
 labels "SELECT count() FROM t JOIN dim_s ON t.s = dim_s.s" ${ON}
 labels "SELECT count() FROM t JOIN dim_s ON t.s = dim_s.s" ${OFF}
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t JOIN dim_s ON t.s = dim_s.s"
@@ -113,7 +113,7 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     FROM numbers(1000)"
 
 echo '--- T3: the current snapshot has no statistics'
-echo 'Expect 400, 10% of the 4000 rows, for d, dec, n, s, sid: the statistics are of the previous snapshot.'
+echo 'Expect 0 (no distinct count) for d, dec, n, s, sid: the statistics are of the previous snapshot.'
 ndv t "${T_COLUMNS}" "" ${ON}
 
 FIRST_SNAPSHOT=$(${CLICKHOUSE_CLIENT} --query "
@@ -138,9 +138,9 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE JSONExtractUInt(stats_file, 'snapshot-id') = current"
 
 echo '--- T6: a statistics file with blobs of the previous snapshot'
-echo 'Expect u 40 from its blob; s 32, 10% of the 320 rows, as its blob gives 50 of the previous snapshot (true 70); k 320 from its bounds.'
+echo 'Expect u 40 from its blob; s 0 (no distinct count), as its blob gives 50 of the previous snapshot (true 70); k 320 from its bounds.'
 ndv r "r.k, r.s, r.u" "" ${ON}
-echo 'k >= 300 prunes the read to the 20 rows of the second file, 10 of them with u: expect u 40 clamped to 10, s 2, k 20.'
+echo 'k >= 300 prunes the read to the 20 rows of the second file, 10 of them with u: expect u 40 clamped to 10, s 0, k 20.'
 ndv r "r.k, r.s, r.u" "WHERE r.k >= 300" ${ON} --use_iceberg_partition_pruning=1
 echo 'Time travel to the previous snapshot: expect s 50 and u 30 from its blobs; k 300 from its bounds.'
 ndv r "r.k, r.s, r.u" "" ${ON} --iceberg_snapshot_id=75667572448823849

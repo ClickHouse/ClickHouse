@@ -14,12 +14,12 @@ CREATE TABLE t_r (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_l SELECT number FROM numbers(10);
 INSERT INTO t_r SELECT number FROM numbers(10);
 
--- With `query_plan_optimize_join_order_limit = 0` no join gets an estimate.
-SELECT * FROM t_l AS l INNER JOIN t_r AS r ON l.k = r.k FORMAT Null SETTINGS query_plan_optimize_join_order_limit = 0,
+-- The right side `rf` has no estimate: a filter that the primary key cannot use, without column statistics.
+SELECT * FROM t_l AS l INNER JOIN (SELECT k FROM t_r WHERE k % 3 != 7) AS rf ON l.k = rf.k FORMAT Null SETTINGS use_statistics = 0,
     parallel_hash_join_threshold = 18446744073709551615, log_comment = '05396_no_estimate_largest';
-SELECT * FROM t_l AS l INNER JOIN t_r AS r ON l.k = r.k FORMAT Null SETTINGS query_plan_optimize_join_order_limit = 0,
+SELECT * FROM t_l AS l INNER JOIN (SELECT k FROM t_r WHERE k % 3 != 7) AS rf ON l.k = rf.k FORMAT Null SETTINGS use_statistics = 0,
     parallel_hash_join_threshold = 0, log_comment = '05396_no_estimate_0';
-SELECT * FROM t_l AS l INNER JOIN t_r AS r ON l.k = r.k FORMAT Null SETTINGS query_plan_optimize_join_order_limit = 0,
+SELECT * FROM t_l AS l INNER JOIN (SELECT k FROM t_r WHERE k % 3 != 7) AS rf ON l.k = rf.k FORMAT Null SETTINGS use_statistics = 0,
     parallel_hash_join_threshold = 100000, log_comment = '05396_no_estimate_100000';
 
 -- The join order optimization gives the right side its estimate of 10 rows.

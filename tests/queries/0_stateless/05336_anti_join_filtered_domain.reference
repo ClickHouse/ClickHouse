@@ -1,0 +1,25 @@
+-- rows of the anti join
+1948
+-- estimate
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: <unknown>, cost: <unknown>)
+    Expression ((Before GROUP BY + WHERE)) (rows: <unknown>, cost: <unknown>)
+      Expression (Post Join Actions) (rows: ~1975.0, cost: 1975.0)
+        Join (JOIN FillRightFirst) (rows: ~1975.0, cost: 1975.0)
+          Expression (Left Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Create result for always true EXISTS expression) (rows: ~13333.0, source: statistics)
+              Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))) (rows: <unknown>, cost: <unknown>)
+                ReadFromMergeTree (default.t_ae_fact) (rows: <unknown>, cost: <unknown>)
+          Expression (Right Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Change column names to column identifiers) (rows: ~10000.0, source: statistics)
+              ReadFromMergeTree (default.t_ae_keys) (rows: <unknown>, cost: <unknown>)
+-- Cascades
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: ~1.0, cost: 901156.1)
+    Expression ((Before GROUP BY + WHERE)) (rows: ~1975.0, cost: 899172.1)
+      JoinLogical (Local HashJoin ) (rows: ~1975.0, cost: 898974.6)
+        Expression (Create result for always true EXISTS expression) (rows: ~13333.0, cost: 322666.6, source: statistics)
+          Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))) (rows: ~13333.0, cost: 321333.3, source: statistics)
+            ReadFromMergeTree (default.t_ae_fact) (rows: ~13333.0, cost: 320000.0, source: statistics)
+        Expression (Change column names to column identifiers) (rows: ~10000.0, cost: 81000.0, source: statistics)
+          ReadFromMergeTree (default.t_ae_keys) (rows: ~10000.0, cost: 80000.0, source: statistics)

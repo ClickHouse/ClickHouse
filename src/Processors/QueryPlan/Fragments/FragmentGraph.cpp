@@ -64,9 +64,9 @@ std::optional<UInt64> getEstimatedRows(const QueryPlan & plan)
         return std::nullopt;
     if (!node->cost_estimation && isExchangeEndpointStep(*node->step) && node->children.size() == 1)
         node = node->children.front();
-    if (!node->cost_estimation)
+    if (!node->cost_estimation || !node->cost_estimation->rows)
         return std::nullopt;
-    return static_cast<UInt64>(std::llround(std::max(0.0, node->cost_estimation->rows)));
+    return static_cast<UInt64>(std::llround(std::max(0.0, *node->cost_estimation->rows)));
 }
 
 FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)

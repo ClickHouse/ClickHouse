@@ -59,6 +59,8 @@ static std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & joi
 {
     auto swapped_join_step = cloneStepAs(join_step);
     swapped_join_step->swapInputs();
+    /// The key identifies the hash table of the old right side, which is the probe side now.
+    swapped_join_step->setRightHashTableCacheKey(0);
     return swapped_join_step;
 }
 

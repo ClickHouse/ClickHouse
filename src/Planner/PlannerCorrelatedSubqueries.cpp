@@ -417,8 +417,8 @@ bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
 /// `distinct_overflow_mode` can never truncate the domain, and no external `DISTINCT`.
 QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
 {
-    context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
     context.uses_correlated_domain = true;
+    context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
     context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
     auto buffer_header = std::make_shared<Block>();
@@ -1692,6 +1692,10 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
+    /// Joined with the outer stream's distinct keys, the decorrelated side only has keys the outer
+    /// stream has.
+    if (uses_correlated_domain)
+        result_join->setProbeKeysWithinPreservedSide();
 
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
     if (uses_in_memory_buffer)

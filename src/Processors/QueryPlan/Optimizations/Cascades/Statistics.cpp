@@ -10,6 +10,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -25,6 +27,7 @@ namespace DB
 void ExpressionStatistics::dump(WriteBuffer & out) const
 {
     out << "estimated_rows: " << estimated_row_count
+        << (rows_unknown ? " (unknown, search value)" : "")
         << " min_rows: " << min_row_count
         << " max_rows: " << max_row_count
         << " estimated_bytes_per_row: " << estimated_bytes_per_row;
@@ -32,8 +35,13 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
         out << " physical_read_bytes: " << physical_read_bytes;
     out << "\n";
     for (const auto & column : column_statistics)
+    {
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
-            << " avg_bytes: " << column.second.avg_bytes << "\n";
+            << " avg_bytes: " << column.second.avg_bytes;
+        if (column.second.max_distinct_values)
+            out << " at most " << column.second.max_distinct_values << " values";
+        out << "\n";
+    }
     std::unordered_set<const void *> visited_classes;
     for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
     {
@@ -264,6 +272,45 @@ void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_s
     statistics.physical_read_bytes = physical_rows * statistics.estimated_bytes_per_row;
 }
 
+std::optional<UInt64> ExpressionStatistics::knownRows() const
+{
+    if (rows_unknown)
+        return std::nullopt;
+    return roundToRowCount(estimated_row_count);
+}
+
+std::optional<UInt64> ExpressionStatistics::knownBound() const
+{
+    if (max_row_count >= Float64(std::numeric_limits<UInt64>::max()))
+        return std::nullopt;
+    return roundToRowCount(max_row_count);
+}
+
+RelationStats ExpressionStatistics::toRelationStats() const
+{
+    RelationStats relation_stats;
+    relation_stats.estimated_rows = knownRows();
+    relation_stats.max_rows = knownBound();
+    relation_stats.avg_row_bytes = estimated_bytes_per_row;
+    relation_stats.column_stats = column_statistics;
+    relation_stats.estimate_from_defaults = estimate_from_defaults;
+    relation_stats.imprecise_estimate = imprecise_estimate;
+    relation_stats.source = source;
+    return relation_stats;
+}
+
+void ExpressionStatistics::applyRelationStats(const RelationStats & relation_stats)
+{
+    rows_unknown = !relation_stats.estimated_rows;
+    estimate_from_defaults = relation_stats.estimate_from_defaults;
+    imprecise_estimate = relation_stats.imprecise_estimate;
+    source = relation_stats.source;
+    estimated_row_count = Float64(relation_stats.estimated_rows ? *relation_stats.estimated_rows : relation_stats.max_rows.value_or(0));
+    if (relation_stats.max_rows)
+        max_row_count = Float64(*relation_stats.max_rows);
+    column_statistics = relation_stats.column_stats;
+}
+
 /// Statistics of a read from object storage, or of a filter over one, from the data lake metadata of the read.
 static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(QueryPlan::Node & node, const ReadFromObjectStorageStep & read_step)
 {
@@ -280,6 +327,10 @@ static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(Q
     /// rows bound a MergeTree read.
     stats.estimated_row_count = relation_stats.estimated_rows ? Float64(*relation_stats.estimated_rows) : rows;
     stats.column_statistics = std::move(relation_stats.column_stats);
+    /// Whether the estimate is precise decides, for example, whether the read may be broadcast.
+    stats.imprecise_estimate = relation_stats.imprecise_estimate;
+    stats.estimate_from_defaults = relation_stats.estimate_from_defaults;
+    stats.source = relation_stats.source;
 
     /// The manifests give no uncompressed sizes, so every column has the width of its type.
     const auto & header = *read_step.getOutputHeader();
@@ -317,38 +368,64 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             read_step = typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get());
 
         /// `estimateReadRowsCount` handles `FilterStep` and `PREWHERE` sampling internally.
+        /// Without a point estimate the rows the read cannot exceed still give the cost model a
+        /// search value; the result is marked unknown.
         auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
-        if (relation_stats.estimated_rows)
+        if (relation_stats.estimated_rows || relation_stats.max_rows)
         {
             stats.emplace();
-            stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
-            stats->column_statistics = relation_stats.column_stats;
+            stats->applyRelationStats(relation_stats);
             /// Hinted column widths are already in the stats; fill the rest so downstream width
             /// estimates (join, aggregation) know every column's size. A table-level width hint
             /// marks the parts as stand-ins, so it beats their real sizes.
             auto storage_widths = relation_stats.avg_row_bytes
                 ? estimateReadColumnWidthsScaledToRow(*read_step, *relation_stats.avg_row_bytes)
                 : estimateReadColumnWidths(*read_step);
+            /// The widths are keyed by the columns of the read, while the statistics of a filter above it are keyed by
+            /// the columns the filter outputs, which it may rename.
+            std::unordered_map<String, ColumnStats> widths;
             for (const auto & [column_name, width] : storage_widths)
+                widths[column_name].avg_bytes = width;
+            if (const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get()))
+                QueryPlanOptimizations::remapColumnStats(widths, filter_step->getExpression());
+            for (const auto & [column_name, width] : widths)
             {
                 auto & column_stats = stats->column_statistics[column_name];
                 if (column_stats.avg_bytes == 0)
-                    column_stats.avg_bytes = width;
+                    column_stats.avg_bytes = width.avg_bytes;
             }
             stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
                 ? *relation_stats.avg_row_bytes
-                : estimateRowWidth(*read_step->getOutputHeader(), stats->column_statistics);
+                : estimateRowWidth(*node.step->getOutputHeader(), stats->column_statistics);
             /// A read (with or without a filter) cannot emit more rows than the table holds. Stat
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.
-            stats->max_row_count = std::max(stats->estimated_row_count,
-                Float64(read_step->getStorageSnapshot()->storage.totalRows(read_step->getContext())
-                    .value_or(std::numeric_limits<UInt64>::max())));
+            const Float64 bound = relation_stats.max_rows
+                ? Float64(*relation_stats.max_rows)
+                : Float64(read_step->getStorageSnapshot()->storage.totalRows(read_step->getContext())
+                    .value_or(std::numeric_limits<UInt64>::max()));
+            stats->max_row_count = std::max(stats->estimated_row_count, bound);
 
-            auto analyzed_result = read_step->getAnalyzedResult();
-            analyzed_result = analyzed_result ? analyzed_result : read_step->selectRangesToRead();
+            const auto analyzed_result = read_step->getAnalyzedResultForEstimation();
             fillPhysicalReadBytes(*stats,
                 analyzed_result ? Float64(analyzed_result->selected_rows) : 0);
+        }
+    }
+    else if (node.children.empty())
+    {
+        /// Other sources go through the same shared estimator, which knows `system.one`, `Memory`
+        /// tables and the hints; a source it does not know stays without statistics here and is
+        /// marked unknown when its group is derived.
+        auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
+        if (relation_stats.estimated_rows || relation_stats.max_rows)
+        {
+            stats.emplace();
+            stats->applyRelationStats(relation_stats);
+            if (!relation_stats.max_rows)
+                stats->max_row_count = stats->estimated_row_count;
+            stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
+                ? *relation_stats.avg_row_bytes
+                : estimateRowWidth(*node.step->getOutputHeader(), stats->column_statistics);
         }
     }
 
