@@ -1431,6 +1431,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     if (!create.attach && !create.isView())
     {
         DataTypeValidationSettings validation_settings(settings);
+        /// A DDL worker pins version 0 on an unversioned state type name, and the initiator has validated the definition.
+        if (getContext()->isDDLOrOnClusterInternal())
+            validation_settings.allow_suspicious_aggregate_function_version_0 = true;
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
     }

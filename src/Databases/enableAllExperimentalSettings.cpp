@@ -51,6 +51,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_suspicious_primary_key", 1);
     context->setSetting("allow_suspicious_ttl_expressions", 1);
     context->setSetting("allow_suspicious_variant_types", 1);
+    context->setSetting("allow_suspicious_aggregate_function_version_0", 1);
     context->setSetting("allow_create_index_without_type", 1);
     context->setSetting("allow_experimental_s3queue", 1);
     context->setSetting("allow_experimental_database_iceberg", 1);

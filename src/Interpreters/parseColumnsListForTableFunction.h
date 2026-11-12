@@ -20,6 +20,7 @@ struct DataTypeValidationSettings
     bool allow_suspicious_low_cardinality_types = true;
     bool allow_suspicious_fixed_string_types = true;
     bool allow_suspicious_variant_types = true;
+    bool allow_suspicious_aggregate_function_version_0 = true;
     bool validate_nested_types = true;
     bool enable_time_time64_type = true;
     bool enable_nullable_tuple_type = true;
