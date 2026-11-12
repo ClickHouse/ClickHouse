@@ -116,6 +116,10 @@ measure() {
     if [[ "${excess}" -lt 300 ]]; then
         echo -e "${name}\t1"
     else
+        # The four readings go to stderr, which the harness keeps on a failure. The excess alone does
+        # not say whether an arm moved or the two phases disagree, and the run that reports it is not
+        # one that can be repeated afterwards.
+        echo "${name}: map ${mb} -> ${ma}, str ${sb} -> ${sa}" >&2
         echo -e "${name}\t0 (opened ${excess} files for 120 Map columns)"
     fi
 }
