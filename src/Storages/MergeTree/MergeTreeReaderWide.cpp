@@ -325,6 +325,14 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 
     const auto & metadata = *storage_snapshot->metadata;
 
+    /// A column that is missing from the part is computed from its default expression before the filter, and the
+    /// expression could use the placeholder values of the columns read here.
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnAbsentFromPart(pos) && metadata.getColumns().hasDefault(columns_to_read[pos].getNameInStorage()))
+            return;
+    }
+
     std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> readers(columns_to_read.size());
     bool has_readers = false;
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos)

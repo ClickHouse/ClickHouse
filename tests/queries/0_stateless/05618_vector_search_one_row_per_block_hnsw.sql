@@ -46,12 +46,26 @@ WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05618_off';
 
+-- A column added later is computed from its default expression before the candidates are filtered. The expression could
+-- use the placeholder values of the other rows, so the vectors are read as usual then.
+ALTER TABLE tab ADD COLUMN d UInt64 DEFAULT intDiv(64, length(vec));
+
+SELECT 'default from the vector, setting on';
+WITH (SELECT vec FROM tab WHERE id = 123) AS ref
+SELECT id, d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_default_on';
+
+SELECT 'default from the vector, setting off';
+WITH (SELECT vec FROM tab WHERE id = 123) AS ref
+SELECT id, d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;

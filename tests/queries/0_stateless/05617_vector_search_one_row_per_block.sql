@@ -17,6 +17,7 @@ SET use_uncompressed_cache = 0;
 DROP TABLE IF EXISTS tab_one_row_per_block;
 DROP TABLE IF EXISTS tab_several_rows_per_block;
 DROP TABLE IF EXISTS tab_sizes;
+DROP TABLE IF EXISTS tab_other_block_sizes;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab_one_row_per_block
@@ -105,6 +106,27 @@ SELECT 'same sizes, setting on';
 SELECT id, length(vec), vec[1] FROM tab_one_row_per_block ORDER BY sipHash64(id) LIMIT 5
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_same_sizes_on';
 
+-- A part written with other block sizes than the column has now: blocks of 260 and 252 bytes, which add up to the size of
+-- one block per row. Neither the settings nor the sizes of the files show it, so the query fails, with an explanation.
+-- With the setting off, the part is read as usual.
+CREATE TABLE tab_other_block_sizes
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 1, max_compress_block_size = 260)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2, index_granularity_bytes = 0;
+
+INSERT INTO tab_other_block_sizes SELECT number, arrayMap(j -> toFloat32(number * 100 + j), range(64)) FROM numbers(2000);
+ALTER TABLE tab_other_block_sizes MODIFY COLUMN vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256);
+
+SELECT id, vec[1] FROM tab_other_block_sizes ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1; -- { serverError UNKNOWN_CODEC, CHECKSUM_DOESNT_MATCH, CORRUPTED_DATA }
+
+SELECT 'other block sizes, setting off';
+SELECT id, vec[1] FROM tab_other_block_sizes ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'codes in few blocks', ProfileEvents['CompressedReadBufferBlocks'] < 10
@@ -123,3 +145,4 @@ ORDER BY log_comment;
 DROP TABLE tab_one_row_per_block;
 DROP TABLE tab_several_rows_per_block;
 DROP TABLE tab_sizes;
+DROP TABLE tab_other_block_sizes;

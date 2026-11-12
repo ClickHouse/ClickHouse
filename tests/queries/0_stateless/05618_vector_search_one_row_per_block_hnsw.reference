@@ -31,5 +31,28 @@ setting off
 121
 680
 101
+default from the vector, setting on
+123	1
+337	1
+1846	1
+1571	1
+1237	1
+1107	1
+413	1
+121	1
+680	1
+101	1
+default from the vector, setting off
+123	1
+337	1
+1846	1
+1571	1
+1237	1
+1107	1
+413	1
+121	1
+680	1
+101	1
+05618_default_on	0
 05618_off	0
 05618_on	1

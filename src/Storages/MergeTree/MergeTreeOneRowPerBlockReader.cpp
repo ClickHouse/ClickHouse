@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
+#include <Compression/CompressedReadBufferBase.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -106,10 +107,32 @@ void MergeTreeOneRowPerBlockReader::readRange(
 
 void MergeTreeOneRowPerBlockReader::readRow(MergeTreeReaderStream & stream, UInt64 row, char * to)
 {
-    /// A seek to the block right after the last one read, or to a block in the read buffer, does not read anything.
-    stream.seekToMark(MarkInCompressedFile{.offset_in_compressed_file = row * layout.block_bytes, .offset_in_decompressed_block = 0});
+    const UInt64 offset = row * layout.block_bytes;
 
-    const auto block = stream.readCompressedBlock();
+    /// A part written with other block sizes than the column has now has no block at the position of a row, which looks
+    /// like corrupted data here. The exception says so, as nothing before the read can tell.
+    auto explanation = [&]
+    {
+        return fmt::format(
+            "While reading row {} from {} at offset {}, as one row per block (setting `merge_tree_use_one_row_per_block_layout`). "
+            "Either the part is corrupted, or it was written with other values of `min_compress_block_size` and "
+            "`max_compress_block_size` than the column has now. In the second case, merge the part or disable the setting",
+            row, path_for_logs, offset);
+    };
+
+    std::optional<CompressedReadBufferBase::CompressedBlock> block;
+    try
+    {
+        /// A seek to the block right after the last one read, or to a block in the read buffer, does not read anything.
+        stream.seekToMark(MarkInCompressedFile{.offset_in_compressed_file = offset, .offset_in_decompressed_block = 0});
+        block = stream.readCompressedBlock();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(explanation());
+        throw;
+    }
+
     if (!block)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the block of row {} from {}: end of file", row, path_for_logs);
 
@@ -119,15 +142,15 @@ void MergeTreeOneRowPerBlockReader::readRow(MergeTreeReaderStream & stream, UInt
         if (block->method != static_cast<UInt8>(CompressionMethodByte::NONE)
             && !CompressionCodecFactory::instance().get(block->method)->isNone())
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "The block of row {} in {} is compressed with method byte 0x{:02x}, expected a block stored without compression",
-                row, path_for_logs, static_cast<unsigned>(block->method));
+                "The block is compressed with method byte 0x{:02x}, expected a block stored without compression. {}",
+                static_cast<unsigned>(block->method), explanation());
         verbatim_method = block->method;
     }
 
     if (block->decompressed_bytes != layout.row_bytes || block->payload.size() != layout.row_bytes)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "The block of row {} in {} has {} bytes, {} decompressed, expected one row of {} bytes",
-            row, path_for_logs, block->payload.size(), block->decompressed_bytes, layout.row_bytes);
+            "The block has {} bytes, {} decompressed, expected one row of {} bytes. {}",
+            block->payload.size(), block->decompressed_bytes, layout.row_bytes, explanation());
 
     memcpy(to, block->payload.data(), layout.row_bytes);
 }

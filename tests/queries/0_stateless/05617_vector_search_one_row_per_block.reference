@@ -72,6 +72,12 @@ same sizes, setting on
 389	64	0.034
 3187	64	0.595
 2573	64	-0.219
+other block sizes, setting off
+1785	178500
+390	39000
+389	38900
+181	18100
+298	29800
 codes in few blocks	1
 05617_one_part_off	0
 05617_one_part_on	100
