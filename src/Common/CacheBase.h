@@ -283,9 +283,6 @@ public:
         cache_policy->remove(predicate);
     }
 
-    /// Like `remove`, and also cancels the pending insertions of the matching keys, as `clear` does for all keys: a `getOrSet`
-    /// that is producing the value of such a key when this is called returns that value, but does not insert it into the cache.
-    /// The predicate gets only the key, because a pending insertion has no value in the cache yet.
     void removeAndCancelPendingInsertions(std::function<bool(const Key &)> predicate)
     {
         std::lock_guard lock(mutex);
@@ -447,9 +444,6 @@ private:
         void cleanup(std::lock_guard<std::mutex> & /* token_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
-            /// After `clear` or `removeAndCancelPendingInsertions` removed this token, another `getOrSet` may have added
-            /// a new token for the same key. That one belongs to a pending insertion that is not cancelled, so keep it.
-            /// We only erase if the pointers are equal, that way we know it's not from a different `getOrSet`.
             auto & tokens = token->cache.insert_tokens;
             if (auto it = tokens.find(*key); it != tokens.end() && it->second == token)
                 tokens.erase(it);
