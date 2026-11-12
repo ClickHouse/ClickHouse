@@ -10128,7 +10128,10 @@ analyzer additionally:
   of the current database if that database supports table namespaces (a data lake catalog) and `a` is not
   `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist and the user can access both;
   if the user can access only one of them, that one is used. Database `a` must exist;
-  when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists;
+  when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists.
+  The current-database reading is not applied to SQL stored in definitions (view and materialized view
+  bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
+  dictionary source queries), where `a.b` is always table `b` of database `a`;
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.
 )", EXPERIMENTAL, \

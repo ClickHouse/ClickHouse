@@ -2400,6 +2400,12 @@ You can also spell out every part with dots:
   `AMBIGUOUS_IDENTIFIER`; if the user can access only one, that one is used. Other
   statements (`EXISTS`, `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL)
   always read `a.b` as database `a`, table `b`.
+- SQL stored in definitions (view and materialized view bodies, row policy
+  conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS`
+  expressions, dictionary source queries) always reads `a.b` as database `a`,
+  table `b`; the query argument of a table function such as `view` keeps the
+  two-part rule. Reference a catalog table there as `` `ns.t` `` at creation
+  time (stored as ``catalog_name.`ns.t` ``) or as `catalog_name.ns.t`.
 
 ```sql
 -- Equivalent to catalog_name.`namespace.table`
