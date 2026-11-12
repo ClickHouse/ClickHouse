@@ -186,8 +186,7 @@ struct Settings
     /// current settings constraints' min, max and disallowed values, ignoring a constant-writability
     /// lock: restoring a value the session already held is not the kind of change such a lock is
     /// meant to block. It does not have to apply the feature-tier policy the way the `compatibility`
-    /// path's own checker does, since this restores a value the session already held, not a new one
-    /// `compatibility` is deriving.
+    /// path's own checker does, since `compatibility` is deriving a new value rather than restoring one.
     void restoreDistributedPlanAdjustments(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.

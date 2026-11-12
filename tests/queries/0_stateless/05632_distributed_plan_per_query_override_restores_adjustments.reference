@@ -1,6 +1,2 @@
-the session derives the plan and overrides the explicit value
-false
-a per-query override that turns the plan off for this query restores it
 true
-the session itself is unaffected by the per-query override
 false

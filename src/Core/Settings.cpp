@@ -12494,8 +12494,7 @@ Settings::Settings()
 
 Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{
-}
+{}
 
 Settings::Settings(Settings && settings) noexcept = default;
 
