@@ -444,6 +444,11 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// Resolve aliases as a reload of the stored definition does, which analyzes it with the server settings.
     mut_context->setSetting(
         "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
+    /// A projection is always calculated locally. With parallel replicas the analysis treats the source as remote
+    /// and replaces the right hand side of `GLOBAL IN` in the stored query in place with a temporary table, which
+    /// does not exist when the projection is calculated. The context may be the global one (with the settings of the
+    /// default profile) when the storage is created or attached, so a session setting cannot prevent it.
+    mut_context->setSetting("enable_parallel_replicas", Field(0));
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -776,9 +781,13 @@ Block ProjectionDescription::calculateByQuery(
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
+    /// The projection is calculated locally from the block, see `getProjectionFromAST`.
+    mut_context->setSetting("enable_parallel_replicas", Field(0));
     /// Building the metadata analyzes `query_ast` in place, which already replaces its positional arguments,
     /// so resolving them again would re-interpret the integer literals they were replaced with.
     mut_context->setSetting("enable_positional_arguments", false);
+    /// A projection column is the stored `IN` expression, not a join it may be rewritten to.
+    mut_context->setSetting("rewrite_in_to_join", false);
     /// Analyze the projection query as an initial one, as its metadata is built, also when the data
     /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
     mut_context->setQueryKindInitial();

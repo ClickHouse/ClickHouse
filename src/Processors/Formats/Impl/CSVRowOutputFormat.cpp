@@ -22,7 +22,7 @@ CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, SharedHeader header_,
         data_types[i] = sample.safeGetByPosition(i).type;
 }
 
-void CSVRowOutputFormat::writeLine(const std::vector<String> & values)
+void CSVRowOutputFormat::writeLine(std::span<const String> values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {

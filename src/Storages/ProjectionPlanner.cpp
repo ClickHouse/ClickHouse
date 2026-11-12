@@ -109,10 +109,18 @@ void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToNa
 {
     if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
     {
-        ConvertToASTOptions ast_options;
-        ast_options.add_cast_for_constants = false;
-        ast_options.fully_qualified_identifiers = false;
-        result.emplace(node, node->toAST(ast_options)->getColumnName());
+        /// A subquery is named by the hash of its AST, which `toAST` does not reproduce.
+        if (node->hasOriginalAST())
+        {
+            result.emplace(node, node->getOriginalAST()->getColumnName());
+        }
+        else
+        {
+            ConvertToASTOptions ast_options;
+            ast_options.add_cast_for_constants = false;
+            ast_options.fully_qualified_identifiers = false;
+            result.emplace(node, node->toAST(ast_options)->getColumnName());
+        }
     }
 
     for (const auto & child : node->getChildren())

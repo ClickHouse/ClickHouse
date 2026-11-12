@@ -1,0 +1,1 @@
+CREATE DATABASE default_1\nENGINE = DataLakeCatalog(\'http://localhost:18181/v1\')\nSETTINGS catalog_type = \'rest\', warehouse = \'demo\', snapshot_loading_mode = \'refs\'
