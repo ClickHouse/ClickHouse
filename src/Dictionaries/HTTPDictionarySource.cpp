@@ -156,7 +156,11 @@ void HTTPDictionarySource::checkCredentials() const
 {
     /// Per request: a loaded source is kept and cloned across updates, and <http_forbid_headers> can change meanwhile.
     if (configuration.created_from_ddl)
+    {
+        Poco::Net::HTTPBasicCredentials credentials;
+        credentials.setUsername(configuration.user);
         context->getHTTPHeaderFilter().checkBasicCredentials(credentials);
+    }
 }
 
 BlockIO HTTPDictionarySource::loadAll()
