@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
+#include <algorithm>
 #include <array>
 
 
@@ -37,6 +38,14 @@ void markAggregationMethodSettingsChanged(Settings & settings)
 {
     for (const auto setting : aggregationMethodSettings())
         settings[setting] = static_cast<bool>(settings[setting]);
+}
+
+bool aggregationMethodSettingsDifferFromInitiator(const Settings & initiator_settings, const Settings & settings)
+{
+    return std::ranges::any_of(aggregationMethodSettings(), [&](const auto setting)
+    {
+        return initiator_settings[setting].changed && initiator_settings[setting].value != settings[setting].value;
+    });
 }
 
 }
