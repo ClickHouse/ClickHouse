@@ -22,7 +22,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/Silk/FiberScheduler.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>

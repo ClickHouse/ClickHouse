@@ -10,7 +10,7 @@ namespace DB
   * In fact it percent-encode all non-word characters, as in URL.
   */
 
-std::string escapeForFileName(std::string_view s);
+std::string escapeForFileName(const std::string & s);
 std::string unescapeForFileName(const std::string & s);
 
 }
