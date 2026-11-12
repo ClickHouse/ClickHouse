@@ -1463,13 +1463,38 @@ UInt64 countRowsDensifiedFromSparse(const MergeTreeDataPartsVector & parts, cons
 /// decompressed block for the life of the reader. The framed block is the checksum, the codec header and the
 /// compressed payload (for incompressible data slightly more than the decompressed block: `n + n / 255 + 16`
 /// for `LZ4`, and `CODEC(NONE)` stores it as is), plus the codec's additional size at the end of the buffer.
+/// An expanding codec can produce a larger payload (`FPC` takes 17 bytes per pair of incompressible values,
+/// `Gorilla` and `DoubleDelta` spend extra bits per value), so the payload is bounded by the largest reserve
+/// of `codecs` - the codecs the read streams are resolved to - with the `LZ4` bound above as the floor for a
+/// block written by a codec that is not among them.
 /// It is a `PODArray`, so its capacity is rounded up to a power of two: a 1 MiB block keeps a 2 MiB copy.
-UInt64 retainedCompressedBlockCapacity(UInt64 decompressed_block_size)
+UInt64 retainedCompressedBlockCapacity(UInt64 decompressed_block_size, const std::vector<CompressionCodecPtr> & codecs)
 {
     if (decompressed_block_size == 0)
         return 0;
-    const UInt64 framed_block = decompressed_block_size + decompressed_block_size / 255 + 128 + PADDING_FOR_SIMD;
-    return roundUpToPowerOfTwoOrZero(framed_block);
+    UInt64 framed_block = decompressed_block_size + decompressed_block_size / 255 + 128;
+    /// A compressed block is at most `MAX_COMPRESS_BLOCK_SIZE`, which fits the 32-bit codec interface.
+    const auto block_size = static_cast<UInt32>(std::min<UInt64>(decompressed_block_size, std::numeric_limits<UInt32>::max() / 4));
+    for (const auto & codec : codecs)
+        framed_block = std::max<UInt64>(
+            framed_block,
+            UInt64{codec->getCompressedReserveSize(block_size)} + codec->getAdditionalSizeAtTheEndOfBuffer()
+                + sizeof(CityHash_v1_0_2::uint128));
+    return roundUpToPowerOfTwoOrZero(framed_block + PADDING_FOR_SIMD);
+}
+
+/// The codecs of the streams of `columns`, for `retainedCompressedBlockCapacity`: the default codec of the part
+/// and every codec a stream resolves to (see `collectWriterStreamCodecs`).
+std::vector<CompressionCodecPtr> collectStreamCodecs(
+    const NamesAndTypesList & columns,
+    const StorageInMemoryMetadata & metadata,
+    const MergeTreeData::PartCompressionCodec & part_codec,
+    const MergeTreeSettings & settings)
+{
+    std::vector<CompressionCodecPtr> codecs{part_codec.codec};
+    for (auto & [_, codec] : collectWriterStreamCodecs(columns, metadata, part_codec, settings))
+        codecs.push_back(std::move(codec));
+    return codecs;
 }
 
 }
@@ -2015,9 +2040,28 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// it physically stores only the columns it patches plus the system columns needed to apply them, all
     /// of which its reader reads, and it has no projection parts.
     const UInt64 input_decompressed_block_size = resolve_compress_block_size_range(settings, input_columns, columns_description).max;
+    /// The default codec of the result part, the one MergeTask compresses with: the compact writer keys its
+    /// compressors by the resolved codecs. The selection resolves it once (resolveMergedPartCodec) and carries it
+    /// on the future part, so the merge uses exactly the codec priced here.
+    /// A nested merge of existing projection parts does not resolve its own codec: MergeTask inherits the
+    /// codec of the parent part being merged, including whether it came from an explicit RECOMPRESS TTL
+    /// (the projection's metadata carries no such TTL), so the recursion passes the parent's resolved one.
+    const MergeTreeData::PartCompressionCodec part_codec = [&]
+    {
+        if (part_codec_override)
+            return *part_codec_override;
+        if (future_part.merged_part_codec)
+            return *future_part.merged_part_codec;
+        return resolveMergedPartCodec(future_part, metadata_snapshot, settings, time_of_merge);
+    }();
+
     /// Besides the file buffer and the decompressed block, every reader stream can retain a copy of a
     /// compressed block that was not wholly available in its file buffer (see retainedCompressedBlockCapacity).
-    const UInt64 input_block_buffers = saturatingAdd(input_decompressed_block_size, retainedCompressedBlockCapacity(input_decompressed_block_size));
+    /// The source parts' streams are priced with the codecs the current metadata resolves them to.
+    const UInt64 input_block_buffers = saturatingAdd(
+        input_decompressed_block_size,
+        retainedCompressedBlockCapacity(
+            input_decompressed_block_size, collectStreamCodecs(input_columns, *metadata_snapshot, part_codec, settings)));
     /// The reader buffers of the base parts when the merge reads `read_columns` (in the source-part view)
     /// from all of them at once. The vertical pricing below reuses it for the reader sets of its stages.
     const auto base_reader_memory = [&](const NamesAndTypesList & read_columns)
@@ -2233,21 +2277,6 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const UInt64 base_max_compress_block_size = base_compress_block_sizes.max;
     const UInt64 base_min_compress_block_size = base_compress_block_sizes.min;
 
-    /// The default codec of the result part, the one MergeTask compresses with: the compact writer keys its
-    /// compressors by the resolved codecs. The selection resolves it once (resolveMergedPartCodec) and carries it
-    /// on the future part, so the merge uses exactly the codec priced here.
-    /// A nested merge of existing projection parts does not resolve its own codec: MergeTask inherits the
-    /// codec of the parent part being merged, including whether it came from an explicit RECOMPRESS TTL
-    /// (the projection's metadata carries no such TTL), so the recursion passes the parent's resolved one.
-    const MergeTreeData::PartCompressionCodec part_codec = [&]
-    {
-        if (part_codec_override)
-            return *part_codec_override;
-        if (future_part.merged_part_codec)
-            return *future_part.merged_part_codec;
-        return resolveMergedPartCodec(future_part, metadata_snapshot, settings, time_of_merge);
-    }();
-
     /// The multipart writers receive the ENCODED stream, not the uncompressed values: every compressed block
     /// carries the codec header and a checksum, and a codec may expand incompressible data (CODEC(NONE)
     /// adds only the framing, LZ4 / ZSTD bounds add a fraction of the block on top). Replaying the multipart
@@ -2262,9 +2291,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// The codecs are the ones the streams are really written with: a column's own codec (an expanding one
     /// such as FPC can exceed the part codec's bound) is resolved like MergeTreeDataPartWriterOnDisk::getSubstreamCodec
     /// does, and the marks go through marks_compression_codec.
-    std::vector<CompressionCodecPtr> data_codecs{part_codec.codec};
-    for (auto & [_, codec] : collectWriterStreamCodecs(output_columns, *metadata_snapshot, part_codec, settings))
-        data_codecs.push_back(std::move(codec));
+    const std::vector<CompressionCodecPtr> data_codecs = collectStreamCodecs(output_columns, *metadata_snapshot, part_codec, settings);
     const std::vector<CompressionCodecPtr> marks_codecs{
         CompressionCodecFactory::instance().get(settings[MergeTreeSetting::marks_compression_codec].value)};
     const auto encoded_written_bytes
@@ -3306,6 +3333,28 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         projection_uncompressed_bytes += missing_rows * column->type->getMaximumSizeOfValueInMemory();
                 }
 
+                /// A required column stored sparsely by a source part can be written densely by the rebuilt
+                /// projection: `writeProjectionPartImpl` chooses the serialization kind with the projection's own
+                /// `ratio_of_defaults_for_sparse_serialization`, which can differ from the table's. The sparse
+                /// source volume counts only the offsets and the non-default values, so price the densified rows
+                /// of a fixed-size type the same way as for the base part (see countRowsDensifiedFromSparse).
+                const double projection_ratio_of_defaults_for_sparse
+                    = static_cast<double>(projection_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]);
+                for (const auto & required_column : required_columns)
+                {
+                    auto column = columns_description.tryGetColumn(
+                        GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), required_column);
+                    if (!column)
+                        column = output_columns.tryGetByName(required_column);
+                    if (!column || !column->type->haveMaximumSizeOfValue())
+                        continue;
+                    const UInt64 densified_rows = countRowsDensifiedFromSparse(
+                        future_part.parts, part_source_name(required_column), projection_ratio_of_defaults_for_sparse);
+                    projection_uncompressed_bytes = saturatingAdd(
+                        projection_uncompressed_bytes,
+                        saturatingStreamsTimesBuffer(densified_rows, column->type->getMaximumSizeOfValueInMemory()));
+                }
+
                 /// `parse` removes `_part_offset` from required_columns for projections that store it as
                 /// `_parent_part_offset`, but `calculate` synthesizes one UInt64 for every rebuilt row.
                 /// Account for that generated column even though it is not read from source parts.
@@ -3481,7 +3530,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
                     saturatingAdd(
                         saturatingAdd(projection_read_buffer_size, projection_max_compress_block_size),
-                        retainedCompressedBlockCapacity(projection_max_compress_block_size)));
+                        retainedCompressedBlockCapacity(
+                            projection_max_compress_block_size,
+                            collectStreamCodecs(projection_column_list, *projection.metadata, part_codec, projection_settings))));
                 /// `writeTempProjectionPart` materializes non-text skip indexes with the projection's
                 /// metadata, but decides which ones (`materialize_skip_indexes_on_merge` and its exclude
                 /// list) from the table settings snapshot, not the projection's overrides. Those writers live
