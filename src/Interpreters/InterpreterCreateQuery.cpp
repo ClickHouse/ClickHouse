@@ -1020,7 +1020,7 @@ void throwIfTableColumnsAreMissingFromTableFunction(
     const String & table_name,
     const ContextPtr & context)
 {
-    if (!table_function.hasStaticStructure())
+    if (!table_function.hasStructureKnownWithoutReading())
         return;
 
     /// The table builds the storage with the global context.
@@ -1028,9 +1028,11 @@ void throwIfTableColumnsAreMissingFromTableFunction(
     const auto function_columns = table_function.getActualTableStructure(context, /*is_insert_query=*/ true);
     Names missing;
     Names unknown;
+    /// Only an ordinary column of the structure: the storage of the function does not compute an `ALIAS`, `MATERIALIZED` or
+    /// `EPHEMERAL` one, which the table would read by name.
     for (const auto & column : columns.getAllPhysical())
     {
-        if (function_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column.name))
+        if (function_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ordinary, column.name))
             continue;
         const auto may_have = table_function.mayHaveColumnOutsideStructure(column.name, global_context);
         if (!may_have)
@@ -1048,7 +1050,7 @@ void throwIfTableColumnsAreMissingFromTableFunction(
         const auto nested = proxy ? proxy->getNested() : storage;
         const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
         const auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
-        const auto readable = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(
+        const auto readable = GetColumnsOptions(GetColumnsOptions::Ordinary).withSubcolumns().withVirtuals(
             VirtualsKind::All, VirtualsMaterializationPlace::All);
         for (const auto & name : unknown)
             if (!nested_snapshot->tryGetColumn(readable, name))
@@ -1065,11 +1067,11 @@ void throwIfTableColumnsAreMissingFromTableFunction(
         missing_list += backQuote(name);
     }
     throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-        "Table function '{}' has no {} {} of the table, so the table could not read {}. The structure has the columns {}. "
-        "A column of the table, unless it is an `ALIAS` column, needs the name of a column of the structure, of its "
+        "Table function '{}' has no {} {} of the table, so the table could not read {}. The structure has the ordinary columns {}. "
+        "A column of the table, unless it is an `ALIAS` column, needs the name of an ordinary column of the structure, of its "
         "subcolumn, or of a virtual column of the function, such as `_path` or a hive partition column of a file-like function",
         table_function.getName(), missing.size() == 1 ? "column" : "columns", missing_list, missing.size() == 1 ? "it" : "them",
-        function_columns.getAllPhysical().toNamesAndTypesDescription());
+        function_columns.getOrdinary().toNamesAndTypesDescription());
 }
 
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.

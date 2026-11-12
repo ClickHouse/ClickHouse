@@ -52,6 +52,10 @@ public:
     /// Returns true if we always know table structure when executing table function
     /// (e.g. structure is specified in table function arguments)
     virtual bool hasStaticStructure() const { return false; }
+    /// Returns true if the structure is known without reading anything outside the query, so that the columns of a table `AS`
+    /// the function can be checked against it at `CREATE`. Unlike `hasStaticStructure`, it does not make the table create the
+    /// storage of the function when it is loaded, rather than when it is first read.
+    virtual bool hasStructureKnownWithoutReading() const { return hasStaticStructure(); }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
     /// Returns true if the storage created by this table function can store its own unreplicated data on disk.

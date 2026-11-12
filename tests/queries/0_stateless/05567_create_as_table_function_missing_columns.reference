@@ -1,4 +1,5 @@
 --- a column the explicit structure does not have
+--- a special column of the structure, which the storage of the function does not compute
 --- a column a function with a fixed structure does not have
 --- a DEFAULT or MATERIALIZED column is read from the function too
 --- an ALIAS column is computed
@@ -7,6 +8,8 @@
 2	4
 --- the same name with another type is converted
 UInt16
+--- the column of format with an explicit structure
+7
 --- a subset of the columns of the structure
 x
 --- a subcolumn of a column of the structure

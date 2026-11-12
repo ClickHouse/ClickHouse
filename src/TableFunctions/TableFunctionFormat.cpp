@@ -51,6 +51,12 @@ public:
     static constexpr auto name = "format";
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return false; }
+    /// An explicit structure is known without parsing the data. The structure is not static, so that a table `AS` the function
+    /// parses the data when it is first read, not when it is loaded, which would fail the loading for data that does not parse.
+    bool hasStructureKnownWithoutReading() const override { return structure != "auto"; }
+    /// Its storage, `StorageValues`, has no virtual columns, so no column outside the structure, which is told without parsing
+    /// the data.
+    std::optional<bool> mayHaveColumnOutsideStructure(const String &, const ContextPtr &) const override { return false; }
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
