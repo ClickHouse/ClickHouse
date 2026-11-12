@@ -6,7 +6,12 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -27,6 +32,7 @@ using namespace DB::Parquet;
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 /// Footers parsed without column chunks (`deserializeFileMetaDataWithoutColumnChunks`) plus the
@@ -200,11 +206,11 @@ std::shared_ptr<FileFooter> makeFooter(const parq::FileMetaData & metadata)
 }
 
 /// By Parquet column index, like Reader::getColumnChunks.
-std::vector<FileColumnChunksPtr> parseColumns(const FileFooter & footer, const std::vector<size_t> & column_indices)
+VectorWithMemoryTracking<FileColumnChunksPtr> parseColumns(const FileFooter & footer, const ColumnIndices & column_indices)
 {
-    std::vector<FileColumnChunks> parsed;
+    VectorWithMemoryTracking<FileColumnChunks> parsed;
     deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, column_indices, parsed);
-    std::vector<FileColumnChunksPtr> res(column_indices.back() + 1);
+    VectorWithMemoryTracking<FileColumnChunksPtr> res(column_indices.back() + 1);
     for (size_t k = 0; k < column_indices.size(); ++k)
         res[column_indices[k]] = std::make_shared<const FileColumnChunks>(std::move(parsed[k]));
     return res;
@@ -242,7 +248,7 @@ size_t expectedColumnMemory(const FileColumnChunks & column)
 size_t expectedCellWeight(const ParquetMetadataCacheCell & cell)
 {
     const FileFooter & footer = *cell.footer;
-    size_t res = sizeof(FileFooter) + footer.serialized.capacity() + footer.column_chunk_offsets.capacity() * sizeof(std::vector<UInt32>);
+    size_t res = sizeof(FileFooter) + footer.serialized.capacity() + footer.column_chunk_offsets.capacity() * sizeof(VectorWithMemoryTracking<UInt32>);
     for (const auto & offsets : footer.column_chunk_offsets)
         res += offsets.capacity() * sizeof(UInt32);
     const auto & metadata = footer.metadata;
@@ -270,7 +276,7 @@ size_t expectedCellWeight(const ParquetMetadataCacheCell & cell)
 struct Skeleton
 {
     parq::FileMetaData metadata;
-    std::vector<std::vector<UInt32>> offsets;
+    ColumnChunkOffsets offsets;
 };
 
 Skeleton parseSkeleton(const std::string & bytes)
@@ -287,10 +293,10 @@ parq::FileMetaData parseLazy(const std::string & bytes)
     size_t max_columns = 0;
     for (const auto & offsets : skeleton.offsets)
         max_columns = std::max(max_columns, offsets.empty() ? 0 : offsets.size() - 1);
-    std::vector<size_t> all_columns(max_columns);
+    ColumnIndices all_columns(max_columns);
     std::iota(all_columns.begin(), all_columns.end(), 0);
 
-    std::vector<FileColumnChunks> chunks;
+    VectorWithMemoryTracking<FileColumnChunks> chunks;
     deserializeColumnChunks(bytes.data(), bytes.size(), skeleton.offsets, all_columns, chunks);
     for (size_t i = 0; i < skeleton.offsets.size(); ++i)
     {
@@ -614,7 +620,7 @@ TEST(ParquetLazyColumnChunks, EquivalentToFullParse)
             EXPECT_EQ(bytes.substr(offsets[j], offsets[j + 1] - offsets[j]), serialize(metadata.row_groups[i].columns[j]));
     }
 
-    std::vector<FileColumnChunks> chunks;
+    VectorWithMemoryTracking<FileColumnChunks> chunks;
     deserializeColumnChunks(bytes.data(), bytes.size(), skeleton.offsets, {1, 3}, chunks);
     ASSERT_EQ(chunks.size(), 2);
     for (size_t k = 0; k < 2; ++k)
@@ -766,7 +772,7 @@ TEST(ParquetLazyColumnChunks, ColumnChunkEndMismatch)
     alone.read(&protocol);
     EXPECT_EQ(buffer->available_read(), 2);
 
-    std::vector<FileColumnChunks> chunks;
+    VectorWithMemoryTracking<FileColumnChunks> chunks;
     EXPECT_EQ(errorCode([&] { deserializeColumnChunks(bytes.data(), bytes.size(), skeleton.offsets, {1}, chunks); }), ErrorCodes::INCORRECT_DATA);
     EXPECT_EQ(errorCode([&] { deserializeColumnChunks(bytes.data(), bytes.size(), skeleton.offsets, {0, 2}, chunks); }), 0);
     EXPECT_EQ(chunks.at(1).chunks.at(0), makeColumnChunk(0, 2));
@@ -807,6 +813,52 @@ TEST(ParquetLazyColumnChunks, CorruptedFooters)
     }
     EXPECT_GT(both_ok, 0);
     EXPECT_GT(both_failed, 0);
+}
+
+/// The offsets of the column chunks are tracked, so parsing a footer can fail on the memory limit. The error must keep
+/// its code, not become a `STD_EXCEPTION`. Only the offsets of a row group with many column chunks are large enough
+/// to fail, so that the conversion of the error does not fail as well.
+TEST(ParquetLazyColumnChunks, MemoryLimitKeepsErrorCode)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+
+    constexpr size_t num_columns = 50000;
+    std::vector<WriteFn> columns;
+    for (size_t i = 0; i < num_columns; ++i)
+        columns.push_back(chunk(0, i));
+    const std::string bytes = writeFileMetaData({{rowGroup({columns})}});
+    ASSERT_EQ(parseSkeleton(bytes).offsets.at(0).size(), num_columns + 1);
+
+    const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
+    const Int64 saved_thread_hard_limit = thread_tracker.getHardLimit();
+    const Int64 saved_total_hard_limit = total_memory_tracker.getHardLimit();
+    const UInt64 saved_min_alloc_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+
+    auto lift_limits = [&]
+    {
+        total_memory_tracker.setHardLimit(saved_total_hard_limit);
+        thread_tracker.setHardLimit(saved_thread_hard_limit);
+        CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc_to_throw);
+    };
+    SCOPE_EXIT_SAFE(lift_limits());
+
+    /// Every allocation reaches the trackers, and those of at least 64 KiB fail.
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(64 * 1024);
+    CurrentThread::get().untracked_memory_limit = 0;
+    CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.resetCounters();
+    thread_tracker.resetCounters();
+    total_memory_tracker.setHardLimit(1);
+    thread_tracker.setHardLimit(1);
+
+    const int code = errorCode([&] { parseSkeleton(bytes); });
+
+    /// Lift the limits before anything else, the assertions allocate.
+    lift_limits();
+
+    EXPECT_EQ(code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 }
 
 TEST(ParquetLazyColumnChunks, MetadataCacheSharesColumnChunks)
@@ -968,7 +1020,7 @@ TEST(ParquetLazyColumnChunks, MetadataCacheConcurrentAdds)
                     return std::shared_ptr<const FileFooter>(footer);
                 }).first;
                 check_cell(*cell);
-                std::vector<FileColumnChunksPtr> columns(5);
+                VectorWithMemoryTracking<FileColumnChunksPtr> columns(5);
                 for (size_t j = 0; j < 5; ++j)
                 {
                     if (rng() % 2 == 0)

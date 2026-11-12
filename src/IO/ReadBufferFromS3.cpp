@@ -224,7 +224,7 @@ bool ReadBufferFromS3::nextImpl()
                 else
                 {
                     /// use the buffer returned by `impl`
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    setWorkingBuffer(impl->buffer(), impl->offset());
                 }
             }
 
@@ -277,7 +277,7 @@ bool ReadBufferFromS3::nextImpl()
     /// `readMetadataFile`) inherits the corrupt bounds.
     if (use_external_buffer)
         assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
-    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    setWorkingBuffer(impl->buffer(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
@@ -389,6 +389,9 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries].value,
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
+
+    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
+    CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {

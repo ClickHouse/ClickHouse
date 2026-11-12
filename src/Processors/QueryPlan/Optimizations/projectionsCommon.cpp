@@ -5,14 +5,16 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
-#include <Storages/MergeTree/HypotheticalProjection.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -31,7 +33,6 @@ namespace Setting
     extern const SettingsBool force_primary_key;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
@@ -84,7 +85,8 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
+        /// The replicas leave what a projection answers without reading to the initiator's local plan.
+        bool support_projection = ClusterProxy::canUseLocalPlanForParallelReplicas(reading->getContext())
             && query_settings[Setting::parallel_replicas_support_projection];
 
         if (!support_projection)
@@ -472,6 +474,7 @@ bool analyzeProjectionCandidate(
         {
             candidate.parent_parts.emplace(part_with_ranges.data_part.get());
             parent_parts_sum_marks += part_with_ranges.getMarksCount();
+            candidate.parent_rows += part_with_ranges.getRowsCount();
         }
     }
 
@@ -519,6 +522,26 @@ bool analyzeProjectionCandidate(
     candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks + parent_parts_sum_marks;
 
     return true;
+}
+
+void recordHypotheticalOutcome(
+    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen)
+{
+    auto & outcome = hypothetical.outcome;
+    if (auto it = result.projection_reject_reasons.find(hypothetical.projection.name); it != result.projection_reject_reasons.end())
+        outcome.reason = it->second;
+    if (candidate && candidate->stat)
+    {
+        outcome.marks = candidate->sum_marks;
+        outcome.rows = candidate->selected_rows + candidate->parent_rows;
+        outcome.chosen = chosen;
+        if (!candidate->stat->description.empty())
+            outcome.reason = candidate->stat->description;
+        if (candidate->merge_tree_projection_select_result_ptr)
+            for (const auto & part : candidate->merge_tree_projection_select_result_ptr->parts_with_ranges)
+                outcome.ranges[part.parent_part->name] = part.ranges;
+    }
+    outcome.forced = outcome.forced && outcome.chosen;
 }
 
 void filterPartsAndCollectProjectionCandidates(
