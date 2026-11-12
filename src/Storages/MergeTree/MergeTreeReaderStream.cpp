@@ -321,6 +321,20 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
     }
 }
 
+std::optional<CompressedReadBufferBase::CompressedBlock> MergeTreeReaderStream::readCompressedBlock()
+{
+    init();
+
+    /// The cached buffer gives decompressed blocks of the cache, and has no compressed block to give.
+    if (!compressed_data_buffer || uncompressed_cache)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Compressed blocks are read from stream {} that is not compressed or is read through the uncompressed cache",
+            path_prefix);
+
+    return compressed_data_buffer->readCompressedBlock();
+}
+
 ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+#include <optional>
 #include <Common/PODArray.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
@@ -87,6 +89,25 @@ public:
 
     /// Returns the checksum at the start of the compressed block at `source`.
     static Checksum readChecksum(const char * source);
+
+    /// A compressed block as it is stored in the file.
+    struct CompressedBlock
+    {
+        /// The method byte of the codec, the first byte of the block header.
+        UInt8 method = 0;
+        /// The compressed data after the block header. For a codec that stores the data as is, such as `NONE`,
+        /// this is the decompressed data.
+        std::string_view payload;
+        /// The size of the data after decompression, from the block header.
+        size_t decompressed_bytes = 0;
+    };
+
+    /// Reads the next block of `compressed_in` and returns it without decompressing it.
+    /// Returns `std::nullopt` at the end of `compressed_in`.
+    ///
+    /// Do not mix this method with reads of decompressed data. It does not update the position of the decompressed data,
+    /// so seek before reading decompressed data again.
+    std::optional<CompressedBlock> readCompressedBlock();
 
     /// Checks that `expected_checksum` is the checksum of the `size` bytes at `data`, the header and the
     /// compressed data of a block. On a mismatch, throws an exception that tells whether a single flipped bit

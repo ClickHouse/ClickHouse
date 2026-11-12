@@ -1,0 +1,116 @@
+-- Tags: no-parallel-replicas
+-- (the two-stage quantized codes rewrite is disabled under parallel replicas, so the lazy read of the vectors does not happen.)
+
+-- With `merge_tree_use_one_row_per_block_layout`, the second stage of lazy materialization reads only the shortlisted rows
+-- of the vector column, not whole granules. This needs one row per block, stored without compression.
+-- The results must be the same as with the usual readers.
+
+SET enable_quantized_codec = 1;
+SET vector_search_use_quantized_codes = 1;
+SET vector_search_index_fetch_multiplier = 10;
+SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 1000000;
+-- The setting has no effect with the columns cache or the uncompressed cache.
+SET use_columns_cache = 0;
+SET use_uncompressed_cache = 0;
+
+DROP TABLE IF EXISTS tab_one_row_per_block;
+DROP TABLE IF EXISTS tab_several_rows_per_block;
+DROP TABLE IF EXISTS tab_sizes;
+
+-- 64 `Float32` elements are 256 bytes, so every row is one block.
+CREATE TABLE tab_one_row_per_block
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES tab_one_row_per_block;
+
+INSERT INTO tab_one_row_per_block SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64))
+FROM numbers(2000);
+
+SELECT 'one part, setting on';
+WITH (SELECT vec FROM tab_one_row_per_block WHERE id = 123) AS ref
+SELECT id FROM tab_one_row_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_one_part_on';
+
+SELECT 'one part, setting off';
+WITH (SELECT vec FROM tab_one_row_per_block WHERE id = 123) AS ref
+SELECT id FROM tab_one_row_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05617_one_part_off';
+
+-- A Compact part is read with the usual readers. The rows of both parts must keep their order.
+ALTER TABLE tab_one_row_per_block MODIFY SETTING min_bytes_for_wide_part = 1000000000;
+INSERT INTO tab_one_row_per_block SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64))
+FROM numbers(2000, 2000);
+
+SELECT 'two parts, setting on';
+WITH (SELECT vec FROM tab_one_row_per_block WHERE id = 123) AS ref
+SELECT id FROM tab_one_row_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_two_parts_on';
+
+SELECT 'two parts, setting off';
+WITH (SELECT vec FROM tab_one_row_per_block WHERE id = 123) AS ref
+SELECT id FROM tab_one_row_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05617_two_parts_off';
+
+-- Without the column-level settings, the blocks hold several rows, and the usual readers are used.
+CREATE TABLE tab_several_rows_per_block
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('int8', 64))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_several_rows_per_block SELECT * FROM tab_one_row_per_block WHERE id < 2000;
+
+SELECT 'several rows per block, setting on';
+WITH (SELECT vec FROM tab_several_rows_per_block WHERE id = 123) AS ref
+SELECT id FROM tab_several_rows_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_several_rows_per_block_on';
+
+-- The queries below are sorted by an expression other than the sorting key, so that the vectors are read lazily.
+-- Rows of 63 and 65 elements: the file of the elements has the size of one block of 64 elements per row, so only the
+-- sizes of the arrays show that the rows cross the blocks, and the usual readers are used.
+CREATE TABLE tab_sizes
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_sizes SELECT number, arrayMap(j -> toFloat32(number * 100 + j), range(if(number % 2 = 0, 63, 65)))
+FROM numbers(2000);
+
+SELECT 'different sizes, setting on';
+SELECT id, length(vec), vec[1], vec[-1] FROM tab_sizes ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_sizes_on';
+
+SELECT 'different sizes, setting off';
+SELECT id, length(vec), vec[1], vec[-1] FROM tab_sizes ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05617_sizes_off';
+
+-- The same query on the Wide part of the table where every row is one block is read this way.
+SELECT 'same sizes, setting on';
+SELECT id, length(vec), vec[1] FROM tab_one_row_per_block ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_same_sizes_on';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The shortlist has 10 * 10 = 100 rows. With one part with the layout, all of them are read this way.
+-- With a second part that is Compact, only the rows of the first part are. Without the layout or with the setting off, none are.
+SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] AS rows_read_by_blocks
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('05617_one_part_on', '05617_one_part_off', '05617_two_parts_on', '05617_two_parts_off', '05617_several_rows_per_block_on',
+        '05617_sizes_on', '05617_sizes_off', '05617_same_sizes_on')
+ORDER BY log_comment;
+
+DROP TABLE tab_one_row_per_block;
+DROP TABLE tab_several_rows_per_block;
+DROP TABLE tab_sizes;

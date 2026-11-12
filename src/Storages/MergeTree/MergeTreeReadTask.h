@@ -227,6 +227,11 @@ public:
         bool collect_predicate_statistics);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
+    /// Tells the main reader which rows of the part this task keeps, when they are known before reading, so that it
+    /// does not need to read whole granules, see `IMergeTreeReader::setSelectedRows`.
+    /// The rows are known in two cases: in the second stage of lazy materialization, and for the candidates of a vector
+    /// similarity index with rescoring. In both cases a filter keeps exactly these rows.
+    void initializeSelectedRows(const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
