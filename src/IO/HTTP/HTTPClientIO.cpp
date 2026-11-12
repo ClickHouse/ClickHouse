@@ -182,10 +182,20 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         return;
     }
 
-    const Int64 send_timeout_ms = session.getSendTimeout().totalMilliseconds();
+    using Wait = Poco::Net::HTTPSession::Wait;
+
+    /// The send timeout bounds the time spent waiting for the socket without sending anything, as
+    /// for a blocking send, also when signals interrupt `poll`. The waits of the send throttler and
+    /// of the scheduler are not part of it.
+    const Int64 send_timeout_us = session.getSendTimeout().totalMicroseconds();
+    Int64 waited_us = 0;
 
     /// Set when the server closed the connection without a response.
     bool peer_closed = false;
+
+    /// What the next send waits for: a TLS write waits for the socket to become readable during a
+    /// renegotiation, while the socket stays writable.
+    Wait send_wait = Wait::Write;
 
     while (size > 0)
     {
@@ -194,26 +204,28 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         /// OpenSSL allows no read after a failed `SSL_write`. The response is parsed as it arrives:
         /// an error stops the body, a success is finished after the body.
         const bool watch_response = !peer_closed && !response_header_complete;
-        const Int16 events = watch_response ? (POLLIN | POLLOUT) : POLLOUT;
+        Int16 events = send_wait == Wait::Read ? POLLIN : POLLOUT;
+        if (watch_response)
+            events |= POLLIN;
         pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
 
-        /// The send timeout bounds the whole wait, also when signals interrupt `poll`.
-        const Stopwatch watch;
         int res = 0;
         while (true)
         {
             int timeout_ms = -1;
-            if (send_timeout_ms > 0)
+            if (send_timeout_us > 0)
             {
-                const Int64 remaining_ms = send_timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds());
-                if (remaining_ms <= 0)
+                const Int64 remaining_us = send_timeout_us - waited_us;
+                if (remaining_us <= 0)
                 {
                     res = 0;
                     break;
                 }
-                timeout_ms = static_cast<int>(std::min<Int64>(remaining_ms, std::numeric_limits<int>::max()));
+                timeout_ms = static_cast<int>(std::min<Int64>((remaining_us + 999) / 1000, std::numeric_limits<int>::max()));
             }
+            const Stopwatch watch;
             res = ::poll(&fd, 1, timeout_ms);
+            waited_us += static_cast<Int64>(watch.elapsedMicroseconds());
             if (res >= 0 || errno != EINTR)
                 break;
         }
@@ -223,7 +235,8 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         if (res == 0)
             throw Poco::TimeoutException("Timeout while sending the HTTP request body");
 
-        if (watch_response && (fd.revents & (POLLIN | POLLHUP | POLLERR)))
+        const bool readable = (fd.revents & (POLLIN | POLLHUP | POLLERR)) != 0;
+        if (watch_response && readable)
         {
             int received = 0;
             {
@@ -243,16 +256,22 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
             }
         }
 
-        if ((fd.revents & POLLOUT) || peer_closed)
+        const bool writable = (fd.revents & (POLLOUT | POLLHUP | POLLERR)) != 0;
+        const bool can_send = peer_closed || (send_wait == Wait::Read ? readable : writable);
+        if (can_send)
         {
             /// Only the send is non-blocking: a response header is read with the timeouts of the session.
             int sent = 0;
             {
                 ScopedNonBlocking non_blocking(*socket.impl());
-                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size));
+                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size), send_wait);
             }
-            data += sent;
-            size -= static_cast<size_t>(sent);
+            if (sent > 0)
+            {
+                data += sent;
+                size -= static_cast<size_t>(sent);
+                waited_us = 0;
+            }
         }
     }
 }

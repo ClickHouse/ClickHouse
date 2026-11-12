@@ -1,0 +1,121 @@
+#include "config.h"
+
+#include <gtest/gtest.h>
+
+#if USE_SSL
+
+#include <IO/HTTP/HTTPClientIO.h>
+#include <IO/WriteHelpers.h>
+#include <Common/tests/gtest_ephemeral_certificate.h>
+
+#include <Poco/Exception.h>
+#include <Poco/Net/Context.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/SecureServerSocket.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
+#include <Poco/Timespan.h>
+
+#include <openssl/ssl.h>
+
+#include <future>
+#include <string>
+#include <thread>
+
+
+namespace
+{
+
+/// A TLS 1.2 server that reads the request header, asks the client to renegotiate, and then stops:
+/// it answers neither the handshake nor the body.
+class StalledRenegotiationServer
+{
+public:
+    StalledRenegotiationServer()
+    {
+        SSL_CTX_set_max_proto_version(server_context->sslContext(), TLS1_2_VERSION);
+        thread = std::thread([this] { run(); });
+    }
+
+    ~StalledRenegotiationServer()
+    {
+        stop.set_value();
+        thread.join();
+    }
+
+    uint16_t port() const { return listener.address().port(); }
+    Poco::Net::Context::Ptr clientContext() const { return client_context; }
+
+    /// Waits until the server has asked for the renegotiation.
+    void waitForRenegotiationRequest() { requested_future.wait(); }
+
+private:
+    void run()
+    {
+        Poco::Net::StreamSocket peer;
+        try
+        {
+            if (listener.poll(Poco::Timespan(10, 0), Poco::Net::Socket::SELECT_READ))
+            {
+                peer = listener.acceptConnection();
+                std::string header;
+                char ch = 0;
+                while (!header.ends_with("\r\n\r\n") && peer.receiveBytes(&ch, 1) == 1)
+                    header += ch;
+
+                peer.setBlocking(false);
+                SSL * ssl = static_cast<Poco::Net::SecureStreamSocketImpl *>(peer.impl())->ssl();
+                EXPECT_EQ(SSL_renegotiate(ssl), 1);
+                /// Sends the request to renegotiate; the answer of the client is never read.
+                SSL_do_handshake(ssl);
+            }
+        }
+        catch (const Poco::Exception & e)
+        {
+            ADD_FAILURE() << e.displayText();
+        }
+        requested.set_value();
+        stop_future.wait();
+    }
+
+    EphemeralCert cert;
+    Poco::Net::Context::Ptr server_context = cert.makeContext(Poco::Net::Context::SERVER_USE);
+    Poco::Net::Context::Ptr client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+    Poco::Net::SecureServerSocket listener{Poco::Net::SocketAddress("127.0.0.1", 0), 64, server_context};
+    std::promise<void> requested;
+    std::future<void> requested_future = requested.get_future();
+    std::promise<void> stop;
+    std::future<void> stop_future = stop.get_future();
+    std::thread thread;
+};
+
+}
+
+
+/// During a renegotiation, `SSL_write` waits for the socket to become readable while it stays
+/// writable. The body writer must wait for that, and the send timeout must still end the wait.
+TEST(HTTPTLSBodyWriter, StalledRenegotiationTimesOut)
+{
+    StalledRenegotiationServer server;
+    Poco::Net::HTTPSClientSession session("127.0.0.1", server.port(), server.clientContext());
+    session.setTimeout(Poco::Timespan(5, 0), Poco::Timespan(1, 0), Poco::Timespan(5, 0));
+
+    const std::string body(1 << 20, 'x');
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+    request.setContentLength(body.size());
+    auto request_body = DB::sendHTTPRequest(session, request);
+
+    server.waitForRenegotiationRequest();
+    ASSERT_TRUE(session.socket().poll(Poco::Timespan(5, 0), Poco::Net::Socket::SELECT_READ));
+
+    EXPECT_THROW(
+        {
+            DB::writeString(body, *request_body);
+            request_body->finalize();
+        },
+        Poco::TimeoutException);
+}
+
+#endif
