@@ -322,7 +322,7 @@ SELECT 99 AS a, bin(a), bitRotateRight(a, 2) AS a_rotated, bin(a_rotated);
   ## bitShiftLeft
 </div>
 
-أُضيف في: v1.1.0
+قُدِّمت في: v1.1.0
 
 تُزيح التمثيل الثنائي لقيمة ما إلى اليسار بعدد محدد من مواضع البت.
 
@@ -331,13 +331,13 @@ SELECT 99 AS a, bin(a), bitRotateRight(a, 2) AS a_rotated, bin(a_rotated);
 تُفقَد بتات قيمة `FixedString` عند خروجها نتيجة الإزاحة.
 أما قيمة `String` فتُوسَّع بإضافة بايتات أخرى، لذلك لا تُفقَد أي بتات.
 
-**الصياغة**
+**البنية**
 
 ```sql
 bitShiftLeft(a, N)
 ```
 
-**وسيطات الدالة**
+**الوسائط**
 
 * `a` — قيمة يُراد إزاحتها. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `N` — عدد المواضع المراد إزاحتها. [`UInt8/16/32/64`](/ar/reference/data-types/int-uint)
@@ -355,34 +355,33 @@ SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
 ```
 
 ```response title=Response
-┌──a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
-│ 99 │ 01100011 │       140 │ 10001100       │
-└────┴──────────┴───────────┴────────────────┘
+┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
+│ 99 │ 01100011 │       140 │ 10001100                 │
+└────┴──────────┴───────────┴──────────────────────────┘
 ```
 
 **مثال على الاستخدام مع الترميز السداسي العشري**
 
 ```sql title=Query
--- The shifted value is binary, so it is shown with `hex`.
-SELECT 'abc' AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
+SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 ```
 
 ```response title=Response
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 06162630  │
-└─────┴────────┴───────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
+│ abc │ 616263     │ &0        │ 06162630                    │
+└─────┴────────────┴───────────┴─────────────────────────────┘
 ```
 
 **مثال استخدام مع ترميز Fixed String**
 
 ```sql title=Query
-SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 ```
 
 ```response title=Response
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 162630    │
-└─────┴────────┴───────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftLeft(toFixedString('abc', 3), 4))─┐
+│ abc │ 616263                       │ &0        │ 162630                                        │
+└─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
 ```
 
 <div id="bitShiftRight">
@@ -398,13 +397,13 @@ SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifte
 تُفقد بِتات قيمة `FixedString` عند خروجها نتيجة الإزاحة.
 وعلى النقيض من ذلك، تُوسَّع قيمة `String` ببايتات إضافية، لذا لا تُفقد أي بِتات.
 
-**الصياغة**
+**البنية**
 
 ```sql
 bitShiftRight(a, N)
 ```
 
-**وسيطات الدالة**
+**المعاملات**
 
 * `a` — قيمة يُراد إزاحتها. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `N` — عدد المواضع المطلوب الإزاحة بمقدارها. [`UInt8/16/32/64`](/ar/reference/data-types/int-uint)
@@ -422,34 +421,33 @@ SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
 ```
 
 ```response title=Response
-┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
-│ 101 │ 01100101 │        25 │ 00011001       │
-└─────┴──────────┴───────────┴────────────────┘
+┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
+│ 101 │ 01100101 │        25 │ 00011001                   │
+└─────┴──────────┴───────────┴────────────────────────────┘
 ```
 
 **مثال على الاستخدام مع الترميز السداسي العشري**
 
 ```sql title=Query
--- The shifted value is binary, so it is shown with `hex`.
-SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 ```
 
 ```response title=Response
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 0616      │
-└─────┴────────┴───────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
+│ abc │ 616263     │           │ 0616                          │
+└─────┴────────────┴───────────┴───────────────────────────────┘
 ```
 
 **مثال استخدام مع ترميز Fixed String**
 
 ```sql title=Query
-SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
 ```
 
 ```response title=Response
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 000616    │
-└─────┴────────┴───────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
+│ abc │ 616263                       │           │ 000616                                          │
+└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
 ```
 
 <div id="bitSlice">
@@ -553,7 +551,7 @@ SELECT bin(2), bitTest(2, 1);
   ## bitTestAll
 </div>
 
-أُضيف في: v1.1.0
+طُرحت في: v1.1.0
 
 تعيد نتيجة [الاقتران المنطقي](https://en.wikipedia.org/wiki/Logical_conjunction) (المعامل AND) لجميع البتات عند المواضع المحددة.
 يُحتسب العد من اليمين إلى اليسار، بدءًا من 0.
@@ -566,9 +564,9 @@ SELECT bin(2), bitTest(2, 1);
 bitTestAll(a, index1[, index2, ... , indexN])
 ```
 
-**وسيطات الدالة**
+**الوسائط**
 
-* `a` — قيمة عدد صحيح. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `a` — قيمة عددية صحيحة. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
 * `index1, ...` — موضع واحد أو عدة مواضع للبتات. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
@@ -584,9 +582,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5);
 ```
 
 ```response title=Response
-┌─bitTestAll(43, 0, 1, 3, 5)─┐
-│                          1 │
-└────────────────────────────┘
+┌─bin(43)──┬─bitTestAll(43, 0, 1, 3, 5)─┐
+│ 00101011 │                          1 │
+└──────────┴────────────────────────────┘
 ```
 
 **مثال على الاستخدام 2**
@@ -596,9 +594,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 ```
 
 ```response title=Response
-┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
-│                             0 │
-└───────────────────────────────┘
+┌─bin(43)──┬─bitTestAll(4⋯1, 3, 5, 2)─┐
+│ 00101011 │                        0 │
+└──────────┴──────────────────────────┘
 ```
 
 <div id="bitTestAny">
@@ -612,15 +610,15 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 
 تكون عملية OR المنطقية بين بتين `true` إذا كانت قيمة بت إدخال واحد على الأقل `true`.
 
-**الصياغة**
+**البنية**
 
 ```sql
 bitTestAny(a, index1[, index2, ... , indexN])
 ```
 
-**وسيطات الدالة**
+**المعاملات**
 
-* `a` — قيمة عدد صحيح. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `a` — قيمة صحيحة. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
 * `index1, ...` — موضع واحد أو عدة مواضع للبتات. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
@@ -636,9 +634,9 @@ SELECT bitTestAny(43, 0, 2);
 ```
 
 ```response title=Response
-┌─bitTestAny(43, 0, 2)─┐
-│                    1 │
-└──────────────────────┘
+┌─bin(43)──┬─bitTestAny(43, 0, 2)─┐
+│ 00101011 │                    1 │
+└──────────┴──────────────────────┘
 ```
 
 **مثال على الاستخدام 2**
@@ -648,9 +646,9 @@ SELECT bitTestAny(43, 4, 2);
 ```
 
 ```response title=Response
-┌─bitTestAny(43, 4, 2)─┐
-│                    0 │
-└──────────────────────┘
+┌─bin(43)──┬─bitTestAny(43, 4, 2)─┐
+│ 00101011 │                    0 │
+└──────────┴──────────────────────┘
 ```
 
 <div id="bitXor">

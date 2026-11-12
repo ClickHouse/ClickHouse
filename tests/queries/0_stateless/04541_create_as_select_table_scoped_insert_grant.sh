@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 # Regression test for the temporary-table publish path of `CREATE TABLE ... AS SELECT` on Atomic
 # databases (issue https://github.com/ClickHouse/ClickHouse/issues/26746).
 #
@@ -33,8 +31,8 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.src TO ${granted}, ${nogrant};
 GRANT INSERT ON ${CLICKHOUSE_DATABASE}.dst TO ${granted};
 "
 
-granted_client=(${CLICKHOUSE_CLIENT} --user "${granted}" --password "${granted}")
-nogrant_client=(${CLICKHOUSE_CLIENT} --user "${nogrant}" --password "${nogrant}")
+granted_client=(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "${granted}" --password "${granted}")
+nogrant_client=(${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "${nogrant}" --password "${nogrant}")
 
 echo "-- [table-scoped INSERT grant] CREATE ... AS SELECT into the granted table must succeed:"
 create_output=$("${granted_client[@]}" --query "CREATE TABLE dst ENGINE = Memory AS SELECT x FROM src ORDER BY x" 2>&1)

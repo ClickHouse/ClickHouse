@@ -432,9 +432,6 @@
 /* Is C++ support being built? */
 /* #undef JEMALLOC_ENABLE_CXX */
 
-/* Are C++ exceptions enabled? */
-#define JEMALLOC_HAVE_CXX_EXCEPTIONS
-
 /* Performs additional size checks when defined. */
 /* #undef JEMALLOC_OPT_SIZE_CHECKS */
 

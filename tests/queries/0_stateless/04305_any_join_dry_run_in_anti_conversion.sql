@@ -18,7 +18,9 @@ INSERT INTO t1_04305 VALUES (1, 10), (2, 20), (3, 30);
 INSERT INTO t2_04305 VALUES (1, 100), (2, 200);
 
 -- Pin the conversion on; the runner randomizes it and 0 would skip the
--- conversion under test, passing vacuously.
+-- conversion under test, passing vacuously. enable_analyzer must also be on:
+-- the old-analyzer config disables convertAnyJoinToSemiOrAntiJoin entirely.
+SET enable_analyzer = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 
 -- Case 1: The filter toUInt64(1 IN (SELECT number FROM numbers(10))) > 0 is

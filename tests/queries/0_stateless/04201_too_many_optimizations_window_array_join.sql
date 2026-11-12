@@ -91,6 +91,7 @@ WITH
         GROUP BY sym, i, px
     )
 SELECT * FROM result
+SETTINGS allow_experimental_analyzer = 1
 FORMAT Null;
 
 -- Original query + ORDER BY ALL to make result deterministic
@@ -145,6 +146,7 @@ WITH
         GROUP BY sym, i, px
     )
 SELECT * FROM result
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS allow_experimental_analyzer = 1;
 
 DROP TABLE test_repro_101693;
