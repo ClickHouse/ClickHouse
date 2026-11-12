@@ -337,6 +337,10 @@ private:
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
+    /// The `CODEC <path> (...)` entries of a column list, added to a list that has none.
+    void fuzzCodecDeclarations(ASTColumns & columns_list);
+    /// Point a codec target at a subcolumn inside it, or at its parent.
+    void fuzzCodecTarget(String & name);
     ASTPtr makeTextIndexTokenizer();
     String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);

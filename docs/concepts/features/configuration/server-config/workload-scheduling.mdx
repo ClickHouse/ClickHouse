@@ -401,6 +401,8 @@ Blocked queries will wait indefinitely and do not appear in `SHOW PROCESSLIST` u
 
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
 
+Creating and dropping workloads and resources requires the `CREATE WORKLOAD`, `CREATE RESOURCE`, `DROP WORKLOAD` and `DROP RESOURCE` privileges. They are not part of the `CREATE` and `DROP` privilege groups, so they have to be granted explicitly or with `GRANT ALL`.
+
 ## Configuration-based workloads and resources {#config_based_workloads}
 
 In addition to SQL-based definitions, workloads and resources can be predefined in the server configuration file. This is useful in cloud environments where some limitations are dictated by infrastructure, while other limits could be changed by customers. Configuration-based entities have priority over SQL-defined ones and cannot be modified or deleted using SQL commands.
