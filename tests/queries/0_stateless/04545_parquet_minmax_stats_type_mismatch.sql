@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- When the requested column type doesn't exactly match the parquet type, min/max-stats-based
 -- row group pruning must still work (and stay consistent with how the values themselves are
 -- converted). E.g. timestamps in milliseconds read as DateTime64(6), or Float64 read as Float32.

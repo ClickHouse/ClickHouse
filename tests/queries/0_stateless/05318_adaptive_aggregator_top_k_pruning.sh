@@ -15,8 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # a few heavy groups and almost every bin is bounded far below them. Every cell compares the top with the one of the
 # same query with the feature off: the counts as a multiset, which ties cannot reorder, and every returned row against
 # the row of its key in the full aggregation, which catches a group whose count lost records or source cells. The last
-# two columns say whether the merge skipped units and records. The cells for an ascending order, a throw-mode group
-# limit and `WITH TIES` must not prune. `max_threads_min_free_memory_per_thread = 0` keeps the threads of every
+# two columns say whether the merge skipped units and records. The cells for an ascending order and
+# `WITH TIES` must not prune. A throw-mode group limit prunes as well: the merge checks the limit against
+# the groups it builds. `max_threads_min_free_memory_per_thread = 0` keeps the threads of every
 # cell whatever the free memory. `optimize_injective_functions_in_group_by = 0` keeps `toString(k)` a
 # string key. Each cell runs in its own clickhouse-local process, so the counters in
 # `system.events` belong to it alone.

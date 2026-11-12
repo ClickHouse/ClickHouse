@@ -708,6 +708,24 @@ def _is_empty_merge_commit(sha):
     return num_parents >= 2 and num_files == 0
 
 
+def configure_performance_shards():
+    """Choose one PR shard family before optional workflow filters run."""
+    from ci.jobs.scripts.performance_selection import pr_shards
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    config = RunConfig.from_fs(info.workflow_name)
+    # ci-force-all bypasses workflow_filter_hooks, so mutually exclusive job
+    # families must be filtered in this pre-hook, before claiming any runners.
+    for job in JobConfigs.performance_comparison_pr_jobs:
+        build_type = job.parameter.split(",", 1)[0].strip()
+        total = pr_shards(info, build_type)
+        count = int(job.parameter.rsplit("/", 1)[1])
+        if count != total:
+            config.set_job_as_filtered(job.name, "Other performance shard family selected")
+    config.dump()
+
+
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
@@ -1082,7 +1100,11 @@ def should_skip_job(job_name):
         and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
-        return True, "Skipped, not labeled with 'pr-performance'"
+        from ci.jobs.scripts.performance_selection import full_suite_reason
+
+        # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
+        if not full_suite_reason(_info_cache, "arm_release"):
+            return True, "Skipped, not labeled with 'pr-performance'"
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
