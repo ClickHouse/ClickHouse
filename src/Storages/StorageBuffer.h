@@ -160,10 +160,7 @@ private:
         time_t first_write_time = 0;
         Block data;
 
-        /// Access identity of the user whose rows this shard currently holds. The shard is flushed to the
-        /// destination under this identity, so a nested Buffer/Alias/Distributed destination is authorized
-        /// as the originating user instead of the full-access, user-less context the storage holds. A shard
-        /// is flushed before it accepts rows from a different identity, so it never mixes identities.
+        /// Access identity of the user whose rows this shard currently holds; the shard is flushed under it.
         /// Non-null whenever the shard holds data (set together with first_write_time).
         std::shared_ptr<const BufferWriteIdentity> write_identity;
 

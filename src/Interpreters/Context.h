@@ -657,10 +657,6 @@ protected:
     bool parse_server_owned_query_without_limits = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
-    /// True for a `Buffer` flush context. The flush carries the identity of the user who issued the INSERT so
-    /// the write is authorized as them, but it is a deferred write, not an interactive query, so functions that
-    /// must run only in user-issued queries (AI functions) are still rejected in it, as in merges and mutations.
-    bool is_buffer_flush = false;
     /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
     /// and internal backup coordination.
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
@@ -1621,9 +1617,8 @@ public:
     {
         return is_background_operation;
     }
-
-    bool isBufferFlush() const { return is_buffer_flush; }
-    void setBufferFlush(bool value) { is_buffer_flush = value; }
+    /// A `Buffer` flush marks its context so functions restricted to user-issued queries stay rejected in it.
+    void setBackgroundOperation() { is_background_operation = true; }
     ContextMutablePtr getBackgroundContext() const;
 
     ContextMutablePtr getBufferContext() const;

@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -137,13 +138,13 @@ struct BufferWriteIdentity
     std::optional<Poco::Net::SocketAddress> current_address;
     std::optional<Poco::Net::SocketAddress> initial_address;
 
-    bool operator==(const BufferWriteIdentity & other) const
+    /// Two identities authorize a downstream write the same way when they share the access-control fields.
+    /// The other captured fields (names, quota key, addresses, expiry) are restored onto the flush so quotas,
+    /// `currentUser`, interserver authentication and the expiry check are correct, but they do not affect
+    /// whether the write is allowed, so a shard that holds one may accept the other without a flush.
+    bool hasSameAccess(const BufferWriteIdentity & other) const
     {
-        if (std::tie(user_id, current_roles, external_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key)
-            != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until, other.current_user, other.initial_user, other.authenticated_user, other.quota_key))
-            return false;
-
-        if (current_address != other.current_address || initial_address != other.initial_address)
+        if (std::tie(user_id, current_roles, external_roles) != std::tie(other.user_id, other.current_roles, other.external_roles))
             return false;
 
         /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
@@ -154,7 +155,6 @@ struct BufferWriteIdentity
             return false;
         return true;
     }
-    bool operator!=(const BufferWriteIdentity & other) const { return !(*this == other); }
 };
 
 namespace
@@ -760,6 +760,8 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
@@ -1055,6 +1057,12 @@ public:
         /// We loop through the buffers, trying to lock mutex. No more than one lap.
         auto shard_num = start_shard_num;
 
+        /// Prefer the least busy shard that is empty or already holds rows of the same access identity, so the
+        /// insert does not have to flush a different identity's rows first (see insertIntoBuffer). Only if no
+        /// such shard can be locked, fall back to the least busy one, which will flush before accepting this.
+        StorageBuffer::Buffer * chosen_buffer = nullptr;
+        std::unique_lock<std::mutex> chosen_lock;
+        size_t chosen_shard_rows = 0;
         StorageBuffer::Buffer * least_busy_buffer = nullptr;
         std::unique_lock<std::mutex> least_busy_lock;
         size_t least_busy_shard_rows = 0;
@@ -1065,10 +1073,22 @@ public:
 
             if (lock.owns_lock())
             {
-                size_t num_rows = storage.buffers[shard_num].data.rows();
-                if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+                auto & candidate = storage.buffers[shard_num];
+                size_t num_rows = candidate.data.rows();
+                const bool same_identity = !candidate.first_write_time
+                    || candidate.write_identity->hasSameAccess(*write_identity);
+                if (same_identity)
                 {
-                    least_busy_buffer = &storage.buffers[shard_num];
+                    if (!chosen_buffer || num_rows < chosen_shard_rows)
+                    {
+                        chosen_buffer = &candidate;
+                        chosen_lock = std::move(lock);
+                        chosen_shard_rows = num_rows;
+                    }
+                }
+                else if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+                {
+                    least_busy_buffer = &candidate;
                     least_busy_lock = std::move(lock);
                     least_busy_shard_rows = num_rows;
                 }
@@ -1077,14 +1097,17 @@ public:
             shard_num = (shard_num + 1) % storage.num_shards;
         }
 
+        StorageBuffer::Buffer * buffer_to_use = chosen_buffer ? chosen_buffer : least_busy_buffer;
+        std::unique_lock<std::mutex> & lock_to_use = chosen_buffer ? chosen_lock : least_busy_lock;
+
         /// If you still can not lock anything at once, then we'll wait on mutex.
-        if (!least_busy_buffer)
+        if (!buffer_to_use)
         {
-            least_busy_buffer = &storage.buffers[start_shard_num];
-            least_busy_lock = least_busy_buffer->lockForWriting();
+            buffer_to_use = &storage.buffers[start_shard_num];
+            lock_to_use = buffer_to_use->lockForWriting();
         }
-        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
-        least_busy_lock.unlock();
+        insertIntoBuffer(block, *buffer_to_use, metadata_snapshot->metadata_version);
+        lock_to_use.unlock();
 
         storage.reschedule(0);
     }
@@ -1100,13 +1123,12 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        /// A shard is flushed to the destination under a single identity, so flush before mixing in rows of a
-        /// different originating identity (mirrors the metadata_version flush below). first_write_time is
-        /// non-zero exactly when the shard holds data, and write_identity is set together with it.
-        /// Only when there is a destination that re-authorizes the write: a destinationless `Buffer` just
-        /// discards rows on flush, so separating identities there would silently drop a previous user's rows.
+        /// Flush before mixing rows of a different access identity into a shard, so each flushed block is
+        /// authorized under one identity (mirrors the metadata_version flush below). Not for a destinationless
+        /// Buffer, whose flush would just discard the earlier rows. first_write_time is non-zero exactly when
+        /// the shard holds data, and write_identity is set together with it.
         const bool identity_changed = static_cast<bool>(storage.destination_id)
-            && buffer.first_write_time && *buffer.write_identity != *write_identity;
+            && buffer.first_write_time && !buffer.write_identity->hasSameAccess(*write_identity);
 
         if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
             buffer.metadata_version != metadata_version ||
@@ -1438,7 +1460,6 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - this could lead to infinite memory growth.
         */
 
-    /// A block that was buffered under a specific user identity cannot be delivered under another authority.
     const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
 
     Stopwatch watch;
@@ -1541,14 +1562,13 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
-    /// Mark this as a `Buffer` flush: it carries the originating user below so the write is authorized as
-    /// them, but it is a deferred write, not an interactive query, so functions that must run only in
-    /// user-issued queries (AI functions) stay rejected in it, as they were when the flush had no user.
-    insert_context->setBufferFlush(true);
+    /// A flush is a deferred background write, not an interactive query, even though it carries the
+    /// originating user below: this keeps functions that may run only in user-issued queries (AI functions)
+    /// rejected in it, as in merges and mutations.
+    insert_context->setBackgroundOperation();
     /// Bound the forwarded INSERT by the user who initiated it, so a nested Buffer/Alias/Distributed
     /// destination is re-authorized as that user instead of the full-access buffer context.
-    if (write_identity)
-        restoreWriteIdentity(insert_context, *write_identity);
+    restoreWriteIdentity(insert_context, *write_identity);
 
     InterpreterInsertQuery interpreter(
         insert,
