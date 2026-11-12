@@ -1441,9 +1441,9 @@ void compactIcebergTable(
                 planned_reuse_keys.insert(reuse_key);
             remove_rewritten_files(planned_reuse_keys);
 
-            const bool use_uuid_in_metadata = catalog && catalog->isTransactional();
-            FileNamesGenerator generator(path_resolver.getTableLocation(), use_uuid_in_metadata, metadata_compression_method, write_format);
-            generator.setVersion(metadata_version + 1);
+            FileNamesGenerator generator(
+                path_resolver.getTableLocation(), /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
+            generator.setBaseMetadataFile(metadata_version, metadata_file_path);
             if (metadata_object->has(Iceberg::f_properties))
             {
                 auto properties = metadata_object->getObject(Iceberg::f_properties);
