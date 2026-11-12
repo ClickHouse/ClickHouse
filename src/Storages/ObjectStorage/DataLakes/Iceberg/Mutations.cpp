@@ -1,3 +1,4 @@
+#include <Formats/ColumnNameMaps.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -213,7 +214,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
                     auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
                     ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
-                    std::unordered_map<String, Int64> field_ids;
+                    ColumnNameToFieldId field_ids;
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
                     field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
                     column_mapper->setStorageColumnEncoding(std::move(field_ids));
@@ -718,8 +719,12 @@ void mutate(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
-        filename_generator.setVersion(last_version + 1);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
@@ -847,8 +852,12 @@ void alter(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
-        filename_generator.setVersion(last_version + 1);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
