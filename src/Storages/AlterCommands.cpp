@@ -2519,6 +2519,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     /// Check if we are going to DROP a column that some other columns depend on.
                     {
                         auto execution_context = Context::createCopy(context);
+                        /// Column defaults are stored SQL: read table names in them as written.
+                        execution_context->setAllowCompoundTableIdentifierQualification(false);
                         auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
                         auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
                         for (const ColumnDescription & column : all_columns)

@@ -2622,15 +2622,17 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
     {
+        /// `ALIAS` expressions are stored SQL: read table names in them as written.
+        ContextPtr alias_context = aliases.empty() ? local_context : Context::createCopyForStoredDefinition(local_context);
         for (const auto & alias : aliases)
         {
             ActionsDAG actions_dag(pipe_columns);
 
-            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
+            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, alias_context);
             query_tree->setAlias(alias.name);
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-            query_analysis_pass.run(query_tree, local_context);
+            query_analysis_pass.run(query_tree, alias_context);
 
             /// On the query info cache path nothing registered this expression's sets.
             collectSets(query_tree, *modified_query_info.planner_context);
