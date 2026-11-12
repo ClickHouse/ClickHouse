@@ -59,8 +59,8 @@ constexpr size_t adaptive_argument_staging_batch_rows = 1024;
 constexpr size_t adaptive_miss_batch_max_key_bytes = 256 << 10;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
-/// How much of the next range of records the drain requests ahead of its prefetch cursor: a page, the most a
-/// hardware stream prefetcher covers without a fresh start.
+/// How much of the next range a walk over staged records requests into L2 as it enters a range: a page,
+/// the most a hardware stream prefetcher covers without a fresh start.
 constexpr size_t adaptive_drain_range_prefetch_bytes = 4096;
 /// A merge unit's table is prefetched into only when it is larger than this: below it the table stays in the
 /// cache through the drain, and a prefetch of a cache-resident slot is pure overhead.
