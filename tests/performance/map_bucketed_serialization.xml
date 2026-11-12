@@ -7,6 +7,7 @@
          so the 10-key case is excluded. -->
 
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <max_insert_threads>4</max_insert_threads>
         <use_query_condition_cache>0</use_query_condition_cache>
     </settings>

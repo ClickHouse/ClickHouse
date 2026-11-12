@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
+
     <!-- The default codec wins every block. -->
     <create_query>
         CREATE TABLE adaptive_codec_merge (x UInt64)

@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
+
     <create_query>CREATE TABLE t_t64_perf (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, max_compress_block_size = 65536</create_query>
 
     <fill_query>INSERT INTO t_t64_perf SELECT number FROM numbers(10000000)</fill_query>
