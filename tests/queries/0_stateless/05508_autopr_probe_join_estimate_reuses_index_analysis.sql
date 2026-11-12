@@ -86,6 +86,15 @@ SELECT dim.name, sum(fact.v) FROM fact INNER JOIN dim ON fact.d = dim.d
 WHERE fact.k BETWEEN 100000 AND 110000 AND dim.d < 100
 GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_throwing_limit_off', max_rows_to_read = 1000000000, enable_parallel_replicas = 0;
 
+-- The same limit with the small table written first: the single-node plan swaps the sides of the join by its
+-- estimates, and the probe has to make the same choice, or the two plans cannot be matched. Without column
+-- statistics the index analysis is the only estimate there is.
+SELECT dim.name, sum(fact.v) FROM dim INNER JOIN fact ON fact.d = dim.d
+GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_throwing_limit_swap_auto', max_rows_to_read = 1000000000, use_statistics = 0;
+
+SELECT dim.name, sum(fact.v) FROM dim INNER JOIN fact ON fact.d = dim.d
+GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_throwing_limit_swap_off', max_rows_to_read = 1000000000, use_statistics = 0, enable_parallel_replicas = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -100,3 +109,8 @@ WHERE q.current_database = currentDatabase() AND base.current_database = current
     AND q.query_id = q.initial_query_id AND base.query_id = base.initial_query_id
     AND endsWith(q.log_comment, '_auto') AND base.log_comment = replaceOne(q.log_comment, '_auto', '_off')
 ORDER BY q.event_time_microseconds;
+
+SELECT log_comment, ProfileEvents['AutoParallelReplicasPlansNotComparable'] AS not_comparable
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND query_id = initial_query_id AND log_comment = '05508_throwing_limit_swap_auto';

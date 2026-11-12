@@ -4,3 +4,5 @@
 05508_cte_twice_auto	1	1	1
 05508_cte_over_join_twice_auto	1	1	1
 05508_throwing_limit_auto	1	1	1
+05508_throwing_limit_swap_auto	1	1	1
+05508_throwing_limit_swap_auto	0
