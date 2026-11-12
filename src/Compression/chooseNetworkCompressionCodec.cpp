@@ -20,14 +20,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
+CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
 {
+    if (!settings)
+        return CompressionCodecFactory::instance().getDefaultCodec();
 
-CompressionCodecPtr chooseNetworkCompressionCodecImpl(
-    const String & compression_method, Int64 zstd_compression_level, const CodecValidationSettings & validation_settings)
-{
     std::optional<int> level;
-    std::string method = Poco::toUpper(compression_method);
+    std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
 
     /// Bad custom logic
     /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
@@ -39,30 +38,10 @@ CompressionCodecPtr chooseNetworkCompressionCodecImpl(
 
     /// More bad custom logic
     if (method == "ZSTD")
-        level = static_cast<int>(zstd_compression_level);
+        level = (*settings)[Setting::network_zstd_compression_level];
 
-    CompressionCodecFactory::instance().validateCodec(method, level, validation_settings);
+    CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
     return CompressionCodecFactory::instance().get(method, level);
-}
-
-}
-
-CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
-{
-    if (!settings)
-        return CompressionCodecFactory::instance().getDefaultCodec();
-
-    return chooseNetworkCompressionCodecImpl(
-        (*settings)[Setting::network_compression_method].toString(),
-        (*settings)[Setting::network_zstd_compression_level],
-        CodecValidationSettings(*settings));
-}
-
-CompressionCodecPtr chooseNetworkCompressionCodec(const String & network_compression_method, Int64 network_zstd_compression_level)
-{
-    /// None of the allowed codec families is gated by a setting, so there is nothing to check them against.
-    return chooseNetworkCompressionCodecImpl(
-        network_compression_method, network_zstd_compression_level, CodecValidationSettings::trusted());
 }
 
 }
