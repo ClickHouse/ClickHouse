@@ -20,6 +20,7 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+class RuntimeFilterPruningPredicate;
 
 struct ObjectInfo
 {
@@ -103,6 +104,10 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    /// The predicate of the JOIN runtime filters every row of the read passes, set before the first `next`.
+    /// An iterator may skip the objects that cannot contain any of their keys once it is built.
+    virtual void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> /*predicate*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -127,6 +132,11 @@ public:
     {
         emit_profile_events = value;
         iterator->setEmitProfileEvents(value);
+    }
+
+    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override
+    {
+        iterator->setJoinRuntimeFilters(std::move(predicate));
     }
 
 private:
