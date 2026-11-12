@@ -2056,9 +2056,19 @@ void LocalServer::processConfig()
         {
             LOG_DEBUG(log, "Loading metadata from {}", path);
 
-            if (attach_system_tables && fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            /// System log tables keep their data in this directory. In a `system` database with the `Memory` engine
+            /// their metadata would be lost at exit, and on the next run the data directories left behind would not let
+            /// them be created again. So, when system logs are enabled, make the `system` database persistent, like in
+            /// the server.
+            const bool persistent_system_database = attach_system_tables
+                && !getClientConfiguration().has("only-system-tables")
+                && hasAnySystemLogConfigured(config());
+
+            if (attach_system_tables
+                && (persistent_system_database || fs::exists(std::filesystem::path(path) / "metadata" / "system.sql")))
             {
-                LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
+                LoadTaskPtrs load_system_metadata_tasks
+                    = loadMetadataSystem(global_context, /* async_load_system_database */ false, persistent_system_database);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
                 deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));

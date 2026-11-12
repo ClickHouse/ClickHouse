@@ -1,0 +1,5 @@
+Atomic
+SELECT \'run 1\' FORMAT Null;
+Atomic
+SELECT \'run 1\' FORMAT Null;
+SELECT \'run 2\' FORMAT Null;
