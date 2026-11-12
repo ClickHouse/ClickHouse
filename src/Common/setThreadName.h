@@ -42,7 +42,6 @@ namespace DB
     M(CLUSTER_DISCOVERY, "ClusterDiscover") \
     M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
     M(CONFIG_RELOADER, "ConfigReloader") \
-    M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
@@ -67,11 +66,13 @@ namespace DB
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(FILE_LOG_WATCH, "FileLogWatch") \
     M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
+    M(HASH_JOIN_DTOR, "HashJoinDtor") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
@@ -214,6 +215,9 @@ enum class ThreadName : uint8_t
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
+/// The calling thread's cached name, by reference: valid while the thread lives, and current after a
+/// later setThreadName. The macOS query profiler reads it for a stopped thread (StackTrace::SuspendedThread).
+const ThreadName & getThreadNameRef();
 
 std::string_view toString(ThreadName name);
 

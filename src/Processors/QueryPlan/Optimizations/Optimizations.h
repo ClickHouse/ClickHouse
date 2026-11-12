@@ -116,6 +116,9 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 /// Lower an `arrayJoin` function inside an Expression/Filter into a real ArrayJoinStep.
 size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Plans each `arrayJoin` function in Expression/Filter steps as a real ArrayJoinStep. Runs also without plan optimizations.
+void lowerArrayJoinFunctions(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 /// Move LimitStep down if possible
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
@@ -274,6 +277,7 @@ inline const auto & getOptimizations()
         {tryShortCircuitConstantFalseJoin,
          "shortCircuitConstantFalseJoin",
          &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
+        /// the steps that other optimizations create after `lowerArrayJoinFunctions`
         {tryLowerArrayJoinFunction, "lowerArrayJoinFunction", &QueryPlanOptimizationSettings::lower_array_join_function},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
@@ -320,6 +324,9 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
+/// reach it keeps its default stream count.
+void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -340,6 +347,8 @@ void markSealGatedReading(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
+/// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep`.
+void useShuffleForOrderByRand(QueryPlan::Node & node);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -403,6 +412,9 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// Lets an offset based parallel replicas read use several replicas of a shard only if no consumer needs stream order.
+void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root);
+
 struct UseProjectionsResult
 {
     std::optional<String> applied_projection;
@@ -423,6 +435,7 @@ UseProjectionsResult optimizeUseNormalProjections(
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void removeSetsOfAlwaysFalseScope(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
 /// Must be called after the second optimization pass so that is_planned flags

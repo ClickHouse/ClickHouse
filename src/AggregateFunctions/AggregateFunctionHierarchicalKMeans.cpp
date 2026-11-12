@@ -211,7 +211,7 @@ void assignRows(
     const Float * points, size_t num_points, size_t dim, const Float * centroids_transposed, const Float * centroid_sq_norms, size_t num_centroids,
     UInt32 * assignment, Float * best_score_out)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         TargetSpecific::x86_64_v4::assignRows(points, num_points, dim, centroids_transposed, centroid_sq_norms, num_centroids, assignment, best_score_out);
@@ -228,7 +228,7 @@ void assignRows(
 
 double updateMinSqDist(const Float * points, size_t num_points, size_t dim, const Float * centroid, Float * best_sq_dist)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return TargetSpecific::x86_64_v4::updateMinSqDist(points, num_points, dim, centroid, best_sq_dist);
     if (isArchSupported(TargetArch::x86_64_v3))
@@ -240,7 +240,7 @@ double updateMinSqDist(const Float * points, size_t num_points, size_t dim, cons
 void accumulateSums(
     const Float * points, size_t num_points, size_t dim, const UInt32 * assignment, double * sums, UInt64 * counts)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         TargetSpecific::x86_64_v4::accumulateSums(points, num_points, dim, assignment, sums, counts);

@@ -134,9 +134,11 @@ def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, sto
     assert history_before.strip() != ""
 
     # Simulate external tool upgrading format version from 1 to 2
+    # A v1 -> v2 upgrade also writes `last-sequence-number`, 0 for a v1 table, as Java does.
     meta, prev_path = _read_iceberg_metadata(instance, table_name)
     assert meta["format-version"] == 1
     meta["format-version"] = 2
+    meta.setdefault("last-sequence-number", 0)
     _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
     # Reading after format version upgrade should work without exception
@@ -178,6 +180,7 @@ def test_remove_orphan_files_after_external_upgrade(started_cluster_iceberg_with
     meta, prev_path = _read_iceberg_metadata(instance, table_name)
     assert meta["format-version"] == 1
     meta["format-version"] = 2
+    meta.setdefault("last-sequence-number", 0)
     _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
     # `remove_orphan_files` must read the latest metadata for its v2 gate. Without the
@@ -246,6 +249,7 @@ def test_format_version_upgrade_concurrent_reads(
             meta, prev_path = _read_iceberg_metadata(instance, table_name)
             assert meta["format-version"] == 1
             meta["format-version"] = 2
+            meta.setdefault("last-sequence-number", 0)
             _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
             # Keep readers running long enough to interleave with the upgraded metadata.

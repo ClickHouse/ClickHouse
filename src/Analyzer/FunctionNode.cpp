@@ -246,7 +246,8 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->name = function_name;
     function_ast->setNullsAction(nulls_action);
-    function_ast->setIsOperator(is_operator);
+    /// Table functions are `TableFunctionNode`, so `not` here is boolean NOT
+    function_ast->setIsOperator(is_operator || function_name == "not");
 
     if (isWindowFunction())
     {

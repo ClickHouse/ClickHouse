@@ -87,6 +87,25 @@ Features:
 
 </Accordion>
 
+<Accordion title="hmg-Borzoi">
+
+[hmg-Borzoi](https://github.com/hyundaimotorgroup/hmg-borzoi) is an open-source, self-hosted web administration platform for ClickHouse clusters, licensed under Apache 2.0. It brings cluster monitoring, SQL execution, database exploration, and access management into one interface.
+
+Features:
+
+- Dashboard for monitoring multiple ClickHouse clusters and node health.
+- Cluster diagnostics for query performance, storage, replication, merges, mutations, and ClickHouse Keeper.
+- SQL editor with syntax highlighting, autocomplete, `EXPLAIN`, and query profiling.
+- Database and table explorer with schema browsing and table lineage visualization.
+- ClickHouse user, role, settings profile, and grant management.
+- Rule-based alerting with execution history and application audit logs.
+- Application-level role-based access control and encrypted storage of ClickHouse credentials.
+- Self-hosted deployment with Docker Compose or Kubernetes.
+
+[Getting started](https://github.com/hyundaimotorgroup/hmg-borzoi/blob/main/docs/en/getting-started.md).
+
+</Accordion>
+
 <Accordion title="LibreDB Studio">
 
 [LibreDB Studio](https://github.com/libredb/libredb-studio) is a self-hosted, MIT-licensed database IDE that runs in the browser and deploys next to the database: a container, a Helm chart, an OLM operator, or an npm package embedded in another product. The ClickHouse provider talks to the documented HTTP interface on `8123`/`8443` and carries no driver dependency.
@@ -313,9 +332,20 @@ Features:
 
 </Accordion>
 
+<Accordion title="ch_insp">
+
+[ch_insp](https://github.com/renatko/ch_insp) is an open-source terminal UI for exploring ClickHouse materialized views and the data flows between source and target tables.
+
+- Visualize flows between source tables, materialized views, and targets.
+- Inspect column lineage, view definitions, and local-node metrics.
+- Search and filter flows, or explore a SQL schema dump offline.
+- Uses read-only ClickHouse queries.
+
+</Accordion>
+
 <Accordion title="xeus-clickhouse">
 
-[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) is a Jupyter kernal for ClickHouse, which supports query CH data using SQL in Jupyter.
+[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) is a Jupyter kernel for ClickHouse, which supports query CH data using SQL in Jupyter.
 
 </Accordion>
 
@@ -774,5 +804,23 @@ Features:
 - Available for Windows, macOS, and Linux.
 
 A free Community Edition is available, with paid editions for additional features.
+
+</Accordion>
+
+<Accordion title="TableStudio">
+
+[TableStudio](https://tablestudio.sh/databases/clickhouse) is a native macOS database client with ClickHouse support, alongside PostgreSQL, MySQL, SQLite, SQL Server, and other databases.
+
+Features:
+
+- Connects to ClickHouse Cloud and self-hosted servers over the HTTP interface, directly or through an SSH tunnel.
+- Estimates the rows a query would read with `EXPLAIN ESTIMATE` before it runs, and reads only the visible columns when browsing a table.
+- Query insights from `system.query_log`, with skip index suggestions tested with `EXPLAIN WHATIF`.
+- Schema checks for sorting keys, partitioning, `Nullable` columns, and `LowCardinality` candidates.
+- Health checks for long-running mutations, failing merges, stuck replication queues, and distributed inserts.
+- Starts, stops, and creates local ClickHouse servers on the Mac, and takes restore points before risky changes.
+- MCP server and plugin for coding agents such as Claude Code, Codex, and Cursor, with read-only reads and production changes staged for review.
+
+A free 7-day trial is available, followed by a one-time license.
 
 </Accordion>
