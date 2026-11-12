@@ -1,7 +1,7 @@
 -- The plan with parallel replicas that the automatic mode builds to decide is optimized without primary-key analysis:
 -- its reads take the analysis of the single-node plan. Join optimization estimates every input of a join, and for a
 -- read without an analysis that estimate used to analyze it, a second time and unpruned, so the probe checked every
--- mark of both tables against the primary key once more.
+-- mark of the tables against the primary key once more.
 
 SET enable_analyzer=1;
 
@@ -19,9 +19,12 @@ SET max_rows_to_read=0;
 
 CREATE TABLE fact (k UInt64, d UInt32, v Float64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE dim (d UInt32, name String) ENGINE = MergeTree ORDER BY d;
+CREATE TABLE dim2 (d UInt32, name String) ENGINE = MergeTree ORDER BY d;
 INSERT INTO fact SELECT number, number % 1000, number / 7 FROM numbers(1000000);
 INSERT INTO dim SELECT number, 'n' || toString(number) FROM numbers(1000);
+INSERT INTO dim2 SELECT number, 'm' || toString(number) FROM numbers(1000);
 
+-- Each query runs with automatic parallel replicas and without.
 SELECT dim.name, sum(fact.v) FROM fact INNER JOIN dim ON fact.d = dim.d
 WHERE fact.k BETWEEN 100000 AND 110000 AND dim.d < 100
 GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_join_auto';
@@ -30,10 +33,38 @@ SELECT dim.name, sum(fact.v) FROM fact INNER JOIN dim ON fact.d = dim.d
 WHERE fact.k BETWEEN 100000 AND 110000 AND dim.d < 100
 GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_join_off', enable_parallel_replicas = 0;
 
+-- The plan with parallel replicas numbers its table expressions differently from the single-node plan when the big
+-- table is written last, so the names of the reads do not tell which read is which.
+SELECT sum(b.v), sum(m.name = ''), sum(s.name = '') FROM dim AS m, dim2 AS s, fact AS b
+WHERE m.d = b.d AND s.d = b.d AND b.k BETWEEN 100000 AND 110000 AND m.d < 100
+FORMAT Null SETTINGS log_comment = '05508_big_table_last_auto';
+
+SELECT sum(b.v), sum(m.name = ''), sum(s.name = '') FROM dim AS m, dim2 AS s, fact AS b
+WHERE m.d = b.d AND s.d = b.d AND b.k BETWEEN 100000 AND 110000 AND m.d < 100
+FORMAT Null SETTINGS log_comment = '05508_big_table_last_off', enable_parallel_replicas = 0;
+
+-- A table read twice, filtered differently.
+SELECT sum(b.v) FROM dim AS d1, dim AS d2, fact AS b
+WHERE d1.d = b.d AND d2.d = b.d + 1 AND b.k BETWEEN 100000 AND 110000 AND d1.d < 100 AND d2.d > 500
+FORMAT Null SETTINGS log_comment = '05508_table_twice_auto';
+
+SELECT sum(b.v) FROM dim AS d1, dim AS d2, fact AS b
+WHERE d1.d = b.d AND d2.d = b.d + 1 AND b.k BETWEEN 100000 AND 110000 AND d1.d < 100 AND d2.d > 500
+FORMAT Null SETTINGS log_comment = '05508_table_twice_off', enable_parallel_replicas = 0;
+
+-- A CTE used twice.
+WITH c AS (SELECT k, d, v FROM fact WHERE k BETWEEN 100000 AND 110000)
+SELECT count(), sum(c1.v) FROM dim AS m, c AS c1, c AS c2 WHERE c1.d = c2.d AND m.d = c1.d AND m.d < 100
+FORMAT Null SETTINGS log_comment = '05508_cte_twice_auto';
+
+WITH c AS (SELECT k, d, v FROM fact WHERE k BETWEEN 100000 AND 110000)
+SELECT count(), sum(c1.v) FROM dim AS m, c AS c1, c AS c2 WHERE c1.d = c2.d AND m.d = c1.d AND m.d < 100
+FORMAT Null SETTINGS log_comment = '05508_cte_twice_off', enable_parallel_replicas = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
--- The query is compared with the same query without automatic parallel replicas.
 SELECT
+    q.log_comment,
     q.ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] AS plan_built,
     q.ProfileEvents['IndexAnalysisRounds'] = base.ProfileEvents['IndexAnalysisRounds'] AS same_index_analysis_rounds,
     q.ProfileEvents['FilteringMarksWithPrimaryKeyProcessedMarks'] = base.ProfileEvents['FilteringMarksWithPrimaryKeyProcessedMarks']
@@ -42,4 +73,5 @@ FROM system.query_log AS q, system.query_log AS base
 WHERE q.current_database = currentDatabase() AND base.current_database = currentDatabase()
     AND q.type = 'QueryFinish' AND base.type = 'QueryFinish' AND q.event_date >= yesterday() AND base.event_date >= yesterday()
     AND q.query_id = q.initial_query_id AND base.query_id = base.initial_query_id
-    AND q.log_comment = '05508_join_auto' AND base.log_comment = '05508_join_off';
+    AND endsWith(q.log_comment, '_auto') AND base.log_comment = replaceOne(q.log_comment, '_auto', '_off')
+ORDER BY q.event_time_microseconds;

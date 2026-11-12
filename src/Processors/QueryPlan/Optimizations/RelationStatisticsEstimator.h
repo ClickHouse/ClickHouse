@@ -14,12 +14,12 @@ namespace DB::QueryPlanOptimizations
 /// them, or `__applyFilter(...) OR isNull(key)`.
 /// With `for_runtime_filter_transport` the estimate is a hard row cap for a transported filter's
 /// exact phase, so an unindexed plan-time filter yields no estimate instead of a statistics guess.
-/// `find_single_node_read` is the one of `QueryPlanOptimizationSettings`: a read without an analysis of its
-/// own is estimated from the analysis of the single-node read it finds.
+/// `find_single_node_reads_of_table` is the one of `QueryPlanOptimizationSettings`: a read without an analysis
+/// of its own is estimated from the analyses of the single-node reads it finds.
 RelationStats estimateReadRowsCount(
     QueryPlan::Node & node,
     const ActionsDAG::Node * filter = nullptr,
     bool for_runtime_filter_transport = false,
-    const FindSingleNodeRead & find_single_node_read = {});
+    const FindSingleNodeReadsOfTable & find_single_node_reads_of_table = {});
 
 }

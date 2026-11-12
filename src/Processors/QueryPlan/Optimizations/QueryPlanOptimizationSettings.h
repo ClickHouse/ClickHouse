@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <span>
 
 namespace DB
 {
@@ -31,6 +32,9 @@ struct DistributedPlanLocalObject;
 /// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
 using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
 
+/// Every read of the single-node plan of the table that a read of the plan with parallel replicas reads.
+using FindSingleNodeReadsOfTable = std::function<std::span<const ReadFromMergeTree * const>(const ReadFromMergeTree &)>;
+
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
 /// count it; the builder logs the specific reason itself.
@@ -50,7 +54,8 @@ struct PlanWithParallelReplicas
 };
 
 using QueryPlanWithParallelReplicasBuilder
-    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
+    = std::function<PlanWithParallelReplicas(
+        const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const FindSingleNodeReadsOfTable &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -333,6 +338,11 @@ struct QueryPlanOptimizationSettings
     /// index takes them from the single-node read instead: building them would execute the `IN` subqueries
     /// the probe plan could not adopt.
     FindSingleNodeRead find_single_node_read;
+
+    /// Set with `find_single_node_read`. A read of the probe plan has no index analysis of its own, so the estimate
+    /// of its rows for join optimization takes one of these reads' analyses instead. Unlike `find_single_node_read`
+    /// it does not need to know which read of a table is which, so it still helps where that cannot be told.
+    FindSingleNodeReadsOfTable find_single_node_reads_of_table;
 
     bool enable_parallel_replicas = false;
 };

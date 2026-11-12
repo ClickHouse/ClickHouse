@@ -182,6 +182,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     const QueryTreeNodePtr & single_node_query_tree,
     const BuiltSetsByHashPtr & built_sets,
     const FindSingleNodeRead & find_single_node_read,
+    const FindSingleNodeReadsOfTable & find_single_node_reads_of_table,
     const LoggerPtr & logger,
     Args &&... interpreter_args)
 {
@@ -296,6 +297,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
     optimization_settings.query_plan_optimize_primary_key = false;
     optimization_settings.find_single_node_read = find_single_node_read;
+    optimization_settings.find_single_node_reads_of_table = find_single_node_reads_of_table;
     // Depends on PK optimizations that we don't perform here
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
@@ -463,8 +465,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeRead & find_single_node_read, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read, logger, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets,
+              const FindSingleNodeRead & find_single_node_read,
+              const FindSingleNodeReadsOfTable & find_single_node_reads_of_table,
+              const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read, find_single_node_reads_of_table, logger, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -487,8 +492,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            storage = storage_,
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeRead & find_single_node_read, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read, logger, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets,
+              const FindSingleNodeRead & find_single_node_read,
+              const FindSingleNodeReadsOfTable & find_single_node_reads_of_table,
+              const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read, find_single_node_reads_of_table, logger, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -508,8 +516,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
            select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
-           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeRead & find_single_node_read, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, find_single_node_read, logger); })
+           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets,
+              const FindSingleNodeRead & find_single_node_read,
+              const FindSingleNodeReadsOfTable & find_single_node_reads_of_table,
+              const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, find_single_node_read, find_single_node_reads_of_table, logger); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
