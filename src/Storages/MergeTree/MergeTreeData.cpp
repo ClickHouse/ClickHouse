@@ -4701,28 +4701,46 @@ void MergeTreeData::prewarmVectorSimilarityIndexCache(
     const std::optional<String> & index_name)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    MergeTreeIndices indexes;
-    for (const auto & desc : metadata_snapshot->getSecondaryIndices())
-    {
-        if (desc.type != "vector_similarity")
-            continue;
-        if (index_name && desc.name != *index_name)
-            continue;
-        indexes.push_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, desc, *getSettings()));
-    }
+    const auto & indices = metadata_snapshot->getSecondaryIndices();
 
-    if (indexes.empty())
+    MergeTreeIndices indexes;
+    if (index_name)
     {
-        if (index_name)
+        /// A missing name and a name of another index type are different mistakes. Filtering the
+        /// vector indexes first would report both as "no vector similarity index named ...".
+        if (!indices.has(*index_name))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Table {} has no vector similarity index named {}",
+                "Table {} has no index {}{}",
                 getStorageID().getNameForLogs(),
-                backQuote(*index_name));
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Table {} has no vector similarity index",
-            getStorageID().getNameForLogs());
+                backQuote(*index_name),
+                indices.getHintsMessage(*index_name));
+
+        const auto & index = indices.getByName(*index_name);
+        if (index.type != "vector_similarity")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Index {} of table {} is not a vector similarity index, its type is {}",
+                backQuote(*index_name),
+                getStorageID().getNameForLogs(),
+                index.type);
+
+        indexes.push_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *getSettings()));
+    }
+    else
+    {
+        for (const auto & desc : indices)
+        {
+            if (desc.type != "vector_similarity")
+                continue;
+            indexes.push_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, desc, *getSettings()));
+        }
+
+        if (indexes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table {} has no vector similarity index",
+                getStorageID().getNameForLogs());
     }
 
     Stopwatch watch;

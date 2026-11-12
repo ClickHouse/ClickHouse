@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS vs_cache_t2;
 DROP TABLE IF EXISTS vs_cache_two_idx;
 DROP TABLE IF EXISTS vs_cache_memory;
 DROP TABLE IF EXISTS vs_cache_plain;
+DROP TABLE IF EXISTS vs_cache_minmax;
 
 CREATE TABLE vs_cache_t1
 (
@@ -77,14 +78,17 @@ SELECT 'prewarm keys after ann', count() FROM system.vector_similarity_index_cac
 
 CREATE TABLE vs_cache_memory (id Int32, vec Array(Float32)) ENGINE = Memory;
 CREATE TABLE vs_cache_plain (id Int32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE vs_cache_minmax (id Int32, INDEX idx id TYPE minmax) ENGINE = MergeTree ORDER BY id;
 
 SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE vs_cache_memory; -- { serverError BAD_ARGUMENTS }
 SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE vs_cache_plain; -- { serverError BAD_ARGUMENTS }
 SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE; -- { clientError SYNTAX_ERROR }
 SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE vs_cache_t1 INDEX missing; -- { serverError BAD_ARGUMENTS }
+SYSTEM PREWARM VECTOR SIMILARITY INDEX CACHE FOR TABLE vs_cache_minmax INDEX idx; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE vs_cache_t1 SYNC;
 DROP TABLE vs_cache_t2 SYNC;
 DROP TABLE vs_cache_two_idx SYNC;
 DROP TABLE vs_cache_memory;
 DROP TABLE vs_cache_plain;
+DROP TABLE vs_cache_minmax;
