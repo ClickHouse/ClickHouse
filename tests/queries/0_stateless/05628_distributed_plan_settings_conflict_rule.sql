@@ -43,3 +43,14 @@ SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_workers_num
 
 SET distributed_plan_workers_num = 0;
 DROP SETTINGS PROFILE profile_05628;
+
+-- A `const` constraint that pins the plan ON (not just one that forbids it) must not be refused
+-- by the check: the value it wants is exactly the one the constraint already holds it to.
+DROP SETTINGS PROFILE IF EXISTS profile_05628_on;
+CREATE SETTINGS PROFILE profile_05628_on SETTINGS make_distributed_plan = 1 CONST;
+SET profile = 'profile_05628_on';
+
+SELECT 'a plan pinned on by a const constraint runs queries fine';
+SELECT 1;
+
+DROP SETTINGS PROFILE profile_05628_on;

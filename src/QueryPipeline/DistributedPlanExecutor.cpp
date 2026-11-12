@@ -52,8 +52,6 @@
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Access/ContextAccess.h>
-#include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <Core/Field.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
@@ -1420,8 +1418,10 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     const auto & settings = query_context->getSettingsRef();
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
 
-    /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
-    if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
+    /// Local execution runs in-process, not bound to a cluster or its client: use the requested
+    /// count (zero included), and let the caller (Optimizer::buildContext) give its own, more
+    /// specific error for zero instead of this function faulting the client for it.
+    if (settings[Setting::distributed_plan_execute_locally])
         return requested_workers;
 
     /// A plan that needs workers cannot serve any selection, named or default, without the client:
@@ -1431,6 +1431,7 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled; cannot run a distributed query plan{}",
             worker_cluster.empty() ? "" : fmt::format(" on worker cluster '{}'", worker_cluster));
+
     /// Size the plan from the provider the query executes on; an unusable selection throws here.
     return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
 }
@@ -1469,7 +1470,12 @@ void checkDistributedPlanSettings(ContextPtr context)
             "`distributed_plan_workers_num = DEFAULT`, or set the conflicting setting back to `DEFAULT`.",
             fmt::join(wants, ", "));
 
-    if (!query_context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValue("make_distributed_plan", Field(true)))
+    /// Nothing explicit refused it, yet it is off: a settings constraint vetoed the derivation
+    /// (adjustSettingsForMakeDistributedPlan). Not re-checked via `allowsValue` here: that constraint
+    /// check refuses every value of a `CONST` setting, including one that is already pinned to the
+    /// value `wants` asks for, which `SET` itself does not refuse (SettingsConstraints::checkImpl
+    /// accepts an unchanged value under `CONST`).
+    if (!make_plan)
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "A settings constraint forbids enabling `make_distributed_plan`, but {} requests a distributed query "
             "plan. Set the conflicting setting back to `DEFAULT`.",
