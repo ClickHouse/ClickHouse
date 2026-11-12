@@ -78,10 +78,6 @@ struct S3AuthSettings
     /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
     void clearServerManagedGcpOAuth();
 
-    /// Set every field that the three `clear*` methods above drop to its value in `other`. Used to merge the server config
-    /// into a restricted client without letting it bring back what the parsing of the restricted query dropped.
-    void restoreServerManagedFieldsFrom(const S3AuthSettings & other);
-
     NormalizedHTTPHeaderEntries headers;
     NormalizedHTTPHeaderEntries access_headers;
 
