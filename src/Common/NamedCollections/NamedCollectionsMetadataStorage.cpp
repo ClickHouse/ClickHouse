@@ -572,7 +572,7 @@ private:
                 getHexUIntLowercase(key_fingerprint));
     }
 
-    std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
+    std::vector<uint8_t, NoDumpAllocator<uint8_t>> calculateBackupMAC(const std::string & stored) const
     {
         /// Domain separation from the encryption use of the key.
         const auto auth_key = hmacSHA256(

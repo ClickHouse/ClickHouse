@@ -3,5 +3,11 @@
         <default>
             <named_collection_control>1</named_collection_control>
         </default>
+        <plaintext_password_user>
+            <password>nodump_plaintext_user_password_7d3a9f1c5e2b8064</password>
+            <time_based_one_time_password>
+                <secret>NODUMPTOTPSECRETQXKJWHVMRLBYCFGD</secret>
+            </time_based_one_time_password>
+        </plaintext_password_user>
     </users>
 </clickhouse>
