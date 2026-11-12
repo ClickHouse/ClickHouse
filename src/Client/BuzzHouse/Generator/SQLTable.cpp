@@ -273,7 +273,14 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}, size_tp.get()));
-                if (t.isAnyDeltaLakeEngine())
+                if (t.isAnyIcebergEngine())
+                {
+                    /// The metadata file read, and the row lineage of format version 3
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_iceberg_metadata_file_path"}, string_tp.get()));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_last_updated_sequence_number"}, size_tp.get()));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_id"}, size_tp.get()));
+                }
+                else if (t.isAnyDeltaLakeEngine())
                 {
                     rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}, string_tp.get()));
                     rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}, size_tp.get()));
@@ -702,6 +709,17 @@ static const std::vector<std::string> arithmeticFuncs
 
 static const std::vector<std::string> icebergFuncs = {"icebergBucket", "icebergTruncate"};
 
+/// The Iceberg year/month/day/hour transforms and the functions accepted as their aliases
+static const std::vector<std::string> icebergDateFuncs
+    = {"icebergYear",
+       "icebergMonth",
+       "icebergDay",
+       "icebergHour",
+       "toYearNumSinceEpoch",
+       "toMonthNumSinceEpoch",
+       "toRelativeDayNum",
+       "toRelativeHourNum"};
+
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
     columnPathRef(entry, expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
@@ -753,7 +771,8 @@ void StatementGenerator::colRefOrExpression(
               /// Use date functions for partitioning/keys
               SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-              func_call->mutable_func()->set_catalog_func(rg.pickRandomly(datesHash));
+              func_call->mutable_func()->set_catalog_func(
+                  rg.pickRandomly((b.isAnyIcebergEngine() && rg.nextBool()) ? icebergDateFuncs : datesHash));
               columnPathRef(entry, func_call->add_args()->mutable_expr());
           }},
          {modulo_func,
@@ -3809,6 +3828,10 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (!next.random_engine && next.isDataLakeCatalogDatabase())
     {
         connections.createExternalDatabase(rg, next, deng);
+        if (rg.nextSmallNumber() < 4)
+        {
+            generateSettingValues(rg, dataLakeCatalogSettings, deng->mutable_setting_values());
+        }
     }
     const String dbkey = next.name;
     this->staged_databases[dbkey] = std::make_shared<SQLDatabase>(std::move(next));

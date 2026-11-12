@@ -922,6 +922,12 @@ static std::unordered_map<String, CHSetting> icebergTableOnlySettings
        {"iceberg_format_version",
         CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 3)); }, {"1", "2", "3"}, false)},
        {"iceberg_max_number_datafiles_to_compact", rowsRangeSetting},
+       /// Pins an early metadata file (relative to the table path): ClickHouse and the Hadoop catalog name them `v<N>`
+       {"iceberg_metadata_file_path",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return fmt::format("'metadata/v{}.metadata.json'", rg.randomInt<uint32_t>(1, 3)); },
+            {},
+            false)},
        {"iceberg_metadata_async_prefetch_period_ms",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
@@ -940,6 +946,7 @@ static std::unordered_map<String, CHSetting> icebergTableOnlySettings
 
 static std::unordered_map<String, CHSetting> paimonSettings = {
     {"paimon_incremental_read", trueOrFalseSetting},
+    {"paimon_incremental_read_append_overwrite", trueOrFalseSetting},
     {"paimon_metadata_refresh_interval_sec",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 120)); }, {"0", "1", "30", "60"}, false)},
@@ -1191,6 +1198,30 @@ static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};
 
 std::unordered_map<String, CHSetting> allDatabaseSettings = {{"lazy_load_tables", trueOrFalseSetting}};
+
+/// `DataLakeCatalog` settings besides the connection ones set by `createExternalDatabase`
+std::unordered_map<String, CHSetting> dataLakeCatalogSettings = {
+    {"flat_namespaces", trueOrFalseSetting},
+    {"force_add_bucket", trueOrFalseSetting},
+    {"snapshot_loading_mode",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'all'", "'refs'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"storage_uri_style",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'path'", "'virtual_hosted'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"use_unity_catalog_v2", trueOrFalseSetting}};
 
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {

@@ -80,6 +80,8 @@ extern std::unordered_map<String, CHSetting> formatSettings;
 
 extern std::unordered_map<String, CHSetting> allDatabaseSettings;
 
+extern std::unordered_map<String, CHSetting> dataLakeCatalogSettings;
+
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;

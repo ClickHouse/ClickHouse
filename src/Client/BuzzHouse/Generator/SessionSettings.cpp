@@ -372,6 +372,13 @@ String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc)
     }
 }
 
+/// Delta Lake versions and Paimon snapshot ids are small sequential numbers (each write adds one),
+/// so low values usually exist. `DEFAULT` resets the pin to the latest version.
+static String getNextLakeVersion(RandomGenerator & rg, const int64_t min_version)
+{
+    return rg.nextSmallNumber() < 3 ? "DEFAULT" : std::to_string(rg.randomInt<int64_t>(min_version, min_version + 10));
+}
+
 /// Returns a DateTime string suitable for expire_snapshots positional/expire_before arguments.
 /// The parser uses readDateTimeText (expects "YYYY-MM-DD HH:MM:SS") and then multiplies by 1000,
 /// so we must produce seconds-granularity DateTime strings, not millisecond integers.
@@ -740,6 +747,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"use_indexes_refiner_in_read_pools", trueOrFalseSetting},
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
+       {"use_join_runtime_filters_for_iceberg_pruning", trueOrFalseSetting},
        {"use_lightweight_primary_key_index_analysis", trueOrFalseSetting},
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
        {"use_paimon_partition_pruning", trueOrFalseSetting},
@@ -984,6 +992,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_enable_expression_visitor_logging", trueOrFalseSettingNoOracle},
     {"delta_lake_log_metadata", trueOrFalseSettingNoOracle},
     {"delta_lake_reload_schema_for_consistency", trueOrFalseSettingNoOracle},
+    /// Time travel and the change data feed range: versions start at 0
+    {"delta_lake_snapshot_end_version",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 0); }, {}, false)},
+    {"delta_lake_snapshot_start_version",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 0); }, {}, false)},
+    {"delta_lake_snapshot_version", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 0); }, {}, false)},
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
@@ -1874,6 +1888,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_vortex_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSettingNoOracle},
+    /// Targeted snapshot read of Paimon incremental mode; snapshot ids start at 1
+    {"paimon_target_snapshot_id", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return getNextLakeVersion(rg, 1); }, {}, false)},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
     {"parallel_replicas_allow_in_with_subquery", trueOrFalseSetting},
     {"parallel_replicas_allow_materialized_views", trueOrFalseSettingNoOracle},

@@ -368,6 +368,11 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_settings);
+    String fuzzStructure(const String & structure);
+    void addQueueSettings(SettingsChanges & changes, bool on_s3);
+    void addMemorySettings(SettingsChanges & changes);
+    void fuzzExistingEngineParameters(ASTStorage & storage);
     void fuzzProxyDatabaseEngine(ASTStorage & storage);
     void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
