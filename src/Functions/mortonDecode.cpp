@@ -35,15 +35,17 @@ namespace DB
 #define EXTRACT_VECTOR(INDEX) \
         auto col##INDEX = ColumnUInt64::create(); \
         auto & vec##INDEX = col##INDEX->getData(); \
-        vec##INDEX.resize(input_rows_count);
+        vec##INDEX.resize(input_rows_count); \
+        UInt64 * const out##INDEX = vec##INDEX.data();
 
 #define MASK(IDX, ...) \
-        ((mask) ? shrink(mask_ratios[(IDX)], std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
+        ((has_mask) ? shrink(mask_ratios[(IDX)], std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
 
 #define EXECUTE() \
     size_t nd; \
     const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get()); \
     const auto * mask = typeid_cast<const ColumnTuple *>(col_const->getDataColumnPtr().get()); \
+    const bool has_mask = mask != nullptr; \
     if (mask) \
         nd = mask->tupleSize(); \
     else \
@@ -64,7 +66,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                vec0[i] = shrink(mask_ratios[0], code_span[i]); \
+                out0[i] = shrink(mask_ratios[0], code_span[i]); \
             } \
             tuple_columns[0] = std::move(col0); \
         } \
@@ -72,7 +74,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                vec0[i] = code_span[i]; \
+                out0[i] = code_span[i]; \
             } \
             tuple_columns[0] = std::move(col0); \
         } \
@@ -80,53 +82,53 @@ namespace DB
     } \
     EXTRACT_VECTOR(1) \
     DECODE(2, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res);) \
     EXTRACT_VECTOR(2) \
     DECODE(3, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res); \
-       vec2[i] = MASK(2, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res); \
+       out2[i] = MASK(2, res);) \
     EXTRACT_VECTOR(3) \
     DECODE(4, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res); \
-       vec2[i] = MASK(2, res); \
-       vec3[i] = MASK(3, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res); \
+       out2[i] = MASK(2, res); \
+       out3[i] = MASK(3, res);) \
     EXTRACT_VECTOR(4) \
     DECODE(5, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res); \
-       vec2[i] = MASK(2, res); \
-       vec3[i] = MASK(3, res); \
-       vec4[i] = MASK(4, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res); \
+       out2[i] = MASK(2, res); \
+       out3[i] = MASK(3, res); \
+       out4[i] = MASK(4, res);) \
     EXTRACT_VECTOR(5) \
     DECODE(6, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res); \
-       vec2[i] = MASK(2, res); \
-       vec3[i] = MASK(3, res); \
-       vec4[i] = MASK(4, res); \
-       vec5[i] = MASK(5, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res); \
+       out2[i] = MASK(2, res); \
+       out3[i] = MASK(3, res); \
+       out4[i] = MASK(4, res); \
+       out5[i] = MASK(5, res);) \
     EXTRACT_VECTOR(6) \
     DECODE(7, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res); \
-       vec2[i] = MASK(2, res); \
-       vec3[i] = MASK(3, res); \
-       vec4[i] = MASK(4, res); \
-       vec5[i] = MASK(5, res); \
-       vec6[i] = MASK(6, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res); \
+       out2[i] = MASK(2, res); \
+       out3[i] = MASK(3, res); \
+       out4[i] = MASK(4, res); \
+       out5[i] = MASK(5, res); \
+       out6[i] = MASK(6, res);) \
     EXTRACT_VECTOR(7) \
     DECODE(8, \
-       vec0[i] = MASK(0, res); \
-       vec1[i] = MASK(1, res); \
-       vec2[i] = MASK(2, res); \
-       vec3[i] = MASK(3, res); \
-       vec4[i] = MASK(4, res); \
-       vec5[i] = MASK(5, res); \
-       vec6[i] = MASK(6, res); \
-       vec7[i] = MASK(7, res);) \
+       out0[i] = MASK(0, res); \
+       out1[i] = MASK(1, res); \
+       out2[i] = MASK(2, res); \
+       out3[i] = MASK(3, res); \
+       out4[i] = MASK(4, res); \
+       out5[i] = MASK(5, res); \
+       out6[i] = MASK(6, res); \
+       out7[i] = MASK(7, res);) \
     switch (nd) \
     { \
         case 2: \
@@ -186,11 +188,14 @@ namespace DB
 #define DECODE(ND, ...) \
         if (nd == (ND)) \
         { \
-            for (size_t i = 0; i < input_rows_count; i++) \
+            code_span.withReader([&](auto read_code) \
             { \
-                auto res = MortonND_##ND##D_Dec.Decode(code_span[i]); \
-                __VA_ARGS__ \
-            } \
+                for (size_t i = 0; i < input_rows_count; i++) \
+                { \
+                    auto res = MortonND_##ND##D_Dec.Decode(read_code(i)); \
+                    __VA_ARGS__ \
+                } \
+            }); \
         }
 
 namespace morton_compress
@@ -382,11 +387,14 @@ public:
 #define DECODE(ND, ...) \
         if (nd == (ND)) \
         { \
-            for (size_t i = 0; i < input_rows_count; i++) \
+            code_span.withReader([&](auto read_code) \
             { \
-                auto res = MortonND_##ND##D::Decode(code_span[i]); \
-                __VA_ARGS__ \
-            } \
+                for (size_t i = 0; i < input_rows_count; i++) \
+                { \
+                    auto res = MortonND_##ND##D::Decode(read_code(i)); \
+                    __VA_ARGS__ \
+                } \
+            }); \
         }
 
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
