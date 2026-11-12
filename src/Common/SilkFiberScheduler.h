@@ -6,12 +6,9 @@
 
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#include <silk/fibers/fiber.h>
 
 namespace silk
 {
@@ -31,19 +28,6 @@ void destroyFiberScheduler();
 bool isFiberSchedulerInitialized();
 
 bool isInsideFiber();
-
-class [[nodiscard]] ThreadModeScope
-{
-public:
-    ThreadModeScope() noexcept
-    {
-        if (isInsideFiber())
-            scope.emplace();
-    }
-
-private:
-    std::optional<silk::FiberScheduler::ThreadModeScope> scope;
-};
 
 using RuntimeCounters = std::vector<std::pair<std::string_view, uint64_t>>;
 
@@ -65,12 +49,6 @@ inline bool isInsideFiber()
 {
     return false;
 }
-
-class [[nodiscard]] ThreadModeScope
-{
-public:
-    ThreadModeScope() noexcept {}
-};
 
 }
 

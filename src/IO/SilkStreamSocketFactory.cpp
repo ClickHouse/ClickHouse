@@ -1,12 +1,12 @@
-#include <Common/Silk/StreamSocketFactory.h>
+#include <IO/SilkStreamSocketFactory.h>
 
 #if USE_SILK
 
-#include <Common/Silk/FiberStreamSocketImpl.h>
+#include <IO/SilkFiberStreamSocketImpl.h>
 #include <Common/Exception.h>
 
 #if USE_SSL
-#include <Common/Silk/SecureFiberStreamSocketImpl.h>
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
