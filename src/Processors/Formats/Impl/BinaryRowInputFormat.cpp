@@ -56,7 +56,7 @@ bool BinaryRowInputFormat<with_defaults>::readRow(DB::MutableColumns & columns, 
                 this->format_reader->skipField(file_column);
         }
 
-        this->column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+        this->column_mapping->insertDefaultsForNotSeenColumns(columns, this->data_types, ext.read_columns);
     }
     else
     {

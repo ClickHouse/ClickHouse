@@ -10,5 +10,8 @@ TSV
 2	x
 3	x
 4	y
+WithNames
+1	x
+1	x
 MergeTree
 1	x	a
