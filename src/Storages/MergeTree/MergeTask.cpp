@@ -116,6 +116,7 @@ namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
+    extern const char merge_mutate_task_pause_after_part_handoff[];
     extern const char merge_task_throw_while_preparing_next_column[];
 }
 
@@ -931,6 +932,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
+    /// Merging text indexes maps rows to source parts by the `_part_index` virtual column, which a table column of that name shadows.
+    global_ctx->rebuild_text_indexes = global_ctx->merge_may_reduce_rows || global_ctx->metadata_snapshot->getColumns().has("_part_index");
+
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
     /// and allocating read/prefetch buffers.
@@ -1364,7 +1368,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
-        global_ctx->context->getWriteSettings(),
+        getWriteSettingsForMergeOrMutation(global_ctx->context->getWriteSettings(), global_ctx->data->supportsReplication()),
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->stream_base_manifest);
@@ -2236,10 +2240,11 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         /// Add step for building missed text indexes and statistics for single parts.
         /// If merge may reduce rows, we will rebuild index and statistics
         /// for the resulting part in the end of the pipeline.
-        if (!global_ctx->merge_may_reduce_rows)
-        {
+        if (!global_ctx->rebuild_text_indexes)
             addBuildTextIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
 
+        if (!global_ctx->merge_may_reduce_rows)
+        {
             if (auto transform = addBuildStatisticsStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx))
                 column_build_statistics_transforms.emplace(global_ctx->future_part->parts[part_num]->name, std::move(transform));
         }
@@ -2294,10 +2299,11 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     }
 
     /// If merge may reduce rows, rebuild text indexes and statistics for the resulting part.
-    if (global_ctx->merge_may_reduce_rows)
-    {
+    if (global_ctx->rebuild_text_indexes)
         addBuildTextIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
 
+    if (global_ctx->merge_may_reduce_rows)
+    {
         if (auto transform = addBuildStatisticsStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx))
             column_build_statistics_transforms.emplace(global_ctx->new_data_part->name, std::move(transform));
     }
@@ -2626,7 +2632,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
     for (const auto & task : ctx->tasks_for_projections)
     {
-        auto part = task->getFuture().get();
+        auto part = task->takeResultPart();
         part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
@@ -2648,7 +2654,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->getPreferredFileOrder());
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
-    global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
+    global_ctx->result_part = std::exchange(global_ctx->new_data_part, nullptr);
+    if (!global_ctx->parent_part)
+        FailPointInjection::pauseFailPoint(FailPoints::merge_mutate_task_pause_after_part_handoff);
 
     return false;
 }
@@ -2759,7 +2767,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
     if (global_ctx->text_indexes_to_merge.empty())
         return false;
 
-    if (!global_ctx->merge_may_reduce_rows)
+    if (!global_ctx->rebuild_text_indexes)
     {
         /// If merge text indexes without rebuilt, part offsets must be set.
         if (!global_ctx->merged_part_offsets)
@@ -2783,7 +2791,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             /// No read pipeline ran, so no transform built segments. The resulting part has no
             /// rows, which is exactly what a 0-row pipeline would have produced anyway.
         }
-        else if (global_ctx->merge_may_reduce_rows)
+        else if (global_ctx->rebuild_text_indexes)
         {
             /// Text index was built for the resulting part.
             segments = getTextIndexSegments(global_ctx->new_data_part->name, index.name, 0);
@@ -2818,7 +2826,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             global_ctx->new_data_part,
             global_ctx->rows_written,
             index_ptr,
-            global_ctx->merged_part_offsets,
+            global_ctx->rebuild_text_indexes ? nullptr : global_ctx->merged_part_offsets,
             reader_settings,
             global_ctx->to->getWriterSettings(),
             ctx->need_sync);
@@ -2983,8 +2991,29 @@ void MergeTask::cancel() noexcept
     if (global_ctx->to)
         global_ctx->to->cancel();
 
-    if (global_ctx->new_data_part)
-        global_ctx->new_data_part->removeIfNeeded();
+    if (global_ctx->temporary_text_index_storage)
+        tryUndoTransaction(*global_ctx->temporary_text_index_storage);
+
+    if (auto part = global_ctx->new_data_part ? global_ctx->new_data_part : global_ctx->result_part)
+    {
+        LOG_DEBUG(global_ctx->data->log, "Rolling back uncommitted part {} of a cancelled merge",
+            part->getDataPartStorage().getPartDirectory());
+        /// The transaction is uncommitted, and on object storage its blobs are staged only there.
+        tryUndoTransaction(part->getDataPartStorage());
+        part->removeIfNeeded();
+    }
+}
+
+void tryUndoTransaction(IDataPartStorage & storage) noexcept
+{
+    try
+    {
+        storage.undoTransaction();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -3402,9 +3431,9 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
 
-        /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
+        /// Rebuild index if text indexes are rebuilt because we cannot adjust parts offsets in that case.
         /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        if (global_ctx->rebuild_text_indexes || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));
@@ -3545,7 +3574,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
     }
 
-    if (!global_ctx->merge_may_reduce_rows
+    if (!global_ctx->rebuild_text_indexes
         && !global_ctx->text_indexes_to_merge.empty()
         && (!global_ctx->merged_part_offsets || !global_ctx->merged_part_offsets->isMappingEnabled()))
     {
@@ -3597,10 +3626,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// Add step for building missed text indexes and statistics for single parts.
         /// If merge may reduce rows, we will rebuild index and statistics
         /// for the resulting part in the end of the pipeline.
-        if (!global_ctx->merge_may_reduce_rows)
-        {
+        if (!global_ctx->rebuild_text_indexes)
             addBuildTextIndexesStep(*plan_for_part, *part, global_ctx);
 
+        if (!global_ctx->merge_may_reduce_rows)
+        {
             if (auto transform = addBuildStatisticsStep(*plan_for_part, *part, global_ctx))
                 ctx->build_statistics_transforms.emplace(part->name, std::move(transform));
         }
@@ -3778,10 +3808,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         addSkipIndexesExpressionSteps(merge_parts_query_plan, global_ctx->merging_skip_indexes, global_ctx);
 
     /// If merge may reduce rows, rebuild text index and statistics for the resulting part.
-    if (global_ctx->merge_may_reduce_rows)
-    {
+    if (global_ctx->rebuild_text_indexes)
         addBuildTextIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
 
+    if (global_ctx->merge_may_reduce_rows)
+    {
         if (auto transform = addBuildStatisticsStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx))
             ctx->build_statistics_transforms.emplace(global_ctx->new_data_part->name, std::move(transform));
     }
