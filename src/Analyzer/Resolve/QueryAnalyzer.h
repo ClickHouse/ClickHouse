@@ -118,7 +118,11 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_ = false);
+    explicit QueryAnalyzer(
+        bool only_analyze_,
+        bool positional_arguments_already_resolved_ = false,
+        StoragePtr replaced_storage_ = nullptr,
+        bool view_source_in_subqueries_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -384,6 +388,11 @@ private:
 
     /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
     const bool positional_arguments_already_resolved;
+
+    /// The view source that the interpreter swaps into the query tree after the analysis.
+    const StoragePtr replaced_storage;
+    /// See `SelectQueryOptions`. Not passed to the analyzers of inlined views: the inner query of a view reads the table itself.
+    const bool view_source_in_subqueries;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

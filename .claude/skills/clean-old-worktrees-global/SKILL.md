@@ -7,7 +7,7 @@ disable-model-invocation: false
 
 # Clean Old Worktrees (Global)
 
-Delete unused git worktrees and stale build directories across all checkouts directly under a root directory.
+Delete unused git worktrees and stale build directories across all checkouts directly under a root directory, including worktrees nested inside other checkouts (e.g. `ClickHouse/.claude/worktrees/*`, `ClickHouse/tmp/wt-*`).
 
 ## Arguments
 
@@ -17,7 +17,7 @@ Delete unused git worktrees and stale build directories across all checkouts dir
 ## Rules
 
 - **Main repos** (`.git` is a directory) are never deleted. Only their old `build*` dirs are.
-- **Worktrees** (`.git` is a file) are deleted as a whole if no file in them (excluding `build*`, `contrib`, `.git`) is newer than the threshold, and they have no uncommitted changes or local commits that would be lost (including inside submodules).
+- **Worktrees** (`.git` is a file pointing to `<main>/.git/worktrees/<name>`, unlike submodules, found directly under the root or up to 6 levels deeper) are deleted as a whole if no file in them (excluding `build*`, `contrib`, `.git`) is newer than the threshold, and they have no uncommitted changes or local commits that would be lost (including inside submodules).
 - **Build dirs** (`build*`) inside kept checkouts are deleted if no file inside is newer than the threshold.
 - Anything whose age cannot be established (e.g. unreadable subdirectories) is kept.
 - Never delete directories in use by a process, containing mount points (e.g. `/dev` mounted into a chroot), or containing block device files. `delete.sh` checks this right before deleting each entry and skips it.
@@ -64,7 +64,7 @@ Remove the excluded worktrees from the list (match whole lines, e.g. `grep -vxF`
 
 Use the same root as for the scan. Run it in the background with the maximum timeout (deleting 100+ worktrees took more than an hour). If it is stopped by the time limit, rerun the same command: it is idempotent and also prunes the worktree metadata.
 
-Right before deleting each entry, the script rejects main repositories, symlinks, and paths that are not a direct child of the root or a `build*` directory inside one. It skips (`SKIPPED (<reason>): <dir>`) directories in use by a process (working directory, root, executable, open or mapped file), containing a mount point, or containing a block device file, and deletes with `rm --one-file-system`. If a skipped directory is used only by your own leftover processes (e.g. a timed-out `du`), stop them by PID and rerun; otherwise keep it.
+Right before deleting each entry, the script rejects main repositories, symlinks, paths through symlinks, and paths that are neither a worktree nor a `build*` directory inside a checkout. It skips (`SKIPPED (<reason>): <dir>`) directories in use by a process (working directory, root, executable, open or mapped file), containing a mount point, or containing a block device file, and deletes with `rm --one-file-system`. If a skipped directory is used only by your own leftover processes (e.g. a timed-out `du`), stop them by PID and rerun; otherwise keep it.
 
 Without passwordless sudo, processes of other users (e.g. in Docker containers) cannot be inspected, and the script refuses to run. In that case check `docker ps` and `ps` for processes using the candidates, then rerun with `ALLOW_UNINSPECTED=1`.
 
