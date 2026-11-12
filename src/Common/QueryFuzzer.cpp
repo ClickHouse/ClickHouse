@@ -533,6 +533,14 @@ Field QueryFuzzer::getRandomField(int type)
            INT_MAX - 1,
            INT_MAX,
            INT_MAX + 1ll,
+           1ll << 30,
+           (1ll << 30) + 1,
+           UINT32_MAX - 1ll,
+           UINT32_MAX,
+           UINT32_MAX + 1ll,
+           UINT32_MAX + 2ll,
+           1ll << 40,
+           1ll << 53,
            INT64_MIN,
            INT64_MIN + 1,
            INT64_MAX - 1,
@@ -2947,6 +2955,14 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
     auto make_codec = [&](bool allow_declarative) -> ASTPtr
     {
         const String chosen = pickRandomly(fuzz_rand, allow_declarative ? pool : pool_without_declarative);
+        if (fuzz_rand() % 10 == 0)
+        {
+            /// Out-of-range integer arguments, e.g. `Delta(0)`, `DoubleDelta(255)`, `GCD(1)` or `ZSTD(1, UINT64_MAX)`
+            auto codec = makeASTFunction(chosen, make_intrusive<ASTLiteral>(getRandomField(0)));
+            if (fuzz_rand() % 3 == 0)
+                codec->arguments->children.push_back(make_intrusive<ASTLiteral>(getRandomField(0)));
+            return codec;
+        }
         if (chosen == "ZSTD" && fuzz_rand() % 2 == 0)
         {
             auto level = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 22 + 1));
@@ -7720,7 +7736,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// Fuzz parametric-aggregate parameters toward boundary values, e.g. the level of
             /// quantile(0.9) or the k of topK(k). Child recursion mutates the argument literals
             /// but the parameter list (the first `(...)`) is otherwise only column-shuffled.
-            if (fn->parameters && fuzz_rand() % 20 == 0)
+            /// More often than argument literals: parameters are sizes and counts, the usual overflow targets.
+            if (fn->parameters && fuzz_rand() % 8 == 0)
             {
                 for (auto & p : fn->parameters->children)
                     if (auto * lit = p->as<ASTLiteral>())
