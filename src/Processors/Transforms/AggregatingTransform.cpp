@@ -1852,7 +1852,7 @@ void AggregatingTransform::initGenerate()
         params->aggregator.recordAdaptiveStagingVerdict(*adaptive_context->session);
 
     if (adaptive_engaged)
-        params->aggregator.prepareAdaptiveTopKPruning(
+        params->aggregator.prepareAdaptiveTopK(
             *adaptive_context->session,
             many_data->variants.size(),
             /*external_merge=*/aggregator_has_temporary_data(),

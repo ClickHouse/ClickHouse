@@ -320,7 +320,10 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
 
             /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
             /// In two-level case we sample across 256 buckets, so we can use a larger period.
-            const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
+            /// The single-level period is not capped, so that the samples span the whole table: fixed hash maps
+            /// (`UInt8` and `UInt16` keys) are iterated in key order, and a prefix of them is biased
+            /// whenever the size of the state correlates with the key.
+            const auto period = bucket == -1 ? std::max<size_t>(table.size() / 100, 1) : 100;
 
             size_t it = 0;
             table.forEachMapped(
@@ -816,12 +819,23 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.bucket_top_k)
     {
+        const auto & rank_function = *params.aggregates[params.bucket_top_k_rank_index].function;
         if (is_simple_count)
             bucket_top_k_rank = BucketTopKRank::InlineCount;
-        else if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()))
+        else if (typeid_cast<const AggregateFunctionCount *>(&rank_function))
             bucket_top_k_rank = BucketTopKRank::CountState;
         else
             bucket_top_k_rank = BucketTopKRank::FinalizedResult;
+        /// The rank is a `count`, `uniqExact` or `uniqExactIf` (see `tryPushBucketTopKIntoAggregation`). A
+        /// group has at least one row, and the first row that the function does not skip makes the rank 1. So
+        /// the rank is at least 1 unless the function can skip rows. A wrapper can: `uniqExactIf` skips the
+        /// rows that its condition rejects, and the NULL adapter of a `Nullable` argument skips the NULLs. So
+        /// can a function on an argument that can hold NULL, as `count(x)` of a `Nullable` argument does
+        /// without a wrapper. For example, `uniqExact(number)` ranks at least 1, and `uniqExact(x)` of a
+        /// `Nullable` `x` ranks 0 for a group whose `x` is always NULL.
+        const bool may_skip_rows = rank_function.getNestedFunction()
+            || std::ranges::any_of(rank_function.getArgumentTypes(), [](const DataTypePtr & type) { return canContainNull(*type); });
+        bucket_top_k_min_rank = may_skip_rows ? 0 : 1;
     }
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
@@ -3054,7 +3068,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     Int32 bucket,
     UntruncatedAggregationKeys * untruncated_keys,
     size_t * merged_group_count,
-    bool keep_table_buffer) const
+    bool keep_table_buffer,
+    std::optional<UInt64> top_k_threshold) const
 {
     if (merged_group_count)
         *merged_group_count = method.data.impls[bucket].size();
@@ -3076,7 +3091,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     }
 
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
-        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, untruncated_keys, keep_table_buffer, top_k_threshold);
 
     const bool allow_having_prefilter = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled;
 
@@ -3101,7 +3116,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 /// time, so this overload is needed for the set instantiation to exist; it is never reached.
 template <typename Method>
 requires SetAggregationMethod<Method>
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UntruncatedAggregationKeys *, bool) const
+Aggregator::AggregatedChunk
+Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UntruncatedAggregationKeys *, bool, std::optional<UInt64>) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The bucket-local Top-K conversion does not support set methods");
 }
@@ -3109,19 +3125,31 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Ar
 template <typename Method>
 requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const
+    Method & method,
+    Arena * arena,
+    Arenas & pools_for_output,
+    Int32 bucket,
+    UntruncatedAggregationKeys * untruncated_keys,
+    bool keep_table_buffer,
+    std::optional<UInt64> top_k_threshold) const
 {
     if (bucket_top_k_rank == BucketTopKRank::FinalizedResult)
         return convertOneBucketToChunkTopKImpl</*finalized_rank=*/true>(
-            method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+            method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer, top_k_threshold);
     return convertOneBucketToChunkTopKImpl</*finalized_rank=*/false>(
-        method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+        method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer, top_k_threshold);
 }
 
 template <bool finalized_rank, typename Method>
 requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const
+    Method & method,
+    Arena * arena,
+    Arenas & pools_for_output,
+    Int32 bucket,
+    UntruncatedAggregationKeys * untruncated_keys,
+    bool keep_table_buffer,
+    std::optional<UInt64> top_k_threshold) const
 {
     auto & data = method.data.impls[bucket];
     chassert(params.bucket_top_k_rank_index < params.aggregates_size);
@@ -3193,6 +3221,14 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
     top.reserve(std::min(params.bucket_top_k, data.size()));
     const auto offer = [&](UInt64 value, const TableKey & key, AggregateDataPtr * mapped)
     {
+        /// A cell ranked worse than the threshold has `bucket_top_k` groups ahead of it in the output of the
+        /// other conversions (see `convertOneBucketToChunk`), so it loses like a cell the full heap rejects.
+        if (top_k_threshold && better(*top_k_threshold, value))
+        {
+            if constexpr (finalized_rank)
+                discard(mapped);
+            return;
+        }
         if (top.size() < params.bucket_top_k)
         {
             top.push_back({value, key, mapped});
@@ -3340,6 +3376,11 @@ UInt64 Aggregator::finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scra
     return counts.back();
 }
 
+std::span<const UInt64> Aggregator::bucketTopKRanks(const Chunk & chunk) const
+{
+    return assert_cast<const ColumnUInt64 &>(*chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]).getData();
+}
+
 Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     ManyAggregatedDataVariants & variants,
     Arena * arena,
@@ -3456,7 +3497,13 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 }
 
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
-    AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const
+    AggregatedDataVariants & variants,
+    Arena * arena,
+    bool final,
+    Int32 bucket,
+    UntruncatedAggregationKeys * untruncated_keys,
+    bool keep_table_buffer,
+    std::optional<UInt64> top_k_threshold) const
 {
     const auto method = variants.type;
     AggregatedChunk agg_chunk;
@@ -3464,7 +3511,9 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*merged_group_count=*/nullptr, keep_table_buffer); \
+        agg_chunk = convertOneBucketToChunk( \
+            variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*merged_group_count=*/nullptr, keep_table_buffer, \
+            top_k_threshold); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M

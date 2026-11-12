@@ -216,7 +216,7 @@ public:
 
     ~AliasSink() override
     {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// On cancellation without an exception (e.g. `KILL QUERY`) neither
         /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
         /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
         if (executor)
@@ -305,6 +305,13 @@ public:
 
         block_io.onFinish();
         block_io = {};
+    }
+
+    void onPipelineFinished() override
+    {
+        /// Stopped by `timeout_overflow_mode = 'break'`: the nested INSERT finishes as if the input had ended.
+        if (isCancelled() && stage != Stage::Exception && executor)
+            onFinish();
     }
 
     void onException(std::exception_ptr) override
@@ -633,8 +640,13 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     if (!has_select_access)
         return false;
 
-    auto target = tryGetTargetTable();
-    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    /// Ask the storage the snapshot was taken from instead of resolving the target again: a storage
+    /// can only interpret its own snapshot, and the target may have been replaced in between, e.g.
+    /// the proxy of a lazily loaded table by the loaded table.
+    const IStorage & target = storage_snapshot->storage;
+    if (&target == this)
+        return false;
+    return target.supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
 /// The delegation below re-enters this method on an Alias target, so each hop asks for its own declared

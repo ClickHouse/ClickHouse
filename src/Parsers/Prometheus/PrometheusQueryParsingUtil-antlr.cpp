@@ -931,7 +931,7 @@ namespace
             if (!res_node)
             {
                 chassert(error_listener.hasError());
-                return nullptr;
+                return {};
             }
 
             auto * offset_op_ctx = ctx->offsetOp();

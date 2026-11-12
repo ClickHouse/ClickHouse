@@ -140,6 +140,8 @@ protected:
       * `modulo` yields the default of its result type there instead.
       */
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    /// The same for these arguments, for a function that throws on the default value of only some argument types.
+    [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
 
     /** True if function might throw an exception during execution.
       */
@@ -738,6 +740,7 @@ public:
     [[nodiscard]] virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
 
     /// Properties from IFunctionBase (see IFunction.h)
     [[nodiscard]] virtual bool isSuitableForConstantFolding() const { return true; }

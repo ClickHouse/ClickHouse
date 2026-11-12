@@ -17,10 +17,14 @@ private:
 
     [[nodiscard]] size_t getMarkUpperBoundForRow(size_t row_index) const;
 
+    void writeDataImpl(WriteBuffer & out) const override;
+    void readDataImpl(ReadBuffer & in) override;
 public:
     MergeTreeIndexGranularityConstant() = default;
     explicit MergeTreeIndexGranularityConstant(size_t constant_granularity_);
     MergeTreeIndexGranularityConstant(size_t constant_granularity_, size_t last_mark_granularity_, size_t num_marks_without_final_, bool has_final_mark_);
+
+    [[nodiscard]] MergeTreeIndexGranularityType getType() const override { return MergeTreeIndexGranularityType::CONSTANT; }
 
     [[nodiscard]] std::optional<size_t> getConstantGranularity() const override { return constant_granularity; }
     [[nodiscard]] size_t getRowsCountInRange(size_t begin, size_t end) const override;

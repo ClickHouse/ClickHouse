@@ -12,17 +12,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="max_local_read_bandwidth">
-  ## max_local_read_bandwidth
-</div>
+## max_local_read_bandwidth {#max_local_read_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 本地读取的最大速度，单位为字节/秒。
 
-<div id="max_local_write_bandwidth">
-  ## max_local_write_bandwidth
-</div>
+该限制仅作用于从块设备读取的数据：只要读取方法能够识别出由 OS 页面缓存提供的读取，这部分读取就不计入限制 (默认的 `local_filesystem_read_method = 'pread_threadpool'`、`pread` 以及文件系统缓存文件的读取均属于这种情况) 。
+
+## max_local_write_bandwidth {#max_local_write_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
