@@ -45,4 +45,13 @@ WITH 'x' AS format
 SELECT foo FROM s3Cluster('test_shard_localhost', s3_conn, filename = '05516_lookup.csv', format = 'CSV', structure = 'foo String')
 ORDER BY foo;
 
+-- A `key = value` is a named argument only as a trailing argument. A positional `identifier = value`
+-- expression followed by a positional argument (here the partition_columns_in_data_file Boolean before
+-- the structure) is an ordinary comparison and must resolve to the alias. Analysis only (EXPLAIN): the
+-- endpoint is never contacted; the test fails (UNKNOWN_IDENTIFIER) if `keep` is wrongly skipped.
+EXPLAIN QUERY TREE
+WITH 1 AS keep
+SELECT * FROM azureBlobStorage('http://127.0.0.1:1/account', 'container', 'file.csv', 'CSV', 'none', 'NONE', keep = 1, 'a UInt8')
+FORMAT Null;
+
 DROP TABLE t_05516;

@@ -106,19 +106,31 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
 
     VectorWithMemoryTracking<size_t> result;
 
+    /// `headers(...)` may appear in any position.
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (!function_node)
-            continue;
-        /// `headers(...)` and a `key = value` named argument are parameters of the table function, not
-        /// expressions of the query: the key must not resolve to a column or alias of the same name.
-        const auto & function_name = function_node->getFunctionName();
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        bool is_key_value_argument = function_name == "equals" && function_arguments.size() == 2
-            && function_arguments[0]->as<IdentifierNode>();
-        if (function_name == "headers" || is_key_value_argument)
+        if (function_node && function_node->getFunctionName() == "headers")
             result.push_back(i);
+    }
+
+    /// A `key = value` named argument is a trailing argument whose key names a parameter of the table
+    /// function, so it must not resolve to a column or alias. A positional `identifier = value` expression
+    /// (one followed by a positional argument, e.g. the partition_columns_in_data_file Boolean) is an
+    /// ordinary comparison, so only the trailing run of `key = value` arguments is skipped.
+    for (size_t i = table_function_arguments_size; i-- > 0;)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (!function_node)
+            break;
+        const auto & function_name = function_node->getFunctionName();
+        if (function_name == "headers")
+            continue; /// already recorded above; part of the trailing named-argument run
+        const auto & function_arguments = function_node->getArguments().getNodes();
+        if (function_name == "equals" && function_arguments.size() == 2 && function_arguments[0]->as<IdentifierNode>())
+            result.push_back(i);
+        else
+            break;
     }
 
     return result;
