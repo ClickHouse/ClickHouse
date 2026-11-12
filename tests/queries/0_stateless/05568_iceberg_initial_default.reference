@@ -74,6 +74,9 @@ Parquet
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
 1	8
+readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 Parquet, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
@@ -81,9 +84,6 @@ schema ids	[1]
 1
 1
 1	(10,5)	[(11,5)]	7	8	(6)	[1,NULL]
-readd	1	(9)	9
-t.j = 9	(9)
-t.j = 9	(9)
 readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
 t.j = 9	(9)
@@ -110,19 +110,23 @@ struct in struct	0	9
 struct in struct	0	10	6
 struct in struct	0	1
 dotted	7	(11)
+dotted element	1	100	8
+dotted element	1	(5)	5
+dotted element	0	100	8
+dotted element	0	(5)	5
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
 1	8
+readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 ORC, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
 10	5	6	\N
 1
 1
-readd	1	(9)	9
-t.j = 9	(9)
-t.j = 9	(9)
 readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
 t.j = 9	(9)
@@ -154,19 +158,20 @@ struct in struct	0	9
 struct in struct	0	10	6
 struct in struct	0	1
 dotted	7	(11)
+dotted element	1	100	8
+dotted element	1	(5)	5
+dotted element	0	100	8
+dotted element	0	(5)	5
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
 1	8
-Avro, current schema
-schema ids	[1]
-1	7	8	(6)	(NULL)	[1,NULL]
 readd	1	(9)	9
 t.j = 9	(9)
 t.j = 9	(9)
+Avro, current schema
+schema ids	[1]
+1	7	8	(6)	(NULL)	[1,NULL]
 readd, current schema	1	9
 readd, current schema	1	9
-Code: 743
-Code: 743
-Code: 743
-Code: 743
+malformed defaults

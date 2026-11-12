@@ -3472,6 +3472,18 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     }
 }
 
+/// The element of the struct `path` that the subcolumn path `subpath` below it starts with, and the rest of `subpath`. An element
+/// name can have dots: it is the shortest prefix of `subpath` that the data lake schema has as a field of the struct.
+static std::pair<String, String> splitStructElementName(const String & path, const String & subpath, const ColumnNameToFieldId & encoding)
+{
+    for (size_t pos = subpath.find('.'); pos != String::npos; pos = subpath.find('.', pos + 1))
+        if (encoding.contains(path + "." + subpath.substr(0, pos)))
+            return {subpath.substr(0, pos), subpath.substr(pos + 1)};
+    if (encoding.contains(path + "." + subpath))
+        return {subpath, {}};
+    return Nested::splitName(subpath);
+}
+
 /// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
 /// and types, to read it under the data lake schema: a list is an array of its element, a struct has the requested elements, a
 /// whole one with its type. A list is told from a struct with a field `element` by the file; if the file has none, by the type
@@ -3510,7 +3522,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> nested_subcolumns;
     for (const auto & [subpath, type] : subcolumns)
     {
-        auto [name, rest] = Nested::splitName(subpath);
+        auto [name, rest] = splitStructElementName(path, subpath, column_mapper.getStorageColumnEncoding());
         if (!whole_types.contains(name) && !nested_subcolumns.contains(name))
             names.push_back(name);
         if (rest.empty())
