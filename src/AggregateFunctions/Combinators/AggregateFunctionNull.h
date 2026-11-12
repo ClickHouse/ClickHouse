@@ -1,7 +1,10 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -829,9 +832,34 @@ private:
 
     bool hasInternalNull(const IColumn ** columns, size_t row_begin, size_t row_end) const
     {
-        for (size_t row = row_begin; row < row_end; ++row)
-            if (hasInternalNull(columns, row))
-                return true;
+        for (size_t argument = 0; argument < number_of_arguments; ++argument)
+        {
+            if (!has_internal_nulls[argument])
+                continue;
+
+            const IColumn * column = columns[argument];
+            if (const auto * constant = checkAndGetColumn<ColumnConst>(column))
+            {
+                if (constant->isNullAt(0))
+                    return true;
+                continue;
+            }
+
+            if (const auto * variant = checkAndGetColumn<ColumnVariant>(column))
+            {
+                if (variant->getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+                    continue;
+            }
+            else if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(column))
+            {
+                if (dynamic->getVariantColumn().getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+                    continue;
+            }
+
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (column->isNullAt(row))
+                    return true;
+        }
         return false;
     }
 
