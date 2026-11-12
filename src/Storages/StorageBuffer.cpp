@@ -1,6 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -19,6 +20,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -342,13 +344,25 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
-        auto destination_lock
-            = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        /// Any grant on the destination implies `SHOW_TABLES` on it, so this denies a user with no access to the
+        /// destination before the refresh below, which could otherwise cost them remote I/O or show them its errors.
+        /// The column-level check needs the destination's metadata, so it is done once the snapshot is taken.
+        local_context->checkAccess(AccessType::SHOW_TABLES, destination->getStorageID());
 
         /// The analyzer refreshes only the `Buffer`, so a data lake destination would keep the snapshot of its last direct query.
         resolveStorageProxy(destination)->updateExternalDynamicMetadataIfExists(local_context);
+
+        /// Resolve subcolumns against the destination's metadata snapshot, which the read below uses too.
+        /// It may differ from the Buffer table's layout, so the same dotted identifier can resolve differently there.
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+        local_context->checkAccess(
+            AccessType::SELECT,
+            destination->getStorageID(),
+            destination_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, destination->getStorageID()));
+        auto destination_lock
+            = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);
@@ -619,6 +633,8 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
@@ -1500,8 +1516,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(ContextPtr query_context) const
 {
     std::optional<UInt64> underlying_rows;
-    if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(query_context);
+    /// A destination the user cannot see contributes nothing, as a missing one does.
+    if (destination_id && query_context
+        && query_context->getAccess()->isGranted(AccessType::SHOW_TABLES, destination_id.database_name, destination_id.table_name))
+    {
+        if (auto destination = getDestinationTable())
+            underlying_rows = destination->totalRows(query_context);
+    }
 
     return total_writes.rows + underlying_rows.value_or(0);
 }

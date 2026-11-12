@@ -456,6 +456,60 @@ def test_static_credentials_when_vended_credentials_disabled(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
 
 
+def test_create_without_engine_arguments_vended_credentials(started_cluster):
+    """A pathless CREATE lets the catalog choose the location and write the first metadata file."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_vended_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_db"
+
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{BASE_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest',
+            vended_credentials = 1
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    try:
+        node.query(
+            f"CREATE TABLE {db_name}.`{namespace}.{table_name}` (id Int64, data String) ENGINE = IcebergS3",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        node.query(
+            f"CREATE TABLE IF NOT EXISTS {db_name}.`{namespace}.{table_name}` (id Int64, data String) ENGINE = IcebergS3",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        with pytest.raises(QueryRuntimeException) as exc:
+            node.query(
+                f"CREATE TABLE {db_name}.`{namespace}.{table_name}` (id Int64, data String) ENGINE = IcebergS3",
+                settings={"allow_experimental_database_iceberg": 1},
+            )
+        assert "already exists" in str(exc.value), str(exc.value)
+
+        node.query(
+            f"INSERT INTO {db_name}.`{namespace}.{table_name}` VALUES (1, 'a'), (2, 'b')",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+        result = node.query(
+            f"SELECT id, data FROM {db_name}.`{namespace}.{table_name}` ORDER BY id FORMAT TSV"
+        )
+        assert result == "1\ta\n2\tb\n", f"unexpected result:\n{result}"
+
+        catalog = load_catalog_impl(started_cluster)
+        table = catalog.load_table(f"{namespace}.{table_name}")
+        assert table.metadata_location.startswith("s3://warehouse-rest/"), table.metadata_location
+        assert table.metadata.location.startswith("s3://warehouse-rest/"), table.metadata.location
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
 def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 

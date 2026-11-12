@@ -32,9 +32,13 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
     if (graph.fragments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has no fragments");
 
-    /// A plan that was not cut is printed by `QueryPlan::explainPlan` alone, which builds its own names.
+    /// A plan that was not cut has its own naming scope, the one `QueryPlan::explainPlan` builds for it.
     if (single_node)
+    {
+        if (options.pretty)
+            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(getPlan(graph.fragments.front()));
         return;
+    }
 
     print_order.reserve(graph.fragments.size());
     for (const auto & fragment : graph.fragments | std::views::reverse)
@@ -107,6 +111,17 @@ const QueryPlan & PreparedFragmentGraph::getPlan(const QueryFragment & fragment)
     return *fragment.plan;
 }
 
+const PrettyNames & PreparedFragmentGraph::getPrettyNames(const QueryPlan & plan) const
+{
+    static const PrettyNames no_names;
+    if (!options.pretty)
+        return no_names;
+    auto it = pretty_names.names.find(&plan);
+    if (it == pretty_names.names.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan to explain has no pretty names");
+    return it->second;
+}
+
 const String * PreparedFragmentGraph::tryGetReceiveExchangeId(const IQueryPlanStep & step)
 {
     if (const auto * receive = typeid_cast<const ShuffleReceiveStep *>(&step))
@@ -155,7 +170,9 @@ void writeSingleNode(const PreparedFragmentGraph & prepared, WriteBuffer & buf, 
 {
     chassert(prepared.single_node);
     const auto & fragment = prepared.graph.fragments.front();
-    PreparedFragmentGraph::getPlan(fragment).explainPlan(buf, prepared.options, 0, max_step_description_length);
+    PreparedFragmentGraph::getPlan(fragment).explainPlan(
+        buf, prepared.options, 0, max_step_description_length,
+        prepared.options.pretty ? &prepared.pretty_names : nullptr);
     if (fragment.fallback_reason)
         buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
 }
