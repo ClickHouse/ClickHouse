@@ -29,6 +29,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool enable_nullable_tuple_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
@@ -327,6 +328,7 @@ String getStructureHintColumnName(
         return identifier_parts.front();
 
     String full_name = boost::algorithm::join(identifier_parts, ".");
+    bool alias_prefix = identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias;
 
     /// `input` has no structure of its own, it takes it from the structure hint.
     if (table_function.getName() != "input")
@@ -343,6 +345,10 @@ String getStructureHintColumnName(
             }
         }
 
+        if (alias_prefix && context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
+            && source_columns->has(identifier_parts.back()))
+            return identifier_parts.back();
+
         if (source_columns->has(full_name))
             return full_name;
 
@@ -350,7 +356,7 @@ String getStructureHintColumnName(
             return {};
     }
 
-    if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
+    if (alias_prefix)
         return identifier_parts.back();
 
     return {};
