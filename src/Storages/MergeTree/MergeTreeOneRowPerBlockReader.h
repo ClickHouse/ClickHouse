@@ -16,7 +16,7 @@ class MergeTreeReaderStream;
 /// `tryGetOneRowPerBlockLayout`. Every row is one block, stored without compression, at a known position in the file of
 /// the array elements, so a row is read by seeking the usual stream of that file to its block and taking the block as it
 /// is stored: the elements of the row are copied once, from the read buffer of the stream to the column, and only the
-/// blocks of the requested rows are checksummed. Marks and array sizes are not read.
+/// blocks of the requested rows are checksummed. The position of a row is computed, not taken from the marks or the array sizes.
 ///
 /// The header and the checksum of every block that is read are checked, and an exception is thrown on a mismatch.
 class MergeTreeOneRowPerBlockReader

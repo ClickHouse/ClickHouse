@@ -458,6 +458,8 @@ size_t MergeTreeReaderWide::readOneRowPerBlock(
             elements_path.push_back(ISerialization::Substream::ArrayElements);
             const auto & file_name = one_row_per_block_readers[pos]->getLayout().file_name;
             auto & stream = getOrAddStream(elements_path, file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION)));
+            /// As in `getStream`: a reader reused for another task keeps the read boundary of the previous one.
+            stream.adjustRightMark(last_mark_to_read);
             one_row_per_block_readers[pos]->readRange(stream, first_row, num_rows, selected_rows, *column);
         }
         catch (Exception & e)

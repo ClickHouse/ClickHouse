@@ -19,6 +19,7 @@ SET hnsw_candidate_list_size_for_search = 2048;
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_readded;
 DROP TABLE IF EXISTS tab_renamed;
+DROP TABLE IF EXISTS tab_prefetch;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab
@@ -128,6 +129,28 @@ WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, f FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- With few prefetches allowed, a reader prefetched for one task is reused for the next tasks, and must read past the end
+-- of the range of the first task.
+CREATE TABLE tab_prefetch
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
+
+INSERT INTO tab_prefetch SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(64))
+FROM numbers(20000);
+
+SELECT 'reused reader';
+WITH (SELECT vec FROM tab_prefetch WHERE id = 123) AS ref
+SELECT id FROM tab_prefetch ORDER BY cosineDistance(vec, ref) LIMIT 3
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, max_threads = 2,
+    allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_prefetch = 1, local_filesystem_read_method = 'pread_threadpool',
+    filesystem_prefetch_step_marks = 1, filesystem_prefetches_limit = 2, merge_tree_min_rows_for_concurrent_read = 1,
+    merge_tree_min_bytes_for_concurrent_read = 0, use_reader_executor = 1;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
@@ -139,3 +162,4 @@ ORDER BY log_comment;
 DROP TABLE tab;
 DROP TABLE tab_readded;
 DROP TABLE tab_renamed;
+DROP TABLE tab_prefetch;

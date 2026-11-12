@@ -10255,7 +10255,6 @@ Read only the needed rows of a vector column instead of whole granules.
 This applies when a query reads known rows of a part. This happens in the second stage of lazy materialization.
 It also happens for the candidates of a vector similarity index with `vector_search_with_rescoring`.
 Only the blocks of these rows are read and checksummed. Their elements are copied directly into the result.
-The marks and array sizes of the column are not read.
 
 The column must meet these conditions:
 - Its type is `Array(BFloat16)`, `Array(Float32)`, `Array(Float64)` or `Array(Int8)`.
