@@ -38,8 +38,12 @@ static struct InitFiu
     ONCE(reverse_index_build_index_throw) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
+    ONCE(transaction_metadata_store_fail) \
+    ONCE(transaction_mutation_csn_store_fail) \
     REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
+    ONCE(transaction_mutation_csn_store_fail_after_write) \
+    ONCE(local_directory_sync_fail) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -66,6 +70,7 @@ static struct InitFiu
     REGULAR(stripe_log_sink_write_fallpoint) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
+    REGULAR(file_checker_repair_memory_limit_exceeded) \
     ONCE(rocksdb_rename_throw_filesystem_error) \
     REGULAR(rocksdb_rename_fail_reopen) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -317,6 +322,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
+    PAUSEABLE_ONCE(iceberg_metadata_prefetch_pause) \
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     PAUSEABLE_ONCE(hudi_pause_after_listing_timeline) \
@@ -455,6 +461,7 @@ static struct InitFiu
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
+    PAUSEABLE(transaction_pause_before_mutation_csn_store) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
     PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \

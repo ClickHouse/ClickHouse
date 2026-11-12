@@ -1430,7 +1430,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings(),
+        /// Temporary projection parts are written only by merges and mutations (`writeTempProjectionPart`), and a
+        /// single one is installed as the projection of the resulting part by renaming, so it is a part of what
+        /// replicas compare. Projections written on insert are not compared - other replicas fetch them.
+        is_temp
+            ? getWriteSettingsForMergeOrMutation(context->getWriteSettings(), data.supportsReplication())
+            : context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec,
         /// A separate instance: `<name>.proj/` is its own part directory.

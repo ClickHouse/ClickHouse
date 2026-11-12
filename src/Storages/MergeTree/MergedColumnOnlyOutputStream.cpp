@@ -36,9 +36,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     /// Granularity is never recomputed while writing only columns.
     const auto settings_context = writer_context ? writer_context : data_part->storage.getContext();
+    /// Only merges and mutations write columns separately.
     MergeTreeWriterSettings writer_settings(
         settings_context->getSettingsRef(),
-        settings_context->getWriteSettings(),
+        getWriteSettingsForMergeOrMutation(settings_context->getWriteSettings(), data_part->storage.supportsReplication()),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,

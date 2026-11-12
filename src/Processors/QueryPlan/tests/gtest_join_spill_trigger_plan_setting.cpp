@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -589,4 +590,56 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(carries_setting(serializeAt(disabled, pre_block_nested_loop_version)));
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
+}
+
+/// `min_string_column_bytes_for_hash_join_row_store` is written only towards a peer that knows the name, even with
+/// default join settings, and a plan from a peer that predates it is read back with the default.
+TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_row_store_strings_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES - 1;
+    const auto defaults = makeJoinSettings({});
+    const auto changed = makeJoinSettings({{"min_string_column_bytes_for_hash_join_row_store", 1000u}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.write(out);
+        return out.str().contains("min_string_column_bytes_for_hash_join_row_store");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(defaults, current_version)));
+    EXPECT_EQ(JoinSettings(serializeAt(changed, current_version), current_version).min_string_column_bytes_for_hash_join_row_store, 1000u);
+
+    EXPECT_FALSE(carries_setting(serializeAt(defaults, pre_row_store_strings_version)));
+    EXPECT_FALSE(carries_setting(serializeAt(changed, pre_row_store_strings_version)));
+    const JoinSettings read_back(serializeAt(changed, pre_row_store_strings_version), pre_row_store_strings_version);
+    EXPECT_EQ(read_back.min_string_column_bytes_for_hash_join_row_store, defaults.min_string_column_bytes_for_hash_join_row_store);
+}
+
+/// `enable_packed_string_keys_in_hash_join` and `min_rows_for_packed_string_keys_in_hash_join` are written at every
+/// version and read back as sent. Plan settings without the names read back as `false` and `0`: exact keys.
+TEST(JoinPackedStringKeysPlanSetting, RoundTrip)
+{
+    auto round_trip = [](const JoinSettings & join_settings)
+    {
+        WriteBufferFromOwnString out;
+        serializeAt(join_settings, current_version).write(out);
+        const String data = out.str();
+        ReadBufferFromString in(data);
+        QueryPlanSerializationSettings settings;
+        settings.read(in);
+        return JoinSettings(settings, current_version);
+    };
+
+    for (const auto & [enable, min_rows] : std::vector<std::pair<bool, UInt64>>{{true, 12345}, {false, 7}, {true, 0}})
+    {
+        const auto read_back = round_trip(makeJoinSettings(
+            {{"enable_packed_string_keys_in_hash_join", enable}, {"min_rows_for_packed_string_keys_in_hash_join", min_rows}}));
+        EXPECT_EQ(read_back.enable_packed_string_keys_in_hash_join, enable);
+        EXPECT_EQ(read_back.min_rows_for_packed_string_keys_in_hash_join, min_rows);
+    }
+
+    const JoinSettings without_names(QueryPlanSerializationSettings{}, current_version);
+    EXPECT_FALSE(without_names.enable_packed_string_keys_in_hash_join);
+    EXPECT_EQ(without_names.min_rows_for_packed_string_keys_in_hash_join, 0u);
 }
