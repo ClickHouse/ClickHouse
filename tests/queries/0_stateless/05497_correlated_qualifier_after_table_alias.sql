@@ -193,6 +193,28 @@ SELECT x, (
 FROM squality_alias_scope_join_name
 ORDER BY x;
 
+-- An alias equal to the database name only binds the one-part name. It does not make the
+-- database-qualified original table name visible in the inner scope.
+CREATE DATABASE squality_alias_scope_db;
+CREATE TABLE squality_alias_scope_db.t (x UInt64) ENGINE = Memory;
+INSERT INTO squality_alias_scope_db.t VALUES (1), (2), (3);
+
+SELECT count() FROM squality_alias_scope_db.t
+WHERE EXISTS
+    (SELECT 1 FROM squality_alias_scope_db.t AS squality_alias_scope_db
+     WHERE squality_alias_scope_db.x > squality_alias_scope_db.t.x);
+
+SELECT x, (
+    SELECT squality_alias_scope_db.t.*
+    FROM squality_alias_scope_db.t AS squality_alias_scope_db
+    WHERE squality_alias_scope_db.x = 3
+    LIMIT 1
+)
+FROM squality_alias_scope_db.t
+ORDER BY x;
+
+DROP DATABASE squality_alias_scope_db;
+
 SET allow_correlated_subqueries = 0;
 SELECT (SELECT squality_alias_scope_wildcard.* REPLACE (1 AS x)
         FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)

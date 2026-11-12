@@ -691,7 +691,7 @@ static bool isOriginalTableQualifierHiddenByParentScope(
         return false;
 
     const auto & qualifier = identifier.front();
-    if (table_expression_node->getAlias() == qualifier)
+    if (qualifier_parts == 1 && table_expression_node->getAlias() == qualifier)
         return false;
 
     const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
