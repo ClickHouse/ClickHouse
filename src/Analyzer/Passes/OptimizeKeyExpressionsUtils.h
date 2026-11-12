@@ -52,7 +52,10 @@ bool canRemoveGroupByKeysThatAreFunctionsOfOtherKeys(const QueryNode & query_nod
 
 /// Removes, in place, every key that is a function of the other keys.
 void removeKeysThatAreFunctionsOfOtherKeys(
-    QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys = {}, UsableGroupByKeys usable_keys = UsableGroupByKeys::ALL);
+    QueryTreeNodes & keys,
+    const QueryTreeNodes & aggregation_keys = {},
+    UsableGroupByKeys usable_keys = UsableGroupByKeys::ALL,
+    const QueryTreeNodePtrWithHashIgnoreAliasesSet & keys_to_keep = {});
 
 /// Returns a new key list with injective functions replaced by their non-constant arguments. An
 /// injective function gives the same grouping as its arguments, so the result does not change. When
@@ -74,13 +77,27 @@ QueryTreeNodes getGroupByKeys(const QueryNode & query_node);
 bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
 
 /// Returns true if `query_node` can have several rows with the same values of `GROUP BY` keys. Subtotals are not considered.
-bool canHaveSeveralRowsPerGroup(const QueryNode & query_node);
+/// `compare_names` also considers an `arrayJoin` that is equal to a key, but has another name, so it can be calculated again.
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node, bool compare_names);
 
-/// Equal expressions can have different names in the planner, because it names a folded constant by the expression that it is
-/// folded from: `x + 2` and `x + (1 + 1)`. Returns true if the constants in equal expressions are written in the same way.
+/// Returns true if `query_node`, which is a `SELECT DISTINCT`, can return equal rows.
+bool canHaveEqualRowsAfterDistinct(const QueryNode & query_node);
+
+/// Equal expressions can have different names in the planner, for example because it adds a cast to the name of a constant that is folded
+/// from an expression: `intDiv(x, 86400)` and `intDiv(x, 24 * 3600)`. Returns true if the names of equal expressions are the same.
 bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs);
 
-/// Returns true if the query has the function `grouping`, whose arguments must be `GROUP BY` keys.
-bool hasGroupingFunction(const QueryNode & query_node);
+/// The same, but constants can differ in the cast.
+bool areConstantsEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs);
+
+/// Returns true if `node` can be calculated after the aggregation from the keys as they are written.
+bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
+
+/// Returns true if equal `GROUP BY` keys of `query_node` can have different values, because their names are different, and some of them
+/// have default values in subtotals.
+bool canEqualGroupByKeysDiffer(const QueryNode & query_node);
+
+/// The arguments of the functions `grouping` of `query_node`, which must be `GROUP BY` keys.
+QueryTreeNodePtrWithHashIgnoreAliasesSet getGroupingFunctionArguments(const QueryNode & query_node);
 
 }

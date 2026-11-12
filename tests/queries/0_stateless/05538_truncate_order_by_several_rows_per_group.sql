@@ -37,6 +37,15 @@ SELECT number % 3 AS x, rowNumberInAllBlocks() AS r, count() AS c FROM numbers(6
 SELECT countIf(explain LIKE '%rowNumberInAllBlocks() DESC%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT number % 3 AS x, rowNumberInAllBlocks() AS r, count() AS c FROM numbers(6) GROUP BY 1 ORDER BY x, r DESC);
 SELECT countIf(explain LIKE '%count() DESC%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT number % 3 AS x, count() AS c FROM numbers(6) GROUP BY 1 ORDER BY x, c DESC);
 
+SELECT 'equal keys with other constants';
+SELECT arrayJoin([number % 2, 2]) AS x, count() AS c FROM numbers(4) GROUP BY x ORDER BY x, arrayJoin([number % 2, toUInt8(2)]);
+SELECT '-';
+SELECT arrayJoin([number % 2, 2]) AS x, number AS y FROM numbers(2) GROUP BY 1, 2 ORDER BY 1, 2, arrayJoin([number % 2, toUInt8(2)]);
+SELECT '-';
+SELECT intDiv(number, 4) AS x, count() AS c FROM numbers(8) GROUP BY x ORDER BY x, intDiv(number, toUInt8(4)) SETTINGS optimize_truncate_order_by_after_group_by_keys = 0;
+SELECT '-';
+SELECT intDiv(number, 4) AS x, count() AS c FROM remote('127.0.0.{2,3}', numbers(8)) GROUP BY 1 ORDER BY 1, intDiv(number, toUInt8(4)) SETTINGS optimize_truncate_order_by_after_group_by_keys = 0;
+
 SELECT 'distributed_group_by_no_merge';
 SET distributed_group_by_no_merge = 2;
 
@@ -51,3 +60,5 @@ SELECT '-';
 SELECT number % 2 AS x, shardNum() AS s FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY x ORDER BY x, shardNum();
 SELECT '-';
 SELECT number % 2 AS x, shardNum() AS s FROM remote('127.0.0.{2,3}', numbers(4)) GROUP BY 1 ORDER BY 1, shardNum() DESC;
+SELECT '-';
+SELECT number AS x FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY x ORDER BY x, count() OVER ();

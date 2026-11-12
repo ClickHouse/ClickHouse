@@ -111,6 +111,11 @@ public:
             /// while the argument of the aggregate function keeps its type, so the replacement would not match it.
             group_by_keys_stack.push_back({});
         }
+        else if (canEqualGroupByKeysDiffer(*query_node))
+        {
+            /// Neither of them is present in every set.
+            group_by_keys_stack.push_back({});
+        }
         else if (std::ranges::any_of(
                      query_node->getOrderBy().getNodes(),
                      [](const QueryTreeNodePtr & sort_node) { return sort_node->as<SortNode &>().withFill(); }))

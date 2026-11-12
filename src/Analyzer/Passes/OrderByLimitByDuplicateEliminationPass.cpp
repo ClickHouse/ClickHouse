@@ -1,16 +1,43 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
 
 namespace
 {
+
+bool hasPartWrittenAlike(const QueryTreeNodePtr & node, const QueryTreeNodePtr & part)
+{
+    checkStackSize();
+
+    return (node->isEqual(*part, {.compare_aliases = false}) && areConstantsWrittenAlike(node, part))
+        || std::ranges::any_of(node->getChildren(), [&](const auto & child) { return child && hasPartWrittenAlike(child, part); });
+}
+
+bool hasOnlyCalculatedArrayJoins(
+    const QueryTreeNodePtr & node, const QueryTreeNodes & clauses, const QueryTreeNodes & group_by_keys)
+{
+    checkStackSize();
+
+    const auto is_key = [&](const QueryTreeNodePtr & key)
+    { return key->isEqual(*node, {.compare_aliases = false}) && areConstantsWrittenAlike(key, node); };
+    if (std::ranges::any_of(group_by_keys, is_key))
+        return true;
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "arrayJoin")
+        return std::ranges::any_of(clauses, [&](const auto & clause) { return hasPartWrittenAlike(clause, node); });
+
+    return std::ranges::all_of(
+        node->getChildren(), [&](const auto & child) { return !child || hasOnlyCalculatedArrayJoins(child, clauses, group_by_keys); });
+}
 
 class OrderByLimitByDuplicateEliminationVisitor : public InDepthQueryTreeVisitor<OrderByLimitByDuplicateEliminationVisitor>
 {
@@ -20,6 +47,30 @@ public:
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
+
+        const auto group_by_keys = getGroupByKeys(*query_node);
+        QueryTreeNodes other_clauses;
+        for (const auto & clause : query_node->getChildren())
+        {
+            const bool is_calculated_before_aggregation
+                = query_node->hasGroupBy() && (clause == query_node->getWhere() || clause == query_node->getPrewhere());
+            if (clause && clause != query_node->getJoinTreeNode() && clause != query_node->getGroupByNode()
+                && clause != query_node->getOrderByNode() && clause != query_node->getLimitByNode() && !is_calculated_before_aggregation)
+                other_clauses.push_back(clause);
+        }
+
+        auto is_redundant = [&](const QueryTreeNodePtr & expression, const QueryTreeNodePtr & previous_expression)
+        {
+            if (areConstantsWrittenAlike(expression, previous_expression))
+                return true;
+
+            /// It can only be calculated from the same key as the previous one.
+            if (!group_by_keys.empty() && !canBeCalculatedFromKeys(expression, group_by_keys))
+                return true;
+
+            /// An `arrayJoin` that is not calculated for another clause would only add rows.
+            return !hasOnlyCalculatedArrayJoins(expression, other_clauses, group_by_keys);
+        };
 
         if (query_node->hasOrderBy())
         {
@@ -43,9 +94,7 @@ public:
 
                 /// Different values can be equal with a collation, so the following keys are not redundant after it.
                 auto previous = unique_expressions_nodes_set.find(expression);
-                const bool redundant = previous != unique_expressions_nodes_set.end()
-                    && areConstantsWrittenAlike(expression, previous->node);
-                if (redundant)
+                if (previous != unique_expressions_nodes_set.end() && is_redundant(expression, previous->node))
                     continue;
 
                 if (!sort_node_typed.getCollator())
@@ -58,15 +107,15 @@ public:
 
         if (query_node->hasLimitBy())
         {
-            QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
+            QueryTreeNodePtrWithHashSet unique_expressions_nodes_set;
             QueryTreeNodes result_nodes;
 
             auto & query_limit_by_nodes = query_node->getLimitBy().getNodes();
 
             for (auto & limit_by_node : query_limit_by_nodes)
             {
-                auto [_, inserted] = unique_expressions_nodes_set.emplace(limit_by_node.get());
-                if (inserted)
+                auto [previous, inserted] = unique_expressions_nodes_set.emplace(limit_by_node);
+                if (inserted || !is_redundant(limit_by_node, previous->node))
                     result_nodes.push_back(limit_by_node);
             }
 

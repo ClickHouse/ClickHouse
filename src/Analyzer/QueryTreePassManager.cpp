@@ -59,6 +59,7 @@
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/TruncateOrderByAfterGroupByKeysPass.h>
+#include <Analyzer/Passes/UnifyGroupByKeysPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Utils.h>
@@ -370,6 +371,9 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>(UsableGroupByKeys::AFTER_REPLACEMENTS));
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>(UsableGroupByKeys::AFTER_REPLACEMENTS));
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
+
+    /// After all passes that replace expressions with keys, or remove keys.
+    manager.addPass(std::make_unique<UnifyGroupByKeysPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 

@@ -53,14 +53,12 @@ public:
             || query->isGroupByWithGroupingSets() || query->isGroupByWithTotals())
             return;
 
-        if (hasGroupingFunction(*query))
-            return;
-
         bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
 
         auto & group_by = query->getGroupBy().getNodes();
 
-        auto new_group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
+        const auto keys_to_keep = getGroupingFunctionArguments(*query);
+        auto new_group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types, &keys_to_keep);
 
         /// At least one key is needed for GROUP BY: with an empty key list the query does not aggregate.
         if (!new_group_by.empty())

@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ListNode.h>
@@ -17,6 +18,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
@@ -186,7 +188,7 @@ bool canRemoveGroupByKeysThatAreFunctionsOfOtherKeys(const QueryNode & query_nod
         || query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithTotals())
         return false;
 
-    return !hasGroupingFunction(query_node);
+    return true;
 }
 
 bool isExpressionFunctionOfKeys(
@@ -271,7 +273,10 @@ bool isExpressionFunctionOfKeys(
 }
 
 void removeKeysThatAreFunctionsOfOtherKeys(
-    QueryTreeNodes & keys, const QueryTreeNodes & aggregation_keys, UsableGroupByKeys usable_keys)
+    QueryTreeNodes & keys,
+    const QueryTreeNodes & aggregation_keys,
+    UsableGroupByKeys usable_keys,
+    const QueryTreeNodePtrWithHashIgnoreAliasesSet & keys_to_keep)
 {
     QueryTreeNodePtrWithHashSet key_set;
     for (const auto & key : keys)
@@ -282,7 +287,8 @@ void removeKeysThatAreFunctionsOfOtherKeys(
     new_keys.reserve(keys.size());
     for (auto & key : keys)
     {
-        const bool is_considered = usable_keys != UsableGroupByKeys::AFTER_REPLACEMENTS || hasReplaceableWithArguments(key);
+        const bool is_considered = !keys_to_keep.contains(key)
+            && (usable_keys != UsableGroupByKeys::AFTER_REPLACEMENTS || hasReplaceableWithArguments(key));
         if (!is_considered || !isExpressionFunctionOfKeys(key, key_set, aggregation_keys))
             new_keys.push_back(key);
     }
@@ -403,18 +409,29 @@ bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTree
     return std::ranges::any_of(group_by_keys, [&](const auto & key) { return compareGroupByKeys(node, key); });
 }
 
-bool canHaveSeveralRowsPerGroup(const QueryNode & query_node)
+namespace
+{
+
+/// Whether `node` has an `arrayJoin`, and is not one of `calculated_nodes`.
+bool hasArrayJoinThatIsNotCalculated(const QueryTreeNodePtr & node, const QueryTreeNodes & calculated_nodes, bool compare_names)
+{
+    return hasFunctionNode(node, "arrayJoin")
+        && std::ranges::none_of(
+               calculated_nodes,
+               [&](const QueryTreeNodePtr & calculated_node)
+               { return calculated_node->isEqual(*node) && (!compare_names || areConstantsWrittenAlike(calculated_node, node)); });
+}
+
+}
+
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node, bool compare_names)
 {
     /// The groups of different shards are not merged.
     if (query_node.getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
         return true;
 
     const auto & keys = query_node.getGroupBy().getNodes();
-    auto adds_rows = [&](const QueryTreeNodePtr & node)
-    {
-        return hasFunctionNode(node, "arrayJoin")
-            && std::ranges::none_of(keys, [&](const QueryTreeNodePtr & key) { return key->isEqual(*node); });
-    };
+    auto adds_rows = [&](const QueryTreeNodePtr & node) { return hasArrayJoinThatIsNotCalculated(node, keys, compare_names); };
 
     for (const auto & node : query_node.getOrderBy().getNodes())
     {
@@ -433,7 +450,45 @@ bool canHaveSeveralRowsPerGroup(const QueryNode & query_node)
         || std::ranges::any_of(query_node.getProjection().getNodes(), adds_rows);
 }
 
-bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+bool canHaveEqualRowsAfterDistinct(const QueryNode & query_node)
+{
+    /// The rows of different shards are not merged.
+    if (query_node.getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
+        return true;
+
+    /// Of the other clauses, only `LIMIT BY` and `WITH FILL` are done after `DISTINCT` and can add rows.
+    if (std::ranges::any_of(
+            query_node.getOrderBy().getNodes(), [](const QueryTreeNodePtr & node) { return node->as<const SortNode &>().withFill(); }))
+        return true;
+
+    const auto & projection = query_node.getProjection().getNodes();
+    return std::ranges::any_of(
+        query_node.getLimitBy().getNodes(),
+        [&](const QueryTreeNodePtr & node) { return hasArrayJoinThatIsNotCalculated(node, projection, /*compare_names=*/true); });
+}
+
+namespace
+{
+
+/// In which way the planner writes the constant in names.
+bool hasCastInName(const ConstantNode & node)
+{
+    if (node.hasSourceExpression())
+        return true;
+
+    try
+    {
+        return ConstantNode::requiresCastCall(applyVisitor(FieldToDataType(), node.getValue()), node.getResultType());
+    }
+    catch (...)
+    {
+        /// `FieldToDataType` can throw for arrays of mixed types.
+        return true;
+    }
+}
+
+template <typename Predicate>
+bool allConstantsInEqualNodes(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, const Predicate & predicate)
 {
     checkStackSize();
 
@@ -443,32 +498,119 @@ bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodeP
     return std::ranges::equal(
         lhs->getChildren(),
         rhs->getChildren(),
-        [](const auto & lhs_child, const auto & rhs_child)
+        [&](const auto & lhs_child, const auto & rhs_child)
         {
             if (!lhs_child || !rhs_child)
                 return !lhs_child && !rhs_child;
 
             const auto * lhs_constant = lhs_child->template as<ConstantNode>();
             const auto * rhs_constant = rhs_child->template as<ConstantNode>();
-            if (!lhs_constant || !rhs_constant)
-                return areConstantsWrittenAlike(lhs_child, rhs_child);
-
-            if (!lhs_constant->hasSourceExpression() || !rhs_constant->hasSourceExpression())
-                return lhs_constant->hasSourceExpression() == rhs_constant->hasSourceExpression();
-
-            const auto & lhs_source = lhs_constant->getSourceExpression();
-            const auto & rhs_source = rhs_constant->getSourceExpression();
-            return lhs_source->isEqual(*rhs_source, {.compare_aliases = false}) && areConstantsWrittenAlike(lhs_source, rhs_source);
+            return lhs_constant && rhs_constant ? predicate(*lhs_constant, *rhs_constant)
+                                                : allConstantsInEqualNodes(lhs_child, rhs_child, predicate);
         });
 }
 
-bool hasGroupingFunction(const QueryNode & query_node)
+/// Equal constants can have types with different time zones, and can be 0 and -0.
+bool haveSameValueName(const ConstantNode & lhs, const ConstantNode & rhs)
 {
-    /// The name after `GroupingFunctionsResolvePass`, if there are no subtotals.
+    return lhs.getResultType()->getName() == rhs.getResultType()->getName() && lhs.getValueName({}) == rhs.getValueName({});
+}
+
+}
+
+bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    return allConstantsInEqualNodes(
+        lhs,
+        rhs,
+        [](const ConstantNode & lhs_constant, const ConstantNode & rhs_constant)
+        { return hasCastInName(lhs_constant) == hasCastInName(rhs_constant) && haveSameValueName(lhs_constant, rhs_constant); });
+}
+
+bool areConstantsEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    return allConstantsInEqualNodes(lhs, rhs, haveSameValueName);
+}
+
+bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys)
+{
+    checkStackSize();
+
+    const auto is_key = [&](const QueryTreeNodePtr & key)
+    { return key->isEqual(*node, {.compare_aliases = false}) && areConstantsWrittenAlike(key, node); };
+    if (std::ranges::any_of(group_by_keys, is_key))
+        return true;
+
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::COLUMN:
+        {
+            const auto source = node->as<ColumnNode &>().getColumnSourceOrNull();
+            return source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+        }
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+        case QueryTreeNodeType::TABLE:
+        case QueryTreeNodeType::TABLE_FUNCTION:
+            return true;
+        case QueryTreeNodeType::FUNCTION:
+        {
+            if (node->as<FunctionNode &>().isAggregateFunction())
+                return true;
+            break;
+        }
+        default:
+            break;
+    }
+
+    return std::ranges::all_of(
+        node->getChildren(), [&](const auto & child) { return !child || canBeCalculatedFromKeys(child, group_by_keys); });
+}
+
+bool canEqualGroupByKeysDiffer(const QueryNode & query_node)
+{
+    if (!query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube() && !query_node.isGroupByWithGroupingSets())
+        return false;
+
+    QueryTreeNodePtrWithHashSet unique_keys;
     return std::ranges::any_of(
-        query_node.getChildren(),
-        [&](const auto & clause)
-        { return clause && clause != query_node.getJoinTreeNode() && hasFunctionNode(clause, "__groupingOrdinary"); });
+        getGroupByKeys(query_node),
+        [&](const QueryTreeNodePtr & key)
+        {
+            auto [unique_key, inserted] = unique_keys.emplace(key);
+            return !inserted && !areConstantsWrittenAlike(unique_key->node, key);
+        });
+}
+
+namespace
+{
+
+void collectGroupingFunctionArguments(const QueryTreeNodePtr & node, QueryTreeNodePtrWithHashIgnoreAliasesSet & arguments)
+{
+    checkStackSize();
+
+    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return;
+
+    /// The name after `GroupingFunctionsResolvePass`, if there are no subtotals.
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "__groupingOrdinary")
+        arguments.insert(function_node->getArguments().begin(), function_node->getArguments().end());
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectGroupingFunctionArguments(child, arguments);
+}
+
+}
+
+QueryTreeNodePtrWithHashIgnoreAliasesSet getGroupingFunctionArguments(const QueryNode & query_node)
+{
+    QueryTreeNodePtrWithHashIgnoreAliasesSet arguments;
+    for (const auto & clause : query_node.getChildren())
+        if (clause && clause != query_node.getJoinTreeNode())
+            collectGroupingFunctionArguments(clause, arguments);
+
+    return arguments;
 }
 
 }

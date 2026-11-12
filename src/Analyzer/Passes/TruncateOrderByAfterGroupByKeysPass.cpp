@@ -9,6 +9,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
@@ -20,6 +21,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
     extern const SettingsBool optimize_truncate_order_by_after_group_by_keys;
 }
@@ -79,7 +81,8 @@ public:
         if (std::ranges::any_of(group_by_nodes, hasReplaceableWithArguments))
         {
             if (canRemoveGroupByKeysThatAreFunctionsOfOtherKeys(*query))
-                removeKeysThatAreFunctionsOfOtherKeys(remaining_keys, {}, UsableGroupByKeys::AFTER_REPLACEMENTS);
+                removeKeysThatAreFunctionsOfOtherKeys(
+                    remaining_keys, {}, UsableGroupByKeys::AFTER_REPLACEMENTS, getGroupingFunctionArguments(*query));
             removeKeysThatAreFunctionsOfOtherKeys(independent_keys);
         }
 
@@ -132,20 +135,24 @@ public:
         /// value of a stateful function depends on whether it is calculated before the sorting.
         const auto has_stateful_function
             = [](const auto & sort_elem) { return hasStatefulFunction(sort_elem->template as<SortNode &>().getExpression()); };
-        if (!canHaveSeveralRowsPerGroup(*query) && !has_merged_keys
+        if (!canHaveSeveralRowsPerGroup(*query, /*compare_names=*/false) && !has_merged_keys
             && std::none_of(order_by_nodes.begin() + truncate_after, order_by_nodes.end(), has_stateful_function))
             order_by_nodes.resize(truncate_after);
 
         /// Remove the elements that are equal in all these rows. Before all keys are covered, only if another pass replaces them, because
         /// then they cannot be calculated from the keys.
+        /// Window functions are not supported over the results of an aggregation on shards.
+        const bool has_unsupported_window_functions = getSettings()[Setting::distributed_group_by_no_merge] == 2
+            && !hasFunctionNode(query->getProjectionNode(), "arrayJoin") && !hasFunctionNode(query->getOrderByNode(), "arrayJoin");
         size_t size = independent_keys_end;
         for (size_t i = independent_keys_end; i < order_by_nodes.size(); ++i)
         {
             const auto & expression = order_by_nodes[i]->as<SortNode &>().getExpression();
             const bool is_redundant
                 = isFunctionOfKeys(expression, columns_of_merged_keys) && (i >= truncate_after || hasReplaceableWithArguments(expression));
-            /// It is already replaced.
-            const bool cannot_be_calculated = isFunctionOfKeys(expression, {}) && readsOtherColumns(expression, group_by_keys);
+            /// It is already replaced, or not supported.
+            const bool cannot_be_calculated = (isFunctionOfKeys(expression, {}) && readsOtherColumns(expression, group_by_keys))
+                || (i >= truncate_after && has_unsupported_window_functions && hasWindowFunctionNodes(expression));
             if (!is_redundant && !cannot_be_calculated)
                 order_by_nodes[size++] = order_by_nodes[i];
         }

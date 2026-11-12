@@ -33,7 +33,7 @@ public:
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
-        removeKeysThatAreFunctionsOfOtherKeys(group_by, {}, usable_keys);
+        removeKeysThatAreFunctionsOfOtherKeys(group_by, {}, usable_keys, getGroupingFunctionArguments(*query));
     }
 
 private:

@@ -18,6 +18,9 @@ arrayJoin
 3
 3
 3
+arrayJoin with other constants
+3
+3
 other arguments
 3
 3
@@ -30,12 +33,26 @@ other functions
 \N
 3
 3
+3
+3
 distributed_group_by_no_merge
 3
 3
 3
 3
+DISTINCT
+3
+3
+3
+3
+3
+3
+3
+3
+3
+3
 replaced
+0
 0
 0
 0
