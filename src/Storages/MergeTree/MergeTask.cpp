@@ -23,6 +23,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -1531,6 +1532,13 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     return hasLightweightDelete(global_ctx.future_part);
 }
 
+static bool readsAliasColumn(const IAST & ast, const ColumnsDescription & columns)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && columns.hasAlias(identifier->name()))
+        return true;
+    return std::ranges::any_of(ast.children, [&](const auto & child) { return readsAliasColumn(*child, columns); });
+}
+
 bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
 {
     if (!global_ctx.merge_may_reduce_rows)
@@ -1539,9 +1547,14 @@ bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
     if (!global_ctx.merge_only_drops_rows)
         return true;
 
-    /// Merging opens every substream of the current definition, which an index written by an older definition may lack (`.pos`).
+    const auto & columns = global_ctx.metadata_snapshot->getColumns();
+
     for (const auto & index : global_ctx.text_indexes_to_merge)
     {
+        /// `MODIFY COLUMN ... ALIAS` redefines the index without rewriting its files.
+        if (readsAliasColumn(*index.definition_ast, columns))
+            return true;
+
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx.metadata_snapshot, index, *global_ctx.data_settings);
         const auto required_substreams = index_ptr->getSubstreams();
 
@@ -1556,32 +1569,9 @@ bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
                 return std::ranges::any_of(format.substreams, [&](const auto & present) { return present.type == required.type; });
             };
 
-            if (format && !std::ranges::all_of(required_substreams, has_substream))
-                return true;
-        }
-    }
-
-    /// A part that lacks a materialized text index gets it built from the part's stream during
-    /// the merge, with doc ids equal to positions in the stream. If lightweight deletes are
-    /// applied at the source (any case except the vertical optimization, which filters rows
-    /// in the merging algorithm instead), the positions do not match the original part offsets.
-    /// Fall back to rebuilding text indexes for the resulting part.
-    if (global_ctx.vertical_lightweight_delete)
-        return false;
-
-    for (size_t i = 0; i < global_ctx.future_part->parts.size(); ++i)
-    {
-        const auto & part = global_ctx.future_part->parts[i];
-        if (part->rows_count == 0)
-            continue;
-
-        if (!part->hasLightweightDelete() && !global_ctx.alter_conversions[i]->hasLightweightDelete())
-            continue;
-
-        for (const auto & index : global_ctx.text_indexes_to_merge)
-        {
-            auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx.metadata_snapshot, index, *global_ctx.data_settings);
-            if (!index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+            /// A part without the index would build it from all of its rows, dropped ones included.
+            /// Merging opens every substream of the current definition, which an index written by an older definition may lack (`.pos`).
+            if (!format || !std::ranges::all_of(required_substreams, has_substream))
                 return true;
         }
     }
