@@ -538,6 +538,8 @@ public:
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
+        /// The only argument is a `LowCardinality` column whose used values are added once (aggregation without keys).
+        bool has_low_cardinality_argument = false;
     };
 
     /// Used for optimize_aggregation_in_order:
@@ -645,8 +647,9 @@ public:
       */
     std::vector<AggregatedChunk> convertBlockToTwoLevel(const Columns & columns, size_t rows) const;
 
-    /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
+    /// For external aggregation. With `capture_kept_keys_seed` the flush snapshots the keys it
+    /// writes out, for the caller to put back into the emptied table (see `keepsKeysAcrossSpills`).
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0, bool capture_kept_keys_seed = false) const;
 
     /// Flushes the table on request of the memory scheduler; returns the released bytes.
     /// Requires a two-level or convertible table and temporary data storage.
@@ -692,6 +695,9 @@ private:
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
+    /// The sum of `key_sizes`, from which the staged records take the stored width of a packed key (see
+    /// `stagedFixedKeyBytes`).
+    size_t adaptive_packed_key_bytes = 0;
     /// Per-query aggregate metadata used to estimate the cost of retaining states and merging them.
     size_t adaptive_state_bytes_per_distinct_input = 0;
     /// The only aggregate whose state grows per distinct input; its arguments are sampled when
@@ -1040,14 +1046,16 @@ private:
         bool all_keys_are_const,
         MemoryTracker * local_memory_tracker) const;
 
-    /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row whose key the
-    /// local table holds adds one to the key's inline count, and the other rows become count records, each with the
-    /// multiplicity of the rows it combines. A run of one key goes into one record, and while a trial shows that it
-    /// pays, so do the later rows of the key found through a per-partition cache. A batch whose kept key bytes reach
-    /// their bound is staged by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the
-    /// rest of the misses and the probe results are left to the caller. Returns the number of local hits.
-    template <typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
-    size_t collectCountMisses(
+    /// Collects the misses of a block whose records carry no aggregate arguments into the producer's batch: those of an
+    /// aggregation by a lone `count` (`with_count`) and those of one without aggregate functions. A row whose key the
+    /// local table holds is a hit, which with `with_count` adds one to the key's inline count. The other rows become
+    /// records, and the repeats of a missed key combine into its record, which with `with_count` counts the rows it
+    /// combines. A run of one key goes into one record, and while a trial shows that it pays, so do the later rows of
+    /// the key found through a per-partition cache. A batch whose kept key bytes reach their bound is staged by
+    /// `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the rest of the misses and
+    /// the probe results are left to the caller. Returns the number of local hits.
+    template <bool with_count, typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
+    size_t collectCombinedMisses(
         LocalMethod & local_method,
         State & find_state,
         size_t row_begin,
@@ -1057,13 +1065,13 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
-    /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
-    /// record carries a key and either a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or
-    /// the row's aggregate arguments laid out by `adaptive_argument_layout`, read from the argument columns of the
-    /// block's `aggregate_instructions`. Variable-size records also carry a hash and lengths; fixed-size records
-    /// recover the hash from the key when drained. Returns what it staged for the accounting of the batch (see
-    /// `accountStagedBatch`).
-    template <typename RecordKey, typename State>
+    /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
+    /// for `Method`, the two-level twin of the producer's table. Each record carries a key and either a multiplicity
+    /// (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate arguments laid out by
+    /// `adaptive_argument_layout`, read from the argument columns of the block's `aggregate_instructions`. The records
+    /// of byte-staged keys also carry a hash and lengths; those of fixed-width keys recover the hash from the key when
+    /// drained. Returns what it staged for the accounting of the batch (see `accountStagedBatch`).
+    template <typename Method, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
         const AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
@@ -1225,7 +1233,8 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryBlockStreamHolder & out) const;
+        TemporaryBlockStreamHolder & out,
+        bool capture_kept_keys_seed) const;
 
     /// Parameters for parallel merge workers for single level.
     struct ParallelMergeWorker
@@ -1720,10 +1729,19 @@ private:
     /// May permanently abandon the cutoff, so call it only when the spill would proceed.
     bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const;
 
-    /// Re-inserts the frozen kept keys, with empty states, into a table just emptied by a spill,
-    /// so the remaining rows of those keys keep being aggregated (see
-    /// `Params::SharedKeptKeysControl`). No-op unless the table is restricted to the kept keys.
+    /// Re-inserts the keys of the last flush, with empty states, into the table it emptied, so
+    /// they keep aggregating instead of being dropped by the `ANY` overflow mode. No-op unless
+    /// the flush captured them.
     void reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const;
+
+    /// A plain `max_rows_to_group_by` with `ANY`: every flush puts the keys it wrote out back
+    /// into the emptied table, so the limit counts every key ever admitted instead of restarting
+    /// at each flush, and it bounds what is retained. The shared cutoff manages its own set.
+    bool keepsKeysAcrossSpills() const
+    {
+        return params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::ANY
+            && !params.shared_kept_keys_control;
+    }
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
 
