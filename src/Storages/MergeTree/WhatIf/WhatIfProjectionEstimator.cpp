@@ -966,7 +966,10 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     { return merge_tree.choosePartFormat(whole_part.scaled(sample_bytes), whole_part.rows, parent_part->info.level, &projection).part_type; };
     const auto block_type = type_of(data.format_bytes);
     const auto part_type = merged_rows ? type_of(data.stored_bytes) : block_type;
-    data.both_formats |= part_type != block_type || (merged_rows && type_of(data.stored_bytes_least) != type_of(data.stored_bytes_most));
+    /// a merge keeps a wide format of the parts that it merges, and the settings that chose their formats are unknown
+    data.both_formats |= part_type != block_type
+        || (merged_rows
+            && (part_type != MergeTreeDataPartType::Wide || type_of(data.stored_bytes_least) != type_of(data.stored_bytes_most)));
     auto [layouts, primary] = layouts_of(part_type);
     data.wide = part_type == MergeTreeDataPartType::Wide;
     if (data.both_formats)
