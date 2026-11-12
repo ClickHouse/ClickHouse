@@ -171,13 +171,14 @@ struct Settings
 
     /// Remember the current value of a setting before adjustSettingsForMakeDistributedPlan
     /// overrides it for a derived distributed plan, so the override can be undone when the plan
-    /// turns off. The memory is local to the object it was recorded on - copies do not inherit
-    /// it, so a context cloned from a distributed query keeps the adjusted values when it turns
-    /// `make_distributed_plan` off to run a local fragment: for a fragment the adjustments are
-    /// the point, not a leftover. An explicit change of a remembered setting revokes its memory,
-    /// so the restore never overwrites a value the user set in the meantime. `name` is kept as
-    /// a key past the call and must point to static storage, such as the setting-name literals
-    /// the adjustment passes.
+    /// turns off. A copy inherits this memory, so a context cloned from a distributed query still
+    /// has it; adjustSettingsForMakeDistributedPlan only acts on it when the plan turns off because
+    /// nothing wants it anymore, not when something explicitly turns it off (a cloned context
+    /// running a local fragment, or a plan falling back to local execution), so a fragment or a
+    /// fallback keeps the adjustments it still needs instead of having them undone. An explicit
+    /// change of a remembered setting revokes its memory, so the restore never overwrites a value
+    /// the user set in the meantime. `name` is kept as a key past the call and must point to static
+    /// storage, such as the setting-name literals the adjustment passes.
     void rememberBeforeDistributedPlanAdjustment(std::string_view name);
 
     /// Restore every remembered pre-adjustment value, except one `is_allowed` refuses: that setting

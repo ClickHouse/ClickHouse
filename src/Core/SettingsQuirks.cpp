@@ -170,11 +170,14 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::functi
 
     if (!settings[Setting::make_distributed_plan])
     {
-        /// A derived plan must leave no trace once it is off; an explicitly enabled plan never
-        /// remembers, so its adjustments stay, as they always have. A remembered value the current
-        /// constraints forbid (e.g. a profile switched in since it was remembered) is dropped to
-        /// its default instead of restored.
-        settings.restoreDistributedPlanAdjustments(is_allowed);
+        /// A plan that turns off because nothing wants it anymore must leave no trace. One that is
+        /// turned off explicitly - a cloned context running an already-split local fragment, or a
+        /// plan falling back to local execution - keeps its adjustments instead: a fragment still
+        /// needs them, and a fallback keeps whatever the plan it fell back from already assumed.
+        /// A remembered value the current constraints forbid (e.g. a profile switched in since it
+        /// was remembered) is dropped to its default instead of restored.
+        if (derived)
+            settings.restoreDistributedPlanAdjustments(is_allowed);
         return;
     }
 
