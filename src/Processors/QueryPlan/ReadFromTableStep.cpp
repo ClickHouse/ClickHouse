@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -10,16 +12,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 ReadFromTableStep::ReadFromTableStep(
     SharedHeader header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
+    FilterDAGInfoPtr row_level_filter_,
     bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , row_level_filter(std::move(row_level_filter_))
     , use_parallel_replicas(use_parallel_replicas_)
 {
 }
@@ -42,6 +47,14 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    if (row_level_filter)
+    {
+        /// An older peer ignores the filter and returns the rows that the policy excludes.
+        if (ctx.step_version < 1)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "The peer cannot apply the row policy of table {}: upgrade all nodes", table_name);
+        flags |= 16;
+    }
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +65,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (row_level_filter)
+        row_level_filter->serialize(ctx);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,19 +95,28 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
+    FilterDAGInfoPtr row_level_filter;
+    if (flags & 16)
+        row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        ctx.output_header, table_name, table_expression_modifiers, std::move(row_level_filter), use_parallel_replicas);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(*this);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);
+    /// Version 1 carries the row policy filter (bit 16 of the flags byte).
+    registry.registerStep(
+        "ReadFromTable",
+        &ReadFromTableStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_LEVEL_FILTER}});
 }
 
 }
