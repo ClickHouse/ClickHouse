@@ -1437,6 +1437,15 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             validation_settings.allow_suspicious_aggregate_function_version_0 = true;
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
+
+        /// `ALIAS` and `EPHEMERAL` columns are persisted by their type name too.
+        DataTypeValidationSettings version_0_settings;
+        version_0_settings.allow_suspicious_aggregate_function_version_0 = validation_settings.allow_suspicious_aggregate_function_version_0;
+        version_0_settings.validate_nested_types = validation_settings.validate_nested_types;
+        for (const auto & name_and_type_pair : properties.columns.getAliases())
+            validateDataType(name_and_type_pair.type, version_0_settings);
+        for (const auto & name_and_type_pair : properties.columns.getEphemeral())
+            validateDataType(name_and_type_pair.type, version_0_settings);
     }
 }
 

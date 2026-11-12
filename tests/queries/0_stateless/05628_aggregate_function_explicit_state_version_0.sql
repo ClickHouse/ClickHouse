@@ -14,6 +14,8 @@ CREATE TABLE t_bitmap (s AggregateFunction(0, groupBitmapOr, AggregateFunction(g
 CREATE TABLE t_if (s AggregateFunction(0, sumMapIf, Array(UInt8), Array(UInt8), UInt8)) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_simple (s SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_argument (s AggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_alias (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)), AggregateFunction(1, sumMap, Array(UInt8), Array(UInt8))) ALIAS NULL) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_ephemeral (k UInt8, s AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)) EPHEMERAL) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t ADD COLUMN s2 AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t MODIFY COLUMN s AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8)); -- { serverError BAD_ARGUMENTS }
 SELECT CAST(sumMapState([1::UInt8], [2::UInt8]), 'AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))'); -- { serverError BAD_ARGUMENTS }
