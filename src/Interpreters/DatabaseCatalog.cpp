@@ -1,5 +1,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 #include <Access/ContextAccess.h>
 
@@ -331,9 +332,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
     /// Runs the shutdown work whose order does not matter: stopping background writers and shutting databases down.
     /// Each database waits for its tables in the shared shutdown pool, so as many threads as that pool keep it busy.
+    /// Its threads are not from the global pool, as the table workers that a database waits for are taken from there.
     auto & tables_pool = getDatabaseCatalogShutdownTablesThreadPool();
     tables_pool.initializeWithDefaultSettingsIfNotInitialized();
-    ThreadPool shutdown_pool(
+    FreeThreadPool shutdown_pool(
         CurrentMetrics::DatabaseCatalogThreads,
         CurrentMetrics::DatabaseCatalogThreadsActive,
         CurrentMetrics::DatabaseCatalogThreadsScheduled,
@@ -345,7 +347,13 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     /// Runs inline if the pool cannot start a thread, so the work is still done.
     auto run_concurrently = [&](const std::function<void()> & task)
     {
-        if (!shutdown_pool.trySchedule(task))
+        auto job = [task]
+        {
+            ThreadStatus thread_status;
+            task();
+        };
+
+        if (!shutdown_pool.trySchedule(job))
             task();
     };
 
@@ -400,23 +408,25 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         };
 
         /// Background writers do not depend on each other, so they stop concurrently, and all of them before returning.
-        auto stop_background_writes = [&](const std::vector<StoragePtr> & tables)
+        /// Returns whether it stopped any writer that is not in `stopped` yet.
+        auto stop_background_writes = [&](const std::vector<StoragePtr> & tables, std::unordered_set<StoragePtr> & stopped)
         {
+            bool stopped_new = false;
             for (const auto & table : tables)
             {
-                bool has_background_writes = false;
                 try
                 {
-                    has_background_writes = table && table->hasBackgroundWrites();
+                    if (!table || stopped.contains(table) || !table->hasBackgroundWrites())
+                        continue;
+                    stopped.insert(table);
                 }
                 catch (...)
                 {
                     tryLogCurrentException(log, "Failed to check whether a table writes in the background");
+                    continue;
                 }
 
-                if (!has_background_writes)
-                    continue;
-
+                stopped_new = true;
                 run_concurrently([this, table]
                 {
                     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
@@ -431,6 +441,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
                 });
             }
             wait_for_concurrent_work();
+            return stopped_new;
         };
 
         auto user_tables = list_user_tables();
@@ -483,8 +494,11 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
         /// List again to include the tables that finished loading meanwhile. Tables that write into others in the background
         /// stop first, what they wrote is drained while destinations still accept it, and only then are all tables prepared.
-        user_tables = list_user_tables();
-        stop_background_writes(user_tables);
+        /// The listing repeats until no new writer appears, as a writer being stopped can load or create another one.
+        std::unordered_set<StoragePtr> stopped_writers;
+        do
+            user_tables = list_user_tables();
+        while (stop_background_writes(user_tables, stopped_writers));
         drain_buffers(user_tables);
         for (const auto & table : user_tables)
         {
