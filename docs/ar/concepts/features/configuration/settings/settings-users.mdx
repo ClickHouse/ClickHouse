@@ -125,6 +125,7 @@ doc_type: 'reference'
 
 للمصادقة باستخدام TOTP، يجب على المستخدمين تقديم كلمة المرور الأساسية إلى جانب كلمة مرور لمرة واحدة يُنشئها تطبيق TOTP الخاص بهم، وذلك إما عبر خيار سطر الأوامر `--one-time-password` أو بإلحاقها بكلمة المرور الأساسية باستخدام المحرف &#39;+&#39;.
 على سبيل المثال، إذا كانت كلمة المرور الأساسية هي `some_password` وكان رمز TOTP المُنشأ هو `345123`، فيمكن للمستخدم تحديد `--password some_password+345123` أو `--password some_password --one-time-password 345123` عند الاتصال بـ ClickHouse. وإذا لم تُحدَّد كلمة مرور، فسيطلب `clickhouse-client` إدخالها تفاعليًا.
+عند عدم تقديم رمز لحساب مُفعَّل عليه TOTP، يرد الخادم بالخطأ `REQUIRED_SECOND_FACTOR` سواء أكانت كلمة المرور صحيحة أم لا، ويطلب `clickhouse-client` إدخال الرمز؛ إذ لا يُتحقَّق من كلمة المرور إلا مقترنةً بالرمز.
 
 يُقبل كل رمز مرة واحدة على الأكثر، وفقًا لما يقتضيه [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2)، لذا لا يمكن للمستخدم إتمام المصادقة بنجاح أكثر من مرة واحدة خلال كل `period`.
 ضع ذلك في الحسبان مع العملاء الذين يصادقون عند كل طلب أو اتصال (مثل البرامج النصية التي تستخدم واجهة HTTP): إذ تحتاج كل عملية مصادقة إلى رمز جديد.
@@ -318,6 +319,8 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 ### show_named_collections_secrets
 
 يُمكِّن هذا الإعداد أو يعطِّل امتياز `SHOW NAMED COLLECTIONS SECRETS` للمستخدم، وهو ما يتيح له الاطلاع على القيم المخزَّنة في [named collections](/ar/concepts/features/configuration/server-config/named-collections)، على سبيل المثال في جدول [`system.named_collections`](/ar/reference/system-tables/named_collections).
+
+وهو مطلوب أيضًا لتجاوز قيمة مفتاح مخزَّن في named collection عند استخدام هذه المجموعة، مثل `url` في `s3(my_collection, url = '...')`، أو في عبارة `SETTINGS` الخاصة بمحرك الجدول، أو مفتاح في مصدر القاموس. أما إضافة مفتاح غير مخزَّن في المجموعة فلا تستلزم هذا الامتياز.
 
 وهو معطَّل افتراضيًا: فالقدرة على إدارة named collections لا تعني القدرة على قراءة بيانات الاعتماد المخزَّنة فيها.
 

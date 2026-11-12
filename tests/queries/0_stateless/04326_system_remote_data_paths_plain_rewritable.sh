@@ -48,6 +48,7 @@ SETTINGS disk = disk(
     name = ${cached_disk_name},
     type = cache,
     max_size = '16Mi',
+    max_file_segment_size = '4Mi',
     path = '04326_cache_${CLICKHOUSE_DATABASE}/',
     disk = disk(
         name = 04326_cached_inner_${CLICKHOUSE_DATABASE},

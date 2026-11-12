@@ -12,7 +12,7 @@ namespace Setting
 extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
-FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
+FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
 {
     if (context)
         return context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
@@ -26,6 +26,12 @@ struct PlusImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
     static const constexpr bool is_commutative = true;
+
+    /// Documentation-only — accepts numerics (with the usual promotion rule),
+    /// Date / DateTime / DateTime64 + Interval, Array of numerics (broadcast),
+    /// and decimals with scale arithmetic. The full promotion matrix isn't
+    /// expressible in the current DSL.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)

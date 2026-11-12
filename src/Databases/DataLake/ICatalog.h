@@ -28,6 +28,10 @@ StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
 std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type);
 
+/// Percent-encodes the bytes a URI cannot carry raw (controls, space, DEL, non-ASCII, `?`, `#`) and every `%` that
+/// `S3::URI` would read literally: one that does not start an escape, or any `%` when the URL has a raw `?`.
+std::string encodeLocationForURI(std::string_view location);
+
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
 /// a registered validator do not support altering settings and get `NOT_IMPLEMENTED`.
@@ -105,6 +109,7 @@ public:
     bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
 
     StorageType getStorageType() const;
+    bool isS3Location() const;
 
     /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"
     /// as simple files or some in-memory tables, or even DataLake tables but in some private storages.
@@ -179,18 +184,21 @@ using CatalogTables = std::vector<CatalogTable>;
 /// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
 struct TableNameFilter
 {
-    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
-    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    /// In (`name = 'ns.table'` or `name IN ('ns.a', 'other.b')`) and Like
+    /// (`name LIKE 'ns.%'`) prune to specific namespaces; All lists the whole catalog
+    /// (fallback when we can't prune).
     enum class Kind
     {
         All,
-        Equals,
+        In,
         Like,
     };
 
     Kind kind = Kind::All;
-    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    /// `Like`: the pattern (e.g. `ns.%`).
     std::string value;
+    /// `In`: the full table names the query can ask for (e.g. `ns.a`, `other.b`).
+    std::vector<std::string> values;
 };
 
 
@@ -270,6 +278,10 @@ public:
     /// writing any table files to storage: a catalog that shares its storage view with
     /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Creates a table at the default location of the catalog. The catalog writes the first metadata file.
+    /// Requires `writesInitialMetadata`.
+    virtual void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const;
 
     /// Creates the namespace unless it already exists.
     virtual void createNamespaceIfNotExists(const String & namespace_name) const;
