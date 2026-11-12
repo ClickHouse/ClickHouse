@@ -75,7 +75,7 @@ sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from su
 select * from sub5 order by key;
 
 --
--- ORDER BY in sub3 : the ORDER BY is redundant; without query_plan_remove_redundant_sorting sub1 is fully pushed, sub3 -> WithMergableStage
+-- ORDER BY in sub3 : the ORDER BY is redundant and removed, so the query is fully pushed
 with sub1 as (select x, y from tab1 where x != 2),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
@@ -90,18 +90,9 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x;
-
-explain description=0
-with sub1 as (select x, y from tab1 where x != 2),
-sub2 as (select y, z from tab2 where y != 4),
-sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
-sub4 as (select z, a from tab3 where z != 8),
-sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x
-settings query_plan_remove_redundant_sorting = 0;
 
 --
--- ORDER BY in sub1 : the ORDER BY is redundant; without query_plan_remove_redundant_sorting sub1 -> WithMergableStage
+-- ORDER BY in sub1 : the ORDER BY is redundant and removed, so the query is fully pushed
 with sub1 as (select x, y from tab1 where x != 2 order by y),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
@@ -116,15 +107,6 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x;
-
-explain description=0
-with sub1 as (select x, y from tab1 where x != 2 order by y),
-sub2 as (select y, z from tab2 where y != 4),
-sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
-sub4 as (select z, a from tab3 where z != 8),
-sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x
-settings query_plan_remove_redundant_sorting = 0;
 
 --
 -- RIGHT JOIN in sub3: sub3 -> WithMergableStage
