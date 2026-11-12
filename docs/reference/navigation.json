@@ -1204,6 +1204,7 @@
         "reference/system-tables/user_processes",
         "reference/system-tables/user_query_log",
         "reference/system-tables/users",
+        "reference/system-tables/vector_similarity_index_cache",
         "reference/system-tables/view_refreshes",
         "reference/system-tables/warnings",
         "reference/system-tables/workloads",

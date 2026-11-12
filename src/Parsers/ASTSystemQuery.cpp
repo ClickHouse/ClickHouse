@@ -69,6 +69,13 @@ String ASTSystemQuery::getTable() const
     return name;
 }
 
+String ASTSystemQuery::getIndex() const
+{
+    String name;
+    tryGetIdentifierNameInto(index, name);
+    return name;
+}
+
 void ASTSystemQuery::setDatabase(const String & name)
 {
     reset(database);
@@ -241,6 +248,24 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     ostr << " OFFSET " << *filelog_offset;
                 else if (filelog_to_end)
                     ostr << " TO END";
+            }
+            break;
+        }
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            if (table)
+            {
+                ostr << ' ';
+                print_keyword("FOR TABLE");
+                ostr << ' ';
+                print_database_table();
+                if (index)
+                {
+                    ostr << ' ';
+                    print_keyword("INDEX");
+                    ostr << ' ';
+                    index->format(ostr, settings, state, frame);
+                }
             }
             break;
         }
@@ -706,6 +731,7 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     w.writeString("query_type", magic_enum::enum_name(type));
     w.writeChild("database", database);
     w.writeChild("table", table);
+    w.writeChild("index", index);
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
@@ -868,6 +894,9 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     table = r.readIdentifierChild("table");
     if (table)
         children.push_back(table);
+    index = r.readIdentifierChild("index");
+    if (index)
+        children.push_back(index);
     if_exists = r.getBool("if_exists");
     /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
     /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.
@@ -1023,6 +1052,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::CANCEL:
         case Type::REFRESH:
         case Type::CLEAR_TIME_SERIES_CACHES:
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
             if (!table)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
             break;
