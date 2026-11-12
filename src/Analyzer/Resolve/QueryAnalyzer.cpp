@@ -5595,7 +5595,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     }
 
     /// The query argument of a table function is a part of the calling query, not a stored definition.
-    if (!execution_context->isCompoundTableIdentifierQualificationAllowed())
+    /// Copy only when the field matters: a storage may keep a weak reference to this context.
+    if (execution_context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
+        && !execution_context->isCompoundTableIdentifierQualificationAllowed())
     {
         auto unrestricted_context = Context::createCopy(execution_context);
         unrestricted_context->setAllowCompoundTableIdentifierQualification(true);
