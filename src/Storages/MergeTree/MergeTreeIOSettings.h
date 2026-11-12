@@ -72,6 +72,10 @@ struct MergeTreeReaderSettings
     bool can_read_part_without_marks = false;
     /// If true, the data stream is compressed.
     bool is_compressed = true;
+    /// If false (the default), text index streams read out of file order (dictionary, postings,
+    /// positions) use a userspace page cache lookahead of one block instead of
+    /// `page_cache_lookahead_blocks`, see `makeTextIndexReaderSettings`.
+    bool use_page_cache_lookahead_for_text_index = false;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     /// If the query condition cache should serve conditions involving the current time by deriving
@@ -223,6 +227,22 @@ struct MergeTreeWriterSettings
     float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    UInt64 adaptive_codec_selection_period = 1;
 };
+
+/// Write settings for a part produced by a merge or a mutation.
+///
+/// Adaptive write buffers make the compressed blocks smaller, which changes the offsets stored in the marks. Replicas
+/// compare the checksums of a merged or mutated part (`checkPartChecksumsAndAddCommitOps`), and the uncompressed
+/// content of marks is a part of them. So the choice of buffers for these parts must not depend on anything local to
+/// a replica, like its memory limit: otherwise replicas with different memory limits produce different parts, and
+/// one of them rejects its own result with `CHECKSUM_DOESNT_MATCH` and fetches the part. Inserted parts are not
+/// compared - other replicas fetch them.
+inline WriteSettings getWriteSettingsForMergeOrMutation(WriteSettings settings, bool is_replicated)
+{
+    if (is_replicated)
+        settings.allow_adaptive_write_buffer_by_memory_ratio = false;
+    return settings;
+}
 
 }

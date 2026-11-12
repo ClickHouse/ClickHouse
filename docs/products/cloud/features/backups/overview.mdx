@@ -70,9 +70,15 @@ We also share backup / restore commands that allow you to export backups to your
 Any usage where backups are being exported to a
 different region in the same cloud provider will incur [data transfer](/products/cloud/reference/billing/network-data-transfer)
 charges.
-
-Currently, we don't support backup / restore for services utilizing [Transparent Data Encryption (TDE)](/products/cloud/guides/security/cmek#transparent-data-encryption-tde) or for regulated services.
 </Info>
+
+<Warning>
+**Services that cannot export backups to your own bucket**
+
+Backups to your own bucket are not available for services created with the **HIPAA compliant** or **PCI compliant** region type (regulated services), or for services using [Transparent Data Encryption (TDE)](/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+
+For regulated services this is a security control of the regulated environment, not a setting: the **Set up external backup** option is disabled in the console and the `BACKUP` privilege is not granted, so `BACKUP ... TO` an external bucket is not permitted either. ClickHouse-managed backups, configurable backup schedules and restores to a new service in the same region remain available. See [HIPAA onboarding](/products/cloud/guides/security/compliance/hipaa-onboarding#backups) and [PCI onboarding](/products/cloud/guides/security/compliance/pci-onboarding#backups).
+</Warning>
 
 See ["Export backups to your own Cloud account"](/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) for examples of how to take full and incremental backups to AWS, GCP, Azure object storage as well as how to restore from the backups.
 

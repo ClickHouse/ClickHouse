@@ -86,6 +86,9 @@ public:
     /// Whether a non-deterministic default was evaluated for one of `columns`, or for any column if `columns` is null.
     bool hasEvaluatedNonDeterministicDefaults(const NameSet * columns = nullptr) const;
 
+    /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
+    bool mayEvaluateMissingDefaults() const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
@@ -335,6 +338,8 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    mutable std::optional<bool> may_evaluate_missing_defaults;
 
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.

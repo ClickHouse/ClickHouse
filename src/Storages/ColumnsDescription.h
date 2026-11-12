@@ -28,6 +28,10 @@
 namespace DB
 {
 
+struct StorageID;
+class AccessRights;
+class AccessFlags;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -227,6 +231,28 @@ public:
 
     Names getNamesOfPhysical() const;
 
+    /// Returns the column names to pass to the `SELECT` access check on `table_id` when a query reads `column_names`.
+    /// A subcolumn (e.g. `t.a` for a `Tuple` column `t`) inherits the grants of its column, so it is mapped to the
+    /// parent storage column and `GRANT SELECT(t)` covers `t.a`, `t.b`, etc. This includes dynamic subcolumns of
+    /// `Dynamic` / `JSON` / dynamic `Map` columns (e.g. `json.a.b`), which are resolved by the same type-aware,
+    /// first-matching-prefix logic as identifier resolution, so the check authorizes exactly the column the query
+    /// reads from. A grant or revoke on the exact subcolumn name takes precedence over its column, so such a
+    /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
+    /// containing a dot, or unknown names such as virtual columns) are returned unchanged. The result is deduplicated
+    /// while preserving the order of first appearance.
+    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
+
+    /// Returns the names of the real subcolumns of the column `column_name` that have a grant of `flags` on their exact
+    /// name which they do not inherit from the column (e.g. ``GRANT SELECT(`json.a`)`` without a grant on `json`).
+    /// Grants are matched by name only, so a granted name is returned only if it resolves, by the same type-aware
+    /// resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a subcolumn of this column.
+    Names getSubcolumnsWithExplicitGrant(
+        const AccessRights & access_rights,
+        const AccessFlags & flags,
+        const String & database,
+        const String & table,
+        const String & column_name) const;
+
     bool hasPhysical(const String & column_name) const;
     bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
@@ -381,5 +407,12 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 /// (JSON paths) are open-ended, so the contract can only ever enumerate origins.
 bool prewhereSupportedColumnsContain(
     const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
+
+class IStorage;
+
+/// Whether the read of `storage` can evaluate a row policy over `required_columns` as its row-level filter.
+/// A remote storage ships only query text and would drop it. Wrappers (Merge, Buffer) re-derive it against
+/// their children's types, so every column must be in the PREWHERE contract.
+bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns);
 
 }

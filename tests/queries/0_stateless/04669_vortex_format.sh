@@ -65,9 +65,11 @@ $CLICKHOUSE_LOCAL -q "SELECT number AS n, toString(number) AS s FROM numbers(10)
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_FILE', 'Vortex'); DESC file('$DATA_FILE', 'Vortex')"
 
 echo "Larger data with compressible patterns survives the round trip:"
+# Random bytes are not valid UTF-8.
 $CLICKHOUSE_LOCAL -q "
     SELECT number AS n, toString(number % 100) AS dict_like, randomString(10) AS rnd, number * 0 AS zeros
     FROM numbers(100000)
+    SETTINGS output_format_vortex_string_as_string = 0
     FORMAT Vortex" > "$DATA_FILE"
 $CLICKHOUSE_LOCAL -q "
     SELECT count(), sum(n), sum(cityHash64(dict_like) * 0 + 1), max(length(rnd)), sum(zeros)
