@@ -461,8 +461,8 @@ bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) con
 {
     /// The files of a data lake snapshot can have other formats than the one new files are written in.
     if (configuration->isDataLakeConfiguration())
-        return FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context);
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+        return FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context, format_settings);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context, format_settings);
 }
 
 size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
@@ -989,6 +989,7 @@ void StorageObjectStorage::read(
         local_context,
         max_block_size,
         num_streams);
+    read_step->setParallelizeOutputAfterReading(parallelizeOutputAfterReading(local_context));
 
     query_plan.addStep(std::move(read_step));
 

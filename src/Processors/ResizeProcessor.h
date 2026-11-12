@@ -2,6 +2,7 @@
 
 #include <queue>
 #include <unordered_map>
+#include <vector>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
@@ -127,6 +128,60 @@ private:
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.
     std::vector<Port::Data> abandoned_chunks;
+};
+
+/// One input and two outputs. Pushes a chunk to the second output only when the first output cannot take it.
+class OverflowProcessor final : public IProcessor
+{
+public:
+    explicit OverflowProcessor(SharedHeader header);
+
+    String getName() const override { return "Overflow"; }
+    Status prepare() override;
+};
+
+/// N inputs and N outputs. Output i takes the chunks of the input that gave it its last chunk (at first input i) until that input
+/// finishes, then sticks to the input of the oldest chunk. An input is needed only while a waiting output sticks to it, or while
+/// a waiting output has no unfinished input to stick to.
+class StickyResizeProcessor final : public IProcessor
+{
+public:
+    StickyResizeProcessor(SharedHeader header, size_t num_streams);
+
+    String getName() const override { return "StickyResize"; }
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
+
+private:
+    struct InputState
+    {
+        InputPort * port = nullptr;
+        UInt64 data_order = 0;
+        bool has_data = false;
+        bool finished = false;
+        bool needed = false;
+        bool wanted = false;
+    };
+
+    struct OutputState
+    {
+        OutputPort * port = nullptr;
+        size_t source = 0;
+        bool waiting = false;
+        bool finished = false;
+    };
+
+    void updateInput(size_t input_number);
+    size_t oldestInputWithData() const;
+    void updateNeeded();
+
+    std::vector<InputState> inputs_state;
+    std::vector<OutputState> outputs_state;
+    std::unordered_map<const InputPort *, size_t> input_index;
+    std::unordered_map<const OutputPort *, size_t> output_index;
+    std::vector<size_t> waiting_outputs;
+    UInt64 data_counter = 0;
+    size_t num_finished_inputs = 0;
+    size_t num_finished_outputs = 0;
 };
 
 }

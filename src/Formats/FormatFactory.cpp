@@ -1391,20 +1391,26 @@ bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, c
     return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
 }
 
-bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const
+bool FormatFactory::checkParallelizeOutputAfterReading(
+    const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
     auto format_name = boost::to_lower_copy(name);
-    if (format_name == "parquet" && context->getSettingsRef()[Setting::input_format_parquet_preserve_order])
+    const auto & settings = context->getSettingsRef();
+    if (format_name == "parquet"
+        && (format_settings_ ? format_settings_->parquet.preserve_order : settings[Setting::input_format_parquet_preserve_order]))
         return false;
-    if (format_name == "vortex" && context->getSettingsRef()[Setting::input_format_vortex_preserve_order])
+    if (format_name == "vortex"
+        && (format_settings_ ? format_settings_->vortex.preserve_order : settings[Setting::input_format_vortex_preserve_order]))
         return false;
 
     return true;
 }
 
-bool FormatFactory::checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const
+bool FormatFactory::checkParallelizeOutputAfterReadingForAnyFormat(
+    const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
-    return checkParallelizeOutputAfterReading("Parquet", context) && checkParallelizeOutputAfterReading("Vortex", context);
+    return checkParallelizeOutputAfterReading("Parquet", context, format_settings_)
+        && checkParallelizeOutputAfterReading("Vortex", context, format_settings_);
 }
 
 void FormatFactory::checkFormatName(const String & name) const

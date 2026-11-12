@@ -2,6 +2,8 @@
 
 #include <Processors/Port.h>
 
+#include <limits>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -341,6 +343,213 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         return Status::NeedData;
 
     return Status::PortFull;
+}
+
+OverflowProcessor::OverflowProcessor(SharedHeader header)
+    : IProcessor(InputPorts{header}, OutputPorts{header, header})
+{
+}
+
+IProcessor::Status OverflowProcessor::prepare()
+{
+    auto & input = inputs.front();
+    auto & main = outputs.front();
+    auto & overflow = outputs.back();
+
+    if (main.isFinished() && overflow.isFinished())
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    auto can_push = [](const OutputPort & output) { return !output.isFinished() && output.canPush(); };
+
+    if (input.hasData())
+    {
+        OutputPort * output = can_push(main) ? &main : (can_push(overflow) ? &overflow : nullptr);
+        if (!output)
+        {
+            input.setNotNeeded();
+            return Status::PortFull;
+        }
+
+        output->pushData(input.pullData(/* set_not_needed = */ true));
+    }
+
+    if (input.isFinished())
+    {
+        main.finish();
+        overflow.finish();
+        return Status::Finished;
+    }
+
+    if (can_push(main) || can_push(overflow))
+    {
+        input.setNeeded();
+        return Status::NeedData;
+    }
+
+    input.setNotNeeded();
+    return Status::PortFull;
+}
+
+static constexpr size_t NO_INPUT = std::numeric_limits<size_t>::max();
+
+StickyResizeProcessor::StickyResizeProcessor(SharedHeader header, size_t num_streams)
+    : IProcessor(InputPorts(num_streams, header), OutputPorts(num_streams, header))
+{
+    for (auto & input : inputs)
+    {
+        input_index.emplace(&input, inputs_state.size());
+        inputs_state.push_back({.port = &input});
+    }
+    for (auto & output : outputs)
+    {
+        output_index.emplace(&output, outputs_state.size());
+        outputs_state.push_back({.port = &output, .source = outputs_state.size()});
+    }
+}
+
+IProcessor::Status StickyResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+{
+    for (auto * port : updated_outputs)
+    {
+        auto & output = outputs_state[output_index.at(port)];
+        if (output.finished)
+            continue;
+
+        if (port->isFinished())
+        {
+            output.finished = true;
+            output.waiting = false;
+            ++num_finished_outputs;
+        }
+        else if (!output.waiting && port->canPush())
+        {
+            output.waiting = true;
+            waiting_outputs.push_back(output_index.at(port));
+        }
+    }
+
+    if (num_finished_outputs == outputs_state.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+        return Status::Finished;
+    }
+
+    for (auto * port : updated_inputs)
+        updateInput(input_index.at(port));
+
+    /// Serve the waiting outputs in the order they started to wait.
+    size_t still_waiting = 0;
+    for (size_t output_number : waiting_outputs)
+    {
+        auto & output = outputs_state[output_number];
+        if (!output.waiting)
+            continue;
+
+        if (!output.port->canPush())
+        {
+            output.waiting = false;
+            continue;
+        }
+
+        size_t from = output.source;
+        if (!inputs_state[from].has_data)
+        {
+            if (!inputs_state[from].finished)
+            {
+                waiting_outputs[still_waiting++] = output_number;
+                continue;
+            }
+
+            from = oldestInputWithData();
+            if (from == NO_INPUT)
+            {
+                waiting_outputs[still_waiting++] = output_number;
+                continue;
+            }
+        }
+
+        auto & input = inputs_state[from];
+        output.port->pushData(input.port->pullData(/* set_not_needed = */ true));
+        input.has_data = false;
+        input.needed = false;
+        output.waiting = false;
+        output.source = from;
+        updateInput(from);
+    }
+    waiting_outputs.resize(still_waiting);
+
+    if (num_finished_inputs == inputs_state.size())
+    {
+        for (auto & output : outputs)
+            output.finish();
+        return Status::Finished;
+    }
+
+    updateNeeded();
+    return waiting_outputs.empty() ? Status::PortFull : Status::NeedData;
+}
+
+void StickyResizeProcessor::updateInput(size_t input_number)
+{
+    auto & input = inputs_state[input_number];
+    if (input.finished)
+        return;
+
+    if (input.port->isFinished())
+    {
+        input.finished = true;
+        input.has_data = false;
+        ++num_finished_inputs;
+    }
+    else if (!input.has_data && input.port->hasData())
+    {
+        input.has_data = true;
+        input.data_order = ++data_counter;
+    }
+}
+
+size_t StickyResizeProcessor::oldestInputWithData() const
+{
+    size_t res = NO_INPUT;
+    for (size_t i = 0; i < inputs_state.size(); ++i)
+        if (inputs_state[i].has_data && (res == NO_INPUT || inputs_state[i].data_order < inputs_state[res].data_order))
+            res = i;
+    return res;
+}
+
+void StickyResizeProcessor::updateNeeded()
+{
+    bool has_free_output = false;
+    for (auto & input : inputs_state)
+        input.wanted = false;
+    for (size_t output_number : waiting_outputs)
+    {
+        auto & input = inputs_state[outputs_state[output_number].source];
+        if (input.finished)
+            has_free_output = true;
+        else
+            input.wanted = true;
+    }
+
+    for (auto & input : inputs_state)
+    {
+        if (input.finished || input.has_data)
+            continue;
+
+        const bool need = has_free_output || input.wanted;
+        if (need == input.needed)
+            continue;
+
+        input.needed = need;
+        if (need)
+            input.port->setNeeded();
+        else
+            input.port->setNotNeeded();
+    }
 }
 
 }

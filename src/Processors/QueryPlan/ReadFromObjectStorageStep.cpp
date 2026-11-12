@@ -245,7 +245,6 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
-    size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
@@ -255,8 +254,13 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     const bool format_allows_parallelize = configuration->isDataLakeConfiguration()
         ? FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context)
         : FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
-    if (parallelize_output && format_allows_parallelize && output_ports > 0 && output_ports < resize_to)
-        pipe.resize(resize_to);
+    /// A table with a sorting key may be read in order, which needs each stream kept.
+    if (parallelize_output && parallelize_output_after_reading && format_allows_parallelize)
+        resizeOutputAfterReading(
+            pipe,
+            resize_to,
+            /* keep_streams = */ need_only_count || storage_snapshot->metadata->hasSortingKey(),
+            build_settings.min_outstreams_per_resize_after_split);
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
