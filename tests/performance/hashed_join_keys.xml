@@ -1,0 +1,120 @@
+<test>
+    <settings>
+        <join_algorithm>parallel_hash</join_algorithm>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <!--
+        Joins whose keys use the `hashed` hash table: several key columns that do not fit in 32 bytes together,
+        a `String` with other columns, and null-safe keys on `Nullable` columns. Each key is hashed with `hash128`,
+        and the join builds the keys of many rows at once. With the swap pinned off, the right table is the build
+        side. About half of the left rows have a match.
+    -->
+
+    <create_query>
+        CREATE TABLE hashed_keys_r
+        (
+            k1 UInt64, k2 UInt64, k3 UInt64, k4 UInt64, k5 UInt64,
+            s40 String, u UInt64, s15 String, ns Nullable(String), v UInt64
+        )
+        ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE hashed_keys_l
+        (
+            k1 UInt64, k2 UInt64, k3 UInt64, k4 UInt64, k5 UInt64,
+            s40 String, u UInt64, s15 String, ns Nullable(String), v UInt64
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <!-- s40 has 16 to 40 bytes, s15 has 0 to 15, and ns is NULL where x = 0 in the right table, and where x = 0 or x % 100 = 1 in the left one. -->
+    <fill_query>
+        INSERT INTO hashed_keys_r
+        SELECT
+            number AS x, x * 3, x * 5, x * 7, x * 11,
+            rightPad(concat(toString(x), '_'), 16 + intHash32(x) % 25, 'k') AS s,
+            x * 13,
+            substring(hex(intHash64(x)), 1, intHash32(x * 7 + 1) % 16),
+            if(x = 0, NULL, toNullable(s)),
+            x
+        FROM numbers_mt(10000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO hashed_keys_l
+        SELECT
+            (number * 2654435761) % 20000000 AS x, x * 3, x * 5, x * 7, x * 11,
+            rightPad(concat(toString(x), '_'), 16 + intHash32(x) % 25, 'k') AS s,
+            x * 13,
+            substring(hex(intHash64(x)), 1, intHash32(x * 7 + 1) % 16),
+            if(x = 0 OR x % 100 = 1, NULL, toNullable(s)),
+            x
+        FROM numbers_mt(20000000)
+    </fill_query>
+
+    <!--
+        Long keys, where a chunk of rows is cut by the byte limit of the key builder:
+        about 2 KiB per key (32 rows in a 64 KiB chunk) and about 12 KiB per key (5 rows).
+    -->
+    <create_query>CREATE TABLE hashed_keys_long_r (u UInt64, s String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE hashed_keys_long_l (u UInt64, s String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE hashed_keys_very_long_r (u UInt64, s String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE hashed_keys_very_long_l (u UInt64, s String, v UInt64) ENGINE = Memory</create_query>
+
+    <fill_query>
+        INSERT INTO hashed_keys_long_r
+        SELECT number AS x, substring(repeat(hex(intHash64(x)), 200), 1, 1024 + intHash32(x) % 2048), x
+        FROM numbers_mt(100000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO hashed_keys_long_l
+        SELECT (number * 2654435761) % 200000 AS x, substring(repeat(hex(intHash64(x)), 200), 1, 1024 + intHash32(x) % 2048), x
+        FROM numbers_mt(200000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO hashed_keys_very_long_r
+        SELECT number AS x, substring(repeat(hex(intHash64(x)), 1100), 1, 8192 + intHash32(x) % 8192), x
+        FROM numbers_mt(20000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO hashed_keys_very_long_l
+        SELECT (number * 2654435761) % 40000 AS x, substring(repeat(hex(intHash64(x)), 1100), 1, 8192 + intHash32(x) % 8192), x
+        FROM numbers_mt(40000)
+    </fill_query>
+
+    <query tag='five_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_l AS l INNER JOIN hashed_keys_r AS r
+        ON l.k1 = r.k1 AND l.k2 = r.k2 AND l.k3 = r.k3 AND l.k4 = r.k4 AND l.k5 = r.k5
+    </query>
+    <query tag='string_16_40_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_l AS l INNER JOIN hashed_keys_r AS r ON l.s40 = r.s40 AND l.u = r.u
+    </query>
+    <query tag='string_0_15_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_l AS l INNER JOIN hashed_keys_r AS r ON l.s15 = r.s15 AND l.u = r.u
+    </query>
+    <query tag='null_safe_nullable_string'>
+        <![CDATA[SELECT count(), sum(r.v) FROM hashed_keys_l AS l INNER JOIN hashed_keys_r AS r ON l.ns <=> r.ns]]>
+    </query>
+    <query tag='left_any_string_16_40_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_l AS l LEFT ANY JOIN hashed_keys_r AS r ON l.s40 = r.s40 AND l.u = r.u
+    </query>
+    <query tag='or_of_string_and_five_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_l AS l INNER JOIN hashed_keys_r AS r
+        ON (l.s40 = r.s40 AND l.u = r.u) OR (l.k1 = r.k1 AND l.k2 = r.k2 AND l.k3 = r.k3 AND l.k4 = r.k4 AND l.k5 = r.k5)
+        SETTINGS join_algorithm = 'hash'
+    </query>
+    <query tag='string_2k_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_long_l AS l INNER JOIN hashed_keys_long_r AS r ON l.s = r.s AND l.u = r.u
+    </query>
+    <query tag='string_12k_uint64'>
+        SELECT count(), sum(r.v) FROM hashed_keys_very_long_l AS l INNER JOIN hashed_keys_very_long_r AS r ON l.s = r.s AND l.u = r.u
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS hashed_keys_r</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hashed_keys_l</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hashed_keys_long_r</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hashed_keys_long_l</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hashed_keys_very_long_r</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hashed_keys_very_long_l</drop_query>
+</test>

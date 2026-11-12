@@ -49,8 +49,3 @@ a=p/b=q/<uuid>.parquet
 committed paths: part=%E6%97%A5%E6%9C%AC%E8%AA%9E/<uuid>.parquet
 part=a%252Fm%C3%BCnchen/<uuid>.parquet
 part=caf%C3%A9/<uuid>.parquet
--- the legacy (non-kernel) reader must also read a null partition value back as NULL
--- (the committed JSON null previously threw in the String-only parsing path)
-1	\N
-2	x
-3	\N

@@ -382,7 +382,11 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
 </Note>
 
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`. This is only accepted for a dictionary defined in a server configuration file: `remote_url_allow_hosts` checks only `host` and `port`, so a `CREATE DICTIONARY` query that sets `socket`, at the source or at one of its `<replica>` entries, is rejected with `BAD_ARGUMENTS`, and such a dictionary always connects over TCP to `host`:`port`, also for `localhost`. For the same reason, its `host` cannot contain `;` or `=`, which the client library reads as a list of connection options, or `,`, which it reads as a list of hosts.
+MySQL can be connected to on a local host via sockets. To do this, set `host` to `localhost` and `socket`. For any other `host`, `socket` is ignored and the connection goes over TCP. Without `socket`, the connection goes over TCP to `port`, also for `localhost`.
+
+<Note>
+`remote_url_allow_hosts` checks only `host` and `port`, not the path in `socket`, so `socket` is only accepted for a dictionary defined in a server configuration file. A `CREATE DICTIONARY` query that sets it, at the source or at one of its `<replica>` entries, is rejected with `BAD_ARGUMENTS`.
+</Note>
 
 Example of settings:
 

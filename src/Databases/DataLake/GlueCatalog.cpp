@@ -19,9 +19,13 @@
 #include <aws/glue/model/TableInput.h>
 #include <aws/glue/model/StorageDescriptor.h>
 #include <aws/glue/model/Column.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <aws/core/http/HttpResponse.h>
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <base/unit.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -51,6 +55,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -97,6 +103,22 @@ namespace DataLake
 
 namespace
 {
+
+/// The generated Glue error mapper marks every modeled exception as not retryable, including server
+/// faults such as `InternalServiceException` (HTTP 500), so a transient status is retried regardless.
+class GlueRetryStrategy : public Aws::Client::DefaultRetryStrategy
+{
+public:
+    /// NOLINTNEXTLINE(google-runtime-int)
+    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
+    {
+        if (attempted_retries >= m_maxRetries)
+            return false;
+        if (DB::CurrentThread::isInitialized() && DB::CurrentThread::get().isQueryCanceled())
+            return false;
+        return error.ShouldRetry() || Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
+    }
+};
 
 /// A Glue table is readable only if it is an Iceberg table. `table_type` is available in
 /// both the bulk `GetTables` listing and `tryGetTableMetadata`, so the two stay consistent.
@@ -169,6 +191,7 @@ GlueCatalog::GlueCatalog(
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
+    client_configuration.retryStrategy = std::make_shared<GlueRetryStrategy>();
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
     Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
@@ -306,12 +329,25 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
 CatalogTables GlueCatalog::getTables() const
 {
     auto databases = getDatabases("");
-    CatalogTables result;
-    for (const auto & database : databases)
+
+    /// Glue has no call that lists the tables of every database, so this issues one `GetTables` request per
+    /// database. Issuing them one after another makes `SHOW TABLES` take seconds to minutes in an account
+    /// with hundreds of databases, so they run in parallel, like the per-namespace listing of `RestCatalog`.
+    /// Every database writes to its own slot, which keeps the result in the order of `GetDatabases`.
+    std::vector<CatalogTables> tables_by_database(databases.size());
     {
-        auto tables_in_database = getTablesForDatabase(database);
-        result.insert(result.end(), tables_in_database.begin(), tables_in_database.end());
+        auto & pool = getContext()->getIcebergCatalogThreadpool();
+        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_GLUE_CATALOG);
+        /// Reserve tracking capacity, so `enqueueAndKeepTrack` cannot schedule a job and then fail to track it.
+        runner.reserve(databases.size());
+        for (size_t i = 0; i < databases.size(); ++i)
+            runner.enqueueAndKeepTrack([this, &databases, &tables_by_database, i] { tables_by_database[i] = getTablesForDatabase(databases[i]); });
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
+
+    CatalogTables result;
+    for (auto & tables_in_database : tables_by_database)
+        std::move(tables_in_database.begin(), tables_in_database.end(), std::back_inserter(result));
     return result;
 }
 
@@ -582,7 +618,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;
 
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
+    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : encodeLocationForURI(s3_location);
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
@@ -747,8 +783,8 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
     fs::path parent = original_path.parent_path();
     fs::path grandparent = parent.parent_path();
 
-    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
-    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
+    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/<i>-<uuid>.metadata.json
+    /// We should drop `metadata/<i>-<uuid>.metadata.json` suffix to get location.
     sd.SetLocation(grandparent.c_str());
 
     table_input.SetStorageDescriptor(sd);
