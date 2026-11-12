@@ -6,16 +6,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A stored UNIQUE KEY + TTL table (which a new definition cannot have) still loads. Its stored definition
-# is rewritten from a UNIQUE KEY table without TTL and attached back with the short ATTACH.
-# MATERIALIZE TTL on it is rejected, REMOVE TTL is allowed.
+# A stored UNIQUE KEY + TTL table (which a new definition cannot have) still loads. The table is stored
+# in a clickhouse-local data directory without TTL, its stored definition is rewritten to carry one, and
+# the next start loads it. MATERIALIZE TTL on it is rejected, REMOVE TTL is allowed.
 
-$CLICKHOUSE_CLIENT --enable_unique_key 1 -q "CREATE TABLE uk_ttl_attach (id UInt64, d Date, v String) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)"
-metadata_file=$($CLICKHOUSE_CLIENT -q "SELECT getServerSetting('path') || metadata_path FROM system.tables WHERE database = currentDatabase() AND name = 'uk_ttl_attach'")
-$CLICKHOUSE_CLIENT -q "DETACH TABLE uk_ttl_attach"
-sed -i.bak 's/^UNIQUE KEY (id)$/UNIQUE KEY (id) TTL d + toIntervalDay(1)/' "$metadata_file" && rm -f "$metadata_file.bak"
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE uk_ttl_attach"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'uk_ttl_attach' AND create_table_query LIKE '%TTL%'"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE uk_ttl_attach MATERIALIZE TTL; -- { serverError SUPPORT_IS_DISABLED }"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE uk_ttl_attach REMOVE TTL"
-$CLICKHOUSE_CLIENT -q "DROP TABLE uk_ttl_attach SYNC"
+data_dir="${CLICKHOUSE_TMP}/data"
+$CLICKHOUSE_LOCAL --path="$data_dir" --enable_unique_key 1 -q "CREATE TABLE uk_ttl_attach (id UInt64, d Date, v String) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)"
+$CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/default/uk_ttl_attach.sql" --param_copy="$data_dir.sql" -q "
+    SET engine_file_truncate_on_insert = 1;
+    INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
+        SELECT replaceOne(raw_blob, '\nUNIQUE KEY (id)\n', '\nUNIQUE KEY (id) TTL d + toIntervalDay(1)\n') FROM file({metadata:String}, 'RawBLOB');
+    INSERT INTO FUNCTION file({metadata:String}, 'RawBLOB') SELECT * FROM file({copy:String}, 'RawBLOB')"
+$CLICKHOUSE_LOCAL --path="$data_dir" -q "
+    SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'uk_ttl_attach' AND create_table_query LIKE '%TTL%';
+    ALTER TABLE uk_ttl_attach MATERIALIZE TTL; -- { serverError SUPPORT_IS_DISABLED }
+    ALTER TABLE uk_ttl_attach REMOVE TTL"
+rm -rf "$data_dir" "$data_dir.sql"

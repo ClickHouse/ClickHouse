@@ -18,16 +18,19 @@ for statement in CREATE ATTACH; do
     $CLICKHOUSE_CLIENT -q "$statement TABLE test_01249.bloom_filter_idx_good($columns, INDEX bloom_filter_a i32 TYPE bloom_filter(1.01) GRANULARITY 1) $storage; -- { serverError BAD_ARGUMENTS }"
 done
 
-# A stored definition with bad arguments still loads: it is rewritten into the stored metadata of a
-# valid table, which is then attached back with the short ATTACH.
+# A stored definition with bad arguments still loads. It is emulated in a clickhouse-local data directory:
+# the stored definition of a valid table is rewritten, and the next start loads it.
+data_dir="${CLICKHOUSE_TMP}/data"
+$CLICKHOUSE_LOCAL --path="$data_dir" -q "CREATE DATABASE test_01249"
 for arguments in '0., 1.' '-0.1' '1.01'; do
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01249.bloom_filter_idx_good($columns, INDEX bloom_filter_a i32 TYPE bloom_filter(0.025) GRANULARITY 1) $storage"
-    metadata_file=$($CLICKHOUSE_CLIENT -q "SELECT getServerSetting('path') || metadata_path FROM system.tables WHERE database = 'test_01249' AND name = 'bloom_filter_idx_good'")
-    $CLICKHOUSE_CLIENT -q "DETACH TABLE test_01249.bloom_filter_idx_good"
-    sed -i.bak "s/bloom_filter(0.025)/bloom_filter($arguments)/" "$metadata_file" && rm -f "$metadata_file.bak"
-    $CLICKHOUSE_CLIENT -q "ATTACH TABLE test_01249.bloom_filter_idx_good"
-    $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01249.bloom_filter_idx_good"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE test_01249.bloom_filter_idx_good"
+    $CLICKHOUSE_LOCAL --path="$data_dir" -q "CREATE TABLE test_01249.bloom_filter_idx_good($columns, INDEX bloom_filter_a i32 TYPE bloom_filter(0.025) GRANULARITY 1) $storage"
+    $CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/test_01249/bloom_filter_idx_good.sql" --param_copy="$data_dir.sql" --param_arguments="$arguments" -q "
+        SET engine_file_truncate_on_insert = 1;
+        INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
+            SELECT replaceOne(raw_blob, 'bloom_filter(0.025)', 'bloom_filter(' || {arguments:String} || ')') FROM file({metadata:String}, 'RawBLOB');
+        INSERT INTO FUNCTION file({metadata:String}, 'RawBLOB') SELECT * FROM file({copy:String}, 'RawBLOB')"
+    $CLICKHOUSE_LOCAL --path="$data_dir" -q "SHOW CREATE TABLE test_01249.bloom_filter_idx_good; DROP TABLE test_01249.bloom_filter_idx_good SYNC"
 done
+rm -rf "$data_dir" "$data_dir.sql"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01249"

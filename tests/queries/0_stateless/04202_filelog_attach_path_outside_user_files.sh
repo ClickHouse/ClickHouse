@@ -10,23 +10,28 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")
+# An `Atomic` or `Replicated` database attaches a table with a full definition only with its UUID; `Ordinary` has none.
+UUID_CLAUSE=""
+if [ "$(${CLICKHOUSE_CLIENT} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()")" != "Ordinary" ]; then
+    UUID_CLAUSE="UUID '$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")'"
+fi
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS filelog_bad_path_attach SYNC;"
 
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE filelog_bad_path_attach UUID '${UUID}' (k UInt8, v UInt8) ENGINE = FileLog('/tmp/nonexistent_4202_pr62421.csv', 'CSV'); -- { serverError BAD_ARGUMENTS }"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE filelog_bad_path_attach ${UUID_CLAUSE} (k UInt8, v UInt8) ENGINE = FileLog('/tmp/nonexistent_4202_pr62421.csv', 'CSV'); -- { serverError BAD_ARGUMENTS }"
 
-# The stored definition of a table with a valid path is rewritten to the outside path, and the table
-# is attached back with the short ATTACH. Error lines on stderr are expected.
-${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', 'CSV') SELECT 1 AS k, 1 AS v"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE filelog_bad_path_attach (k UInt8, v UInt8) ENGINE = FileLog('${CLICKHOUSE_TEST_UNIQUE_NAME}.csv', 'CSV');"
-metadata_file=$(${CLICKHOUSE_CLIENT} --query "SELECT getServerSetting('path') || metadata_path FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach'")
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE filelog_bad_path_attach;"
-sed -i.bak "s|'${CLICKHOUSE_TEST_UNIQUE_NAME}.csv'|'/tmp/nonexistent_4202_pr62421.csv'|" "$metadata_file" && rm -f "$metadata_file.bak"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE filelog_bad_path_attach;" 2>/dev/null
+# The table is stored in a clickhouse-local data directory with a valid relative path, its stored
+# definition is rewritten to the outside path, and the next start loads it. Error lines on stderr are expected.
+cd "${CLICKHOUSE_TMP}"
+echo '1,1' > "${CLICKHOUSE_TMP}/filelog.csv"
+$CLICKHOUSE_LOCAL --path=data -q "CREATE TABLE filelog_bad_path_attach (k UInt8, v UInt8) ENGINE = FileLog('filelog.csv', 'CSV')"
+$CLICKHOUSE_LOCAL -q "
+    SET engine_file_truncate_on_insert = 1;
+    INSERT INTO FUNCTION file('data.sql', 'RawBLOB')
+        SELECT replaceOne(raw_blob, '\'filelog.csv\'', '\'/tmp/nonexistent_4202_pr62421.csv\'') FROM file('data/metadata/default/filelog_bad_path_attach.sql', 'RawBLOB');
+    INSERT INTO FUNCTION file('data/metadata/default/filelog_bad_path_attach.sql', 'RawBLOB') SELECT * FROM file('data.sql', 'RawBLOB')"
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach';"
-${CLICKHOUSE_CLIENT} --query "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach';"
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS filelog_bad_path_attach SYNC;"
-rm -f "${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}.csv"
+$CLICKHOUSE_LOCAL --path=data -q "
+    SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach';
+    SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach';" 2>/dev/null
+rm -rf data data.sql filelog.csv
