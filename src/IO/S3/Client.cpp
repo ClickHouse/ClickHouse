@@ -56,7 +56,6 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
-
 #include <Common/thread_local_rng.h>
 #include <random>
 
@@ -1085,7 +1084,7 @@ void Client::slowDownAfterRetryableError() const
 
 void Client::logConfiguration() const
 {
-    if (client_configuration.group == HTTPConnectionGroupType::DISK)
+    if (client_configuration.for_disk_s3)
     {
         LOG_TRACE(
             log,
@@ -1497,7 +1496,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool s3_slow_all_threads_after_network_error,
     bool s3_slow_all_threads_after_retryable_error,
     bool enable_s3_requests_logging,
-    HTTPConnectionGroupType group,
+    bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
     const HTTPRequestThrottler & request_throttler,
     const String & protocol)
@@ -1518,7 +1517,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        group,
+        for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         request_throttler,

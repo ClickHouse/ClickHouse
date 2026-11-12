@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include <Common/Silk/FiberScheduler.h>
+#include <Common/SilkFiberScheduler.h>
 
 /// Silk runtime only supports a single initialize/destroy per process lifetime,
 /// so we initialize lazily on first usage (to avoid initializing when not running Silk tests)
