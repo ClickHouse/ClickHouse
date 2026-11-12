@@ -20,9 +20,11 @@ SET max_rows_to_read=0;
 CREATE TABLE fact (k UInt64, d UInt32, v Float64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE dim (d UInt32, name String) ENGINE = MergeTree ORDER BY d;
 CREATE TABLE dim2 (d UInt32, name String) ENGINE = MergeTree ORDER BY d;
+CREATE TABLE dim3 (d UInt32, m UInt8) ENGINE = MergeTree ORDER BY d;
 INSERT INTO fact SELECT number, number % 1000, number / 7 FROM numbers(1000000);
 INSERT INTO dim SELECT number, 'n' || toString(number) FROM numbers(1000);
 INSERT INTO dim2 SELECT number, 'm' || toString(number) FROM numbers(1000);
+INSERT INTO dim3 SELECT number, number % 12 FROM numbers(1000);
 
 -- Each query runs with automatic parallel replicas and without.
 SELECT dim.name, sum(fact.v) FROM fact INNER JOIN dim ON fact.d = dim.d
@@ -60,6 +62,18 @@ FORMAT Null SETTINGS log_comment = '05508_cte_twice_auto';
 WITH c AS (SELECT k, d, v FROM fact WHERE k BETWEEN 100000 AND 110000)
 SELECT count(), sum(c1.v) FROM dim AS m, c AS c1, c AS c2 WHERE c1.d = c2.d AND m.d = c1.d AND m.d < 100
 FORMAT Null SETTINGS log_comment = '05508_cte_twice_off', enable_parallel_replicas = 0;
+
+-- A CTE over a join, used twice. The plan with parallel replicas numbers the table expressions of each copy from 1,
+-- so both copies of a table get the same name there and different names in the single-node plan.
+WITH inv AS (SELECT f.d AS d, c.m AS m, sum(f.v) AS s FROM fact AS f, dim AS a, dim2 AS b, dim3 AS c
+             WHERE f.d = a.d AND f.d = b.d AND f.d = c.d AND f.k BETWEEN 100000 AND 110000 GROUP BY f.d, c.m)
+SELECT count(), sum(i1.s + i2.s) FROM inv AS i1, inv AS i2 WHERE i1.d = i2.d AND i1.m = 1 AND i2.m = 2
+FORMAT Null SETTINGS log_comment = '05508_cte_over_join_twice_auto';
+
+WITH inv AS (SELECT f.d AS d, c.m AS m, sum(f.v) AS s FROM fact AS f, dim AS a, dim2 AS b, dim3 AS c
+             WHERE f.d = a.d AND f.d = b.d AND f.d = c.d AND f.k BETWEEN 100000 AND 110000 GROUP BY f.d, c.m)
+SELECT count(), sum(i1.s + i2.s) FROM inv AS i1, inv AS i2 WHERE i1.d = i2.d AND i1.m = 1 AND i2.m = 2
+FORMAT Null SETTINGS log_comment = '05508_cte_over_join_twice_off', enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -2,3 +2,4 @@
 05508_big_table_last_auto	1	1	1
 05508_table_twice_auto	1	1	1
 05508_cte_twice_auto	1	1	1
+05508_cte_over_join_twice_auto	1	1	1
