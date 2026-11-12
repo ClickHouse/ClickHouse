@@ -24,3 +24,12 @@ t_sparse_index	s	Sparse
 1
 1
 1
+t_full_prewhere	s	Default
+t_full_prewhere	u	Default
+t_full_prewhere	v	Default
+t_sparse_prewhere	s	Sparse
+t_sparse_prewhere	u	Sparse
+t_sparse_prewhere	v	Sparse
+1
+1
+1

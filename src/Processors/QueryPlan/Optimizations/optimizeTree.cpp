@@ -397,6 +397,11 @@ void optimizeTreeSecondPass(
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
         });
 
+    /// `JoinStepLogical::preCalculateKeys` computes an expression key below the join, after which the join no longer
+    /// reads the columns the key was computed from. Prune them, or the join carries them as payload.
+    if (join_runtime_filters_were_added && optimization_settings.remove_unused_columns)
+        removeUnusedColumns(root, RemoveUnusedColumnsMode::Global);
+
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
     /// before; a copied predicate alone is no reason to run a rewrite the user turned off
     const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;

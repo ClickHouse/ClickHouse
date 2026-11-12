@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format
 
 # INSERTs into a `File` table must not wait out `lock_acquire_timeout` behind a SELECT that reads the table more than once.
 

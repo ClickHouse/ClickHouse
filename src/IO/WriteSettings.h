@@ -30,6 +30,9 @@ struct WriteSettings
 
     bool use_adaptive_write_buffer = false;
     size_t adaptive_write_buffer_initial_size = 16 * 1024;
+    /// Whether a `MergeTree` writer may also activate adaptive write buffers by the share of the server memory limit
+    /// (`max_memory_ratio_to_activate_adaptive_write_buffer`). Turned off for merges and mutations of replicated tables.
+    bool allow_adaptive_write_buffer_by_memory_ratio = true;
 
     bool write_through_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
