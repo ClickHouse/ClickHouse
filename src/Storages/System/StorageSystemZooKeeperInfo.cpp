@@ -15,6 +15,7 @@
 #include <Common/isLocalAddress.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Net/StreamSocket.h>
 
 namespace DB
