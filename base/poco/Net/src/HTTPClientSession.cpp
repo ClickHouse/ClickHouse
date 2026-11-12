@@ -295,6 +295,7 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
+	_startedResponse.reset();
 	/// A new exchange starts: nothing of it has been transferred yet. The flags are only
 	/// consulted while there is no body stream to inspect (see isRequestBodyComplete), but they
 	/// must not keep the value left by a previous exchange on this session.
@@ -388,7 +389,7 @@ HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& r
 	_responseReceived = false;
 	_requestBodyComplete = false;
 	_responseBodyComplete = false;
-	_earlyResponse.reset();
+	_startedResponse.reset();
 
 	_keepAliveCurrentRequest += 1;
 

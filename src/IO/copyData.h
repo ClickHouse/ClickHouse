@@ -37,7 +37,6 @@ void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, co
 /// Copies everything an `std::istream` has left to a WriteBuffer, and returns the number of bytes
 /// copied. Reads into the memory of the WriteBuffer, so the data is copied exactly once. Only for
 /// the interfaces that hand out an `std::istream` and nothing better - the AWS SDK, for example.
-/// Stops early when `stop` returns true; it is checked before each chunk.
-size_t copyFromIStreamToWriteBuffer(std::istream & from, WriteBuffer & to, const std::function<bool()> & stop = {});
+size_t copyFromIStreamToWriteBuffer(std::istream & from, WriteBuffer & to);
 
 }

@@ -112,16 +112,13 @@ void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, co
     copyDataImpl(from, to, true, bytes, &is_cancelled, throttler);
 }
 
-size_t copyFromIStreamToWriteBuffer(std::istream & from, WriteBuffer & to, const std::function<bool()> & stop)
+size_t copyFromIStreamToWriteBuffer(std::istream & from, WriteBuffer & to)
 {
     size_t total_copied = 0;
 
     while (true)
     {
         to.nextIfAtEnd();
-
-        if (stop && stop())
-            break;
 
         const size_t space = to.available();
         chassert(space != 0);

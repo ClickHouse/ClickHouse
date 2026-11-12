@@ -198,6 +198,18 @@ namespace Net
         int buffered() const;
         /// Returns the number of bytes in the buffer.
 
+        int fillBuffer();
+        /// Appends data from the socket to the read buffer, after moving the unread bytes to its
+        /// beginning. On a socket that the caller has set to non-blocking mode, takes only what has
+        /// already arrived. Returns the number of bytes added, 0 when nothing is available or the
+        /// buffer is full, and -1 when the peer has closed the connection.
+
+        const char * bufferedData() const { return _pCurrent; }
+        /// Returns the unread bytes of the read buffer; `buffered` is their number.
+
+        void consumeBuffered(int length) { _pCurrent += length; }
+        /// Marks `length` unread bytes of the read buffer as read.
+
     protected:
         HTTPSession();
         /// Creates a HTTP session using an

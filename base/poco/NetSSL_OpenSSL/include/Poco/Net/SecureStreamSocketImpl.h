@@ -44,6 +44,9 @@ namespace Net
         void setReceiveTimeout(const Poco::Timespan & timeout);
 
         void setSendThrottler(const Poco::Net::ThrottlerPtr & throttler = {});
+
+        void throttleSendBlocking(size_t length) override;
+        /// The TLS layer charges the underlying socket, so its throttler budget must be the one that waits.
         void setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler = {});
 
         SocketImpl * acceptConnection(SocketAddress & clientAddr);

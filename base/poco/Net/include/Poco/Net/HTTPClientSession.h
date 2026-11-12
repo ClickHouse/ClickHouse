@@ -300,14 +300,27 @@ namespace Net
         /// `sendRequestHeaders`: for the former the state is taken from the body stream itself.
 
         void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
-
-        void setEarlyResponse(std::unique_ptr<HTTPResponse> response) { _earlyResponse = std::move(response); }
-        /// Keeps a final response that arrived while the request body was being sent, for the caller
-        /// that receives the response next. Cleared by `sendRequestHeaders`.
-
-        std::unique_ptr<HTTPResponse> takeEarlyResponse() { return std::move(_earlyResponse); }
-        /// Moves out the response kept by `setEarlyResponse`, if any.
         /// Reports the completion of a request body written by the caller of `sendRequestHeaders`.
+
+        struct StartedResponse
+        {
+            HTTPResponse response;
+            bool status_line_read = false;
+            bool complete = false;
+            std::string last_field_name;
+        };
+        /// A response that started to arrive while the request body was being sent, parsed as far as
+        /// it has arrived. The caller that receives the response continues it.
+
+        StartedResponse & startResponse()
+        {
+            if (!_startedResponse)
+                _startedResponse = std::make_unique<StartedResponse>();
+            return *_startedResponse;
+        }
+        StartedResponse * startedResponse() { return _startedResponse.get(); }
+        std::unique_ptr<StartedResponse> takeStartedResponse() { return std::move(_startedResponse); }
+        /// Cleared by `sendRequest` and `sendRequestHeaders`.
 
         bool isResponseBodyComplete();
         /// Whether the body of the last response was read to the end. A connection with an
@@ -451,7 +464,7 @@ namespace Net
         bool _expectResponseBody;
         bool _responseReceived;
         bool _requestBodyComplete = true;
-        std::unique_ptr<HTTPResponse> _earlyResponse;
+        std::unique_ptr<StartedResponse> _startedResponse;
         bool _responseBodyComplete = true;
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;

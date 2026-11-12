@@ -1,16 +1,18 @@
 #include <IO/HTTP/HTTPClientIO.h>
 #include <IO/ScopedNonBlocking.h>
-#include <IO/SocketPeerClosed.h>
 
 #include <Common/Exception.h>
 #include <Common/Hex.h>
+#include <Common/Stopwatch.h>
 
 #include <Poco/Ascii.h>
+#include <Poco/Net/HTTPBasicStreamBuf.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
 #include <Poco/String.h>
 
 #include <cerrno>
+#include <limits>
 #include <cstring>
 #include <poll.h>
 
@@ -21,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
 namespace
@@ -213,6 +214,91 @@ void readHTTPResponseHeaderOrReset(Poco::Net::HTTPClientSession & session, Poco:
     }
 }
 
+std::string_view trimHTTPSpaces(std::string_view value)
+{
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t'))
+        value.remove_prefix(1);
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t'))
+        value.remove_suffix(1);
+    return value;
+}
+
+void parseHTTPStatusLine(std::string_view line, Poco::Net::HTTPResponse & response)
+{
+    const auto version_end = line.find(' ');
+    if (version_end == std::string_view::npos || version_end > max_version_length)
+        throw Poco::Net::MessageException("Invalid HTTP version string");
+    auto rest = trimHTTPSpaces(line.substr(version_end));
+    const auto status_end = std::min(rest.find(' '), rest.size());
+    if (status_end == 0 || status_end > max_status_length)
+        throw Poco::Net::MessageException("Invalid HTTP status code");
+    const auto reason = trimHTTPSpaces(rest.substr(status_end));
+    if (reason.size() > max_reason_length)
+        throw Poco::Net::MessageException("HTTP reason string too long");
+
+    const std::string version(line.substr(0, version_end));
+    const std::string status(rest.substr(0, status_end));
+    try
+    {
+        response.setVersion(version);
+        response.setStatus(status);
+        response.setReason(std::string(reason));
+    }
+    catch (const Poco::SyntaxException & e)
+    {
+        throw Poco::SyntaxException(e.message(), ", while reading HTTP response: version='" + version + "', status='" + status + "'");
+    }
+}
+
+/// Parses the complete lines of a response header that are in the read buffer of the session into
+/// `started`, consuming exactly them: the bytes after the header belong to the response body.
+void parseBufferedHTTPHeaderLines(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPClientSession::StartedResponse & started)
+{
+    while (!started.complete)
+    {
+        const char * begin = session.bufferedData();
+        const auto size = static_cast<size_t>(session.buffered());
+        const auto * end_of_line = static_cast<const char *>(std::memchr(begin, '\n', size));
+        if (!end_of_line)
+            return;
+
+        std::string_view line(begin, end_of_line - begin);
+        if (!line.empty() && line.back() == '\r')
+            line.remove_suffix(1);
+
+        if (!started.status_line_read)
+        {
+            /// Empty lines before the status line are allowed.
+            if (!line.empty())
+            {
+                parseHTTPStatusLine(line, started.response);
+                started.status_line_read = true;
+            }
+        }
+        else if (line.empty())
+        {
+            started.complete = true;
+        }
+        else if (line.front() == ' ' || line.front() == '\t')
+        {
+            /// An obsolete folded line continues the value of the previous field.
+            if (started.last_field_name.empty())
+                throw Poco::Net::MessageException("Folded HTTP header line without a field");
+            const auto value = started.response.get(started.last_field_name) + " " + std::string(trimHTTPSpaces(line));
+            started.response.set(started.last_field_name, value);
+        }
+        else
+        {
+            const auto colon = line.find(':');
+            if (colon == std::string_view::npos)
+                throw Poco::Net::MessageException("Field name in HTTP header line without a colon");
+            started.last_field_name = std::string(trimHTTPSpaces(line.substr(0, colon)));
+            started.response.add(started.last_field_name, std::string(trimHTTPSpaces(line.substr(colon + 1))));
+        }
+        session.consumeBuffered(static_cast<int>(end_of_line - begin + 1));
+    }
+}
+
 }
 
 
@@ -241,55 +327,102 @@ HTTPRequestBodyWriteBuffer::~HTTPRequestBodyWriteBuffer()
     cancel();
 }
 
+bool HTTPRequestBodyWriteBuffer::checkResponse()
+{
+    while (session.buffered() > 0)
+    {
+        auto & started = session.startResponse();
+        parseBufferedHTTPHeaderLines(session, started);
+        if (!started.status_line_read)
+            break;
+
+        const auto status = started.response.getStatus();
+        if (status >= Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+            return true;
+
+        if (status >= Poco::Net::HTTPResponse::HTTP_OK)
+        {
+            /// The rest of a successful response comes after the body: stop reading it now.
+            if (started.complete)
+                response_header_complete = true;
+            break;
+        }
+
+        /// An informational response, such as a late `100 Continue`: the server wants the body.
+        if (!started.complete)
+            break;
+        session.takeStartedResponse();
+    }
+
+    if (!response_header_complete && static_cast<size_t>(session.buffered()) >= Poco::Net::HTTP_DEFAULT_BUFFER_SIZE)
+        throw Poco::Net::MessageException("HTTP response header line is too long");
+    return false;
+}
+
 void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
 {
-    /// The server has already answered: drop the rest of the body.
-    if (early_response_received)
+    /// The server has answered with an error: drop the rest of the body.
+    if (stopped)
         return;
 
     auto & socket = session.socket();
-    const auto send_timeout_ms = session.getSendTimeout().totalMilliseconds();
+    const Int64 send_timeout_ms = session.getSendTimeout().totalMilliseconds();
 
     /// Set when the server closed the connection without a response.
     bool peer_closed = false;
 
     while (size > 0)
     {
-        /// Wait for the socket to accept data and watch for a response at the same time, so that
-        /// a response arrives before any write can fail. A failed write would lose it over TLS:
-        /// OpenSSL allows no read after a failed `SSL_write`.
-        const short events = peer_closed ? POLLOUT : (POLLIN | POLLOUT);
+        /// Wait for the socket to accept data and watch for a response at the same time, so that a
+        /// response arrives before any write can fail. A failed write would lose it over TLS:
+        /// OpenSSL allows no read after a failed `SSL_write`. The response is parsed as it arrives:
+        /// an error stops the body, a success is finished after the body.
+        const bool watch_response = !peer_closed && !response_header_complete;
+        const short events = watch_response ? (POLLIN | POLLOUT) : POLLOUT;
         pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
+
+        /// The send timeout bounds the whole wait, also when signals interrupt `poll`.
+        const Stopwatch watch;
         int res = 0;
-        do
-            res = ::poll(&fd, 1, send_timeout_ms > 0 ? static_cast<int>(send_timeout_ms) : -1);
-        while (res < 0 && errno == EINTR);
+        while (true)
+        {
+            int timeout_ms = -1;
+            if (send_timeout_ms > 0)
+            {
+                const Int64 remaining_ms = send_timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds());
+                if (remaining_ms <= 0)
+                {
+                    res = 0;
+                    break;
+                }
+                timeout_ms = static_cast<int>(std::min<Int64>(remaining_ms, std::numeric_limits<int>::max()));
+            }
+            res = ::poll(&fd, 1, timeout_ms);
+            if (res >= 0 || errno != EINTR)
+                break;
+        }
 
         if (res < 0)
             throw Poco::Net::NetException("Failed to poll the socket while sending the HTTP request body", errno);
         if (res == 0)
             throw Poco::TimeoutException("Timeout while sending the HTTP request body");
 
-        if (!peer_closed && (fd.revents & (POLLIN | POLLHUP | POLLERR)))
+        if (watch_response && (fd.revents & (POLLIN | POLLHUP | POLLERR)))
         {
-            /// For TLS this is a non-blocking `SSL_peek`: a session ticket or `KeyUpdate` gives `Idle`.
-            const auto state = getSocketState(socket);
+            int received = 0;
+            {
+                /// For TLS this goes through `SSL_read`: a session ticket or `KeyUpdate` gives no data.
+                ScopedNonBlocking non_blocking(*socket.impl());
+                received = session.fillBuffer();
+            }
 
-            /// No response came: the next write reports how the connection ended (`EPIPE`,
-            /// `ECONNRESET`), as without the monitoring. From now on only writability is awaited,
-            /// so that a half-closed connection does not wake the loop up again and again.
-            if (state == SocketState::Closed)
+            /// The next write reports how the connection ended, as without the watching.
+            if (received < 0)
                 peer_closed = true;
 
-            if (state == SocketState::DataPending)
+            if (checkResponse())
             {
-                auto response = std::make_unique<Poco::Net::HTTPResponse>();
-                readHTTPResponseHeaderOrReset(session, *response);
-                /// A late `100 Continue`: the server wants the body.
-                if (response->getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE)
-                    continue;
-                session.setEarlyResponse(std::move(response));
-                early_response_received = true;
+                stopped = true;
                 return;
             }
         }
@@ -360,12 +493,16 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
 {
     next();
 
-    /// The server has answered, and the rest of the body was dropped: the request stays incomplete.
-    if (early_response_received)
+    /// The server has answered with an error, and the rest of the body was dropped: the request stays incomplete.
+    if (stopped)
         return;
 
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::Chunked)
+    {
         writeBody("0\r\n\r\n", 5);
+        if (stopped)
+            return;
+    }
 
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength && bytes_written != content_length)
         throw Exception(
@@ -679,22 +816,52 @@ static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
 static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
 {
-    if (auto early_response = session.takeEarlyResponse())
+    /// A response that started to arrive while the request body was being sent: finish it.
+    if (auto started = session.takeStartedResponse())
     {
-        /// Fail closed: a success for a body that was not fully sent must not be taken for a success of the request.
-        if (early_response->getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-            throw Exception(
-                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                "HTTP server answered {} {} before the whole request body was sent",
-                static_cast<int>(early_response->getStatus()),
-                early_response->getReason());
+        try
+        {
+            while (true)
+            {
+                parseBufferedHTTPHeaderLines(session, *started);
+                if (started->complete)
+                {
+                    if (started->response.getStatus() >= Poco::Net::HTTPResponse::HTTP_OK)
+                        break;
+                    /// An informational response: the final one follows.
+                    started = std::make_unique<Poco::Net::HTTPClientSession::StartedResponse>();
+                    continue;
+                }
+                if (static_cast<size_t>(session.buffered()) >= Poco::Net::HTTP_DEFAULT_BUFFER_SIZE)
+                    throw Poco::Net::MessageException("HTTP response header line is too long");
+                if (session.fillBuffer() < 0)
+                    throw Poco::Net::MessageException("HTTP response header ended prematurely");
+            }
 
-        /// `Poco::Net::HTTPResponse` is not copyable: copy the status line and the headers into the caller's object.
-        response.clear();
-        response.setVersion(early_response->getVersion());
-        response.setStatusAndReason(early_response->getStatus(), early_response->getReason());
-        for (const auto & [name, value] : *early_response)
-            response.add(name, value);
+            /// The caller's limits apply to the header as a whole, as for a header read in one go.
+            const auto & parsed = started->response;
+            if (response.getFieldLimit() > 0 && parsed.size() > static_cast<size_t>(response.getFieldLimit()))
+                throw Poco::Net::MessageException("Too many header fields");
+            response.clear();
+            response.setVersion(parsed.getVersion());
+            response.setStatusAndReason(parsed.getStatus(), parsed.getReason());
+            for (const auto & [name, value] : parsed)
+            {
+                if (response.getNameLengthLimit() > 0 && name.size() > static_cast<size_t>(response.getNameLengthLimit()))
+                    throw Poco::Net::MessageException("Field name is too long");
+                if (response.getValueLengthLimit() > 0 && value.size() > static_cast<size_t>(response.getValueLengthLimit()))
+                    throw Poco::Net::MessageException("Field value is too long");
+                response.add(name, value);
+            }
+        }
+        catch (const Poco::Exception &)
+        {
+            /// Same cleanup as in `readHTTPResponseHeaderOrReset`.
+            session.reset();
+            if (const auto * network_exception = session.networkException())
+                network_exception->rethrow();
+            throw;
+        }
         return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
     }
 

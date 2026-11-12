@@ -672,10 +672,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-                /// Once the server has answered, the rest of the content is not read: `receiveHTTPResponse`
-                /// returns that answer (RFC 9112, 9.5).
-                auto size = copyFromIStreamToWriteBuffer(
-                    *request.GetContentBody(), *request_body, [&] { return request_body->hasEarlyResponse(); });
+                auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
                 request_body->finalize();
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);

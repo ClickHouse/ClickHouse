@@ -475,6 +475,45 @@ def test_early_error_response_at_upload_is_not_retried(
     assert s3_errors == 2, s3_errors
 
 
+def test_tls_upload_is_throttled(cluster, broken_s3):
+    # The body is sent with non-blocking writes; the bandwidth limit must still hold over TLS.
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_puts(1)
+
+    insert_query_id = randomize_query_id("TEST_TLS_UPLOAD_IS_THROTTLED")
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'https://resolver:8443/root/data/test_tls_upload_is_throttled',
+                'minio', '{minio_secret_key}',
+                'RowBinary', 's String'
+            )
+        SELECT randomString(1048576) FROM numbers(8)
+        SETTINGS
+            s3_max_single_part_upload_size=100000000,
+            max_remote_write_network_bandwidth=1000000,
+            s3_truncate_on_insert=1,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    sleep_us = int(
+        node.query(
+            f"""
+            SELECT ProfileEvents['QueryRemoteWriteThrottlerSleepMicroseconds']
+            FROM system.query_log
+            WHERE query_id = '{insert_query_id}' AND type = 'QueryFinish'
+            """
+        )
+    )
+    # 8 MiB at 1 MB/s with a burst of at most 1 MB needs more than 7 s of throttler sleep.
+    assert sleep_us > 4_000_000, sleep_us
+
+
 @pytest.mark.parametrize("send_something", [True, False])
 def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
     cluster, broken_s3, send_something
