@@ -78,6 +78,12 @@ rustup toolchain install nightly-2026-11-02
 rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
+
+<Tip>
+ccache does not cache Rust, so a new build directory compiles all Rust crates again.
+With `-DRUST_BUILD_CACHE_DIR=<path>`, Cargo keeps the compiled crates in that directory and new build directories of the same checkout and configuration reuse them (except delta-kernel-rs). It takes about 7 GB per checkout and configuration, is not size-limited, and can be deleted at any time.
+</Tip>
+
 ## Build ClickHouse {#build-clickhouse}
 
 We recommend to create a separate directory `build` inside `ClickHouse` which contains all build artifacts:
