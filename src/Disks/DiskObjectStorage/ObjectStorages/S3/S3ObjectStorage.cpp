@@ -787,6 +787,16 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
+    /// The client is shared by all sessions and a query uses it after this call, so a session never changes its
+    /// restriction mode (`s3_allow_server_credentials_in_user_queries`): a restricted session may not use a client
+    /// built with the opt-in, and a client built restricted stays restricted. Only a forced rebuild (config reload,
+    /// or a rebuild by the server itself) follows the given context. Server disks are never restricted.
+    const bool session_restricts = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
+    if (!options.force_client_rebuild)
+        checkSessionMayUseServerCredentials(context);
+    const bool restricts_now = options.force_client_rebuild ? session_restricts : (!for_disk_s3 && client_restricts_server_credentials);
+    const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
+
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
 
     settings_from_config->loadFromConfigForObjectStorage(
@@ -795,11 +805,14 @@ void S3ObjectStorage::applyNewSettings(
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
     /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
+    /// So does a restricted client: the parsing of a restricted query dropped the server's authentication material
+    /// (`role_arn`, headers, GCP OAuth) from its settings, and the config must not bring it back.
+    const bool merge_auth_from_config = options.allow_client_change && !restricts_now;
     auto apply_endpoint_settings = [&]
     {
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         {
-            if (options.allow_client_change)
+            if (merge_auth_from_config)
                 modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
             modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
         }
@@ -807,7 +820,7 @@ void S3ObjectStorage::applyNewSettings(
 
     auto apply_config_settings = [&]
     {
-        if (options.allow_client_change)
+        if (merge_auth_from_config)
             modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
         modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
     };
@@ -832,16 +845,6 @@ void S3ObjectStorage::applyNewSettings(
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
-
-    /// The client is shared by all sessions and a query uses it after this call, so a session never changes its
-    /// restriction mode (`s3_allow_server_credentials_in_user_queries`): a restricted session may not use a client
-    /// built with the opt-in, and a client built restricted stays restricted. Only a forced rebuild (config reload,
-    /// or a rebuild by the server itself) follows the given context. Server disks are never restricted.
-    const bool session_restricts = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
-    if (!options.force_client_rebuild)
-        checkSessionMayUseServerCredentials(context);
-    const bool restricts_now = options.force_client_rebuild ? session_restricts : (!for_disk_s3 && client_restricts_server_credentials);
-    const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
 
     ContextPtr client_context = context;
     if (restricts_now && !session_restricts)

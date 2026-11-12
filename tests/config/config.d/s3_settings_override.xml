@@ -23,5 +23,12 @@
             <endpoint>http://localhost:11111/test/04093_s3_settings_query_override</endpoint>
             <max_single_part_upload_size>104857600</max_single_part_upload_size>
         </test_04093>
+
+        <!-- Endpoint for test 05628_s3_restricted_client_keeps_filtered_auth. A restricted session drops this server-side
+             encryption key when it creates the table, and reading the table must not bring it back. -->
+        <test_05628>
+            <endpoint>http://localhost:11111/test/05628_s3_restricted_client_keeps_filtered_auth</endpoint>
+            <server_side_encryption_customer_key_base64>MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=</server_side_encryption_customer_key_base64>
+        </test_05628>
     </s3>
 </clickhouse>
