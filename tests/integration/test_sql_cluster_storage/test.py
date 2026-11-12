@@ -447,6 +447,74 @@ def test_keeper_drop_other_cluster_while_reload_cannot_materialize(cluster):
             node_b.query(f"DROP CLUSTER IF EXISTS {name}")
 
 
+def test_keeper_boolean_properties_reject_config_interpolation(cluster):
+    """Boolean SQL cluster properties must not expand `${...}` against this server's config.
+
+    A writer with `tcp_port` / `tcp_port_secure` would otherwise persist `secure = '${tcp_port_secure}'`
+    after Poco treated the expanded port as true. A Keeper peer without that key then fails to load
+    the cluster. Rejected ALTER must leave the previously loaded definition on every replica.
+    """
+    keeper_path = KEEPER_METADATA_PATHS["cluster_metadata_keeper.xml"]
+    install_metadata_storage(
+        cluster,
+        "cluster_metadata_keeper.xml",
+        keeper_metadata_path=keeper_path,
+    )
+
+    node_a = cluster.instances["clickhouse1"]
+    node_b = cluster.instances["clickhouse2"]
+    name = "bool_no_interpolation_cluster"
+    count_query = f"SELECT count() FROM system.clusters WHERE cluster = '{name}'"
+    topology_query = (
+        f"SELECT host_name, port, internal_replication FROM system.clusters "
+        f"WHERE cluster = '{name}' ORDER BY replica_num FORMAT TSV"
+    )
+    interpolation_query = (
+        f"SELECT countIf(create_query LIKE '%${{%') FROM system.clusters WHERE cluster = '{name}'"
+    )
+
+    node_a.query(f"DROP CLUSTER IF EXISTS {name}")
+    try:
+        error = node_a.query_and_get_error(
+            f"CREATE CLUSTER {name} (SHARD (host = 'clickhouse1', port = 9000, secure = '${{tcp_port}}'))"
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert node_a.query(count_query).strip() == "0"
+
+        node_a.query(
+            f"""
+            CREATE CLUSTER {name} (
+                allow_distributed_ddl_queries = 1,
+                SHARD (
+                    internal_replication = 0,
+                    host = 'clickhouse1',
+                    port = 9000,
+                    secure = 0,
+                    compression = 1
+                )
+            )
+            """
+        )
+        assert_eq_with_retry(node_b, count_query, "1\n")
+        expected_topology = "clickhouse1\t9000\t0"
+        assert node_a.query(topology_query).strip() == expected_topology
+        assert node_b.query(topology_query).strip() == expected_topology
+        assert node_a.query(interpolation_query).strip() == "0"
+        assert node_b.query(interpolation_query).strip() == "0"
+
+        error = node_a.query_and_get_error(
+            f"ALTER CLUSTER {name} (SHARD (host = 'clickhouse1', port = 9440, secure = '${{tcp_port_secure}}'))"
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert node_a.query(topology_query).strip() == expected_topology
+        assert node_b.query(topology_query).strip() == expected_topology
+        assert node_a.query(interpolation_query).strip() == "0"
+        assert node_b.query(interpolation_query).strip() == "0"
+    finally:
+        node_a.query(f"DROP CLUSTER IF EXISTS {name}")
+        node_b.query(f"DROP CLUSTER IF EXISTS {name}")
+
+
 def test_keeper_drop_keeps_config_cluster_with_same_name(cluster):
     """A SQL cluster created on one node is skipped on a node which has a configured cluster with the same name.
     `DROP CLUSTER` on that node removes the shared metadata but must keep its configured cluster."""

@@ -1,11 +1,12 @@
 #include <Common/SQLClusters/SQLClusterFactory.h>
 
-#include <Common/Config/ConfigHelper.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFieldsConversionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserSQLClusterQuery.h>
 #include <Parsers/parseQuery.h>
@@ -71,6 +72,60 @@ bool isCredentialProperty(std::string_view name)
     return name == "user" || name == "password";
 }
 
+bool isBoolProperty(std::string_view name)
+{
+    return name == "secure" || name == "compression" || name == "internal_replication"
+        || name == "allow_distributed_ddl_queries";
+}
+
+/// `Cluster` reads these keys with Poco `getBool`, which expands `${...}` against the
+/// server configuration. A value that is true only after expanding a listener port
+/// (for example `secure = '${tcp_port_secure}'` while this server has `tcp_port_secure = 9440`)
+/// would then be stored as the original SQL and fail on a peer that has no such key.
+/// Parse the raw SQL field here, reject configuration references, and rewrite the field
+/// to a Boolean so persistence and later loads do not interpolate.
+void validateAndNormalizeBoolProperty(Field & value, std::string_view name)
+{
+    if (value.getType() == Field::Types::String)
+    {
+        const auto & str = value.safeGet<String>();
+        if (str.contains("${"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Property `{}` is a Boolean and must not contain a configuration reference, got `{}`",
+                name,
+                str);
+    }
+
+    try
+    {
+        value = Field(fieldToNumberSettingValue<bool>(value));
+    }
+    catch (const Exception &)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Property `{}` must be a Boolean (0, 1, true or false), got {}",
+            name,
+            value);
+    }
+}
+
+void validateBoolProperty(const Field & value, std::string_view name)
+{
+    Field copy = value;
+    validateAndNormalizeBoolProperty(copy, name);
+}
+
+void normalizeBoolProperties(Properties & properties)
+{
+    for (auto & change : properties)
+    {
+        if (isBoolProperty(change.name))
+            validateAndNormalizeBoolProperty(change.value, change.name);
+    }
+}
+
 void validateNoDuplicateProperties(const Properties & properties, std::string_view scope)
 {
     std::unordered_set<std::string_view> seen;
@@ -109,6 +164,9 @@ void validateClusterLevelProperties(const Properties & properties)
     {
         if (!clusterPropertyKeys().contains(change.name) && !isCredentialProperty(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed at cluster level", change.name);
+
+        if (isBoolProperty(change.name))
+            validateBoolProperty(change.value, change.name);
     }
 }
 
@@ -134,6 +192,8 @@ void validateShardProperties(const Properties & properties, bool has_replicas)
             validateIntProperty(change.value, change.name, 0, std::numeric_limits<Int32>::max());
         else if (change.name == "priority")
             validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
+        else if (isBoolProperty(change.name))
+            validateBoolProperty(change.value, change.name);
     }
 }
 
@@ -150,6 +210,8 @@ void validateReplicaProperties(const Properties & properties)
             validatePortProperty(change.value);
         else if (change.name == "priority")
             validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
+        else if (isBoolProperty(change.name))
+            validateBoolProperty(change.value, change.name);
     }
 }
 
@@ -164,6 +226,19 @@ void validateSQLClusterDefinition(const ASTSQLClusterDefinition & definition)
 
         for (const auto & replica_ast : shard.replicas)
             validateReplicaProperties(replica_ast->as<const ASTSQLClusterReplica &>().properties);
+    }
+}
+
+void normalizeSQLClusterBooleanProperties(ASTSQLClusterDefinition & definition)
+{
+    normalizeBoolProperties(definition.cluster_properties);
+
+    for (auto & shard_ast : definition.shards)
+    {
+        auto & shard = shard_ast->as<ASTSQLClusterShard &>();
+        normalizeBoolProperties(shard.properties);
+        for (auto & replica_ast : shard.replicas)
+            normalizeBoolProperties(replica_ast->as<ASTSQLClusterReplica &>().properties);
     }
 }
 
@@ -251,6 +326,19 @@ void setConfigValue(Poco::Util::AbstractConfiguration & config, const String & k
         config.setInt64(key, applyVisitor(FieldVisitorConvertToNumber<Int64>(), value));
 }
 
+void setSQLClusterConfigValue(
+    Poco::Util::AbstractConfiguration & config, const String & key, std::string_view name, const Field & value)
+{
+    if (isBoolProperty(name))
+    {
+        Field normalized = value;
+        validateAndNormalizeBoolProperty(normalized, name);
+        config.setBool(key, normalized.safeGet<bool>());
+        return;
+    }
+    setConfigValue(config, key, value);
+}
+
 /// Fill an omitted `port` of one replica (or of an inline `SHARD`) with the listener port of this server.
 /// `Cluster::Address` resolves a missing `port` from `tcp_port` or `tcp_port_secure` of the server that
 /// materializes the definition. Stored definitions are shared between servers (Keeper metadata storage),
@@ -265,11 +353,15 @@ void resolveOmittedPort(
     if (properties.tryGet("port"))
         return;
 
-    /// Interpret `secure` exactly like `Cluster::Address` does.
-    Poco::AutoPtr<OrderedMapConfiguration> replica_config = new OrderedMapConfiguration();
+    /// Interpret `secure` from the raw SQL field. Do not expand configuration references:
+    /// `getBool` would turn `${tcp_port_secure}` into this server's listener port.
+    bool is_secure = false;
     if (const auto * secure = properties.tryGet("secure"))
-        setConfigValue(*replica_config, "secure", *secure);
-    const bool is_secure = ConfigHelper::getBool(*replica_config, "secure", false, /* empty_as */ true);
+    {
+        Field normalized = *secure;
+        validateAndNormalizeBoolProperty(normalized, "secure");
+        is_secure = normalized.safeGet<bool>();
+    }
 
     const char * port_key = is_secure ? "tcp_port_secure" : "tcp_port";
     const Int64 port = server_config.getInt64(port_key, 0);
@@ -290,7 +382,7 @@ void applyReplicaProperties(Poco::Util::AbstractConfiguration & config, const St
     {
         if (!replicaPropertyKeys().contains(change.name))
             continue;
-        setConfigValue(config, prefix + "." + change.name, change.value);
+        setSQLClusterConfigValue(config, prefix + "." + change.name, change.name, change.value);
     }
 }
 
@@ -299,7 +391,7 @@ void applyShardOnlyProperties(Poco::Util::AbstractConfiguration & config, const 
     for (const auto & change : properties)
     {
         if (change.name == "weight" || change.name == "internal_replication")
-            setConfigValue(config, prefix + "." + change.name, change.value);
+            setSQLClusterConfigValue(config, prefix + "." + change.name, change.name, change.value);
     }
 }
 
@@ -308,7 +400,7 @@ void applyClusterProperties(Poco::Util::AbstractConfiguration & config, const St
     for (const auto & change : properties)
     {
         if (change.name == "secret" || change.name == "allow_distributed_ddl_queries")
-            setConfigValue(config, prefix + "." + change.name, change.value);
+            setSQLClusterConfigValue(config, prefix + "." + change.name, change.name, change.value);
         else if (change.name != "user" && change.name != "password")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cluster property `{}`", change.name);
     }
@@ -596,7 +688,9 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
 
     auto resolved_ast = query.clone();
     auto & resolved_query = resolved_ast->as<ASTCreateSQLClusterQuery &>();
-    resolveOmittedPorts(resolved_query.definition->as<ASTSQLClusterDefinition &>(), context->getConfigRef(), query.cluster_name);
+    auto & resolved_definition = resolved_query.definition->as<ASTSQLClusterDefinition &>();
+    normalizeSQLClusterBooleanProperties(resolved_definition);
+    resolveOmittedPorts(resolved_definition, context->getConfigRef(), query.cluster_name);
 
     /// Build the in-memory cluster first, then persist, as named collections and handlers do.
     /// A definition that `materializeCluster` rejects (missing `host`, invalid `weight`, ...)
@@ -643,7 +737,9 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
     create_query.definition = query.definition->clone();
 
     validateSQLClusterDefinition(create_query.definition->as<const ASTSQLClusterDefinition &>());
-    resolveOmittedPorts(create_query.definition->as<ASTSQLClusterDefinition &>(), context->getConfigRef(), query.cluster_name);
+    auto & alter_definition = create_query.definition->as<ASTSQLClusterDefinition &>();
+    normalizeSQLClusterBooleanProperties(alter_definition);
+    resolveOmittedPorts(alter_definition, context->getConfigRef(), query.cluster_name);
 
     auto create_statement = create_query.formatWithSecretsOneLine();
     auto cluster = materializeCluster(create_query, context, create_statement);
