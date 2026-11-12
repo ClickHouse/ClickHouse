@@ -37,6 +37,7 @@ public:
 
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
+    /// Types of the keys `partitionChunk` returns: Iceberg `int` for `truncate[W]` of an `int` column, else the transform function's type.
     const DataTypes & getResultTypes() const { return result_data_types; }
 
 private:
@@ -46,6 +47,8 @@ private:
     std::vector<std::optional<size_t>> function_params;
     std::vector<String> columns_to_apply;
     DataTypes result_data_types;
+    DataTypes transform_result_data_types;
+    std::vector<bool> is_truncate_of_int;
 
     size_t max_partitions_count;
 };

@@ -670,6 +670,55 @@ void validateSnapshotForMutation(
                     "but data file `{}` has format `{}`",
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
+
+            /// A delete file records the `truncate[W]` value computed for the current column type, so it never pairs with
+            /// a recorded value that computation cannot produce.
+            const auto & partition_value = file_entry->normalized_partition_key_value;
+            for (const auto & partition_field : *file_entry->common_partition_specification)
+            {
+                const auto transform = parseTransformAndArgument(partition_field.transform_name);
+                if (!transform || transform->transform_name != "icebergTruncate" || !transform->argument
+                    || partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
+                    continue;
+
+                const auto source = persistent_table_components.schema_processor->tryGetFieldCharacteristics(
+                    current_schema_id, partition_field.source_id);
+                if (!source)
+                    continue;
+                const WhichDataType source_type(removeNullable(source->type));
+                if (!source_type.isInt32() && !source_type.isInt64())
+                    continue;
+
+                const auto & value = partition_value[partition_field.tuple_index];
+                if (value.getType() != Field::Types::Int64)
+                    continue;
+
+                const Int64 recorded_value = value.safeGet<Int64>();
+                const bool fits_int
+                    = recorded_value >= std::numeric_limits<Int32>::min() && recorded_value <= std::numeric_limits<Int32>::max();
+                if (source_type.isInt32() && !fits_int)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
+                        "which does not fit the Iceberg `int` type (written by an older ClickHouse version). "
+                        "Copy the rows into a new table to mutate them",
+                        file_entry->parsed_entry->file_path_key.serialize(),
+                        partition_field.partition_name,
+                        recorded_value);
+
+                /// Only the 32-bit wraparound of an `int` value gives a key in `int` range that is not a multiple of the width.
+                const size_t width = *transform->argument;
+                if (source_type.isInt64() && fits_int && width != 0 && width <= static_cast<size_t>(std::numeric_limits<Int32>::max())
+                    && recorded_value % static_cast<Int64>(width) != 0)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
+                        "computed in 32-bit arithmetic before the column was promoted from `int` to `long`. "
+                        "Copy the rows into a new table to mutate them",
+                        file_entry->parsed_entry->file_path_key.serialize(),
+                        partition_field.partition_name,
+                        recorded_value);
+            }
         }
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
@@ -757,6 +806,10 @@ void mutate(
                 current_schema = schemas->getObject(static_cast<UInt32>(i));
             }
         }
+
+        /// The validation resolves source types in this schema, which a concurrent commit may have just added.
+        if (current_schema)
+            persistent_table_components.schema_processor->addIcebergTableSchema(current_schema);
 
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet

@@ -800,7 +800,19 @@ void generateManifestFile(
                 {
                     case Field::Types::Int64:
                     case Field::Types::UInt64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                    {
+                        const Int64 value = partition_values[i].safeGet<Int64>();
+                        if (value_schema->type() != avro::AVRO_INT)
+                            return avro::GenericDatum(value);
+                        /// A value recorded by an older writer under a `long` field cannot be rewritten into an `int` one.
+                        if (value < std::numeric_limits<Int32>::min() || value > std::numeric_limits<Int32>::max())
+                            throw Exception(
+                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                "Partition value {} of partition field {} does not fit the Iceberg `int` type",
+                                value,
+                                partition_columns[i]);
+                        return avro::GenericDatum(static_cast<Int32>(value));
+                    }
                     case Field::Types::String:
                         return avro::GenericDatum(partition_values[i].safeGet<String>());
                     case Field::Types::Float64:

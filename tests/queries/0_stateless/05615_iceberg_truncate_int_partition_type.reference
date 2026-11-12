@@ -1,0 +1,80 @@
+--- truncate[10] of Int32
+types	['Int32']
+values	[(-20,1),(-10,1),(0,2),(10,1),(2147483640,1),(2147483646,1)]
+bounds	[(4,4)]
+--- truncate[10] of Nullable(Int32)
+types	['Nullable(Int32)']
+values	[(-10,1),(NULL,1)]
+bounds	[(4,4)]
+--- truncate[10] of Int16, an Iceberg int
+types	['Int32']
+values	[(-32770,1),(0,1)]
+bounds	[(4,4)]
+--- truncate[2^30] of Int32
+types	['Int32']
+values	[(-2147483648,1),(0,1),(1073741824,1)]
+bounds	[(4,4)]
+--- truncate[2^30 + 1] of Int32 is refused, of Int64 is not
+NOT_IMPLEMENTED
+0
+1
+--- truncate[10] of Int64 and truncate[3] of String keep their types
+types	['Int64']
+values	[(-2147483650,1),(0,1)]
+bounds	[(8,8)]
+types	['String']
+values	[('abc',1),('xy',1)]
+bounds	[(2,2),(3,3)]
+--- reads with partition pruning
+1	[1,2,3,4,5,6,7]
+x = -1	[2]
+x = 5	[4]
+x IN (-11, 15)	[1,5]
+x BETWEEN -5 AND 7	[2,3,4]
+x = -2147483648	[7]
+x IN (-2147483648, 5)	[4,7]
+x <= -2147483641	[7]
+--- DELETE and UPDATE
+types	['Int32']
+values	[(-10,1),(0,1)]
+bounds	[(4,4)]
+1	-11
+3	0
+5	15
+6	2147483647
+7	-2147483648
+20	-1
+[20]
+--- legacy table with a long partition value outside the int range
+2	[1,2]
+4
+ICEBERG_SPECIFICATION_VIOLATION
+ICEBERG_SPECIFICATION_VIOLATION
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+2	[1,2]
+4
+[1,2]
+[4]
+--- manifest-list pruning
+x = 5	[1]
+x = 25	[2]
+x = -2147483648	[3]
+ml_1	1
+ml_2	1
+ml_3	2
+--- DELETE and UPDATE after promoting the int column to long
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+1	-2147483648
+2	5
+3	5
+--- DELETE and UPDATE of tables written by PyIceberg and Spark
+py_del_control	[0,1,2,4,5]
+py_del_wrapped	[1,2,3,4,5]
+py_upd_wrapped	[0,2,3,4,5,100]
+[100]
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+[0,1,2,3,4,5,6]
+[0,1]
