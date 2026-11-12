@@ -33,6 +33,6 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query = 'main'
         SELECT query_id FROM system.query_log
         WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
             AND log_comment = '05565_order_by')
-SETTINGS make_distributed_plan = 0;
+SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 
 DROP TABLE t_merge_dp_order;

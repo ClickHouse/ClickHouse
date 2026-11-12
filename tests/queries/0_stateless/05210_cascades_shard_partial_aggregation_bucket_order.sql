@@ -54,34 +54,34 @@ SELECT countIf(explain ILIKE '%MergingAggregated%') - 1 = countIf(explain ILIKE 
     FROM (EXPLAIN PLAN distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 1)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 SELECT countIf(explain ILIKE '%MergingAggregated%') - 1 = countIf(explain ILIKE '%GatherExchange%'),
        countIf(explain ILIKE '%GatherExchange%') > 0
     FROM (EXPLAIN PLAN distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 1,
                  distributed_plan_force_shuffle_aggregation = 1)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 -- The promise is made from either setting alone, so the split must follow whichever is on.
 SELECT countIf(explain ILIKE '%MergingAggregated%') - 1 = countIf(explain ILIKE '%GatherExchange%'),
        countIf(explain ILIKE '%GatherExchange%') > 0
     FROM (EXPLAIN PLAN distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 0, enable_memory_bound_merging_of_aggregation_results = 1)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 SELECT countIf(explain ILIKE '%MergingAggregated%') - 1 = countIf(explain ILIKE '%GatherExchange%'),
        countIf(explain ILIKE '%GatherExchange%') > 0
     FROM (EXPLAIN PLAN distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 -- Without the promise the shard gathers its partial aggregation as before: the initiator's merge is
 -- the only one, and both shards keep the multi-node partial.
 SELECT countIf(explain ILIKE '%MergingAggregated%') = 1, countIf(explain ILIKE '%GatherExchange%') = 2
     FROM (EXPLAIN PLAN distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 0, enable_memory_bound_merging_of_aggregation_results = 0)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 
 -- The aggregation must complete: on both push paths of the merge, under the force setting, and
 -- with the shard plan shipped rather than sent as text.
@@ -101,6 +101,6 @@ SELECT count(), sum(s) = 2 * (SELECT sum(number) FROM numbers(200000))
     FROM (SELECT k, sum(v) AS s FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k);
 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k HAVING k = 7;
 SELECT k, sum(v) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k HAVING k = 7
-    SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+    SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0, distributed_plan_workers_num = DEFAULT;
 
 DROP TABLE t_cascades_bucket_order;

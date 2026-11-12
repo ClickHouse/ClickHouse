@@ -38,7 +38,7 @@ FROM (
     SELECT count() FROM t_cascades_repl
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1
 )
-SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 
 SELECT countIf(explain LIKE '%ParallelRead%' OR explain LIKE '%ReplicatedRead%') > 0
 FROM (
@@ -46,6 +46,6 @@ FROM (
     SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, use_statistics = 0
 )
-SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 
 DROP TABLE t_cascades_repl SYNC;

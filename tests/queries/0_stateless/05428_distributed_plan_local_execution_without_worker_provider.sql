@@ -13,7 +13,7 @@ CREATE TABLE t_local_no_provider (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_local_no_provider SELECT number FROM numbers(1000000);
 
 SELECT sum(k) FROM t_local_no_provider
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_workers_num = 0,
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_worker_cluster = 'nonexistent_05428', distributed_plan_default_reader_bucket_count = 0,
     distributed_plan_min_rows_per_reader = 100000, log_comment = '05428_local_no_provider';
 

@@ -35,14 +35,14 @@ SELECT countIf(explain ILIKE '%MergingAggregated%'), countIf(explain ILIKE '%Gat
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 1,
                  max_rows_to_group_by = 10000000000)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 -- Without the promise each shard still gathers a multi-node partial aggregation.
 SELECT countIf(explain ILIKE '%MergingAggregated%'), countIf(explain ILIKE '%GatherExchange%')
     FROM (EXPLAIN PLAN distributed = 1 SELECT k, sum(v) FROM remote('127.0.0.1,localhost', currentDatabase(), t_cascades_shard_group_by_limit) GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 2,
                  distributed_aggregation_memory_efficient = 0, enable_memory_bound_merging_of_aggregation_results = 0,
                  max_rows_to_group_by = 10000000000)
-    SETTINGS make_distributed_plan = 0;
+    SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 
 SELECT count(), sum(s) = 2 * (SELECT sum(number) FROM numbers(200000))
     FROM (SELECT k, sum(v) AS s FROM remote('127.0.0.1,localhost', currentDatabase(), t_cascades_shard_group_by_limit) GROUP BY k);

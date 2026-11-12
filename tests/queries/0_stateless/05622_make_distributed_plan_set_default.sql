@@ -8,10 +8,12 @@
 SET distributed_plan_execute_locally = 1;
 
 SELECT 'derived again after DEFAULT clears an explicit off';
-SET make_distributed_plan = 0;
-SELECT getSetting('make_distributed_plan');
-SET make_distributed_plan = DEFAULT;
+-- The three SETs run back to back, with no query between them: a bare SET only changes what a
+-- later query would want, so the conflicting intermediate state (an explicit off while the
+-- workers num still wants the plan) is never itself checked.
 SET distributed_plan_workers_num = 3;
+SET make_distributed_plan = 0;
+SET make_distributed_plan = DEFAULT;
 SELECT getSetting('make_distributed_plan');
 
 SELECT 'stays off after DEFAULT when no workers are configured';

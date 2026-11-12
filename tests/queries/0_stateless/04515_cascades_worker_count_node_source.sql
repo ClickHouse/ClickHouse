@@ -77,6 +77,6 @@ FROM (
               ORDER BY event_time_microseconds DESC LIMIT 1)
     )
 )
-SETTINGS make_distributed_plan = 0;
+SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 
 DROP TABLE t_worker_count;

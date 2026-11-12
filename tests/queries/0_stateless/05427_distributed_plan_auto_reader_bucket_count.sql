@@ -22,7 +22,9 @@ SELECT sum(k) FROM t_auto_readers SETTINGS distributed_plan_min_rows_per_reader 
 SELECT sum(k) FROM t_auto_readers SETTINGS distributed_plan_default_reader_bucket_count = 3, log_comment = '05427_explicit';
 
 -- A worker runs no more threads than it has cores, whatever `max_threads` the initiator sends.
-SET distributed_plan_execute_locally = 0, distributed_plan_workers_num = 0;
+-- `distributed_plan_workers_num = DEFAULT`, not `0`: the latter is now an explicit refusal of the
+-- plan it conflicts with, while DEFAULT leaves the provider to pick the worker count, same as before.
+SET distributed_plan_execute_locally = 0, distributed_plan_workers_num = DEFAULT;
 SELECT sum(k) FROM t_auto_readers SETTINGS max_threads = 1024, log_comment = '05427_max_threads';
 
 SET make_distributed_plan = 0;

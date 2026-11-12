@@ -3,24 +3,19 @@
 # no-old-analyzer: make_distributed_plan requires the analyzer.
 
 # The constraints of the user's own profile arrive at login, after the profile's settings are
-# applied. A `const` constraint there must still veto the make_distributed_plan derivation
-# from the profile's distributed_plan_workers_num. The environment itself may already pin the
-# setting const for every user (ClickHouse Cloud does); the probe below reads the ambient pin
-# from a readonly=0 session, and the expectations follow it.
+# applied. A `const` constraint there must still veto the make_distributed_plan derivation from
+# the profile's distributed_plan_workers_num - and since that same distributed_plan_workers_num
+# still wants the plan, every query for that user, even a plain SELECT 1, is rejected at query
+# start with SETTING_CONSTRAINT_VIOLATION until the profile itself is fixed.
 #
-# A vetoed derivation must also leave no trace: the settings adjusted for distributed plans
-# must keep their profile values (`compile_expressions = 1` is the probe). This holds the
-# server to judging the derivation under the incoming profile's own constraints, and the
-# client to not deriving at all - a client context has no constraints, and its adjustments
-# would ride back to the server as explicit changes when it applies the pushed session
-# settings.
-#
-# For the pinned user, every query - including the probe queries below - wants the plan via the
-# profile's own `distributed_plan_workers_num`, and that want conflicts with the pin: querying
-# for the pinned user's settings would itself be rejected at query start. Each probe therefore
-# first resets `distributed_plan_workers_num` to 0 in the same multi-statement connection, which
-# is not itself checked (it only changes what a later query would want), before reading the
-# setting a later, now-unconflicted query sees.
+# A vetoed derivation must also leave no trace: the settings adjusted for distributed plans must
+# keep their profile values (`compile_expressions = 1` is the probe). Read it from the rejected
+# query's own `ExceptionBeforeStart` row in system.query_log - logQuery/logExceptionBeforeStart run
+# before the settings conflict is checked, so the row exists even though the query itself never
+# returns anything. This holds the server to judging the derivation under the incoming profile's
+# own constraints, and the client to not deriving at all - a client context has no constraints,
+# and its adjustments would ride back to the server as explicit changes when it applies the
+# pushed session settings.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -40,9 +35,6 @@ cleanup()
 }
 trap cleanup EXIT
 cleanup
-
-AMBIENT_PIN=$(${CLICKHOUSE_CLIENT} -q "SELECT readonly FROM system.settings WHERE name = 'make_distributed_plan'")
-if [ "${AMBIENT_PIN}" == "0" ]; then EXPECTED_DERIVED="true"; else EXPECTED_DERIVED="false"; fi
 
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${FREE_PROFILE} SETTINGS distributed_plan_workers_num = 3"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${FREE_USER} SETTINGS PROFILE ${FREE_PROFILE}"
@@ -64,17 +56,19 @@ check()
     if [ "${actual}" == "${expected}" ]; then echo "OK"; else echo "FAIL: got ${actual}, expected ${expected}"; fi
 }
 
-check_vetoed()
-{
-    local label=$1 user=$2 setting=$3 expected=$4
-    local actual
-    actual=$(${CLICKHOUSE_CLIENT_BINARY} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --user "${user}" --multiquery \
-        -q "SET distributed_plan_workers_num = 0; SELECT getSetting('${setting}')")
-    echo "${label}"
-    if [ "${actual}" == "${expected}" ]; then echo "OK"; else echo "FAIL: got ${actual}, expected ${expected}"; fi
-}
+check "derived at login without the constraint" "${FREE_USER}" make_distributed_plan "true"
+check "still derived in a readonly session" "${READONLY_USER}" make_distributed_plan "true"
 
-check "derived at login without the constraint" "${FREE_USER}" make_distributed_plan "${EXPECTED_DERIVED}"
-check_vetoed "vetoed at login by the const constraint" "${PINNED_USER}" make_distributed_plan "false"
-check_vetoed "the vetoed plan does not latch its adjustments" "${PINNED_USER}" compile_expressions "true"
-check "still derived in a readonly session" "${READONLY_USER}" make_distributed_plan "${EXPECTED_DERIVED}"
+echo "vetoed at login by the const constraint"
+PINNED_ERROR=$(${CLICKHOUSE_CLIENT_BINARY} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --user "${PINNED_USER}" -q "SELECT 1" 2>&1)
+if [[ "${PINNED_ERROR}" == *SETTING_CONSTRAINT_VIOLATION* ]]; then echo "OK"; else echo "FAIL: ${PINNED_ERROR}"; fi
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+echo "the vetoed plan does not latch its adjustments"
+LATCHED=$(${CLICKHOUSE_CLIENT} -q "
+    SELECT Settings['compile_expressions']
+    FROM system.query_log
+    WHERE type = 'ExceptionBeforeStart' AND user = '${PINNED_USER}' AND query = 'SELECT 1'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1")
+if [ "${LATCHED}" == "1" ]; then echo "OK"; else echo "FAIL: got ${LATCHED}"; fi

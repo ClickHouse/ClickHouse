@@ -1,5 +1,4 @@
 derived again after DEFAULT clears an explicit off
-false
 true
 stays off after DEFAULT when no workers are configured
 false
