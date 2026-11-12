@@ -373,7 +373,11 @@ void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & proc
 
 void FunctionBaseAI::checkHasUser(const ContextPtr & context)
 {
-    if (context->getUserID())
+    /// A `Buffer` flush now runs under the identity of the user who issued the INSERT (so the write can be
+    /// authorized as them), but it is still a deferred, retried background write rather than an interactive
+    /// query, so AI functions must not be executed in it - the same way they are rejected in merges and
+    /// mutations, which have no user at all.
+    if (context->getUserID() && !context->isBufferFlush())
         return;
 
     /// A background operation is retried, and its failure is visible only in the logs and system tables.

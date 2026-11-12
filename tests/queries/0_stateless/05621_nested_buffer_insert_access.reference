@@ -1,0 +1,15 @@
+## Part A: two-hop bypass is denied (direct-write path)
+direct insert denied:   OK
+inner buffer denied:    OK
+outer buffer denied:    OK
+victim unchanged:       ['original']
+## Part B: an unauthorized buffered row is discarded and does not wedge the shard
+outer_b OPTIMIZE: OK
+inner_b OPTIMIZE: OK
+victim after Part B:    ['legit_b','original']
+## Part C: an invalid (dropped) buffered identity does not block a later valid writer
+valid writer after dropped identity: OK
+single_b OPTIMIZE: OK
+victim after Part C:    ['from_ok','legit_b','original']
+## Part D: destinationless buffer keeps rows from different users
+destinationless rows:   ['win_low','win_ok']

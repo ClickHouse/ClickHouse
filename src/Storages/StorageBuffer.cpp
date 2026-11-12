@@ -1,6 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
@@ -20,7 +21,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -60,6 +60,10 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+
+#include <Poco/Net/SocketAddress.h>
+
+#include <tuple>
 
 
 namespace ProfileEvents
@@ -105,6 +109,129 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int USER_EXPIRED;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
+    extern const int AUTHENTICATION_FAILED;
+}
+
+/// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
+/// flushed to the destination through a nested INSERT; without this it would run under the storage's
+/// long-lived, user-less buffer context, which is treated as full access (`Context::getAccess`,
+/// `full_access = !user_id`), so a nested Buffer/Alias/Distributed destination would skip the originating
+/// user's access checks. Replaying this identity onto the flush context bounds the write by the user who
+/// issued the INSERT. Mirrors what `AsynchronousInsertQueue` captures for a deferred flush.
+struct BufferWriteIdentity
+{
+    std::optional<UUID> user_id;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> external_roles;
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
+    time_t authentication_valid_until = 0;
+    String current_user;
+    String initial_user;
+    String authenticated_user;
+    String quota_key;
+    /// The originating client addresses: a downstream `Distributed` destination over a cluster secret
+    /// authenticates `initial_user` against `initial_address` on the remote, and IP-keyed quotas are billed
+    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`.
+    std::optional<Poco::Net::SocketAddress> current_address;
+    std::optional<Poco::Net::SocketAddress> initial_address;
+
+    bool operator==(const BufferWriteIdentity & other) const
+    {
+        if (std::tie(user_id, current_roles, external_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key)
+            != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until, other.current_user, other.initial_user, other.authenticated_user, other.quota_key))
+            return false;
+
+        if (current_address != other.current_address || initial_address != other.initial_address)
+            return false;
+
+        /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
+        /// identity comparison would wrongly split two equal limits coming from different sessions.
+        if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
+            return false;
+        if (authentication_grants && authentication_grants->toStringPrecise() != other.authentication_grants->toStringPrecise())
+            return false;
+        return true;
+    }
+    bool operator!=(const BufferWriteIdentity & other) const { return !(*this == other); }
+};
+
+namespace
+{
+
+std::shared_ptr<const BufferWriteIdentity> captureWriteIdentity(const ContextPtr & context)
+{
+    auto identity = std::make_shared<BufferWriteIdentity>();
+    identity->user_id = context->getUserID();
+    if (identity->user_id)
+    {
+        identity->current_roles = context->getCurrentRoles();
+        identity->external_roles = context->getExternalRoles();
+        identity->authentication_grants = context->getAuthenticationGrants();
+        identity->authentication_valid_until = context->getAuthenticationValidUntil();
+    }
+    const auto & client_info = context->getClientInfo();
+    identity->current_user = client_info.current_user;
+    identity->initial_user = client_info.initial_user;
+    identity->authenticated_user = client_info.authenticated_user;
+    identity->quota_key = client_info.quota_key;
+    identity->current_address = client_info.current_address;
+    identity->initial_address = client_info.initial_address;
+    return identity;
+}
+
+/// An error that means the captured identity can never deliver its block to the destination: the user was
+/// dropped, their authentication expired, or they are not (or no longer) authorized for a downstream table.
+/// Retrying such a flush never succeeds, so the block must be discarded rather than kept and retried.
+bool isUndeliverableUnderIdentity(int code)
+{
+    return code == ErrorCodes::ACCESS_DENIED
+        || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND
+        || code == ErrorCodes::AUTHENTICATION_FAILED
+        || code == ErrorCodes::USER_EXPIRED;
+}
+
+void restoreWriteIdentity(const ContextMutablePtr & insert_context, const BufferWriteIdentity & identity)
+{
+    /// No originating user means an internal/server-initiated insert; keep the trusted user-less buffer
+    /// context, exactly as before this identity propagation was introduced.
+    if (!identity.user_id)
+        return;
+
+    /// Fail closed if the authentication method that buffered these rows expired before the flush. The
+    /// deferred flush has no session to re-validate the user, so without this a token could buffer rows
+    /// just before expiry and have a background flush write them afterwards. `AsynchronousInsertQueue`
+    /// checks the same way. 0 means no expiry.
+    if (identity.authentication_valid_until != 0)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        if (now > identity.authentication_valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to buffer the flushed rows has expired");
+    }
+
+    /// Replay the originating identity so the nested INSERT (and any further Buffer/Alias/Distributed hop)
+    /// is authorized as the user who issued the INSERT, not as the full-access buffer context. The external
+    /// roles are not granted locally, so re-apply the current roles without the grant check.
+    insert_context->setUser(*identity.user_id, identity.external_roles, identity.authentication_grants, identity.authentication_valid_until);
+    insert_context->setCurrentRoles(identity.current_roles, /*check_grants=*/ false);
+
+    /// setUser restores only the access-control identity, not the ClientInfo user names that
+    /// currentUser()/initialUser() and any triggered materialized views observe; restore them too.
+    insert_context->setCurrentUserName(identity.current_user);
+    insert_context->setInitialUserName(identity.initial_user);
+    insert_context->setAuthenticatedUserName(identity.authenticated_user);
+    insert_context->setQuotaClientKey(identity.quota_key);
+
+    /// Restore the originating client addresses so a downstream `Distributed` destination over a cluster
+    /// secret authenticates the user against the real client address, and IP-keyed quotas bill the
+    /// originating bucket, instead of the buffer context's `0.0.0.0`.
+    if (identity.current_address)
+        insert_context->setCurrentAddress(*identity.current_address);
+    if (identity.initial_address)
+        insert_context->setInitialAddress(*identity.initial_address);
+}
+
 }
 
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
@@ -633,8 +760,6 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
-        buffers_select_query_options.view_source_in_subqueries
-            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
@@ -884,6 +1009,9 @@ public:
     {
         // Check table structure.
         metadata_snapshot->check(getHeader(), true);
+        /// Captured once from the initiating query's context and replayed onto the flush context so the
+        /// forwarded write is bounded by this user even on a later background flush.
+        write_identity = captureWriteIdentity(getContext());
     }
 
     String getName() const override { return "BufferSink"; }
@@ -916,7 +1044,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, write_identity);
             }
             return;
         }
@@ -963,6 +1091,7 @@ public:
 private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
+    std::shared_ptr<const BufferWriteIdentity> write_identity;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
     {
@@ -971,8 +1100,17 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
+        /// A shard is flushed to the destination under a single identity, so flush before mixing in rows of a
+        /// different originating identity (mirrors the metadata_version flush below). first_write_time is
+        /// non-zero exactly when the shard holds data, and write_identity is set together with it.
+        /// Only when there is a destination that re-authorizes the write: a destinationless `Buffer` just
+        /// discards rows on flush, so separating identities there would silently drop a previous user's rows.
+        const bool identity_changed = static_cast<bool>(storage.destination_id)
+            && buffer.first_write_time && *buffer.write_identity != *write_identity;
+
         if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
-            buffer.metadata_version != metadata_version)
+            buffer.metadata_version != metadata_version ||
+            identity_changed)
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -985,7 +1123,10 @@ private:
         }
 
         if (!buffer.first_write_time)
+        {
             buffer.first_write_time = current_time;
+            buffer.write_identity = write_identity;
+        }
 
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
@@ -1297,17 +1438,38 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - this could lead to infinite memory growth.
         */
 
+    /// A block that was buffered under a specific user identity cannot be delivered under another authority.
+    const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
+
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity);
     }
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// Return the block to its place in the buffer.
+        /// If the buffering user can never deliver this block (they were dropped, their authentication
+        /// expired, or they lack access to a downstream table), retrying never succeeds. Keeping the block
+        /// would wedge the shard: every later writer with a different identity must flush it first and hits
+        /// the same error, and background flush, OPTIMIZE and shutdown drain are blocked too. Fail closed by
+        /// discarding it - the data is never written under another authority - instead of retaining it.
+        /// Buffer data is non-durable by design. The synchronous direct-write path does not go through here,
+        /// so a user's own over-threshold insert still gets the error back directly.
+        if (flushed_under_user_identity && isUndeliverableUnderIdentity(getCurrentExceptionCode()))
+        {
+            total_writes.rows -= block_rows;
+            total_writes.bytes -= block_allocated_bytes_delta;
+            LOG_ERROR(
+                log,
+                "Discarding {} rows ({} bytes) buffered for destination table {}: the buffering user can no longer "
+                "write to it ({}).",
+                block_rows, block_bytes, destination_id.getNameForLogs(), getCurrentExceptionMessage(false));
+            return true;
+        }
 
+        /// Transient failure: return the block to its place in the buffer and retry later.
         CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
@@ -1329,7 +1491,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity)
 {
     if (!destination_id || block.empty())
         return;
@@ -1376,6 +1538,14 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    /// Mark this as a `Buffer` flush: it carries the originating user below so the write is authorized as
+    /// them, but it is a deferred write, not an interactive query, so functions that must run only in
+    /// user-issued queries (AI functions) stay rejected in it, as they were when the flush had no user.
+    insert_context->setBufferFlush(true);
+    /// Bound the forwarded INSERT by the user who initiated it, so a nested Buffer/Alias/Distributed
+    /// destination is re-authorized as that user instead of the full-access buffer context.
+    if (write_identity)
+        restoreWriteIdentity(insert_context, *write_identity);
 
     InterpreterInsertQuery interpreter(
         insert,
