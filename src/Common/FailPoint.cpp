@@ -367,6 +367,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE(merge_mutate_task_pause_after_part_handoff) \
     REGULAR(merge_task_throw_while_preparing_next_column) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
@@ -383,6 +384,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
+    PAUSEABLE_ONCE(mt_drop_partition_pause_after_merges_stopped) \
+    PAUSEABLE(mt_merge_selecting_task_pause_after_selection) \
+    PAUSEABLE_ONCE(mt_merge_task_pause_before_transaction_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
     PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
