@@ -4790,7 +4790,7 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
     return isVariantExtension(part_column->type, command.data_type);
 }
 
-static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
+static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const MutationCommand & command, const ContextPtr & context)
 {
     if (auto alter = command.ast(); alter && alter->partition)
     {
@@ -4821,13 +4821,42 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
         return true;
 
-    if (canSkipConversionToNullable(part, metadata_snapshot, command))
-        return true;
-
-    if (canSkipConversionToVariant(part, command))
-        return true;
-
     return false;
+}
+
+/// A conversion that the part skips keeps the data of the column and converts it when read, but a projection of the part computed
+/// from the column, such as an aggregate state of it, a sorting key or `toTypeName(dt)`, keeps what it computed from the values
+/// of the old type, also through the default of a column that the part does not store. Such a projection is rebuilt, as
+/// `MATERIALIZE PROJECTION` builds it, without rewriting the column.
+static void addRebuildOfProjectionsComputedFromColumn(
+    const MergeTreeDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const AlterConversionsPtr & alter_conversions,
+    const String & column_name,
+    NameSet & rebuilt_projections,
+    MutationCommands & commands)
+{
+    const auto & part_columns = part->getColumns();
+    auto is_computed_for_part = [&](const String & name)
+    {
+        const String name_in_part = alter_conversions && alter_conversions->isColumnRenamed(name)
+            ? alter_conversions->getColumnOldName(name) : name;
+        return !part_columns.contains(name_in_part);
+    };
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (!part->hasProjection(projection.name) && !part->hasUnloadedProjection(projection.name))
+            continue;
+        if (!MutationsInterpreter::projectionComputesFromColumn(projection, column_name, metadata_snapshot->getColumns(), is_computed_for_part))
+            continue;
+        if (rebuilt_projections.emplace(projection.name).second)
+            commands.push_back({
+                .type = MutationCommand::Type::MATERIALIZE_PROJECTION,
+                .projection_name = projection.name,
+                .rebuild_existing_projection = true,
+            });
+    }
 }
 
 namespace
@@ -5140,10 +5169,20 @@ bool MutateTask::prepare()
     /// disable parallel replicas for mutations
     context_for_reading->setSetting("enable_parallel_replicas", false);
 
+    NameSet rebuilt_projections;
     for (const auto & command : *ctx->commands)
     {
-        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
-            ctx->commands_for_part.emplace_back(command);
+        if (canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
+            continue;
+
+        if (canSkipConversionToNullable(ctx->source_part, ctx->metadata_snapshot, command) || canSkipConversionToVariant(ctx->source_part, command))
+        {
+            addRebuildOfProjectionsComputedFromColumn(
+                ctx->source_part, ctx->metadata_snapshot, alter_conversions, command.column_name, rebuilt_projections, ctx->commands_for_part);
+            continue;
+        }
+
+        ctx->commands_for_part.emplace_back(command);
     }
 
     auto updated_columns_in_patches = alter_conversions->getColumnsUpdatedInPatches();

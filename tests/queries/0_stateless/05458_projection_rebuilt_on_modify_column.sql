@@ -124,6 +124,29 @@ ALTER TABLE t_absent_plain_default MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') 
 SELECT groupArray(toHour(dt)) FROM t_absent_plain_default WHERE id >= 0 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 SELECT groupArray(toHour(dt)) FROM t_absent_plain_default SETTINGS optimize_use_projections = 0;
 
+-- A conversion that a part applies without rewriting the column, to `Nullable` with the default serialization and without
+-- statistics, or an extension of a `Variant`, still rebuilds a projection computed from the column, also through the default of a
+-- column that the part does not store.
+CREATE TABLE t_nullable (id UInt64, dt UInt8, PROJECTION p (SELECT id + length(toTypeName(dt)) AS h, count() GROUP BY h))
+ENGINE = MergeTree ORDER BY id
+SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1,
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_nullable SELECT number, toUInt8(number) FROM numbers(3);
+ALTER TABLE t_nullable MODIFY COLUMN dt Nullable(UInt8) SETTINGS mutations_sync = 2;
+SELECT groupArray(h) FROM (SELECT id + length(toTypeName(dt)) AS h, count() FROM t_nullable GROUP BY h ORDER BY h)
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(h) FROM (SELECT id + length(toTypeName(dt)) AS h, count() FROM t_nullable GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
+
+CREATE TABLE t_variant (id UInt64, x Variant(UInt8, String)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_variant SELECT number, number::UInt8 FROM numbers(3);
+ALTER TABLE t_variant ADD COLUMN h UInt64 DEFAULT id + length(toTypeName(x));
+ALTER TABLE t_variant ADD PROJECTION p (SELECT h, count() GROUP BY h);
+ALTER TABLE t_variant MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_variant MODIFY COLUMN x Variant(UInt8, String, Array(UInt8)) SETTINGS mutations_sync = 2;
+SELECT groupArray(h) FROM (SELECT h, count() FROM t_variant GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(h) FROM (SELECT h, count() FROM t_variant GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -142,3 +165,5 @@ DROP TABLE t_subcolumn;
 DROP TABLE t_default_subcolumn;
 DROP TABLE t_absent_plain;
 DROP TABLE t_absent_plain_default;
+DROP TABLE t_nullable;
+DROP TABLE t_variant;
