@@ -3820,6 +3820,11 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
         /// Add general database settings
         generateSettingValues(rg, allDatabaseSettings, deng->mutable_setting_values());
     }
+    if (next.isReplicatedDatabase() && rg.nextSmallNumber() < 5)
+    {
+        /// Add Replicated database settings
+        generateSettingValues(rg, replicatedDatabaseSettings, deng->mutable_setting_values());
+    }
     if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && !next.isProxyDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
