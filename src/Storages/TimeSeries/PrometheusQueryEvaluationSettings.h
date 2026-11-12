@@ -3,7 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -66,6 +66,11 @@ struct PrometheusQueryEvaluationSettings
     /// (If a step is given in the subquery, as in "http_requests_total[10m:1m]", then the given step is used.)
     /// If not set then it's 15 seconds by default.
     std::optional<DurationType> default_subquery_step;
+
+    /// A range query is rejected if (end_time - start_time) / step is greater than this value; 0 means no limit.
+    UInt64 max_points_per_series = 0;
+    /// Copy label matchers across binary operators, see the setting `promql_push_down_label_matchers`.
+    bool push_down_label_matchers = true;
 };
 
 }

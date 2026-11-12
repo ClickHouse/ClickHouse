@@ -196,7 +196,7 @@ def test_permanent_error_read_fails_without_accusing_part(started_cluster, kind)
 
     node.query(f"SYSTEM ENABLE FAILPOINT {perm_fp}")
     try:
-        err = node.query_and_get_error(f"SELECT sum(k) FROM {table}")
+        err = node.query_and_get_error(f"SELECT sum(k) FROM {table} SETTINGS use_statistics_for_sum_avg_aggregation = 0")
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {perm_fp}")
 
@@ -246,7 +246,7 @@ def test_non_retryable_error_still_marks_part_broken(started_cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT azure_inject_bad_request")
     try:
-        node.query_and_get_error("SELECT sum(k) FROM t_negative")
+        node.query_and_get_error("SELECT sum(k) FROM t_negative SETTINGS use_statistics_for_sum_avg_aggregation = 0")
         node.wait_for_log_line(BROKEN_PART_LOG, timeout=60)
     finally:
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_bad_request")
@@ -283,6 +283,7 @@ def test_transient_forbidden_on_write_succeeds(started_cluster):
             node.query(
                 "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)",
                 query_id=query_id,
+                settings={"async_insert": "0"},  # rely on synchronous query executed
             )
         finally:
             node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")

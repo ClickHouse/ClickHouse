@@ -106,19 +106,19 @@ ClickHouse es ampliamente conocido por ofrecer un rendimiento de consulta extrem
 Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHouse fast?](/es/get-started/about/why-clickhouse-is-so-fast).
 
 {/*
-  ## ¿Qué es OLAP? {#what-is-olap}
+  ## ¿Qué es OLAP?
   Los escenarios OLAP requieren respuestas en tiempo real sobre grandes conjuntos de datos para consultas analíticas complejas con las siguientes características:
   - Los conjuntos de datos pueden ser masivos: miles de millones o billones de filas
   - Los datos se organizan en tablas que contienen muchas columnas
   - Solo unas pocas columnas se seleccionan para responder a cualquier consulta concreta
   - Los resultados deben devolverse en milisegundos o segundos
 
-  ## Bases de datos orientadas a columnas frente a bases de datos orientadas a filas {#column-oriented-vs-row-oriented-databases}
+  ## Bases de datos orientadas a columnas frente a bases de datos orientadas a filas
   En un DBMS orientado a filas, los datos se almacenan en filas, con todos los valores relacionados con una fila almacenados físicamente de forma contigua.
 
   En un DBMS orientado a columnas, los datos se almacenan en columnas, y los valores de una misma columna se almacenan juntos.
 
-  ## Por qué las bases de datos orientadas a columnas funcionan mejor en el escenario OLAP {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+  ## Por qué las bases de datos orientadas a columnas funcionan mejor en el escenario OLAP
 
   Las bases de datos orientadas a columnas están mejor adaptadas a los escenarios OLAP: son al menos 100 veces más rápidas procesando la mayoría de las consultas. Las razones se explican en detalle a continuación, aunque resulta más fácil demostrarlo visualmente:
 
@@ -126,7 +126,7 @@ Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHo
 
   El resto de este artículo explica por qué las bases de datos orientadas a columnas funcionan bien en estos escenarios, y por qué ClickHouse en particular [supera](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) a las demás en esta categoría.
 
-  ## ¿Por qué ClickHouse es tan rápido? {#why-is-clickhouse-so-fast}
+  ## ¿Por qué ClickHouse es tan rápido?
 
   ClickHouse aprovecha al máximo todos los recursos del sistema disponibles para procesar cada consulta analítica lo más rápido posible. Esto es posible gracias a una combinación única de capacidades analíticas y atención a los detalles de bajo nivel necesarios para implementar la base de datos OLAP más rápida.
 
@@ -135,7 +135,7 @@ Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHo
   - [Características distintivas de ClickHouse](/get-started/about/distinctive-features)
   - [FAQ: ¿Por qué ClickHouse es tan rápido?](/get-started/about/why-clickhouse-is-so-fast)
 
-  ## Procesamiento de consultas analíticas en tiempo real {#processing-analytical-queries-in-real-time}
+  ## Procesamiento de consultas analíticas en tiempo real
 
   En un DBMS orientado a filas, los datos se almacenan en el siguiente orden:
 
@@ -168,7 +168,7 @@ Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHo
 
   Cuanto mayor es la carga sobre el sistema, más importante resulta personalizar su configuración para ajustarla a los requisitos del escenario de uso, y más granular se vuelve esa personalización. No existe ningún sistema igualmente adecuado para escenarios significativamente distintos. Si un sistema es adaptable a un amplio conjunto de escenarios, bajo una carga elevada gestionará todos ellos de forma igualmente deficiente, o funcionará bien solo para uno o unos pocos escenarios posibles.
 
-  ### Propiedades clave del escenario OLAP {#key-properties-of-olap-scenario}
+  ### Propiedades clave del escenario OLAP
 
   - Las tablas son "anchas", es decir, contienen un gran número de columnas.
   - Los conjuntos de datos son grandes y las consultas requieren un alto throughput al procesar una sola consulta (hasta miles de millones de filas por segundo por servidor).
@@ -183,7 +183,7 @@ Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHo
 
   Es fácil apreciar que el escenario OLAP difiere considerablemente de otros escenarios populares (como OLTP o el acceso key-value). Por tanto, no tiene sentido intentar usar OLTP o una DB key-value para procesar consultas analíticas si se quiere obtener un rendimiento aceptable. Por ejemplo, usar MongoDB o Redis para análisis producirá un rendimiento muy inferior al de las bases de datos OLAP.
 
-  ### Entrada/salida {#inputoutput}
+  ### Entrada/salida
 
   1.  Para una consulta analítica, solo es necesario leer un pequeño número de columnas de la tabla. En una base de datos orientada a columnas, es posible leer únicamente los datos necesarios. Por ejemplo, si se necesitan 5 columnas de 100, cabe esperar una reducción de 20 veces en el volumen de E/S.
   2.  Dado que los datos se leen en bloques, resulta más fácil comprimirlos. Los datos en columnas también son más fáciles de comprimir, lo que reduce aún más el volumen de E/S.
@@ -191,7 +191,7 @@ Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHo
 
   Por ejemplo, la consulta "contar el número de registros por plataforma publicitaria" requiere leer una columna "ID de plataforma publicitaria", que ocupa 1 byte sin comprimir. Si la mayor parte del tráfico no proviene de plataformas publicitarias, cabe esperar al menos una compresión de 10 veces en esta columna. Con un algoritmo de compresión rápido, la descompresión de datos puede alcanzar una velocidad de al menos varios gigabytes de datos sin comprimir por segundo. En otras palabras, esta consulta puede procesarse a una velocidad de aproximadamente varios miles de millones de filas por segundo en un único servidor. Esta velocidad se alcanza realmente en la práctica.
 
-  ### CPU {#cpu}
+  ### CPU
 
   Dado que la ejecución de una consulta requiere procesar un gran número de filas, resulta conveniente enviar todas las operaciones sobre vectores completos en lugar de sobre filas individuales, o bien implementar el motor de consultas de forma que el coste de despacho sea prácticamente nulo. Si no se hace esto, con cualquier subsistema de disco medianamente decente, el intérprete de consultas inevitablemente satura la CPU. Por ello, tiene sentido tanto almacenar los datos en columnas como procesarlos por columnas siempre que sea posible.
 

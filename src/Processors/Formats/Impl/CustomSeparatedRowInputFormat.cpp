@@ -215,9 +215,9 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
 }
 
 template <CustomSeparatedFormatReader::ReadFieldMode mode>
-std::vector<String> CustomSeparatedFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> CustomSeparatedFormatReader::readRowImpl()
 {
-    std::vector<String> values;
+    VectorWithMemoryTracking<String> values;
     skipRowStartDelimiter();
 
     if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
@@ -312,7 +312,7 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
     }
 }
 
-bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &)
+bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &, size_t /*column_index*/)
 {
     skipSpaces();
     updateFormatSettings(is_last_file_column);
@@ -415,7 +415,7 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (no_more_data || reader.checkForSuffix())
     {

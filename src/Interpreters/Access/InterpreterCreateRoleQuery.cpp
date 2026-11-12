@@ -8,15 +8,11 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-}
 
 namespace
 {
@@ -28,10 +24,10 @@ namespace
     {
         if (!override_name.empty())
             role.setName(override_name);
-        else if (!query.new_name.empty())
-            role.setName(query.new_name);
-        else if (query.names.size() == 1)
-            role.setName(query.names.front());
+        else if (query.new_name)
+            role.setName(query.new_name->toString());
+        else if (query.names->size() == 1)
+            role.setName(query.names->toStrings().at(0));
 
         if (override_settings)
             role.settings.applyChanges(*override_settings);
@@ -47,6 +43,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     const auto & query = updated_query_ptr->as<const ASTCreateRoleQuery &>();
+    const Strings names = query.names->toStrings();
 
     auto & access_control = getContext()->getAccessControl();
 
@@ -58,11 +55,11 @@ BlockIO InterpreterCreateRoleQuery::execute()
     if (query.or_replace)
         access_type |= AccessType::DROP_ROLE;
 
-    for (const auto & name : query.names)
+    for (const auto & name : names)
         getContext()->checkAccess(access_type, name);
 
-    if (!query.new_name.empty() && !query.alter)
-        getContext()->checkAccess(AccessType::CREATE_ROLE, query.new_name);
+    if (query.new_name && !query.alter)
+        getContext()->checkAccess(AccessType::CREATE_ROLE, query.new_name->toString());
 
     std::optional<AlterSettingsProfileElements> settings_from_query;
     if (query.alter_settings)
@@ -93,39 +90,34 @@ BlockIO InterpreterCreateRoleQuery::execute()
             updateRoleFromQueryImpl(*updated_role, query, {}, settings_from_query);
             return updated_role;
         };
+        auto ids = query.if_exists ? storage->find<Role>(names) : storage->getIDs<Role>(names);
+        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-        {
-            auto ids = storage->find<Role>(query.names);
-            storage->tryUpdate(ids, update_func);
-        }
+            access_control.tryUpdate(ids, update_func);
         else
-            storage->update(storage->getIDs<Role>(query.names), update_func);
+            access_control.update(ids, update_func);
     }
     else
     {
         std::vector<AccessEntityPtr> new_roles;
-        for (const auto & name : query.names)
+        for (const auto & name : names)
         {
             auto new_role = std::make_shared<Role>();
             updateRoleFromQueryImpl(*new_role, query, name, settings_from_query);
             new_roles.emplace_back(std::move(new_role));
         }
 
-        if (!query.storage_name.empty())
-        {
-            for (const auto & name : query.names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::ROLE, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Role {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
-        }
+        if (query.or_replace)
+            getContext()->checkSettingsConstraintsForOverwrite(new_roles, query.storage_name);
 
-        if (query.if_not_exists)
-            storage->tryInsert(new_roles);
+        if (!query.storage_name.empty())
+            access_control.insertInto(query.storage_name, new_roles, query.or_replace, !query.if_not_exists);
+        else if (query.if_not_exists)
+            access_control.tryInsert(new_roles);
         else if (query.or_replace)
-            storage->insertOrReplace(new_roles);
+            access_control.insertOrReplace(new_roles);
         else
-            storage->insert(new_roles);
+            access_control.insert(new_roles);
     }
 
     return {};

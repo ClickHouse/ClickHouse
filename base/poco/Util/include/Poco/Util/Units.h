@@ -19,9 +19,9 @@
 // Written by Calum Grant
 // Copyright (C) Calum Grant 2007
 //
-// Home page: http://calumgrant.net/units
-// File location: http://calumgrant.net/units/units.hpp
-// Manual: http://calumgrant.net/units/units.html
+// Home page: https://web.archive.org/web/20100324135842/http://calumgrant.net/units/index.html
+// File location: https://web.archive.org/web/20080725051345/http://calumgrant.net/units/units.hpp
+// Manual: https://web.archive.org/web/20080725051304/http://calumgrant.net/units/units.html
 //
 // Copying permitted under the terms of the Boost software license.
 //

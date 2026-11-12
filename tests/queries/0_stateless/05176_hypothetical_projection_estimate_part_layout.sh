@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # the cases whose answer depends on how the writer would lay the projection part out
 # every case has a twin table with the same projection materialized, the estimate must match what it reads
 
@@ -7,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # count() must reach the read step and the real projection must be allowed to win
-PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
+PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 # the read-step header holds the final granule count, the per-index lines vary by build
 compare()
@@ -118,9 +120,9 @@ for w in "b >= 4000" "b < 2000"; do
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 
-# a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
+# a lightweight delete leaves the dead rows in the part, but the rebuilt projection drops them:
 
-# the rebuild ANDs `_row_exists` into the projection's WHERE, and there is none here to AND it into
+# the rebuild filters by `_row_exists` even for a projection without a WHERE
 echo "--- a materialized lightweight delete ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;

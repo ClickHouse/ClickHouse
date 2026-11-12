@@ -31,7 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST.h>
-#include <Parsers/StatementFactory.h>
+#include <Parsers/ParserRegistry.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -987,6 +987,16 @@ String renderSystemTableColumns(const String & table_name, const ColumnsDescript
     {
         if (column.default_desc.expression && column.default_desc.kind == ColumnDefaultKind::Alias)
         {
+            const String alias_comment = boost::algorithm::trim_copy(column.comment);
+            if (!alias_comment.empty())
+            {
+                /// An alias with its own comment documents a value rather than a spelling of another column
+                /// (the per-metric aliases of `system.metric_log`), so it is rendered like an ordinary column.
+                aliases += "- `" + column.name + "` (" + formatSystemTableType(column.type->getName()) + ") — "
+                    + indentMarkdownContinuation(alias_comment) + "\n";
+                continue;
+            }
+
             String description;
             if (table_name == "trace_log" && column.name == "build_id")
                 description = "Alias for the build ID of the running ClickHouse server binary.";
@@ -1313,8 +1323,10 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 makeRepoRelative(value.source));
     }
 
-    /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+    /// SQL statement documentation is stored in the parsers which parse them
+    for (const auto & creator : ParserRegistry::instance().getCreators())
+        for (const auto & [name, documentation] : creator()->getDocumentation())
+            addRow(res_columns, EntityType::Statement, name, renderDoc(documentation), makeRepoRelative(documentation.source));
 
     /// System-table documentation is stored in each attached table's metadata comment. A structured comment uses
     /// section markers such as `.description` and `.examples`; an ordinary comment remains a concise fallback.

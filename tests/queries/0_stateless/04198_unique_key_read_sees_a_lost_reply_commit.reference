@@ -1,0 +1,9 @@
+held	0	a
+held	1	b
+held	2	a
+held count	3
+committed 1
+released	0	a
+released	1	b
+released	2	a
+released count	3

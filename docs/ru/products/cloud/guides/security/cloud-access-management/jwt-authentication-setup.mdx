@@ -13,10 +13,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.jsx";
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="JWT-аутентификация с пользовательским провайдером идентификации" />
@@ -25,9 +21,15 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   В этом руководстве описывается настройка JWKS-провайдеров в консоли Cloud. О том, как создать JWT, какова его структура, какие утверждения обязательны, что представляют собой утверждения ролей и привилегий, а также как работают эфемерные пользователи, см. в справочнике [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt).
 </Tip>
 
-ClickHouse Cloud позволяет аутентифицировать подключения к сервису с помощью JSON Web Tokens (JWT), проверяемых по вашим конечным точкам JSON Web Key Set (JWKS). Вместо управления учетными данными базы данных ваш провайдер идентификации выпускает краткоживущие токены, которые ClickHouse проверяет по открытым ключам, опубликованным по указанному вами URL JWKS.
+ClickHouse Cloud позволяет аутентифицировать соединения с сервисом с помощью JSON Web Tokens (JWT), проверяемых по вашим конечным точкам JSON Web Key Set (JWKS). Вместо управления учетными данными базы данных ваш провайдер идентификации выпускает краткоживущие токены, которые ClickHouse проверяет по открытым ключам, опубликованным по указанному вами URL JWKS.
 
 Вы можете самостоятельно настроить эти JWKS-провайдеры для каждого сервиса в разделе **Settings → Security** консоли ClickHouse Cloud.
+
+<Tip>
+  **Используете Microsoft Entra ID?**
+
+  Воспользуйтесь руководством [JWT-аутентификация с Microsoft Entra ID](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id): в нём описаны настройка Entra ID и значения, которые нужно указать для провайдера, а также рассказано, как сопоставить роли приложений Entra ID с ролями ClickHouse.
+</Tip>
 
 <div id="before-you-begin">
   ## Перед началом работы
@@ -44,9 +46,7 @@ ClickHouse Cloud позволяет аутентифицировать подк�
   Провайдеры на основе JWKS поддерживают ключи **RSA** и, начиная с версии 26.8, ключи **EC** на кривых P-256, P-384 и P-521. Документ JWKS может содержать ключи других типов, но в нём должен присутствовать хотя бы один пригодный для использования ключ.
 </Note>
 
-<div id="how-it-works">
-  ## Как это работает
-</div>
+## Как это работает {#how-it-works}
 
 Клиент (ваш провайдер идентификации или приложение) создаёт JWT и подписывает его своим **закрытым ключом**. Токен должен соответствовать ожидаемому [формату токена](/ru/concepts/features/security/external-authenticators/jwt#token-claims). Затем ClickHouse проверяет его с помощью **открытых** ключей, опубликованных по указанному вами URL JWKS:
 
@@ -105,3 +105,4 @@ ClickHouse проверяет доступность URL JWKS и получае�
 </div>
 
 * [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt) — утверждения токена, эфемерные пользователи и использование клиентом.
+* [JWT-аутентификация с Microsoft Entra ID](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — настройка Entra ID в качестве Провайдера JWT.

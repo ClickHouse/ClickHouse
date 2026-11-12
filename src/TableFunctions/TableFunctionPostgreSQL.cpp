@@ -12,6 +12,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -117,10 +118,11 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         }
     }
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings));
+    configuration.emplace(StoragePostgreSQL::getConfiguration(
+        args, context, &postgresql_settings, /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
-    /// stored in a named collection.
+    /// stored in a named collection. `getConfiguration` checks these overrides of the collection.
     if (settings_ast)
         postgresql_settings.loadFromQuery(settings_ast->as<ASTSetQuery &>());
 
@@ -190,7 +192,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
-All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in ClickHouse after the query to PostgreSQL finishes. The `LIMIT` sampling constraint is pushed to PostgreSQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## Passing a query instead of a table name {#passing-a-query}
 
@@ -199,6 +201,14 @@ Instead of a table name, the third argument can be a `SELECT` query that is pass
 ```sql
 SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to PostgreSQL, so it must not end with a semicolon. The `schema` argument does not apply to a passed query: qualify the table names in the query instead.
+
+With a [named collection](/concepts/features/configuration/server-config/named-collections) such as `mypg` from the [examples](#examples), pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+SELECT * FROM postgresql(mypg, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`PostgreSQL`](/reference/engines/table-engines/integrations/postgresql) table engine.
@@ -317,7 +327,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 ### Replicating or migrating Postgres data with PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > In addition to table functions, you can always use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
 }
 
 }

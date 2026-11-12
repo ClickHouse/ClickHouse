@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <storage_policy>plain_rewritable_extending</storage_policy>
+    </merge_tree>
+</clickhouse>

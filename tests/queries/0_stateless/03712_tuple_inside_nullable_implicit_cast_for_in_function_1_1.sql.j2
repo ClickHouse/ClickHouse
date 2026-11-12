@@ -4,9 +4,6 @@
 
 SET enable_nullable_tuple_type = 1;
 
-{% for analyzer in [1] -%}
-SET enable_analyzer = {{ analyzer }};
-
 SET transform_null_in = 0;
 
 SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
@@ -337,5 +334,3 @@ SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
 
 SELECT 1 IN tuple(1, 2, 3, 4, 5);
 SELECT 1 IN tuple(1, 2, 3, 4, 5) ORDER BY ALL;
-
-{% endfor -%}

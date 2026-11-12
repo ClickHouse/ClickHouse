@@ -1,0 +1,23 @@
+The returned generated values are the same as the inserted ones
+OK
+HTTP with the data in the request body
+2	21
+{"x":12}
+{"x":13}
+7
+Data from stdin
+14
+15
+170
+180
+FROM INFILE
+41
+13
+A large result is received while the data is sent
+1000000 500000500000
+clickhouse-local
+1	2
+2	4
+10
+12
+6

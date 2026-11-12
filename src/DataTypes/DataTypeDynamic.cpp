@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDynamic.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
@@ -10,6 +11,7 @@
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
@@ -280,6 +282,8 @@ SELECT d::Nullable(Float64) FROM test;
 │                            0 │
 └──────────────────────────────┘
 ```
+
+A type that cannot be converted to the destination type causes an error only if the column contains values of this type.
 
 ### Converting a Variant column to Dynamic column {#converting-a-variant-column-to-dynamic-column}
 
@@ -1101,11 +1105,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
 
 bool hasDynamicType(const DataTypePtr & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & t) { result |= isDynamic(t); };
-    check(*type);
-    type->forEachChild(check);
-    return result;
+    return anyInTypeTree(*type, [](const IDataType & t) { return isDynamic(t); });
 }
 
 }
