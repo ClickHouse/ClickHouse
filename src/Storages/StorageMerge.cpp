@@ -1315,7 +1315,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     for (const auto & row_policy : row_policy_filter_ptr->policies)
                         modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, modified_context);
+                /// A row policy is a stored definition: read table names in it as written.
+                row_policy_data_opt = RowPolicyData(
+                    row_policy_filter_ptr, storage_metadata_snapshot, Context::createCopyForStoredDefinition(modified_context));
                 row_policy_data_opt->extendNames(real_column_names);
             }
 

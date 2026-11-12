@@ -7001,9 +7001,11 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         }
 
         /// Resolve the row policy filter expression against result_node's columns.
-        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
+        /// A row policy is a stored definition: read table names in it as written.
+        auto filter_context = Context::createCopyForStoredDefinition(scope.context);
+        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), filter_context);
         QueryAnalyzer filter_analyzer(this->only_analyze);
-        filter_analyzer.resolve(filter_node, result_node, scope.context);
+        filter_analyzer.resolve(filter_node, result_node, filter_context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
         auto result_columns = result_node->as<QueryNode>()

@@ -1032,8 +1032,14 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
-    return buildFilterInfo(
+    /// A row policy is a stored definition: read table names in it as written.
+    auto filter_query_tree = buildFilterQueryTree(
         row_policy_filter->expression,
+        table_expression_query_info.table_expression,
+        Context::createCopyForStoredDefinition(query_context));
+
+    return buildFilterInfo(
+        std::move(filter_query_tree),
         table_expression_query_info.table_expression,
         planner_context,
         std::move(required_names_without_filter));

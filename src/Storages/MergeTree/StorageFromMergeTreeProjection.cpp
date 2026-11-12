@@ -77,8 +77,12 @@ void StorageFromMergeTreeProjection::read(
         try
         {
             /// resolve against the projection's own columns; anything it can't provide throws below
-            filter_info = buildFilterInfo(
-                row_policy_filter->expression->clone(), query_info.table_expression, query_info.planner_context);
+            /// a row policy is a stored definition: read table names in it as written
+            auto filter_query_tree = buildFilterQueryTree(
+                row_policy_filter->expression->clone(),
+                query_info.table_expression,
+                Context::createCopyForStoredDefinition(query_info.planner_context->getQueryContext()));
+            filter_info = buildFilterInfo(std::move(filter_query_tree), query_info.table_expression, query_info.planner_context);
         }
         catch (const Exception & e)
         {
