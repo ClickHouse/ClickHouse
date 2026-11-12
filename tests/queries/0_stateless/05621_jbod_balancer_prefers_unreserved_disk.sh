@@ -43,7 +43,8 @@ cat > "${CONFIG}" <<XML
 </clickhouse>
 XML
 
-${CLICKHOUSE_LOCAL} --config-file="${CONFIG}" --path="${WORK}/db" --multiquery -q "
+${CLICKHOUSE_LOCAL} --config-file="${CONFIG}" --path="${WORK}/db" -q "
+    -- min_bytes_to_rebalance_partition_over_jbod must be at least max_bytes_to_merge_at_max_space_in_pool / 1024.
     CREATE TABLE t (p UInt8, d String)
     ENGINE = MergeTree
     PARTITION BY p
