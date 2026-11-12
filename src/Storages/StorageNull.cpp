@@ -35,6 +35,7 @@ void registerStorageNull(StorageFactory & factory)
     SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
+        .supports_temporary = true,
     },
     Documentation{
         .description = R"DOCS_MD(

@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+Добавлено в: v26.10.0
+
+Возвращает все комбинации (неупорядоченные выборки без повторяющихся индексов) длины `k` из исходного массива. Перебор выполняется по индексам, поэтому одинаковые значения могут приводить к появлению дублирующихся строк в результате. При `k = 0` возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
+
+**Синтаксис**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**Аргументы**
+
+* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+* `k` — длина каждой генерируемой комбинации. Не должна превышать размер исходного массива. Поддерживаются типы `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` и `UInt64`. [`(U)Int*`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Все комбинации длины `k`. [`Array(Array(T))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**Пример с `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 Добавленный в: v20.1.0
@@ -645,12 +688,12 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 
 ## arrayDotProduct {#arrayDotProduct}
 
-Добавленный в: v23.5.0
+Добавлено в: v23.5.0
 
 Возвращает скалярное произведение двух массивов.
 
 <Note>
-  Размеры двух векторов должны быть одинаковыми. Типы Array и Tuple также могут содержать элементы разных типов.
+  Размеры двух векторов должны быть одинаковыми. Массивы и Tuple также могут содержать элементы разных типов.
 </Note>
 
 **Синтаксис**
@@ -669,7 +712,7 @@ arrayDotProduct(v1, v2)
 Скалярное произведение двух векторов.
 
 <Note>
-  Возвращаемый тип определяется типами аргументов. Если Array или Tuple содержат элементы разных типов, то тип результата — супертип.
+  Возвращаемый тип определяется типами аргументов. Если массивы или Tuple содержат элементы разных типов, то тип результата — супертип.
   Два массива `BFloat16` накапливаются и возвращают значение типа `Float32` (то же правило, что и для двух массивов `Float32`).
 </Note>
 
@@ -2513,6 +2556,272 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+Добавлено в: v26.10.0
+
+Аналогична `arrayPackBitsToFixedString`, но лямбда-функция возвращает целое число, младшие `g` бит которого образуют группу, а группы
+плотно упаковываются (начиная со старшего бита) в `FixedString(n)`. Результатом являются первые `n` байт
+`arrayPackBitGroupsToString` (от группы, пересекающей границу, берутся только её старшие биты), дополненные нулями до `n`
+байт. Размер `n` и размер группы `g` должны быть положительными константами, причём `g` не должен превышать 64.
+
+**Синтаксис**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**Аргументы**
+
+* `f` — лямбда-функция, вычисляющая значение группы для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — размер результирующей строки `FixedString` в байтах. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+* `g` — количество бит в группе. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера для упаковки. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает упакованные биты. [`FixedString(n)`](/ru/reference/data-types/fixedstring)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+Добавлено в: v26.10.0
+
+Аналогична `arrayPackBitsToString`, но лямбда-функция возвращает целое число, младшие `g` бит которого образуют группу, а группы
+упаковываются подряд, без промежутков (начиная со старшего бита). Длина результата составляет `ceil(size_of_array * g / 8)` байт.
+Размер группы `g` должен быть константой от 1 до 64.
+
+**Синтаксис**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**Аргументы**
+
+* `f` — лямбда-функция, вычисляющая значение группы для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — количество битов в группе. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает упакованные биты. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+Добавлено в: v26.10.0
+
+Аналогична `arrayPackBitsToUInt64`, но лямбда-функция возвращает целое число, младшие `g` бит которого образуют группу, а группы
+упаковываются подряд, без промежутков (внутри каждого байта старший бит идёт первым, байты интерпретируются в порядке байтов от младшего к старшему, поэтому
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). Результат
+содержит первые 64 бита упакованного потока: если 64 не делится на `g` нацело, то от группы, пересекающей границу,
+берутся только её старшие биты. Размер группы `g` должен быть константой от 1 до 64.
+
+**Синтаксис**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**Аргументы**
+
+* `f` — лямбда-функция, вычисляющая значение группы для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — количество битов в группе. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает упакованные биты. [`UInt64`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+Добавлено в: v26.10.0
+
+Применяет лямбда-функцию к каждому элементу массива и упаковывает полученные биты в `FixedString(n)`.
+Для каждого элемента лямбда-функция возвращает целое число, которое интерпретируется как один бит (ноль или не ноль).
+Биты записываются начиная со старшего, поэтому результат совпадает с первыми `n` байтами результата `arrayPackBitsToString`.
+Если в массиве больше `n * 8` элементов, лишние игнорируются; если меньше — результат дополняется нулями до `n` байт.
+Размер `n` должен быть положительной константой.
+
+**Синтаксис**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**Аргументы**
+
+* `f` — лямбда-функция, вычисляющая бит для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — размер результирующей строки `FixedString` в байтах. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — один или несколько упаковываемых массивов одинакового размера. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает упакованные биты. [`FixedString(n)`](/ru/reference/data-types/fixedstring)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+Добавлено в: v26.10.0
+
+Применяет лямбда-функцию к каждому элементу массива и упаковывает полученные биты в `String`.
+Для каждого элемента лямбда-функция возвращает целое число, которое интерпретируется как один бит (нулевое или ненулевое значение).
+Биты записываются начиная со старшего; длина результата составляет `ceil(size_of_array / 8)` байт.
+
+**Синтаксис**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**Аргументы**
+
+* `f` — лямбда-функция, вычисляющая бит для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает упакованные биты. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+Добавлено в: v26.10.0
+
+Применяет лямбда-функцию к каждому элементу массива и упаковывает полученные биты в `UInt64`.
+Для каждого элемента лямбда-функция возвращает целое число, которое рассматривается как один бит (ноль или ненулевое значение).
+Поток битов раскладывается по байтам, начиная со старшего бита (байты получаются те же, что и у `arrayPackBitsToString`),
+а сами байты интерпретируются в порядке от младшего к старшему (little-endian), поэтому
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
+Используются только первые 64 элемента; если элементов меньше, оставшиеся биты заполняются нулями.
+
+**Синтаксис**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**Аргументы**
+
+* `f` — лямбда-функция, вычисляющая бит для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Возвращает упакованные биты. [`UInt64`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+Добавлено в: v26.10.0
+
+Возвращает все частичные перестановки (упорядоченные выборки без повторяющихся индексов) длины `k` из исходного массива. Перебор выполняется по индексам, поэтому одинаковые значения могут давать в результате дублирующиеся строки. При `k = 0` возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
+
+**Синтаксис**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**Аргументы**
+
+* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+* `k` — длина каждой генерируемой частичной перестановки. Не должна превышать размер исходного массива. Поддерживаются типы `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` и `UInt64`. [`(U)Int*`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Все частичные перестановки длины `k`. [`Array(Array(T))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**Пример с `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Добавленный в: v23.2.0
@@ -2776,6 +3085,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+Добавлено в: v26.10.0
+
+Возвращает все перестановки элементов исходного массива. Перебор выполняется по индексам, поэтому при наличии одинаковых значений в результате могут появиться дублирующиеся строки. Для пустого исходного массива возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
+
+**Синтаксис**
+
+```sql
+arrayPermutations(arr)
+```
+
+**Аргументы**
+
+* `arr` — Исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+
+**Возвращаемое значение**
+
+Все перестановки исходного массива. [`Array(Array(T))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3222,6 +3563,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+Добавлено в: v26.10.0
+
+Удаляет из массива элемент с указанным индексом.
+Используется индексация от 1. Отрицательные индексы отсчитываются с конца массива.
+Если индекс выходит за границы массива, массив возвращается без изменений.
+Индекс 0 недопустим.
+
+**Синтаксис**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**Аргументы**
+
+* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
+* `index` — целочисленный индекс удаляемого элемента; не может иметь тип Nullable. Отрицательные индексы отсчитываются с конца. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Возвращает исходный массив без элемента с индексом `index` или исходный массив без изменений, если `index` выходит за границы массива. [`Array(T)`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Положительный индекс**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**Отрицательный индекс**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**Выход за границы**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3775,6 +4172,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
+**Псевдонимы**: `slice`
+
 **Аргументы**
 
 * `arr` — Массив, из которого берётся срез. [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit)
@@ -4136,13 +4535,15 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**Псевдонимы**: `array_union`
+
 **Аргументы**
 
 * `arrN` — N массивов, из которых создаётся новый массив. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает массив с уникальными элементами из исходных массивов [`Array(T)`](/ru/reference/data-types/array)
+Возвращает массив с различными элементами из исходных массивов [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -4298,13 +4699,15 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
+**Псевдонимы**: `zip`
+
 **Аргументы**
 
 * `arr1, arr2, ..., arrN` — N массивов, объединённых в один массив. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает массив с элементами из исходных массивов, объединёнными в кортежи. Типы данных в кортеже совпадают с типами входных массивов и идут в том же порядке, в котором передаются массивы. [`Array(T)`](/ru/reference/data-types/array) или [`Tuple(T1, T2, ...)`](/ru/reference/data-types/tuple)
+Возвращает массив с элементами из исходных массивов, сгруппированными в кортежи. Типы данных в кортеже совпадают с типами входных массивов и идут в том же порядке, в котором передаются массивы. [`Array(T)`](/ru/reference/data-types/array) или [`Tuple(T1, T2, ...)`](/ru/reference/data-types/tuple)
 
 **Примеры**
 
@@ -4316,6 +4719,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+Добавлено в: v26.8.0
+
+Функция совместимости с PostgreSQL. Возвращает позицию (с индексацией от 1) первого вхождения элемента в массив или `NULL`, если элемент не найден. Если в качестве элемента передан `NULL`, выполняется поиск первого `NULL` в массиве — так же, как в PostgreSQL. Нативный аналог в ClickHouse — функция `indexOf`, которая возвращает 0 вместо `NULL`.
+
+**Синтаксис**
+
+```sql
+array_position(array, element)
+```
+
+**Аргументы**
+
+* `array` — массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array)
+* `element` — искомый элемент. [`Any`](/ru/reference/data-types/index)
+
+**Возвращаемое значение**
+
+Позиция первого вхождения (с индексацией от 1) или `NULL`, если элемент отсутствует в массиве. [`Nullable(UInt64)`](/ru/reference/data-types/nullable)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -5320,7 +5756,7 @@ Unicode &quot;кодовых точек&quot;, и не то же самое, ч�
 length(x)
 ```
 
-**Псевдонимы**: `OCTET_LENGTH`, `CARDINALITY`
+**Псевдонимы**: `CARDINALITY`, `OCTET_LENGTH`
 
 **Аргументы**
 
