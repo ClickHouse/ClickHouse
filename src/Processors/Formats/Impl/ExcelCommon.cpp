@@ -198,6 +198,33 @@ bool tryInsertText(IColumn & column, const SerializationPtr & serialization, std
     return serialization->tryDeserializeWholeText(column, buf, format_settings);
 }
 
+/// Appends a number written as a plain decimal (like `-12.50`, without an exponent) without the trailing zeros of the fraction.
+/// Returns false and appends nothing if the text is not a plain decimal with a fraction.
+bool appendPlainDecimalText(std::string_view text, String & out)
+{
+    size_t pos = 0;
+    if (pos < text.size() && text[pos] == '-')
+        ++pos;
+    size_t integer_begin = pos;
+    while (pos < text.size() && isNumericASCII(text[pos]))
+        ++pos;
+    if (pos == integer_begin || pos == text.size() || text[pos] != '.')
+        return false;
+    size_t point = pos;
+    ++pos;
+    while (pos < text.size() && isNumericASCII(text[pos]))
+        ++pos;
+    if (pos != text.size())
+        return false;
+
+    size_t end = text.find_last_not_of('0');
+    /// An integer like `1.00` is handled by `numberTextToInteger`.
+    if (end == point)
+        return false;
+    out.append(text.substr(0, end + 1));
+    return true;
+}
+
 /// Converts the textual representation of an integral number, like `1.0`, `-12E2` or `9007199254740993.0`,
 /// to the decimal notation of the integer (`1`, `-1200`, `9007199254740993`) with exact arithmetic.
 /// Returns false if the text is not a number or the number is not an integer.
@@ -786,6 +813,19 @@ void cellToString(const Cell & cell, bool date1904, String & out)
                     formatLocalDateTime(*value, cell.format, out);
                     return;
                 }
+            }
+            /// The original text is exact, while the double may be rounded (e.g. for integers above 2^53).
+            /// Write such numbers exactly, but in the canonical form (`1E+3` is `1000` and `1.50` is `1.5`, like the double is formatted).
+            if (!cell.text.empty())
+            {
+                String integer_text;
+                if (numberTextToInteger(cell.text, integer_text))
+                {
+                    out += integer_text;
+                    return;
+                }
+                if (appendPlainDecimalText(cell.text, out))
+                    return;
             }
             formatNumber(cell.number, out);
             return;
