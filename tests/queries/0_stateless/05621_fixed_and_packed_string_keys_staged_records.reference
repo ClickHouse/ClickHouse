@@ -1,3 +1,6 @@
-Count, runs of 127	1	1
-Key-only, runs of 300	1	1
-Count, interleaved	1	1
+Count, 9 of 16 bytes, runs of 127	1	1
+Key-only, 1 of 4 bytes, runs of 300	1	1
+Count, 8 of 8 bytes, interleaved	1	1
+Fixed-size and String arguments, 5 of 8 bytes	1	1
+An Array argument, 2 of 4 bytes	1	1
+Count, long strings, written to disk	1	1
