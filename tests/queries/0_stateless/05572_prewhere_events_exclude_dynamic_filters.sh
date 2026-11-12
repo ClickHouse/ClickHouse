@@ -68,6 +68,20 @@ ${CLICKHOUSE_CLIENT} --enable_join_runtime_filters 1 --enable_join_runtime_filte
   --max_threads 1 --use_query_condition_cache 0 \
   --query_id "$qid_rf_mixed" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x WHERE t.c % 2 = 0 FORMAT Null"
 
+# -------- A join runtime filter interleaved between two user steps is not counted --------
+# With `optimize_prewhere_after_pushdown`, `PREWHERE c % 2 = 0` and the pushed-down `WHERE a < 199999` become
+# two user steps with the runtime filter `__applyFilter` between them: `c % 2 = 0` -> `__applyFilter` -> `a < 199999`.
+# The runtime filter empties almost every granule, but a granule it empties must not be attributed to PREWHERE,
+# even though a later user step reads the already-emptied granule. Neither user predicate empties a granule
+# (`c % 2 = 0` keeps half of each, `a < 199999` drops only the single last row), so: 25 read, 0 dropped, 100000
+# rows dropped. A boundary snapshot at the last user step would still see the runtime filter's drops; per-step
+# attribution does not.
+qid_rf_interleaved="${CLICKHOUSE_DATABASE}_rf_interleaved_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --optimize_prewhere_after_pushdown 1 --enable_join_runtime_filters 1 \
+  --enable_join_runtime_filters_index_analysis 0 --query_plan_join_swap_table 0 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --use_query_condition_cache 0 \
+  --query_id "$qid_rf_interleaved" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x PREWHERE t.c % 2 = 0 WHERE t.a < 199999 FORMAT Null"
+
 # -------- A fused step mixing a user predicate with top-K is not counted --------
 # With step splitting disabled the user `c % 2 = 0` and the top-K `__topKFilter` share one fused step whose
 # rejections cannot be separated, so nothing is attributed to PREWHERE rather than counting top-K's rejections.
@@ -83,11 +97,13 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 #   join RF:        0, 0, 0          (dynamic join runtime filter, no user predicate)
 #   prewhere:      25, 24, 191808
 #   RF after user: 25, 0, 100000     (runtime filter's granule drops excluded; user predicate counted)
+#   RF interleaved:25, 0, 100000     (runtime filter between two user steps excluded; user predicates counted)
 #   topK fused:     0, 0, 0          (mixed fused step not separable, not attributed)
 dump_events "$qid_topk"
 dump_events "$qid_rf"
 dump_events "$qid_pw"
 dump_events "$qid_rf_mixed"
+dump_events "$qid_rf_interleaved"
 dump_events "$qid_topk_fused"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim"

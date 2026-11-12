@@ -363,10 +363,50 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         throw;
     }
 
-    /// Survivors per granule at the last query-PREWHERE reader's output. Used to decide which granules the
-    /// query PREWHERE dropped, excluding granules emptied only by a later synthesized dynamic filter (a join
-    /// runtime filter appended after the user predicate), which reads as a step with `is_query_prewhere = false`.
-    std::optional<std::vector<size_t>> rows_surviving_prewhere;
+    /// Survivors per granule entering the first query-PREWHERE step, captured only when an earlier reader
+    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
+    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
+    std::optional<std::vector<size_t>> rows_entering_prewhere;
+
+    /// Per-granule PREWHERE drop attribution. The query PREWHERE and any synthesized dynamic filters (a top-K
+    /// threshold filter, a join runtime filter) run as separate chain steps and may be interleaved. A granule is
+    /// dropped "by PREWHERE" only when a query-PREWHERE step empties it, never a dynamic filter -- the same rule
+    /// the per-step row counter in `executePrewhereActionsAndFilterColumns` follows. For each granule we find the
+    /// first step that empties it and record whether that step was a query PREWHERE (1) or a dynamic filter (2);
+    /// a granule still non-empty after the last query-PREWHERE step is not dropped by PREWHERE whatever a later
+    /// dynamic filter does to it.
+    std::vector<size_t> prewhere_prev_surviving;    /// survivors per granule after the previously tracked step
+    std::vector<char> prewhere_granule_empty_state; /// 0 = alive, 1 = emptied by PREWHERE, 2 = emptied by a dynamic filter
+    bool prewhere_tracking_started = false;
+
+    /// Fold one chain step into the per-granule attribution above. Called for every step from the first to the
+    /// last query-PREWHERE reader (inclusive); steps outside that range cannot change PREWHERE's verdict.
+    auto track_prewhere_granules = [&](size_t step_index)
+    {
+        if (!prewhere_granule_stats_enabled
+            || step_index < first_query_prewhere_reader_index
+            || step_index > last_query_prewhere_reader_index)
+            return;
+
+        auto surviving = read_result.survivingRowsPerGranule();
+        if (!prewhere_tracking_started)
+        {
+            /// Survivors entering the first query-PREWHERE step: its input snapshot, or the raw rows read when
+            /// PREWHERE is the first reader. From here a granule can only lose rows, so the first step that
+            /// brings it to zero is the one that dropped it.
+            prewhere_prev_surviving = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
+            prewhere_granule_empty_state.assign(surviving.size(), 0);
+            prewhere_tracking_started = true;
+        }
+
+        const auto * step = range_readers[step_index].getPrewhereInfo();
+        const bool is_query_prewhere_step = step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere;
+        for (size_t granule = 0; granule < surviving.size(); ++granule)
+            if (prewhere_granule_empty_state[granule] == 0 && prewhere_prev_surviving[granule] > 0 && surviving[granule] == 0)
+                prewhere_granule_empty_state[granule] = is_query_prewhere_step ? 1 : 2;
+
+        prewhere_prev_surviving = std::move(surviving);
+    };
 
     std::optional<bool> should_continue_sampling;
     if (read_result.num_rows != 0)
@@ -387,17 +427,11 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1, last_reader_evaluating_defaults > 0);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
 
-        if (prewhere_granule_stats_enabled && last_query_prewhere_reader_index == 0)
-            rows_surviving_prewhere = read_result.survivingRowsPerGranule();
+        track_prewhere_granules(0);
 
         if (num_attributed_readers != 0)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
-
-    /// Survivors per granule at the first query-PREWHERE reader's input, captured only when an earlier reader
-    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
-    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
-    std::optional<std::vector<size_t>> rows_entering_prewhere;
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
@@ -441,8 +475,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
 
-        if (prewhere_granule_stats_enabled && i == last_query_prewhere_reader_index)
-            rows_surviving_prewhere = read_result.survivingRowsPerGranule();
+        track_prewhere_granules(i);
 
         if (i < num_attributed_readers)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
@@ -452,16 +485,26 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     /// Account the granules this block read and dropped by PREWHERE. `entering` is the rows that reached
     /// PREWHERE (survivors at the first query-PREWHERE reader's input, or the raw rows read when PREWHERE is
-    /// the first reader), and `surviving` the survivors at the last query-PREWHERE reader's output. A granule
-    /// is read by PREWHERE only when `entering > 0`, so marks pruned before PREWHERE and granules emptied by an
-    /// earlier mutation/row-policy filter are excluded; it is dropped when `surviving == 0`, measured before any
-    /// later synthesized dynamic filter, so a join runtime filter's granule drops are not attributed to PREWHERE.
-    /// Feed them in mark order; a granule split across blocks is reassembled by `feedPrewhereGranuleMark`.
+    /// the first reader); a granule is read by PREWHERE only when `entering > 0`, so marks pruned before
+    /// PREWHERE and granules emptied by an earlier mutation/row-policy filter are excluded. A granule counts as
+    /// dropped only when a query-PREWHERE step emptied it (`empty_state == 1`); one emptied by an interleaved or
+    /// later dynamic filter (`== 2`), or still non-empty, survived from PREWHERE's standpoint, so a top-K or join
+    /// runtime filter's granule drops are not attributed to PREWHERE. Feed them in mark order; a granule split
+    /// across blocks is reassembled by `feedPrewhereGranuleMark`.
     if (prewhere_granule_stats_enabled)
     {
         const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
-        const auto surviving_rows_per_granule = rows_surviving_prewhere.has_value() ? std::move(*rows_surviving_prewhere) : read_result.survivingRowsPerGranule();
-        read_result.forEachGranuleMark(entering, surviving_rows_per_granule, [this](size_t mark, size_t surviving_rows)
+
+        /// Pass 0 for a granule a query-PREWHERE step emptied (dropped), and a non-zero marker otherwise, so
+        /// `forEachGranuleMark` reports it survived. `prewhere_tracking_started` is false only when no rows ever
+        /// reached PREWHERE, in which case `entering` is all zeros and no granule is reported anyway.
+        std::vector<size_t> surviving_prewhere(entering.size(), 1);
+        if (prewhere_tracking_started)
+            for (size_t granule = 0; granule < surviving_prewhere.size(); ++granule)
+                if (prewhere_granule_empty_state[granule] == 1)
+                    surviving_prewhere[granule] = 0;
+
+        read_result.forEachGranuleMark(entering, surviving_prewhere, [this](size_t mark, size_t surviving_rows)
         {
             feedPrewhereGranuleMark(mark, surviving_rows > 0);
         });
