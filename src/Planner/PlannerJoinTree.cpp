@@ -2338,6 +2338,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             custom_key_ast,
                             table_expression_query_info.table_expression,
                             query_context,
+                            planner_context->isViewSourceInSubqueries(),
                             /*check_access_rights=*/ true);
 
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
@@ -2650,6 +2651,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     additional_filter_ast,
                                     table_expression_query_info.table_expression,
                                     query_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
@@ -2682,6 +2684,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.additional_filter_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2700,6 +2703,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     custom_key_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2944,6 +2948,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 custom_key_ast,
                                 table_expression_query_info.table_expression,
                                 query_context,
+                                planner_context->isViewSourceInSubqueries(),
                                 /*check_access_rights=*/ true);
 
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
