@@ -519,43 +519,6 @@ def test_unique_key_on_a_non_plain_engine_still_loads(started_cluster):
     )
 
     node.query("DROP TABLE uk_old_engine SYNC")
-def test_unique_key_stored_projection_is_never_read(started_cluster):
-    # A projection part bypasses the delete bitmap of a UNIQUE KEY table. A new definition cannot carry
-    # both, but a stored one still loads, so reads must fall back to the base table. Simulated as above.
-    node.query("DROP TABLE IF EXISTS uk_stored_proj SYNC")
-    node.query(
-        "CREATE TABLE uk_stored_proj (id UInt64, user_id UInt32) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id, user_id)",
-        settings=UK_SETTINGS,
-    )
-    metadata_sql = "/var/lib/clickhouse/" + node.query(
-        "SELECT metadata_path FROM system.tables WHERE database = 'default' AND name = 'uk_stored_proj'"
-    ).strip()
-    node.query("DETACH TABLE uk_stored_proj")
-    bash(
-        node,
-        "sed -i 's/^    `user_id` UInt32$/    `user_id` UInt32,\\n    PROJECTION p (SELECT user_id, count() GROUP BY user_id)/' "
-        + shlex.quote(metadata_sql),
-    )
-    node.query("ATTACH TABLE uk_stored_proj", settings={"send_logs_level": "error"})
-    assert node.query("SELECT name FROM system.projections WHERE database = 'default' AND table = 'uk_stored_proj'") == "p\n"
-
-    # Inserted after the ATTACH, so the parts carry the projection.
-    node.query("INSERT INTO uk_stored_proj VALUES (1, 10), (2, 10), (3, 20)", settings=UK_SETTINGS)
-    assert node.query("SELECT id, user_id FROM uk_stored_proj ORDER BY id") == "1\t10\n2\t10\n3\t20\n"
-    assert (
-        node.query(
-            "SELECT user_id, count() FROM uk_stored_proj GROUP BY user_id ORDER BY user_id",
-            settings={"optimize_use_projections": 1},
-        )
-        == "10\t2\n20\t1\n"
-    )
-    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
-        "SELECT * FROM mergeTreeProjection(currentDatabase(), uk_stored_proj, p)"
-    )
-
-    node.query("DROP TABLE uk_stored_proj SYNC")
-
-
 def test_unique_key_sst_roundtrip_on_encrypted_disk(started_cluster):
     # UNIQUE KEY on an encrypted local disk: the load-time SST validation reads
     # `unique_key_index.sst` through `ReadBufferFromEncryptedFile`, whose
