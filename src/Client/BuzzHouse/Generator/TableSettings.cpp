@@ -1188,7 +1188,14 @@ static std::unordered_map<String, CHSetting> timeSeriesTableSettings = {
 static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};
 
-std::unordered_map<String, CHSetting> allDatabaseSettings = {{"lazy_load_tables", trueOrFalseSetting}};
+/// Mostly unlimited (0) or large, because a small limit makes `CREATE TABLE` in the database fail
+static const auto maxTablesSetting = CHSetting(
+    [](RandomGenerator & rg, FuzzConfig &)
+    { return rg.nextMediumNumber() < 61 ? "0" : std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 1000)); },
+    {},
+    false);
+
+std::unordered_map<String, CHSetting> allDatabaseSettings = {{"lazy_load_tables", trueOrFalseSetting}, {"max_tables", maxTablesSetting}};
 
 /// The `default_replica_*` settings are skipped, because the engine arguments are always given, and
 /// `collection_name` needs a named collection. `highRangeNonZero` stays far from the UInt64 lag overflow.
@@ -1782,6 +1789,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         azureQueueSettings.erase(entry);
         logTableSettings.erase(entry);
         replicatedDatabaseSettings.erase(entry);
+        allDatabaseSettings.erase(entry);
     }
     /// The MergeTree settings `ProjectionDescription::getProjectionFromAST` accepts in `WITH SETTINGS`, for both forms
     static const std::vector<String> projection_setting_names

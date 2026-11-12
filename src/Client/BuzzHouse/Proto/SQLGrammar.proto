@@ -2332,6 +2332,21 @@ message AlterPolicyContent {
     optional SQLIdentifier rename_to = 6;
 }
 
+message FetchPartition {
+    required SinglePartitionExpr single_partition = 1;
+    required string from = 2;
+}
+
+message SQLSecurityClause {
+    enum SQLSecurityType {
+        DEFINER = 1;
+        INVOKER = 2;
+        NONE = 3;
+    }
+    optional string definer = 1;
+    optional SQLSecurityType security = 2;
+}
+
 message AlterItem {
     optional bool paren = 1;
     oneof alter_oneof {
@@ -2399,6 +2414,12 @@ message AlterItem {
         AlterPolicyContent alter_policy = 57;
         /// For MergeTree tables
         ModifyProjection modify_projection = 58;
+        FetchPartition fetch_partition = 60;
+        TableKey modify_sample_by = 61;
+        bool remove_sample_by = 62;
+        OptionalPartitionExpr materialize_ttl = 63;
+        /// For views
+        SQLSecurityClause modify_sql_security = 64;
     }
 }
 

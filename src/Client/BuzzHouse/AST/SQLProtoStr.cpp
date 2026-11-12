@@ -5059,6 +5059,41 @@ CONV_FN(AlterItem, alter)
             }
             break;
         case AlterType::kExecuteCommand: ExecuteCommandToString(ret, alter.execute_command()); break;
+        case AlterType::kFetchPartition:
+            ret += "FETCH ";
+            SinglePartitionExprToString(ret, alter.fetch_partition().single_partition());
+            ret += " FROM ";
+            appendSQLStringLiteral(ret, alter.fetch_partition().from());
+            break;
+        case AlterType::kModifySampleBy:
+            ret += "MODIFY SAMPLE BY ";
+            TableKeyToString(ret, alter.modify_sample_by());
+            break;
+        case AlterType::kRemoveSampleBy: ret += "REMOVE SAMPLE BY"; break;
+        case AlterType::kMaterializeTtl:
+            ret += "MATERIALIZE TTL";
+            if (alter.materialize_ttl().has_single_partition())
+            {
+                ret += " IN ";
+                SinglePartitionExprToString(ret, alter.materialize_ttl().single_partition());
+            }
+            break;
+        case AlterType::kModifySqlSecurity: {
+            const SQLSecurityClause & ssc = alter.modify_sql_security();
+
+            ret += "MODIFY";
+            if (ssc.has_definer() || !ssc.has_security())
+            {
+                ret += " DEFINER = ";
+                ret += ssc.has_definer() ? ssc.definer() : "CURRENT_USER";
+            }
+            if (ssc.has_security())
+            {
+                ret += " SQL SECURITY ";
+                ret += SQLSecurityClause_SQLSecurityType_Name(ssc.security());
+            }
+        }
+        break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
             SelectParenToString(ret, alter.modify_query());

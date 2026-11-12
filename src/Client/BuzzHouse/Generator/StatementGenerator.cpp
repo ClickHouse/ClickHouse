@@ -2371,6 +2371,39 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  this->entries.clear();
              }},
             {2 * static_cast<uint32_t>(no_oracle && !t.isDeterministic()), [&] { ati->set_remove_ttl(true); }},
+            {2 * static_cast<uint32_t>(no_oracle && is_mt && can_merge),
+             [&]
+             {
+                 OptionalPartitionExpr * ope = ati->mutable_materialize_ttl();
+                 if (rg.nextBool())
+                     generateNextTablePartition(
+                         rg, 0, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
+             }},
+            /// Sample by
+            {2 * static_cast<uint32_t>(no_oracle && is_mt),
+             [&]
+             {
+                 flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+                 generateTableKey(rg, createTableRelation(rg, true, "", t), t, true, ati->mutable_modify_sample_by());
+                 this->entries.clear();
+             }},
+            {1 * static_cast<uint32_t>(no_oracle && is_mt), [&] { ati->set_remove_sample_by(true); }},
+            /// Fetch partition or part from the Keeper path of a replicated table, into the detached directory
+            {3 * static_cast<uint32_t>(no_oracle && t.isReplicatedMergeTree()),
+             [&]
+             {
+                 FetchPartition * fp = ati->mutable_fetch_partition();
+                 DB::Strings paths;
+
+                 for (const auto & [_, t2] : this->tables)
+                 {
+                     /// Paths with macros are not expanded in FETCH
+                     if (t2.isReplicatedMergeTree() && !t2.keeper_path.empty() && t2.keeper_path.find('{') == String::npos)
+                         paths.emplace_back(t2.keeper_path);
+                 }
+                 generateNextTablePartition(rg, 1, false, false, t, fp->mutable_single_partition()->mutable_partition());
+                 fp->set_from(paths.empty() ? "/clickhouse/tables/nonexistent" : rg.pickRandomly(paths));
+             }},
             /// Attach/replace partition from
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
@@ -2486,6 +2519,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
                   const uint32_t alter_refresh = 1 * static_cast<uint32_t>(!v.isDeterministic());
                   const uint32_t alter_query = 3;
                   const uint32_t comment_view = 2;
+                  const uint32_t sql_security_view = 1;
                   AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
 
                   ati->set_paren(rg.nextSmallNumber() < 9);
@@ -2515,7 +2549,22 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
                             this->allow_in_expression_alias = true;
                             matchQueryAliases(v, sparen->release_select(), sparen->mutable_select());
                         }},
-                       {comment_view, [&] { ati->set_comment(nextComment(rg)); }}});
+                       {comment_view, [&] { ati->set_comment(nextComment(rg)); }},
+                       {sql_security_view,
+                        [&]
+                        {
+                            SQLSecurityClause * ssc = ati->mutable_modify_sql_security();
+
+                            /// The printer falls back to `DEFINER = CURRENT_USER` when neither is set
+                            if (rg.nextSmallNumber() < 5)
+                                ssc->set_definer(rg.nextSmallNumber() < 8 ? "CURRENT_USER" : "default");
+                            if (rg.nextSmallNumber() < 8)
+                            {
+                                std::uniform_int_distribution<uint32_t> sec_range(
+                                    1, static_cast<uint32_t>(SQLSecurityClause::SQLSecurityType_MAX));
+                                ssc->set_security(static_cast<SQLSecurityClause_SQLSecurityType>(sec_range(rg.generator)));
+                            }
+                        }}});
               }
               this->enforce_final = prev_enforce_final;
               this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -2541,7 +2590,14 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
                   AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
 
                   ati->set_paren(rg.nextSmallNumber() < 9);
-                  ati->set_comment(nextComment(rg));
+                  const auto & dsettings = (d->isReplicatedDatabase() && !replicatedDatabaseSettings.empty() && rg.nextBool())
+                      ? replicatedDatabaseSettings
+                      : allDatabaseSettings;
+
+                  if (!dsettings.empty() && rg.nextBool())
+                      generateSettingValues(rg, dsettings, ati->mutable_table_modify_setting());
+                  else
+                      ati->set_comment(nextComment(rg));
               }
           }},
          {alter_policy,
