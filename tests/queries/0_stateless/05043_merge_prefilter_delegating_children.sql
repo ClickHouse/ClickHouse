@@ -2,9 +2,10 @@
 
 -- A `WHERE _table = ...` or `WHERE _database = ...` filter over a `Merge` table silently returned
 -- zero rows when the matching child reads its data from other tables (`Distributed`, `Merge`,
--- `Buffer`, `Alias`): the rows of such a child carry the name of the table that actually produced
+-- `Buffer`, `Alias`): the rows of such a child carried the name of the table that actually produced
 -- them, while the pruning in `ReadFromMerge::getSelectedTables` matched the predicate against the
--- child's own name. Such children are now always read, and the predicate filters their rows.
+-- child's own name. The `Merge` engine now produces `_table` and `_database` itself, so the rows
+-- always carry the child's own name, and the pruning agrees with them.
 
 DROP TABLE IF EXISTS t05043_leaf;
 DROP TABLE IF EXISTS t05043_dist;
@@ -26,7 +27,7 @@ SELECT count() FROM merge(currentDatabase(), '^t05043_dist$') WHERE _table = 't0
 SELECT count() FROM merge(currentDatabase(), '^t05043_dist$') WHERE _table = 't05043_dist';
 SELECT DISTINCT _table FROM merge(currentDatabase(), '^t05043_dist$');
 -- The same at the `FetchColumns` stage (`ARRAY JOIN` prevents forwarding the query to the child):
-SELECT count() FROM merge(currentDatabase(), '^t05043_dist$') ARRAY JOIN [1] AS one WHERE _table = 't05043_leaf';
+SELECT count() FROM merge(currentDatabase(), '^t05043_dist$') ARRAY JOIN [1] AS one WHERE _table = 't05043_dist';
 
 SELECT 'Merge over Merge';
 CREATE TABLE t05043_inner_leaf (x UInt64) ENGINE = MergeTree ORDER BY x;
@@ -55,14 +56,16 @@ SELECT count() FROM merge(currentDatabase(), '^t05043_alias$') WHERE _table = 't
 SELECT count() FROM merge(currentDatabase(), '^t05043_alias$') WHERE _table = 't05043_alias';
 
 SELECT 'Pruning still works';
--- A child that does not read from other tables is still pruned by its own name:
--- the view throws on read, so the query only succeeds if the view is never read.
+-- A child is pruned by its own name: the view throws on read, so the query only succeeds if the
+-- view is never read.
 CREATE TABLE t05043_plain (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t05043_plain VALUES (1);
 CREATE VIEW t05043_throwing AS SELECT throwIf(number >= 0, 'must not be read') + number AS x FROM system.numbers LIMIT 1;
 
 SELECT count() FROM merge(currentDatabase(), '^t05043_(plain|throwing)$') WHERE _table = 't05043_plain';
 SELECT count() FROM merge(currentDatabase(), '^t05043_(plain|throwing)$') WHERE _database = currentDatabase() AND _table = 't05043_plain';
+-- The same for a child that reads from other tables:
+SELECT count() FROM merge(currentDatabase(), '^t05043_(dist|throwing)$') WHERE _table = 't05043_dist';
 
 DROP TABLE t05043_dist;
 DROP TABLE t05043_leaf;

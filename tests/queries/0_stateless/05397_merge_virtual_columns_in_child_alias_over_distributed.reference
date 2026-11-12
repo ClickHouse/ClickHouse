@@ -1,0 +1,6 @@
+-- _table
+str_dist	1	1
+str_dist	1	physical!
+-- _database
+1	1	1
+1	1	db?

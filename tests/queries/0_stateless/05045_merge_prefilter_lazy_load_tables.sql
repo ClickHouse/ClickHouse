@@ -3,10 +3,9 @@
 --       with the `lazy_load_tables` setting.
 
 -- In a database with `lazy_load_tables = 1`, an unloaded table is a `StorageTableProxy`.
--- The proxy must forward `readsFromOtherTables` to the nested storage: otherwise a
--- `WHERE _table = ...` filter over a `Merge` table would prune a lazily loaded `Distributed`
--- (or `Merge`, `Buffer`, `Alias`) child by the proxy's own name and silently return no rows
--- after a restart or `ATTACH DATABASE` (found by review in
+-- A `WHERE _table = ...` filter over a `Merge` table must select the rows of a lazily loaded
+-- `Distributed` child by the child's own name after a restart or `ATTACH DATABASE`, the same as
+-- for a loaded child (the case was found by review in
 -- https://github.com/ClickHouse/ClickHouse/pull/116371).
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
@@ -28,15 +27,15 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't05045_dist';
 USE {CLICKHOUSE_DATABASE:Identifier};
 
--- The rows of the `Distributed` child carry the leaf's name; the proxy must not be pruned.
-SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') WHERE _table = 't05045_leaf';
+-- The rows of the `Distributed` child carry the child's own name, not the leaf's name.
+SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') WHERE _table = 't05045_dist';
 SELECT DISTINCT _table FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$');
 -- The same at the `FetchColumns` stage (`ARRAY JOIN` prevents forwarding the query to the child):
-SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') ARRAY JOIN [1] AS one WHERE _table = 't05045_leaf';
--- No rows carry the child's own name:
-SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') WHERE _table = 't05045_dist';
+SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') ARRAY JOIN [1] AS one WHERE _table = 't05045_dist';
+-- No rows carry the leaf's name:
+SELECT count() FROM merge({CLICKHOUSE_DATABASE_1:String}, '^t05045_dist$') WHERE _table = 't05045_leaf';
 
--- A lazily loaded `MergeTree` child does not delegate its reads and stays prunable:
+-- A lazily loaded `MergeTree` child stays prunable:
 -- filtering on another name reads nothing from it.
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
