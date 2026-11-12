@@ -1,0 +1,54 @@
+-- 1. keys without distinct counts: partial aggregation, then a shuffle of the states
+GatherExchange
+  Expression ((Project names + Projection))
+    Filter (HAVING)
+      MergingAggregated
+        ShuffleExchange
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (ParallelRead default.t_points)
+-- 2. the plan of case 1 gives the same result as the plan for one server
+10000	18322958229431956806
+10000	18322958229431956806
+-- 3. one key has a distinct count that shows about one row for each group: the costs select a shuffle of the input rows
+GatherExchange
+  Expression ((Project names + Projection))
+    Filter (HAVING)
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_points)
+-- 4. distributed_plan_force_shuffle_aggregation: shuffle of the input rows
+GatherExchange
+  Expression ((Project names + Projection))
+    Filter (HAVING)
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_points)
+-- 5. no merge of the states on each node (distributed_plan_partial_aggregation_before_shuffle = 0): shuffle of the input rows
+GatherExchange
+  Expression ((Project names + Projection))
+    Filter (HAVING)
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_points)
+-- 6. the shuffle join distributes its output by x: one aggregation step in each bucket, no exchange between the join and the aggregation
+GatherExchange
+  Expression ((Project names + Projection))
+    Filter (HAVING)
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_points)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_owners)
+-- 7. a small table is read on one node: one aggregation step, no exchange
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.t_owners)

@@ -33,6 +33,21 @@ void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const E
     Memo & memo, std::vector<GroupExpressionPtr> & result) const
 {
     expression->setApplied(*this, required_properties);
+    /// An expression that is made for a requirement which accepts no exchange from `DistributionEnforcer`,
+    /// and that has the required distribution, has it without such an exchange: its rule provides the
+    /// distribution itself, or it asks an input for the distribution that the parent requires and then
+    /// must pass this requirement on to that input. A rule also makes expressions with another
+    /// distribution, for example for another node count; they get no mark.
+    /// An enforcer keeps the properties that it is built with.
+    if (!expression->isEnforcer())
+    {
+        auto required_distribution = required_properties.distribution;
+        required_distribution.without_enforcer = false;
+        expression->properties.distribution.without_enforcer = required_properties.distribution.without_enforcer
+            && !required_distribution.columns.empty()
+            && ExpressionProperties::isDistributionSatisfiedBy(required_distribution, expression->properties.distribution);
+    }
+
     auto stored_expression = memo.getGroup(expression->group_id)->addPhysicalExpression(expression);
     if (stored_expression == expression)
     {

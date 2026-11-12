@@ -91,6 +91,9 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescripti
     if (required.is_replicated != existing.is_replicated)
         return false;
 
+    if (required.without_enforcer && !existing.without_enforcer)
+        return false;
+
     /// Empty required columns means "any distribution is fine" - just match node_count
     /// and replication. Data shuffled by specific columns still satisfies a requirement
     /// that doesn't care about column distribution.
@@ -138,6 +141,8 @@ void  ExpressionProperties::dump(WriteBuffer & out) const
     out << dumpSortDescription(sorting);
     out << "], {";
     out << fmt::format("{} nodes, {}, {}", distribution.node_count, distribution.is_replicated ? "replicated" : "not replicated", fmt::join(distribution.columns, ","));
+    if (distribution.without_enforcer)
+        out << ", without enforcer";
     if (stream_layout == StreamLayout::Single)
         out << ", single stream";
     else if (stream_layout == StreamLayout::Disjoint)

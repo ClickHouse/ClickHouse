@@ -93,7 +93,8 @@ private:
 
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
+    return !required_properties.distribution.without_enforcer
+        && !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
 }
 
 ExpressionProperties DistributionEnforcer::EnforcerEnumerator::inputAtSourceDistribution() const

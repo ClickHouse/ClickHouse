@@ -454,6 +454,84 @@ TEST(CascadesBestImplementation, CheaperDisjointWinsDisjointRequirement)
 }
 
 /// Implementations of different distribution shapes do not satisfy each other's requirements.
+/// A rule that runs for a requirement which accepts no exchange from `DistributionEnforcer` marks
+/// the expressions that have the required distribution. Its other expressions (a variant for
+/// another node count, or without the key columns) get no mark, and neither does anything that is
+/// made for a requirement without distribution columns.
+TEST(CascadesBestImplementation, MarkWithoutEnforcerOnlyOnTheRequiredDistribution)
+{
+    Memo memo(getLogger("gtest_cascades_best_implementation"));
+    TestEnforcerRule rule;
+    const GroupId group_id = memo.addGroup(costedExpr(propsAt(1), 1));
+
+    auto physical = [&](ExpressionProperties properties)
+    {
+        auto expression = costedExpr(std::move(properties), 10);
+        expression->group_id = group_id;
+        return expression;
+    };
+
+    const auto keyed = propsFull(4, {}, DistributionColumns{NameSet{"k"}});
+    auto keyed_without_enforcer = keyed;
+    keyed_without_enforcer.distribution.without_enforcer = true;
+    auto unkeyed_without_enforcer = propsAt(4);
+    unkeyed_without_enforcer.distribution.without_enforcer = true;
+
+    auto with_required_distribution = physical(keyed);
+    rule.addPhysicalToMemo(with_required_distribution, keyed_without_enforcer, memo);
+    EXPECT_TRUE(with_required_distribution->properties.distribution.without_enforcer);
+
+    /// A rule that copies the required distribution into the properties copies the mark too.
+    auto other_columns = physical(propsFull(4, {}, DistributionColumns{NameSet{"other"}}));
+    other_columns->properties.distribution.without_enforcer = true;
+    rule.addPhysicalToMemo(other_columns, keyed_without_enforcer, memo);
+    EXPECT_FALSE(other_columns->properties.distribution.without_enforcer);
+
+    auto without_columns = physical(propsAt(4));
+    rule.addPhysicalToMemo(without_columns, keyed_without_enforcer, memo);
+    EXPECT_FALSE(without_columns->properties.distribution.without_enforcer);
+
+    auto other_node_count = physical(propsFull(8, {}, DistributionColumns{NameSet{"k"}}));
+    rule.addPhysicalToMemo(other_node_count, keyed_without_enforcer, memo);
+    EXPECT_FALSE(other_node_count->properties.distribution.without_enforcer);
+
+    auto for_plain_requirement = physical(propsFull(4, sortByColumns({"s"}), DistributionColumns{NameSet{"k"}}));
+    rule.addPhysicalToMemo(for_plain_requirement, keyed, memo);
+    EXPECT_FALSE(for_plain_requirement->properties.distribution.without_enforcer);
+
+    auto for_unkeyed_requirement = physical(propsAt(4, sortByColumns({"s"})));
+    rule.addPhysicalToMemo(for_unkeyed_requirement, unkeyed_without_enforcer, memo);
+    EXPECT_FALSE(for_unkeyed_requirement->properties.distribution.without_enforcer);
+}
+
+/// A cheaper implementation that has its distribution from an enforcer exchange does not replace a
+/// costlier one that has it without, and is not selected for a requirement that accepts no exchange.
+/// The order in which they are costed does not matter.
+TEST(CascadesBestImplementation, RequirementWithoutEnforcer)
+{
+    CostConfig cost_config;
+    const auto keyed = propsFull(4, {}, {NameSet{"k"}});
+    auto keyed_without_enforcer = keyed;
+    keyed_without_enforcer.distribution.without_enforcer = true;
+
+    for (bool exchange_first : {true, false})
+    {
+        Group group(0);
+        auto over_exchange = costedExpr(keyed, 10);
+        auto without_exchange = costedExpr(keyed_without_enforcer, 100);
+        group.updateBestImplementation(exchange_first ? over_exchange : without_exchange, cost_config);
+        group.updateBestImplementation(exchange_first ? without_exchange : over_exchange, cost_config);
+
+        EXPECT_EQ(group.getBestImplementation(keyed, cost_config).expression, over_exchange);
+        EXPECT_EQ(group.getBestImplementation(keyed_without_enforcer, cost_config).expression, without_exchange);
+    }
+
+    /// Without such an implementation the requirement has no plan.
+    Group only_exchange(0);
+    only_exchange.updateBestImplementation(costedExpr(keyed, 10), cost_config);
+    EXPECT_EQ(only_exchange.getBestImplementation(keyed_without_enforcer, cost_config).expression, nullptr);
+}
+
 TEST(CascadesBestImplementation, DistributionShapeIsolation)
 {
     Group group(0);
