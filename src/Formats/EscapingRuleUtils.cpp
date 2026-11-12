@@ -78,7 +78,10 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
     /// The most common case, separately: a tail call that needs no stack frame, so with pointer authentication
     /// there's no return address to sign and authenticate for every skipped field.
     if (escaping_rule == FormatSettings::EscapingRule::Escaped)
-        return readEscapedStringInto<NullOutput, false>(shared_null_output, buf);
+    {
+        readEscapedStringInto<NullOutput, false>(shared_null_output, buf);
+        return;
+    }
 
     NullOutput & out = shared_null_output;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
