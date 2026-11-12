@@ -1045,7 +1045,11 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
-    auto filter_query_tree = buildFilterQueryTree(row_policy_filter->expression, table_expression_query_info.table_expression, query_context);
+    auto filter_query_tree = buildFilterQueryTree(
+        row_policy_filter->expression,
+        table_expression_query_info.table_expression,
+        query_context,
+        planner_context->isViewSourceInSubqueries());
 
     /// The row-policy filter is analyzed here, separately from the query tree checked by
     /// `queryTreeIsEligibleForPlanCache`, and is planned into the cached plan itself. Check its
