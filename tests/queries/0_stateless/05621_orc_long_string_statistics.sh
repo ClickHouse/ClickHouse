@@ -50,22 +50,23 @@ ${CLICKHOUSE_LOCAL} -q "
     INTO OUTFILE '$WORK_DIR/groups.orc' TRUNCATE FORMAT ORC
     SETTINGS output_format_orc_row_index_stride = 1, output_format_orc_compression_method = 'none'"
 
-# Prints the matching rows and how many rows the reader returned before the filter.
+# Prints the matching rows (the column `n` or the expression given) and how many rows the reader returned before the filter.
 query()
 {
-    local file=$1 condition=$2
+    local file=$1 condition=$2 n=${3:-n}
     local result
     result=$(${CLICKHOUSE_LOCAL} --print-profile-events -q "
-        SELECT groupArray(n) FROM (SELECT n FROM file('$file', ORC) WHERE $condition ORDER BY n)
+        SELECT groupArray(n) FROM (SELECT $n AS n FROM file('$file', ORC) WHERE $condition ORDER BY n)
         SETTINGS input_format_orc_filter_push_down = 1, input_format_orc_use_fast_decoder = 1" 2>"$WORK_DIR/events")
     local expected
     expected=$(${CLICKHOUSE_LOCAL} -q "
-        SELECT groupArray(n) FROM (SELECT n FROM file('$file', ORC) WHERE $condition ORDER BY n)
+        SELECT groupArray(n) FROM (SELECT $n AS n FROM file('$file', ORC) WHERE $condition ORDER BY n)
         SETTINGS input_format_orc_filter_push_down = 0")
     local rows
-    rows=$(grep -o 'SelectedRows: [0-9]*' "$WORK_DIR/events" | grep -o '[0-9]*$')
+    # The profile events can be reported in several parts, by different threads.
+    rows=$(grep -o 'SelectedRows: [0-9]*' "$WORK_DIR/events" | awk '{ sum += $2 } END { print sum + 0 }')
     if [ "$result" != "$expected" ]; then echo "$condition: wrong result $result, expected $expected"; fi
-    echo "$condition: $result, read ${rows:-0} rows"
+    echo "$condition: $result, read $rows rows"
 }
 
 echo "-- the pushdown uses the bounds written instead of long minimums and maximums"
@@ -94,3 +95,18 @@ done
 echo "-- a repeated minimum replaces the previous one, also when it is long"
 # The file statistics have a minimum 'z' followed by the actual minimum, the stored value of 2000 bytes.
 ${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('$DATA_DIR/duplicate_string_minimum.orc') WHERE s = repeat('b', 2000) SETTINGS input_format_orc_filter_push_down = 1"
+
+echo "-- the statistics of the Java writer that contain U+FFFD are cut before it"
+# Written by Apache ORC Java 2.2.1: row groups of 1000 rows, each with 999 values 'a' and one long value. For the
+# first three long values the Java writer stores an upper bound with U+FFFD that is less than the value. The last row
+# group has one value 'b\x80', stored as the minimum 'b' U+FFFD that is greater than the value, and a long value.
+for condition in \
+    "s = concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail')" \
+    "s = concat(repeat('b', 1021), unhex('EFBFBE'), 'tail')" \
+    "s = concat(repeat('b', 1000), unhex(repeat('FF', 50)))" \
+    "s = repeat('b', 2000)" \
+    "s = repeat('c', 3000)" \
+    "s = unhex('6280')"
+do
+    query "$DATA_DIR/java_unsafe_string_bounds.orc" "$condition" _row_number
+done

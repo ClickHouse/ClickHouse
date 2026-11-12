@@ -303,47 +303,51 @@ namespace StringStatisticsField
     constexpr UInt32 UPPER_BOUND = 5;
 }
 
+/// The Java writer of Apache ORC (`ColumnStatisticsImpl`) converts the statistics to strings, which replaces invalid
+/// UTF-8 with U+FFFD: in the values, and in the bounds where it increments U+FFFE and U+10FFFF into invalid UTF-8.
+/// Such a statistic can be on the wrong side of the values, but the part before the first U+FFFD is unchanged.
+constexpr std::string_view REPLACEMENT_CHARACTER = "\xEF\xBF\xBD";
+
 StringStatistics parseStringStatistics(std::string_view data)
 {
     StringStatistics res;
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
+        /// Long values (written by old writers) are kept only as truncated bounds, to not hold copies of them.
+        /// The values with U+FFFD are cut before it into bounds. A repeated field replaces the previous one.
+        auto set_lower = [&](std::string_view value, bool exact)
+        {
+            res.minimum.reset();
+            res.lower_bound.reset();
+            if (size_t pos = value.find(REPLACEMENT_CHARACTER); pos != std::string_view::npos)
+            {
+                value = value.substr(0, pos);
+                exact = false;
+            }
+            if (exact && value.size() <= MAX_STRING_STATISTICS_SIZE)
+                res.minimum = std::string(value);
+            else
+                res.lower_bound = std::string(truncateStringLowerBound(value));
+        };
+        auto set_upper = [&](std::string_view value, bool exact)
+        {
+            res.maximum.reset();
+            res.upper_bound.reset();
+            if (size_t pos = value.find(REPLACEMENT_CHARACTER); pos != std::string_view::npos)
+                res.upper_bound = truncateStringUpperBound(value.substr(0, pos));
+            else if (value.size() <= MAX_STRING_STATISTICS_SIZE)
+                (exact ? res.maximum : res.upper_bound) = std::string(value);
+            else
+                res.upper_bound = truncateStringUpperBound(value);
+        };
+
         switch (field)
         {
-            /// Long values (written by old writers) are kept only as truncated bounds, to not hold copies of them.
-            /// A repeated field replaces the previous one, as in protobuf.
-            case StringStatisticsField::MINIMUM:
-            {
-                auto value = readBytesField(r, type);
-                if (value.size() > MAX_STRING_STATISTICS_SIZE)
-                {
-                    res.minimum.reset();
-                    res.lower_bound = std::string(truncateStringLowerBound(value));
-                }
-                else
-                    res.minimum = std::string(value);
-                return true;
-            }
-            case StringStatisticsField::MAXIMUM:
-            {
-                auto value = readBytesField(r, type);
-                if (value.size() > MAX_STRING_STATISTICS_SIZE)
-                {
-                    res.maximum.reset();
-                    res.upper_bound = truncateStringUpperBound(value);
-                }
-                else
-                    res.maximum = std::string(value);
-                return true;
-            }
+            case StringStatisticsField::MINIMUM: set_lower(readBytesField(r, type), true); return true;
+            case StringStatisticsField::MAXIMUM: set_upper(readBytesField(r, type), true); return true;
+            case StringStatisticsField::LOWER_BOUND: set_lower(readBytesField(r, type), false); return true;
+            case StringStatisticsField::UPPER_BOUND: set_upper(readBytesField(r, type), false); return true;
             case StringStatisticsField::SUM: res.sum = readSignedVarintField(r, type); return true;
-            case StringStatisticsField::LOWER_BOUND: res.lower_bound = std::string(truncateStringLowerBound(readBytesField(r, type))); return true;
-            case StringStatisticsField::UPPER_BOUND:
-            {
-                auto value = readBytesField(r, type);
-                res.upper_bound = value.size() > MAX_STRING_STATISTICS_SIZE ? truncateStringUpperBound(value) : std::string(value);
-                return true;
-            }
             default: return false;
         }
     });
