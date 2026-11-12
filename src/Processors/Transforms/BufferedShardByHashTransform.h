@@ -1,13 +1,14 @@
 #pragma once
 
 #include <atomic>
-#include <deque>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 
 #include <Columns/IColumn.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/PODArray.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
@@ -74,7 +75,7 @@ struct BufferedShardByHashBudget
     /// lets a buffer `scatter` shares across the shard chunks of one block, across more than one block still
     /// buffered, or across sibling scatters (e.g. the same `ColumnConst`/`LowCardinality` payload the query
     /// evaluates once and every stream references) be charged exactly once for as long as any reference holds it.
-    std::unordered_map<const void *, SharedObjectAccounting> shared_object_refcounts;
+    UnorderedMapWithMemoryTracking<const void *, SharedObjectAccounting> shared_object_refcounts;
     /// Every scatter of the stage, so that any of them can reclaim the charges of chunks the downstream merges
     /// have already pulled out of ANY scatter's output ports before consulting - or adding to - the table and the
     /// counter. A scatter can only notice a pull of its own by running `prepare()` again (nothing calls back into
@@ -83,7 +84,7 @@ struct BufferedShardByHashBudget
     /// allocated at a freed address would be taken for one of them (see
     /// `BufferedShardByHashTransform::reclaimAllPortResidentChunks`). Entries are added by the constructor and
     /// removed by the destructor, which also releases whatever that scatter still had charged.
-    std::vector<BufferedShardByHashTransform *> scatters;
+    VectorWithMemoryTracking<BufferedShardByHashTransform *> scatters;
 };
 
 /// Shards input rows to N output ports by hash(key) % N.
@@ -161,7 +162,7 @@ private:
     struct QueuedChunk
     {
         Chunk chunk;
-        std::vector<const void *> touched_objects;
+        VectorWithMemoryTracking<const void *> touched_objects;
     };
 
     /// Queue bookkeeping that maintains the shared buffered-bytes counter. When `budget_enabled`, all of it -
@@ -171,12 +172,12 @@ private:
     /// nothing shared to guard and the mutex is not taken (see `lockBudget`).
     /// `touched_objects` is taken by reference and moved from only once the queue slot is committed, so if
     /// growing the queue throws, the caller still owns the charge and can roll it back.
-    void enqueue(size_t shard, Chunk chunk, std::vector<const void *> & touched_objects);
+    void enqueue(size_t shard, Chunk chunk, VectorWithMemoryTracking<const void *> & touched_objects);
     QueuedChunk dequeue(size_t shard);
     void clearQueue(size_t shard);
     /// Account for one shard chunk leaving the pipeline (consumed downstream or discarded on a finished output):
     /// release its charge, which frees every buffer no other buffered chunk references any more.
-    void releaseQueuedChunk(const std::vector<const void *> & touched_objects);
+    void releaseQueuedChunk(const VectorWithMemoryTracking<const void *> & touched_objects);
     /// Release the charge for a chunk parked in an output port once the downstream merge has pulled it
     /// (`OutputPort::hasData()` is false again) or the downstream closed the port without pulling, making the
     /// chunk unreachable. A pushed chunk stays resident in the port state until the merge pulls it, so its
@@ -222,21 +223,21 @@ private:
     /// what makes a buffer shared across many shard chunks of one block, across more than one buffered block
     /// (e.g. `ColumnConst::cloneResized` keeps the same backing payload), or across sibling scatters - charged
     /// exactly once for as long as any of them still holds it.
-    void chargeColumnAndDescendants(const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes);
+    void chargeColumnAndDescendants(const IColumn & column, VectorWithMemoryTracking<const void *> & touched, Int64 & total_bytes);
     /// Same, for a shared object that is not a column and therefore has no subobjects of its own to walk: an
     /// `Arena` holding aggregate-function states, which several `ColumnAggregateFunction` reach at once (see
     /// `chargeColumnAndDescendants`). `bytes` is measured by the caller, since only it knows how to size the
     /// object; like a column, it is billed the first time it is registered and forgotten once the last charge
     /// referencing it is released. The caller must hold `budget->mutex`.
-    void chargeSharedObject(const void * object, Int64 bytes, std::vector<const void *> & touched, Int64 & total_bytes);
+    void chargeSharedObject(const void * object, Int64 bytes, VectorWithMemoryTracking<const void *> & touched, Int64 & total_bytes);
     /// Reverses `chargeColumnAndDescendants` for every object in `touched`: releases this charge's reference to
     /// each, and once an object's refcount reaches zero (no buffered charge references it any longer), forgets
     /// it. Returns the total cached bytes of the objects released, which the caller must subtract from the
     /// shared counter (in one atomic update, possibly combined with a charge it registers in the same critical
     /// section - see `generateOutputChunks`). The caller must hold `budget->mutex`.
-    Int64 releaseTouchedObjectsUnlocked(const std::vector<const void *> & touched);
+    Int64 releaseTouchedObjectsUnlocked(const VectorWithMemoryTracking<const void *> & touched);
     /// Same, but takes `budget->mutex` itself and subtracts the released bytes from the shared counter.
-    void releaseTouchedObjects(const std::vector<const void *> & touched);
+    void releaseTouchedObjects(const VectorWithMemoryTracking<const void *> & touched);
 
     /// A lock on `budget->mutex` when there is a budget to maintain, and an empty (unlocked, mutex-less) lock
     /// otherwise - with `budget_enabled` false nothing shared is touched, so the stage-wide mutex is not taken
@@ -267,7 +268,7 @@ private:
     ColumnNumbers key_columns;
     /// Per column of the header: whether the downstream sorted merges sort by it, so they expand a
     /// `ColumnReplicated` in it (`IMergingAlgorithm::removeReplicatedFromSortingColumns`) before retaining it.
-    std::vector<bool> is_sorting_column;
+    VectorWithMemoryTracking<bool> is_sorting_column;
     /// Total-bytes cap on what the whole stage buffers; 0 means no cap.
     size_t max_buffered_bytes;
     /// True only when there is a byte cap to enforce (a non-zero `max_buffered_bytes`). When false -
@@ -293,21 +294,21 @@ private:
     /// Objects `chargePendingInput` registered for `pending_input_chunk` (see `chargeColumnAndDescendants`),
     /// released via `releaseTouchedObjects` once the chunk is split (`generateOutputChunks`) or dropped before
     /// it is split.
-    std::vector<const void *> pending_input_touched;
+    VectorWithMemoryTracking<const void *> pending_input_touched;
 
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Unbounded chunk-wise; `max_buffered_bytes`
     /// bounds the resident bytes instead.
-    std::vector<std::deque<QueuedChunk>> output_queues;
+    VectorWithMemoryTracking<DequeWithMemoryTracking<QueuedChunk>> output_queues;
 
     /// For each shard, the budget charge of the chunk currently parked in its output port (empty if the port
     /// holds no chunk we pushed). The charge stays held until the downstream merge pulls the chunk out of the
     /// port; only then is it truly gone from the pipeline (a port can hold at most one chunk at a time).
-    std::vector<std::shared_ptr<BufferedShardByHashChunkCharge>> port_resident_charges;
+    VectorWithMemoryTracking<std::shared_ptr<BufferedShardByHashChunkCharge>> port_resident_charges;
 
     /// Reused across input chunks to skip per-chunk reallocation.
     PaddedPODArray<UInt32> hash_buffer;
     IColumn::Selector selector;
-    std::vector<Columns> shard_columns;
+    VectorWithMemoryTracking<Columns> shard_columns;
 };
 
 }

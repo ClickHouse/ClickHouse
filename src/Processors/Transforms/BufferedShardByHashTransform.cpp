@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-static Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, const std::vector<const void *> & touched)
+static Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, const VectorWithMemoryTracking<const void *> & touched)
 {
     Int64 released_bytes = 0;
     for (const void * ptr : touched)
@@ -47,7 +47,7 @@ static Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, cons
 struct BufferedShardByHashChunkCharge
 {
     BufferedShardByHashChunkCharge(
-        std::shared_ptr<BufferedShardByHashBudget> budget_, const std::vector<const void *> & touched_, Columns retained_columns_)
+        std::shared_ptr<BufferedShardByHashBudget> budget_, const VectorWithMemoryTracking<const void *> & touched_, Columns retained_columns_)
         : budget(std::move(budget_))
         , touched(touched_)
         , retained_columns(std::move(retained_columns_))
@@ -85,7 +85,7 @@ struct BufferedShardByHashChunkCharge
     }
 
     std::shared_ptr<BufferedShardByHashBudget> budget;
-    std::vector<const void *> touched;
+    VectorWithMemoryTracking<const void *> touched;
     /// Owned by whichever thread wins `active` (under `budget->mutex`), or destroyed with the charge.
     Columns retained_columns;
     std::atomic_bool active = false;
@@ -186,7 +186,7 @@ BufferedShardByHashTransform::~BufferedShardByHashTransform()
     std::erase(budget->scatters, this);
 }
 
-void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, std::vector<const void *> & touched_objects)
+void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, VectorWithMemoryTracking<const void *> & touched_objects)
 {
     auto & queue = output_queues[shard];
     /// Committed in two steps so a failed allocation cannot strand the charge: growing the deque can throw, but
@@ -213,7 +213,7 @@ void BufferedShardByHashTransform::clearQueue(size_t shard)
     output_queues[shard].clear();
 }
 
-void BufferedShardByHashTransform::releaseQueuedChunk(const std::vector<const void *> & touched_objects)
+void BufferedShardByHashTransform::releaseQueuedChunk(const VectorWithMemoryTracking<const void *> & touched_objects)
 {
     if (touched_objects.empty())
         return; /// Nothing was charged for this chunk (no budget to enforce).
@@ -225,7 +225,7 @@ void BufferedShardByHashTransform::releaseQueuedChunk(const std::vector<const vo
 }
 
 void BufferedShardByHashTransform::chargeSharedObject(
-    const void * object, Int64 bytes, std::vector<const void *> & touched, Int64 & total_bytes)
+    const void * object, Int64 bytes, VectorWithMemoryTracking<const void *> & touched, Int64 & total_bytes)
 {
     /// Registration is transactional: the reference recorded in `touched` and the table entry it refers to must
     /// appear together, or not at all. `touched` is the only handle a release path has, so an entry in it with
@@ -253,7 +253,7 @@ void BufferedShardByHashTransform::chargeSharedObject(
 }
 
 void BufferedShardByHashTransform::chargeColumnAndDescendants(
-    const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes)
+    const IColumn & column, VectorWithMemoryTracking<const void *> & touched, Int64 & total_bytes)
 {
     /// Same transactional registration as `chargeSharedObject`: the table entry first (strong guarantee), the
     /// `touched` reference only once that succeeded, rolling a just-created entry back if it does not - so every
@@ -348,7 +348,7 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
     total_bytes += self_bytes;
 }
 
-Int64 BufferedShardByHashTransform::releaseTouchedObjectsUnlocked(const std::vector<const void *> & touched)
+Int64 BufferedShardByHashTransform::releaseTouchedObjectsUnlocked(const VectorWithMemoryTracking<const void *> & touched)
 {
     Int64 released_bytes = 0;
     for (const void * ptr : touched)
@@ -364,7 +364,7 @@ Int64 BufferedShardByHashTransform::releaseTouchedObjectsUnlocked(const std::vec
     return released_bytes;
 }
 
-void BufferedShardByHashTransform::releaseTouchedObjects(const std::vector<const void *> & touched)
+void BufferedShardByHashTransform::releaseTouchedObjects(const VectorWithMemoryTracking<const void *> & touched)
 {
     if (touched.empty())
         return;
@@ -910,12 +910,12 @@ void BufferedShardByHashTransform::generateOutputChunks()
 
         /// Pre-charging queue sizes, so a failure below can tell the chunks this call committed (whose charges
         /// live only in the unpublished `block_bytes`) from chunks that were already buffered.
-        std::vector<size_t> queue_sizes_before;
+        VectorWithMemoryTracking<size_t> queue_sizes_before;
         if (budget_enabled)
             for (const auto & queue : output_queues)
                 queue_sizes_before.push_back(queue.size());
 
-        std::vector<const void *> shard_touched;
+        VectorWithMemoryTracking<const void *> shard_touched;
         try
         {
             auto output_it = outputs.begin();
