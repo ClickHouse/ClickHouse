@@ -330,6 +330,25 @@ static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
 #endif
 }
 
+/// Whether executing `ast` makes the server wait for the rows of an `INSERT` to arrive from the client over the
+/// connection: an `INSERT` without inline data whose rows do not come from its own `SELECT`, or come from the `input`
+/// table function. The body of `EXECUTE AS` returns its own `BlockIO`, so it is looked through.
+static bool queryReadsDataFromClient(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * execute_as = ast->as<ASTExecuteAsQuery>())
+        return queryReadsDataFromClient(execute_as->subquery);
+    const auto * insert_query = ast->as<ASTInsertQuery>();
+    if (!insert_query || insert_query->hasInlinedData())
+        return false;
+    if (!insert_query->select)
+        return true;
+    ASTPtr input_function;
+    insert_query->tryFindInputFunction(input_function);
+    return input_function != nullptr;
+}
+
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
     if (settings[Setting::max_ast_depth])
@@ -3064,6 +3083,18 @@ static BlockIO executeQueryImpl(
 
         if (!applied_rewrite_rules.empty())
             context->setRewrittenByQueryRules(true);
+
+        /// The client chooses how to run the query (send the rows of an `INSERT`, or read a result) from the query it
+        /// submitted, not from the rewritten one. A rewrite that changes whether the server waits for rows from the
+        /// client, e.g. `SELECT 1` rewritten to `INSERT INTO t FROM INFILE 'f'`, would leave both sides waiting for
+        /// each other, so refuse it before the interpreter runs. `INSERT ... SELECT` obtains its own rows and is allowed.
+        /// Skipped for the background run of a rewritten query, which was already checked at dispatch.
+        if (!applied_rewrite_rules.empty() && !flags.rewritten_query_origin
+            && queryReadsDataFromClient(out_ast) != queryReadsDataFromClient(ast_for_formatted_query))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The query was rewritten by a query rule into a statement that {} data from the client, "
+                "unlike the submitted query, which is not allowed",
+                queryReadsDataFromClient(out_ast) ? "reads" : "does not read");
 
         /// Checked before the interpreter runs, so a rewrite into e.g. DDL has no side effects.
         /// The read-only statements that produce rows (`SELECT`, `SHOW ...`, `EXISTS`, `DESCRIBE`,

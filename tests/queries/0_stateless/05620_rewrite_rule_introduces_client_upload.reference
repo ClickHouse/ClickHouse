@@ -1,0 +1,6 @@
+native, rewrite into INSERT FROM INFILE:
+BAD_ARGUMENTS
+http, rewrite into INSERT FROM INFILE:
+BAD_ARGUMENTS
+native, rewrite into INSERT ... SELECT:
+9009011
