@@ -48,8 +48,7 @@ protected:
 /// exchange kind. `addEnforcer` centralizes the construction of the self-referential
 /// enforcer expression: it lives in the source group, its single input points back to
 /// the same group with a relaxed requirement, the output distribution is the required
-/// one, and the expression carries the Distribution enforcer axis that the
-/// cycle-avoidance rules key on.
+/// one, and the expression records the required properties that it was made for.
 class DistributionEnforcer::EnforcerEnumerator
 {
 public:
@@ -113,7 +112,7 @@ void DistributionEnforcer::EnforcerEnumerator::addEnforcer(
     output_properties.sorting = std::move(output_sorting);
     output_properties.stream_layout = output_layout;
     auto enforcer_expr = makeEnforcerExpression(
-        expression, std::move(step), std::move(input_required), std::move(output_properties), EnforcedProperty::Distribution);
+        expression, std::move(step), std::move(input_required), std::move(output_properties), required_properties);
 
     rule.addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
 }

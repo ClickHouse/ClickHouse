@@ -250,14 +250,7 @@ GroupPtr CascadesOptimizer::getGroup(GroupId group_id)
     return memo.getGroup(group_id);
 }
 
-void CascadesOptimizer::updateBestPlan(GroupExpressionPtr expression)
-{
-    /// No pruning: an expression that loses to the current best still keeps its cost, so the
-    /// enforcer-input selection can consider it as an acyclic fallback.
-    costAndUpdateBest(expression, /*prune_against_best=*/false);
-}
-
-bool CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best)
+void CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression)
 {
     const auto & cost_config = memo.getContext().cost_config;
     auto group = memo.getGroup(expression->group_id);
@@ -269,28 +262,13 @@ bool CascadesOptimizer::costAndUpdateBest(GroupExpressionPtr expression, bool pr
     {
         LOG_TEST(log, "Expression '{}' in group #{} has an unsatisfiable input, not a best-plan candidate",
             expression->getDescription(), expression->group_id);
-        return false;
-    }
-
-    if (prune_against_best)
-    {
-        Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
-        Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
-        if (std::isfinite(current_best) && subtree_weighted >= current_best)
-        {
-            LOG_TEST(log, "Pruned expression '{}' in group #{}: "
-                "cost {} >= current best {}",
-                expression->getDescription(), expression->group_id,
-                subtree_weighted, current_best);
-            return false;
-        }
+        return;
     }
 
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
         expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
     group->updateBestImplementation(expression, cost_config);
-    return true;
 }
 
 void CascadesOptimizer::deriveStatistics(GroupId group_id)
@@ -305,7 +283,7 @@ bool CascadesOptimizer::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
     /// Check if all inputs are fully optimized (all stages complete) and have
     /// a satisfying implementation.  A group can be fully done with no best if
     /// no rule could produce the required distribution (e.g. `ReadFromSystemOne`
-    /// at {N nodes}) - treat as pruned.
+    /// at {N nodes}) - the expression is skipped.
     for (const auto & input : expression->inputs)
     {
         auto child_group = getGroup(input.group_id);
@@ -317,13 +295,13 @@ bool CascadesOptimizer::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
                 "input group #{} has no implementation for {}",
                 expression->getDescription(), expression->group_id,
                 input.group_id, input.required_properties.dump());
-            return true;  /// Unsatisfiable input - treat as pruned
+            return true;  /// Unsatisfiable input - nothing to cost
         }
     }
 
     /// All inputs ready - compute cost directly, bypassing the `OptimizeInputsTask` chain.
     deriveStatistics(expression->group_id);
-    costAndUpdateBest(expression, /*prune_against_best=*/true);
+    costAndUpdateBest(expression);
     return true;
 }
 
@@ -440,17 +418,19 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 {
     const auto & cost_config = memo.getContext().cost_config;
 
-    /// Single-input expressions on the current DFS path, used to break enforcer self-reference
-    /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression
+    /// Single-input expressions on the current DFS path. An enforcer is not an answer to its own
+    /// input, but enforcers of one group can lead to each other through different required
+    /// properties (a gather from N nodes, a scatter from one node). Their costs prevent such a
+    /// cycle only while an exchange costs more than nothing, so the path excludes it by construction.
+    /// Path-local: added when a frame is pushed, removed when popped, so the same expression
     /// can still be reused in an independent sibling branch.
     std::unordered_set<GroupExpression *> active_path;
 
-    /// Select the cheapest eligible (acyclic) implementation for a group. `input_is_self_referential`
-    /// is true when this selection is for the self-referential input of a same-group enforcer.
-    auto select_best = [&](GroupId group_id, const ExpressionProperties & props, bool input_is_self_referential) -> GroupExpressionPtr
+    /// Select the cheapest implementation of a group that is not on the current path.
+    auto select_best = [&](GroupId group_id, const ExpressionProperties & props) -> GroupExpressionPtr
     {
         auto group = memo.getGroup(group_id);
-        auto best = group->selectInputImplementation(props, cost_config, active_path, input_is_self_referential).expression;
+        auto best = group->getBestImplementation(props, cost_config, active_path).expression;
         if (!best)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cascades optimizer: no acyclic implementation found for group #{} satisfying required properties {}.\n"
@@ -487,8 +467,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     /// guarantees its inputs are satisfiable.
     {
         auto root_group = memo.getGroup(subtree_root_group_id);
-        auto root_best = root_group->selectInputImplementation(
-            required_properties, cost_config, active_path, /*input_is_self_referential=*/false).expression;
+        auto root_best = root_group->getBestImplementation(required_properties, cost_config, active_path).expression;
         if (!root_best)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan cannot distribute this query: no plan satisfies {} at the root. "
@@ -507,8 +486,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         {
             const auto & input = frame.expression->inputs[frame.next_child];
             ++frame.next_child;
-            const bool input_is_self_referential = input.group_id == frame.group_id;
-            auto child = select_best(input.group_id, input.required_properties, input_is_self_referential);
+            auto child = select_best(input.group_id, input.required_properties);
             push_frame(input.group_id, std::move(child));
             continue;
         }

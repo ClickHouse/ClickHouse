@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -32,8 +33,21 @@ void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const E
     Memo & memo, std::vector<GroupExpressionPtr> & result) const
 {
     expression->setApplied(*this, required_properties);
-    if (memo.getGroup(expression->group_id)->addPhysicalExpression(expression))
+    auto stored_expression = memo.getGroup(expression->group_id)->addPhysicalExpression(expression);
+    if (stored_expression == expression)
+    {
         result.push_back(expression);
+        return;
+    }
+
+    /// The group already has an equal expression. If it is an enforcer, it is now made for these
+    /// required properties too.
+    for (const auto & enforced_properties : expression->enforced_for)
+    {
+        auto & enforced_for = stored_expression->enforced_for;
+        if (std::find(enforced_for.begin(), enforced_for.end(), enforced_properties) == enforced_for.end())
+            enforced_for.push_back(enforced_properties);
+    }
 }
 
 std::vector<GroupExpressionPtr> IOptimizationRule::addPhysicalToMemo(
