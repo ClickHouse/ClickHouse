@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 
 namespace DB
 {
@@ -68,4 +69,6 @@ void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
 {
     RocksDBSettingsImpl::checkCanSet(name, value);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(RocksDBSettings)
 }

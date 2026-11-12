@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/SettingDescription.h>
 
 namespace DB
 {
@@ -38,6 +39,7 @@ struct GenerateRandomSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<GenerateRandomSettingsImpl> impl;

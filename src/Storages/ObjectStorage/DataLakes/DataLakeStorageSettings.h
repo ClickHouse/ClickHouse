@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 #include <base/unit.h>
 
 #include <limits>
@@ -216,6 +217,7 @@ struct DataLakeStorageSettings
     bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
     /// Returns the canonical name of a setting given under one of its aliases.
     static std::string_view resolveName(std::string_view name);
 

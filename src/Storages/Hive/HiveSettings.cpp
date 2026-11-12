@@ -8,6 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -94,5 +95,7 @@ bool HiveSettings::hasBuiltin(std::string_view name)
 {
     return HiveSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(HiveSettings)
 }
 #endif
