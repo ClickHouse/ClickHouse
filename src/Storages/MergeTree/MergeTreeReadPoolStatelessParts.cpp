@@ -426,11 +426,30 @@ MergeTreeReadTaskInfoPtr MergeTreeReadPoolStatelessParts::buildTaskInfoForPart(c
     auto disk = read_from_parts_info.disk;
 
     /// The part path was checked to be inside the root of the disk when it was parsed, but only lexically,
-    /// and a local disk follows symlinks, so check where the path actually leads.
-    if (disk->getDataSourceDescription().type == DataSourceType::Local
-        && !pathStartsWith(fs::path(disk->getPath()) / part_relative_path, fs::path(disk->getPath())))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The path of part {} leads outside of the root of disk {}", part.relative_path, disk->getName());
+    /// and a local disk follows symlinks, so check where the path actually leads. The same holds for every
+    /// file inside the part (metadata, marks, data, projections): a file of a part directory inside the root
+    /// can be a symlink to a file outside of it, so check every entry before anything is read from the part.
+    if (disk->getDataSourceDescription().type == DataSourceType::Local)
+    {
+        fs::path disk_root = disk->getPath();
+        fs::path part_full_path = disk_root / part_relative_path;
+        if (!pathStartsWith(part_full_path, disk_root))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The path of part {} leads outside of the root of disk {}", part.relative_path, disk->getName());
+
+        if (fs::is_directory(part_full_path))
+        {
+            /// The iterator does not descend into symlinked directories, but the symlink itself is an entry
+            /// and is checked like any other one.
+            for (const auto & entry : fs::recursive_directory_iterator(part_full_path))
+            {
+                if (!pathStartsWith(entry.path(), disk_root))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "The file {} of part {} leads outside of the root of disk {}",
+                                    entry.path().lexically_relative(part_full_path).string(), part.relative_path, disk->getName());
+            }
+        }
+    }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
