@@ -5927,7 +5927,8 @@ void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
         if (!merge_tree)
             return;
 
-        /// The cache keys are built from the paths of the parts, which `RENAME TABLE` changes for a table without a UUID.
+        /// Here we lock the table because: `RENAME TABLE` of a table without a UUID rewrites the paths of its parts, which are 
+        /// read here to build the cache keys. `RENAME` locks the table exclusively, so the shared lock keeps the paths stable.
         auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
         merge_tree->clearVectorSimilarityIndexCache();
     }
