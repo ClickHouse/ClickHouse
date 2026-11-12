@@ -36,7 +36,7 @@ SHOW CREATE DICTIONARY d_url_tok SETTINGS format_display_secrets_in_show_and_sel
 
 CREATE DICTIONARY d_url_tok_nested (k UInt64, v String) PRIMARY KEY k
 SOURCE(HTTP(URL 'https://TOKEN@localhost:11111/x?next=http://u:p@other/x' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);
-SHOW CREATE DICTIONARY d_url_tok SETTINGS format_display_secrets_in_show_and_select = 0;
+SHOW CREATE DICTIONARY d_url_tok_nested SETTINGS format_display_secrets_in_show_and_select = 0;
 SQL
 
 # A setting value can be any kind of URI, so its password is hidden up to the last '@' before the first '/'.
