@@ -118,7 +118,7 @@ void Aggregator::accountStagedBatch(
     ///   stream of five `UInt64` arguments at global repeat 10 can therefore remain profitable when
     ///   its local streams repeat little.
     /// - The sample receives routing hashes matching `hash & 0xFF == 0`. Each distinct key has the
-    ///   same sampling probability, and `distinct_sampled_hashes` collapses its repeats onto one entry.
+    ///   same sampling probability, and `distinct_sampled_hashes` counts its repeats once.
     ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
     ///   keys, including the key in their hash because equal arguments in different groups occupy
     ///   separate states.
@@ -128,22 +128,36 @@ void Aggregator::accountStagedBatch(
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
         frozen.staged_records += total;
         frozen.staged_bytes += staged.record_bytes + total * adaptive_thaw_record_cost;
-        for (size_t i = 0; i < total; ++i)
+        const auto sample = [&](size_t i)
         {
             const auto hash = hashes[i];
-            if ((hash & adaptive_thaw_sample_mask) == 0)
+            if ((hash & adaptive_thaw_sample_mask) != 0)
+                return;
+            frozen.addSampledHash(hash);
+            if (adaptive_state_bytes_per_distinct_input)
             {
-                frozen.distinct_sampled_hashes.insert(hash);
-                if (adaptive_state_bytes_per_distinct_input)
-                {
-                    SipHash input_hash;
-                    input_hash.update(hash);
-                    for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
-                        columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
-                    frozen.addSampledInputHash(input_hash.get64());
-                }
+                SipHash input_hash;
+                input_hash.update(hash);
+                for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
+                    columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
+                frozen.addSampledInputHash(input_hash.get64());
             }
+        };
+        /// About one record in 256 is sampled, so the hashes are tested eight at a time, and only a block
+        /// with a sampled hash pays for the per-record calls.
+        constexpr size_t sample_test_block = 8;
+        size_t i = 0;
+        for (; i + sample_test_block <= total; i += sample_test_block)
+        {
+            bool sampled = false;
+            for (size_t j = i; j < i + sample_test_block; ++j)
+                sampled |= (hashes[j] & adaptive_thaw_sample_mask) == 0;
+            if (sampled)
+                for (size_t j = i; j < i + sample_test_block; ++j)
+                    sample(j);
         }
+        for (; i < total; ++i)
+            sample(i);
     }
 
     misses.clear();
@@ -165,9 +179,10 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
         spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
     }
     return std::make_shared<AdaptiveAggregationSession>(
+        producers,
         layout,
         std::move(spill_scope),
-        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
+        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>() : nullptr);
 }
 
 bool Aggregator::advanceAdaptiveProducer(
@@ -178,8 +193,9 @@ bool Aggregator::advanceAdaptiveProducer(
     if (over_external_threshold && adaptiveStagingWorthSpilling(adaptive))
         spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
 
-    /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks apply.
-    if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive))
+    /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks
+    /// apply, unless the top-K pruning is expected to free most of what it stages.
+    if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive) && !adaptiveTopKPruningFreesStaging(result, adaptive))
         thawAdaptive(result, adaptive);
     if (adaptive.isBaseline())
         return false;
@@ -257,7 +273,10 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     {
         const auto & layout = adaptive.session->layout;
         adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(
-            layout.numPartitions(), adaptive_staging_block_buckets * layout.partitionsPerBucket(), layout.firstChunkBytes());
+            layout.numPartitions(),
+            adaptive_staging_block_buckets * layout.partitionsPerBucket(),
+            layout.firstChunkBytes(),
+            layout.maxChunkBytes());
     }
     if (params.adaptiveTopKPrunes() && !adaptive.count_bins.isAllocated())
         adaptive.count_bins.allocate();
@@ -331,12 +350,27 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         shared.top_k_pruning->addMergeCountedTable(local_variants);
 }
 
-void Aggregator::prepareAdaptiveTopKPruning(
+void Aggregator::prepareAdaptiveTopK(
     AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
     auto & pruning = shared.top_k_pruning;
     if (pruning && (external_merge || collects_statistics || !pruning->prepare(producers)))
         pruning.reset();
+
+    if (!params.bucket_top_k || external_merge)
+        return;
+
+    /// Settling skips units unread, whose groups the statistics need. A throw-mode group limit allows it,
+    /// as it allows the pruning: the merge checks the limit against the groups it builds (see
+    /// `checkMergedGroupLimit`). Settling also drops the groups tied with the output ones, which `LIMIT`
+    /// allows only because the order is by the rank alone and not `WITH TIES` (see
+    /// `tryPushBucketTopKIntoAggregation`). A descending order never settles, because a rank has no largest
+    /// possible value.
+    std::optional<UInt64> best_possible_rank;
+    if (params.bucket_top_k_ascending && !collects_statistics)
+        best_possible_rank = bucket_top_k_min_rank;
+    shared.top_k_threshold
+        = std::make_unique<AdaptiveTopKThreshold>(params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank);
 }
 
 UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
@@ -516,6 +550,34 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
         if (!callback(block))
             break;
     }
+}
+
+bool Aggregator::adaptiveTopKPruningFreesStaging(AggregatedDataVariants & table, AdaptiveAggregationProducer & adaptive) const
+{
+    /// Only a lone `count()` weighs the pruning against a thaw: its records combine the repeats of a key in a
+    /// batch, so staging costs little where the merge frees most of them unread. The records of the other
+    /// aggregates do not combine, so they thaw on the evidence alone.
+    if (!is_simple_count || !params.adaptiveTopKPrunes())
+        return false;
+    chassert(adaptive.count_bins.isAllocated());
+    auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+    if (frozen.staged_records < frozen.next_pruning_check)
+        return true;
+    frozen.next_pruning_check = 2 * frozen.staged_records;
+
+    /// The hot keys set the local top whether the table holds them or, once the table stopped probing (see
+    /// `FrozenState::recordLocalProbeResults`), the bins do. Staging costs per record: a cold row in a bin
+    /// far below the top is a record of its own, while the rows of a hot key combine into few. The merge
+    /// bounds a bin by the sum of all producers' bins, so a bin counts as pruned only below the top divided
+    /// by their number (see `adaptive_thaw_min_pruned_bin_divisor`). For example, with `LIMIT 10`,
+    /// 8 producers and a local top of 8000 rows, the records in the bins below 1000 rows are those the merge
+    /// is expected to free. Without a local top, every staged group may be in the top, so the pruning frees
+    /// nothing.
+    const auto top = adaptiveLocalTopKCount(table, adaptive.count_bins);
+    if (!top)
+        return false;
+    const size_t divisor = std::max(adaptive_thaw_min_pruned_bin_divisor, adaptive.session->producers);
+    return adaptive_thaw_pruned_share_inverse * adaptive.count_bins.rowsInBinsBelow(*top / divisor) >= frozen.staged_records;
 }
 
 std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
