@@ -1,0 +1,6 @@
+-- an equality on a column with as many distinct values as rows: a fraction of a row is rounded up to one
+1
+20
+-- a constant conjunct, here `IS NOT NULL` of a non-Nullable column, does not change the estimate
+1
+1

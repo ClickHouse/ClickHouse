@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
 # long: many statements over thousands of rows; over the time limit of the flaky check under the thread fuzzer.
+# no-msan: up to 450 s under MSan against 7 s in a debug build, too close to the 600 s per-test timeout;
+# the test still runs under ASan, UBSan and TSan.
 
 # Two parts of 6 000 rows with a dozen SHARED paths of mixed types: several tasks per part, readers reused across tasks,
 # many small ranges per task, FINAL over intersecting parts, merges and mutations, and the read settings that pick
