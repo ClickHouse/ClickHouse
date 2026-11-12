@@ -21,14 +21,28 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/Exception.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Timespan.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/argsToConfig.h>
+
+#include "config.h"
+
+#if USE_SSL
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/HTTPSClientSession.h>
+#endif
 
 #include <fcntl.h>
 #include <grp.h>
@@ -639,6 +653,39 @@ bool createClickHouseDatabase(
     return true;
 }
 
+/// Whether the server on 127.0.0.1:`port` answers `/ping`. It is polled while the server is starting,
+/// so failing to connect means "not ready yet". The certificate of HTTPS is not verified, as `wget --no-check-certificate`
+/// in entrypoint.sh: the server is local, and the check sends nothing secret.
+bool pingServer(Poco::UInt16 port_number, [[maybe_unused]] bool secure)
+{
+    try
+    {
+        std::unique_ptr<Poco::Net::HTTPClientSession> session;
+#if USE_SSL
+        if (secure)
+        {
+            Poco::Net::Context::Ptr context = new Poco::Net::Context(
+                Poco::Net::Context::CLIENT_USE, "", Poco::Net::Context::VERIFY_NONE);
+            session = std::make_unique<Poco::Net::HTTPSClientSession>("127.0.0.1", port_number, context);
+        }
+        else
+#endif
+            session = std::make_unique<Poco::Net::HTTPClientSession>("127.0.0.1", port_number);
+        session->setTimeout(Poco::Timespan(1, 0));
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/ping", Poco::Net::HTTPMessage::HTTP_1_1);
+        session->sendRequest(request);
+        Poco::Net::HTTPResponse response;
+        std::istream & body = session->receiveResponse(response);
+        body.ignore(std::numeric_limits<std::streamsize>::max());
+        return response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
+    }
+    catch (const Poco::Exception &)
+    {
+        return false;
+    }
+}
+
 /// Returns false on first script failure (fail-fast, matches shell `set -e`).
 bool runInitScripts(const std::vector<std::string> & client_base)
 {
@@ -762,6 +809,49 @@ bool initClickHouseDB(
     if (native_port.empty())
         native_port = "9000";
 
+    /// The readiness check is `/ping` over HTTP, the same as in entrypoint.sh. It needs no credentials: the user
+    /// from the environment may be unable to log in, e.g. when a mounted `users.d` sets the password of `default`
+    /// and an init script passes that password itself.
+    std::string ping_port = getOverriddenConfigValue(extra_server_args, "http_port");
+    if (ping_port.empty())
+        ping_port = extractConfigValue(config_file, "http_port");
+    bool ping_secure = false;
+    if (ping_port.empty())
+    {
+        ping_port = getOverriddenConfigValue(extra_server_args, "https_port");
+        if (ping_port.empty())
+            ping_port = extractConfigValue(config_file, "https_port");
+        ping_secure = true;
+    }
+    if (ping_port.empty())
+    {
+        std::cerr << "docker-init: error: neither `http_port` nor `https_port` is configured, "
+                     "so it cannot check whether the server for the initialization is ready\n";
+        return false;
+    }
+#if !USE_SSL
+    if (ping_secure)
+    {
+        std::cerr << "docker-init: error: only `https_port` is configured, but ClickHouse is built without SSL, "
+                     "so it cannot check whether the server for the initialization is ready\n";
+        return false;
+    }
+#endif
+    Poco::UInt16 ping_port_number = 0;
+    try
+    {
+        const unsigned long value = std::stoul(ping_port);
+        if (value == 0 || value > std::numeric_limits<Poco::UInt16>::max())
+            throw std::out_of_range(ping_port);
+        ping_port_number = static_cast<Poco::UInt16>(value);
+    }
+    catch (const std::exception &)
+    {
+        std::cerr << "docker-init: error: invalid " << (ping_secure ? "`https_port`" : "`http_port`")
+                  << " '" << ping_port << "'\n";
+        return false;
+    }
+
     std::string run_as = std::to_string(run_uid) + ":" + std::to_string(run_gid);
 
     /// Start a temporary server bound only to localhost.
@@ -834,40 +924,7 @@ bool initClickHouseDB(
 
     while (tries > 0 && !server_ready && !g_shutdown_requested)
     {
-        pid_t check_pid = fork();
-        if (check_pid < 0)
-        {
-            /// fork failed — skip this iteration and retry.
-            --tries;
-            sleep(1); // NOLINT(concurrency-mt-unsafe)
-            continue;
-        }
-        if (check_pid == 0)
-        {
-            int devnull = open("/dev/null", O_WRONLY);
-            if (devnull >= 0)
-            {
-                dup2(devnull, STDOUT_FILENO);
-                dup2(devnull, STDERR_FILENO);
-                close(devnull);
-            }
-            /// Keep args in a named variable so the strings outlive argv.
-            std::vector<std::string> check_args = {
-                g_clickhouse_binary, "client",
-                "--host", "127.0.0.1",
-                "--port", native_port,
-                "-u", clickhouse_user,
-                "--password", clickhouse_password,
-                "--query", "SELECT 1",
-            };
-            auto argv = buildArgv(check_args);
-            execvp(argv[0], argv.data());
-            _exit(127);
-        }
-
-        int check_status = 0;
-        while (waitpid(check_pid, &check_status, 0) < 0 && errno == EINTR) {}
-        if (WIFEXITED(check_status) && WEXITSTATUS(check_status) == 0)
+        if (pingServer(ping_port_number, ping_secure))
         {
             server_ready = true;
         }
