@@ -138,13 +138,18 @@ struct BufferWriteIdentity
     std::optional<Poco::Net::SocketAddress> current_address;
     std::optional<Poco::Net::SocketAddress> initial_address;
 
-    /// Two identities authorize a downstream write the same way when they share the access-control fields.
-    /// The other captured fields (names, quota key, addresses, expiry) are restored onto the flush so quotas,
-    /// `currentUser`, interserver authentication and the expiry check are correct, but they do not affect
-    /// whether the write is allowed, so a shard that holds one may accept the other without a flush.
-    bool hasSameAccess(const BufferWriteIdentity & other) const
+    /// Two identities may share a buffer shard only when the flush would replay them identically. The whole
+    /// identity is restored onto the nested insert, so beyond the access-control fields (user, roles, grants)
+    /// a difference in the authentication deadline, the client names, the quota key or the client addresses
+    /// changes the expiry check, the written values (e.g. `currentUser()`), interserver authentication or
+    /// quota attribution. A shard is flushed before it accepts a different identity; with several shards the
+    /// sink routes different identities to different shards instead, so this rarely forces a flush.
+    bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
     {
-        if (std::tie(user_id, current_roles, external_roles) != std::tie(other.user_id, other.current_roles, other.external_roles))
+        if (std::tie(user_id, current_roles, external_roles, authentication_valid_until,
+                     current_user, initial_user, authenticated_user, quota_key, current_address, initial_address)
+            != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until,
+                        other.current_user, other.initial_user, other.authenticated_user, other.quota_key, other.current_address, other.initial_address))
             return false;
 
         /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
@@ -1076,7 +1081,7 @@ public:
                 auto & candidate = storage.buffers[shard_num];
                 size_t num_rows = candidate.data.rows();
                 const bool same_identity = !candidate.first_write_time
-                    || candidate.write_identity->hasSameAccess(*write_identity);
+                    || candidate.write_identity->hasSameFlushIdentity(*write_identity);
                 if (same_identity)
                 {
                     if (!chosen_buffer || num_rows < chosen_shard_rows)
@@ -1128,7 +1133,7 @@ private:
         /// Buffer, whose flush would just discard the earlier rows. first_write_time is non-zero exactly when
         /// the shard holds data, and write_identity is set together with it.
         const bool identity_changed = static_cast<bool>(storage.destination_id)
-            && buffer.first_write_time && !buffer.write_identity->hasSameAccess(*write_identity);
+            && buffer.first_write_time && !buffer.write_identity->hasSameFlushIdentity(*write_identity);
 
         if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
             buffer.metadata_version != metadata_version ||

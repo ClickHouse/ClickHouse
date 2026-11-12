@@ -186,6 +186,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// This branch starts from the global context, which is not a background operation. Carry the marker over
+    /// so that a definer view reached from a background write (e.g. a `Buffer` flush) stays a background
+    /// operation and functions restricted to user-issued queries (AI functions) remain rejected in it.
+    if (context->isBackgroundContext())
+        new_context->setBackgroundOperation();
     /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
