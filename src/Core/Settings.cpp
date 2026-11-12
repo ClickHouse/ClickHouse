@@ -10887,11 +10887,11 @@ Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimi
     DECLARE(String, ai_function_rerank_default_credentials, "", R"(
 Name of the named collection used by the reranking functions (`aiRelevance`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Like the text functions, `aiRelevance` reads `model` from its parameter map, falling back to the named collection's `model`. Kept separate from `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` because a reranking endpoint differs from both a chat and an embeddings one. Only used by `aiRelevance`, which requires `allow_experimental_ai_relevance_function`.
 )", EXPERIMENTAL, \
-        {"26.10", "", "", "New setting"}) \
+        {"26.11", "", "", "New setting"}) \
     DECLARE(NonZeroUInt64, ai_function_rerank_max_batch_size, 100, R"(
 Maximum number of documents to include in a single HTTP request made by the reranking functions (`aiRelevance`). Within a block, documents scored against the same query are grouped into batches of this size to reduce API call overhead. For example, 500 documents scored against one query with a batch size of 100 result in 5 HTTP requests. The default matches Cohere's billing, where one search unit covers one query with up to 100 documents.
 )", EXPERIMENTAL, \
-        {"26.10", 100, 100, "New setting"}) \
+        {"26.11", 100, 100, "New setting"}) \
     DECLARE(Bool, ai_function_allow_insecure_endpoint, false, R"(
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", BETA, \
@@ -10916,7 +10916,7 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_ai_relevance_function, false, R"(
 Enable the experimental `aiRelevance` function, which scores the relevance of a document to a query using a reranking model.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting to enable the `aiRelevance` function."}) \
+        {"26.11", false, false, "New experimental setting to enable the `aiRelevance` function."}) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
