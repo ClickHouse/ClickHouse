@@ -809,8 +809,9 @@ std::optional<StorageABR::UnixTimePoint> StorageABR::getQueryLowerBound(const Ke
     std::optional<UnixTimePoint> min_left;
     for (const auto & range : ranges)
     {
+        /// `extractBounds` ignores the conditions on functions of the time column (e.g. `toStartOfHour(ts)`).
         if (range.left.isNull() || range.left.isNegativeInfinity())
-            return std::nullopt; /// unbounded range -> no finite lower bound
+            return searchQueryLowerBound(time_cond, time_type);
 
         Field lower_bound = range.left;
         if (which_time_type.isDateTime64())
@@ -858,6 +859,66 @@ std::optional<StorageABR::UnixTimePoint> StorageABR::getQueryLowerBound(const Ke
         min_left = std::min(min_left.value_or(*left), *left);
     }
     return min_left;
+}
+
+std::optional<StorageABR::UnixTimePoint> StorageABR::searchQueryLowerBound(const KeyCondition & time_cond, const DataTypePtr & time_type) const
+{
+    /// The values of the time column are searched in the representation of its minmax index, from the Unix epoch to the largest one.
+    const auto column_type = removeLowCardinality(time_type);
+    const WhichDataType which_time_type(column_type);
+    Int64 max_value = 0;
+    std::function<Field(Int64)> to_field;
+    if (which_time_type.isDate())
+    {
+        max_value = DATE_LUT_MAX_DAY_NUM;
+        to_field = [](Int64 value) { return Field(static_cast<UInt64>(value)); };
+    }
+    else if (which_time_type.isDate32())
+    {
+        max_value = DATE_LUT_MAX_EXTEND_DAY_NUM;
+        to_field = [](Int64 value) { return Field(value); };
+    }
+    else if (which_time_type.isDateTime())
+    {
+        max_value = std::numeric_limits<UInt32>::max();
+        to_field = [](Int64 value) { return Field(static_cast<UInt64>(value)); };
+    }
+    else if (which_time_type.isDateTime64())
+    {
+        const UInt32 scale = getDecimalScale(*column_type);
+        if (common::mulOverflow(
+                static_cast<Int64>(DATE_LUT_MAX_EXTEND_DAY_NUM) * SECONDS_PER_DAY, DecimalUtils::scaleMultiplier<Int64>(scale), max_value))
+            max_value = std::numeric_limits<Int64>::max();
+        to_field = [scale](Int64 value) { return Field(DecimalField<DateTime64>(DateTime64(value), scale)); };
+    }
+    else
+        return std::nullopt; /// Only the temporal types are searched.
+
+    /// Whether the condition can be true for a time not later than `value`. It is checked the way `MergeTree` checks the ranges of
+    /// its parts. The check is conservative, so the bound may be earlier, but not later.
+    const DataTypes data_types{time_type};
+    auto can_be_true_until = [&](Int64 value)
+    {
+        return time_cond.checkInHyperrectangle({Range::createRightBounded(to_field(value), true)}, data_types).can_be_true;
+    };
+
+    /// True at the epoch: there is no lower bound that `ABR` supports. Never true: the condition is always false.
+    if (can_be_true_until(0) || !can_be_true_until(max_value))
+        return std::nullopt;
+
+    /// Binary search the actual lower bound.
+    Int64 low = 0;
+    Int64 high = max_value;
+    while (high - low > 1)
+    {
+        const Int64 middle = low + (high - low) / 2;
+        if (can_be_true_until(middle))
+            high = middle;
+        else
+            low = middle;
+    }
+
+    return timeValueToUnixTimePoint(to_field(high), time_type);
 }
 
 std::optional<StorageABR::UnixTimePoint> StorageABR::timeValueToUnixTimePoint(const Field & value, const DataTypePtr & time_type) const

@@ -208,6 +208,9 @@ private:
     /// Returns nullopt when no finite lower bound can be determined.
     std::optional<UnixTimePoint> getQueryLowerBound(const KeyCondition & time_cond, const DataTypePtr & time_type) const;
 
+    /// Finds the lower bound on the time column by a binary search over the values of the column.
+    std::optional<UnixTimePoint> searchQueryLowerBound(const KeyCondition & time_cond, const DataTypePtr & time_type) const;
+
     /// Converts the time column's native numeric representation to Unix time.
     /// Returns nullopt when the value is before the Unix epoch.
     std::optional<UnixTimePoint> timeValueToUnixTimePoint(const Field & value, const DataTypePtr & time_type) const;

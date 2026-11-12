@@ -271,6 +271,16 @@ SELECT count() FROM abr_table_min_date_datetime64 WHERE d >= toDateTime64('1969-
 SELECT count() FROM abr_table_min_date_date32 WHERE d >= toDate32('2025-11-05');
 SELECT count() FROM abr_table_min_date_datetime64 WHERE d >= toDateTime64('2025-11-05 00:00:00', 9, 'UTC');
 
+-- A condition on a monotonic function of the time column, which `toStartOfHour` and `toStartOfInterval` are not rewritten from,
+-- is bounded by checking where it can be true, as `MergeTree` checks the ranges of its parts.
+SELECT /* test 05301, query 30 */ max(value), count() FROM abr_table_min_date WHERE toStartOfHour(ts) >= toDateTime('2025-11-05 10:00:00');
+SELECT /* test 05301, query 31 */ max(value), count() FROM abr_table_min_date WHERE toStartOfInterval(ts, INTERVAL 1 HOUR) >= toDateTime('2025-11-01 00:00:00');
+SELECT count() FROM abr_table_min_date WHERE toStartOfHour(ts) <= toDateTime('2025-11-05 10:00:00'); -- {serverError QUERY_NOT_ALLOWED}
+
+SYSTEM FLUSH LOGS query_log;
+SELECT abr_min_date as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05301, query 30 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+SELECT abr_min_date as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05301, query 31 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+
 DROP TABLE IF EXISTS abr_table_min_date;
 DROP TABLE IF EXISTS abr_table_min_date_date;
 DROP TABLE IF EXISTS abr_table_min_date_date32;
