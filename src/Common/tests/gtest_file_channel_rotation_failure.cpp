@@ -88,7 +88,7 @@ rlim_t leaveOneFreeDescriptor(DescriptorTableGuard & guard)
 class DirectoryChanges
 {
 public:
-    explicit DirectoryChanges(const std::filesystem::path & dir)
+    explicit DirectoryChanges([[maybe_unused]] const std::filesystem::path & dir)
     {
 #if defined(OS_LINUX)
         fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
@@ -104,17 +104,17 @@ public:
     }
 
     /// Returns the number of changes since the previous call.
-    size_t take()
+    size_t take() const
     {
         size_t count = 0;
 #if defined(OS_LINUX)
         char buffer[4096];
-        ssize_t bytes;
+        ssize_t bytes = 0;
         while ((bytes = ::read(fd, buffer, sizeof(buffer))) > 0)
         {
             for (ssize_t offset = 0; offset < bytes; ++count)
             {
-                inotify_event event;
+                inotify_event event{};
                 std::memcpy(&event, buffer + offset, sizeof(event));
                 offset += sizeof(event) + event.len;
             }
