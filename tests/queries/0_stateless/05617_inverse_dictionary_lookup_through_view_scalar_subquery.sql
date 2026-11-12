@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS scalar_subquery_data;
 DROP TABLE IF EXISTS scalar_subquery_cfg;
 
 CREATE TABLE scalar_subquery_cfg (flag UInt8, dict_name String) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO scalar_subquery_cfg VALUES (1, currentDatabase() || '.scalar_subquery_dict');
+INSERT INTO scalar_subquery_cfg SELECT 1, currentDatabase() || '.scalar_subquery_dict';
 
 CREATE TABLE scalar_subquery_ref (id UInt64, a String, b String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO scalar_subquery_ref VALUES (1, 'match', 'other'), (2, 'other', 'match');
