@@ -361,6 +361,5 @@
       "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
-  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }
