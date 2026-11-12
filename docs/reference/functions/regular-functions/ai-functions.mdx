@@ -64,7 +64,7 @@ GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
 GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
 ```
 
-The setting [`allow_ai_functions`](/reference/settings/session-settings/allow#allow_ai_functions) (enabled by default) disables AI functions when set to `0`, for example in a settings profile or with a constraint.
+The setting `allow_ai_functions` (enabled by default) disables AI functions when set to `0`, for example in a settings profile or with a constraint.
 
 AI functions are executed only in queries run by a user. They are rejected in mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) and in the keys, TTL, skip indexes and projections of a table, which are executed in the background, and `Buffer` flushes throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert; when such a column is added with `ALTER TABLE`, the existing parts compute it in the background, where AI functions are not executed.
 
