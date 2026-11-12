@@ -790,20 +790,11 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
-    const auto processing_stage = type == ProjectionDescription::Type::Normal && !where_clause_ast
-        ? QueryProcessingStage::FetchColumns
-        : QueryProcessingStage::WithMergeableState;
-
-    /** A normal projection without `WHERE` stores the columns it requires as they are: the query is
-      * only executed up to `FetchColumns`, which applies no expressions and no filters. The result is
-      * taken from the source block directly instead of from a query plan, because the Analyzer folds
-      * the expressions which are constant by the types of their arguments (`isNull` of a column which
-      * is not `Nullable`), so it would not read the columns they use, while the projection metadata,
-      * built by the required columns of the query, still describes them.
-      * The rows deleted by a lightweight delete are filtered out by `_row_exists` here, because the
-      * `_row_exists = 1` condition added to the query above is not applied at `FetchColumns`.
+    /** A normal projection without `WHERE` stores the columns it requires as they are, so they are
+      * taken from the source block directly. The rows deleted by a lightweight delete are filtered
+      * out by `_row_exists` here.
       */
-    if (processing_stage == QueryProcessingStage::FetchColumns)
+    if (type == ProjectionDescription::Type::Normal && !where_clause_ast)
     {
         ColumnPtr row_exists_column;
         if (source_block.has(RowExistsColumn::name))

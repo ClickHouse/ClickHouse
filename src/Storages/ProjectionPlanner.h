@@ -40,6 +40,9 @@ private:
     /// calculates the expressions from the source columns, the outputs have the stored names
     ActionsDAG buildActions(const QueryTreeNodes & expressions);
 
+    /// a subquery of IN is an ordinary query: plans it and builds its set
+    void buildSubquerySets();
+
     QueryTreeNodePtr query_tree;
     PlannerContextPtr planner_context;
     QueryTreeNodeToName node_to_name;

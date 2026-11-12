@@ -108,7 +108,6 @@ void collectStoredNodeNames(const QueryTreeNodePtr & node, const QueryTreeNodeTo
             collectStoredNodeNames(child, unresolved_node_names, result);
 }
 
-
 QueryTreeNodePtr buildProjectionQueryTreeImpl(
     const ASTPtr & query_ast,
     const StoragePtr & source,
@@ -260,7 +259,15 @@ Pipe ProjectionPlanner::buildPipe(Block source)
         pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, params, nullptr); });
     }
 
-    /// a subquery of IN is an ordinary query: plan it and build its set before the pipe runs
+    /// only after the actions: this changes the trees of the subqueries, and the name of a set comes from its tree
+    buildSubquerySets();
+
+    return pipe;
+}
+
+void ProjectionPlanner::buildSubquerySets()
+{
+    const auto & query_context = planner_context->getQueryContext();
     auto subquery_options = SelectQueryOptions{}.subquery();
     for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
     {
@@ -274,8 +281,6 @@ Pipe ProjectionPlanner::buildPipe(Block source)
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
         subquery->buildSetInplace(query_context);
     }
-
-    return pipe;
 }
 
 }
