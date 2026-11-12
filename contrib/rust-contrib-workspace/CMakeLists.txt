@@ -9,6 +9,13 @@ endif()
 clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" FEATURES ${_features})
 clickhouse_config_crate_flags(_ch_rust_workspace)
 
+# The build script of `delta_kernel_ffi` writes `delta_kernel_ffi.hpp` only when it runs and does not track all the crates
+# the header is generated from, so the header must not come from a shared Cargo build directory.
+if (RUST_BUILD_CACHE_DIR AND "delta_kernel" IN_LIST _features)
+    corrosion_set_cargo_flags(_ch_rust_workspace "--config=build.build-dir='${CMAKE_CURRENT_BINARY_DIR}/cargo-build-dir'")
+    message(STATUS "RUST_BUILD_CACHE_DIR is not used: the Rust workspace includes delta-kernel-rs")
+endif()
+
 get_property(_build_depends GLOBAL PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS)
 if (_build_depends)
     list(REMOVE_DUPLICATES _build_depends)
