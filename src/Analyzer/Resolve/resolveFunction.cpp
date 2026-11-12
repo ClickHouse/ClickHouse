@@ -124,6 +124,9 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & function_name)
 {
     const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    if (std::none_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, std::string_view(function_name).substr(0, alias.size())); }))
+        return {};
+
     String nested_name = function_name;
     size_t arguments_count = 2;
     while (true)
@@ -149,6 +152,9 @@ std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & f
 
 bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context)
 {
+    if (function_node.getArguments().getNodes().size() < 2)
+        return false;
+
     const auto & function_name = function_node.getFunctionName();
     auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
     return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
@@ -1417,15 +1423,15 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
   *
   * Steps:
-  * 1. Resolve function parameters. Validate that each function parameter must be constant node.
-  * 2. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 1. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 2. Resolve function parameters. Validate that each function parameter must be constant node.
   * 3. If function is count function, that take unqualified ASTERISK matcher, remove it from its arguments. Example: SELECT count(*) FROM test_table;
   * 4. If function is `IN` function, then right part of `IN` function is replaced as subquery.
   * 5. Resolve function arguments list, lambda expressions are allowed as function arguments.
   * For `IN` function table expressions are allowed as function arguments.
   * 6. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
   * 7. If function name identifier was not resolved as function in current scope, try to lookup lambda from sql user defined functions factory.
-  * 8. If function was resolve as lambda from step 2 or 7, then resolve lambda using function arguments and replace function node with lambda result.
+  * 8. If function was resolve as lambda from step 1 or 7, then resolve lambda using function arguments and replace function node with lambda result.
   * After than function node is resolved.
   * 9. If function was not resolved during step 6 as lambda, then try to resolve function as window function or executable user defined function
   * or ordinary function or aggregate function.
@@ -1501,7 +1507,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
         if (!separator_node || separator_node->getValue().getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "If groupConcat is used with two arguments, the second argument must be a constant String");
+                "If groupConcat is used with a separator argument, the separator must be a constant String");
 
         /// The separator replaces the raw delimiter parameter and keeps the optional limit. This happens
         /// before the parameters are resolved, so an overridden delimiter expression is never evaluated.
