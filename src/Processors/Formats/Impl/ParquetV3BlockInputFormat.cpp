@@ -263,8 +263,13 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         readFileFooterIfNeeded();
 
         {
-            std::lock_guard lock(reader_mutex);
+            std::unique_lock lock(reader_mutex);
             reader = std::move(reader_with_footer);
+            /// `onCancel` may have run before the move and found no reader.
+            if (isCancelled())
+                reader->cancel();
+            lock.unlock();
+
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             /// Of the readers of a split file, only one records the statistics (of all row groups, also of the other buckets).
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition
