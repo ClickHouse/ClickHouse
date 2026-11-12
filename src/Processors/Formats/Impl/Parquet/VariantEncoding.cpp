@@ -928,7 +928,7 @@ public:
                 const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(type).getScale();
                 const Int64 value = assert_cast<const ColumnDateTime64 &>(column).getData()[row].value;
                 const UInt32 target_scale = scale <= 6 ? 6 : 9;
-                Int64 scaled;
+                Int64 scaled = 0;
                 if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int64>(target_scale - scale), scaled))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

@@ -1184,7 +1184,7 @@ static bool icebergTypeContainsVariant(const Poco::Dynamic::Var & type)
     if (type.isString())
         return type.extract<String>() == Iceberg::f_variant;
 
-    const auto object = type.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = type.extract<Poco::JSON::Object::Ptr>();
     const auto kind = object->getValue<String>(Iceberg::f_type);
     if (kind == "struct")
     {
