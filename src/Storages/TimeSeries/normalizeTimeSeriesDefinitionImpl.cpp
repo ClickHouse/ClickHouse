@@ -736,8 +736,11 @@ namespace
         {
             if (new_settings)
             {
-                if (const auto * written_value = new_settings->changes.tryGet(name))
-                    return written_value;
+                /// The last occurrence of a repeated setting is the one the table applies.
+                const auto & changes = new_settings->changes;
+                auto written = std::ranges::find_if(changes.rbegin(), changes.rend(), [&](const SettingChange & change) { return change.name == name; });
+                if (written != changes.rend())
+                    return &written->value;
                 if (std::ranges::find(new_settings->default_settings, name) != new_settings->default_settings.end())
                     return nullptr;
             }

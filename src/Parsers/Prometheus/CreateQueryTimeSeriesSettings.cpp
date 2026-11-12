@@ -12,11 +12,14 @@ namespace DB
 namespace
 {
     /// Returns the value of a setting from the SETTINGS clause of a CREATE query, or null if the query doesn't specify it.
+    /// The last occurrence of a repeated setting, which is the one the table applies.
     const Field * tryGetSettingValue(const ASTCreateQuery & query, std::string_view setting_name)
     {
         if (!query.storage || !query.storage->settings)
             return nullptr;
-        return query.storage->settings->changes.tryGet(setting_name);
+        const auto & changes = query.storage->settings->changes;
+        auto it = std::ranges::find_if(changes.rbegin(), changes.rend(), [&](const SettingChange & change) { return change.name == setting_name; });
+        return it == changes.rend() ? nullptr : &it->value;
     }
 }
 

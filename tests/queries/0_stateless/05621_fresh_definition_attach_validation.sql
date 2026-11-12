@@ -114,6 +114,11 @@ ATTACH TABLE ts_ext UUID '05621000-0000-0000-0000-000000000023' ENGINE = TimeSer
     METRIC FAMILIES `.inner_id.metricfamilies.05621000-0000-0000-0000-000000000022`;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ts_ext';
 DROP TABLE ts_ext;
+-- A repeated setting takes its last value, which enables the inner recent samples table here
+ATTACH TABLE ts_ext UUID '05621000-0000-0000-0000-000000000025' ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 0, recent_samples_ttl_seconds = 60, store_time_ranges = 0
+    SAMPLES `.inner_id.samples.05621000-0000-0000-0000-000000000022`
+    TAGS `.inner_id.tags.05621000-0000-0000-0000-000000000022`
+    METRIC FAMILIES `.inner_id.metricfamilies.05621000-0000-0000-0000-000000000022`; -- { serverError BAD_ARGUMENTS }
 -- The columns of a TimeSeries table attached with a full definition follow its external targets, like on CREATE
 CREATE TABLE ext_samples (id Tuple(UInt64, LowCardinality(UUID)), timestamp DateTime64(6), value Float32) ENGINE = MergeTree ORDER BY (id, timestamp);
 ATTACH TABLE ts_ext UUID '05621000-0000-0000-0000-000000000024' (metric_name String) ENGINE = TimeSeries SETTINGS version = 9, recent_samples_ttl_seconds = 0, store_time_ranges = 0
