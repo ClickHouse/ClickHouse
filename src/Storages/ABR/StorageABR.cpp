@@ -1295,7 +1295,7 @@ SELECT count() FROM events WHERE ts >= now() - INTERVAL 1 DAY AND region = 'eu';
 )",
                 .result = "",
             }},
-            .introduced_in = {26, 10},
+            .introduced_in = {26, 11},
         });
 }
 

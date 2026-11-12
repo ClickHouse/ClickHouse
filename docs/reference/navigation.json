@@ -392,6 +392,7 @@
               "group": "Special",
               "pages": [
                 "reference/engines/table-engines/special/index",
+                "reference/engines/table-engines/special/abr",
                 "reference/engines/table-engines/special/alias",
                 "reference/engines/table-engines/special/buffer",
                 "reference/engines/table-engines/special/dictionary",
