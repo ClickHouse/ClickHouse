@@ -251,6 +251,24 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
+        {
+            if (table)
+            {
+                ostr << ' ';
+                print_keyword("FOR TABLE");
+                ostr << ' ';
+                print_database_table();
+                if (index)
+                {
+                    ostr << ' ';
+                    print_keyword("INDEX");
+                    ostr << ' ';
+                    index->format(ostr, settings, state, frame);
+                }
+            }
+            break;
+        }
         case Type::RESTART_REPLICA:
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
@@ -259,30 +277,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FLUSH_DISTRIBUTED:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
-        case Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::CLEAR_TIME_SERIES_CACHES:
         {
             if (table)
             {
-                if (type == Type::PREWARM_VECTOR_SIMILARITY_INDEX_CACHE)
-                {
-                    ostr << ' ';
-                    print_keyword("FOR TABLE");
-                    ostr << ' ';
-                    print_database_table();
-                    if (index)
-                    {
-                        ostr << ' ';
-                        print_keyword("INDEX");
-                        ostr << ' ';
-                        index->format(ostr, settings, state, frame);
-                    }
-                }
-                else
-                {
-                    ostr << ' ';
-                    print_database_table();
-                }
+                ostr << ' ';
+                print_database_table();
             }
 
             if (sync_replica_mode != SyncReplicaMode::DEFAULT)
