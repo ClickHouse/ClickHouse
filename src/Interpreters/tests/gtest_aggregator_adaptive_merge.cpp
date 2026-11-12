@@ -197,14 +197,14 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
             auto & table = sources.front()->key64_two_level->data;
             const auto bucket = static_cast<Int32>(
                 AggregatedDataWithUInt64KeyTwoLevel::getBucketFromHash(table.hash(UInt64{1})));
-            aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+            aggregator.prepareAdaptiveTopK(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
             auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
             AdaptiveMergeTask task;
             std::atomic<bool> cancelled{false};
             const auto merge = [&]
             {
                 return aggregator.mergeAndConvertAdaptiveBucket(
-                    prepared, *session, task, /*final=*/true, bucket, cancelled, /*updater=*/nullptr, /*full_group_count=*/nullptr);
+                    prepared, *session, task, /*final=*/true, bucket, cancelled, /*updater=*/nullptr, /*merged_group_count=*/nullptr);
             };
             if (throws)
                 EXPECT_THROW(merge(), std::runtime_error);
@@ -267,7 +267,7 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
         sources.push_back(std::move(source));
     }
 
-    aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+    aggregator.prepareAdaptiveTopK(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
     auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
     AdaptiveMergeTask task;
     std::atomic<bool> cancelled{false};
@@ -276,7 +276,7 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
     {
         const auto chunks = aggregator.mergeAndConvertAdaptiveBucket(
             prepared, *session, task, /*final=*/true, static_cast<Int32>(bucket), cancelled,
-            /*updater=*/nullptr, /*full_group_count=*/nullptr);
+            /*updater=*/nullptr, /*merged_group_count=*/nullptr);
         for (const auto & converted : chunks)
         {
             const auto & columns = converted.chunk.getColumns();

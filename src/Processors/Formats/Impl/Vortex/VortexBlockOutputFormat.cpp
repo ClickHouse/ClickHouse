@@ -8,6 +8,7 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Port.h>
 #include <Common/Exception.h>
+#include <Common/isValidUTF8.h>
 
 #include <arrow/api.h>
 #include <arrow/c/bridge.h>
@@ -64,6 +65,38 @@ static void throwFromArrowStatusIfFailed(const arrow::Status & status)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Error while writing Vortex file: {}", status.ToString());
 }
 
+/// Vortex takes the values of a `Utf8` array on trust.
+static void checkStringsAreValidUTF8(const std::shared_ptr<arrow::ArrayData> & data, const String & column_name)
+{
+    if (data->type->id() == arrow::Type::STRING && data->length > 0)
+    {
+        arrow::StringArray strings(data);
+        const int64_t rows = strings.length();
+        const int32_t * offsets = strings.raw_value_offsets();
+        const auto * bytes = reinterpret_cast<const UInt8 *>(strings.raw_data());
+        const int32_t begin = offsets[0];
+        const int32_t end = offsets[rows];
+        if (begin != end)
+        {
+            /// The values are valid one by one iff their concatenation is valid and none starts inside a code point.
+            bool valid = UTF8::isValidUTF8(bytes + begin, end - begin);
+            for (int64_t row = 1; valid && row < rows; ++row)
+                valid = offsets[row] == end || (bytes[offsets[row]] & 0xC0) != 0x80;
+            if (!valid)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot write a value of column `{}` that is not valid UTF-8 to the Vortex `Utf8` type. "
+                    "Set `output_format_vortex_string_as_string = 0` to write `String` columns as `Binary`",
+                    column_name);
+        }
+    }
+
+    for (const auto & child : data->child_data)
+        checkStringsAreValidUTF8(child, column_name);
+    if (data->dictionary)
+        checkStringsAreValidUTF8(data->dictionary, column_name);
+}
+
 VortexBlockOutputFormat::VortexBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , format_settings(format_settings_)
@@ -79,11 +112,10 @@ VortexBlockOutputFormat::~VortexBlockOutputFormat()
 void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
 {
     CHColumnToArrowColumn::Settings arrow_settings;
-    /// A ClickHouse string is any sequence of bytes, while Vortex insists that `Utf8` really is
-    /// UTF-8, so strings leave as `Binary`.
-    arrow_settings.output_string_as_string = false;
-    /// There is no fixed-width binary type on the Vortex side either.
+    arrow_settings.output_string_as_string = format_settings.vortex.output_string_as_string;
+    /// There is no fixed-width binary type on the Vortex side, so `FixedString` is written as `Binary`.
     arrow_settings.output_fixed_string_as_fixed_byte_array = false;
+    arrow_settings.output_fixed_string_as_string = false;
     /// As a plain `U32` a `DateTime` would come back as a number; as a timestamp with second
     /// precision it survives the round trip, arriving as `DateTime64(0)`.
     arrow_settings.output_datetime_as_timestamp = true;
@@ -122,6 +154,11 @@ void VortexBlockOutputFormat::consume(Chunk chunk)
     Chunks chunks;
     chunks.push_back(std::move(chunk));
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
+
+    if (format_settings.vortex.output_string_as_string)
+        for (int i = 0; i < arrow_table->num_columns(); ++i)
+            for (const auto & array : arrow_table->column(i)->chunks())
+                checkStringsAreValidUTF8(array->data(), arrow_table->field(i)->name());
 
     /// A chunk too large for one Arrow record batch comes back as several table chunks. Recombining them
     /// would hit the same 32-bit offset limit, so write each record batch separately.
