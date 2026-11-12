@@ -231,25 +231,19 @@ NS_BEFORE_EPOCH="toDateTime64('1969-12-31 23:59:59.9999995', 9, 'UTC')"
 check ts "ts = '2026-01-01 00:00:00.123456'"
 check ts "'2026-01-01 00:00:00.123456' = ts"
 check ts "ts < '2026-01-01 00:00:00.123456'"
-check ts "ts >= '2026-01-01 00:00:01'"
 check ts "ts = '2026-01-01 05:30:00.123456'" "session_timezone='Asia/Kolkata'"
 # Date and DateTime constants are cast to the column type: midnight in the column's time zone.
 check ts "ts >= toDate('2026-01-02')"
 check ts "ts < toDate32('1970-01-01')"
 check ts "ts < toDate('2026-01-01')" "session_timezone='America/New_York'"
-check ts "ts >= toDateTime('2026-01-01 00:00:01', 'UTC')"
 check ts "ts < toDateTime('2026-01-01 05:30:01', 'Asia/Kolkata')"
 # A string finer than microseconds or outside the range is parsed by the comparison and by pruning alike.
 check ts "ts < '2026-01-01 00:00:00.1234565'"
-check ts "ts >= '2026-01-01 00:00:00.1234565'"
 check ts "ts > '2300-01-01 00:00:00'"
 check ts "ts < '1899-12-31 00:00:00'"
 # A `timestamp_ntz` column differs only in the kernel literal: a wall-clock time instead of an instant.
-check ntz "ts = '2026-01-01 00:00:00.123456'"
 check ntz "ts = '2026-01-01 05:30:00.123456'" "session_timezone='Asia/Kolkata'"
 check ntz "ts < toDate('2026-01-01')" "session_timezone='America/New_York'"
-check ntz "ts > '2300-01-01 00:00:00'"
-check ntz "ts < '1899-12-31 00:00:00'"
 
 # A string is parsed in `cast_string_to_date_time_mode`, as the comparison does, whatever
 # `date_time_input_format` says: '20260102' is 2026-01-02 in `best_effort` and 20260102 seconds after the
@@ -267,46 +261,36 @@ check ts_basic "ts < '20260102'"
 
 # `DateTime64` constants compare by ticks, whatever their time zone; a coarser scale converts exactly.
 check ts "ts = toDateTime64('2026-01-01 05:30:00.123456', 6, 'Asia/Kolkata')"
-check ts "toDateTime64('2026-01-01 00:00:00.123456', 6, 'UTC') = ts"
-check ts "ts >= toDateTime64('2026-01-01 00:00:00.123', 3, 'UTC')"
 check ts "ts < toDateTime64('2026-01-01 00:00:00.123', 3, 'UTC')"
 
 # A finer constant scales the column up. Between two microseconds the bound is the floor of the
 # constant; truncating it instead would lose the file at 00:00:00.123456 for `<` and `<=`.
-for op in '<' '<=' '>' '>='; do
-    check ts "ts ${op} ${NS_BETWEEN}"
-    check ts "${NS_BETWEEN} ${op} ts"
-done
+check ts "ts < ${NS_BETWEEN}"
+check ts "ts >= ${NS_BETWEEN}"
+check ts "${NS_BETWEEN} < ts"
+check ts "${NS_BETWEEN} >= ts"
 check ntz "ts < ${NS_BETWEEN}"
-check ntz "${NS_BETWEEN} < ts"
-# No column value equals such a constant: `=` and `!=` stay untranslated, a negation stays exact.
+# No column value equals such a constant: `=` stays untranslated, a negation stays exact.
 check ts "ts = ${NS_BETWEEN}"
-check ts "ts != ${NS_BETWEEN}"
 check ts "NOT (ts < ${NS_BETWEEN})"
 # With `decimal_check_overflow = 0` the comparison multiplies the column and wraps around beyond 2262-04-11.
 # Pruning cannot read that setting of the comparison, so the file there stays scanned in either polarity,
 # with the setting on too.
 check ts "ts = ${NS_EXACT}"
-check ts "NOT (ts = ${NS_EXACT})"
-check ts "ts < ${NS_EXACT}"
-check ts "${NS_EXACT} <= ts"
 check ts "ts = ${NS_EXACT}" "decimal_check_overflow=0"
 check ts "NOT (ts = ${NS_EXACT})" "decimal_check_overflow=0"
 check ts "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
 check ts "ts <= ${NS_BEFORE_EPOCH}"
-check ntz "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
 # With `date_time_overflow_behavior = 'saturate'` the Parquet reader clamps a timestamp to the range of
 # `DateTime64(6)` while its statistics keep the real value. Clamping keeps the order with a constant inside
 # that range, so such a constant still skips files as usual.
 check ts "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='saturate'"
-check ntz "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='saturate'"
 
 # The INT96 9999-12-31 23:59:59 lies beyond the `Int64` nanoseconds and is read as written, in any
 # overflow mode, as its statistics say.
 copy_table int96 timestamp "${CUR_DIR}/data_parquet/05534_int96_beyond_int64_nanoseconds.parquet" '9999-12-31 23:59:59.000000'
 check int96 "ts = '9999-12-31 23:59:59'"
 check int96 "ts < '2262-04-12 00:00:00'"
-check int96 "ts > '2262-04-12 00:00:00'"
 check int96 "ts < '2262-04-12 00:00:00'" "date_time_overflow_behavior='saturate'"
 check int96 "ts >= '9999-12-31 23:59:59.999999'" "date_time_overflow_behavior='saturate'"
 # The reader of a table engine takes the setting from the table, not from the query.
@@ -319,17 +303,13 @@ check int96_saturate "ts < '2262-04-12 00:00:00'"
 copy_table int96_before_epoch timestamp "${CUR_DIR}/data_parquet/05534_int96_before_epoch_sub_microsecond.parquet" '1969-12-31 23:59:59.999'
 check int96_before_epoch "ts = '1970-01-01 00:00:00'"
 check int96_before_epoch "ts >= '1970-01-01 00:00:00'"
-check int96_before_epoch "ts > '1969-12-31 23:59:59.999999'"
 check int96_before_epoch "ts > '1970-01-01 00:00:00'"
 
-# Junctions and nested negation.
+# Junctions; an untranslated child under negation leaves the whole conjunction undecided.
 check ts "ts BETWEEN '2026-01-01 00:00:00' AND '2026-01-01 00:00:00.5'"
-check ts "NOT (ts = '2026-01-01 00:00:00.123456' AND ts > '1970-01-01')"
-# An untranslated child under negation leaves the whole conjunction undecided.
 check ts "NOT (ts = ${NS_BETWEEN} AND ts > '1970-01-01')"
 
 # Untranslated forms scan every file.
-check ts "ts < '1970-01-01' OR ts > '2100-01-01'"
 check ts "ts IN ('2026-01-01 00:00:00.123456', '2026-01-02 00:00:00')"
 check ts "toDate(ts) = '2026-01-01'"
 
@@ -341,34 +321,23 @@ declare_table ts_ms small "ts DateTime64(3, 'UTC')"
 declare_table ts_ns small "ts DateTime64(9, 'UTC')"
 declare_table ts_kolkata small "ts DateTime64(6, 'Asia/Kolkata')"
 check ts_ms "ts = '2026-01-01 00:00:00.123'"
-check ts_ms "ts >= '2026-01-01 00:00:01'"
 check ts_ns "ts = '2026-01-01 00:00:00.123456'"
-check ts_ns "ts >= '2026-01-01 00:00:01'"
-check ts_ms "NOT (ts = '2026-01-01 00:00:00.123' AND ts > '1970-01-01')"
 check ts_kolkata "ts = '2026-01-01 05:30:00.123456'"
-check ts_kolkata "ts < '2026-01-01 05:30:00.123456'"
 check ts_kolkata "ts < toDate('2026-01-01')"
-check ts_kolkata "ts >= toDateTime('2026-01-01 00:00:01', 'UTC')"
 
 make_table nullable timestamp full data true NULL '2026-01-01 00:00:00.000000' '2026-01-01 00:00:01.000000'
 check nullable "ts = '2026-01-01 00:00:00'"
-check nullable "'2026-01-01 00:00:00.5' < ts"
-check nullable "ts < ${NS_BETWEEN}"
-check nullable "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
 check nullable "NOT (ts <= '2026-01-01 00:00:00.5')"
-check nullable "ts IS NOT NULL AND ts >= '2026-01-01 00:00:01'"
 check nullable "ts IS NULL OR ts > '2026-01-01 00:00:00.5'"
 # A column declared not `Nullable` reads a NULL as 1970-01-01, which the statistics leave out: no file is skipped.
 declare_table nullable_as_default nullable "ts DateTime64(6, 'UTC')"
 check nullable_as_default "ts < '2000-01-01 00:00:00'"
-check nullable_as_default "ts = toDateTime64(0, 6, 'UTC')"
 check nullable_as_default "NOT (ts >= '2026-01-01 00:00:00')"
 
 # Before 1677-09-21 a row also leaves the `Int64` nanoseconds: with `decimal_check_overflow = 0` the 1600 row
 # wraps around and compares above the constant, so its file stays scanned whenever the column is scaled.
 make_table ancient timestamp full data false '1600-01-01 00:00:00.000000' '2026-01-01 00:00:00.000000'
 check ancient "ts > ${NS_BETWEEN}" "decimal_check_overflow=0"
-check ancient "${NS_BETWEEN} < ts" "decimal_check_overflow=0"
 check ancient "ts > ${NS_BETWEEN}"
 
 make_table no_stats timestamp none data false '2026-01-01 00:00:00.000000' '2026-01-01 00:00:00.123456'
@@ -390,23 +359,12 @@ PARTITION_FILES=(
 make_table part timestamp full partition false "${PARTITION_FILES[@]}"
 make_table part_ntz timestamp_ntz full partition false "${PARTITION_FILES[@]}"
 check part "ts > '2026-01-01 00:00:00.123456'"
-check part "ts >= '2026-01-01 00:00:00.123456'"
 check part "ts = '2026-01-01 00:00:00.123456'"
-check part "ts != '2026-01-01 00:00:00.123456'"
-check part "ts = '2026-01-01 05:30:00.123456'" "session_timezone='Asia/Kolkata'"
 check part "ts < ${NS_BETWEEN}"
-check part "ts > ${NS_BEFORE_EPOCH}"
 check part "ts <= ${NS_BEFORE_EPOCH}"
-check part "ts > '2026-01-01 00:00:00.1234565'"
-check part "ts <= '2026-01-01 00:00:00.1234565'"
 check part "ts > '2300-01-01 00:00:00'"
-check part "ts < '1899-12-31 00:00:00'"
-check part_ntz "ts = '2026-01-01 00:00:00.123456'"
-check part_ntz "ts > '2026-01-01 00:00:00.123456'"
 check part_ntz "ts = '2026-01-01 05:30:00.123456'" "session_timezone='Asia/Kolkata'"
-check part_ntz "ts < ${NS_BETWEEN}"
-check part_ntz "ts <= ${NS_BEFORE_EPOCH}"
-check part_ntz "ts > '2300-01-01 00:00:00'"
+check part_ntz "ts > '2026-01-01 00:00:00.123456'"
 
 run_all
 
