@@ -25,7 +25,7 @@ CREATE TABLE tab_one_row_per_block
     vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576;
 
 SYSTEM STOP MERGES tab_one_row_per_block;
 
@@ -41,6 +41,11 @@ SELECT 'one part, setting off';
 WITH (SELECT vec FROM tab_one_row_per_block WHERE id = 123) AS ref
 SELECT id FROM tab_one_row_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05617_one_part_off';
+
+-- The column-level block sizes apply only to the stream of the array elements of a `Quantized` column. The quantized
+-- codes, 68 bytes per row, are stored in blocks of the default size, not in a block per 4 rows.
+SELECT count() FROM tab_one_row_per_block WHERE NOT ignore(vec.quantized)
+SETTINGS log_comment = '05617_codes';
 
 -- A Compact part is read with the usual readers. The rows of both parts must keep their order.
 ALTER TABLE tab_one_row_per_block MODIFY SETTING min_bytes_for_wide_part = 1000000000;
@@ -101,6 +106,10 @@ SELECT id, length(vec), vec[1] FROM tab_one_row_per_block ORDER BY sipHash64(id)
 SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_same_sizes_on';
 
 SYSTEM FLUSH LOGS query_log;
+
+SELECT 'codes in few blocks', ProfileEvents['CompressedReadBufferBlocks'] < 10
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05617_codes';
 
 -- The shortlist has 10 * 10 = 100 rows. With one part with the layout, all of them are read this way.
 -- With a second part that is Compact, only the rows of the first part are. Without the layout or with the setting off, none are.

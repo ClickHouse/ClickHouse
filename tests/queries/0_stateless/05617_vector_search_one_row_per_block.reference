@@ -20,6 +20,7 @@ one part, setting off
 101
 721
 121
+2000
 two parts, setting on
 123
 3160
@@ -71,6 +72,7 @@ same sizes, setting on
 389	64	0.034
 3187	64	0.595
 2573	64	-0.219
+codes in few blocks	1
 05617_one_part_off	0
 05617_one_part_on	100
 05617_same_sizes_on	3
