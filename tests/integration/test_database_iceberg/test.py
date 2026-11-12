@@ -2909,7 +2909,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
             f"USE {CATALOG_NAME}; SELECT count() FROM default.{T2}", settings=on, user=policy_user
         )
         assert "ACCESS_DENIED" in err, f"row policy must read the database table: {err}"
-        assert f"{X}.{P}" in err, f"the missing grant must be on the database table: {err}"
+        # the catalog table would be printed as ON <catalog>.`X.P`
+        assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
     finally:
         for kind in ("catalog", "database", "neither"):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")

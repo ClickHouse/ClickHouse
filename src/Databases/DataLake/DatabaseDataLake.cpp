@@ -2404,10 +2404,11 @@ You can also spell out every part with dots:
   conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS`
   expressions, `ClickHouse` dictionary source queries executed on the same
   server) always reads `a.b` as database `a`, table `b`; the query argument of
-  a table function such as `view` keeps the two-part rule. Reference a catalog
-  table in any stored definition as `catalog_name.ns.t`. In view bodies and
-  column expressions, `` `ns.t` `` also works: it is qualified at creation time
-  and stored as ``catalog_name.`ns.t` ``.
+  table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
+  keeps the two-part rule. Reference a catalog table in any stored definition as
+  `catalog_name.ns.t`. In view bodies and column expressions, `` `ns.t` `` also
+  works when the catalog is the current database at creation: it is qualified
+  then and stored as ``catalog_name.`ns.t` ``.
 
 ```sql
 -- Equivalent to catalog_name.`namespace.table`

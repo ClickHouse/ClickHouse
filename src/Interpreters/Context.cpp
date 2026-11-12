@@ -3598,6 +3598,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            /// The view body is stored SQL: read table names in it as written.
             view_context->setAllowCompoundTableIdentifierQualification(false);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
@@ -3891,6 +3892,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    /// The view body is stored SQL: read table names in it as written.
     view_context->setAllowCompoundTableIdentifierQualification(false);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),

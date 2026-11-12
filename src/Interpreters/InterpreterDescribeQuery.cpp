@@ -198,6 +198,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             /// `SHOW COLUMNS` on the view but without direct grants on the inner tables can still describe
             /// a `SQL SECURITY DEFINER` view.
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
+            /// The view body is stored SQL: read table names in it as written.
             view_context->setAllowCompoundTableIdentifierQualification(false);
             fillColumnsFromSubqueryImpl(query, view_context);
             return;

@@ -2093,6 +2093,7 @@ public:
 
     bool isCompoundTableIdentifierQualificationAllowed() const { return allow_compound_table_identifier_qualification; }
     void setAllowCompoundTableIdentifierQualification(bool value) { allow_compound_table_identifier_qualification = value; }
+
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 

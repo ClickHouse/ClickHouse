@@ -1003,6 +1003,7 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
+    /// The view body is stored SQL: read table names in it as written.
     view_context->setAllowCompoundTableIdentifierQualification(false);
     return view_context;
 }
