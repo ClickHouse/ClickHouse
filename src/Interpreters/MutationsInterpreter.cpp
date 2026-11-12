@@ -1797,7 +1797,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                     if (default_it == ttl_target_defaults.end() || !default_it->second.expression)
                         continue;
 
+                    /// Expand `ALIAS` references first, the same as `TTLTransform` does when it builds the
+                    /// reset expression: an alias is not stored, so the columns its definition reads are
+                    /// the ones to feed.
                     auto default_ast = default_it->second.expression->clone();
+                    replaceAliasColumnsInQuery(default_ast, columns_desc, {}, context);
                     auto syntax_result = TreeRewriter(context).analyze(default_ast, columns_desc.getAll());
                     for (const auto & required_column : syntax_result->requiredSourceColumns())
                     {
@@ -1806,6 +1810,18 @@ void MutationsInterpreter::prepare(bool dry_run)
                             dependencies.emplace(resolved->getNameInStorage(), ColumnDependency::TTL_EXPRESSION);
                     }
                 }
+
+                /// The full TTL pass also executes the table's move and recompression TTLs, even when
+                /// no rewritten column feeds them: `TTLTransform` evaluates every such rule over the
+                /// mutation block to update the part's `ttl_infos`. Feed their inputs as readonly
+                /// columns too; otherwise, on a wide part, an independent rule such as
+                /// `TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(LZ4)` fails with `NOT_FOUND_COLUMN_IN_BLOCK`.
+                for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+                    for (const auto & expression_column : ttl_entry.expression_columns.getNames())
+                        dependencies.emplace(expression_column, ColumnDependency::TTL_EXPRESSION);
+                for (const auto & ttl_entry : metadata_snapshot->getRecompressionTTLs())
+                    for (const auto & expression_column : ttl_entry.expression_columns.getNames())
+                        dependencies.emplace(expression_column, ColumnDependency::TTL_EXPRESSION);
 
                 /// The full TTL pass also executes the table's row TTLs (`TTL ... [DELETE]`, rows-where
                 /// and group-by TTLs), even when no rewritten column feeds them. A row TTL deletes rows,
@@ -1838,15 +1854,18 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// it only deletes rows and never resets the sign / version / is_deleted value, so it
             /// must not trigger this refusal. (UNIQUE KEY columns need no such check: TTL is not
             /// supported on tables with UNIQUE KEY at all.)
-            for (const auto & merge_key_column : merge_key_columns)
+            /// The merge key can be a subcolumn of a column that has a TTL (e.g.
+            /// `ReplacingMergeTree(ver, flags.del)` with `flags ... TTL d + INTERVAL ...`), so the
+            /// targets are matched the same subcolumn-aware way as in the direct checks above.
+            for (const auto & column_ttl_target : column_ttl_targets)
             {
-                if (column_ttl_targets.contains(merge_key_column))
+                if (column_required_by(column_ttl_target, merge_key_columns))
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                         "Refused to materialize column {} because it makes the mutation re-evaluate the column TTLs, "
-                        "and one of them resets column {}, which is used as the sign, version or is_deleted column "
+                        "and one of them resets column {}, which is (or contains) the sign, version or is_deleted column "
                         "of the table engine, which the merge logic depends on. Resetting it could change the "
                         "collapsing or replacing semantics of existing data",
-                        backQuote(command.column_name), backQuote(merge_key_column));
+                        backQuote(command.column_name), backQuote(column_ttl_target));
             }
 
             /// A TTL-driven reset must not leave a stored MATERIALIZED column stale either. Any
