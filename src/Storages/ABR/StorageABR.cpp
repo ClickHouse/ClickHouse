@@ -1049,16 +1049,15 @@ void StorageABR::read(
             "executes the query on a source table, where they cannot be applied. Add the condition to the query instead",
             getStorageID().getNameForLogs());
 
-    /// `ABR` runs the whole query on a source table. As the left table of a JOIN, it runs the whole query, which the planner expects.
-    /// On the right side of a JOIN, the planner only expects the columns of this table, but `ABR` would still run the whole JOIN
-    /// query and return the wrong columns.
-    if (query_info.query_tree && query_info.table_expression
-        && extractLeftTableExpression(query_info.query_tree->as<const QueryNode &>().getJoinTreeNodeTyped()).get()
-            != query_info.table_expression.get())
+    /// `ABR` cannot easily support JOINs, because of its particular limit-tracking and retry behavior.
+    const bool has_join = query_info.query_tree
+        ? extractTableExpressions(query_info.query_tree->as<const QueryNode &>().getJoinTreeNodeTyped()).size() > 1
+        : query_info.query->as<const ASTSelectQuery &>().hasJoin();
+    if (has_join)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Table {} with the `ABR` engine can only be read as the leftmost table of a JOIN. Read it through a subquery "
-            "with a condition on its time column instead: `JOIN (SELECT ... FROM {} WHERE {} >= ...)`",
+            "Table {} with the `ABR` engine cannot be joined directly. Read it through a subquery with a condition on its time "
+            "column instead: `JOIN (SELECT ... FROM {} WHERE {} >= ...)`",
             getStorageID().getNameForLogs(), getStorageID().getFullTableName(), time_column);
 
     /// Neither the choice of the table nor the retries go outside the range of `abr_first_table_suffix` and `abr_last_table_suffix`.
@@ -1212,8 +1211,9 @@ whole, across all attempts. The candidate tables are the chosen table and the co
   found in its own database. Renaming it within its database is supported.
 - A database that contains an `ABR` table can only be renamed with `RENAME DATABASE` when `check_table_dependencies` is
   disabled, as for any database with dependencies between its tables.
-- An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
-  condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
+- An `ABR` table cannot be joined directly, on any side of a `JOIN`, as the other tables would count against the limits of
+  each attempt. Read it through a subquery with a condition on its time column instead:
+  `(SELECT ... FROM abr_table WHERE ts >= ...) AS a JOIN other_table ...`. `ARRAY JOIN` is supported.
 - An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With
   `serialize_query_plan = 1`, a distributed query that reads `ABR` tables on remote servers is sent to them as SQL instead.
 )DOCS_MD",
