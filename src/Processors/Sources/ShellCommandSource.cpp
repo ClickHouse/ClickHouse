@@ -592,6 +592,24 @@ namespace
     protected:
         void cleanup()
         {
+            bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+
+            /// The output was not read to the end: close it, so the command gets EPIPE instead of blocking the send threads.
+            if (command && !finished && !valid_command)
+            {
+                executor.reset();
+                pipeline.reset();
+
+                try
+                {
+                    command->out.close();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
+            }
+
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
                     thread.join();
@@ -659,8 +677,6 @@ namespace
 
             if (command_holder && process_pool)
             {
-                bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
-
                 LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
                 /// A worker that will not be reused is reaped before its slot is published.
@@ -725,9 +741,11 @@ namespace
 
             if (status == Status::Finished)
             {
-                for (auto & thread : send_data_threads)
-                    if (thread.joinable())
-                        thread.join();
+                /// If the output was not read to the end, the send threads are stopped in `cleanup`.
+                if (finished)
+                    for (auto & thread : send_data_threads)
+                        if (thread.joinable())
+                            thread.join();
 
                 /// Check if stderr was accumulated before checking exit code
                 /// This ensures stderr exceptions take priority over exit code exceptions
@@ -764,7 +782,8 @@ namespace
                     }
                 }
 
-                rethrowExceptionDuringSendDataIfNeeded();
+                if (finished)
+                    rethrowExceptionDuringSendDataIfNeeded();
             }
 
             return status;
