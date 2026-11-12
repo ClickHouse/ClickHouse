@@ -26,10 +26,7 @@ bool ParserShowFunctionsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     }
 
     if (like)
-    {
         query->like = like->as<ASTLiteral &>().value.safeGet<String>();
-        query->has_like = true;
-    }
     node = query;
 
     return true;

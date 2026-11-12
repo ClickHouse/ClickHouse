@@ -10,8 +10,6 @@
 #include <Core/NamesAndAliases.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Context.h>
-#include <Access/Common/AccessFlags.h>
 #include <fmt/core.h>
 
 #include <optional>
@@ -251,12 +249,11 @@ Pipe StorageSystemJemallocBins::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo &,
-    ContextPtr context,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-    context->checkAccess(AccessType::SYSTEM_JEMALLOC);
     storage_snapshot->check(column_names);
 
     auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);

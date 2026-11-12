@@ -41,6 +41,7 @@
 
 #include <base/range.h>
 
+#include <climits>
 #include <filesystem>
 #include <functional>
 
@@ -70,7 +71,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
-    extern const SettingsNonZeroUInt64 max_distributed_connections;
+    extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
@@ -79,6 +80,7 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
+    extern const SettingsBool use_compact_format_in_distributed_parts_names;
 }
 
 namespace DistributedSetting
@@ -89,6 +91,7 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
@@ -496,8 +499,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
-                        context->getProcessListElementSafe()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }
@@ -768,7 +770,6 @@ DistributedSink::~DistributedSink()
 
 IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
-    storage.checkShardingKeySetsAreBuilt();
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
@@ -828,7 +829,8 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
             writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
         else
         {
-            const auto & path = shard_info.insertPathForInternalReplication();
+            const auto & path = shard_info.insertPathForInternalReplication(
+                settings[Setting::prefer_localhost_replica], settings[Setting::use_compact_format_in_distributed_parts_names]);
             if (path.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory name for async inserts is empty");
             writeToShard(shard_info, block_to_send, {path});
@@ -839,7 +841,11 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local || !settings[Setting::prefer_localhost_replica])
-                dir_names.push_back(address.toFullString());
+                dir_names.push_back(address.toFullString(settings[Setting::use_compact_format_in_distributed_parts_names]));
+
+        /// Reject before the local write below, otherwise a shard holding both this server and a
+        /// too long remote destination inserts locally and still reports the INSERT as failed.
+        checkDirectoryNameLengths(shard_info, dir_names);
 
         if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
             writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
@@ -885,10 +891,25 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 }
 
 
+void DistributedSink::checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const
+{
+    /// The name embeds `user:password@host:port`, hence it is not reported
+    /// (see `maskDataPath` in StorageSystemDistributionQueue.cpp).
+    for (const auto & dir_name : dir_names)
+        if (dir_name.size() > NAME_MAX)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "The max length of a directory name for async distributed INSERT into table {} (cluster {}, shard {}) is {}, current length is {}",
+                storage.getStorageID().getFullNameNotQuoted(), storage.getClusterName(), shard_info.shard_num, NAME_MAX, dir_name.size());
+}
+
+
 void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names)
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+
+    /// Every directory this function creates is named after an element of `dir_names`.
+    checkDirectoryNameLengths(shard_info, dir_names);
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();

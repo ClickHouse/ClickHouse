@@ -58,7 +58,7 @@ def encode_string(s):
     return encode_varuint(len(s)) + s
 
 
-def build_interserver_hello(cluster_name, tcp_protocol_version=54471):
+def build_interserver_hello(cluster_name):
     """Build a native protocol Hello packet that enters the interserver
     path with the given cluster name (and a 32-byte salt)."""
     parts = []
@@ -68,7 +68,7 @@ def build_interserver_hello(cluster_name, tcp_protocol_version=54471):
     parts.append(encode_string(b"test"))  # client_name
     parts.append(encode_varuint(24))  # version_major
     parts.append(encode_varuint(1))  # version_minor
-    parts.append(encode_varuint(tcp_protocol_version))
+    parts.append(encode_varuint(54471))  # tcp_protocol_version
     parts.append(encode_string(b""))  # default_db
     parts.append(encode_string(USER_INTERSERVER_MARKER))  # user
     parts.append(encode_string(b""))  # password — empty for interserver
@@ -146,26 +146,3 @@ def test_cluster_without_secret_rejected(started_cluster):
         )
         > 0
     ), "Expected a LoginFailure row in system.session_log for the rejected interserver marker"
-
-
-def test_old_protocol_revision_rejected(started_cluster):
-    """Interserver mode needs a revision that carries the server nonce (54462);
-    an older peer is rejected in the handshake, before its cluster is looked up."""
-    packet = build_interserver_hello(b"no_secret_cluster", tcp_protocol_version=54461)
-    kind, _ = send_hello_and_classify_response(node, packet)
-    assert kind == "closed", (
-        f"Server did not silently reject interserver marker with an old revision, got: {kind}"
-    )
-    failure_reason = "Interserver mode is not supported for client protocol revision 54461, the minimum is 54462"
-    assert node.contains_in_log(failure_reason)
-    node.query("SYSTEM FLUSH LOGS session_log")
-    assert (
-        int(
-            node.query(
-                "SELECT count() FROM system.session_log "
-                "WHERE type = 'LoginFailure' AND interface = 'TCP_Interserver' "
-                f"AND failure_reason = '{failure_reason}'"
-            )
-        )
-        > 0
-    )

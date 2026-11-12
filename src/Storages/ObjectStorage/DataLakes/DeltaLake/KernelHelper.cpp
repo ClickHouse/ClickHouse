@@ -3,7 +3,6 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/FailPoint.h>
@@ -11,12 +10,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
-#include <IO/S3/Client.h>
-
-#include <algorithm>
 #include <filesystem>
-
-#include <boost/algorithm/string/predicate.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -109,7 +103,7 @@ public:
 
         /// Check if user didn't mention any region.
         /// Same as in S3/Client.cpp (stripping len("https://s3.")).
-        if (url.endpoint.size() > 11 && url.endpoint.substr(11) == "amazonaws.com")
+        if (url.endpoint.substr(11) == "amazonaws.com")
             url.addRegionToURI(region);
 
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
@@ -191,34 +185,12 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
-        /// The object store of the kernel is a separate client, so the request options of the S3 client that
-        /// ClickHouse uses for the data files must be passed to it as well. The extra headers of that client
-        /// already contain the SSE-C headers (see `ClientFactory::create`) and the explicit request headers.
-        /// The object store does not take arbitrary headers, only the options that it knows: the SSE-C key
-        /// (it then sends the key with every request, including the reads of `_delta_log`) and requester pays.
-        bool has_sse_customer_key = false;
-        bool request_payer = false;
-        for (const auto & header : object_storage->getS3StorageClient()->getClientConfiguration().extra_headers)
-        {
-            if (boost::iequals(header.name, "x-amz-server-side-encryption-customer-key"))
-            {
-                set_option("aws_server_side_encryption", "sse-c");
-                set_option("aws_sse_customer_key_base64", header.value);
-                has_sse_customer_key = true;
-            }
-            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(header.value, "requester"))
-            {
-                set_option("aws_request_payer", "true");
-                request_payer = true;
-            }
-        }
-
         LOG_TRACE(
             log,
             "Using endpoint: {}, uri: {}, region: {}, bucket: {}, no sign: {}, "
-            "has access_key_id: {}, has secret_access_key: {}, has token: {}, SSE-C: {}, requester pays: {}",
+            "has access_key_id: {}, has secret_access_key: {}, has token: {}",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
-            !access_key_id.empty(), !secret_access_key.empty(), !token.empty(), has_sse_customer_key, request_payer);
+            !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
 
         return guard.release();
     }
@@ -249,9 +221,6 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     };
 
     const auto & endpoint = connection_params.endpoint;
-
-    /// Given no credentials, the kernel's object store falls back to the machine's managed identity by itself.
-    const bool drop_credentials = connection_params.checkOrDropServerManagedCredentials();
 
     /// Supported options
     /// https://github.com/apache/arrow-rs-object-store/blob/main/src/azure/builder.rs#L390
@@ -356,48 +325,8 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 3: /// WorkloadIdentityCredential
-        {
-            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
-            if (!name.empty())
-                set_option("azure_storage_account_name", name);
-
-            /// Without the credentials the request is unsigned, see `azure_skip_signature` below.
-            if (drop_credentials)
-                break;
-
-            /// The same parameters as the Azure SDK credential uses: the defaults of the options come from the
-            /// environment (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_AUTHORITY_HOST`),
-            /// and `client_id` and `tenant_id` from `extra_credentials` override them.
-            Azure::Identity::WorkloadIdentityCredentialOptions workload_identity_options;
-            if (!connection_params.workload_identity_client_id.empty())
-                workload_identity_options.ClientId = connection_params.workload_identity_client_id;
-            if (!connection_params.workload_identity_tenant_id.empty())
-                workload_identity_options.TenantId = connection_params.workload_identity_tenant_id;
-
-            /// The object store of the kernel uses the workload identity only if all three are set, and otherwise
-            /// silently falls back to the managed identity of the machine.
-            if (workload_identity_options.ClientId.empty() || workload_identity_options.TenantId.empty()
-                || workload_identity_options.TokenFilePath.empty())
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Azure workload identity requires a client id, a tenant id and a federated token file "
-                    "(environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`), "
-                    "but the {} is not set",
-                    workload_identity_options.ClientId.empty() ? "client id"
-                        : (workload_identity_options.TenantId.empty() ? "tenant id" : "federated token file"));
-
-            set_option("azure_client_id", workload_identity_options.ClientId);
-            set_option("azure_tenant_id", workload_identity_options.TenantId);
-            set_option("azure_federated_token_file", workload_identity_options.TokenFilePath);
-            /// The SDK default is `https://login.microsoftonline.com/`, while the object store appends `/<tenant>/...` itself.
-            std::string authority_host = workload_identity_options.AuthorityHost;
-            while (authority_host.ends_with('/'))
-                authority_host.pop_back();
-            if (!authority_host.empty())
-                set_option("azure_authority_host", authority_host);
-            break;
-        }
         case 1: /// ClientSecretCredential
+        case 3: /// WorkloadIdentityCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:
@@ -408,15 +337,6 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
-
-    /// Given no key or SAS token, the kernel would use the managed identity. A connection string without them is
-    /// anonymous for the Azure SDK, so it is unsigned whatever the session; the helper outlives the session that built it.
-    const bool has_credential = std::ranges::any_of(options, [](const auto & option)
-        { return option.first == "azure_storage_account_key" || option.first == "azure_storage_sas_key"; });
-    const bool is_connection_string = std::holds_alternative<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
-
-    if (drop_credentials || (!has_credential && (is_connection_string || connection_params.forbid_implicit_credentials)))
-        set_option("azure_skip_signature", "true");
 
     /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
     /// otherwise derives the public `<account>.blob.core.windows.net` host from the account
@@ -517,11 +437,7 @@ private:
 class LocalKernelHelper final : public IKernelHelper
 {
 public:
-    /// `resolved_path` is `path_` resolved the same way the local object storage resolves the keys of data files.
-    LocalKernelHelper(const std::string & path_, const std::string & resolved_path)
-        : table_location(getTableLocation(resolved_path)), path(path_), directory(resolved_path)
-    {
-    }
+    explicit LocalKernelHelper(const std::string & path_) : table_location(getTableLocation(path_)), path(path_) {}
 
     const std::string & getTableLocation() const override { return table_location; }
 
@@ -541,22 +457,16 @@ public:
     /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
     void prepareForTableCreation() const override
     {
-        std::filesystem::create_directories(directory);
+        std::filesystem::create_directories(path);
     }
 
 private:
     const std::string table_location;
     const std::string path;
-    const std::string directory;
 
-    /// The kernel accepts only an absolute `file://` URL. A relative path stays relative to the directory
-    /// the local object storage reads from (the current directory in `clickhouse-local`).
-    static std::string getTableLocation(const std::string & resolved_path)
+    static std::string getTableLocation(const std::string & path)
     {
-        std::string absolute_path = std::filesystem::absolute(resolved_path).lexically_normal().string();
-        while (absolute_path.size() > 1 && absolute_path.ends_with('/'))
-            absolute_path.pop_back();
-        return "file://" + absolute_path + "/";
+        return "file://" + path + "/";
     }
 };
 }
@@ -589,16 +499,14 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
+                object_storage->getAzureBlobStorageConnectionParams(),
                 configuration->getRawPath().path);
         }
 #endif
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
-            const auto & path = local_conf->getPathForRead().path;
-            return std::make_shared<DeltaLake::LocalKernelHelper>(
-                path, DB::resolvePathRelativelyToBase(path, object_storage->getCommonKeyPrefix()));
+            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPathForRead().path);
         }
         default:
         {

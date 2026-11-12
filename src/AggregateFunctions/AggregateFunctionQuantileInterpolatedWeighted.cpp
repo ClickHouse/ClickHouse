@@ -306,26 +306,16 @@ private:
         }
     }
 
-    /// yl + (dy / dx) * (level - xl), computed in `UnderlyingType`.
-    UnderlyingType interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
+    /// This ignores overflows or NaN's that might arise during add, sub and mul operations and doesn't aim to provide exact
+    /// results since `the quantileInterpolatedWeighted` function itself relies mainly on approximation.
+    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
     {
+        UnderlyingType value_diff = upper_value - lower_value;
         Float64 percentile_diff = upper_percentile - lower_percentile;
         percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
-        const Float64 level_diff = level - lower_percentile;
 
-        auto legacy = [&]
-        {
-            const UnderlyingType value_diff = upper_value - lower_value;
-            return static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * level_diff;
-        };
-
-        if constexpr (is_floating_point<UnderlyingType>)
-            return static_cast<UnderlyingType>(legacy());
-        else
-            /// The two factors stay separate: normalising them into one coefficient would round
-            /// before the exact multiplication.
-            return QuantileInterpolation::interpolateRatio<UnderlyingType>(
-                lower_value, upper_value, level_diff, percentile_diff, legacy);
+        /// yl + (dy / dx) * (level - xl)
+        return static_cast<UnderlyingType>(static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * (level - lower_percentile));
     }
 };
 
@@ -371,7 +361,7 @@ void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFac
 void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
@@ -417,7 +407,7 @@ SELECT quantileInterpolatedWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.

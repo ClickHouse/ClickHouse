@@ -2,14 +2,13 @@ from abc import abstractmethod
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
-import os
 import random
 import string
 import typing
 
 from environment import get_system_timezones
-from tests.integration.helpers.cluster import ClickHouseCluster
-from tests.integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
+from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -42,18 +41,8 @@ def generate_xml_safe_string(length: int = 10) -> str:
 
 
 def threshold_generator(
-    always_on_prob,
-    always_off_prob,
-    min_val,
-    max_val,
-    bits: int = 64,
-    allow_unlimited: bool = True,
+    always_on_prob, always_off_prob, min_val, max_val, bits: int = 64
 ):
-    """Values around `min_val`/`max_val`, plus a rare `2**bits - 1` for the type's maximum.
-
-    Pass `allow_unlimited=False` for a duration: the maximum means "unlimited" for a size or
-    a count, but for a delay or a timeout it only hangs whatever waits on it."""
-
     def gen():
         tmp = random.random()
         if tmp <= always_on_prob:
@@ -61,8 +50,7 @@ def threshold_generator(
         if tmp <= always_on_prob + always_off_prob:
             return max_val
         if (
-            allow_unlimited
-            and tmp <= always_on_prob + always_off_prob + 0.01
+            tmp <= always_on_prob + always_off_prob + 0.01
             and isinstance(min_val, int)
             and isinstance(max_val, int)
         ):
@@ -90,19 +78,6 @@ true_false_lambda = lambda: random.randint(0, 1)
 threads_lambda = lambda: random.randint(0, multiprocessing.cpu_count())
 no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
-# How long `dolor.py` waits for a server to stop before force killing it, which fails the run.
-# The server's own `shutdown_wait_unfinished` must stay under this, or a drain slower than the
-# window is reported as a shutdown failure rather than letting the server give up on its own.
-SERVER_STOP_WAIT_SECONDS = 30
-
-# How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 180
-
-# The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
-# settle before the binary may be swapped, one for the Keeper session to expire.
-SERVER_SETTLE_SLEEP_SECONDS = 1
-KEEPER_SESSION_EXPIRE_SLEEP_SECONDS = 3
-
 
 rocksdb_properties = {
     "rocksdb": {
@@ -116,9 +91,7 @@ rocksdb_properties = {
 possible_properties = {
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
-        "role_cache_expiration_time_seconds": threshold_generator(
-            0.2, 0.2, 1, 60, allow_unlimited=False
-        ),
+        "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 31),
         "select_from_information_schema_requires_grant": true_false_lambda,
         "select_from_system_db_requires_grant": true_false_lambda,
         "settings_constraints_replace_previous": true_false_lambda,
@@ -139,16 +112,14 @@ possible_properties = {
     "async_load_databases": true_false_lambda,
     "async_load_system_database": true_false_lambda,
     "asynchronous_heavy_metrics_update_period_s": threshold_generator(
-        0.2, 0.2, 1, 60, allow_unlimited=False
+        0.2, 0.2, 1, 60, 6
     ),
     "asynchronous_metrics_enable_heavy_metrics": true_false_lambda,
     "asynchronous_metrics_keeper_metrics_only": true_false_lambda,
     "asynchronous_metrics_key_values_mode": lambda: random.choice(
         ["key_values", "legacy_names", "both"]
     ),
-    "asynchronous_metrics_update_period_s": threshold_generator(
-        0.2, 0.2, 1, 30, allow_unlimited=False
-    ),
+    "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30, 5),
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,
     "background_distributed_schedule_pool_size": no_zero_threads_lambda,
@@ -179,11 +150,7 @@ possible_properties = {
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(
     #     0.2, 0.2, 0.0, 0.001
     # ),
-    "cgroups_memory_usage_observer_wait_time": threshold_generator(
-        0.2, 0.2, 0, 60, allow_unlimited=False
-    ),
-    "columns_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
-    "columns_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "cgroups_memory_usage_observer_wait_time": threshold_generator(0.2, 0.2, 0, 60, 6),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     # In bytes (default 128Mi), unlike the element count above
     "compiled_expression_cache_size": threshold_generator(
@@ -195,37 +162,27 @@ possible_properties = {
     ),
     "concurrent_threads_soft_limit_num": threads_lambda,
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,
-    "config_reload_interval_ms": threshold_generator(
-        0.2, 0.2, 500, 10000, allow_unlimited=False
-    ),
+    "config_reload_interval_ms": threshold_generator(0.2, 0.2, 500, 10000, 14),
     "cpu_slot_preemption": true_false_lambda,
-    "cpu_slot_preemption_timeout_ms": threshold_generator(
-        0.2, 0.2, 0, 5000, allow_unlimited=False
-    ),
-    "cpu_slot_quantum_ns": threshold_generator(
-        0.2, 0.2, 0, 100000000, allow_unlimited=False
-    ),
-    "database_atomic_delay_before_drop_table_sec": threshold_generator(
-        0.2, 0.2, 0, 60, allow_unlimited=False
-    ),
-    "database_catalog_drop_error_cooldown_sec": threshold_generator(
-        0.2, 0.2, 0, 30, allow_unlimited=False
-    ),
+    "cpu_slot_preemption_timeout_ms": threshold_generator(0.2, 0.2, 0, 5000),
+    "cpu_slot_quantum_ns": threshold_generator(0.2, 0.2, 0, 100000000),
+    "database_atomic_delay_before_drop_table_sec": threshold_generator(0.2, 0.2, 0, 60),
+    "database_catalog_drop_error_cooldown_sec": threshold_generator(0.2, 0.2, 0, 30),
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_catalog_unused_dir_cleanup_period_sec": threshold_generator(
-        0.2, 0.2, 60, 86400, allow_unlimited=False
+        0.2, 0.2, 60, 86400
     ),
     "database_catalog_unused_dir_hide_timeout_sec": threshold_generator(
-        0.2, 0.2, 60, 3600, allow_unlimited=False
+        0.2, 0.2, 60, 3600
     ),
     "database_catalog_unused_dir_rm_timeout_sec": threshold_generator(
-        0.2, 0.2, 3600, 2592000, allow_unlimited=False
+        0.2, 0.2, 3600, 2592000
     ),
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
     "dictionary_background_reconnect_interval": threshold_generator(
-        0.2, 0.2, 100, 10000, allow_unlimited=False
+        0.2, 0.2, 100, 10000, 14
     ),
     "disable_insertion_and_mutation": true_false_lambda,
     "disable_internal_dns_cache": true_false_lambda,
@@ -241,9 +198,7 @@ possible_properties = {
     "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
-    "distributed_ddl_cleanup_delay_period": threshold_generator(
-        0.2, 0.2, 0, 300, allow_unlimited=False
-    ),
+    "distributed_ddl_cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 300),
     "distributed_ddl_max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 2000),
     "distributed_ddl_pool_size": no_zero_threads_lambda,
     "distributed_ddl_task_max_lifetime": threshold_generator(0.2, 0.2, 0, 604800),
@@ -251,28 +206,20 @@ possible_properties = {
     "dns_allow_resolve_names_to_ipv4": true_false_lambda,
     "dns_allow_resolve_names_to_ipv6": true_false_lambda,
     "dns_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "dns_cache_update_period": threshold_generator(
-        0.2, 0.2, 1, 600, allow_unlimited=False
-    ),
+    "dns_cache_update_period": threshold_generator(0.2, 0.2, 1, 600, 10),
     "dns_max_consecutive_failures": threshold_generator(0.2, 0.2, 1, 10, 4),
     "drop_distributed_cache_pool_size": threads_lambda,
     "drop_distributed_cache_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "enable_webterminal": true_false_lambda,
-    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "encryption_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "encryption_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "global_profiler_cpu_time_period_ns": threshold_generator(
-        0.2, 0.2, 0, 1000000000, allow_unlimited=False
-    ),
-    "global_profiler_real_time_period_ns": threshold_generator(
-        0.2, 0.2, 0, 1000000000, allow_unlimited=False
-    ),
-    "handshake_timeout_milliseconds": threshold_generator(
-        0.2, 0.2, 1000, 30000, allow_unlimited=False
-    ),
+    "global_profiler_cpu_time_period_ns": threshold_generator(0.2, 0.2, 0, 1000000000),
+    "global_profiler_real_time_period_ns": threshold_generator(0.2, 0.2, 0, 1000000000),
+    "handshake_timeout_milliseconds": threshold_generator(0.2, 0.2, 1000, 30000),
     "http_connections_hard_limit": threshold_generator(0.2, 0.2, 0, 400000),
     "http_connections_rcvbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
     "http_connections_sndbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
@@ -285,7 +232,7 @@ possible_properties = {
     "iceberg_compaction_threadpool_pool_size": threads_lambda,
     "iceberg_compaction_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "iceberg_scheduler_compaction_threadpool_pool_size": threads_lambda,
@@ -293,11 +240,11 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "ignore_empty_sql_security_in_create_view_query": true_false_lambda,
-    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "index_mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "interserver_tables_status_require_auth": true_false_lambda,
@@ -310,30 +257,26 @@ possible_properties = {
     ),
     "jemalloc_flush_profile_on_memory_exceeded": true_false_lambda,
     "jemalloc_flush_profile_on_memory_exceeded_interval": threshold_generator(
-        0.2, 0.2, 0, 10000, allow_unlimited=False
+        0.2, 0.2, 0, 10000
     ),
     "jemalloc_max_background_threads_num": threads_lambda,
     "jemalloc_merge_tree_arenas": threshold_generator(0.2, 0.2, 1, 8, 4),
     # log2 of the sampling interval in bytes (default 19 = 512KiB); keep a floor
     # so the profiler doesn't sample nearly every allocation
     "jemalloc_profiler_sampling_rate": threshold_generator(0.2, 0.2, 10, 32),
-    "keep_alive_timeout": threshold_generator(0.2, 0.2, 1, 60, allow_unlimited=False),
+    "keep_alive_timeout": threshold_generator(0.2, 0.2, 1, 60, 6),
     "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 1, 1000),
     # Dolor restarts the keepers, so a short socket timeout is a real target. Not lower
     # than 5s, or the sessions expire faster than any table can make progress
     "keeper_server_socket_receive_timeout_sec": threshold_generator(
-        0.2, 0.2, 5, 300, allow_unlimited=False
+        0.2, 0.2, 5, 300, 9
     ),
-    "keeper_server_socket_send_timeout_sec": threshold_generator(
-        0.2, 0.2, 5, 300, allow_unlimited=False
-    ),
+    "keeper_server_socket_send_timeout_sec": threshold_generator(0.2, 0.2, 5, 300, 9),
     "load_marks_threadpool_pool_size": threads_lambda,
     "load_marks_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     # DiskLocal reads this at the config root, not under the disk
-    "local_disk_check_period_ms": threshold_generator(
-        0.2, 0.2, 0, 60000, allow_unlimited=False
-    ),
-    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "local_disk_check_period_ms": threshold_generator(0.2, 0.2, 0, 60000, 16),
+    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -427,13 +370,9 @@ possible_properties = {
     "max_waiting_queries": threshold_generator(0.2, 0.2, 0, 100),
     "max_zookeeper_pooled_connections": threshold_generator(0.2, 0.2, 0, 100, 7),
     "memory_worker_correct_memory_tracker": true_false_lambda,
-    "memory_worker_decay_adjustment_period_ms": threshold_generator(
-        0.2, 0.2, 0, 30000, allow_unlimited=False
-    ),
+    "memory_worker_decay_adjustment_period_ms": threshold_generator(0.2, 0.2, 0, 30000),
     "memory_worker_dynamic_hard_limit": true_false_lambda,
-    "memory_worker_period_ms": threshold_generator(
-        0.2, 0.2, 0, 10000, allow_unlimited=False
-    ),
+    "memory_worker_period_ms": threshold_generator(0.2, 0.2, 0, 10000),
     "memory_worker_purge_dirty_pages_threshold_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
@@ -462,14 +401,8 @@ possible_properties = {
     ),
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
     "oom_canary_enable": true_false_lambda,
-    # The `OOMCanary` constructor rejects an initial backoff above the maximum one, so this
-    # range ends where the one below starts instead of the two being drawn independently.
-    "oom_canary_initial_backoff_seconds": threshold_generator(
-        0.2, 0.2, 0, 10, allow_unlimited=False
-    ),
-    "oom_canary_max_backoff_seconds": threshold_generator(
-        0.2, 0.2, 10, 120, allow_unlimited=False
-    ),
+    "oom_canary_initial_backoff_seconds": threshold_generator(0.2, 0.2, 0, 10),
+    "oom_canary_max_backoff_seconds": threshold_generator(0.2, 0.2, 0, 120),
     "oom_canary_max_rapid_relaunches": threshold_generator(0.2, 0.2, 0, 100),
     "oom_canary_relaunch": true_false_lambda,
     # bits=27 keeps the occasional "huge value" case at 128Mi instead of 2^64
@@ -483,33 +416,22 @@ possible_properties = {
         0.2, 0.2, -20, 19, 4
     ),
     "page_cache_free_memory_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "page_cache_history_window_ms": threshold_generator(
-        0.2, 0.2, 0, 1000, allow_unlimited=False
-    ),
-    # `Server.cpp` refuses to start when the minimum exceeds a non-zero maximum, so the two
-    # ranges are ordered rather than drawn independently from the same one. The minimum also
-    # gives up the unlimited draw, which would clear any maximum; on a floor it means nothing.
-    "page_cache_max_size": threshold_generator(0.2, 0.2, 1048576, 2097152),
-    "page_cache_min_size": threshold_generator(
-        0.2, 0.2, 0, 1048576, allow_unlimited=False
-    ),
-    "page_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
+    "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
+    "page_cache_min_size": threshold_generator(0.2, 0.2, 0, 2097152),
+    "page_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "page_cache_shards": threshold_generator(0.2, 0.2, 0, 10),
     "page_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "paimon_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "paimon_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "paimon_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parquet_metadata_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "parquet_metadata_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "parquet_metadata_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "parts_kill_delay_period": threshold_generator(
-        0.2, 0.2, 0, 60, allow_unlimited=False
-    ),
-    "parts_kill_delay_period_random_add": threshold_generator(
-        0.2, 0.2, 0, 100, allow_unlimited=False
-    ),
+    "parts_kill_delay_period": threshold_generator(0.2, 0.2, 0, 60),
+    "parts_kill_delay_period_random_add": threshold_generator(0.2, 0.2, 0, 100),
     "parts_killer_max_condemned_parts_per_batch": threshold_generator(
         0.2, 0.2, 1, 100000
     ),  # Cloud setting
@@ -524,7 +446,7 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "prepare_system_log_tables_on_startup": true_false_lambda,
-    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -540,20 +462,16 @@ possible_properties = {
     "query_cache_max_entry_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1048576),
     "query_cache_max_entry_size_in_rows": threshold_generator(0.2, 0.2, 0, 30000000),
     "query_cache_max_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1073741824),
-    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "query_condition_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
     # 0 falls back to the generic HTTP timeouts; small values exercise the fetch retries
     "replicated_fetches_http_connection_timeout": threshold_generator(
-        0.2, 0.2, 0, 30, allow_unlimited=False
+        0.2, 0.2, 0, 30, 5
     ),
-    "replicated_fetches_http_receive_timeout": threshold_generator(
-        0.2, 0.2, 0, 30, allow_unlimited=False
-    ),
-    "replicated_fetches_http_send_timeout": threshold_generator(
-        0.2, 0.2, 0, 30, allow_unlimited=False
-    ),
+    "replicated_fetches_http_receive_timeout": threshold_generator(0.2, 0.2, 0, 30, 5),
+    "replicated_fetches_http_send_timeout": threshold_generator(0.2, 0.2, 0, 30, 5),
     "restore_threads": no_zero_threads_lambda,
     "s3_allow_server_credentials_for_system_table_disks": true_false_lambda,
     "s3_credentials_provider_max_cache_size": threshold_generator(
@@ -565,25 +483,13 @@ possible_properties = {
     "s3queue_disable_streaming": true_false_lambda,
     "show_addresses_in_stack_traces": true_false_lambda,
     "show_license_expiration_warnings": true_false_lambda,  # Cloud setting
-    # Not randomized: with 1 (the default) the server waits for running backups and restores
-    # on shutdown without any time limit, by design, so any long backup would be reported as
-    # a shutdown failure. It is always set to 0 below.
-    "shutdown_wait_backups_and_restores": lambda: 0,
-    # A shutdown can spend `shutdown_wait_unfinished` twice: once cancelling backups and
-    # restores, and once more waiting for the connections that ran them to finish.
-    "shutdown_wait_unfinished": threshold_generator(
-        0.2, 0.2, 0, (SERVER_STOP_WAIT_SECONDS - 10) // 2, allow_unlimited=False
-    ),
+    "shutdown_wait_backups_and_restores": true_false_lambda,
+    "shutdown_wait_unfinished": threshold_generator(0.2, 0.2, 0, 30),
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "skip_check_for_incorrect_settings": true_false_lambda,
-    "snapshot_cleaner_period": threshold_generator(
-        0.2, 0.2, 0, 600, allow_unlimited=False
-    ),
+    "snapshot_cleaner_period": threshold_generator(0.2, 0.2, 0, 600),
     "snapshot_cleaner_pool_size": threads_lambda,
-    # `StorageMaterializedView::startup` sleeps this long for roughly every second view, so the
-    # cost is multiplied by how many the generator has created, against the few seconds
-    # `dolor.py` gives a server to come up. Hence far smaller than the setting itself allows.
-    "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 10, allow_unlimited=False),
+    "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "storage_connections_hard_limit": threshold_generator(0.2, 0.2, 0, 400000),
     "storage_connections_rcvbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
     "storage_connections_sndbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
@@ -596,19 +502,18 @@ possible_properties = {
     "tables_loader_foreground_pool_size": threads_lambda,
     "temporary_data_in_distributed_cache": true_false_lambda,
     "text_index_header_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "text_index_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "text_index_postings_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "text_index_postings_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_postings_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "text_index_tokens_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_tokens_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "text_index_tokens_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "text_index_tokens_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_tokens_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    # Both pool sizes are declared `NonZeroUInt64`, which rejects the 0 `threads_lambda` draws.
     "threadpool_local_fs_reader_pool_size": no_zero_threads_lambda,
     "threadpool_local_fs_reader_queue_size": threshold_generator(0.2, 0.2, 0, 20000),
     "threadpool_remote_fs_reader_pool_size": no_zero_threads_lambda,
@@ -630,13 +535,13 @@ possible_properties = {
         "fault_probability_after_commit": threshold_generator(0.2, 0.2, 0.0, 1.0),
         "fault_probability_before_commit": threshold_generator(0.2, 0.2, 0.0, 1.0),
     },
-    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "unique_key_bitmap_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "unique_key_bitmap_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "unique_key_bitmap_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_bitmap_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "unique_key_index_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_separate_cache_arena": true_false_lambda,
@@ -644,7 +549,7 @@ possible_properties = {
     "user_profile_events_per_cpu": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
     "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "wait_dictionaries_load_at_startup": true_false_lambda,
@@ -665,7 +570,7 @@ possible_properties = {
 }
 
 distributed_properties = {
-    "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60, allow_unlimited=False),
+    "cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 60),
     "max_tasks_in_queue": threshold_generator(0.2, 0.2, 0, 1000),
     "pool_size": no_zero_threads_lambda,
     "task_max_lifetime": threshold_generator(0.2, 0.2, 0, 60),
@@ -713,22 +618,14 @@ object_storages_properties = {
         "s3_min_upload_part_size": threshold_generator(
             0.2, 0.2, 1024, 16 * 1024 * 1024, 24
         ),
-        "s3_request_timeout_ms": threshold_generator(
-            0.2, 0.2, 1000, 60000, allow_unlimited=False
-        ),
+        "s3_request_timeout_ms": threshold_generator(0.2, 0.2, 1000, 60000, 16),
         "s3_retry_attempts": threshold_generator(0.2, 0.2, 1, 20, 5),
         # Kept under the lower bound of s3_retry_max_delay_ms
-        "s3_retry_initial_delay_ms": threshold_generator(
-            0.2, 0.2, 1, 500, allow_unlimited=False
-        ),
-        "s3_retry_max_delay_ms": threshold_generator(
-            0.2, 0.2, 1000, 10000, allow_unlimited=False
-        ),
+        "s3_retry_initial_delay_ms": threshold_generator(0.2, 0.2, 1, 500, 9),
+        "s3_retry_max_delay_ms": threshold_generator(0.2, 0.2, 1000, 10000, 14),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
-        # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
-        # rejects strict > max
         "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 16 * 1024 * 1024, 24
+            0.2, 0.2, 0, 100 * 1024 * 1024
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
@@ -742,12 +639,8 @@ object_storages_properties = {
     },
     "azure": {
         "check_objects_after_upload": true_false_lambda,
-        # bits=31 as for S3: the SDK page size is a 32-bit int, so 2**64 - 1 wraps to -1
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
-        # Floor 10, as `s3_max_part_number` above: with `max_single_part_upload_size=0` every write
-        # is multipart, and a floor of 1 cannot fit even the disk's startup `checkAccess` probe, so
-        # the server rejects the disk with INVALID_CONFIG_PARAMETER and never starts.
-        "max_blocks_in_multipart_upload": threshold_generator(0.2, 0.2, 10, 100000),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
+        "max_blocks_in_multipart_upload": threshold_generator(0.2, 0.2, 1, 100000),
         "max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 1, 100),
         "max_single_download_retries": threshold_generator(0.2, 0.2, 1, 16),
         "max_single_part_copy_size": threshold_generator(
@@ -765,26 +658,16 @@ object_storages_properties = {
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        # Never above the lower bound of max_upload_part_size: validateUploadSettings
-        # rejects min > max, and rejects a zero min
-        "min_upload_part_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 24),
+        "min_upload_part_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
         # `objects_chunk_size_to_delete` is read only by S3Settings, so it is left out here
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
-        "retry_initial_backoff_ms": threshold_generator(
-            0.2, 0.2, 0, 5000, allow_unlimited=False
-        ),
-        "retry_max_backoff_ms": threshold_generator(
-            0.2, 0.2, 0, 30000, allow_unlimited=False
-        ),
+        "retry_initial_backoff_ms": threshold_generator(0.2, 0.2, 0, 5000),
+        "retry_max_backoff_ms": threshold_generator(0.2, 0.2, 0, 30000),
         # "skip_access_check": true_false_lambda, may break the startup
-        # Never above the lower bound of max_upload_part_size: validateUploadSettings
-        # rejects strict > max
-        "strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 16 * 1024 * 1024, 24
-        ),
+        "strict_upload_part_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
         "thread_pool_size": threads_lambda,
         "upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "upload_part_size_multiply_parts_count_threshold": threshold_generator(
@@ -795,29 +678,17 @@ object_storages_properties = {
     "web": {},
 }
 
-# Object storage elements that only one metadata storage reads: the server rejects them on any other.
-metadata_type_properties = {
-    "metadata_keep_free_space_bytes": {"local"},
-    "object_metadata_cache_size": {"plain"},
-}
-
 s3_with_keeper_properties = {
-    "metadata_cache_cleanup_interval": threshold_generator(
-        0.2, 0.2, 1, 60, allow_unlimited=False
-    ),
+    "metadata_cache_cleanup_interval": threshold_generator(0.2, 0.2, 1, 60),
     "metadata_cache_enabled": true_false_lambda,
     "metadata_cache_full_directory_lists": true_false_lambda,
 }
 
 metadata_cleanup_properties = {
-    "deleted_objects_delay_sec": threshold_generator(
-        0.2, 0.2, 0, 60, allow_unlimited=False
-    ),
+    "deleted_objects_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
     "enabled": lambda: 1 if random.randint(0, 9) < 9 else 0,
-    "interval_sec": threshold_generator(0.2, 0.2, 1, 60, allow_unlimited=False),
-    "old_transactions_delay_sec": threshold_generator(
-        0.2, 0.2, 0, 60, allow_unlimited=False
-    ),
+    "interval_sec": threshold_generator(0.2, 0.2, 1, 60),
+    "old_transactions_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
 }
 
 
@@ -834,22 +705,15 @@ cache_storage_properties = {
     "cache_on_write_operations": true_false_lambda,
     "check_cache_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "drop_cache_threads": no_zero_threads_lambda,
-    "dynamic_resize_lock_wait_ms": threshold_generator(
-        0.2, 0.2, 0, 5000, allow_unlimited=False
-    ),
+    "dynamic_resize_lock_wait_ms": threshold_generator(0.2, 0.2, 0, 5000),
     "enable_bypass_cache_with_threshold": true_false_lambda,
+    "enable_filesystem_query_cache_limit": true_false_lambda,
     "expose_prometheus_eviction_metrics": true_false_lambda,
     "expose_prometheus_eviction_metrics_per_user": true_false_lambda,
-    "idle_client_check_interval_sec": threshold_generator(
-        0.2, 0.2, 0, 3600, allow_unlimited=False
-    ),
+    "idle_client_check_interval_sec": threshold_generator(0.2, 0.2, 0, 3600, 12),
     "idle_client_eviction_threads": no_zero_threads_lambda,
-    "idle_client_ttl_sec": threshold_generator(
-        0.2, 0.2, 1, 7 * 24 * 60 * 60, allow_unlimited=False
-    ),
-    "invalidated_entries_cleanup_interval_ms": threshold_generator(
-        0.2, 0.2, 1, 60000, allow_unlimited=False
-    ),
+    "idle_client_ttl_sec": threshold_generator(0.2, 0.2, 1, 7 * 24 * 60 * 60, 20),
+    "invalidated_entries_cleanup_interval_ms": threshold_generator(0.2, 0.2, 1, 60000),
     "invalidated_entries_cleanup_remove_batch": threshold_generator(0.2, 0.2, 1, 1000),
     "invalidated_entries_cleanup_threshold": threshold_generator(0.2, 0.2, 1, 100000),
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -878,9 +742,7 @@ cache_storage_properties = {
 
 policy_properties = {
     "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
-    "least_used_ttl_ms": threshold_generator(
-        0.2, 0.2, 0, 120000, allow_unlimited=False
-    ),
+    "least_used_ttl_ms": threshold_generator(0.2, 0.2, 0, 120000),
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
     # Cannot set `max_data_part_size_bytes` and `max_data_part_size_ratio` at the same time
     # "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
@@ -892,31 +754,13 @@ policy_properties = {
 
 
 all_disks_properties = {
+    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
+    "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    "perform_ttl_move_on_insert": true_false_lambda,
+    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
     # "skip_access_check": true_false_lambda, may break the startup
     "thread_pool_size": no_zero_threads_lambda,
-}
-
-# The server rejects a disk element that its disk type does not read, so these go only to the
-# kinds that read them (`object_storage/<type>` for an object storage disk).
-disk_kind_properties = {
-    "keep_free_space_bytes": (
-        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-        {"local", "object_storage/local"},
-    ),
-    "min_bytes_for_seek": (
-        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-        {"object_storage/azure"},
-    ),
-    "readonly": (
-        lambda: 1 if random.randint(0, 9) < 2 else 0,
-        {
-            "object_storage/local",
-            "object_storage/s3",
-            "object_storage/s3_with_keeper",
-            "object_storage/azure",
-            "s3_with_keeper",
-        },
-    ),
 }
 
 
@@ -926,13 +770,9 @@ backup_properties = {
     "attempts_to_collect_metadata_before_sleep": threshold_generator(
         0.2, 0.2, 1, 10, 4
     ),
-    "collect_metadata_timeout": threshold_generator(
-        0.2, 0.2, 1000, 600000, allow_unlimited=False
-    ),
+    "collect_metadata_timeout": threshold_generator(0.2, 0.2, 1000, 600000, 20),
     "compare_collected_metadata": true_false_lambda,
-    "create_table_timeout": threshold_generator(
-        0.2, 0.2, 1000, 300000, allow_unlimited=False
-    ),
+    "create_table_timeout": threshold_generator(0.2, 0.2, 1000, 300000, 19),
     "data_file_name_prefix_length": threshold_generator(0.2, 0.2, 0, 8, 3),
     "max_attempts_after_bad_version": threshold_generator(0.2, 0.2, 1, 100, 7),
     # Kept above the upper bound of the min sleep below
@@ -943,7 +783,7 @@ backup_properties = {
         0.2, 0.2, 1, 500, 9
     ),
     "remove_backup_files_after_failure": true_false_lambda,
-    "sync_period_ms": threshold_generator(0.2, 0.2, 1000, 60000, allow_unlimited=False),
+    "sync_period_ms": threshold_generator(0.2, 0.2, 1000, 60000, 16),
     "test_inject_sleep": true_false_lambda,
     "test_randomize_order": true_false_lambda,
 }
@@ -998,37 +838,6 @@ def remove_element(property_element: ET.Element, elem: str):
     remove_xml.text = ""
 
 
-def get_cluster_names(remote_servers: typing.Optional[ET.Element]) -> list[str]:
-    """Collect the names of the clusters defined in a `remote_servers` element, which may come
-    from another configuration file and hold clusters not named `cluster<N>`. The markers
-    `remove_element` adds to drop an inherited cluster are skipped."""
-    if remote_servers is None:
-        return []
-    return [c.tag for c in remote_servers if "remove" not in c.attrib]
-
-
-def get_cache_setting(cache_element: ET.Element, name: str, default: str) -> str:
-    element = cache_element.find(name)
-    if element is None or element.get("remove") is not None or not element.text:
-        return default
-    return element.text
-
-
-def set_cache_setting(cache_element: ET.Element, name: str, value: str):
-    element = cache_element.find(name)
-    if element is None:
-        element = ET.SubElement(cache_element, name)
-    element.attrib.pop("remove", None)
-    element.text = value
-
-
-def parse_cache_size(text: str) -> int:
-    for suffix, multiplier in (("Ki", 1 << 10), ("Mi", 1 << 20), ("Gi", 1 << 30), ("Ti", 1 << 40)):
-        if text.endswith(suffix):
-            return int(text[: -len(suffix)]) * multiplier
-    return int(text)
-
-
 def normalize_cache_properties(cache_element: ET.Element):
     # `FileCacheSettings::validate` rejects split cache with overcommit policies.
     use_split_cache = cache_element.find("use_split_cache")
@@ -1040,30 +849,6 @@ def normalize_cache_properties(cache_element: ET.Element):
         and cache_policy.text in ("LRU_OVERCOMMIT", "SLRU_OVERCOMMIT")
     ):
         use_split_cache.text = "0"
-
-    # `FileCacheSettings::validate` rejects an SLRU cache whose file segment does not fit
-    # each SLRU queue (of both parts with `use_split_cache`), so shrink the file segment.
-    if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
-        # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
-        get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
-        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
-        ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
-        parts = [max_size]
-        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
-            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
-            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
-        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
-
-        max_file_segment_size = parse_cache_size(
-            get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
-        )
-        if 0 < smallest_queue_size < max_file_segment_size:
-            set_cache_setting(cache_element, "max_file_segment_size", str(smallest_queue_size))
-            boundary_alignment = parse_cache_size(
-                get_cache_setting(cache_element, "boundary_alignment", str(4 << 20))
-            )
-            if boundary_alignment > smallest_queue_size:
-                set_cache_setting(cache_element, "boundary_alignment", str(smallest_queue_size))
 
 
 def add_single_cluster(
@@ -1147,7 +932,6 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
-    readonly_disks: set[int],
 ) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
@@ -1241,12 +1025,8 @@ def add_single_disk(
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
 
-        # Add a endpoint_subpath, read only by the S3 and Azure object storages
-        if (
-            metadata_type == "plain_rewritable"
-            and object_storage_type in ("s3", "s3_with_keeper", "azure")
-            and random.randint(1, 100) <= 70
-        ):
+        # Add a endpoint_subpath
+        if metadata_type == "plain_rewritable" and random.randint(1, 100) <= 70:
             endpoint_subpath_xml = ET.SubElement(next_disk, "endpoint_subpath")
             endpoint_subpath_xml.text = (
                 f"node{random.choice(range(0, len(args.replica_values)))}"
@@ -1257,12 +1037,9 @@ def add_single_disk(
             "s3" if object_storage_type == "s3_with_keeper" else object_storage_type
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
-            storage_properties = {
-                name: generator
-                for name, generator in object_storages_properties[dict_entry].items()
-                if metadata_type in metadata_type_properties.get(name, {metadata_type})
-            }
-            apply_properties_recursively(next_disk, storage_properties)
+            apply_properties_recursively(
+                next_disk, object_storages_properties[dict_entry]
+            )
         if (
             is_private_binary
             and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
@@ -1288,18 +1065,11 @@ def add_single_disk(
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
-        if disk_type == "cache":
+        if disk_type == "cache" or random.randint(1, 2) == 1:
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
-        elif random.randint(1, 2) == 1 and iter_prev_disk not in readonly_disks:
-            # The path of an encrypted disk is relative to the disk it wraps (`DiskEncrypted` uses
-            # `wrapped_disk->getPath() + path`). An absolute path is rejected by object storage disks
-            # with `PATH_ACCESS_DENIED`, and the server refuses to start. A readonly disk cannot
-            # create the directory, so the server would not start either.
-            path_xml = ET.SubElement(next_disk, "path")
-            path_xml.text = f"disk{i}/"
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
@@ -1308,7 +1078,7 @@ def add_single_disk(
             # Add random settings
             if random.randint(1, 100) <= 70:
                 apply_properties_recursively(next_disk, cache_storage_properties)
-            normalize_cache_properties(next_disk)
+                normalize_cache_properties(next_disk)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -1327,16 +1097,7 @@ def add_single_disk(
                 )
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
-        kind = (
-            f"object_storage/{final_type}"
-            if disk_type == "object_storage"
-            else disk_type
-        )
-        disk_properties = dict(all_disks_properties)
-        for name, (generator, kinds) in disk_kind_properties.items():
-            if kind in kinds:
-                disk_properties[name] = generator
-        apply_properties_recursively(next_disk, disk_properties)
+        apply_properties_recursively(next_disk, all_disks_properties)
     return (prev_disk, final_type, final_super_type, final_metadata_type)
 
 
@@ -1360,7 +1121,6 @@ class DiskPropertiesGroup(PropertiesGroup):
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
         created_disks_types = []
-        readonly_disks = set()
         created_cache_disks = []
         created_keeper_disks = []
         safe_for_database_disk = []
@@ -1386,11 +1146,8 @@ class DiskPropertiesGroup(PropertiesGroup):
                 random.choice(possible_types),
                 created_disks_types,
                 is_private_binary,
-                readonly_disks,
             )
             created_disks_types.append(next_created_disk_pair)
-            if disk_xml_elem.findtext("readonly") == "1":
-                readonly_disks.add(i)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
             elif (
@@ -1519,7 +1276,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
     # Add random settings
     if random.randint(1, 100) <= 70:
         apply_properties_recursively(next_cache, cache_storage_properties)
-    normalize_cache_properties(next_cache)
+        normalize_cache_properties(next_cache)
 
 
 class CachePropertiesGroup(PropertiesGroup):
@@ -1671,32 +1428,30 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         cluster: ClickHouseCluster,
         is_private_binary: bool,
     ):
+        number_clusters = 0
         shared_settings = {
             "delay_before_drop_intention_seconds": threshold_generator(
-                0.2, 0.2, 0, 60, allow_unlimited=False
+                0.2, 0.2, 0, 60, 32
             ),
-            "delay_before_drop_table_seconds": threshold_generator(
-                0.2, 0.2, 0, 60, allow_unlimited=False
-            ),
+            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60, 31),
             "drop_ignore_inactive_replica_after_seconds": threshold_generator(
-                0.2, 0.2, 0, 60, allow_unlimited=False
+                0.2, 0.2, 0, 60, 32
             ),
             "drop_local_thread_pool_size": threads_lambda,
-            "drop_lock_duration_seconds": threshold_generator(
-                0.2, 0.2, 0, 60, allow_unlimited=False
-            ),
+            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60, 31),
             "drop_zookeeper_thread_pool_size": threads_lambda,
             # "migration_from_database_replicated": true_false_lambda, not suitable for testing
             "state_application_thread_pool_size": threads_lambda,
         }
         remote_servers = top_root.find("remote_servers")
-        cluster_name_choices = get_cluster_names(remote_servers)
-        if cluster_name_choices and random.randint(1, 100) <= 75:
+        if remote_servers is not None:
+            number_clusters = len(
+                [c for c in remote_servers if "remove" not in c.attrib]
+            )
+        if number_clusters > 0 and random.randint(1, 100) <= 75:
+            cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
             if remote_servers is None or remote_servers.find("default") is None:
-                # The default cluster was not removed. It is missing from this element but
-                # inherited from `programs/server/config.xml`, and Dolor nodes use
-                # `copy_common_configs=False`, so the `<remote_servers remove="remove"/>` of
-                # `0_common_instance_config.xml` never drops it - only a marker written here.
+                # The default cluster was not removed
                 cluster_name_choices.append("default")
             shared_settings["cluster_name"] = lambda: random.choice(
                 cluster_name_choices
@@ -1720,11 +1475,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
             "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-            # No unlimited: the server adds it to a log pointer, and 2**64-1 wraps the sum,
-            # marking a synced replica unsynced (LOGICAL_ERROR 'our_log_ptr < max_log_ptr').
-            "max_replication_lag_to_enqueue": threshold_generator(
-                0.2, 0.2, 1, 200, allow_unlimited=False
-            ),
+            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 1, 200),
         }
         apply_properties_recursively(property_element, replicated_settings, 0)
 
@@ -1754,24 +1505,20 @@ class LogTablePropertiesGroup(PropertiesGroup):
 
         log_table_properties = {
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
-            "flush_interval_milliseconds": threshold_generator(
-                0.2, 0.2, 1, 10000, allow_unlimited=False
-            ),
+            "flush_interval_milliseconds": threshold_generator(0.2, 0.2, 1, 10000),
             "flush_on_crash": true_false_lambda,
             # Setting these may crash the server
             # "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
             # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         if self.log_table == "text_log":
-            # Pinned to the most verbose level, and written directly because
-            # `apply_properties_recursively` samples: at `error` the health check's `Warning`
-            # patterns never reach the table and it under-reports without saying so.
-            level_xml = ET.SubElement(property_element, "level")
-            level_xml.text = "test"
-        elif self.log_table == "trace_log":
+            log_table_properties["level"] = lambda: random.choice(
+                ["trace", "debug", "information", "warning", "error"]
+            )
+        if self.log_table == "trace_log":
             log_table_properties["symbolize"] = true_false_lambda
-        elif self.log_table == "transposed_metric_log":
-            # Created only with this `schema_type`; the default ("bucketed") makes the section a no-op
+        if self.log_table == "transposed_metric_log":
+            # Created only with this `schema_type`; the default ("wide") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
         # Can't use this without the engine parameter?
@@ -1859,8 +1606,9 @@ def modify_server_settings(
     cluster: ClickHouseCluster,
     is_private_binary: bool,
     input_config_path: str,
-) -> tuple[bool, str, list[str]]:
+) -> tuple[bool, str, int]:
     modified = False
+    number_clusters = 0
 
     # Parse the existing XML file
     tree = ET.parse(input_config_path)
@@ -1963,18 +1711,6 @@ def modify_server_settings(
             possible_properties, random.randint(0, len(possible_properties))
         )
 
-    # Always set, unlike the sampled properties above: the default of 120s is four times the
-    # window `dolor.py` allows before it force kills, so leaving it out reports every drain
-    # slower than that window as a shutdown failure.
-    if root.find("shutdown_wait_unfinished") is None:
-        selected_properties["shutdown_wait_unfinished"] = possible_properties[
-            "shutdown_wait_unfinished"
-        ]
-    if root.find("shutdown_wait_backups_and_restores") is None:
-        selected_properties["shutdown_wait_backups_and_restores"] = possible_properties[
-            "shutdown_wait_backups_and_restores"
-        ]
-
     # Add remote server configurations
     if (
         root.find("remote_servers") is None
@@ -2021,7 +1757,6 @@ def modify_server_settings(
         selected_properties["distributed_query"] = DistributedQueryPropertiesGroup()
 
     # Add log tables
-    all_log_entries = []
     if args.add_log_tables:
         all_log_entries = [
             ("aggregated_zookeeper_log", 1048576, 8192),
@@ -2042,13 +1777,16 @@ def modify_server_settings(
             ("iceberg_metadata_log", 1048576, 8192),
             ("metric_log", 1048576, 8192),
             ("opentelemetry_span_log", 1048576, 8192),
+            ("part_log", 1048576, 8192),
             ("predicate_statistics_log", 1048576, 8192),
             ("processors_profile_log", 1048576, 8192),
+            ("query_log", 1048576, 8192),
             ("query_metric_log", 1048576, 8192),
             ("query_thread_log", 1048576, 8192),
             ("query_views_log", 1048576, 8192),
             ("s3queue_log", 1048576, 8192),
             ("session_log", 1048576, 8192),
+            ("text_log", 1048576, 8192),
             ("trace_log", 1048576, 8192),
             ("transactions_info_log", 1048576, 8192),
             ("transposed_metric_log", 1048576, 8192),
@@ -2059,22 +1797,12 @@ def modify_server_settings(
             all_log_entries = random.sample(
                 all_log_entries, random.randint(1, len(all_log_entries))
             )
-
-    # The oracles read these: the health check needs `part_log` and `text_log`, and its whole
-    # query throws `UNKNOWN_TABLE` if either is missing; BuzzHouse reads `query_log` to compare
-    # performance. Sampling them away silently turns those checks into no-ops.
-    if args.add_log_tables or args.with_monitoring:
-        all_log_entries += [
-            ("part_log", 1048576, 8192),
-            ("query_log", 1048576, 8192),
-            ("text_log", 1048576, 8192),
-        ]
-    random.shuffle(all_log_entries)
-    for entry in all_log_entries:
-        if root.find(entry[0]) is None:
-            selected_properties[entry[0]] = LogTablePropertiesGroup(
-                entry[0], entry[1], entry[2]
-            )
+        random.shuffle(all_log_entries)
+        for entry in all_log_entries:
+            if root.find(entry[0]) is None:
+                selected_properties[entry[0]] = LogTablePropertiesGroup(
+                    entry[0], entry[1], entry[2]
+                )
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (
@@ -2120,25 +1848,27 @@ def modify_server_settings(
             zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
             zookeeper_path_xml.text = "/clickhouse/txn"
 
-    # Get the cluster names if generated, to be used in `users.xml` if needed
-    cluster_names = get_cluster_names(root.find("remote_servers"))
+    # Get number of clusters if generated, to be used in `users.xml` if needed
+    remote_servers = root.find("remote_servers")
+    if remote_servers is not None:
+        number_clusters = len([c for c in remote_servers if "remove" not in c.attrib])
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, prefix="config_", suffix=".xml", delete=False
+            dir=args.tmp_files_dir, suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
             tree.write(temp_path, encoding="utf-8", xml_declaration=True)
-        return True, temp_path, cluster_names
-    return False, input_config_path, cluster_names
+        return True, temp_path, number_clusters
+    return False, input_config_path, number_clusters
 
 
 def modify_user_settings(
-    args, input_config_path: str, cluster_names: list[str]
+    args, input_config_path: str, number_clusters: int
 ) -> tuple[bool, str]:
     modified = False
 
@@ -2148,7 +1878,7 @@ def modify_user_settings(
     if root.tag != "clickhouse":
         raise Exception("<clickhouse> element not found")
 
-    if cluster_names:
+    if number_clusters > 0:
         modified = True
         profiles_xml = root.find("profiles")
         if profiles_xml is None:
@@ -2163,17 +1893,16 @@ def modify_user_settings(
             cluster_for_parallel_replicas_xml = ET.SubElement(
                 default_xml, "cluster_for_parallel_replicas"
             )
-        # Keep a cluster the caller already pinned (`lacasadeldolor_job.py` sets
-        # `allnodes`), only pick one when it is missing or names a dropped cluster.
-        if (cluster_for_parallel_replicas_xml.text or "").strip() not in cluster_names:
-            cluster_for_parallel_replicas_xml.text = random.choice(cluster_names)
+        cluster_for_parallel_replicas_xml.text = (
+            f"cluster{random.choice(range(0, number_clusters))}"
+        )
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, prefix="user_", suffix=".xml", delete=False
+            dir=args.tmp_files_dir, suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
@@ -2237,7 +1966,7 @@ keeper_settings = {
             0.2, 0.2, 0, 1000 * 1024 * 1024
         ),
         "commit_profiler_real_time_period_ns": threshold_generator(
-            0.2, 0.2, 0, 1000000000, allow_unlimited=False
+            0.2, 0.2, 0, 1000000000
         ),
         # The keeper LSM storage. Floors keep it from flushing and merging non-stop
         "committed_memtable_size": threshold_generator(
@@ -2246,35 +1975,25 @@ keeper_settings = {
         "compress_logs": true_false_lambda,
         "compress_snapshots_with_zstd_format": true_false_lambda,
         "configuration_change_tries_count": threshold_generator(0.2, 0.2, 0, 40),
-        "dead_session_check_period_ms": threshold_generator(
-            0.2, 0.2, 100, 5000, allow_unlimited=False
-        ),
+        "dead_session_check_period_ms": threshold_generator(0.2, 0.2, 100, 5000),
         "disk_move_retries_during_init": threshold_generator(0.2, 0.2, 0, 200),
-        "disk_move_retries_wait_ms": threshold_generator(
-            0.2, 0.2, 0, 5000, allow_unlimited=False
-        ),
+        "disk_move_retries_wait_ms": threshold_generator(0.2, 0.2, 0, 5000),
         "dispatch_busy_wait_long_sleep_us": threshold_generator(
-            0.2, 0.2, 0, 100000, allow_unlimited=False
+            0.2, 0.2, 0, 100000, 17
         ),
-        "dispatch_busy_wait_sleep_us": threshold_generator(
-            0.2, 0.2, 0, 10000, allow_unlimited=False
-        ),
+        "dispatch_busy_wait_sleep_us": threshold_generator(0.2, 0.2, 0, 10000),
         "file_block_size": threshold_generator(0.2, 0.2, 4096, 262144, 18),
         "flush_threads": threshold_generator(0.2, 0.2, 1, 8, 3),
         "force_sync": true_false_lambda,
         "fresh_log_gap": threshold_generator(0.2, 0.2, 0, 200),
-        "heart_beat_interval_ms": threshold_generator(
-            0.2, 0.2, 100, 1500, allow_unlimited=False
-        ),
+        "heart_beat_interval_ms": threshold_generator(0.2, 0.2, 100, 1500),
         "latest_logs_cache_entry_count_threshold": threshold_generator(
             0.2, 0.2, 0, 200000, 18
         ),
         "latest_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 2 * 1024 * 1024 * 1024
         ),
-        "leadership_expiry_ms": threshold_generator(
-            0.2, 0.2, 0, 1999, allow_unlimited=False
-        ),
+        "leadership_expiry_ms": threshold_generator(0.2, 0.2, 0, 1999),
         "log_file_overallocate_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
         ),
@@ -2286,24 +2005,20 @@ keeper_settings = {
         # NonZeroUInt64. `log_readahead_pool_threads` is left at its 0 (auto) default:
         # Changelog rejects a non-zero pool smaller than the peer reader count
         "log_readahead_eviction_timeout_ms": threshold_generator(
-            0.2, 0.2, 1000, 60000, allow_unlimited=False
+            0.2, 0.2, 1000, 60000, 16
         ),
         "log_readahead_max_peer_readers": threshold_generator(0.2, 0.2, 1, 8, 3),
         "log_readahead_serve_wait_timeout_ms": threshold_generator(
-            0.2, 0.2, 1, 1000, allow_unlimited=False
+            0.2, 0.2, 1, 1000, 10
         ),
         "log_readahead_window_bytes": threshold_generator(
             0.2, 0.2, 1, 64 * 1024 * 1024
         ),
         "log_slow_connection_operation_threshold_ms": threshold_generator(
-            0.2, 0.2, 0, 10000, allow_unlimited=False
+            0.2, 0.2, 0, 10000
         ),
-        "log_slow_cpu_threshold_ms": threshold_generator(
-            0.2, 0.2, 0, 5000, allow_unlimited=False
-        ),
-        "log_slow_total_threshold_ms": threshold_generator(
-            0.2, 0.2, 0, 30000, allow_unlimited=False
-        ),
+        "log_slow_cpu_threshold_ms": threshold_generator(0.2, 0.2, 0, 5000),
+        "log_slow_total_threshold_ms": threshold_generator(0.2, 0.2, 0, 30000),
         # Always above the upper bound of min_files_to_merge
         "max_files_to_merge": threshold_generator(0.2, 0.2, 20, 100, 7),
         "max_flush_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
@@ -2335,14 +2050,8 @@ keeper_settings = {
         "merge_threads": threshold_generator(0.2, 0.2, 1, 8, 3),
         "min_files_to_merge": threshold_generator(0.2, 0.2, 2, 10, 4),
         "min_request_size_for_cache": threshold_generator(0.2, 0.2, 0, 100 * 1024),
-        # Must stay under `session_timeout_ms`, the max of the same pair, pinned to 15000
-        # (60000 under sanitizers) below - which only holds without the `2**bits - 1` draw.
-        "min_session_timeout_ms": threshold_generator(
-            0.2, 0.2, 1000, 10000, allow_unlimited=False
-        ),
-        "min_time_between_fsyncs_ms": threshold_generator(
-            0.2, 0.2, 0, 100, allow_unlimited=False
-        ),
+        "min_session_timeout_ms": threshold_generator(0.2, 0.2, 1000, 10000),
+        "min_time_between_fsyncs_ms": threshold_generator(0.2, 0.2, 0, 100),
         "nuraft_append_entries_backward_probe_throttle_threshold": threshold_generator(
             0.2, 0.2, 0, 128
         ),
@@ -2362,15 +2071,9 @@ keeper_settings = {
         "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
         "reserved_log_items": threshold_generator(0.2, 0.2, 0, 100000),
         "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 1, 100000),
-        "session_shutdown_timeout": threshold_generator(
-            0.2, 0.2, 5000, 30000, allow_unlimited=False
-        ),
-        "shutdown_timeout": threshold_generator(
-            0.2, 0.2, 3000, 30000, allow_unlimited=False
-        ),
-        "sleep_before_leader_change_ms": threshold_generator(
-            0.2, 0.2, 1000, 30000, allow_unlimited=False
-        ),
+        "session_shutdown_timeout": threshold_generator(0.2, 0.2, 5000, 30000),
+        "shutdown_timeout": threshold_generator(0.2, 0.2, 3000, 30000),
+        "sleep_before_leader_change_ms": threshold_generator(0.2, 0.2, 1000, 30000),
         "snapshot_distance": threshold_generator(0.2, 0.2, 0, 100000),
         "snapshot_transfer_chunk_size": threshold_generator(
             0.2, 0.2, 0, 16 * 1024 * 1024
@@ -2381,26 +2084,16 @@ keeper_settings = {
         ),
         "sorted_runs_soft_limit": threshold_generator(0.2, 0.2, 4, 200, 8),
         "stale_log_gap": threshold_generator(0.2, 0.2, 0, 10000),
-        "startup_timeout": threshold_generator(
-            0.2, 0.2, 1000, 600000, allow_unlimited=False
-        ),
-        "stream_in_flight_drain_timeout_ms": threshold_generator(
-            0.2, 0.2, 0, 10000, allow_unlimited=False
-        ),
-        "stream_suspect_retry_delay_ms": threshold_generator(
-            0.2, 0.2, 0, 5000, allow_unlimited=False
-        ),
+        "startup_timeout": threshold_generator(0.2, 0.2, 1000, 600000),
+        "stream_in_flight_drain_timeout_ms": threshold_generator(0.2, 0.2, 0, 10000),
+        "stream_suspect_retry_delay_ms": threshold_generator(0.2, 0.2, 0, 5000),
         "container_gc_batch_size": threshold_generator(0.2, 0.2, 1, 4096),
         "container_gc_max_never_used_interval_ms": threshold_generator(
-            0.2, 0.2, 0, 60000, allow_unlimited=False
+            0.2, 0.2, 0, 60000
         ),
-        "container_gc_period_ms": threshold_generator(
-            0.2, 0.2, 1, 60000, allow_unlimited=False
-        ),
+        "container_gc_period_ms": threshold_generator(0.2, 0.2, 1, 60000),
         "ttl_gc_batch_size": threshold_generator(0.2, 0.2, 1, 4096),
-        "ttl_gc_period_ms": threshold_generator(
-            0.2, 0.2, 1, 10000, allow_unlimited=False
-        ),
+        "ttl_gc_period_ms": threshold_generator(0.2, 0.2, 1, 10000),
         "uncommitted_memtable_size": threshold_generator(
             0.2, 0.2, 1024 * 1024, 64 * 1024 * 1024, 26
         ),
@@ -2413,11 +2106,9 @@ keeper_settings = {
         "write_throttling_factor": threshold_generator(0.2, 0.2, 1.0, 64.0),
         # Always above the upper bound of the min delay below
         "write_throttling_max_delay_us": threshold_generator(
-            0.2, 0.2, 100000, 5000000, allow_unlimited=False
+            0.2, 0.2, 100000, 5000000, 23
         ),
-        "write_throttling_min_delay_us": threshold_generator(
-            0.2, 0.2, 1000, 10000, allow_unlimited=False
-        ),
+        "write_throttling_min_delay_us": threshold_generator(0.2, 0.2, 1000, 10000, 14),
     },
     "create_snapshot_on_exit": true_false_lambda,
     "digest_enabled": true_false_lambda,
@@ -2484,9 +2175,7 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
         session_timeout_ms_xml = ET.SubElement(
             coordination_settings_xml, "session_timeout_ms"
         )
-        session_timeout_ms_xml.text = (
-            "60000" if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1" else "15000"
-        )
+        session_timeout_ms_xml.text = "15000"
         raft_logs_level_xml = ET.SubElement(
             coordination_settings_xml, "raft_logs_level"
         )
@@ -2535,7 +2224,7 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
 
         ET.indent(tree, space="    ", level=0)
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, prefix="keeper_", suffix=".xml", delete=False
+            dir=args.tmp_files_dir, suffix=".xml", delete=False
         ) as temp_file:
             result_configs.append(temp_file.name)
             tree.write(temp_file.name, encoding="utf-8", xml_declaration=True)

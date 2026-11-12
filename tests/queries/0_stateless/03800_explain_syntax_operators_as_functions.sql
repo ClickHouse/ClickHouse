@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- Test that EXPLAIN SYNTAX formats all operators as functions
 -- Related to issue #94603
 -- Tests should output function notation (e.g., plus(1, 2)) instead of operator notation (e.g., 1 + 2)

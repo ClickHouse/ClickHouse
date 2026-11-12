@@ -70,13 +70,11 @@ void Chunk::checkNumRowsIsConsistent()
 
 MutableColumns Chunk::mutateColumns()
 {
-    size_t num_columns = columns.size();
-    MutableColumns mutable_columns(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        mutable_columns[i] = IColumn::mutate(std::move(columns[i]));
-
-    columns.clear();
-    num_rows = 0;
+    MutableColumns mutable_columns(columns.size());
+    /// Detach first: `IColumn::mutate` consumes the column even when it throws, and a chunk never holds a null column.
+    Columns detached_columns = detachColumns();
+    for (size_t i = 0; i < detached_columns.size(); ++i)
+        mutable_columns[i] = IColumn::mutate(std::move(detached_columns[i]));
 
     return mutable_columns;
 }
@@ -218,15 +216,6 @@ void materializeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-void materializeChunk(Chunk & chunk, const ColumnNumbers & column_positions)
-{
-    const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (const auto pos : column_positions)
-        columns[pos] = removeSpecialRepresentations(columns[pos]->convertToFullColumnIfConst());
     chunk.setColumns(std::move(columns), num_rows);
 }
 

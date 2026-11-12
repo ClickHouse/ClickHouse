@@ -93,7 +93,7 @@ ORDER BY (time);
 ```sql
 CREATE TABLE optimized_wikistat
 (
-    `time` DateTime CODEC(Delta, Default),
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
     `project` LowCardinality(String),
     `subproject` LowCardinality(String),
     `path` String,

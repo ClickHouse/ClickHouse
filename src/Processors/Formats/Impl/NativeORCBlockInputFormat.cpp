@@ -973,21 +973,6 @@ static void buildORCSearchArgumentImpl(
 
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
-        {
-            /// Each atom approximates the whole predicate leaf, so ORC may skip the data that any of the
-            /// atoms rules out, which is what their conjunction does.
-            auto atoms = std::move(rpn_stack.back().group_atoms);
-            rpn_stack.pop_back();
-            builder.startAnd();
-            for (auto & atom : atoms)
-            {
-                rpn_stack.push_back(std::move(atom));
-                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            }
-            builder.end();
-            break;
-        }
         /// There is no optimization with space-filling curves for ORC.
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.
@@ -1200,8 +1185,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             if (array_type)
             {
                 updateIncludeTypeIds(array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
+                return;
             }
-            return;
+            break;
         }
         case ORC::MAP: {
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
@@ -1209,8 +1195,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             {
                 updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids);
                 updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids);
+                return;
             }
-            return;
+            break;
         }
         case ORC::STRUCT: {
             /// To make sure tuple field pruning work fine, we should include only the fields of ORC struct type which are also contained in CH tuple types, instead of all fields of ORC struct type.
@@ -1234,8 +1221,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
                         updateIncludeTypeIds(tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
                 }
+                return;
             }
-            return;
+            break;
         }
         case ORC::UNION: {
             /// ORC union maps to the ClickHouse Variant type. A branch that gets a forced type hint
@@ -1262,6 +1250,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
         default:
             return;
     }
+
+    /// A requested type of another kind reads the whole node, and the cast to the requested type converts it or throws.
+    include_typeids.insert(orc_type->getColumnId());
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
@@ -2792,6 +2783,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_value_type = orc_type->getSubtype(1);
 
             auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
+            /// A map key cannot be Nullable.
+            if (!key_type_hint && !DataTypeMap::isValidKeyType(key_column.type))
+                key_type_hint = removeNullableOrLowCardinalityNullable(key_column.type);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen

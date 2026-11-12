@@ -613,18 +613,18 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 && table_metadata.getMode() == ObjectStorageQueueMode::ORDERED
                 && table_metadata.buckets <= 1 && table_metadata.processing_threads_num <= 1)
             {
-                const auto message = PreformattedMessage::create("Ordered mode in cloud without "
+                const std::string message = "Ordered mode in cloud without "
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
-                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.");
+                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.";
 
                 if (is_attach)
                 {
-                    LOG_WARNING(log, message);
+                    LOG_WARNING(log, "{}", message);
                     warned = true;
                 }
                 else
                 {
-                    throw Exception(message, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
                 }
             }
 

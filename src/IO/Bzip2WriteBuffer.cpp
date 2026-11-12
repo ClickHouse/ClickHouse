@@ -41,7 +41,10 @@ void Bzip2WriteBuffer::nextImpl()
             out->position() = out->buffer().end() - stream.avail_out;
 
             if (ret != BZ_RUN_OK)
-                throw Exception(ErrorCodes::BZIP2_STREAM_ENCODER_FAILED, "bzip2 stream encoder failed: {}", bzip2ErrorToString(ret));
+                throw Exception(
+                    ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
+                    "bzip2 stream encoder failed: error code: {}",
+                    ret);
 
         }
         while (stream.avail_in > 0);
@@ -78,7 +81,10 @@ void Bzip2WriteBuffer::finalFlushBefore()
             break;
 
         if (ret != BZ_FINISH_OK)
-            throw Exception(ErrorCodes::BZIP2_STREAM_ENCODER_FAILED, "bzip2 stream encoder failed: {}", bzip2ErrorToString(ret));
+            throw Exception(
+                ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
+                "bzip2 stream encoder failed: error code: {}",
+                ret);
     }
     while (true);
 }

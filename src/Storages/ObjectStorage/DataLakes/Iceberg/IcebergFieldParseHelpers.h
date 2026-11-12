@@ -39,10 +39,6 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
 std::optional<Field> deserializeDecimalFromBinaryRepr(
     const String & str, const IDataType & decimal_type, bool lower_bound = false, bool compensate_rounding = false);
 
-/// The value of a `uuid` bound pair that describes a single value, or nothing for any other pair:
-/// the pair is ordered by unsigned byte comparison, which is not the order of ClickHouse `UUID`.
-std::optional<Field> deserializeUUIDPointFromBinaryRepr(const String & lower, const String & upper);
-
 }
 
 #endif

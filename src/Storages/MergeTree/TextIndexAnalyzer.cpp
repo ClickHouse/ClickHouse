@@ -1,7 +1,5 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
-#include <Columns/ColumnString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
@@ -107,18 +105,13 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
-    std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range)
 {
-    /// A pattern scan delivers known tokens again, so embedded postings are added only with a new token.
     if (is_failed || tokens.contains(token))
         return;
 
     tokens[token] = token_info;
     addRowsRange(token_rows_range);
-
-    if (embedded_postings)
-        addPostings(*embedded_postings);
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
@@ -163,7 +156,7 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_post
         markFailed();
 }
 
-PaddedPODArrayPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
+FlatPostingsPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
 {
     chassert(postings);
 
@@ -180,8 +173,6 @@ PaddedPODArrayPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
 TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
-    bool all_patterns_have_automata = true;
-    bool has_general_pattern = false;
 
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
@@ -195,42 +186,8 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         }
 
         for (const auto & pattern : query->getPatterns())
-        {
             queries_by_pattern[&pattern].insert(hash);
-            has_general_pattern |= pattern.getMatchKind() == RegexpMatchKind::General;
-        }
-        for (const auto & automaton : query->getPatternAutomata())
-        {
-            if (automaton)
-                pattern_cursors.emplace_back(*automaton);
-            else
-                all_patterns_have_automata = false;
-        }
     }
-
-    /// Prefix and exact literals already have a cheaper contiguous block-range scan.
-    /// Infix patterns without a rejecting prefix retain the SIMD literal filter.
-    if (!all_patterns_have_automata || !has_general_pattern)
-        pattern_cursors.clear();
-}
-
-TextIndexDictionaryDFA::Cursor::Result TextIndexAnalyzer::nextPatternToken(std::string_view token, String & lower_bound)
-{
-    using Result = TextIndexDictionaryDFA::Cursor::Result;
-    bool found = false;
-    String candidate;
-    for (auto & cursor : pattern_cursors)
-    {
-        auto result = cursor.next(token, candidate);
-        if (result == Result::Match)
-            return Result::Match;
-        if (result == Result::Seek && (!found || candidate < lower_bound))
-        {
-            lower_bound = candidate;
-            found = true;
-        }
-    }
-    return found ? Result::Seek : Result::Exhausted;
 }
 
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
@@ -280,33 +237,16 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         token_rows_range = *clipped_range;
     }
 
-    /// Clip the embedded postings to the readable rows once.
-    std::optional<PostingList> embedded_postings;
-    if (!token_info->embedded_postings.empty())
-    {
-        tokens_with_postings.emplace(token);
-        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-
-        embedded_postings.emplace(token_info->embedded_postings.size(), token_info->embedded_postings.data());
-        if (readable_rows)
-            embedded_postings = readable_rows->clipPostings(*embedded_postings);
-    }
-
-    const bool no_readable_postings = embedded_postings && embedded_postings->isEmpty();
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addTokenInfo(token, token_info, token_rows_range, embedded_postings && !no_readable_postings ? &*embedded_postings : nullptr);
+        query_builder.addTokenInfo(token, token_info, token_rows_range);
     });
 
-    /// Same as in `addPostings`: a token without readable postings is missing.
-    if (no_readable_postings)
+    if (!token_info->embedded_postings.empty())
     {
-        processTokenOperation(token, [&](QueryBuilder & query_builder)
-        {
-            query_builder.addMissingToken(token);
-        });
-
-        queries_by_token.erase(token);
+        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        addPostings(token, embedded);
+        ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
 }
 
@@ -366,91 +306,6 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
     }
 
     return added;
-}
-
-std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::getPatternTokenKeyRanges() const
-{
-    if (queries_by_pattern.empty())
-        return std::nullopt;
-
-    std::vector<TokenKeyRange> key_ranges;
-    key_ranges.reserve(queries_by_pattern.size());
-
-    for (const auto & [pattern, _] : queries_by_pattern)
-    {
-        String literal(pattern->getRequiredSubstring());
-        if (literal.empty())
-            return std::nullopt;
-
-        /// An anchored kind compares bytes: the constructor demotes a case-insensitive one to `General`.
-        /// That is the order the dictionary is sorted in, so such a pattern matches inside one key range.
-        switch (pattern->getMatchKind())
-        {
-            case RegexpMatchKind::Prefix:
-                key_ranges.emplace_back(literal, firstStringThatIsGreaterThanAllStringsWithPrefix(literal));
-                break;
-            case RegexpMatchKind::Exact:
-                key_ranges.emplace_back(literal, literal);
-                break;
-            case RegexpMatchKind::Suffix:
-            case RegexpMatchKind::Substring:
-            case RegexpMatchKind::General:
-                return std::nullopt;
-        }
-    }
-
-    return key_ranges;
-}
-
-bool TextIndexAnalyzer::canFilterTokensByLiterals() const
-{
-    if (queries_by_pattern.empty())
-        return false;
-
-    return std::ranges::all_of(queries_by_pattern, [](const auto & entry) { return !entry.first->getRequiredSubstring().empty(); });
-}
-
-void TextIndexAnalyzer::markPatternCandidateTokens(
-    const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks)
-{
-    const auto & chars = tokens.getChars();
-    const auto & offsets = tokens.getOffsets();
-    const size_t literal_size = pattern.getRequiredSubstring().size();
-
-    const UInt8 * const begin = chars.data();
-    const UInt8 * const end = begin + chars.size();
-    const UInt8 * pos = begin;
-    size_t token_idx = 0;
-
-    while (pos < end && end != (pos = pattern.searchRequiredSubstring(pos, end - pos)))
-    {
-        while (begin + offsets[token_idx] <= pos)
-            ++token_idx;
-
-        /// Tokens are stored back to back and are not zero-terminated, so an occurrence may straddle two of
-        /// them. One that leaves the token cannot be followed by one inside it, which would start earlier.
-        if (pos + literal_size <= begin + offsets[token_idx])
-            candidate_marks[token_idx] = 1;
-
-        pos = begin + offsets[token_idx];
-        ++token_idx;
-    }
-}
-
-void TextIndexAnalyzer::matchTokensByLiterals(
-    const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices)
-{
-    const size_t num_tokens = tokens.size();
-    candidate_marks.assign(num_tokens, static_cast<UInt8>(0));
-
-    for (const auto & [pattern, _] : queries_by_pattern)
-        markPatternCandidateTokens(*pattern, tokens, candidate_marks);
-
-    for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
-    {
-        if (candidate_marks[token_idx] && addTokenToPatterns(tokens.getDataAt(token_idx)))
-            matched_indices.push_back(token_idx);
-    }
 }
 
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const

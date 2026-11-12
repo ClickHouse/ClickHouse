@@ -10,7 +10,6 @@
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -31,11 +30,12 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace Setting
 {
+    extern const SettingsBool transform_null_in;
+    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -224,15 +224,6 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
 
-            if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Suspiciously many columns ({}) in a serialized set (maximum: {})",
-                    num_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
-            if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Suspiciously many rows ({}) in a serialized set (maximum: {})",
-                    num_rows, DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS);
-
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);
 
@@ -288,9 +279,6 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        /// The initiator ran this check against its own policies; the replica's may differ.
-        storage_set->checkNoRowPolicy(context);
-
         /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
         auto future_set = std::make_shared<FutureSetFromStorage>(
             set.hash, nullptr, storage_set->getSet(), table_node->getStorageID(), /*is_mutable_during_query_=*/ true);
@@ -302,11 +290,12 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
 static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    const FutureSetSettings set_settings(settings);
     for (auto & set : sets)
     {
-        auto future_set = std::make_shared<FutureSetFromTuple>(
-            set.hash, nullptr, std::move(set.set_columns), set_settings.transform_null_in, set_settings.size_limits);
+        SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
+        bool transform_null_in = settings[Setting::transform_null_in];
+
+        auto future_set = std::make_shared<FutureSetFromTuple>(set.hash, nullptr, std::move(set.set_columns), transform_null_in, size_limits);
         for (auto * column : set.columns)
             column->setData(future_set);
     }
@@ -325,8 +314,14 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     {
         auto subquery_plan = QueryPlan::makeSets(std::move(set.plan_and_sets), context);
 
+        SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
+        bool transform_null_in = settings[Setting::transform_null_in];
+        size_t max_size_for_index = settings[Setting::use_index_for_in_with_subqueries_max_values];
+
         auto future_set = std::make_shared<FutureSetFromSubquery>(
-            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)), nullptr, nullptr, FutureSetSettings(settings));
+            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)),
+            nullptr, nullptr,
+            transform_null_in, size_limits, max_size_for_index);
 
         for (auto * column : set.columns)
             column->setData(future_set);
@@ -344,18 +339,6 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         prepared_sets_cache);
 
     plan.addStep(std::move(step));
-}
-
-void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out)
-{
-    SerializationFlags flags;
-    flags.sets_must_be_ready = true;
-    serializeSets(registry, out, flags);
-}
-
-void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
-{
-    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
 }
 
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)

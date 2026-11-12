@@ -17,7 +17,9 @@ import CommonUserRolesContent from '/snippets/fr/_users-and-roles-common.mdx';
 
 Cet article présente les bases de la définition des utilisateurs et des rôles SQL, ainsi que de l’application de ces privilèges et autorisations aux bases de données, tables, lignes et colonnes.
 
-## Utilisateur admin {#admin-user}
+<div id="admin-user">
+  ## Utilisateur admin
+</div>
 
 Les services ClickHouse Cloud disposent d’un utilisateur admin, `default`, créé lors de la création du service. Le mot de passe est fourni à ce moment-là et peut être réinitialisé par les utilisateurs de ClickHouse Cloud disposant du rôle **Admin**.
 
@@ -38,26 +40,30 @@ GRANT default_role TO clickhouse_admin;
   Ces utilisateurs de la SQL Console générés automatiquement disposent du rôle `default`.
 </Note>
 
-## Authentification sans mot de passe {#passwordless-authentication}
+<div id="passwordless-authentication">
+  ## Authentification sans mot de passe
+</div>
 
 Deux rôles sont disponibles pour la SQL Console : `sql_console_admin`, avec des autorisations identiques à `default_role`, et `sql_console_read_only`, avec des autorisations en lecture seule.
 
 Les utilisateurs Admin se voient attribuer par défaut le rôle `sql_console_admin`, donc rien ne change pour eux. En revanche, le rôle `sql_console_read_only` permet d’accorder à des utilisateurs non Admin un accès en lecture seule ou un accès complet à n’importe quelle instance. Un administrateur doit configurer cet accès. Les rôles peuvent être ajustés à l’aide des commandes `GRANT` ou `REVOKE` afin de mieux répondre aux exigences propres à chaque instance, et toute modification apportée à ces rôles sera conservée.
 
-### Contrôle d’accès granulaire {#granular-access-control}
+<div id="granular-access-control">
+  ### Contrôle d’accès granulaire
+</div>
 
 <Tip>
-  Préférez les [rôles de base de données gérés dans le Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) pour gérer l’accès à la base de données depuis la Console. Les rôles `sql-console-role:<email>` ne sont pas compatibles avec les sessions JWT dans la SQL Console.
+  Préférez les [rôles de base de données gérés dans le Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (bêta) pour gérer l’accès à la base de données depuis la Console. Les rôles `sql-console-role:<email>` ne sont pas compatibles avec l’[authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 </Tip>
 
-Cette fonctionnalité de contrôle d’accès peut également être configurée manuellement avec une granularité par utilisateur. Avant d’attribuer les nouveaux rôles `sql_console_*` aux utilisateurs, il convient de créer des rôles de base de données propres aux utilisateurs de la SQL Console, correspondant à l’espace de noms `sql-console-role:<email>`. Par exemple :
+Cette fonctionnalité de contrôle d’accès peut également être configurée manuellement avec une granularité par utilisateur. Avant d’attribuer les nouveaux rôles `sql_console_*` aux utilisateurs, il convient de créer des rôles de base de données propres aux utilisateurs de la SQL Console, correspondant à l’espace de noms `sql-console-role:<email>`. Par exemple :
 
 ```sql
 CREATE ROLE OR REPLACE sql-console-role:<email>;
 GRANT <some grants> TO sql-console-role:<email>;
 ```
 
-Lorsqu’un rôle correspondant est détecté, il est attribué à l’utilisateur à la place des rôles prédéfinis. Cela permet de mettre en place des configurations de contrôle d’accès plus complexes, par exemple en créant des rôles tels que `sql_console_sa_role` et `sql_console_pm_role`, puis en les attribuant à des utilisateurs spécifiques. Par exemple :
+Lorsqu’un rôle correspondant est détecté, il est attribué à l’utilisateur à la place des rôles prédéfinis. Cela permet de mettre en place des configurations de contrôle d’accès plus complexes, par exemple en créant des rôles tels que `sql_console_sa_role` et `sql_console_pm_role`, puis en les attribuant à des utilisateurs spécifiques. Par exemple :
 
 ```sql
 CREATE ROLE OR REPLACE sql_console_sa_role;

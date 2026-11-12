@@ -14,15 +14,6 @@ namespace ErrorCodes
 namespace
 {
 
-size_t getTaskWeight(const ObjectInfoPtr & object_info)
-{
-    if (auto size = object_info->getFileSizeHint())
-        return std::max<size_t>(1, *size);
-    if (auto metadata = object_info->getObjectMetadata(); metadata && metadata->is_size_known && metadata->size_bytes)
-        return metadata->size_bytes;
-    return 1;
-}
-
 String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive)
 {
     if (send_over_whole_archive && object_info->isArchive())
@@ -36,16 +27,11 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
-    bool send_over_whole_archive_,
-    std::chrono::milliseconds wait_for_owner_)
+    bool send_over_whole_archive_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
-    , wait_for_owner(wait_for_owner_)
     , connection_to_files(ids_of_nodes_.size())
-    , remaining_bytes(ids_of_nodes_.size(), 0)
     , ids_of_nodes(std::move(ids_of_nodes_))
-    , replica_seen(ids_of_nodes.size(), false)
-    , replica_finished(ids_of_nodes.size(), false)
     , iterator_exhausted(false)
 {
 }
@@ -101,39 +87,27 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
             connection_to_files.size()
         );
 
-    if (!replica_seen[number_of_current_replica])
-    {
-        replica_seen[number_of_current_replica] = true;
-        replica_seen_cv.notify_all();
-    }
-
-    auto next_file = takeQueuedFile(number_of_current_replica);
-    if (next_file)
-        LOG_TRACE(
-            log,
-            "Assigning pre-queued file {} to replica {}",
-            getSchedulingIdentifier(next_file, send_over_whole_archive),
-            number_of_current_replica
-        );
-
-    return next_file;
-}
-
-ObjectInfoPtr StorageObjectStorageStableTaskDistributor::takeQueuedFile(size_t replica)
-{
-    auto & files = connection_to_files[replica];
+    auto & files = connection_to_files[number_of_current_replica];
 
     while (!files.empty())
     {
         auto next_file = files.back();
         files.pop_back();
 
-        auto it = unprocessed_files.find(getSchedulingIdentifier(next_file, send_over_whole_archive));
+        auto file_identifier = getSchedulingIdentifier(next_file, send_over_whole_archive);
+        auto it = unprocessed_files.find(file_identifier);
         if (it == unprocessed_files.end())
             continue;
 
-        remaining_bytes[replica] -= getTaskWeight(it->second);
         unprocessed_files.erase(it);
+
+        LOG_TRACE(
+            log,
+            "Assigning pre-queued file {} to replica {}",
+            file_identifier,
+            number_of_current_replica
+        );
+
         return next_file;
     }
 
@@ -165,11 +139,9 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
 
         String file_identifier;
-        String placement_identifier;
         if (send_over_whole_archive && object_info->isArchive())
         {
             file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
-            placement_identifier = file_identifier;
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
                      "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
@@ -177,10 +149,9 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         else
         {
             file_identifier = object_info->getIdentifier();
-            placement_identifier = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
         }
 
-        size_t file_replica_idx = getReplicaForFile(placement_identifier);
+        size_t file_replica_idx = getReplicaForFile(file_identifier);
         if (file_replica_idx == number_of_current_replica)
         {
             LOG_TRACE(
@@ -201,8 +172,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            if (unprocessed_files.emplace(file_identifier, object_info).second)
-                remaining_bytes[file_replica_idx] += getTaskWeight(object_info);
+            unprocessed_files.emplace(file_identifier, object_info);
             connection_to_files[file_replica_idx].push_back(object_info);
         }
     }
@@ -212,106 +182,25 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
 
 ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
-    if (!stealing_allowed_since)
-        stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
-
-    /// Every file is assigned to a replica by rendezvous hashing, so that the same file is read by the same replica
-    /// in every query, and is read from its cache. Taking a file of another replica breaks this, so it is done only
-    /// when needed. A replica that has asked for tasks keeps asking until it receives an empty task, so its files
-    /// will be processed anyway. If they were given to any replica that asks, they would go to random replicas,
-    /// depending on the timing of the requests, and the caches would be different in every query. That's why the
-    /// files of such a replica are taken only to balance the work, when it has much more of it left than the others.
-    /// If such a replica fails in the middle of the query, the result is incomplete anyway, because the files
-    /// that it was reading are lost.
-    ///
-    /// Note that the requests are served synchronously by the threads of the initiator, so waiting here for
-    /// a replica that has already asked for tasks could block the threads that serve the requests of this replica.
-    ///
-    /// The loop exits in one of two ways:
-    /// - returns a file: of the current replica if it has any; otherwise of the replica with the most remaining bytes
-    ///   among the replicas whose files can be taken:
-    ///   - replicas that have received an empty task and will not ask again (their files could have been queued
-    ///     by other threads that took them from the iterator before it was exhausted);
-    ///   - replicas that haven't asked for tasks yet, once `wait_for_owner` has passed;
-    ///   - replicas that have asked for tasks and have more than twice the average remaining bytes of the other replicas;
-    /// - returns nothing when no unprocessed files are left, or when the files that are left will be processed
-    ///   by their replicas.
-    /// Otherwise, when there are files of replicas that haven't asked for tasks yet, it waits until a new replica
-    /// asks for tasks or until `wait_for_owner` passes, and then checks again.
-    while (!unprocessed_files.empty())
+    if (!unprocessed_files.empty())
     {
-        if (auto next_file = takeQueuedFile(number_of_current_replica))
-        {
-            LOG_TRACE(
-                log,
-                "Iterator exhausted. Assigning unprocessed file {} to its replica {}",
-                getSchedulingIdentifier(next_file, send_over_whole_archive),
-                number_of_current_replica);
+        auto it = unprocessed_files.begin();
+        auto next_file = it->second;
+        unprocessed_files.erase(it);
 
-            return next_file;
-        }
+        auto file_path = getSchedulingIdentifier(next_file, send_over_whole_archive);
+        LOG_TRACE(
+            log,
+            "Iterator exhausted. Assigning unprocessed file {} to replica {}",
+            file_path,
+            number_of_current_replica
+        );
 
-        const bool deadline_passed = std::chrono::steady_clock::now() >= *stealing_allowed_since;
-
-        UInt128 total_remaining_bytes = 0;
-        for (size_t bytes : remaining_bytes)
-            total_remaining_bytes += bytes;
-
-        std::optional<size_t> owner;
-        bool should_wait = false;
-        for (size_t replica = 0; replica < remaining_bytes.size(); ++replica)
-        {
-            if (!remaining_bytes[replica])
-                continue;
-
-            bool can_take = false;
-            if (replica_finished[replica])
-            {
-                can_take = true;
-            }
-            else if (!replica_seen[replica])
-            {
-                can_take = deadline_passed;
-                should_wait = should_wait || !deadline_passed;
-            }
-            else
-            {
-                /// More than twice the average of the other replicas. There are at least two replicas here,
-                /// because the current replica doesn't have queued files.
-                UInt128 bytes = remaining_bytes[replica];
-                can_take = bytes * (remaining_bytes.size() - 1) > (total_remaining_bytes - bytes) * 2;
-            }
-
-            if (can_take && (!owner || remaining_bytes[replica] > remaining_bytes[*owner]))
-                owner = replica;
-        }
-
-        if (owner)
-        {
-            auto next_file = takeQueuedFile(*owner);
-            if (!next_file)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica {} has {} bytes left but no queued files", *owner, remaining_bytes[*owner]);
-
-            LOG_TRACE(
-                log,
-                "Iterator exhausted. Assigning unprocessed file {} of replica {} to replica {}",
-                getSchedulingIdentifier(next_file, send_over_whole_archive),
-                *owner,
-                number_of_current_replica);
-
-            return next_file;
-        }
-
-        if (!should_wait)
-            break;
-
-        replica_seen_cv.wait_until(lock, *stealing_allowed_since);
+        return next_file;
     }
 
-    LOG_TRACE(log, "No more tasks for replica {}", number_of_current_replica);
-    replica_finished[number_of_current_replica] = true;
     return {};
 }
 

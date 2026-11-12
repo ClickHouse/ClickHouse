@@ -9,7 +9,9 @@ doc_type: '참고'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-## GCP용 고객 관리형 VPC(BYO-VPC) {#customer-managed-vpc-gcp}
+<div id="customer-managed-vpc-gcp">
+  ## GCP용 고객 관리형 VPC(BYO-VPC)
+</div>
 
 ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC를 사용하여 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 수준을 높여 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있게 해줍니다.
 
@@ -19,21 +21,12 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
     2. 프라이빗 서브넷 내에서 GKE 클러스터 파드에 사용할 보조 IPv4 범위를 최소 1개 할당하십시오. 보조 범위는 최소 `/21`이어야 합니다. 이보다 작은 범위는 GKE 클러스터가 프로비저닝을 완료하는 데 필요한 파드 IP 주소를 충분히 제공하지 못하므로 인프라 설정이 실패합니다.
     3. 서브넷에서 **Private Google Access**를 활성화하십시오. 이렇게 하면 GKE 노드가 외부 IP 주소 없이도 Google API 및 서비스에 연결할 수 있습니다.
 
-    <Note>
-      [Private Service Connect](/ko/cloud/reference/byoc/onboarding/network-gcp#setup-psc)를 통해 서비스를 노출하려면 이 VPC에 용도가 `PRIVATE_SERVICE_CONNECT`인 전용 서브넷도 필요합니다. 지금 생성해도 되고, private link를 활성화하기 전에 나중에 생성해도 됩니다.
-    </Note>
-
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Private Google Access가 활성화된 기본 및 보조 IPv4 범위를 보여주는 BYOC GCP 서브넷 세부 정보" />
   </Step>
 
   <Step title="네트워크 연결 확인" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
-    VPC에 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)가 배포되어 있는지 확인하십시오. Cloud NAT gateway는 외부 IP 주소가 없는 인스턴스에 아웃바운드 연결을 제공하며, 다음 두 가지가 이에 의존합니다.
-
-    * **Tailscale.** ClickHouse BYOC 구성 요소는 Tailscale 컨트롤 플레인에 등록됩니다. Tailscale은 인바운드 공개 액세스 없이도 비공개 관리 작업을 위한 안전한 제로 트러스트 네트워킹을 제공합니다.
-    * **컨테이너 이미지.** 배포에서 실행하는 일부 이미지는 커뮤니티 이미지를 포함하여 BYOC 레지스트리에 미러링되지 않으며, 업스트림 레지스트리에서 가져옵니다.
-
-    아웃바운드 경로가 없는 VPC는 프로비저닝을 완료하지 못합니다. 사전 유효성 검사에서 Cloud NAT gateway가 해당 네트워크를 포함하는지 확인합니다. 공개된 단일 엔드포인트 목록은 없으며, 네트워크 정책상 명시적인 목록이 필요한 경우 지원팀에 문의하여 설정을 검토받으십시오.
+    VPC에 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)가 배포되어 있는지 확인하십시오. ClickHouse BYOC 구성 요소는 Tailscale 컨트롤 플레인과 통신하기 위해 아웃바운드 인터넷 액세스가 필요합니다. Tailscale은 비공개 관리 작업을 위한 안전한 제로 트러스트 네트워킹을 제공하는 데 사용됩니다. Cloud NAT gateway는 외부 IP 주소가 없는 인스턴스에 이러한 아웃바운드 연결을 제공합니다.
 
     **DNS Resolution**
     VPC에서 DNS 해석이 정상적으로 작동하고 있으며, 표준 DNS 이름을 차단하거나 방해하거나 덮어쓰지 않는지 확인하십시오. ClickHouse BYOC는 DNS를 사용해 Tailscale 컨트롤 서버와 ClickHouse 서비스 엔드포인트를 확인합니다. DNS를 사용할 수 없거나 구성이 잘못된 경우 BYOC 서비스가 연결되지 않거나 제대로 작동하지 않을 수 있습니다.
@@ -41,7 +34,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
 
   <Step title="BYOC 인프라 설정" id="set-up-byoc-infrastructure">
     <Note>
-      **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 프로비저닝 전에 자동으로 [사전 유효성 검사](/ko/products/bring-your-own-cloud/onboarding/standard#preflight-validation)를 실행합니다. 이 검사는 관리 서비스 계정에 필요한 권한이 있는지, 필요한 Google Cloud API가 활성화되어 있는지 확인하며, 사용자가 제공한 VPC에 대해서도 네트워크와 서브넷이 정상적으로 확인되는지, 서브넷의 기본 범위와 파드 보조 범위가 충분히 큰지, Cloud NAT gateway가 해당 네트워크를 포함하는지 검증합니다. 누락된 항목이 있으면 설정이 중단되고 수정해야 할 구체적인 문제가 표시됩니다.
+      **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 프로비저닝 전에 자동으로 [사전 유효성 검사](/ko/products/bring-your-own-cloud/onboarding/standard#preflight-validation)를 실행하여 관리 서비스 계정에 필요한 권한이 있는지, 필요한 Google Cloud API가 활성화되어 있는지 확인합니다. 고객 관리형 VPC의 자동 유효성 검사는 아직 GCP 사전 검사에 포함되어 있지 않으므로, 시작하기 전에 VPC가 위의 [네트워크 요구 사항](#configure-existing-vpc)을 충족하는지 확인하십시오.
     </Note>
 
     새 인프라를 설정할 때 ClickHouse Cloud 콘솔에서 다음을 구성하십시오.
@@ -49,32 +42,8 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
     1. **VPC configuration**에서 **Use existing VPC**를 선택하십시오.
     2. **VPC network name**을 입력하십시오.
     3. ClickHouse용으로 할당한 **Subnet name**을 입력하십시오.
-    4. 필요에 따라 **Secondary range names**를 입력하여 GKE가 파드에 사용할 서브넷 보조 범위를 지정할 수 있습니다. 비워 두면 모든 보조 범위가 사용되며, 입력하는 이름은 모두 해당 서브넷에 이미 존재해야 합니다.
-    5. VPC가 공유 VPC 호스트 프로젝트에 있는 경우 **Shared VPC host project ID**를 입력하십시오. VPC가 인프라와 동일한 프로젝트에 있다면 비워 두십시오. 아래 [호스트 프로젝트의 공유 VPC](#shared-vpc-host-project)를 참조하십시오.
-    6. 프로비저닝을 시작하려면 **Set up Infrastructure**를 클릭하십시오.
+    4. 프로비저닝을 시작하려면 **Set up Infrastructure**를 클릭하십시오.
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP용으로 Use existing VPC가 선택되어 VPC network name, subnet name, secondary range names, Shared VPC host project ID 필드를 보여주는 ClickHouse Cloud BYOC 설정 UI" />
+    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP용으로 Use existing VPC가 선택된 ClickHouse Cloud BYOC 설정 UI" />
   </Step>
 </Steps>
-
-### 호스트 프로젝트의 공유 VPC {#shared-vpc-host-project}
-
-별도의 [공유 VPC(Shared VPC)](https://cloud.google.com/vpc/docs/shared-vpc) 호스트 프로젝트에 있는 네트워크 위에서 서비스 프로젝트에 BYOC를 실행할 수 있으며, 이렇게 하면 네트워킹을 중앙에서 일괄 관리할 수 있습니다. VPC와 그 서브넷은 **호스트** 프로젝트가 소유하고, BYOC 인프라는 여기에 연결된 **서비스** 프로젝트에서 실행됩니다. 위에서 설명한 요구 사항은 달라지지 않으며, 호스트 프로젝트의 서브넷에 그대로 적용됩니다.
-
-이 구성에만 해당하는 사전 요구 사항은 두 가지입니다:
-
-* **시작하기 전에 호스트 프로젝트를 공유 VPC 호스트로 활성화하고, 서비스 프로젝트를 여기에 연결하십시오.** 두 단계는 모두 필요하며 서로 별개입니다. 아직 공유 VPC 호스트가 아닌 프로젝트는 먼저 호스트로 활성화해야 하고, 그 이후에야 서비스 프로젝트를 연결할 수 있습니다. 공유 VPC GKE 클러스터는 이 연결이 반드시 존재해야 합니다. 사전 유효성 검사는 연결 여부와 무관하게 호스트 프로젝트의 권한 부여를 통해 네트워크와 서브넷을 읽기 때문에 어느 쪽이든 통과하며, 결국 이후 클러스터 생성 단계에서 프로비저닝이 실패합니다. 두 작업은 모두 조직 수준의 작업으로, 조직 내에서 공유 VPC를 관리하는 담당자가 수행해야 합니다. 온보딩 Terraform이 대신 처리할 수는 없습니다.
-* **호스트 프로젝트를 지정한 상태로 온보딩 Terraform을 실행하십시오.** [온보딩 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)에 `shared_vpc_host_project_id`, `shared_vpc_host_subnet_region`, `shared_vpc_host_private_subnet_id`를 전달하십시오. `shared_vpc_host_private_subnet_id`는 GKE 노드가 실행되는 호스트 서브넷, 즉 위에서 구성한 서브넷이며, 아래에서 설명하는 Private Service Connect 서브넷이 아닙니다. 이 값을 PSC 서브넷으로 지정하면 `roles/compute.networkUser` 권한 부여가 잘못된 서브넷에 적용되어 클러스터 생성 단계에서 프로비저닝이 실패합니다. 한 번의 실행으로 두 프로젝트에 모두 쓰기가 이루어지므로, 실행에 사용하는 자격 증명에는 서비스 프로젝트와 호스트 프로젝트 양쪽에 대한 IAM 관리자 권한이 필요합니다.
-
-모듈이 호스트 프로젝트에 추가하는 권한 부여는 범위가 좁지만, 전부 읽기 전용은 아닙니다:
-
-| 호스트 프로젝트의 권한 부여                                                                                                                                                        | 부여 대상                                                                      | 이유                                                                                                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compute.networks.get`, `compute.subnetworks.get`, `compute.subnetworks.use`                                                                                           | ClickHouse 관리 서비스 계정                                                       | 네트워크와 서브넷을 읽고, Private Service Connect 연결이 PSC 서브넷을 사용할 수 있도록 함                                                                                                                                                                        |
-| 노드 서브넷에 대한 `roles/compute.networkUser`                                                                                                                                 | ClickHouse 관리 서비스 계정, 서비스 프로젝트의 GKE 서비스 에이전트, 서비스 프로젝트의 Google APIs 서비스 계정 | 해당 서브넷을 사용하는 세 아이덴티티                                                                                                                                                                                                                   |
-| `roles/container.hostServiceAgentUser`                                                                                                                                 | 서비스 프로젝트의 GKE 서비스 에이전트                                                     | 모든 공유 VPC GKE 클러스터에 필요                                                                                                                                                                                                                 |
-| `compute.firewalls.create`, `compute.firewalls.delete`, `compute.firewalls.get`, `compute.firewalls.list`, `compute.firewalls.update`, `compute.networks.updatePolicy` | 서비스 프로젝트의 GKE 서비스 에이전트                                                     | 공유 VPC 환경에서 GKE는 클러스터 및 로드 밸런서 방화벽 규칙을 서비스 프로젝트가 아닌 호스트 프로젝트에 생성합니다. 이 권한이 없으면 내부 로드 밸런서의 상태 확인 규칙이 생성되지 않아 인그레스 백엔드가 비정상 상태로 남고 Private Link가 동작하지 않습니다. 이는 `roles/compute.securityAdmin`을 부여하는 대신 사용할 수 있도록 Google이 문서화한 세분화된 대안입니다. |
-
-쓰기 권한은 마지막 행뿐이며, 이 권한도 ClickHouse가 아니라 사용자 소유 프로젝트의 GKE 서비스 에이전트에 부여됩니다. ClickHouse 관리 서비스 계정은 호스트 프로젝트에 쓰기를 수행하지 않습니다. 또한 모듈은 호스트 프로젝트에서 `container.googleapis.com` API를 활성화하며, 이를 통해 해당 프로젝트의 GKE 서비스 에이전트가 프로비저닝됩니다.
-
-그런 다음 위에서 설명한 **Shared VPC host project ID** 필드에 호스트 프로젝트를 입력하십시오. Private Link가 필요하다면 노드 서브넷과 동일한 네트워크 및 리전에 별도의 `PRIVATE_SERVICE_CONNECT` 서브넷을 호스트 프로젝트에 생성하십시오. 이 서브넷은 노드 서브넷을 대체하는 것이 아니라 함께 존재하며, `shared_vpc_host_private_subnet_id`로 전달하는 서브넷과는 다릅니다.

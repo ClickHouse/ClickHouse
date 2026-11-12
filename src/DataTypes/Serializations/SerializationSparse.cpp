@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -60,10 +59,10 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         has_value_after_defaults = false;
     }
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeStateSparse>(*this);
-        new_state->nested = nested ? nested->clone(context) : nullptr;
+        new_state->nested = nested ? nested->clone() : nullptr;
         return new_state;
     }
 };
@@ -319,9 +318,7 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
 
     settings.path.push_back(Substream::SparseOffsets);
-    auto * stream = settings.getter(settings.path);
-    /// An empty range writes nothing, not even the end of granule marker: it only completes a granule.
-    if (stream && offset < size)
+    if (auto * stream = settings.getter(settings.path))
     {
         size_t end = limit && offset + limit < size ? offset + limit : size;
         serializeOffsets(offsets_data, *stream, offset, end);
@@ -408,7 +405,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (offsets_column.size() + 1 != values_column->size())
     {
         throw Exception(
-            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
             offsets_column.size(),
             values_column->size());

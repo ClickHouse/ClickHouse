@@ -1,4 +1,5 @@
 -- Test recursive CTE whose seed (non-recursive) term is itself a UNION of several SELECTs.
+SET enable_analyzer = 1;
 
 -- Seed is a UNION DISTINCT of two SELECTs; recursion widens from every seed row.
 SELECT sum(n), count()

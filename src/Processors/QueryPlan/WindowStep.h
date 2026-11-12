@@ -1,7 +1,5 @@
 #pragma once
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
 
 #include <Interpreters/WindowDescription.h>
 
@@ -15,9 +13,8 @@ class WindowStep : public ITransformingStep
 public:
     explicit WindowStep(const SharedHeader & input_header_,
             const WindowDescription & window_description_,
-            const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
-            bool streams_fan_out_,
-            const SortingStep::Settings & sort_settings_);
+            const std::vector<WindowFunctionDescription> & window_functions_,
+            bool streams_fan_out_);
 
     String getName() const override { return "Window"; }
 
@@ -56,7 +53,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -64,9 +60,7 @@ public:
 
     const WindowDescription & getWindowDescription() const;
 
-    const VectorWithMemoryTracking<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
-
-    const SortingStep::Settings & getSortSettings() const { return sort_settings; }
+    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
 
     /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
     bool hasStreamsFanOut() const { return streams_fan_out; }
@@ -77,9 +71,8 @@ private:
     void updateOutputHeader() override;
 
     WindowDescription window_description;
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
+    std::vector<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
-    SortingStep::Settings sort_settings;
 };
 
 }

@@ -1,7 +1,0 @@
---- file
-100000	4999950000
---- bucket
-100000	4999950000
---- tasks, metadata fetched on replicas
-bucket	1	0
-file	1	0

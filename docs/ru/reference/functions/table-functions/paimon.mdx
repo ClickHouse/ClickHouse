@@ -15,7 +15,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Предоставляет табличный интерфейс только для чтения к таблицам Apache [Paimon](https://paimon.apache.org/), хранящимся в Amazon S3, Azure, HDFS или локально.
 
-## Синтаксис {#syntax}
+<div id="syntax">
+  ## Синтаксис
+</div>
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -29,24 +31,24 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-## Аргументы {#arguments}
+<div id="arguments">
+  ## Аргументы
+</div>
 
 Описание аргументов соответствует описанию аргументов табличных функций `s3`, `azureBlobStorage`, `HDFS` и `file`.
 `format` обозначает формат файлов данных в таблице Paimon.
 
 Для `paimonS3` можно использовать необязательный параметр `extra_credentials`, чтобы передать `role_arn` для доступа на основе ролей в ClickHouse Cloud. Шаги по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
 
-### Возвращаемое значение {#returned-value}
+<div id="returned-value">
+  ### Возвращаемое значение
+</div>
 
 Таблица с указанной структурой для чтения данных из указанной таблицы Paimon.
 
-## Ограничения {#limitations}
-
-Слияние при чтении (merge-on-read) не реализовано, поэтому **чтение таблиц с первичным ключом не поддерживается**: считыватель возвращает необработанное объединение
-файлов данных снимка, в котором остаются версии строк, уже замещённые последующими операциями upsert. По этой причине при чтении таблицы, в схеме которой
-объявлен `primary-key`, генерируется исключение.
-
-## Определение именованной коллекции {#defining-a-named-collection}
+<div id="defining-a-named-collection">
+  ## Определение именованной коллекции
+</div>
 
 Ниже приведён пример настройки именованной коллекции для хранения URL и учётных данных:
 
@@ -69,11 +71,15 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-## Псевдонимы {#aliases}
+<div id="aliases">
+  ## Псевдонимы
+</div>
 
 Табличная функция `paimon` теперь — псевдоним `paimonS3`.
 
-## Виртуальные столбцы {#virtual-columns}
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -81,11 +87,13 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
 
-## Поддерживаемые типы данных {#data-types-supported}
+<div id="data-types-supported">
+  ## Поддерживаемые типы данных
+</div>
 
 | Тип данных Paimon                 | Тип данных ClickHouse     |
 | --------------------------------- | ------------------------- |
-| BOOLEAN                           | Bool                      |
+| BOOLEAN                           | Int8                      |
 | TINYINT                           | Int8                      |
 | SMALLINT                          | Int16                     |
 | INTEGER                           | Int32                     |
@@ -103,7 +111,9 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
 
-## Поддерживаемые ключи партиционирования {#partition-supported}
+<div id="partition-supported">
+  ## Поддерживаемые ключи партиционирования
+</div>
 
 Типы данных, поддерживаемые в ключах партиционирования Paimon:
 
@@ -122,7 +132,9 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 * `FLOAT`
 * `DOUBLE`
 
-## См. также {#see-also}
+<div id="see-also">
+  ## См. также
+</div>
 
 * [Табличная функция cluster для Paimon](/ru/reference/functions/table-functions/paimonCluster)
 

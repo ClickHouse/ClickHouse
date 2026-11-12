@@ -20,6 +20,7 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -72,7 +73,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsString count_distinct_implementation;
@@ -100,7 +100,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -1136,14 +1135,11 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto query_context = CurrentThread::tryGetQueryContext();
             auto access = query_context ? query_context->getAccess() : nullptr;
             const auto & storage_id = storage->getStorageID();
-            const NameSet chain_granted = access
-                ? alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, source_columns.getNames())
-                : NameSet{};
             for (const auto & column : source_columns)
             {
                 if (access
                     && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && chain_granted.contains(column.name))
+                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
                     accessible_columns.push_back(column);
             }
         }
@@ -1508,17 +1504,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
     }
 
-    if (select_query->shuffle)
-    {
-        if (!settings[Setting::allow_experimental_shuffle_query])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
-
-        if (!select_options.only_analyze)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "`SHUFFLE` is supported only with the analyzer (turn on setting `allow_experimental_analyzer = 1`)");
-    }
-
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
@@ -1548,7 +1533,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Only apply AST optimization for initial queries.
+    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
+
+     /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;
