@@ -172,8 +172,7 @@ const std::unordered_set<String> & WriteTransaction::getTimestampNtzPaths() cons
 
 void WriteTransaction::create(const DB::Names & partition_columns)
 {
-    auto * engine_builder = kernel_helper->createBuilder();
-    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = kernel_helper->getEngine();
 
     auto * new_transaction = DeltaLake::KernelUtils::unwrapResult(
         ffi::transaction(
@@ -315,8 +314,7 @@ void WriteTransaction::createTable()
     /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
     kernel_helper->prepareForTableCreation();
 
-    auto * engine_builder = kernel_helper->createBuilder();
-    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = kernel_helper->getEngine();
 
     DeltaLake::KernelCreateSchemaState schema_state;
     schema_state.schema_list = &table_schema;

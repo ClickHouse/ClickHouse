@@ -90,8 +90,7 @@ TableChanges::KernelTableChanges & TableChanges::getTableChanges() const
     if (table_changes.get())
         return table_changes;
 
-    auto * engine_builder = helper->createBuilder();
-    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = helper->getEngine();
     table_changes = version_range.second.has_value()
         ? KernelUtils::unwrapResult(
             ffi::table_changes_between_versions(
