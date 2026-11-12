@@ -2954,7 +2954,7 @@ namespace
     public:
         bool has(const String &) override { return false; }
         ResourceLink get(const String &) override { return {}; }
-        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
     };
 }
 
