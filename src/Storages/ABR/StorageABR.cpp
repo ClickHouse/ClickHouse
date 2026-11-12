@@ -1292,8 +1292,7 @@ CREATE TABLE events_10 AS events_1;
 CREATE TABLE events_100 AS events_1;
 
 SET allow_experimental_abr = 1;
-CREATE TABLE events (ts DateTime, region String, value UInt64)
-ENGINE = ABR('events', [1, 10, 100], ('ts', 'region'));
+CREATE TABLE events ENGINE = ABR('events', [1, 10, 100], ('ts', 'region'));
 
 SELECT count() FROM events WHERE ts >= now() - INTERVAL 1 DAY AND region = 'eu';
 )",
