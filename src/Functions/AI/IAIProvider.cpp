@@ -1,10 +1,10 @@
-#include <Functions/AI/IAIProvider.h>
-#include <Functions/AI/OpenAIProvider.h>
 #include <Functions/AI/AnthropicProvider.h>
 #include <Functions/AI/CohereProvider.h>
+#include <Functions/AI/IAIProvider.h>
+#include <Functions/AI/OpenAIProvider.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -76,7 +76,8 @@ void IAIProvider::embed(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }
 
-void IAIProvider::rerank(const AIRerankRequest & /*ai_rerank_request*/, const ConnectionTimeouts & /*timeouts*/, AIRerankResponse & /*response*/)
+void IAIProvider::rerank(
+    const AIRerankRequest & /*ai_rerank_request*/, const ConnectionTimeouts & /*timeouts*/, AIRerankResponse & /*response*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support reranking");
 }
@@ -92,8 +93,10 @@ AIProviderPtr createAIProvider(
     else if (provider_name == "cohere")
         provider = std::make_unique<CohereProvider>(endpoint, api_key);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'cohere', 'huggingface', 'tei'", provider_name);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'cohere', 'huggingface', 'tei'",
+            provider_name);
 
     /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
     auto headers = provider->getHeaders();

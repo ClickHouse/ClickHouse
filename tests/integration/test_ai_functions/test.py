@@ -21,7 +21,9 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "node", stay_alive=True, user_configs=["configs/allow_experimental_ai_relevance.xml"]
+    "node",
+    stay_alive=True,
+    user_configs=["configs/allow_experimental_ai_relevance.xml"],
 )
 
 
@@ -2162,8 +2164,14 @@ def test_function_name_header(started_cluster):
             "aiClassify",
             "SELECT aiClassify('hi', ['a', 'b'], map('credentials', 'ai_mock'))",
         ),
-        ("aiExtract", "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))"),
-        ("aiTranslate", "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))"),
+        (
+            "aiExtract",
+            "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))",
+        ),
+        (
+            "aiTranslate",
+            "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))",
+        ),
         (
             "aiEmbed",
             "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
@@ -2554,7 +2562,8 @@ def fill_relevance_docs(documents=RELEVANCE_DOCUMENTS):
 
 def test_relevance_scores(started_cluster):
     """Each row gets its own document's score, whatever position the provider ranked it at: the mock
-    returns results sorted by score, not in input order, so a mix-up of `index` would show here."""
+    returns results sorted by score, not in input order, so a mix-up of `index` would show here.
+    """
     query = "capital of France"
     fill_relevance_docs()
     result = instance.query(
@@ -2634,7 +2643,9 @@ def test_relevance_groups_rows_by_query(started_cluster):
     )
     for line, (q, d) in zip(result.strip().splitlines(), rows):
         _, score = line.split("\t")
-        assert parse_nullable_float(score) == pytest.approx(expected_rerank_score(q, d), abs=1e-4)
+        assert parse_nullable_float(score) == pytest.approx(
+            expected_rerank_score(q, d), abs=1e-4
+        )
     assert int(get_profile_events(qid)["api_calls"]) == 2  # one per distinct query
     instance.query("DROP TABLE relevance_pairs")
 
@@ -2653,16 +2664,14 @@ def test_relevance_order_by_limit_across_blocks(started_cluster):
     )
     # Against the query 'capital of France' (word set {capital, of, france}), the mock's Jaccard
     # scores are: paris -> 0.5, berlin -> 0.25, eiffel -> 0.125, baguette -> 0.2222, sourdough -> 0.
-    instance.query(
-        """
+    instance.query("""
         INSERT INTO relevance_catalog VALUES
         ('https://example.com/paris', 'geography', 'Paris is the capital of France'),
         ('https://example.com/berlin', 'geography', 'Berlin is the capital of Germany'),
         ('https://example.com/eiffel', 'geography', 'The Eiffel Tower stands in France'),
         ('https://example.com/baguette', 'cooking', 'A baguette is the pride of France'),
         ('https://example.com/sourdough', 'cooking', 'Sourdough needs time and patience')
-        """
-    )
+        """)
     try:
         qid = unique_query_id("relevance_order_by")
         result = instance.query(
@@ -2734,7 +2743,8 @@ def test_relevance_input_token_quota_throw(started_cluster):
 
 def test_relevance_output_token_quota_skip(started_cluster):
     """Reported output tokens count towards `ai_function_max_output_tokens_per_query`. With
-    `ai_function_throw_on_quota_exceeded = 0`, rows after the limit is hit are skipped as NULL."""
+    `ai_function_throw_on_quota_exceeded = 0`, rows after the limit is hit are skipped as NULL.
+    """
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
     qid = unique_query_id("relevance_output_quota")
@@ -2789,7 +2799,13 @@ def test_relevance_null_and_empty_operands(started_cluster):
         "SELECT aiRelevance(q, d, map('credentials', 'ai_rerank')) FROM relevance_nullable ORDER BY id",
         query_id=qid,
     )
-    assert [parse_nullable_float(v) for v in result.split()] == [None, None, None, None, 1.0]
+    assert [parse_nullable_float(v) for v in result.split()] == [
+        None,
+        None,
+        None,
+        None,
+        1.0,
+    ]
     assert json.loads(last_request()["body"])["documents"] == ["a"]
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 1  # only the complete row dispatched a request
@@ -2832,7 +2848,9 @@ def test_relevance_model_from_named_collection_forwarded(started_cluster):
 def test_relevance_empty_model_override_forwarded(started_cluster):
     """An explicitly empty `model` in the map overrides the collection's model and is sent as-is:
     whether a model is required is left to the provider's endpoint."""
-    instance.query("SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank', 'model', ''))")
+    instance.query(
+        "SELECT aiRelevance('hi', 'a', map('credentials', 'ai_rerank', 'model', ''))"
+    )
     assert json.loads(last_request()["body"])["model"] == ""
 
 

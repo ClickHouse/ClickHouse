@@ -160,7 +160,6 @@ struct AIRerankRequest : AIRequest
 
     /// Model identifier as specified in the parameter map or the named collection (e.g. "rerank-v3.5").
     String model;
-
 };
 
 /// Response from a single reranking request. `results` holds exactly one entry per document, ordered by

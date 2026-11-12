@@ -1,20 +1,20 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionBaseAI.h>
-#include <Functions/AI/IAIProvider.h>
+#include <Access/Common/AccessFlags.h>
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/AI/AIRequestExecutor.h>
-#include <Access/Common/AccessFlags.h>
+#include <Functions/AI/IAIProvider.h>
+#include <Functions/FunctionBaseAI.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 
-#include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <base/scope_guard.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -58,14 +58,20 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_ai_relevance_function])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Function '{}' is experimental. Set `allow_experimental_ai_relevance_function` setting to enable it", name);
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Function '{}' is experimental. Set `allow_experimental_ai_relevance_function` setting to enable it",
+                name);
 
         context->checkAccess(AccessType::aiRelevance);
         return std::make_shared<FunctionAiRelevance>(context);
     }
 
-    explicit FunctionAiRelevance(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
+    explicit FunctionAiRelevance(ContextPtr context_)
+        : context(context_)
+    {
+        FunctionBaseAI::throwIfBackgroundExpression(context);
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -92,10 +98,16 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
-            {"document", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
+            {"document",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString),
+             nullptr,
+             "String"},
         };
         FunctionArgumentDescriptors optional_args{
-            {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
+            {"params",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap),
+             &isColumnConst,
+             "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
@@ -117,8 +129,7 @@ public:
         std::shared_ptr<IAIProvider> provider = createAIProvider(
             getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
         if (!provider->supportsRerank())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "AI provider '{}' does not support reranking", params.collection.provider);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "AI provider '{}' does not support reranking", params.collection.provider);
 
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -246,7 +257,7 @@ private:
         return {
             {"credentials", AIParamKind::String, std::nullopt},
             /// `model` is required, but is normally supplied by the named collection (same as `commonParams`).
-            {"model", AIParamKind::String, std::nullopt, /*inherit_from_collection=*/ true},
+            {"model", AIParamKind::String, std::nullopt, /*inherit_from_collection=*/true},
         };
     }
 
@@ -295,10 +306,25 @@ endpoint differs from both.
         .arguments
         = {{"query", "The query to score the document against.", {"String"}},
            {"document", "The document to score.", {"String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. The common parameters `credentials` and `model` apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
-        .returned_value = {"The relevance score in `[0, 1]` (higher is more relevant), or NULL if the query or document is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Nullable(Float32)"}},
+           {"params",
+            "Optional constant `Map(String, String)` of parameters. The common parameters `credentials` and `model` apply (see [AI "
+            "Functions](/reference/functions/regular-functions/ai-functions)).",
+            {"Map(String, String)"}}},
+        .returned_value
+        = {"The relevance score in `[0, 1]` (higher is more relevant), or NULL if the query or document is NULL or empty, the request "
+           "failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` "
+           "disabled.",
+           {"Nullable(Float32)"}},
         .examples
-        = {{"Rerank the candidates retrieved by a filter and return the top 2 rows (`credentials` can be omitted if the `ai_function_rerank_default_credentials` setting is set; `model` can be omitted if the named collection defines one)", "SET allow_experimental_ai_relevance_function = 1;\nCREATE TABLE docs (url String, category String, text String) ENGINE = Memory;\nINSERT INTO docs VALUES ('https://example.com/paris', 'geography', 'Paris is the capital of France'), ('https://example.com/berlin', 'geography', 'Berlin is the capital of Germany'), ('https://example.com/eiffel', 'geography', 'The Eiffel Tower stands in France'), ('https://example.com/baguette', 'cooking', 'A baguette is the pride of France');\nSELECT url, text, aiRelevance('capital of France', text, map('credentials', 'ai_rerank_credentials', 'model', 'rerank-v3.5')) AS score\nFROM docs\nWHERE category = 'geography'\nORDER BY score DESC\nLIMIT 2", ""}},
+        = {{"Rerank the candidates retrieved by a filter and return the top 2 rows (`credentials` can be omitted if the "
+            "`ai_function_rerank_default_credentials` setting is set; `model` can be omitted if the named collection defines one)",
+            "SET allow_experimental_ai_relevance_function = 1;\nCREATE TABLE docs (url String, category String, text String) ENGINE = "
+            "Memory;\nINSERT INTO docs VALUES ('https://example.com/paris', 'geography', 'Paris is the capital of France'), "
+            "('https://example.com/berlin', 'geography', 'Berlin is the capital of Germany'), ('https://example.com/eiffel', 'geography', "
+            "'The Eiffel Tower stands in France'), ('https://example.com/baguette', 'cooking', 'A baguette is the pride of "
+            "France');\nSELECT url, text, aiRelevance('capital of France', text, map('credentials', 'ai_rerank_credentials', 'model', "
+            "'rerank-v3.5')) AS score\nFROM docs\nWHERE category = 'geography'\nORDER BY score DESC\nLIMIT 2",
+            ""}},
         .introduced_in = {26, 10},
         .category = FunctionDocumentation::Category::AI});
 

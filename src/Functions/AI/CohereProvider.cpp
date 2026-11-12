@@ -2,12 +2,12 @@
 #include <IO/HTTPCommon.h>
 #include <Common/Exception.h>
 
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
 
 #include <sstream>
 
@@ -81,8 +81,7 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
         throw AIProviderHTTPException(
-            status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            status, PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;
@@ -111,9 +110,11 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
 
     /// Without `top_n`, `results` holds exactly one entry per document.
     if (results->size() != ai_rerank_request.documents.size())
-        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
+        throw Exception(
+            ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI rerank response 'results' has {} entries, expected {} (one per document sent)",
-            results->size(), ai_rerank_request.documents.size());
+            results->size(),
+            ai_rerank_request.documents.size());
 
     /// Guards against a misbehaving provider returning an out-of-range or duplicate `index`.
     VectorWithMemoryTracking<bool> seen(ai_rerank_request.documents.size(), false);
@@ -132,17 +133,23 @@ void CohereProvider::rerank(const AIRerankRequest & ai_rerank_request, const Con
 
         UInt64 idx = item->getValue<UInt64>("index");
         if (idx >= ai_rerank_request.documents.size())
-            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
+            throw Exception(
+                ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI rerank response 'results[{}].index' = {} is out of range (expected < {})",
-                i, idx, ai_rerank_request.documents.size());
+                i,
+                idx,
+                ai_rerank_request.documents.size());
         if (seen[idx])
-            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-                "AI rerank response 'results[{}].index' = {} duplicates an earlier entry", i, idx);
+            throw Exception(
+                ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
+                "AI rerank response 'results[{}].index' = {} duplicates an earlier entry",
+                i,
+                idx);
         seen[idx] = true;
 
-        response.results.push_back(AIRerankResponse::Result{
-            .index = static_cast<UInt32>(idx),
-            .relevance_score = static_cast<Float32>(item->getValue<Float64>("relevance_score"))});
+        response.results.push_back(
+            AIRerankResponse::Result{
+                .index = static_cast<UInt32>(idx), .relevance_score = static_cast<Float32>(item->getValue<Float64>("relevance_score"))});
     }
 }
 

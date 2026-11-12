@@ -519,8 +519,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     std::shared_ptr<IAIProvider> provider = createAIProvider(
         getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
     if (!provider->supportsChat())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "AI provider '{}' does not support chat completions", params.collection.provider);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "AI provider '{}' does not support chat completions", params.collection.provider);
 
     if (input_rows_count == 0)
         return result_type->createColumn();

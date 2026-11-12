@@ -94,7 +94,7 @@ import json
 import random
 import threading
 import time
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
@@ -280,7 +280,8 @@ def make_embeddings_response(body, *, duplicate_index=False, drop_last=False):
 def rerank_score(query, document):
     """Deterministic Jaccard similarity over lowercase word sets. Documents sharing more words with
     the query score higher, giving a natural, testable ranking. Mirrored in test.py's
-    `expected_rerank_score` so tests can compute the expected order/scores independently."""
+    `expected_rerank_score` so tests can compute the expected order/scores independently.
+    """
     q_words = set(query.lower().split())
     d_words = set(document.lower().split())
     if not q_words or not d_words:
