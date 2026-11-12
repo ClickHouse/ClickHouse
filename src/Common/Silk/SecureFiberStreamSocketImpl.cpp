@@ -1,8 +1,8 @@
-#include <IO/SilkSecureFiberStreamSocketImpl.h>
+#include <Common/Silk/SecureFiberStreamSocketImpl.h>
 
 #if USE_SILK && USE_SSL
 
-#include <IO/SilkFiberStreamSocketImpl.h>
+#include <Common/Silk/FiberStreamSocketImpl.h>
 
 #include <base/MemorySanitizer.h>
 #include <base/defines.h>
@@ -172,12 +172,7 @@ private:
 }
 
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context)
-    : SecureFiberStreamSocketImpl(new FiberStreamSocketImpl, context)
-{
-}
-
-SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
-    : Poco::Net::SecureStreamSocketImpl(underlying_, context)
+    : Poco::Net::SecureStreamSocketImpl(Poco::AutoPtr<Poco::Net::StreamSocketImpl>(new FiberStreamSocketImpl), context)
 {
     setBioMethod(silkBioMethod());
     setMutex(std::make_unique<SilkRecursiveMutex>());
