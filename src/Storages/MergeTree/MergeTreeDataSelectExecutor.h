@@ -321,10 +321,6 @@ public:
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
-    /// A pending `RENAME COLUMN` / `DROP COLUMN` changes what a part returns before the part is renamed, and `KILL MUTATION` never
-    /// renames it, so the query condition cache is neither read nor written meanwhile.
-    static bool hasPendingMetadataMutations(const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
-
     /// Throws if an index in `force_data_skipping_indices` is not among the useful ones.
     static void checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings);
 

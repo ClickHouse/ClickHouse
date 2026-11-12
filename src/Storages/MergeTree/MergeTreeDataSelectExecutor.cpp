@@ -1995,11 +1995,6 @@ static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::
     return node;
 }
 
-bool MergeTreeDataSelectExecutor::hasPendingMetadataMutations(const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
-{
-    return mutations_snapshot && mutations_snapshot->hasMetadataMutations();
-}
-
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
@@ -2044,7 +2039,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// holds finished ones. The write sides are gated symmetrically (see `ReadFromMergeTree`).
             || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
             || hasPendingAlterOrMetadataMutations(parts_with_ranges, mutations_snapshot)
-            || hasPendingMetadataMutations(mutations_snapshot)
             /// A masking policy rewrites the values this read filters without being in the mutations snapshot
             /// or the condition hash, so entries recorded by a read without the policy may drop matching marks.
             || (!parts_with_ranges.empty()

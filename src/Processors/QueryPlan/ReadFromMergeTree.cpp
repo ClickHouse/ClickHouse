@@ -3046,11 +3046,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-bool ReadFromMergeTree::isQueryConditionCacheAllowed() const
-{
-    return allow_query_condition_cache && !MergeTreeDataSelectExecutor::hasPendingMetadataMutations(mutations_snapshot);
-}
-
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
@@ -3968,9 +3963,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     const bool filter_depends_on_non_deterministic_virtuals = filterDependsOnNonDeterministicVirtuals(metadata_snapshot->virtuals, query_info_);
     if (filter_depends_on_non_deterministic_virtuals)
-        reader_settings.use_query_condition_cache = false;
-
-    if (MergeTreeDataSelectExecutor::hasPendingMetadataMutations(mutations_snapshot))
         reader_settings.use_query_condition_cache = false;
 
     /// Mirrors the read side in `filterPartsByQueryConditionCache`: while an alter or metadata mutation
@@ -5759,9 +5751,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
-        reader_settings.use_query_condition_cache = false;
-
-    if (MergeTreeDataSelectExecutor::hasPendingMetadataMutations(mutations_snapshot))
         reader_settings.use_query_condition_cache = false;
 
     /// See the same gate in `selectRangesToRead`.
