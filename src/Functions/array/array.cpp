@@ -337,7 +337,7 @@ private:
         if (!out_array)
             return false;
 
-        std::vector<const ColumnArray *> arrays;
+        VectorWithMemoryTracking<const ColumnArray *> arrays;
         arrays.reserve(columns.size());
         for (const auto * column : columns)
         {
