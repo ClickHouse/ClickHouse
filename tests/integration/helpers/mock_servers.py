@@ -92,7 +92,7 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
 # The same as start_mock_servers, but
 # import servers from central directory tests/integration/helpers
 # and return the control instance
-def start_s3_mock(cluster, mock_name, port, timeout=100):
+def start_s3_mock(cluster, mock_name, port, timeout=100, args=None):
     script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
     registered_servers = [
         mock
@@ -106,7 +106,8 @@ def start_s3_mock(cluster, mock_name, port, timeout=100):
             f"Can't run s3 mock `{mock_name}`. No file `{file_name}` in directory `{script_dir}`"
         )
 
-    start_mock_servers(cluster, script_dir, [(file_name, "resolver", port)], timeout)
+    mock_spec = (file_name, "resolver", port) if args is None else (file_name, "resolver", port, args)
+    start_mock_servers(cluster, script_dir, [mock_spec], timeout)
 
     fmt = importlib.import_module("." + mock_name, "helpers.s3_mocks")
     control = getattr(fmt, "MockControl")(cluster, "resolver", port)

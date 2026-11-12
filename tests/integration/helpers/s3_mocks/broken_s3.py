@@ -1,10 +1,11 @@
+import argparse
 import http.server
 import random
 import socket
 import socketserver
+import ssl
 import string
 import struct
-import sys
 import threading
 import time
 import urllib.parse
@@ -248,7 +249,10 @@ class _ServerRuntime:
         # Answers directly instead of redirecting, so the upload is never completed upstream and
         # whatever object the key already holds stays in place.
         def __init__(self, early=None):
-            self.early = early == "1"
+            # `1`: answer before reading the body, then reset the connection, like MinIO.
+            # `lingering`: answer before reading the body, then read and drop a part of it before
+            # the connection is reset, like AWS S3, which keeps reading for a while after its answer.
+            self.early = early
 
         def inject_error(self, request_handler):
             data = (
@@ -260,15 +264,29 @@ class _ServerRuntime:
                 "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
                 "</Error>"
             )
-            if self.early:
+            if self.early in ("1", "lingering"):
                 request_handler.send_response(404)
                 request_handler.send_header("Content-Type", "text/xml")
                 request_handler.send_header("Content-Length", str(len(data)))
                 request_handler.send_header("Connection", "close")
                 request_handler.end_headers()
                 request_handler.wfile.write(bytes(data, "UTF-8"))
-                # like MinIO: stop sending, wait, then close with the body unread, which resets the connection
                 request_handler.connection.shutdown(socket.SHUT_WR)
+                if self.early == "lingering":
+                    # like AWS S3: keep reading and dropping the body after the answer, but less than
+                    # a large part, so that a client that does not watch the connection is still sending
+                    connection = request_handler.connection
+                    connection.settimeout(1)
+                    to_drop = 8 * 1024 * 1024
+                    while to_drop > 0:
+                        try:
+                            data = connection.recv(min(to_drop, 65536))
+                        except OSError:
+                            break
+                        if not data:
+                            break
+                        to_drop -= len(data)
+                # stop reading, wait, then close with the body unread, which resets the connection
                 time.sleep(0.5)
                 request_handler.connection.close()
             else:
@@ -929,9 +947,25 @@ class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 if __name__ == "__main__":
-    httpd = _ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-    if len(sys.argv) == 4:
-        httpd.set_upstream(sys.argv[2], sys.argv[3])
-    else:
-        httpd.set_upstream("minio1", 9001)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("port", type=int)
+    parser.add_argument("upstream_host", nargs="?", default="minio1")
+    parser.add_argument("upstream_port", nargs="?", default="9001")
+    # The same mock, with the same state, also listens with TLS on this port.
+    parser.add_argument("--tls-port", type=int)
+    parser.add_argument("--tls-cert")
+    parser.add_argument("--tls-key")
+    args = parser.parse_args()
+
+    httpd = _ThreadedHTTPServer(("0.0.0.0", args.port), RequestHandler)
+    httpd.set_upstream(args.upstream_host, args.upstream_port)
+
+    if args.tls_port is not None:
+        tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls_context.load_cert_chain(args.tls_cert, args.tls_key)
+        httpsd = _ThreadedHTTPServer(("0.0.0.0", args.tls_port), RequestHandler)
+        httpsd.socket = tls_context.wrap_socket(httpsd.socket, server_side=True)
+        httpsd.set_upstream(args.upstream_host, args.upstream_port)
+        threading.Thread(target=httpsd.serve_forever, daemon=True).start()
+
     httpd.serve_forever()

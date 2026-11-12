@@ -14,6 +14,29 @@ from helpers.test_tools import assert_eq_with_retry
 from helpers.config_cluster import minio_secret_key
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+CERTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "certs")
+
+
+def start_broken_s3(cluster):
+    # The same mock, with the same state, also listens with TLS on 8443 (self-signed certificate).
+    resolver = cluster.get_container_id("resolver")
+    for name in ("server.crt", "server.key"):
+        cluster.copy_file_to_container(
+            resolver, os.path.join(CERTS_DIR, name), f"broken_s3_{name}"
+        )
+    return start_s3_mock(
+        cluster,
+        "broken_s3",
+        "8083",
+        args=[
+            "--tls-port",
+            "8443",
+            "--tls-cert",
+            "broken_s3_server.crt",
+            "--tls-key",
+            "broken_s3_server.key",
+        ],
+    )
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +45,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=[],
+            main_configs=["configs/ssl_client.xml"],
             user_configs=[
                 "configs/setting.xml",
                 "configs/s3_retries.xml",
@@ -57,7 +80,7 @@ def cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
-        start_s3_mock(cluster, "broken_s3", "8083")
+        start_broken_s3(cluster)
 
         for _, node in cluster.instances.items():
             node.stop_clickhouse()
@@ -81,7 +104,7 @@ def randomize_query_id(query_id, random_suffix_length=10):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_broken_s3(cluster)
 
 
 @pytest.fixture(scope="function")
@@ -401,7 +424,16 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
     ), error
 
 
-def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
+@pytest.mark.parametrize(
+    "scheme, port, early",
+    [("http", 8083, "1"), ("https", 8443, "1"), ("https", 8443, "lingering")],
+)
+def test_early_error_response_at_upload_is_not_retried(
+    cluster, broken_s3, scheme, port, early
+):
+    # The server answers `NoSuchUpload` before it reads the body, then resets the connection
+    # (`1`, like MinIO) or reads a part of the body before the reset (`lingering`, like AWS S3).
+    # The client must notice the answer while it sends the body, also over TLS.
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()
@@ -409,7 +441,7 @@ def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
         count=1000,
         after=0,
         action="no_such_upload",
-        action_args=["1"],
+        action_args=[early],
     )
 
     insert_query_id = randomize_query_id("TEST_EARLY_ERROR_RESPONSE_AT_UPLOAD")
@@ -417,7 +449,7 @@ def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_early_error_response_at_upload_is_not_retried',
+                '{scheme}://resolver:{port}/root/data/test_early_error_response_at_upload_is_not_retried_{scheme}_{early}',
                 'minio', '{minio_secret_key}',
                 'CSV', auto, 'none'
             )
@@ -442,6 +474,45 @@ def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
     assert upload_parts == 1
     # the early 404 and the failed abort of the fake upload
     assert s3_errors == 2, s3_errors
+
+
+def test_tls_upload_is_throttled(cluster, broken_s3):
+    # The body is sent with non-blocking writes; the bandwidth limit must still hold over TLS.
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_puts(1)
+
+    insert_query_id = randomize_query_id("TEST_TLS_UPLOAD_IS_THROTTLED")
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'https://resolver:8443/root/data/test_tls_upload_is_throttled',
+                'minio', '{minio_secret_key}',
+                'RowBinary', 's String'
+            )
+        SELECT randomString(1048576) FROM numbers(8)
+        SETTINGS
+            s3_max_single_part_upload_size=100000000,
+            max_remote_write_network_bandwidth=1000000,
+            s3_truncate_on_insert=1,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    sleep_us = int(
+        node.query(
+            f"""
+            SELECT ProfileEvents['QueryRemoteWriteThrottlerSleepMicroseconds']
+            FROM system.query_log
+            WHERE query_id = '{insert_query_id}' AND type = 'QueryFinish'
+            """
+        )
+    )
+    # 8 MiB at 1 MB/s with a burst of at most 1 MB needs more than 7 s of throttler sleep.
+    assert sleep_us > 4_000_000, sleep_us
 
 
 @pytest.mark.parametrize("send_something", [True, False])

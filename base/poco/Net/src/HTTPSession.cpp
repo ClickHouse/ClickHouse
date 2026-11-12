@@ -226,6 +226,95 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 }
 
 
+int HTTPSession::fillBuffer()
+{
+	if (!_pBuffer)
+	{
+		_pBuffer = std::make_unique<char[]>(HTTP_DEFAULT_BUFFER_SIZE);
+		_pCurrent = _pEnd = _pBuffer.get();
+	}
+	const int unread = static_cast<int>(_pEnd - _pCurrent);
+	if (_pCurrent != _pBuffer.get())
+	{
+		std::memmove(_pBuffer.get(), _pCurrent, unread);
+		_pCurrent = _pBuffer.get();
+		_pEnd = _pCurrent + unread;
+	}
+	const int space = HTTP_DEFAULT_BUFFER_SIZE - unread;
+	if (space == 0)
+		return 0;
+	try
+	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atStart(space);
+		/// A negative result means that a non-blocking socket has nothing: `EAGAIN`, or
+		/// `ERR_SSL_WANT_READ` and `ERR_SSL_WANT_WRITE` for a TLS socket.
+		const int result = _socket.receiveBytes(_pEnd, space);
+		if (result < 0)
+		{
+			if (_receiveDataHooks)
+				_receiveDataHooks->atFail();
+			return 0;
+		}
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFinish(result);
+		if (result == 0)
+			return -1;
+		_pEnd += result;
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFail();
+		setException(exc);
+		throw;
+	}
+}
+
+
+int HTTPSession::writeRawNonBlocking(
+	const char* buffer, std::streamsize length, Wait& wait, const std::function<bool()>& ready_to_send)
+{
+	_socket.impl()->throttleSendBlocking(static_cast<size_t>(length));
+
+	try
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atStart((int) length);
+		if (ready_to_send && !ready_to_send())
+		{
+			if (_sendDataHooks)
+				_sendDataHooks->atFail();
+			wait = Wait::Write;
+			return 0;
+		}
+		/// A negative result means that the socket would block: -1 for `EAGAIN`, and for a TLS socket
+		/// `SecureStreamSocket::ERR_SSL_WANT_READ` (-1) and `ERR_SSL_WANT_WRITE` (-2).
+		int result = _socket.sendBytes(buffer, (int) length);
+		wait = (result == -1 && _socket.secure()) ? Wait::Read : Wait::Write;
+		if (result < 0)
+		{
+			if (_sendDataHooks)
+				_sendDataHooks->atFail();
+			result = 0;
+		}
+		else if (_sendDataHooks)
+		{
+			_sendDataHooks->atFinish(result);
+		}
+		return result;
+	}
+	catch (Poco::Exception& exc)
+	{
+		if (_sendDataHooks)
+			_sendDataHooks->atFail();
+		setException(exc);
+		throw;
+	}
+}
+
+
 int HTTPSession::receive(char* buffer, int length)
 {
 	try

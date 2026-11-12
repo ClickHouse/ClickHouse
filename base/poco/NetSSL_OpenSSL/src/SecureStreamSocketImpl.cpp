@@ -69,6 +69,11 @@ void SecureStreamSocketImpl::setSendThrottler(const Poco::Net::ThrottlerPtr& thr
 	underlying_socket->setSendThrottler(throttler);
 }
 
+void SecureStreamSocketImpl::throttleSendBlocking(size_t length)
+{
+	underlying_socket->throttleSendBlocking(length);
+}
+
 void SecureStreamSocketImpl::setReceiveThrottler(const Poco::Net::ThrottlerPtr& throttler)
 {
 	_recvThrottler = throttler;

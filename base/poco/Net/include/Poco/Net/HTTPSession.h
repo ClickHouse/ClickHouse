@@ -189,8 +189,39 @@ namespace Net
         /// Same as `writeRaw`, but loops until all `length` bytes are written.
         /// Throws `MessageException` if the socket stops accepting data.
 
+        enum class Wait
+        /// What the next attempt of a non-blocking operation has to wait for.
+        {
+            Read,
+            Write,
+        };
+
+        int writeRawNonBlocking(
+            const char * buffer, std::streamsize length, Wait & wait, const std::function<bool()> & ready_to_send = {});
+        /// Sends up to `length` bytes on a socket that the caller has set to non-blocking mode.
+        /// Returns the number of bytes sent, or 0 when the socket would block. `wait` tells what the
+        /// next attempt has to wait for: a TLS write can wait for the socket to become readable, for
+        /// example during a renegotiation. For a TLS socket the next call must pass the same data,
+        /// because OpenSSL retries the pending record write.
+        ///
+        /// The send throttler and the send data hooks wait before the send, as for a blocking send.
+        /// What the caller checked before the call can change during these waits, so `ready_to_send`
+        /// is called after them: when it returns false, nothing is sent, and the result is 0.
+
         int buffered() const;
         /// Returns the number of bytes in the buffer.
+
+        int fillBuffer();
+        /// Appends data from the socket to the read buffer, after moving the unread bytes to its
+        /// beginning. On a socket that the caller has set to non-blocking mode, takes only what has
+        /// already arrived. Returns the number of bytes added, 0 when nothing is available or the
+        /// buffer is full, and -1 when the peer has closed the connection.
+
+        const char * bufferedData() const { return _pCurrent; }
+        /// Returns the unread bytes of the read buffer; `buffered` is their number.
+
+        void consumeBuffered(int length) { _pCurrent += length; }
+        /// Marks `length` unread bytes of the read buffer as read.
 
     protected:
         HTTPSession();

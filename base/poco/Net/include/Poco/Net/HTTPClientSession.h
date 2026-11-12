@@ -20,6 +20,7 @@
 
 #include <istream>
 #include <ostream>
+#include "Poco/Net/HTTPResponseParser.h"
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/HTTPSessionFactory.h"
 #include "Poco/Net/Net.h"
@@ -300,6 +301,12 @@ namespace Net
         void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
         /// Reports the completion of a request body written by the caller of `sendRequestHeaders`.
 
+        HTTPResponseParser & responseParser() { return _responseParser; }
+        /// The parser of the response to the current request, reset with the default limits by
+        /// `sendRequest` and `sendRequestHeaders`. The writer of the request body and the reader
+        /// of the response continue the same parser, so a response that starts to arrive while
+        /// the body is being sent is finished when the response is received.
+
         bool isResponseBodyComplete();
         /// Whether the body of the last response was read to the end. A connection with an
         /// unread response body must not be reused: the rest of the body would be taken for the
@@ -350,10 +357,6 @@ namespace Net
         ///
         /// This method should only be called if the request contains
         /// a "Expect: 100-continue" header.
-
-        bool receiveEarlyResponse(HTTPResponse & response);
-        /// After sending the request failed, drops the rest of it and reads the response header the
-        /// server has already sent. If true, receiveResponse() must be called with the same response.
 
         virtual void flushRequest();
         /// Flushes the request stream.
@@ -446,6 +449,7 @@ namespace Net
         bool _expectResponseBody;
         bool _responseReceived;
         bool _requestBodyComplete = true;
+        HTTPResponseParser _responseParser;
         bool _responseBodyComplete = true;
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;

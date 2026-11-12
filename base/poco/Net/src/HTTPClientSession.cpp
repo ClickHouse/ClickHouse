@@ -295,6 +295,7 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
+	_responseParser.reset(HTTPHeaderLimits{});
 	/// A new exchange starts: nothing of it has been transferred yet. The flags are only
 	/// consulted while there is no body stream to inspect (see isRequestBodyComplete), but they
 	/// must not keep the value left by a previous exchange on this session.
@@ -388,6 +389,7 @@ HTTPClientSession::BodyInfo HTTPClientSession::sendRequestHeaders(HTTPRequest& r
 	_responseReceived = false;
 	_requestBodyComplete = false;
 	_responseBodyComplete = false;
+	_responseParser.reset(HTTPHeaderLimits{});
 
 	_keepAliveCurrentRequest += 1;
 
@@ -622,36 +624,6 @@ bool HTTPClientSession::peekResponse(HTTPResponse& response)
 	}
 	_responseReceived = response.getStatus() != HTTPResponse::HTTP_CONTINUE;
 	return !_responseReceived;
-}
-
-
-bool HTTPClientSession::receiveEarlyResponse(HTTPResponse& response)
-{
-	poco_assert (!_responseReceived);
-
-	/// Drops the unsent rest of the request, which rethrows the send error.
-	try
-	{
-		flushRequest();
-	}
-	catch (...)
-	{
-	}
-	clearException();
-
-	response.clear();
-	HTTPHeaderInputStream his(*this);
-	try
-	{
-		response.read(his);
-	}
-	catch (Exception&)
-	{
-		close();
-		return false;
-	}
-	_responseReceived = response.getStatus() != HTTPResponse::HTTP_CONTINUE;
-	return _responseReceived;
 }
 
 
