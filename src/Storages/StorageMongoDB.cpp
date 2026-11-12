@@ -526,6 +526,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
+        /// The reader preserves numeric bytes in `Bool`, but the local set probes their truth value.
+        /// A BSON equality list cannot express that conversion, including numbers absent from the list.
+        if (isBool(removeNullable(column_type)))
+        {
+            LOG_DEBUG(log, "Cannot push down Boolean set membership for column {}", column_node->getColumnName());
+            return {};
+        }
+
         /// A list of one member arrives as a plain constant.
         Array elements;
         if (const_value.getType() == Field::Types::Tuple)
@@ -546,7 +554,6 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         Array converted_elements;
         converted_elements.reserve(elements.size());
-        std::vector<std::pair<Field, DataTypePtr>> truthy_members;
         for (size_t i = 0; i < elements.size(); ++i)
         {
             DataTypePtr element_type;
@@ -567,15 +574,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
             const auto * element_hint = conversionHint(element_type, column_type);
             auto converted = tryConvertFieldToType(elements[i], *column_type, element_hint, {}, /*strict=*/ true);
-            /// A member such as `2` or `2.0` has no `Bool` value, so the set of `IN` drops it. A BSON number 2 is still
-            /// read into a `Bool` column as it is, and the set tests such a value by its truth, so it matches the list
-            /// exactly if a member is `true`. The member's own encoding is written then only: otherwise `$in` would return
-            /// a document that the `WHERE` drops, while the limit is pushed too, and `$nin` would exclude a matching one.
-            const bool outside_bool_domain
-                = isBool(removeNullable(column_type)) && (converted.isNull() || isOutsideBoolDomain(converted, column_type));
-            if (outside_bool_domain && isBoolNumberComparison(element_type, column_type) && isKeptByBoolReader(elements[i], element_type))
-                truthy_members.emplace_back(elements[i], element_type);
-            if (converted.isNull() || outside_bool_domain)
+            if (converted.isNull())
             {
                 auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
                 LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
@@ -591,11 +590,6 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 other_encodings.emplace_back(elements[i], element_type);
             converted_elements.push_back(std::move(converted));
         }
-
-        const bool has_true_member = !truthy_members.empty() && std::ranges::any_of(converted_elements, [](const Field & member)
-            { return isInt64OrUInt64orBoolFieldType(member.getType()) && member.safeGet<UInt64>() == 1; });
-        if (has_true_member)
-            other_encodings.insert(other_encodings.end(), truthy_members.begin(), truthy_members.end());
 
         const_value = std::move(converted_elements);
         column_type = std::make_shared<DataTypeArray>(column_type);

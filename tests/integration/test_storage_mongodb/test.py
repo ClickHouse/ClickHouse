@@ -990,7 +990,13 @@ def test_where(started_cluster):
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyBool = true") == "2\n"
-    assert node.query("SELECT count() FROM where_table WHERE keyBool IN (false)") == "2\n"
+    assert (
+        node.query(
+            "SELECT count() FROM where_table WHERE keyBool IN (false)",
+            settings={"mongodb_throw_on_unsupported_query": 0},
+        )
+        == "2\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM where_table WHERE keyInt = keyFloat")
@@ -1063,7 +1069,14 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "n NOT IN (true)": "2\n",
             }
             actual = {
-                predicate: node.query(f"SELECT count() FROM {source} WHERE {predicate}")
+                predicate: node.query(
+                    f"SELECT count() FROM {source} WHERE {predicate}",
+                    settings=(
+                        {"mongodb_throw_on_unsupported_query": 0}
+                        if predicate.startswith("flag ") and " IN " in predicate
+                        else {}
+                    ),
+                )
                 for predicate in expected
             }
             assert actual == expected
@@ -1117,7 +1130,14 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag NOT IN (2)": "5\n",
             }
             actual = {
-                predicate: node.query(f"SELECT count() FROM {source} WHERE {predicate}")
+                predicate: node.query(
+                    f"SELECT count() FROM {source} WHERE {predicate}",
+                    settings=(
+                        {"mongodb_throw_on_unsupported_query": 0}
+                        if " IN " in predicate
+                        else {}
+                    ),
+                )
                 for predicate in expected
             }
             assert actual == expected
@@ -1164,6 +1184,67 @@ def test_where_bool_wrapped_numbers(started_cluster, bool_type):
                 == result
             )
     finally:
+        collection.drop()
+
+
+@pytest.mark.parametrize("bool_type", ["Bool", "Nullable(Bool)"])
+@pytest.mark.parametrize("use_table_function", [False, True])
+@pytest.mark.parametrize(
+    "predicate, expected",
+    [
+        ("flag IN (1, 2.0) ORDER BY id", "1\n2\n3\n"),
+        ("flag NOT IN (1, 2.0) ORDER BY id LIMIT 1", "4\n"),
+    ],
+)
+def test_where_bool_membership_reader_values(
+    started_cluster, bool_type, use_table_function, predicate, expected
+):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "bool_membership_reader_values"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many(
+        [
+            {"id": 1, "flag": 3},
+            {"id": 2, "flag": 2},
+            {"id": 3, "flag": True},
+            {"id": 4, "flag": False},
+        ]
+    )
+
+    node = started_cluster.instances["node"]
+    structure = f"id Int32, flag {bool_type}"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    source = (
+        f"mongodb({arguments}, '{structure}')"
+        if use_table_function
+        else collection_name
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        query = f"SELECT id FROM {{}} WHERE {predicate}"
+        assert node.query(query.format(reference)) == expected
+        assert (
+            node.query(
+                query.format(source),
+                settings={"mongodb_throw_on_unsupported_query": 0},
+            )
+            == expected
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
         collection.drop()
 
 
