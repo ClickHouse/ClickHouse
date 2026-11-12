@@ -3343,13 +3343,18 @@ bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const Matched
 
         stack.insert(stack.end(), node->children.begin(), node->children.end());
 
+        /// matchTrees() compares types with `equals`, which equates `Bool` with `UInt8` and time zones, so compare the names.
+        auto it = matches.find(node);
+        if (it != matches.end() && it->second.node && node->result_type && it->second.node->result_type
+            && node->result_type->getName() != it->second.node->result_type->getName())
+            return false;
+
         if (node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
 
         if (typeid_cast<const FunctionCapture *>(node->function_base.get()))
             return false;
 
-        auto it = matches.find(node);
         if (it == matches.end() || !it->second.node || it->second.node->type != ActionsDAG::ActionType::FUNCTION)
             return false;
 
@@ -3364,6 +3369,10 @@ bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const Matched
         const auto & index_children = it->second.node->children;
         for (size_t i = 0; i < node->children.size() && i < index_children.size(); ++i)
         {
+            /// Constant arguments are not matched by matchTrees() on their own, so compare their types here too.
+            if (node->children[i]->result_type->getName() != index_children[i]->result_type->getName())
+                return false;
+
             const auto & query_column = node->children[i]->column;
             const auto & index_column = index_children[i]->column;
             if (!query_column || !index_column || !isColumnConst(*query_column) || !isColumnConst(*index_column))

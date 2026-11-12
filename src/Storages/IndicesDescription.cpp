@@ -346,6 +346,15 @@ IndexDescription IndexDescription::getIndexFromAST(
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(result.where_ast);
 
+        /// Analyse the condition as the initiating user first: the analysis below has the privileges of the server and must not
+        /// reach what the user has no access to (for example `hasColumnInTable` of a protected table).
+        {
+            ASTPtr user_where_ast = result.where_ast->clone();
+            auto user_syntax = TreeRewriter(context).analyze(
+                user_where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+            ExpressionAnalyzer(user_where_ast, user_syntax, context).getActions(true);
+        }
+
         /// The part writer runs the condition analysed here, with the settings of the server (global) context.
         /// Its constants are folded in the current time zone, which is recorded.
         const ContextPtr analysis_context = context->getGlobalContext();
