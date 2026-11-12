@@ -132,7 +132,8 @@ inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std
         {
             if (size_t colon = bounded.find(':'); colon < at_sign)
                 return {authority_begin + colon + 1, authority_begin + at_sign};
-            continue;
+
+            return {authority_begin, authority_begin + at_sign};
         }
 
         size_t authority_end = std::min(text.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin), text.length());
@@ -149,15 +150,19 @@ inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std
     return {std::string_view::npos, std::string_view::npos};
 }
 
-/// Replace the password `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
-inline bool maskURIPassword(std::string * uri, std::string_view authority_terminators = "/")
+/// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
+inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
-    auto [password_begin, password_end] = findURIPasswordRange(*uri, authority_terminators);
-    if (password_begin == std::string::npos)
-        return false;
+    size_t offset = 0;
+    while (true)
+    {
+        auto [password_begin, password_end] = findURIPasswordRange(uri.substr(offset), authority_terminators);
+        if (password_begin == std::string::npos)
+            return offset > 0;
 
-    uri->replace(password_begin, password_end - password_begin, HIDDEN_SECRET);
-    return true;
+        uri.replace(offset + password_begin, password_end - password_begin, HIDDEN_SECRET);
+        offset += password_begin + HIDDEN_SECRET.length();
+    }
 }
 
 /// Hides the secret option values and the URI password of a MongoDB connection string or option list; returns whether any was hidden.

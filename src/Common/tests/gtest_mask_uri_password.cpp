@@ -27,10 +27,9 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://localhost:11111/x?email=a@b.com", "http://localhost:11111/x?email=a@b.com"},
         {"http://host/user:password@x", "http://host/user:password@x"},
         {"http://u:p@a/b@host", "http://u:[HIDDEN]@a/b@host"},
-        {"http://host?email=a@b.com", "http://host?email=a@b.com"},
 
-        /// No password: a userinfo without ':' is a user name, and an authority without '@' has no userinfo.
-        {"http://user@host", "http://user@host"},
+        /// No password: a userinfo without ':' is a password, and an authority without '@' has no userinfo.
+        {"http://user@host", "http://[HIDDEN]@host"},
         {"http://host:8080", "http://host:8080"},
         {"http://[::1]:8123/path@x", "http://[::1]:8123/path@x"},
         {"file:///etc/passwd", "file:///etc/passwd"},
@@ -58,6 +57,8 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         /// Here the first authority is `host ftp:`, which is not `host[:port]`, so it fails closed.
         {"http://host ftp://user:password@elsewhere", "http://host ftp:[HIDDEN]@elsewhere"},
         {"https://host/key?redirect=http://u:p@elsewhere", "https://host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+        {"https://u:p@host/key?redirect=http://u:p@elsewhere", "https://u:[HIDDEN]@host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+        {"https://token@host/key?redirect=http://u:p@elsewhere", "https://[HIDDEN]@host/key?redirect=http://u:[HIDDEN]@elsewhere"},
 
         /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
         {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
@@ -70,19 +71,21 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://host#frag:x@y", "http://host#frag:x@y"},
         {"http://u:pa?ss@host", "http://u:[HIDDEN]@host"},
         {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
+        {"http://host?email=a@b.com", "http://host?email=a@b.com"},
+        {"://token@host", "://[HIDDEN]@host"},
     };
 
     for (const auto & [input, expected] : cases)
     {
         std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri), input != expected) << "return value for: " << input;
+        EXPECT_EQ(maskURIPassword(uri), input != expected) << "return value for: " << input;
         EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 
     for (const auto & [input, expected] : rfc_cases)
     {
         std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
+        EXPECT_EQ(maskURIPassword(uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
         EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 }
@@ -90,14 +93,14 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
 TEST(MaskURIPassword, MasksThePassword)
 {
     std::string uri = "https://user:hunter2@example.com:443/db";
-    EXPECT_TRUE(maskURIPassword(&uri));
+    EXPECT_TRUE(maskURIPassword(uri));
     EXPECT_EQ(uri, "https://user:[HIDDEN]@example.com:443/db");
 }
 
 TEST(MaskURIPassword, LeavesURIsWithoutAPasswordAlone)
 {
     std::string uri = "https://example.com/db";
-    EXPECT_FALSE(maskURIPassword(&uri));
+    EXPECT_FALSE(maskURIPassword(uri));
     EXPECT_EQ(uri, "https://example.com/db");
 }
 
