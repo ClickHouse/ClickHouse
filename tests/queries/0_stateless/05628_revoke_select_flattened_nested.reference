@@ -1,0 +1,13 @@
+s	['nt.a']
+t	['id','nt.public','nt.secret']
+t0	['id','nt']
+tn	['nt.public','nt.secret']
+no grants: - - - - - - -
+GRANT(nt): - - - - - - -
+GRANT(nt.public): - - + - - - +
+GRANT table, REVOKE(nt): + - - - - - +
+GRANT table, REVOKE(nt.secret): + - + - - - +
+role: GRANT table, REVOKE(nt): + - - - - - +
+t0 GRANT table, REVOKE(nt): - - -
+carriers, no revoke: + + + + + +
+carriers, REVOKE(nt): - - - - - -

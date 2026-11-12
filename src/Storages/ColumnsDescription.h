@@ -238,9 +238,15 @@ public:
     /// first-matching-prefix logic as identifier resolution, so the check authorizes exactly the column the query
     /// reads from. A grant or revoke on the exact subcolumn name takes precedence over its column, so such a
     /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
-    /// containing a dot, or unknown names such as virtual columns) are returned unchanged. The result is deduplicated
-    /// while preserving the order of first appearance.
+    /// containing a dot, or unknown names such as virtual columns) are returned unchanged. A column of a flattened
+    /// `Nested` structure without a grant or revoke of its own is checked as the structure name when that name is
+    /// denied, so `REVOKE SELECT(n)` applies to its columns. The result is deduplicated while preserving the order
+    /// of first appearance.
     Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
+
+    /// Returns `n` for an `Array` column `n.x` of a flattened `Nested` structure `n` (grouped by the first dot, like
+    /// `Nested::collect`), unless `n` is itself a column.
+    std::optional<String> tryGetFlattenedNestedName(const String & column_name) const;
 
     /// Returns the names of the real subcolumns of the column `column_name` that have a grant of `flags` on their exact
     /// name which they do not inherit from the column (e.g. ``GRANT SELECT(`json.a`)`` without a grant on `json`).

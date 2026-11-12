@@ -882,6 +882,15 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
     NameSet seen;
     std::shared_ptr<const AccessRights> access_rights;
     String database;
+    String table;
+    auto init_access_rights = [&]
+    {
+        if (access_rights)
+            return;
+        access_rights = context->getAccess()->getAccessRightsWithImplicit();
+        database = table_id.hasDatabase() ? table_id.getDatabaseName() : context->getCurrentDatabase();
+        table = table_id.getTableName();
+    };
     for (const auto & name : column_names)
     {
         /// Map `name` to the storage column that identifier resolution actually reads from, so the
@@ -906,16 +915,21 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
             /// A subcolumn inherits the grants of its column, like a column inherits the grants of its table. A grant or
             /// revoke that names the subcolumn itself (e.g. ``GRANT SELECT(`json.a`)`` or ``REVOKE SELECT(`t.a`)``) takes
             /// precedence, so the subcolumn name is checked as is when such an entry changes what the name inherits.
-            if (!access_rights)
-            {
-                access_rights = context->getAccess()->getAccessRightsWithImplicit();
-                database = table_id.hasDatabase() ? table_id.getDatabaseName() : context->getCurrentDatabase();
-            }
-            const auto & table = table_id.getTableName();
+            init_access_rights();
             const bool has_explicit_entry = access_rights->isGranted(AccessType::SELECT, database, table, name)
                 != access_rights->isGrantedInherited(AccessType::SELECT, database, table, name);
             if (!has_explicit_entry)
                 name_to_check = column->getNameInStorage();
+        }
+
+        /// A `REVOKE` on the name of a flattened `Nested` structure applies to its columns that have no grant or revoke of their own.
+        if (auto nested_name = tryGetFlattenedNestedName(name_to_check))
+        {
+            init_access_rights();
+            if (access_rights->isGranted(AccessType::SELECT, database, table, name_to_check)
+                && access_rights->isGrantedInherited(AccessType::SELECT, database, table, name_to_check)
+                && !access_rights->isGranted(AccessType::SELECT, database, table, *nested_name))
+                name_to_check = std::move(*nested_name);
         }
 
         if (seen.insert(name_to_check).second)
@@ -923,6 +937,17 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
     }
 
     return result;
+}
+
+std::optional<String> ColumnsDescription::tryGetFlattenedNestedName(const String & column_name) const
+{
+    auto column = tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), column_name);
+    if (!column || !isArray(column->type))
+        return {};
+    auto [nested_name, element_name] = Nested::splitName(column_name);
+    if (element_name.empty() || tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), nested_name))
+        return {};
+    return nested_name;
 }
 
 Names ColumnsDescription::getSubcolumnsWithExplicitGrant(

@@ -6887,11 +6887,12 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
     /// which the planner's per-column SELECT check treats as separate privileges, so they must be
     /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
+    const auto & columns = storage_snapshot->metadata->getColumns();
     if (!scope.context->getAccess()->isGranted(
             AccessType::SELECT,
             storage_id.getDatabaseName(),
             storage_id.getTableName(),
-            storage_snapshot->metadata->getColumns().getAll().getNames()))
+            columns.getColumnNamesForSelectAccessCheck(columns.getAll().getNames(), scope.context, storage_id)))
         return;
 
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
