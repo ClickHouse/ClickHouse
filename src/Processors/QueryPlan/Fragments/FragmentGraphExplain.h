@@ -66,8 +66,9 @@ void explainAsTree(
 /// wraps and formats it. Defined in `FragmentGraphJSON.cpp`. Names are not prettified, as in `json = 1`.
 ///
 /// A single node yields `{"Plan": ...}`, as `json = 1` does, with `"Fallback Reason"` when the fragment has one. A cut
-/// plan yields `Plan`, the plan of the fragment that produces the result, then `Fragments` and `Exchanges` by ascending
-/// id, and `Levels` (see `computeLevels`). The send and receive steps of an exchange have `Exchange Id`.
+/// plan yields `Result Fragment`, the id of the fragment that produces the result, then `Fragments` and `Exchanges` by
+/// ascending id, and `Levels` (see `computeLevels`). The plan of a fragment is flat: `Root` and `Steps`, from
+/// `QueryPlan::explainPlanSteps`. The send and receive steps of an exchange have `Exchange Id`.
 std::unique_ptr<JSONBuilder::JSONMap> explainAsFragmentsJSON(const FragmentGraph & graph, const ExplainPlanOptions & options);
 
 }

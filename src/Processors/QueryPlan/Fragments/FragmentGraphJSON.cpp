@@ -59,13 +59,13 @@ const QueryFragment & getResultFragment(const FragmentGraph & graph)
 
 /// The id of the exchange of every send and receive step of the fragments. The send step of the result
 /// (`final_result`) sends to the client, not to an exchange of the graph, so it is not in the map.
-std::unordered_map<const IQueryPlanStep *, UInt32> collectExchangeIds(const FragmentGraph & graph)
+MapStepToExchangeIds collectExchangeIds(const FragmentGraph & graph)
 {
     std::unordered_map<std::string_view, UInt32> id_by_name;
     for (const auto & exchange : graph.exchanges)
         id_by_name.emplace(exchange.name, exchange.id);
 
-    std::unordered_map<const IQueryPlanStep *, UInt32> exchange_ids;
+    MapStepToExchangeIds exchange_ids;
     for (const auto & fragment : graph.fragments)
     {
         std::vector<const QueryPlan::Node *> stack{PreparedFragmentGraph::getPlan(fragment).getRootNode()};
@@ -93,7 +93,9 @@ std::unique_ptr<JSONBuilder::JSONMap> explainFragment(const QueryFragment & frag
         map->add("Description", *fragment.description);
     if (fragment.fallback_reason)
         map->add("Fallback Reason", *fragment.fallback_reason);
-    map->add("Plan", PreparedFragmentGraph::getPlan(fragment).explainPlan(options));
+    const auto & plan = PreparedFragmentGraph::getPlan(fragment);
+    map->add("Root", plan.getRootNode()->step->getUniqID());
+    map->add("Steps", plan.explainPlanSteps(options));
     return map;
 }
 
@@ -145,9 +147,9 @@ std::unique_ptr<JSONBuilder::JSONMap> explainAsFragmentsJSON(const FragmentGraph
     ExplainPlanOptions fragment_options = options;
     fragment_options.exchange_ids = &exchange_ids;
 
-    /// `EXPLAIN` cuts the plan in place, so the plan of the whole query is gone; `Plan` is the fragment that produces the
-    /// result, so that `Plan` is a tree of steps for every document.
-    document->add("Plan", PreparedFragmentGraph::getPlan(getResultFragment(graph)).explainPlan(fragment_options));
+    /// `EXPLAIN` cuts the plan in place, so the plan of the whole query is gone; the document points to the fragment that
+    /// produces the result instead.
+    document->add("Result Fragment", getResultFragment(graph).id);
 
     auto fragments = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & fragment : graph.fragments)

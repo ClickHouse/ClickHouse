@@ -65,17 +65,64 @@ FROM (
     GROUP BY small.sid
     SETTINGS distributed_plan_max_rows_to_broadcast = 0);
 
-SELECT '-- the top-level plan is the plan of the fragment that produces the result';
+SELECT '-- the result fragment: no nested plan, its root sends the result to the client';
 SELECT
-    JSONExtractString(explain, 1, 'Plan', 'Node Type'),
-    JSONExtractString(explain, 1, 'Plan', 'Description'),
-    JSONHas(explain, 1, 'Plan', 'Exchange Id'),
-    JSONExtractRaw(explain, 1, 'Plan') = JSONExtractRaw(explain, 1, 'Fragments', -1, 'Plan')
+    JSONHas(explain, 1, 'Plan'),
+    JSONExtractUInt(explain, 1, 'Result Fragment') = JSONExtractUInt(explain, 1, 'Fragments', -1, 'Id'),
+    JSONExtractString(explain, 1, 'Fragments', -1, 'Steps', 1, 'Node Type'),
+    JSONExtractString(explain, 1, 'Fragments', -1, 'Steps', 1, 'Description'),
+    JSONHas(explain, 1, 'Fragments', -1, 'Steps', 1, 'Exchange Id'),
+    JSONHas(explain, 1, 'Fragments', -1, 'Steps', 1, 'Plans')
 FROM (
     EXPLAIN fragments = 1, json = 1
     SELECT bid % 10 AS k, sum(bid)
     FROM big
     GROUP BY k);
+
+SELECT '-- flat steps: the root is the first step, and every other step is the input of exactly one step of its fragment';
+SELECT
+    fragment_id,
+    length(step_ids),
+    root = step_ids[1],
+    arraySort(arrayFlatten(children)) = arraySort(arrayPopFront(step_ids))
+FROM
+(
+    SELECT
+        JSONExtractUInt(fragment, 'Id') AS fragment_id,
+        JSONExtractString(fragment, 'Root') AS root,
+        arrayMap(step -> JSONExtractString(step, 'Node Id'), JSONExtractArrayRaw(fragment, 'Steps')) AS step_ids,
+        arrayMap(step -> JSONExtract(step, 'Children', 'Array(String)'), JSONExtractArrayRaw(fragment, 'Steps')) AS children
+    FROM (
+        EXPLAIN fragments = 1, json = 1
+        SELECT small.sid, count()
+        FROM big, small
+        WHERE small.sid = (big.bid + 1) % 5000
+        GROUP BY small.sid
+        SETTINGS distributed_plan_max_rows_to_broadcast = 0)
+    ARRAY JOIN JSONExtractArrayRaw(explain, 1, 'Fragments') AS fragment
+)
+ORDER BY fragment_id;
+
+SELECT '-- flat steps: the inputs of a join in order, the left side first';
+SELECT
+    JSONExtractString(step, 'Node Type'),
+    arrayMap(id -> (JSONExtractString(steps[indexOf(ids, id)], 'Node Type'), JSONExtractUInt(steps[indexOf(ids, id)], 'Exchange Id')),
+        JSONExtract(step, 'Children', 'Array(String)'))
+FROM
+(
+    SELECT
+        arrayFlatten(arrayMap(fragment -> JSONExtractArrayRaw(fragment, 'Steps'), JSONExtractArrayRaw(explain, 1, 'Fragments'))) AS steps,
+        arrayMap(step -> JSONExtractString(step, 'Node Id'), steps) AS ids
+    FROM (
+        EXPLAIN fragments = 1, json = 1
+        SELECT small.sid, count()
+        FROM big, small
+        WHERE small.sid = (big.bid + 1) % 5000
+        GROUP BY small.sid
+        SETTINGS distributed_plan_max_rows_to_broadcast = 0)
+)
+ARRAY JOIN steps AS step
+WHERE JSONExtractString(step, 'Node Type') LIKE '%Join%';
 
 SELECT '-- estimated rows only with estimates = 1';
 SELECT countSubstrings(explain, '"Estimated Rows"') FROM (
@@ -85,7 +132,7 @@ SELECT countSubstrings(explain, '"Estimated Rows"') FROM (
     GROUP BY k);
 
 SELECT '-- make_distributed_plan = 0';
-SELECT JSONHas(explain, 1, 'Plan'), JSONHas(explain, 1, 'Fragments'), JSONHas(explain, 1, 'Fallback Reason') FROM (
+SELECT JSONHas(explain, 1, 'Plan'), JSONHas(explain, 1, 'Plan', 'Plans'), JSONHas(explain, 1, 'Fragments'), JSONHas(explain, 1, 'Fallback Reason') FROM (
     EXPLAIN fragments = 1, json = 1
     SELECT bid % 10 AS k, sum(bid)
     FROM big

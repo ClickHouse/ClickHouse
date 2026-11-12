@@ -912,14 +912,16 @@ Levels: [F0, F1] -> [F2] -> [F3]
 
 With `fragments` = 1 and `json` = 1, a query that is executed by stateless workers is described as one JSON document with these keys:
 
-- `Plan` — the plan of the query fragment that produces the result. `EXPLAIN` shows the plan after it is cut, so this is not the plan of the whole query.
-- `Fragments` — the query fragments by ascending id, each with `Id`, `Stage` (the stage name), `Tasks` (the number of tasks) and `Plan`, which has the same form as with `json` = 1 without `fragments`.
+- `Result Fragment` — the id of the query fragment that produces the result.
+- `Fragments` — the query fragments by ascending id, each with `Id`, `Stage` (the stage name), `Tasks` (the number of tasks), `Root` (the `Node Id` of the root step of the fragment, the first element of `Steps`) and `Steps`.
 - `Exchanges` — the exchanges by ascending id, each with `Id`, `Name`, `From` and `To` (the ids of the fragment that sends the data and of the fragment that reads it), `Kind` (`hash`, `broadcast`, `gather` or `any`), `Keys` for `hash`, `Sort Description` for a `gather` that keeps the sort order, `Mode` (`streaming` or `persisted`), `Source Buckets`, `Destination Buckets` and, with `estimates` = 1 when the planner has an estimate, `Estimated Rows`.
 - `Levels` — the fragment ids grouped by their depth, as arrays, from the fragments without dependencies to the fragment that produces the result.
 
+`Steps` is a flat array of the steps of the fragment, root first, each parent before its inputs. A step has the same keys as with `json` = 1 without `fragments`, but instead of `Plans` it has `Children`: the `Node Id` of its inputs in input order, such as the left and the right side of a join, then of the root steps of its nested plans, whose steps are in the same array. `Node Id` is unique within the query.
+
 The send and receive steps of an exchange have the key `Exchange Id` with the id of the exchange. The send step of the result (`final_result`) sends it to the client, not to an exchange, and has no `Exchange Id`. Column names are not shortened, whatever the value of `pretty`.
 
-When the query is not distributed, the document is the same as without `fragments`. If the query could not be distributed and fell back to local execution, the document has the key `Fallback Reason` after `Plan`.
+When the query is not distributed, the document is the same as without `fragments`, with the nested `Plan`. If the query could not be distributed and fell back to local execution, the document has the key `Fallback Reason` after `Plan`.
 
 Example (trimmed):
 
@@ -935,11 +937,17 @@ FORMAT TSVRaw;
 ```json
 [
   {
-    "Plan": {"Node Type": "GatherSend", "Node Id": "GatherSend_21", "Plans": [ ... ]},
+    "Result Fragment": 2,
     "Fragments": [
-      {"Id": 0, "Stage": "stage_0", "Tasks": 3, "Plan": {"Node Type": "ShuffleSend", "Node Id": "ShuffleSend_17", "Exchange Id": 0, "Plans": [ ... ]}},
-      {"Id": 1, "Stage": "stage_1", "Tasks": 3, "Plan": {"Node Type": "GatherSend", "Node Id": "GatherSend_19", "Exchange Id": 1, "Plans": [ ... ]}},
-      {"Id": 2, "Stage": "main", "Tasks": 1, "Plan": {"Node Type": "GatherSend", "Node Id": "GatherSend_21", "Plans": [ ... ]}}
+      {"Id": 0, "Stage": "stage_0", "Tasks": 3, "Root": "ShuffleSend_17", "Steps": [
+        {"Node Type": "ShuffleSend", "Node Id": "ShuffleSend_17", "Exchange Id": 0, "Children": ["Aggregating_10"]},
+        {"Node Type": "Aggregating", "Node Id": "Aggregating_10", "Children": ["Expression_6"]},
+        ...
+        {"Node Type": "ReadFromMergeTree", "Node Id": "ReadFromMergeTree_0", "Children": []}]},
+      {"Id": 1, "Stage": "stage_1", "Tasks": 3, "Root": "GatherSend_19", "Steps": [ ... ]},
+      {"Id": 2, "Stage": "main", "Tasks": 1, "Root": "GatherSend_21", "Steps": [
+        {"Node Type": "GatherSend", "Node Id": "GatherSend_21", "Children": ["GatherReceive_20"]},
+        {"Node Type": "GatherReceive", "Node Id": "GatherReceive_20", "Exchange Id": 1, "Children": []}]}
     ],
     "Exchanges": [
       {"Id": 0, "Name": "exchange_0", "From": 0, "To": 1, "Kind": "hash", "Keys": ["modulo(__table1.bid, 10_UInt8)"], "Mode": "streaming", "Source Buckets": 3, "Destination Buckets": 3},

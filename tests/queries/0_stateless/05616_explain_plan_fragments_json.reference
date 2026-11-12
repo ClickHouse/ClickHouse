@@ -1,102 +1,95 @@
 -- aggregation, the whole document
 [
   {
-    "Plan": {
-      "Node Type": "GatherSend",
-      "Node Id": "GatherSend_21",
-      "Description": "final_result",
-      "Plans": [
-        {
-          "Node Type": "GatherReceive",
-          "Node Id": "GatherReceive_20",
-          "Exchange Id": 1,
-          "Description": "exchange_1"
-        }
-      ]
-    },
+    "Result Fragment": 2,
     "Fragments": [
       {
         "Id": 0,
         "Stage": "stage_0",
         "Tasks": 3,
-        "Plan": {
-          "Node Type": "ShuffleSend",
-          "Node Id": "ShuffleSend_17",
-          "Exchange Id": 0,
-          "Description": "exchange_0",
-          "Plans": [
-            {
-              "Node Type": "Aggregating",
-              "Node Id": "Aggregating_10",
-              "Description": "partial",
-              "Plans": [
-                {
-                  "Node Type": "Expression",
-                  "Node Id": "Expression_6",
-                  "Description": "(Before GROUP BY + Change column names to column identifiers)",
-                  "Plans": [
-                    {
-                      "Node Type": "ReadFromMergeTree",
-                      "Node Id": "ReadFromMergeTree_0",
-                      "Description": "default.big"
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
+        "Root": "ShuffleSend_17",
+        "Steps": [
+          {
+            "Node Type": "ShuffleSend",
+            "Node Id": "ShuffleSend_17",
+            "Exchange Id": 0,
+            "Description": "exchange_0",
+            "Children": ["Aggregating_10"]
+          },
+          {
+            "Node Type": "Aggregating",
+            "Node Id": "Aggregating_10",
+            "Description": "partial",
+            "Children": ["Expression_6"]
+          },
+          {
+            "Node Type": "Expression",
+            "Node Id": "Expression_6",
+            "Description": "(Before GROUP BY + Change column names to column identifiers)",
+            "Children": ["ReadFromMergeTree_0"]
+          },
+          {
+            "Node Type": "ReadFromMergeTree",
+            "Node Id": "ReadFromMergeTree_0",
+            "Description": "default.big",
+            "Children": []
+          }
+        ]
       },
       {
         "Id": 1,
         "Stage": "stage_1",
         "Tasks": 3,
-        "Plan": {
-          "Node Type": "GatherSend",
-          "Node Id": "GatherSend_19",
-          "Exchange Id": 1,
-          "Description": "exchange_1",
-          "Plans": [
-            {
-              "Node Type": "Expression",
-              "Node Id": "Expression_7",
-              "Description": "(Project names + Projection)",
-              "Plans": [
-                {
-                  "Node Type": "MergingAggregated",
-                  "Node Id": "MergingAggregated_13",
-                  "Description": "merge",
-                  "Plans": [
-                    {
-                      "Node Type": "ShuffleReceive",
-                      "Node Id": "ShuffleReceive_18",
-                      "Exchange Id": 0,
-                      "Description": "exchange_0"
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
+        "Root": "GatherSend_19",
+        "Steps": [
+          {
+            "Node Type": "GatherSend",
+            "Node Id": "GatherSend_19",
+            "Exchange Id": 1,
+            "Description": "exchange_1",
+            "Children": ["Expression_7"]
+          },
+          {
+            "Node Type": "Expression",
+            "Node Id": "Expression_7",
+            "Description": "(Project names + Projection)",
+            "Children": ["MergingAggregated_13"]
+          },
+          {
+            "Node Type": "MergingAggregated",
+            "Node Id": "MergingAggregated_13",
+            "Description": "merge",
+            "Children": ["ShuffleReceive_18"]
+          },
+          {
+            "Node Type": "ShuffleReceive",
+            "Node Id": "ShuffleReceive_18",
+            "Exchange Id": 0,
+            "Description": "exchange_0",
+            "Children": []
+          }
+        ]
       },
       {
         "Id": 2,
         "Stage": "main",
         "Tasks": 1,
-        "Plan": {
-          "Node Type": "GatherSend",
-          "Node Id": "GatherSend_21",
-          "Description": "final_result",
-          "Plans": [
-            {
-              "Node Type": "GatherReceive",
-              "Node Id": "GatherReceive_20",
-              "Exchange Id": 1,
-              "Description": "exchange_1"
-            }
-          ]
-        }
+        "Root": "GatherSend_21",
+        "Steps": [
+          {
+            "Node Type": "GatherSend",
+            "Node Id": "GatherSend_21",
+            "Description": "final_result",
+            "Children": ["GatherReceive_20"]
+          },
+          {
+            "Node Type": "GatherReceive",
+            "Node Id": "GatherReceive_20",
+            "Exchange Id": 1,
+            "Description": "exchange_1",
+            "Children": []
+          }
+        ]
       }
     ],
     "Exchanges": [
@@ -135,12 +128,20 @@
 persisted
 -- shuffle join: levels, exchanges and an exchange id on both ends of every exchange
 [[0,1],[2],[3],[4]]	[(0,'exchange_0',0,2,'hash'),(1,'exchange_1',1,2,'hash'),(2,'exchange_2',2,3,'hash'),(3,'exchange_3',3,4,'gather')]	5	1
--- the top-level plan is the plan of the fragment that produces the result
-GatherSend	final_result	0	1
+-- the result fragment: no nested plan, its root sends the result to the client
+0	1	GatherSend	final_result	0	0
+-- flat steps: the root is the first step, and every other step is the input of exactly one step of its fragment
+0	4	1	1
+1	3	1	1
+2	6	1	1
+3	4	1	1
+4	2	1	1
+-- flat steps: the inputs of a join in order, the left side first
+JoinLogical	[('ShuffleReceive',0),('ShuffleReceive',1)]
 -- estimated rows only with estimates = 1
 0
 -- make_distributed_plan = 0
-1	0	0
+1	1	0	0
 -- fallback to local execution
 0	make_distributed_plan does not support WITH TOTALS
 -- errors
