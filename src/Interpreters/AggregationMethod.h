@@ -194,7 +194,7 @@ struct AggregationMethodKeysAndPackedString
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
     TopKAggregationHeap<Key> top_k_heap;

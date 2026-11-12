@@ -273,7 +273,7 @@ public:
         /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).
         bool enable_packed_string_keys = true;
 
-        /// Use the `KeysAndPackedStringHashMap`-based hash tables for fixed-width keys and one non-nullable
+        /// Use the `KeysAndPackedStringHashTable`-based hash tables for fixed-width keys and one non-nullable
         /// `String` key (`keys32_packed_string`, `keys64_packed_string`, `keys128_packed_string`); if false, fall
         /// back to `prealloc_serialized`. As for `enable_packed_string_keys`, the methods hash keys differently,
         /// so all participants of a distributed query must agree on this value.

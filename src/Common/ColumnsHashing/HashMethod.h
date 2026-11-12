@@ -388,8 +388,9 @@ protected:
 /// For the case of fixed-width keys and one non-nullable `String` key, stored as a
 /// `KeysAndPackedString<Keys>`: the fixed-width values packed into `Keys` longest first, and the string as a
 /// packed reference. Like `HashMethodPackedString`, it reads the key in place and persists the string only
-/// when the key is inserted. It keeps no consecutive-keys cache, because `KeysAndPackedStringHashMap` returns
-/// bare mapped pointers, not cells. With `for_sub_range`, it is the `SubRangeState` of the method.
+/// when the key is inserted. It keeps no consecutive-keys cache, because `KeysAndPackedStringHashTable`
+/// returns bare mapped pointers, or untyped cell addresses for a set, from which the cache cannot read the key.
+/// With `for_sub_range`, it is the `SubRangeState` of the method.
 ///
 /// The `String` key can be `LowCardinality(String)`: the string of a row is then its dictionary entry. When
 /// the dictionary has no more entries than the state has rows, the state hashes each entry for the first row

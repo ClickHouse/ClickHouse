@@ -313,6 +313,12 @@ bool AggregatedDataVariants::isKeysAndPackedString(Type type_)
         case Type::keys32_packed_string_two_level:
         case Type::keys64_packed_string_two_level:
         case Type::keys128_packed_string_two_level:
+        case Type::keys32_packed_string_void:
+        case Type::keys64_packed_string_void:
+        case Type::keys128_packed_string_void:
+        case Type::keys32_packed_string_void_two_level:
+        case Type::keys64_packed_string_void_two_level:
+        case Type::keys128_packed_string_void_two_level:
             return true;
         default:
             return false;

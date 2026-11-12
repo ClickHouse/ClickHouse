@@ -11,7 +11,7 @@
 /// The key stores a 32-bit hash that covers the whole key, the fixed-width part included, so it is the hash
 /// of the key (`getHash`, see `HashMethodKeysAndPackedString`). The `PackedStringRef` of the `UInt64` and
 /// `UInt128` keys holds it in its first 4 bytes. There are two exceptions. An empty string stores no hash:
-/// such keys are hashed by their fixed-width part alone (see `KeysAndPackedStringHashMap`). A
+/// such keys are hashed by their fixed-width part alone (see `KeysAndPackedStringHashTable`). A
 /// `PackedStringRef` of a string over 4 GiB stores the length of the string in place of the hash (see
 /// `PackedStringRef::build`), so such keys of one length share a hash. Equality compares whole keys, so these
 /// keys stay correct, and a table can hold only a few keys that large, so the shared hash costs nothing.

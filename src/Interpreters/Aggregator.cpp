@@ -793,12 +793,24 @@ AggregatedDataVariants::Type chooseMergeBlocksMethod(AggregatedDataVariants::Typ
     APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
 #undef M
 
-    /// There is no packed hash64 method; `mergeBlocks` re-reads keys from block columns,
-    /// so the `std::string_view`-keyed hash64 method works for it just as well.
-    if (method == AggregatedDataVariants::Type::key_packed_string)
-        method = AggregatedDataVariants::Type::key_string_hash64;
-    else if (AggregatedDataVariants::isKeysAndPackedString(method))
-        method = AggregatedDataVariants::Type::prealloc_serialized_hash64;
+    /// There is no packed hash64 method; `mergeBlocks` re-reads keys from block columns, so the
+    /// `std::string_view`-keyed hash64 methods work just as well: `key_string_hash64` for a `String` key, and
+    /// `prealloc_serialized_hash64` or its key-only form for fixed-width keys and one `String` key.
+    switch (method)
+    {
+        case AggregatedDataVariants::Type::key_packed_string:
+            return AggregatedDataVariants::Type::key_string_hash64;
+        case AggregatedDataVariants::Type::keys32_packed_string:
+        case AggregatedDataVariants::Type::keys64_packed_string:
+        case AggregatedDataVariants::Type::keys128_packed_string:
+            return AggregatedDataVariants::Type::prealloc_serialized_hash64;
+        case AggregatedDataVariants::Type::keys32_packed_string_void:
+        case AggregatedDataVariants::Type::keys64_packed_string_void:
+        case AggregatedDataVariants::Type::keys128_packed_string_void:
+            return AggregatedDataVariants::Type::prealloc_serialized_void_hash64;
+        default:
+            break;
+    }
 
 #undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
 
@@ -902,12 +914,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (!params.enable_fixed_and_packed_string_keys && AggregatedDataVariants::isKeysAndPackedString(method_chosen))
         method_chosen = AggregatedDataVariants::Type::prealloc_serialized;
 
-    /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
-    /// table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for UInt64,
-    /// 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed fixed keys
-    /// (keys32/keys64/keys128/keys256), serialized keys (serialized/prealloc_serialized and their nullable
-    /// forms) and nullable fixed-width keys (nullable_key32/64, nullable_keys128/256); single string/FixedString
-    /// and LowCardinality keys are not covered yet.
+    /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped
+    /// hash table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for
+    /// UInt64, 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed
+    /// fixed keys (keys32/keys64/keys128/keys256), serialized keys (serialized/prealloc_serialized and their
+    /// nullable forms), nullable fixed-width keys (nullable_key32/64, nullable_keys128/256) and fixed-width
+    /// keys with one `String` key (keys32/64/128_packed_string, which take `LowCardinality` keys too); a
+    /// single string or FixedString key and the other `LowCardinality` keys are not covered yet.
     /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
     if (params.aggregates_size == 0)
@@ -929,6 +942,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::nullable_key64:   method_chosen = Type::nullable_key64_void;   break;
             case Type::nullable_keys128: method_chosen = Type::nullable_keys128_void; break;
             case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
+            case Type::keys32_packed_string:  method_chosen = Type::keys32_packed_string_void;  break;
+            case Type::keys64_packed_string:  method_chosen = Type::keys64_packed_string_void;  break;
+            case Type::keys128_packed_string: method_chosen = Type::keys128_packed_string_void; break;
             default: break;
         }
     }
@@ -3837,15 +3853,17 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
         src_data = nullptr;
     };
 
-    auto merge_cell = [&](const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
+    /// Merges a source cell, with its key as the table stores it, into `dst_table`: the destination table, or a
+    /// sub-table of a destination that dispatches its keys over sub-tables.
+    auto merge_cell = [&](auto & dst_table, const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
     {
-        typename Method::Data::LookupResult it;
+        typename std::decay_t<decltype(dst_table)>::LookupResult it;
         bool inserted = false;
 
         if constexpr (is_void_mapped)
         {
             /// `src_data` is the cell's `VoidMapped` placeholder - the key union is the whole merge.
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_table.emplace(key, it, inserted, hash_value);
         }
         else
         {
@@ -3853,7 +3871,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
             if (!src_data)
                 return;
 
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_table.emplace(key, it, inserted, hash_value);
             adopt_or_collect(inserted, it->getMapped(), src_data);
         }
     };
@@ -3941,6 +3959,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
 
                     for (size_t i = 0; i < batch_size; ++i)
                         merge_cell(
+                            dst_method.data,
                             std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
                             batch[i].first->getMapped(),
                             batch[i].second);
@@ -3984,14 +4003,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
                             if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
                                 continue;
 
-                            AggregateDataPtr & src_data = it->getMapped();
-                            if (!src_data)
-                                continue;
-
-                            typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
-                            bool inserted = false;
-                            dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
-                            adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                            merge_cell(dst_sub, std::decay_t<decltype(*it)>::getKey(it->getValue()), it->getMapped(), hash_value);
                         }
                     });
             }

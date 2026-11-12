@@ -75,7 +75,7 @@ struct AggregationEntry
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
     /// The part of `sum_of_sizes` with an empty string in the tables of fixed-width keys and one `String`,
-    /// which keep such keys in a sub-table of their own (see `KeysAndPackedStringHashMap`), and 0 for the
+    /// which keep such keys in a sub-table of their own (see `KeysAndPackedStringHashTable`), and 0 for the
     /// other methods. Its share of `sum_of_sizes` splits the preallocation of such a table between its
     /// sub-tables.
     size_t sum_of_sizes_with_empty_string = 0;

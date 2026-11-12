@@ -363,12 +363,21 @@ namespace
         const size_t first_partition;
     };
 
-    /// The same for a set table, whose cells hold only keys.
+    /// Visits every cell of a set table, whose cells hold only keys, with its key as the table stores it and its hash,
+    /// as `forEachMappedCellWithHash` does for a map table. The set of fixed-width keys and a string has no iterator
+    /// over its sub-tables, and visits its keys through `forEachValueWithHash`.
     template <typename Table, typename Callback>
     void forEachKeyCellWithHash(Table & table, Callback && callback)
     {
-        for (auto it = table.begin(), end = table.end(); it != end; ++it)
-            callback(Table::cell_type::getKey(it->getValue()), it.getHash());
+        if constexpr (requires { table.begin(); })
+        {
+            for (auto it = table.begin(), end = table.end(); it != end; ++it)
+                callback(Table::cell_type::getKey(it->getValue()), it.getHash());
+        }
+        else
+        {
+            table.forEachValueWithHash(callback);
+        }
     }
 
     /// Decodes the variable-size arguments of argument records of `format` into one column per variable field of

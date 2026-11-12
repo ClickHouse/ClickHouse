@@ -5,7 +5,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
-#include <Common/HashTable/KeysAndPackedStringHashMap.h>
+#include <Common/HashTable/KeysAndPackedStringHashTable.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
@@ -66,6 +66,10 @@ using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256Hash
 using AggregatedDataWithKeys32AndPackedString = KeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithKeys64AndPackedString = KeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 using AggregatedDataWithKeys128AndPackedString = KeysAndPackedStringHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+/// The same keys without aggregate functions, in sets whose cells hold the keys alone.
+using AggregatedDataWithKeys32AndPackedStringVoid = KeysAndPackedStringHashSet<UInt32, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedStringVoid = KeysAndPackedStringHashSet<UInt64, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedStringVoid = KeysAndPackedStringHashSet<UInt128, UInt128HashCRC32>;
 
 using AggregatedDataWithKeys128Void = HashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256Void = HashSet<UInt256, UInt256HashCRC32>;
@@ -92,6 +96,9 @@ using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateData
 using AggregatedDataWithKeys32AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithKeys64AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 using AggregatedDataWithKeys128AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+using AggregatedDataWithKeys32AndPackedStringVoidTwoLevel = TwoLevelKeysAndPackedStringHashSet<UInt32, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedStringVoidTwoLevel = TwoLevelKeysAndPackedStringHashSet<UInt64, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedStringVoidTwoLevel = TwoLevelKeysAndPackedStringHashSet<UInt128, UInt128HashCRC32>;
 
 using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashSet<UInt256, UInt256HashCRC32>;
