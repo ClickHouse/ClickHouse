@@ -533,6 +533,9 @@
     M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
     M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
     \
+    M(AmberConnectionsStored, "Total count of sessions stored in the session pool for Amber") \
+    M(AmberConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for Amber") \
+    \
     M(BlobKillerThreads, "Number of threads in the thread pool of the object storage disk background removal process") \
     M(BlobKillerThreadsActive, "Number of threads in the thread pool of the object storage disk background removal process running a task") \
     M(BlobKillerThreadsScheduled, "Number of queued or active tasks in the thread pool of the object storage disk background removal process") \

@@ -2,10 +2,14 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/SipHash.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <base/PackedStringRef.h>
 
 #include <algorithm>
+#include <bit>
 #include <concepts>
 #include <span>
 
@@ -457,6 +461,98 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
     void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) { key.buildRange(begin, end, keys, skip); }
 };
 
+/// The 16-byte key of a single `String` join key in the `key_packed_string` and `two_level_key_packed_string` maps.
+///
+/// - Up to 15 bytes: the `UnhashedPackedStringRef` of the string. It is exact: byte 15 holds the length, and the bytes
+///   past the end are zero. The empty string is the zero key.
+/// - 16 bytes or more: the unkeyed `sipHash128Padded` of the string with bit 7 of byte 15 set. No short key has that
+///   bit set, so a hashed key never equals a short one. Two long strings whose other 127 hash bits match share a key.
+///
+/// `build` and `buildRange` read up to 16 bytes from the start of a string; the chars of a `ColumnString` have that
+/// padding.
+struct PackedStringJoinKey
+{
+    static constexpr size_t max_inline_size = UnhashedPackedStringRef::MAX_SMALL_LEN;
+
+    /// Bit 7 of byte 15, which is in `items[1]` on both byte orders.
+    static constexpr UInt64 hashed_flag = UInt64(UnhashedPackedStringRef::LARGE_TAG_BYTE)
+        << (std::endian::native == std::endian::little ? 56 : 0);
+
+    static ALWAYS_INLINE UInt128 build(const char * data, size_t size)
+    {
+        if (size <= max_inline_size)
+            return std::bit_cast<UInt128>(UnhashedPackedStringRef::buildShort(data, size));
+
+        UInt128 key = sipHash128Padded(data, size);
+        key.items[1] |= hashed_flag;
+        return key;
+    }
+
+    /// `keys[i - begin]` = the key of row `i` of a `ColumnString`, for the rows [begin, end). The rows `i` with
+    /// `skip[i] != 0` are not hashed, and their keys are unspecified. On aarch64 and on x86 with AVX2 it hashes long
+    /// strings 8 at a time: 4 in NEON lanes and 4 in general registers, or all 8 in AVX2 lanes.
+    static void buildRange(
+        const char * chars, const IColumn::Offset * offsets, size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
+};
+
+/// Key getter of `key_packed_string` and `two_level_key_packed_string`. It builds the `PackedStringJoinKey` of a row,
+/// or reads keys built ahead, see `PreparedJoinKeys`.
+template <typename Value, typename Mapped>
+struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_impl::HashMethodBase<
+                                           HashMethodPackedStringJoinKey<Value, Mapped>,
+                                           Value,
+                                           Mapped,
+                                           /*consecutive_keys_optimization=*/false,
+                                           use_offset>,
+                                       public PreparedJoinKeys<HashMethodPackedStringJoinKey<Value, Mapped>>
+{
+    using Base = ColumnsHashing::columns_hashing_impl::
+        HashMethodBase<HashMethodPackedStringJoinKey<Value, Mapped>, Value, Mapped, false, use_offset>;
+
+    /// Hashing a long string is not cheap, but `true` lets the join loops prefetch: after `prepareRows`, they build
+    /// each key once.
+    static constexpr bool has_cheap_key_calculation = true;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+
+    /// The number of `emplaceKey` calls, and how many of their keys are hashed.
+    size_t emplaced_keys = 0;
+    size_t hashed_keys = 0;
+
+    HashMethodPackedStringJoinKey(const ColumnRawPtrs & key_columns, const Sizes &, const ColumnsHashing::HashMethodContextPtr &)
+        : HashMethodPackedStringJoinKey(assert_cast<const ColumnString &>(*key_columns[0]))
+    {
+    }
+
+    explicit HashMethodPackedStringJoinKey(const ColumnString & column)
+        : PreparedJoinKeys<HashMethodPackedStringJoinKey>(column.size())
+        , offsets(column.getOffsets().data())
+        , chars(column.getChars().data())
+    {
+    }
+
+    ALWAYS_INLINE UInt128 buildKey(size_t row) const
+    {
+        return PackedStringJoinKey::build(
+            reinterpret_cast<const char *>(chars) + offsets[ssize_t(row) - 1], offsets[row] - offsets[ssize_t(row) - 1]);
+    }
+
+    void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) const
+    {
+        PackedStringJoinKey::buildRange(reinterpret_cast<const char *>(chars), offsets, begin, end, keys, skip);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        auto result = Base::emplaceKey(data, row, pool);
+        ++emplaced_keys;
+        hashed_keys += (result.getKey().items[1] & PackedStringJoinKey::hashed_flag) != 0;
+        return result;
+    }
+};
+
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
@@ -554,6 +650,14 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key16, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_packed_string, Value, Mapped>
+{
+    using Type = HashMethodPackedStringJoinKey<Value, Mapped>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_packed_string, Value, Mapped>
+{
+    using Type = HashMethodPackedStringJoinKey<Value, Mapped>;
 };
 #define KEYGETTER_RANGE_IMPL(TYPE, FIELD_TYPE) \
     template <typename Value, typename Mapped> \

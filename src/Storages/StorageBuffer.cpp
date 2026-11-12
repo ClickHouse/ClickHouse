@@ -22,6 +22,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -634,6 +635,8 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
