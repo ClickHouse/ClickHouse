@@ -1,11 +1,11 @@
 SET in_null_as_unknown = 1;
 
 SELECT [1] IN CAST(NULL AS Nullable(UInt8)), [1] NOT IN CAST(NULL AS Nullable(UInt8));
-SELECT materialize(emptyArrayUInt8()) IN emptyArrayUInt8(), materialize(emptyArrayUInt8()) NOT IN emptyArrayUInt8();
+SELECT materialize(emptyArrayUInt8()) IN ([]), materialize(emptyArrayUInt8()) NOT IN ([]);
 
 SET allow_experimental_analyzer = 0;
 SELECT [1] IN CAST(NULL AS Nullable(UInt8)), [1] NOT IN CAST(NULL AS Nullable(UInt8));
-SELECT materialize(emptyArrayUInt8()) IN emptyArrayUInt8(), materialize(emptyArrayUInt8()) NOT IN emptyArrayUInt8();
+SELECT materialize(emptyArrayUInt8()) IN ([]), materialize(emptyArrayUInt8()) NOT IN ([]);
 SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS squality_in_null_projection;
