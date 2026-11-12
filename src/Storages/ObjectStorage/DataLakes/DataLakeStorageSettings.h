@@ -118,8 +118,8 @@ Unlike the query-level setting, this one is stored in the table definition, so i
 When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
 )", 0) \
     ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
-Per-table counterpart of the query-level setting of the same name: allows removing old data files after they were merged by compaction,
-together with the snapshots that referenced them.
+Per-table counterpart of the query-level setting of the same name: allows expiring the snapshots that a newer one replaced longer
+than `iceberg_compaction_data_cleanup` ago, together with the files that only they reference, for a table with background compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 The previous name `allow_experimental_cleanup_old_data_files_compaction` is kept as an alias, so the table definitions that use it still load.
 )", 0, allow_experimental_cleanup_old_data_files_compaction) \
@@ -128,26 +128,28 @@ Per-table counterpart of the query-level setting of the same name: minimum delay
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
-Per-table counterpart of the query-level setting of the same name: the time after which data files replaced by compaction are deleted.
+Per-table counterpart of the query-level setting of the same name: the time after which a snapshot that a newer one replaced is expired,
+together with the files that only it references.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
     DECLARE(Bool, iceberg_read_with_snapshot_lease, true, R"(
-Lets a query reading this table lease the snapshot it reads, so that the cleanup after a compaction on any replica does not remove
-the data files of that snapshot while the query still reads them. A lease is an object under `coordination/` in the table
+Lets a query reading this table lease the snapshot it reads, so that the cleanup of old data files on any replica does not remove
+the files of that snapshot while the query still reads them. A lease is an object under `coordination/` in the table
 directory, one per snapshot and replica, shared by all the queries of the replica reading that snapshot and renewed while they run.
 Only takes effect when compaction or the cleanup of old data files is enabled for the table.
 )", 0) \
     DECLARE(NonZeroUInt64, iceberg_snapshot_lease_seconds, 300, R"(
 Lease period, in seconds, of the lease a replica takes on an Iceberg snapshot its queries read. The replica renews the lease every
 third of this period while the snapshot is read, and a lease that has not been renewed for a whole period is ignored by the
-cleanup after a compaction, so this bounds how long a replica that stopped reading or died delays the cleanup.
+cleanup of old data files, so this bounds how long a replica that stopped reading or died keeps the snapshot. The cleanup also
+runs once per this period.
 )", 0) \
     DECLARE(UInt64, iceberg_outdated_snapshot_lifetime_seconds, 15 * 60, R"(
-Time, in seconds, after a compaction during which the cleanup after it does not remove the data files of the snapshots the
-compaction superseded, similar to `old_parts_lifetime` of `MergeTree`. A query reading the current snapshot of the table, that is
-without `iceberg_snapshot_id`, `iceberg_timestamp_ms` or `iceberg_metadata_file_path`, writes its lease only once it has run for
-two thirds of this time, so the queries shorter than that put no lease objects to the object storage. Time travel queries write their
-lease before they start reading. Set to 0 to make every query write its lease before it starts reading.
+Time, in seconds, after a snapshot was replaced by a newer one during which the cleanup of old data files does not expire it, similar
+to `old_parts_lifetime` of `MergeTree`. The longer of this and `iceberg_compaction_data_cleanup` applies. A query reading the current
+snapshot of the table, that is without `iceberg_snapshot_id`, `iceberg_timestamp_ms` or `iceberg_metadata_file_path`, writes its lease
+only once it has run for two thirds of this time, so the queries shorter than that put no lease objects to the object storage. Time
+travel queries write their lease before they start reading. Set to 0 to make every query write its lease before it starts reading.
 )", 0) \
     DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
 Per-table counterpart of the query-level setting of the same name: number of merged data files accumulated before compaction
