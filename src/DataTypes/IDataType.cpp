@@ -11,7 +11,9 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/TimezoneMixin.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/NestedUtils.h>
@@ -126,9 +128,34 @@ bool keepsANestedTypeOutOfReach(const IDataType & type)
     return type_id == TypeIndex::AggregateFunction || type_id == TypeIndex::Function || type_id == TypeIndex::QBit;
 }
 
-bool carriesAReachableTimeZone(const IDataType & type)
+/// A QBit element type is a float, so only these two can hide a zone.
+DataTypes getTypesOutOfReach(const IDataType & type)
 {
-    return anyInTypeTree(type, [](const IDataType & one) { return dynamic_cast<const TimezoneMixin *>(&one) != nullptr; });
+    if (const auto * aggregate_function = typeid_cast<const DataTypeAggregateFunction *>(&type))
+        return aggregate_function->getArgumentsDataTypes();
+
+    DataTypes types;
+    if (const auto * function = typeid_cast<const DataTypeFunction *>(&type))
+    {
+        types = function->getArgumentTypes();
+        types.push_back(function->getReturnType());
+    }
+    return types;
+}
+
+bool carriesATimeZone(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & one)
+    {
+        if (dynamic_cast<const TimezoneMixin *>(&one))
+            return true;
+        if (!keepsANestedTypeOutOfReach(one))
+            return false;
+        for (const auto & nested : getTypesOutOfReach(one))
+            if (nested && carriesATimeZone(*nested))
+                return true;
+        return false;
+    });
 }
 
 ExpressionIdentity collectExpressionIdentity(const IDataType & type)
@@ -177,7 +204,7 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
 
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
 {
-    if (!carriesAReachableTimeZone(type))
+    if (!carriesATimeZone(type))
         return;
 
     for (const auto & component : collectExpressionIdentity(type))

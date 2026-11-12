@@ -38,6 +38,8 @@ an omitted zone and that zone spelled out under a wrapper are one sort key	1
 two zones swapped inside a tuple are two sort keys	2
 the same object paths spelled in either order are one expression	{"a":"1970-01-01 00:00:00","b":"1970-01-01 09:00:00"}	{"a":"1970-01-01 00:00:00","b":"1970-01-01 09:00:00"}
 a custom name under a wrapper is its own sort key	2
+two zones keep their own IN sets	2
+two zones out of reach keep their own IN sets	2
 a declared name beside an omitted zone under one alias	(true,'1970-01-01 00:00:00')	(true,'1970-01-01 00:00:00')
 a zone-free type out of reach beside an omitted zone	1
 reversed skip paths are one expression	{"a":"1970-01-01 00:00:00"}	{"a":"1970-01-01 00:00:00"}

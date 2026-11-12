@@ -299,6 +299,18 @@ SELECT 'a zone out of reach under one alias',
          'Tuple(DateTime(''UTC''), AggregateFunction(any, DateTime(''Asia/Tokyo'')))') AS a
 SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
+-- An `IN` set is looked up by the hash of its subquery alone, so the hash has to tell two zones apart
+-- as well, a hidden one included. Each subquery matches one number: hour 0 or hour 9.
+SELECT 'two zones keep their own IN sets', count() FROM numbers(10)
+WHERE number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'UTC')))) AS v)
+    OR number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'Asia/Tokyo')))) AS v);
+
+SELECT 'two zones out of reach keep their own IN sets', count() FROM numbers(10)
+WHERE number IN (SELECT toUInt64(toHour(finalizeAggregation(materialize(
+        arrayReduce('argMaxState', [toDateTime(0, 'UTC')], [1]))))) AS v)
+    OR number IN (SELECT toUInt64(toHour(finalizeAggregation(materialize(
+        arrayReduce('argMaxState', [toDateTime(0, 'Asia/Tokyo')], [1]))))) AS v);
+
 -- A declared name is compared at its own position, so one sitting elsewhere in the type does not
 -- decide for a zone: these two differ only in a zone left out and are one expression.
 SELECT 'a declared name beside an omitted zone under one alias',
@@ -369,7 +381,7 @@ SETTINGS session_timezone = 'UTC'; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALI
 
 -- The everyday member of that class: `Bool` is `UInt8` with a name of its own, so the two spellings
 -- of the number one are two expressions.
-SELECT 'a declared name under one alias', true AS a, toUInt8(1) AS a; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT 'a declared name under one alias', true AS a, 1 AS a; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SELECT 'a custom name is its own sort key', count() FROM (
     EXPLAIN QUERY TREE

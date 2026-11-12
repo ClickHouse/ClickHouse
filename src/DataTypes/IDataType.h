@@ -619,8 +619,8 @@ FOR_TYPES_OF_TYPE(DISPATCH)
 /// is compared as part of the declared name of the position holding it.
 bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
 
-/// Appends the time zones the predicate above compares beyond `equals`. A type that carries no zone
-/// the walk can reach keeps the digest its caller has already produced.
+/// Appends the time zones the predicate above compares beyond `equals`. A type that carries no zone,
+/// reachable or not, keeps the digest its caller has already produced.
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.
