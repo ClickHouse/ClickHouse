@@ -334,6 +334,70 @@ function(clickhouse_import_crate)
     enable_dummy_launchers_if_needed()
 endfunction()
 
+# Set the location of an imported library the way Corrosion does: generic and per configuration.
+function(_clickhouse_set_rust_lib_location target_name location)
+    set_property(TARGET ${target_name} PROPERTY IMPORTED_LOCATION "${location}")
+    foreach (_config IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER "${_config}" _config)
+        set_property(TARGET ${target_name} PROPERTY "IMPORTED_LOCATION_${_config}" "${location}")
+    endforeach()
+endfunction()
+
+# Post-process the static library of a Rust crate with
+#     bash SCRIPT <library.a> ARGS...
+# where SCRIPT rewrites the library in place.
+#
+# Corrosion runs cargo on every build and copies its output to IMPORTED_LOCATION with
+# `copy_if_different`, so an unchanged library keeps its timestamp and nothing is relinked.
+# Rewriting that copy in place would break this: it no longer matches the cargo output, so
+# every build copies it again, rewrites it again and relinks every binary that uses it.
+# Instead, the result of each step goes to its own file, the step runs only when its input
+# changes, and the binaries link the result of the last step.
+#
+#     clickhouse_postprocess_rust_lib(<target> STEP <name> SCRIPT <script> [ARGS ...] [DEPENDS ...] [COMMENT ...])
+function(clickhouse_postprocess_rust_lib target_name)
+    cmake_parse_arguments(ARG "" "STEP;SCRIPT;COMMENT" "ARGS;DEPENDS" ${ARGN})
+
+    # The input is the result of the previous step, if any, otherwise the copy made by Corrosion.
+    get_target_property(_input ${target_name} CLICKHOUSE_RUST_LIB)
+    get_target_property(_previous_step ${target_name} CLICKHOUSE_RUST_LIB_STEP)
+    if (NOT _previous_step)
+        set(_previous_step cargo-build_${target_name})
+    endif()
+    if (NOT _input)
+        get_target_property(_input ${target_name} IMPORTED_LOCATION)
+        if (NOT _input OR _input MATCHES "NOTFOUND")
+            set(_input "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
+        endif()
+    endif()
+    get_filename_component(_name "${_input}" NAME)
+    set(_output "${CMAKE_CURRENT_BINARY_DIR}/${ARG_STEP}/${_name}")
+
+    add_custom_command(OUTPUT "${_output}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${ARG_STEP}"
+        COMMAND ${CMAKE_COMMAND} -E copy "${_input}" "${_output}.tmp"
+        COMMAND bash "${ARG_SCRIPT}" "${_output}.tmp" ${ARG_ARGS}
+        COMMAND ${CMAKE_COMMAND} -E rename "${_output}.tmp" "${_output}"
+        DEPENDS "${_input}" "${ARG_SCRIPT}" ${ARG_DEPENDS}
+        COMMENT "${ARG_COMMENT}"
+        VERBATIM
+    )
+    add_custom_target(${ARG_STEP}_${target_name} DEPENDS "${_output}")
+    # Each step runs after the previous one: other generators attach the previous step's rule to this target too.
+    add_dependencies(${ARG_STEP}_${target_name} ${_previous_step})
+    add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB "${_output}")
+    set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB_STEP ${ARG_STEP}_${target_name})
+
+    # Link the result. Corrosion sets IMPORTED_LOCATION of `<target>-static` in a call deferred to
+    # the end of the directory that imported the crate, so override it at the end of the top-level
+    # one. A deferred call expands variables when it runs, hence EVAL with the values substituted now.
+    cmake_language(EVAL CODE "
+        cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL
+            _clickhouse_set_rust_lib_location [[${target_name}-static]] [[${_output}]])
+    ")
+endfunction()
+
 # Configure a Rust crate target with ClickHouse-specific flags.
 function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
@@ -495,16 +559,13 @@ function(clickhouse_config_crate_flags target_name)
         endif()
 
         if (_localize_ref_libs)
-            add_custom_target(localize_rust_c_${target_name}
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
-                    "${_rust_lib_path}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
-                    ${_localize_ref_libs}
+            clickhouse_postprocess_rust_lib(${target_name}
+                STEP localize_rust_c
+                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
+                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}" ${_localize_ref_libs}
+                DEPENDS ${_localize_ref_deps} ${CH_RUST_LOCALIZE_MATHLIB}
                 COMMENT "Localizing C-namespace symbols in ${target_name}"
-                VERBATIM
             )
-            add_dependencies(localize_rust_c_${target_name}
-                cargo-build_${target_name} ${_localize_ref_deps})
-            add_dependencies(${target_name} localize_rust_c_${target_name})
         else()
             message(STATUS
                 "localize_rust_c_symbols: no reference C libraries for this "

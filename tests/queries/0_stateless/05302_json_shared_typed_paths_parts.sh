@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-darwin
-# no-darwin: `system.parts_columns.filenames` of a wide part is empty on macOS ARM, https://github.com/ClickHouse/ClickHouse/issues/127841
 
 # What a part of a JSON column with SHARED paths is made of, and the wire: the three typed shared data substreams and
 # their files, no per-path stream, the object serialization versions, Native and RowBinary with and without the binary
@@ -17,6 +15,7 @@ WIDE="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity
 COMPACT="min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 4, replace_long_file_name_to_hash = 0"
 
 echo "-- the substreams and files of the typed shared data, no per-path stream"
+# On a case-insensitive filesystem (macOS) part files are named by hashes, so check only that each substream has its own file.
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t_w; DROP TABLE IF EXISTS t_c; DROP TABLE IF EXISTS t_plain;
 CREATE TABLE t_w (x UInt64, json $SHARED) ENGINE = MergeTree ORDER BY x SETTINGS $WIDE;
@@ -25,7 +24,7 @@ CREATE TABLE t_plain (x UInt64, json $PLAIN) ENGINE = MergeTree ORDER BY x SETTI
 INSERT INTO t_w SELECT number, $ROW FROM numbers(20);
 INSERT INTO t_c SELECT * FROM t_w;
 INSERT INTO t_plain SELECT * FROM t_w;
-SELECT table, arraySort(arrayFilter(s -> s LIKE '%typed_shared_data%', substreams)), arraySort(arrayFilter(f -> f LIKE '%typed_shared_data%', filenames)), arrayExists(s -> s IN ('json.a', 'json.b', 'json.c'), substreams), arrayExists(s -> s IN ('a', 'b', 'c'), subcolumns.names)
+SELECT table, arraySort(arrayFilter(s -> s LIKE '%typed_shared_data%', substreams)), arraySort(arrayFilter((s, f) -> s LIKE '%typed_shared_data%' AND f != '', substreams, filenames)), arrayExists(s -> s IN ('json.a', 'json.b', 'json.c'), substreams), arrayExists(s -> s IN ('a', 'b', 'c'), subcolumns.names)
     FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_w', 't_c', 't_plain') AND column = 'json' AND active ORDER BY table;
 SELECT table, column_data_compressed_bytes > 0, column_data_uncompressed_bytes > 0, column_marks_bytes > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_w' AND column = 'json' AND active;
 SELECT table, arraySort(arrayFilter(x -> x.1 IN ('a', 'b', 'c'), arrayZip(subcolumns.names, arrayMap(bytes -> bytes > 0, subcolumns.data_compressed_bytes), arrayMap(bytes -> bytes > 0, subcolumns.data_uncompressed_bytes))))

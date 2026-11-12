@@ -273,7 +273,10 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     {
         const auto & layout = adaptive.session->layout;
         adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(
-            layout.numPartitions(), adaptive_staging_block_buckets * layout.partitionsPerBucket(), layout.firstChunkBytes());
+            layout.numPartitions(),
+            adaptive_staging_block_buckets * layout.partitionsPerBucket(),
+            layout.firstChunkBytes(),
+            layout.maxChunkBytes());
     }
     if (params.adaptiveTopKPrunes() && !adaptive.count_bins.isAllocated())
         adaptive.count_bins.allocate();
