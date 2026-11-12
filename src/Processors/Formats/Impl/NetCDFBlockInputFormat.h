@@ -6,11 +6,11 @@
 #include <Formats/NetCDF.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <vector>
 
 namespace DB
 {
@@ -50,7 +50,7 @@ struct NetCDFTableLayout
         UInt64 num_elements = 0;
         /// The axes of the variable, one per use of a dimension, without the dimension that holds
         /// the length of the strings.
-        std::vector<size_t> axis_ids;
+        VectorWithMemoryTracking<size_t> axis_ids;
         /// The values that are read as NULL, in the representation of the file: one entry per
         /// attribute that declares them. Each entry refers to the data of the attribute in the
         /// header, which holds `size() / value_size` sentinels of `value_size` bytes each, so a
@@ -60,17 +60,17 @@ struct NetCDFTableLayout
             std::string_view data;
             size_t value_size = 0;
         };
-        std::vector<NullValues> null_values;
+        VectorWithMemoryTracking<NullValues> null_values;
     };
 
     /// The dimension behind every axis. The first `header.dimensions.size()` axes are the first
     /// uses of the dimensions themselves; an axis for a repeated use of a dimension comes after.
-    std::vector<size_t> axis_dimensions;
+    VectorWithMemoryTracking<size_t> axis_dimensions;
     /// The axes of the row space, in the order in which they enumerate the rows.
-    std::vector<size_t> row_axes;
-    std::vector<UInt64> row_axis_lengths;
+    VectorWithMemoryTracking<size_t> row_axes;
+    VectorWithMemoryTracking<UInt64> row_axis_lengths;
     UInt64 num_rows = 0;
-    std::vector<Column> columns;
+    VectorWithMemoryTracking<Column> columns;
 
     NamesAndTypesList getNamesAndTypes() const;
 };
@@ -102,7 +102,7 @@ private:
         const NetCDFTableLayout::Column * column = nullptr;
 
         /// How much the index of the value changes when the index along a row dimension grows by one.
-        std::vector<UInt64> strides;
+        VectorWithMemoryTracking<UInt64> strides;
         /// True when the index of the value is the number of the row, which is the common case of a
         /// variable that uses all the dimensions of the row space.
         bool is_identity = false;
@@ -136,7 +136,7 @@ private:
     bool is_initialized = false;
     NetCDFHeader netcdf_header;
     NetCDFTableLayout layout;
-    std::vector<ColumnState> states;
+    VectorWithMemoryTracking<ColumnState> states;
 
     /// The whole file, when the input is not seekable and has to be read into memory.
     String content;

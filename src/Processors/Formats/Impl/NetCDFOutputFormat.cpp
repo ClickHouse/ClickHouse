@@ -15,6 +15,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/intExp.h>
 #include <Common/transformEndianness.h>
@@ -25,8 +26,6 @@
 #include <bit>
 #include <bitset>
 #include <limits>
-#include <unordered_set>
-#include <vector>
 
 #if USE_ICU
 #include <unicode/unorm2.h>
@@ -77,7 +76,7 @@ void checkNameIsNFC(const String & name)
     if (U_FAILURE(error))
         throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Cannot get the NFC normalizer: {}", u_errorName(error));
 
-    std::vector<UChar> utf16(name.size());
+    VectorWithMemoryTracking<UChar> utf16(name.size());
     int32_t utf16_size = 0;
     u_strFromUTF8(
         utf16.data(),
@@ -277,7 +276,7 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
 
     static constexpr UInt64 bits_in_word = 64;
     const UInt64 first_key = Keys::toKey(preferred);
-    std::vector<UInt64> taken((num_candidates + bits_in_word - 1) / bits_in_word, 0);
+    VectorWithMemoryTracking<UInt64> taken((num_candidates + bits_in_word - 1) / bits_in_word, 0);
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -554,7 +553,7 @@ template String chooseNetCDFFillValue<Float64>(const Float64 *, size_t, const UI
 NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
     : IOutputFormat(header_, out_)
 {
-    std::unordered_set<String> used_dimension_names;
+    UnorderedSetWithMemoryTracking<String> used_dimension_names;
     dimension_names.emplace_back(ROW_DIMENSION_NAME);
     used_dimension_names.insert(dimension_names.back());
 
@@ -566,7 +565,7 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
 
     /// A block can carry duplicate column names (`SELECT x, x FROM t`), but a file with two
     /// variables of the same name would not be read back: the reader rejects it as malformed.
-    std::unordered_set<String> variable_names;
+    UnorderedSetWithMemoryTracking<String> variable_names;
 
     for (const auto & column : *header_)
     {

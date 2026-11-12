@@ -3,8 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Formats/NetCDF.h>
 #include <Processors/Formats/IOutputFormat.h>
-
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -69,9 +68,9 @@ private:
     void writeHeader(WriteBuffer & buffer) const;
     void writeVariableData(const Variable & variable) const;
 
-    std::vector<Variable> variables;
-    std::vector<String> dimension_names;
-    std::vector<UInt64> dimension_lengths;
+    VectorWithMemoryTracking<Variable> variables;
+    VectorWithMemoryTracking<String> dimension_names;
+    VectorWithMemoryTracking<UInt64> dimension_lengths;
     UInt64 num_rows = 0;
     UInt8 version = 2;
 };

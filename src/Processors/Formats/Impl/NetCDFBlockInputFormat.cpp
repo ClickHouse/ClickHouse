@@ -15,6 +15,9 @@
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/transformEndianness.h>
 #include <Core/Defines.h>
@@ -24,9 +27,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <map>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -148,11 +148,11 @@ DataTypePtr getDataType(const NetCDFVariable & variable)
 /// variable that uses all of them is stored in exactly the order the rows are produced. Among the
 /// axes that are not ordered relative to each other, the one whose dimension is declared first in
 /// the file goes first.
-std::vector<size_t> orderRowAxes(size_t num_axes, const std::vector<std::vector<size_t>> & variable_axes)
+VectorWithMemoryTracking<size_t> orderRowAxes(size_t num_axes, const VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> & variable_axes)
 {
-    std::vector<bool> is_used(num_axes, false);
-    std::vector<std::unordered_set<size_t>> successors(num_axes);
-    std::vector<size_t> in_degree(num_axes, 0);
+    VectorWithMemoryTracking<bool> is_used(num_axes, false);
+    VectorWithMemoryTracking<UnorderedSetWithMemoryTracking<size_t>> successors(num_axes);
+    VectorWithMemoryTracking<size_t> in_degree(num_axes, 0);
     size_t num_used = 0;
 
     for (const auto & axes : variable_axes)
@@ -170,9 +170,9 @@ std::vector<size_t> orderRowAxes(size_t num_axes, const std::vector<std::vector<
         }
     }
 
-    std::vector<size_t> order;
+    VectorWithMemoryTracking<size_t> order;
     order.reserve(num_used);
-    std::vector<bool> is_ordered(num_axes, false);
+    VectorWithMemoryTracking<bool> is_ordered(num_axes, false);
 
     while (order.size() < num_used)
     {
@@ -223,13 +223,13 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     /// the would-be length dimension, the dimension stays in the row space, and the `char` variable
     /// is read as one character per row.
     /// The unlimited dimension is never a length, because it is always the first one.
-    std::vector<bool> is_string_length(header.dimensions.size(), true);
+    VectorWithMemoryTracking<bool> is_string_length(header.dimensions.size(), true);
 
     for (size_t i = 0; i < header.dimensions.size(); ++i)
         if (header.dimensions[i].is_unlimited)
             is_string_length[i] = false;
 
-    std::unordered_set<std::string_view> variable_names;
+    UnorderedSetWithMemoryTracking<std::string_view> variable_names;
     for (const auto & variable : header.variables)
         variable_names.insert(variable.name);
 
@@ -250,14 +250,14 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         }
     }
 
-    std::vector<std::vector<size_t>> effective_dimensions(header.variables.size());
-    std::vector<UInt64> string_lengths(header.variables.size(), 1);
-    std::vector<bool> has_string_length_dimension(header.variables.size(), false);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> effective_dimensions(header.variables.size());
+    VectorWithMemoryTracking<UInt64> string_lengths(header.variables.size(), 1);
+    VectorWithMemoryTracking<bool> has_string_length_dimension(header.variables.size(), false);
 
     for (size_t i = 0; i < header.variables.size(); ++i)
     {
         const auto & variable = header.variables[i];
-        effective_dimensions[i] = variable.dimension_ids;
+        effective_dimensions[i].assign(variable.dimension_ids.begin(), variable.dimension_ids.end());
 
         if (variable.type == NetCDFType::Char && !effective_dimensions[i].empty()
             && is_string_length[effective_dimensions[i].back()])
@@ -277,12 +277,12 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     for (size_t i = 0; i < header.dimensions.size(); ++i)
         layout.axis_dimensions[i] = i;
 
-    std::map<std::pair<size_t, size_t>, size_t> axis_of_repeated_use;
-    std::vector<std::vector<size_t>> variable_axes(header.variables.size());
+    MapWithMemoryTracking<std::pair<size_t, size_t>, size_t> axis_of_repeated_use;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> variable_axes(header.variables.size());
 
     for (size_t i = 0; i < header.variables.size(); ++i)
     {
-        std::unordered_map<size_t, size_t> uses;
+        UnorderedMapWithMemoryTracking<size_t, size_t> uses;
         for (size_t dimension_id : effective_dimensions[i])
         {
             size_t use = uses[dimension_id]++;
@@ -313,7 +313,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
                 "The number of rows of the NetCDF file does not fit in 64 bits");
     }
 
-    std::unordered_map<std::string_view, size_t> variable_ids;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> variable_ids;
     for (size_t i = 0; i < header.variables.size(); ++i)
         if (!variable_ids.emplace(header.variables[i].name, i).second)
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -325,7 +325,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     {
         /// The name of a generated column has to differ from the name of a variable and from the
         /// name of another generated column, or one of the columns would be unreachable.
-        std::unordered_set<String> used_column_names;
+        UnorderedSetWithMemoryTracking<String> used_column_names;
         for (const auto & variable : header.variables)
             used_column_names.insert(variable.name);
 
@@ -345,7 +345,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             /// repeated use the index is available only as a column of its own.
             auto it = variable_ids.find(dimension.name);
             bool has_coordinate_variable = it != variable_ids.end()
-                && variable_axes[it->second] == std::vector<size_t>{axis_id};
+                && variable_axes[it->second] == VectorWithMemoryTracking<size_t>{axis_id};
 
             if (has_coordinate_variable)
                 continue;
@@ -507,11 +507,11 @@ void NetCDFBlockInputFormat::initialize()
 
     layout = getNetCDFTableLayout(netcdf_header, format_settings);
 
-    std::unordered_map<std::string_view, const NetCDFTableLayout::Column *> columns_by_name;
+    UnorderedMapWithMemoryTracking<std::string_view, const NetCDFTableLayout::Column *> columns_by_name;
     for (const auto & column : layout.columns)
         columns_by_name.emplace(column.name, &column);
 
-    std::unordered_map<size_t, size_t> position_of_axis;
+    UnorderedMapWithMemoryTracking<size_t, size_t> position_of_axis;
     for (size_t position = 0; position < layout.row_axes.size(); ++position)
         position_of_axis[layout.row_axes[position]] = position;
 
@@ -652,7 +652,7 @@ void NetCDFBlockInputFormat::loadElementsSparse(ColumnState & state, PaddedPODAr
     state.buffer_first_element = 0;
     state.buffer_num_elements = 0;
 
-    std::vector<UInt64> elements(indexes.begin(), indexes.end());
+    VectorWithMemoryTracking<UInt64> elements(indexes.begin(), indexes.end());
     std::sort(elements.begin(), elements.end());
     elements.erase(std::unique(elements.begin(), elements.end()), elements.end());
 
@@ -697,7 +697,7 @@ void NetCDFBlockInputFormat::getElementIndexes(
     }
 
     size_t num_axes = layout.row_axes.size();
-    std::vector<UInt64> positions(num_axes);
+    VectorWithMemoryTracking<UInt64> positions(num_axes);
     UInt64 rest = first_row;
     for (size_t i = num_axes; i > 0; --i)
     {
@@ -733,7 +733,7 @@ namespace
 
 /// Whether the value of `size` bytes is one of the sentinels. The sentinels of a string have the
 /// length of the whole attribute, so a value of another length matches none of them.
-bool isNullValue(const std::vector<NetCDFTableLayout::Column::NullValues> & null_values, const char * value, size_t size)
+bool isNullValue(const VectorWithMemoryTracking<NetCDFTableLayout::Column::NullValues> & null_values, const char * value, size_t size)
 {
     for (const auto & sentinels : null_values)
     {
@@ -751,7 +751,7 @@ bool isNullValue(const std::vector<NetCDFTableLayout::Column::NullValues> & null
 }
 
 template <typename T>
-void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const std::vector<NetCDFTableLayout::Column::NullValues> & null_values)
+void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const VectorWithMemoryTracking<NetCDFTableLayout::Column::NullValues> & null_values)
 {
     ColumnVector<T> * values = nullptr;
     NullMap * null_map = nullptr;
@@ -776,7 +776,7 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
     /// A floating-point sentinel is compared by value, as the reference implementation does it,
     /// rather than by its bytes: `-0.0` equals the sentinel `+0.0`, and a NaN sentinel matches every
     /// NaN, whatever its payload is.
-    std::vector<T> float_sentinels;
+    VectorWithMemoryTracking<T> float_sentinels;
     bool has_nan_sentinel = false;
     if constexpr (std::is_floating_point_v<T>)
     {
