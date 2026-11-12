@@ -93,13 +93,11 @@ class RuntimeFilterFilePruning
 {
 public:
     RuntimeFilterFilePruning(
-        RuntimeFilterIndexAnalysisDescriptors descriptors_,
-        RuntimeFilterLookupPtr lookup_,
+        std::shared_ptr<const RuntimeFilterPruningPredicate> predicate_,
         ContextPtr context_,
         const IcebergSchemaProcessor & schema_processor_,
         Int32 table_schema_id_)
-        : descriptors(std::move(descriptors_))
-        , lookup(std::move(lookup_))
+        : predicate(std::move(predicate_))
         , context(std::move(context_))
         , schema_processor(schema_processor_)
         , table_schema_id(table_schema_id_)
@@ -121,55 +119,31 @@ public:
 private:
     const ManifestFilesPruner * getPruner(Int32 schema_id)
     {
-        std::lock_guard lock(mutex);
-        if (no_pruning_predicate)
+        auto predicate_dag = predicate->tryGet();
+        if (!predicate_dag || !*predicate_dag)
             return nullptr;
 
-        if (!predicate_dag)
-        {
-            for (const auto & descriptor : descriptors)
-            {
-                auto filter = lookup->find(descriptor.filter_id);
-                if (!filter)
-                    return nullptr;
-                if (!filter->isReady())
-                    return nullptr;
-            }
-
-            auto dag = std::make_shared<ActionsDAG>();
-            const auto * predicate = buildRuntimeRangePredicate(*lookup, descriptors, *dag, context);
-            if (!predicate)
-            {
-                no_pruning_predicate = true;
-                return nullptr;
-            }
-            dag->getOutputs() = {predicate};
-            predicate_dag = std::move(dag);
-        }
-
+        std::lock_guard lock(mutex);
         auto & pruner = pruners[schema_id];
         if (!pruner)
             pruner = std::make_unique<ManifestFilesPruner>(
                 schema_processor,
                 table_schema_id,
                 schema_id,
-                predicate_dag.get(),
+                predicate_dag->get(),
                 /*partition_key_=*/nullptr,
                 PartitionSpecification{},
                 context);
         return pruner.get();
     }
 
-    const RuntimeFilterIndexAnalysisDescriptors descriptors;
-    const RuntimeFilterLookupPtr lookup;
+    /// Owns the DAG the pruners point to.
+    const std::shared_ptr<const RuntimeFilterPruningPredicate> predicate;
     const ContextPtr context;
     const IcebergSchemaProcessor & schema_processor;
     const Int32 table_schema_id;
 
     std::mutex mutex;
-    /// Every filter is built, but none gives an `IN` set or a range to check the bounds against.
-    bool no_pruning_predicate TSA_GUARDED_BY(mutex) = false;
-    std::shared_ptr<const ActionsDAG> predicate_dag TSA_GUARDED_BY(mutex);
     /// Never erased, so the pruner `getPruner` returns stays valid after the lock is released.
     std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners TSA_GUARDED_BY(mutex);
 };
@@ -285,16 +259,16 @@ IcebergIterator::IcebergIterator(
         object_storage, persistent_components, local_context, logger, std::move(manifest_keys));
 }
 
-void IcebergIterator::setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & descriptors, RuntimeFilterLookupPtr lookup)
+void IcebergIterator::setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate)
 {
     const auto & settings = local_context->getSettingsRef();
-    if (descriptors.empty() || !lookup || !table_state_snapshot || !settings[Setting::use_join_runtime_filters_for_iceberg_pruning]
+    if (!table_state_snapshot || !settings[Setting::use_join_runtime_filters_for_iceberg_pruning]
         || !settings[Setting::enable_join_runtime_filters_index_analysis] || !settings[Setting::use_iceberg_partition_pruning])
         return;
 
-    LOG_DEBUG(logger, "Data files are pruned by {} JOIN runtime filter(s) once they are built", descriptors.size());
+    LOG_DEBUG(logger, "Data files are pruned by {} JOIN runtime filter(s) once they are built", predicate->getDescriptors().size());
     runtime_filter_pruning = std::make_unique<Iceberg::RuntimeFilterFilePruning>(
-        descriptors, std::move(lookup), local_context, *persistent_components.schema_processor, table_state_snapshot->schema_id);
+        std::move(predicate), local_context, *persistent_components.schema_processor, table_state_snapshot->schema_id);
 }
 
 void IcebergIterator::ensureDeletesReady()
