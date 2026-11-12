@@ -169,6 +169,11 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
 }
 
+void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());
+}
+
 void IAggregateFunction::mergeStateFromDifferentVariant(
     AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
 {
@@ -235,7 +240,7 @@ void IAggregateFunction::mergeAndDestroyBatchOrDefer(
 
         for (; i < size; ++i)
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+            chassert(!isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                      "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
             if (isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
             {
@@ -272,7 +277,7 @@ void IAggregateFunction::mergeBatchOrDefer(
         if (!places[i])
             continue;
 
-        chassert(places[i] + place_offset != rhs[i],
+        chassert(!isSelfMerge(places[i] + place_offset, rhs[i]),
                  "IAggregateFunction::mergeBatchOrDefer called with the same source and destination state");
         if (isLargeMergePair(places[i] + place_offset, rhs[i]))
         {
