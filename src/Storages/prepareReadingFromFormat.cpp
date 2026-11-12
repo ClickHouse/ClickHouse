@@ -1,5 +1,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>

@@ -37,9 +37,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     /// Granularity is never recomputed while writing only columns.
+    /// Only merges and mutations write columns separately.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
-        data_part->storage.getContext()->getWriteSettings(),
+        getWriteSettingsForMergeOrMutation(data_part->storage.getContext()->getWriteSettings(), data_part->storage.supportsReplication()),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,

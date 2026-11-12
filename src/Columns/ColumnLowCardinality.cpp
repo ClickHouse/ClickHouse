@@ -135,6 +135,95 @@ namespace
             return mapUniqueIndexImpl(*data_uint64);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
+
+    /// Returns the positions used by `indexes[begin, end)` in the order of their first occurrence, the same list as `mapUniqueIndex`.
+    template <typename T>
+    MutableColumnPtr getUsedPositions(
+        const PaddedPODArray<T> & indexes, size_t begin, size_t end, size_t dictionary_size, size_t num_special_positions)
+    {
+        auto res = ColumnVector<T>::create(dictionary_size);
+        T * positions = res->getData().data();
+        size_t num_positions = 0;
+
+        PaddedPODArray<UInt8> seen(dictionary_size, 0);
+        UInt8 * seen_data = seen.data();
+        const T * data = indexes.data();
+
+        size_t row = begin;
+        if (dictionary_size > num_special_positions)
+        {
+            size_t regular_left = dictionary_size - num_special_positions;
+            /// A block that repeats the previous row (e.g. a sorted column) is skipped with vector compares.
+            constexpr size_t block_size = 32 / sizeof(T);
+            while (row < end)
+            {
+                size_t found_regular = 0;
+                if (end - row >= block_size)
+                {
+                    if (row != begin)
+                    {
+                        bool all_same = true;
+                        for (size_t i = 0; i < block_size; ++i)
+                            all_same &= data[row + i] == data[row + i - 1];
+                        if (all_same)
+                        {
+                            row += block_size;
+                            continue;
+                        }
+                    }
+
+                    /// A constant trip count lets the block be unrolled.
+#pragma clang loop unroll(full)
+                    for (size_t i = 0; i < block_size; ++i)
+                    {
+                        const T position = data[row + i];
+                        if (!seen_data[position]) [[unlikely]]
+                        {
+                            seen_data[position] = 1;
+                            positions[num_positions++] = position;
+                            found_regular += position >= num_special_positions;
+                        }
+                    }
+                    row += block_size;
+                }
+                else
+                {
+                    for (; row < end; ++row)
+                    {
+                        const T position = data[row];
+                        if (!seen_data[position])
+                        {
+                            seen_data[position] = 1;
+                            positions[num_positions++] = position;
+                            found_regular += position >= num_special_positions;
+                        }
+                    }
+                }
+                if (found_regular >= regular_left)
+                    break;
+                regular_left -= found_regular;
+            }
+        }
+
+        /// Only the special positions (the default and NULL) can occur first in the rest of the rows.
+        std::array<std::pair<size_t, T>, 2> found;
+        size_t num_found = 0;
+        for (size_t special = 0; special < num_special_positions; ++special)
+        {
+            if (seen_data[special])
+                continue;
+            const T * it = std::find(data + row, data + end, static_cast<T>(special));
+            if (it != data + end)
+                found[num_found++] = {static_cast<size_t>(it - data), static_cast<T>(special)};
+        }
+        if (num_found == 2 && found[1].first < found[0].first)
+            std::swap(found[0], found[1]);
+        for (size_t i = 0; i < num_found; ++i)
+            positions[num_positions++] = found[i].second;
+
+        res->getData().resize(num_positions);
+        return res;
+    }
 }
 
 
@@ -991,6 +1080,41 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
 
     return {std::move(sub_keys), std::move(sub_indexes)};
+}
+
+ColumnPtr ColumnLowCardinality::getMinimalDictionary(UInt64 offset, UInt64 limit) const
+{
+    const IColumn & indexes = getIndexes();
+    if (offset > indexes.size() || limit > indexes.size() - offset)
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters offset = {}, limit = {} are out of bound in "
+            "ColumnLowCardinality::getMinimalDictionary method (size() = {}).", offset, limit, indexes.size());
+
+    /// The search needs memory proportional to the dictionary, which may be shared and much larger than the range.
+    const size_t dictionary_size = getDictionary().size();
+    if (dictionary_size > limit)
+        return getMinimalDictionaryEncodedColumn(offset, limit).dictionary;
+
+    const size_t num_special_positions = getDictionary().getNestedTypeDefaultValueIndex() + 1;
+    MutableColumnPtr positions;
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            positions = getUsedPositions(assert_cast<const ColumnUInt8 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
+            break;
+        case sizeof(UInt16):
+            positions = getUsedPositions(assert_cast<const ColumnUInt16 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
+            break;
+        case sizeof(UInt32):
+            positions = getUsedPositions(assert_cast<const ColumnUInt32 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
+            break;
+        case sizeof(UInt64):
+            positions = getUsedPositions(assert_cast<const ColumnUInt64 &>(indexes).getData(), offset, offset + limit, dictionary_size, num_special_positions);
+            break;
+        default:
+            throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
+    }
+
+    return getDictionary().getNestedColumn()->index(*positions, 0);
 }
 
 PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const

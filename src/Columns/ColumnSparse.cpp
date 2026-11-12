@@ -545,6 +545,18 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         return res;
     }
 
+    /// A sparse filter computed from this column selects exactly its non-default rows, so the result shares `values`.
+    if constexpr (std::is_same_v<Type, UInt64>)
+    {
+        const auto & offsets_data = getOffsetsData();
+        if (limit == offsets_data.size() && memcmp(indexes.data(), offsets_data.data(), limit * sizeof(UInt64)) == 0)
+        {
+            auto res_offsets = ColumnUInt64::create(limit);
+            iota(res_offsets->getData().data(), limit, UInt64(0));
+            return ColumnSparse::create(values, std::move(res_offsets), limit);
+        }
+    }
+
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
     auto res_values = values->cloneEmpty();

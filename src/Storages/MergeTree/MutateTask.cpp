@@ -4005,7 +4005,7 @@ private:
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings(),
+            getWriteSettingsForMergeOrMutation(ctx->context->getWriteSettings(), ctx->data->supportsReplication()),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
             /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
             ctx->stream_base_manifest);

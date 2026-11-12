@@ -364,6 +364,9 @@ public:
 
     DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
 
+    /// Returns `getMinimalDictionaryEncodedColumn(offset, limit).dictionary` without building the indexes.
+    ColumnPtr getMinimalDictionary(UInt64 offset, UInt64 limit) const;
+
     ColumnPtr countKeys() const;
 
     bool containsNull() const;
