@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -43,6 +44,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
@@ -2136,6 +2138,27 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
     return skipJSONFieldImpl<bool>(buf, name_of_field, settings, 0);
 }
 
+
+template <typename Allocator>
+void readStringGrowing(std::basic_string<char, std::char_traits<char>, Allocator> & s, size_t size, ReadBuffer & buf)
+{
+    while (s.size() < size)
+    {
+        if (buf.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", s.size(), size);
+
+        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
+        if (s.capacity() < s.size() + bytes_to_copy)
+            s.reserve(std::min(size, std::max(s.size() + bytes_to_copy, 2 * s.capacity())));
+        s.append(buf.position(), bytes_to_copy);
+        buf.position() += bytes_to_copy;
+    }
+}
+
+template void readStringGrowing<std::allocator<char>>(String & s, size_t size, ReadBuffer & buf);
+template void readStringGrowing<AllocatorWithMemoryTracking<char>>(
+    std::basic_string<char, std::char_traits<char>, AllocatorWithMemoryTracking<char>> & s, size_t size, ReadBuffer & buf);
 
 void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
 {

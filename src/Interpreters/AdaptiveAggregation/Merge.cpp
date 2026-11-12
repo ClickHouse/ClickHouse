@@ -632,7 +632,7 @@ size_t Aggregator::selectCountFirstBestGroups(
     const Cells & cells,
     const bool * alive_bins,
     TopK * top_k,
-    const AdaptiveTopKPruning * pruning,
+    const AdaptiveTopKThreshold & threshold,
     const ForEachInMemoryPartition & for_each_in_memory_partition,
     const ForEachSpilledBlock & for_each_spilled_block,
     Arena * arena,
@@ -693,17 +693,18 @@ size_t Aggregator::selectCountFirstBestGroups(
     best_hashes.clear();
     if (top_k)
     {
-        /// With the pruning, which serves a descending order only, a group counted below the threshold cannot reach
-        /// the top.
-        const UInt64 threshold = pruning ? pruning->currentThreshold() : 0;
+        /// A group counted below the threshold, a floor, cannot reach the top.
+        const UInt64 min_count = threshold.current();
         for (const auto & group : top_k->getGroups())
-            if (group.count >= threshold)
+            if (group.count >= min_count)
                 best_hashes.push_back(group.hash);
     }
     else
     {
         /// The smallest counts, selected by a pass over the counted groups. Only the cells that enter the heap are
-        /// hashed; its front holds the largest count kept.
+        /// hashed; its front holds the largest count kept. A group counted above the threshold, a ceiling,
+        /// cannot reach the top.
+        const UInt64 max_count = threshold.current();
         auto & best = task.best_counts_and_hashes;
         best.clear();
         const auto by_count = [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; };
@@ -712,6 +713,8 @@ size_t Aggregator::selectCountFirstBestGroups(
             [&](AggregateDataPtr & mapped, const auto & hash_of)
             {
                 const UInt64 count = getInlineCountState(mapped);
+                if (count > max_count)
+                    return;
                 if (best.size() < params.bucket_top_k)
                 {
                     best.emplace_back(count, hash_of());
@@ -995,9 +998,16 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             forEachKeyCellWithHash(source, [&](const auto & key, size_t hash) { unit_cells[unit_of(hash)].push_back({key, nullptr, hash}); });
     }
 
+    /// The threshold of the top-K that the aggregation feeds, which every conversion of the merge reads and
+    /// tightens (see `AdaptiveTopKThreshold`). Only the external merge of a top-K goes without it, and that
+    /// merge outputs partial states.
+    AdaptiveTopKThreshold * const threshold = session.top_k_threshold.get();
+    chassert(threshold || !final || !params.bucket_top_k);
+
     /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`), completed with the
     /// groups of the tables of the producers that never froze.
     AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
+    chassert(!pruning || threshold);
     AdaptiveTopKPruning::BucketBounds bin_bounds{};
     if (pruning)
     {
@@ -1040,26 +1050,29 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         if (!unit_records && cells.empty())
             continue;
 
-        /// The unit's bins that can still hold a group of the top, at the threshold of the moment (see
+        /// A settled threshold skips every unit left (see `AdaptiveTopKThreshold`). Otherwise the pruning
+        /// keeps the unit's bins that can still hold a group of the top, at the threshold of the moment (see
         /// `AdaptiveTopKPruning::selectUnit`): a unit with none is skipped, its source cells dropped and its records freed
         /// unread; a unit with some drains only theirs.
         const bool * alive_bins = nullptr;
-        if (pruning)
+        bool skip = threshold && threshold->settled();
+        if (pruning && !skip)
         {
-            const auto selection = pruning->selectUnit(bin_bounds, unit, units, alive);
-            if (selection == AdaptiveTopKPruning::UnitSelection::Skip)
-            {
-                if constexpr (MapAggregationMethod<Method>)
-                    for (auto & cell : cells)
-                        discardAdaptiveSourceState(*cell.mapped);
-                for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                    staged.release(sub);
-                pruned_records += unit_records;
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
-                continue;
-            }
+            const auto selection = pruning->selectUnit(bin_bounds, unit, units, threshold->current(), alive);
+            skip = selection == AdaptiveTopKPruning::UnitSelection::Skip;
             if (selection == AdaptiveTopKPruning::UnitSelection::Filter)
                 alive_bins = alive.data();
+        }
+        if (skip)
+        {
+            if constexpr (MapAggregationMethod<Method>)
+                for (auto & cell : cells)
+                    discardAdaptiveSourceState(*cell.mapped);
+            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+                staged.release(sub);
+            pruned_records += unit_records;
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
+            continue;
         }
 
         /// Calls `f` with the records in memory of each partition of the unit.
@@ -1128,7 +1141,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     cells,
                     alive_bins,
                     top_k ? &*top_k : nullptr,
-                    pruning,
+                    *threshold,
                     for_each_in_memory_partition,
                     for_each_spilled_block,
                     arena,
@@ -1157,7 +1170,17 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// pre-filter - when the statistics ask for it: the untruncated key bytes, because the chunk carries only the
         /// kept groups, and a bounded sample of those keys for when it carries none at all.
         UntruncatedAggregationKeys untruncated_keys;
-        auto chunk = convertOneBucketToChunk(dest, arena, final, bucket, updater ? &untruncated_keys : nullptr, /*keep_table_buffer=*/true);
+        /// A group ranked worse than the threshold has `bucket_top_k` groups ahead of it in the output of the
+        /// units converted so far, so the conversion drops it. Before the first selection the threshold is
+        /// the worst rank of the order, which drops nothing.
+        auto chunk = convertOneBucketToChunk(
+            dest,
+            arena,
+            final,
+            bucket,
+            updater ? &untruncated_keys : nullptr,
+            /*keep_table_buffer=*/true,
+            threshold ? std::optional(threshold->current()) : std::nullopt);
         if (updater)
         {
             if (untruncated_keys.bytes)
@@ -1166,9 +1189,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             else
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
-        if (pruning)
-            pruning->offerCounts(
-                assert_cast<const ColumnUInt64 &>(*chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]).getData());
+        /// The unit holds every record and source cell of its keys, so the ranks it output are exact, and no
+        /// other unit outputs its groups.
+        if (threshold)
+            threshold->offer(bucketTopKRanks(chunk.chunk));
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
