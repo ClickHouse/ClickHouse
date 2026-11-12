@@ -2,3 +2,5 @@ without show	1
 hidden	0
 visible	1
 after table-level prewarm	1
+on cluster current	1
+on cluster default	0
