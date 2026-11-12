@@ -84,16 +84,16 @@ Functions
 2
 2
 2
--- has keeps the padding
-0
-0
+-- has applies the padding rule, like hasAny and hasAll
 2
 2
--- mapContainsKey and mapContainsValue keep the padding
-0
-0
-0
-0
+2
+2
+-- mapContainsKey and mapContainsValue apply the padding rule
+2
+2
+2
+2
 2
 2
 -- startsWith and endsWith keep the padding
