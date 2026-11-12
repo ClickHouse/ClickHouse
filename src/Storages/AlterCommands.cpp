@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -46,9 +47,12 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SubcolumnCodecs.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -64,6 +68,7 @@ namespace Setting
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -83,6 +88,7 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
@@ -100,11 +106,17 @@ namespace MergeTreeSetting
 namespace
 {
 
-/// Whether the two names name one setting: a `MergeTree` setting can have two names.
+/// Whether the two names name one setting: a `MergeTree` or a `DataLakeStorageSettings` setting can have several names.
 bool isSameSetting(const String & left, const String & right)
 {
     auto resolve = [](const String & name)
-    { return MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name); };
+    {
+        if (MergeTreeSettings::hasBuiltin(name))
+            return MergeTreeSettings::resolveName(name);
+        if (DataLakeStorageSettings::hasBuiltin(name))
+            return DataLakeStorageSettings::resolveName(name);
+        return std::string_view(name);
+    };
     return resolve(left) == resolve(right);
 }
 
@@ -341,6 +353,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
             command.default_expression = ast_col_decl.getDefaultExpression();
+            command.ephemeral_default = ast_col_decl.ephemeral_default;
         }
 
         if (ast_col_decl.getComment())
@@ -788,21 +801,21 @@ void AlterCommand::apply(
     const MergeTreeSettings * settings_defaults) const
 {
     /// Helper function for column existence check with IF EXISTS
-    auto should_skip_column_operation = [&]() -> bool {
-        return if_exists && !metadata.columns.has(column_name);
+    auto should_skip_column_operation = [&](const String & name) -> bool {
+        return if_exists && !metadata.columns.has(name);
     };
 
     /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
     /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
-    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
+    auto skip_absent_column_or_fail = [&](std::string_view action, const String & name) -> bool
     {
-        if (should_skip_column_operation())
+        if (should_skip_column_operation(name))
             return true;
-        if (metadata.columns.has(column_name))
+        if (metadata.columns.has(name))
             return false;
 
-        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
-        metadata.columns.appendHintsMessage(message.text, column_name);
+        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(name), action);
+        metadata.columns.appendHintsMessage(message.text, name);
         throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
     };
 
@@ -860,17 +873,43 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation())
+            if (should_skip_column_operation(column_name))
                 return;
             metadata.columns.remove(column_name);
         }
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (skip_absent_column_or_fail("modify"))
-            return;
-        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
+        /// `prepare` resolves a subcolumn against the columns before the ALTER. A subcolumn of a column that a previous
+        /// command of the same ALTER adds or changes the type of is resolved here, against the columns so far.
+        String target_column = column_name;
+        String target_subcolumn = subcolumn_name;
+        if (target_subcolumn.empty() && !metadata.columns.has(column_name))
         {
+            if (auto subcolumn = metadata.columns.tryGetSubcolumn(column_name))
+            {
+                target_column = subcolumn->getNameInStorage();
+                target_subcolumn = subcolumn->getSubcolumnName();
+            }
+        }
+
+        if (skip_absent_column_or_fail("modify", target_column))
+            return;
+        metadata.columns.modify(target_column, after_column, first, [&](ColumnDescription & column)
+        {
+            /// The result is validated by `validateColumnCodecs` after all commands are applied.
+            if (!target_subcolumn.empty())
+            {
+                if (to_remove == RemoveProperty::CODEC)
+                    column.subcolumn_codecs.erase(target_subcolumn);
+                else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
+                    column.subcolumn_codecs.set(target_subcolumn, codec);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+                        backQuote(target_subcolumn), backQuote(target_column));
+                return;
+            }
+
             if (to_remove == RemoveProperty::DEFAULT
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
@@ -944,6 +983,7 @@ void AlterCommand::apply(
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
+                    column.default_desc.ephemeral_default = ephemeral_default;
                 }
             }
         });
@@ -986,7 +1026,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (skip_absent_column_or_fail("comment"))
+        if (skip_absent_column_or_fail("comment", column_name))
             return;
 
         metadata.columns.modify(column_name,
@@ -1323,7 +1363,7 @@ void AlterCommand::apply(
     }
     else if (type == RENAME_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (should_skip_column_operation(column_name))
             return;
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
@@ -1357,6 +1397,9 @@ void AlterCommand::apply(
 
         if (metadata.isPartitionKeyDefined())
             rename_visitor.visit(metadata.partition_key.definition_ast);
+
+        if (metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to))
+            metadata.dropImplicitIndicesForColumn(column_name);
 
         for (auto & index : metadata.secondary_indices)
         {
@@ -1817,6 +1860,33 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
+NameSet AlterCommands::getAddedIndexNames(const IndicesDescription & existing) const
+{
+    NameSet present;
+    for (const auto & index : existing)
+        present.insert(index.name);
+
+    NameSet added;
+    for (const AlterCommand & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::ADD_INDEX)
+        {
+            /// Otherwise `AlterCommand::apply` either skips it, with `IF NOT EXISTS`, or throws.
+            if (present.insert(command.index_name).second)
+                added.insert(command.index_name);
+        }
+        else if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
+        {
+            present.erase(command.index_name);
+            added.erase(command.index_name);
+        }
+    }
+    return added;
+}
+
 void AlterCommands::apply(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
@@ -1836,22 +1906,32 @@ void AlterCommands::apply(
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
 
+    /// Keys must be what CREATE and a reload resolve in the global context (parts persist their types),
+    /// so a session setting must not decide them here either.
+    ContextPtr key_context = context->getGlobalContext();
+    if (context->isAnalyzingBackgroundExpressions())
+    {
+        auto background_key_context = Context::createCopy(key_context);
+        background_key_context->setAnalyzingBackgroundExpressions(true);
+        key_context = background_key_context;
+    }
+
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
         metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
+            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, key_context);
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Derived inputs and types can change even when the partition key output structure does not.
     if (metadata_copy.minmax_count_projection && columns_changed)
@@ -1860,12 +1940,12 @@ void AlterCommands::apply(
         auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, key_context));
     }
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
@@ -1883,6 +1963,16 @@ void AlterCommands::apply(
         {
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
         }
+    }
+
+    /// Only the declared ones, and only now: the rebuild above resolves them against the schema every
+    /// command produced, which is what gets stored. Existing indices stay unauthorised on purpose.
+    const NameSet declared_indices = getAddedIndexNames(metadata.secondary_indices);
+
+    for (const auto & index : metadata_copy.secondary_indices)
+    {
+        if (declared_indices.contains(index.name))
+            checkTextIndexPreAndPostProcessorPermissions(index, context);
     }
 
     /// Changes in columns may lead to changes in projections
@@ -1933,6 +2023,19 @@ void AlterCommands::apply(
         }
     }
 
+    /// Changes in columns may make their codecs invalid.
+    if (columns_changed)
+    {
+        try
+        {
+            validateColumnCodecs(metadata_copy.columns, CodecValidationSettings::trusted());
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because the codecs of a column would become invalid: {}", exception.message());
+        }
+    }
+
     if (metadata_copy.table_ttl.definition_ast != nullptr)
     {
         try
@@ -1975,6 +2078,16 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            if (!has_column)
+            {
+                if (auto subcolumn = columns.tryGetSubcolumn(command.column_name))
+                {
+                    command.column_name = subcolumn->getNameInStorage();
+                    command.subcolumn_name = subcolumn->getSubcolumnName();
+                    has_column = true;
+                }
+            }
+
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
@@ -2110,6 +2223,65 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 }
 
 
+/// The advice appended to a "cannot remove <kind>" error, chosen per kind because `REMOVE` does not
+/// accept every one of them. Deliberately a `switch` with no `default`, so that a new
+/// `ColumnDefaultKind` is a compile error here rather than a sentence naming a syntax that does not
+/// exist: that is how `defaultKindToGetKind` in `ColumnsDescription.cpp` was kept correct when
+/// `Ephemeral` was added, while this message was not.
+static String removePropertyHint(ColumnDefaultKind kind, const String & column_name)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+        case ColumnDefaultKind::Materialized:
+        case ColumnDefaultKind::Alias:
+            /// `ParserAlterQuery` accepts exactly these three of the four kinds after `REMOVE`.
+            return "Use REMOVE " + toString(kind) + " to delete it";
+        case ColumnDefaultKind::Ephemeral:
+            /// There is no `REMOVE EPHEMERAL`, and nothing for it to strip: an `EPHEMERAL` column is
+            /// neither stored nor readable, it exists only as an input to other columns' default
+            /// expressions at `INSERT` time. Name the two operations that do exist instead.
+            return "EPHEMERAL is not removable as a property: use DROP COLUMN " + backQuote(column_name)
+                + " to delete the column, or MODIFY COLUMN to replace it with a DEFAULT, MATERIALIZED or ALIAS expression";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
+}
+
+namespace
+{
+
+/// `MODIFY COLUMN <subcolumn> CODEC(...)` and `MODIFY COLUMN <subcolumn> REMOVE CODEC` are the only commands for a subcolumn.
+void validateSubcolumnCodecCommand(
+    const AlterCommand & command, const NameAndTypePair & subcolumn, const ColumnsDescription & columns, const StoragePtr & table, const ContextPtr & context)
+{
+    const bool only_codec = !command.data_type && !command.default_expression && !command.comment && !command.ttl
+        && command.settings_changes.empty() && command.settings_resets.empty() && !command.column_statistics_decl
+        && !command.add_enum_values && command.after_column.empty() && !command.first
+        && (command.to_remove == AlterCommand::RemoveProperty::NO_PROPERTY || command.to_remove == AlterCommand::RemoveProperty::CODEC)
+        && (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC);
+    if (!only_codec)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+            backQuote(subcolumn.getSubcolumnName()), backQuote(subcolumn.getNameInStorage()));
+
+    if (!table->supportsSubcolumnCodecs())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support codecs for subcolumns", table->getName());
+
+    if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
+    {
+        if (!columns.get(subcolumn.getNameInStorage()).subcolumn_codecs.contains(subcolumn.getSubcolumnName()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subcolumn {} doesn't have CODEC, cannot remove it", backQuote(command.column_name));
+        return;
+    }
+
+    if (!context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
+
+    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+        command.codec, subcolumn.type, CodecValidationSettings(context->getSettingsRef()));
+}
+
+}
+
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
     const auto metadata = table->getInMemoryMetadataPtr(context, false);
@@ -2127,6 +2299,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
     /// over a virtual column is inert there and is left out of this set.
     NameSet insert_time_default_columns;
+    /// New `DEFAULT` and `MATERIALIZED` expressions of a `MergeTree` table, also computed in the background for existing parts.
+    ASTPtr background_default_expr_list = make_intrusive<ASTExpressionList>();
     bool defaults_evaluated_at_insert_time = true;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
@@ -2211,6 +2385,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (!all_columns.has(column_name))
             {
+                if (auto subcolumn = all_columns.tryGetSubcolumn(column_name))
+                {
+                    if (renamed_columns.contains(subcolumn->getNameInStorage()))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
+                                                                     "in a single ALTER query", backQuote(subcolumn->getNameInStorage()));
+                    validateSubcolumnCodecCommand(command, *subcolumn, all_columns, table, context);
+                    modified_columns.emplace(subcolumn->getNameInStorage());
+                    continue;
+                }
+
                 if (!command.if_exists)
                 {
                     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
@@ -2250,22 +2434,25 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove DEFAULT from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED && column_default->kind != ColumnDefaultKind::Materialized)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::ALIAS && column_default->kind != ColumnDefaultKind::Alias)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove ALIAS from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
             }
 
@@ -2278,8 +2465,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
                 checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
-                const GetColumnsOptions options(GetColumnsOptions::All);
-                const auto old_data_type = all_columns.getColumn(options, column_name).type;
+                /// Later commands of the same ALTER, such as a codec for a subcolumn of the new type, see the new type.
+                all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
             }
 
             if (command.isRemovingProperty())
@@ -2488,6 +2675,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
+            /// A column TTL resets the column to its existing default in merges.
+            if (command.ttl && !command.default_expression && all_columns.has(column_name))
+            {
+                const auto & default_desc = all_columns.get(column_name).default_desc;
+                if (default_desc.expression
+                    && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+                    background_default_expr_list->children.emplace_back(
+                        setAlias(default_desc.expression->clone(), column_name + "_tmp_ttl_default"));
+            }
+
             if (command.default_expression)
             {
                 DataTypePtr data_type_ptr;
@@ -2513,6 +2710,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (defaults_evaluated_at_insert_time
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
                     insert_time_default_columns.insert(final_column_name);
+
+                if (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized)
+                    background_default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2545,6 +2745,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
+
+    /// A replica replaying the `ALTER` of a Replicated database does not repeat the check.
+    auto txn = context->getZooKeeperMetadataTransaction();
+    if (!background_default_expr_list->children.empty() && castStorage<MergeTreeData>(table, DeferredTable::Load)
+        && (!txn || txn->isInitialQuery()))
+    {
+        auto background_context = Context::createCopy(context);
+        background_context->setAnalyzingBackgroundExpressions(true);
+        validateColumnsDefaultsAndGetSampleBlock(background_default_expr_list, all_columns.getAll(), background_context, {});
+    }
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const

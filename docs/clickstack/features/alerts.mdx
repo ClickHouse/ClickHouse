@@ -4,20 +4,25 @@ title: 'Alerts with ClickStack'
 sidebarTitle: 'Alerts'
 description: 'Alerts with ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
+keywords: ['ClickStack', 'observability', 'alerts', 'search-alerts', 'anomaly-detection', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
 ClickStack includes built-in support for alerting, enabling teams to detect and respond to issues in real time across logs, metrics, and traces.
 
-Alerts can be created directly in the HyperDX interface and integrate with popular notification systems like Slack and PagerDuty.
+Alerts can be created directly in the ClickStack UI interface and integrate with popular notification systems like Slack and PagerDuty.
 
 Alerting works seamlessly across your ClickStack data, helping you track system health, catch performance regressions, and monitor key business events.
 
 ## Types of alerts {#types-of-alerts}
 
 ClickStack supports two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
+
+Each alert uses one of two detection modes, selected under **Alert type** in the alert editor:
+
+- **Static threshold**: fires when the value crosses a number you choose. This is the default, and the mode described on this page.
+- **Anomaly detection** (Managed ClickStack only): fires when the value moves outside its expected range, learned from recent history. See [Anomaly detection alerts](/clickstack/features/anomaly-detection).
 
 ### 1. Search alerts {#search-alerts}
 
@@ -148,7 +153,7 @@ Depending on the service type, you will need to provide different details. Speci
 
 ## Managing alerts {#managing-alerts}
 
-Alerts can be centrally managed through the alerts panel on the left-hand side of HyperDX.
+Alerts can be centrally managed through the alerts panel on the left-hand side of ClickStack UI.
 
 <Image img="/images/use-cases/observability/manage_alerts.webp" alt="Manage alerts" size="lg"/>
 
@@ -156,7 +161,7 @@ From this view, you can see all alerts that have been created and are currently 
 
 <Image img="/images/use-cases/observability/alerts_view.webp" alt="Alerts view" size="lg"/>
 
-This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, HyperDX queries your data to check whether the alert condition is met:
+This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, ClickStack UI queries your data to check whether the alert condition is met:
 
 - **Red bar**: The threshold condition was met during this evaluation and the alert fired (notification sent)
 - **Green bar**: The alert was evaluated but the threshold condition wasn't met (no notification sent)
@@ -285,6 +290,10 @@ In this query, `ServiceName` is a non-numeric, non-timestamp column, so each ser
 
 Alert on excess error counts that exceed a rolling average by more than two standard deviations. This catches spikes relative to recent baseline behavior rather than a fixed threshold.
 
+<Tip>
+On Managed ClickStack, [anomaly detection alerts](/clickstack/features/anomaly-detection) do this without custom SQL, and add a preview, a backtest, and per-group baselines. Use the SQL approach below when you need full control over the baseline calculation, or on ClickStack Open Source.
+</Tip>
+
 ```sql
 WITH buckets AS (
   SELECT
@@ -332,7 +341,7 @@ Note that the query fetches 30 intervals *before* the start of the date range to
 
 ## Common alert scenarios {#common-alert-scenarios}
 
-Here are a few common alert scenarios you can use HyperDX for:
+Here are a few common alert scenarios you can use ClickStack UI for:
 
 **Errors:** We recommend setting up alerts for the default
 `All Error Events` and `HTTP Status >= 400` saved searches to be notified when
@@ -344,3 +353,8 @@ occurring.
 
 **User Events:** You can also set up alerts for customer-facing teams to be
 notified when new users sign up or a critical user action is performed.
+
+**Unusual changes:** When there is no obvious threshold, such as error counts
+that vary by service or traffic that changes over the day, use an
+[anomaly detection alert](/clickstack/features/anomaly-detection) grouped by
+`ServiceName`.

@@ -54,7 +54,21 @@ public:
     static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+
+    /// The columns a skip index must not depend on to be usable for this part: the columns updated on
+    /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
+    /// `RENAME COLUMN`. A name dropped or renamed away can be reused by a new column right away (and
+    /// an index with the old name can be added on it), while the part still holds the index file
+    /// built over the old column; which column that file was built over is not recorded, so any
+    /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
+    NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
+    /// Columns an index over cannot read correctly regardless of how its granules were typed, as opposed
+    /// to a value-preserving type change (ALTER MODIFY COLUMN): ALTER UPDATE, patches, a pending drop
+    /// (the reader returns defaults) or a pending rename (the name now reads another column). The
+    /// per-part type record certifies the type, never the values or the column identity, so these are
+    /// not exempt from index invalidation even when the recorded type matches.
+    const NameSet & getValueUpdatedColumns() const { return value_updated_columns; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
@@ -115,6 +129,10 @@ private:
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
 
+    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
+    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
+    NameSet columns_touched_by_metadata_mutations;
+
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
 
@@ -129,6 +147,9 @@ private:
     /// Names of columns which are updated by mutation commands.
     /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
+
+    /// Not a subset of all_updated_columns: also holds columns dropped or renamed by a pending mutation.
+    NameSet value_updated_columns;
 
     /// Patches required to be applied for a part.
     PatchPartsForReader patch_parts;

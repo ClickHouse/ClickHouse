@@ -1,0 +1,9 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT length(groupConcat(',')(toString(number))) FROM numbers(20000000) FORMAT Null</query>
+    <query>SELECT groupConcat(',')(toString(number)) FROM numbers(10000000) GROUP BY number % 1000000 FORMAT Null</query>
+    <query>SELECT groupConcat(',', 1000)(toString(number)) FROM numbers(10000000) GROUP BY number % 1000 FORMAT Null</query>
+</test>

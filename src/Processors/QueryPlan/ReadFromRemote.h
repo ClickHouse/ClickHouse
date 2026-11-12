@@ -55,6 +55,10 @@ public:
 
     bool hasSerializedPlan() const;
 
+    bool hasTotals() const;
+
+    void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -73,6 +77,7 @@ private:
     const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    bool allow_reading_shard_from_several_replicas = false;
 
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(
@@ -109,6 +114,9 @@ public:
         SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
+        /// Whose settings decide whether a pushed-down condition is spliced into the replicas' query:
+        /// the fragment's, which the initiator's copy of the fragment is optimized with too.
+        ContextPtr filter_rewrite_context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -152,6 +160,7 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;
+    ContextPtr filter_rewrite_context;
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
@@ -168,6 +177,17 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context);
+    ContextMutablePtr & context,
+    /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
+
+/// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
+/// remote query - all of them where it does not run.
+ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
+    const ActionsDAG::Node & condition,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & rewrite_context);
 
 }
