@@ -119,7 +119,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             address = resolved->object.empty()
                 ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
                 : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
-        std::string access = getFaultMemoryAccessType(sig, info, context);
+        std::string_view access = getFaultMemoryAccessType(sig, info, context);
         if (access.empty())
             access = "<not available>";
         return fmt::format("Address: {}. Access: {}. {}", address, access, message);
@@ -153,12 +153,13 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     return reinterpret_cast<UInt64>(resolved->address);
 }
 
-const char * getFaultMemoryAccessType(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+std::string_view getFaultMemoryAccessType(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     /// Only SIGSEGV and SIGBUS have meaningful memory access types
     if (sig != SIGSEGV && sig != SIGBUS)
         return "";
 
+    /// Ignore explicit kill(SIGSEGV)
     if (info.si_code <= 0)
         return "";
 

@@ -144,7 +144,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
     {
         saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
-        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)), std::memory_order_relaxed);
+        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)).data(), std::memory_order_relaxed);
     }
 
     if (sig != SIGTSTP)
@@ -781,7 +781,7 @@ try
     if (collectCrashLog)
     {
         const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
-        const String fault_access_type = getFaultMemoryAccessType(sig, info, *context);
+        const String fault_access_type{getFaultMemoryAccessType(sig, info, *context)};
         const String si_code_description = getSignalCodeDescription(sig, info.si_code);
 
         collectCrashLog(
