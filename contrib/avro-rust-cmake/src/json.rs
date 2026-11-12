@@ -26,15 +26,15 @@ pub struct JsonLimits {
     pub max_nodes: usize,
 }
 
-/// The default `max_nodes` admits the existing 100,000-field named-record
-/// compatibility case (about 1.1 million JSON values). Independently of the
-/// 16 MiB input-byte cap, `1 << 21` values bound the node arena itself to
-/// 64 MiB because a `JsonValue` is 32 bytes.
+/// The default `max_nodes` admits the existing 100,000-field named-record compatibility case (about 1.1
+/// million JSON values). `1 << 21` values bound the node arena itself to 64 MiB because a `JsonValue` is 32
+/// bytes. Input bytes themselves are not capped; streaming callers own their input buffers.
+
 impl Default for JsonLimits {
     fn default() -> Self {
         JsonLimits {
             max_depth: 0,
-            max_bytes: 16 << 20,
+            max_bytes: usize::MAX,
             max_nodes: 1 << 21,
         }
     }

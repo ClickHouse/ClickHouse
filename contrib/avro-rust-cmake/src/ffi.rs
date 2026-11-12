@@ -925,7 +925,7 @@ pub unsafe extern "C" fn avro_first_out_of_range_i32(
 /// Returns `AVRO_OK` (`*out` is a new header and `*consumed` its size),
 /// `AVRO_NEED_MORE` (`*needed` is the total window size required), or an
 /// error. With `eof != 0` a short window is the error "EOF reached".
-/// `max_header_bytes == 0` selects the default (16 MiB).
+/// `max_header_bytes == 0` means no header-size limit: the caller's buffer bounds memory.
 #[no_mangle]
 pub unsafe extern "C" fn avro_ocf_header_parse(
     buf: *const u8,

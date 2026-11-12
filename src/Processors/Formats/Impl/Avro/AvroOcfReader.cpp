@@ -54,9 +54,8 @@ constexpr size_t LOOKAHEAD_BYTES = 8 * 1024;
 /// The decoder is given a piece of the input as it is only when the piece has at least this many bytes. A smaller piece is
 /// not worth a call of the decoder, and is copied to a window of `PLAIN_WINDOW_BYTES` with the pieces that follow it.
 constexpr size_t MIN_LENT_PIECE_BYTES = 64 * 1024;
-/// The cap on the file header (magic, metadata, sync marker) that is parsed: the limit the Rust library applies for
-/// `max_header_bytes == 0`, passed explicitly so that the window below can never outgrow it.
-constexpr size_t MAX_HEADER_BYTES = 16ULL << 20;
+/// A file header is buffered as its metadata arrives; this is only the initial read-ahead and does not cap it.
+constexpr size_t INITIAL_HEADER_BYTES = 16ULL << 20;
 /// Bytes that are already in the input buffer are taken into the header window up to this size even when the
 /// parser did not ask for them yet, so that a header that fits one buffer is parsed once.
 constexpr size_t HEADER_READ_AHEAD = 64 * 1024;
@@ -507,16 +506,14 @@ OcfReader::OcfReader(ReadBuffer & in_)
     uint64_t consumed = 0;
     for (;;)
     {
-        /// The parser restarts from the first byte on every call, so the window must grow geometrically (at least
-        /// doubling, bounded by `MAX_HEADER_BYTES`) instead of by the few bytes the parser reports: the total work
-        /// is linear in the size of the header.
+        /// Doubling window size keeps restarts linear. Passing 0 leaves no artificial header-size ceiling.
         fillWindow(target);
-        fillWindowFromBuffer(std::min(MAX_HEADER_BYTES, windowSize() + HEADER_READ_AHEAD));
+        fillWindowFromBuffer(std::min(INITIAL_HEADER_BYTES, windowSize() + HEADER_READ_AHEAD));
 
         AvroOcfHeader * raw = nullptr;
         uint64_t needed = 0;
         int32_t status = avro_ocf_header_parse(
-            reinterpret_cast<const uint8_t *>(windowData()), windowSize(), windowSize() < target, MAX_HEADER_BYTES, &raw, &consumed,
+            reinterpret_cast<const uint8_t *>(windowData()), windowSize(), windowSize() < target, 0, &raw, &consumed,
             &needed, err, sizeof(err));
         checkStatus(status, err);
         if (status == AVRO_OK)
@@ -524,9 +521,9 @@ OcfReader::OcfReader(ReadBuffer & in_)
             header.reset(raw);
             break;
         }
-        if (status != AVRO_NEED_MORE || needed <= windowSize() || needed > MAX_HEADER_BYTES)
+        if (status != AVRO_NEED_MORE || needed <= windowSize())
             throwUnexpectedStatus("avro_ocf_header_parse");
-        target = std::max<size_t>(needed, std::min(MAX_HEADER_BYTES, windowSize() * 2));
+        target = std::max<size_t>(needed, windowSize() * 2);
     }
     if (consumed > windowSize())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The Avro file header ended at byte {} of {} read", consumed, windowSize());

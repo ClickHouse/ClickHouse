@@ -13,10 +13,10 @@
 //! caller, which decompresses the block payload with its own, memory-tracked
 //! decompressors, and then runs the executor on the plain bytes.
 //!
-//! Nothing here allocates in proportion to attacker-chosen lengths: lengths
-//! are compared with limits before any bytes are waited for or copied, and the
-//! only allocation is the metadata map, which is capped by
-//! [`OcfLimits::max_header_bytes`].
+//! The only allocation is the metadata map, whose bytes are actual input. `OcfLimits::max_header_bytes` is an
+//! optional cap on those bytes; 0 removes the cap, so the caller's input and memory controls apply.
+//!
+//! Schema text has no byte-count ceiling. Rust JSON parsing bounds nesting and JSON-value count independently.
 
 use std::collections::HashMap;
 
@@ -65,7 +65,7 @@ pub struct OcfLimits {
 impl Default for OcfLimits {
     fn default() -> Self {
         OcfLimits {
-            max_header_bytes: 16 << 20,
+            max_header_bytes: 0,
             max_block_bytes: 0,
         }
     }
@@ -201,7 +201,7 @@ fn header_inner(buf: &[u8], limits: &OcfLimits) -> std::result::Result<(Header, 
     let mut w = Window {
         buf,
         pos: 0,
-        cap: limits.max_header_bytes,
+        cap: if limits.max_header_bytes == 0 { usize::MAX } else { limits.max_header_bytes },
     };
     let magic = w.take(4)?;
     if magic != MAGIC {
@@ -366,10 +366,6 @@ fn block_inner(buf: &[u8], ctx: &BlockCtx) -> std::result::Result<(BlockHeader, 
     }
     if ctx.codec == Codec::Null {
         check_object_count(objects, bytes, ctx.min_record_size)?;
-    } else if ctx.min_record_size == 0 {
-        // Compressed payloads are checked after decompression, but the zero-size
-        // cap does not depend on the payload.
-        check_object_count(objects, 0, 0)?;
     }
     Ok((
         BlockHeader::Block {
