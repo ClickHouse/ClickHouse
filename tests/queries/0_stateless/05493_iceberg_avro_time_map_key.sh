@@ -26,3 +26,15 @@ for format in Avro Parquet ORC; do
     ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${table}"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
 done
+
+# A time nested in a compound key: the whole key is written as a string as well.
+echo "--- Avro, compound key ---"
+table="${PREFIX}_Avro_tuple_key"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${table} (m Map(Tuple(tm Time64(6)), Int64))
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${table}/', 'Avro')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    INSERT INTO ${table} SELECT map(CAST(tuple(toTime64('12:00:00', 6)), 'Tuple(tm Time64(6))'), toInt64(1))" 2>&1 \
+    | grep -o -m1 'NOT_IMPLEMENTED' | head -n1
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"

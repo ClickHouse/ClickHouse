@@ -1193,6 +1193,27 @@ void validateIcebergTimeOfDayMicroseconds(Int64 microseconds)
 namespace
 {
 
+/// Whether the type is `Time` or `Time64`, or contains one of them in its elements, at any depth.
+bool typeContainsTime(const DataTypePtr & type)
+{
+    const auto unwrapped = removeNullable(removeLowCardinality(type));
+    const WhichDataType which(unwrapped);
+    if (which.isTime() || which.isTime64())
+        return true;
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (typeContainsTime(element))
+                return true;
+        return false;
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+        return typeContainsTime(array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
+        return typeContainsTime(map->getKeyType()) || typeContainsTime(map->getValueType());
+    return false;
+}
+
 void checkIcebergTimeColumnIsWritable(
     const ColumnMapper & column_mapper, const DataTypePtr & type, const String & path, bool is_avro)
 {
@@ -1225,8 +1246,8 @@ void checkIcebergTimeColumnIsWritable(
         /// The Avro writer writes a `Map` as an Avro `map`, whose keys are strings, while Iceberg requires a map
         /// with non-string keys to be an array of key-value records, with a `time` key as a `time-micros` `long`.
         /// A data file with a time key as a string would not match the Iceberg schema for other readers.
-        const auto key_type = removeNullable(removeLowCardinality(map->getKeyType()));
-        if (is_avro && (WhichDataType(key_type).isTime() || WhichDataType(key_type).isTime64()))
+        /// The whole key is written as a string, so this also applies to a time nested in a compound key.
+        if (is_avro && typeContainsTime(map->getKeyType()))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot write column {} of type {} into an Iceberg Avro data file: a map with `time` keys is not supported "
