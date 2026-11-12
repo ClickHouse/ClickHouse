@@ -330,7 +330,7 @@ static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processo
 StepAnalyzer AggregatingStep::makeAnalyzer() const
 {
     StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
-    analyzer.reporter = [](StepProcessors step_processors) { return aggregationAnalysisReport(step_processors); };
+    analyzer.reporter = aggregationAnalysisReport;
     return analyzer;
 }
 
@@ -1118,7 +1118,7 @@ String AggregatingProjectionStep::getStepGroupName(size_t group) const
 StepAnalyzer AggregatingProjectionStep::makeAnalyzer() const
 {
     StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
-    analyzer.reporter = [](StepProcessors step_processors) { return aggregationAnalysisReport(step_processors); };
+    analyzer.reporter = aggregationAnalysisReport;
     return analyzer;
 }
 
