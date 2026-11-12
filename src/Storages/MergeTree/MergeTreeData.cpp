@@ -140,7 +140,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -15887,30 +15886,8 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
     return parts_to_clear.size();
 }
 
-void MergeTreeData::clearVectorSimilarityIndexCache(const String & index_name) const
+void MergeTreeData::clearVectorSimilarityIndexCache() const
 {
-    /// The cache keys refer to an index by its file name, see `MergeTreeIndexReader::read`.
-    std::optional<String> index_file_name;
-    if (!index_name.empty())
-    {
-        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
-        const auto & indices = metadata_snapshot->getSecondaryIndices();
-        if (!indices.has(index_name))
-        {
-            auto hints = indices.getHints(index_name);
-            auto hints_string = !hints.empty() ? ". Maybe you meant: " + toString(hints) : "";
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} has no index {}{}",
-                getStorageID().getNameForLogs(), backQuote(index_name), hints_string);
-        }
-
-        const auto & index = indices.getByName(index_name);
-        if (index.type != "vector_similarity")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index {} of table {} is not a vector similarity index, its type is {}",
-                backQuote(index_name), getStorageID().getNameForLogs(), index.type);
-
-        index_file_name = getIndexFileName(index.name, index.escape_filenames);
-    }
-
     auto vector_similarity_index_cache = getContext()->getVectorSimilarityIndexCache();
     if (!vector_similarity_index_cache)
         return;
@@ -15921,7 +15898,7 @@ void MergeTreeData::clearVectorSimilarityIndexCache(const String & index_name) c
     for (const auto & part : getAllDataPartsVector())
         paths_to_data_parts.insert(part->getPathForCacheKey());
 
-    vector_similarity_index_cache->removeEntriesFromCache(paths_to_data_parts, index_file_name);
+    vector_similarity_index_cache->removeEntriesFromCache(paths_to_data_parts);
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)

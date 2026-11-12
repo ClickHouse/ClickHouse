@@ -1777,9 +1777,8 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
-    /// Removes the entries of the data parts of this table from the vector similarity index cache. If `index_name` is not
-    /// empty, removes only the entries of that index, which must be a vector similarity index of the table.
-    void clearVectorSimilarityIndexCache(const String & index_name) const;
+    /// Removes the entries of the data parts of this table from the vector similarity index cache.
+    void clearVectorSimilarityIndexCache() const;
 
 protected:
     friend class IMergeTreeDataPart;

@@ -111,7 +111,7 @@ private:
     void prewarmMarkCache();
     void prewarmPrimaryIndexCache();
     void clearTimeSeriesCaches();
-    void clearVectorSimilarityIndexCacheForTable(const ASTSystemQuery & query);
+    void clearVectorSimilarityIndexCacheForTable();
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

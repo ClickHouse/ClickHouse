@@ -407,12 +407,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_keyword(" FOR TABLE ");
                 print_database_table();
-
-                if (!index_name.empty())
-                {
-                    print_keyword(" INDEX ");
-                    print_identifier(index_name);
-                }
             }
             break;
         }
@@ -751,8 +745,6 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeUInt("untracked_memory_size", untracked_memory_size);
     if (query_result_cache_tag.has_value())
         w.writeString("query_result_cache_tag", *query_result_cache_tag);
-    if (!index_name.empty())
-        w.writeString("index_name", index_name);
     if (!filesystem_cache_name.empty())
         w.writeString("filesystem_cache_name", filesystem_cache_name);
     if (!distributed_cache_server_id.empty())
@@ -934,7 +926,6 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     untracked_memory_size = r.getUInt("untracked_memory_size");
     if (r.has("query_result_cache_tag"))
         query_result_cache_tag = r.getString("query_result_cache_tag");
-    index_name = r.getString("index_name");
     filesystem_cache_name = r.getString("filesystem_cache_name");
     distributed_cache_server_id = r.getString("distributed_cache_server_id");
     distributed_cache_drop_connections = r.getBool("distributed_cache_drop_connections");
@@ -1046,12 +1037,6 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::SYNC_DATABASE_REPLICA:
             if (!database)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SYNC_DATABASE_REPLICA` requires 'database' during AST JSON deserialization");
-            break;
-        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            /// The parser accepts an index only after a table (`FOR TABLE t INDEX i`), and `formatImpl` prints it only then.
-            if (!index_name.empty() && !table)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "`SYSTEM {}` with 'index_name' requires 'table' during AST JSON deserialization", typeToString(type));
             break;
         case Type::START_LISTEN:
         case Type::STOP_LISTEN:

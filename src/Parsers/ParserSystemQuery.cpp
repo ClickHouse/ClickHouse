@@ -758,7 +758,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
         {
-            /// SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster] [FOR TABLE [db.]table [INDEX index]]
+            /// SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster] [FOR TABLE [db.]table]
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
 
@@ -768,14 +768,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     return false;
                 if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                     return false;
-
-                if (ParserKeyword{Keyword::INDEX}.ignore(pos, expected))
-                {
-                    ASTPtr index;
-                    if (!ParserIdentifier{}.parse(pos, index, expected))
-                        return false;
-                    res->index_name = getIdentifierName(index);
-                }
             }
             break;
         }
@@ -1333,10 +1325,10 @@ Clears the cache of [vector similarity indexes](/reference/engines/table-engines
 Its size is configured with the server-level setting [`vector_similarity_index_cache_size`](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 
 ```sql
-SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table [INDEX index_name]]
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
 ```
 
-With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and with `INDEX`, only those of the given vector similarity index of the table. The cache entries of the other tables and indexes stay cached.
+With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and the cache entries of the other tables stay cached.
 
 With `FOR TABLE`, the statement requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege on the table. Without it, the statement clears the entries of all tables, so it requires the privilege on all tables (`ON *.*`).
 

@@ -609,7 +609,7 @@ BlockIO InterpreterSystemQuery::execute()
                 system_context->clearVectorSimilarityIndexCache();
             }
             else
-                clearVectorSimilarityIndexCacheForTable(query);
+                clearVectorSimilarityIndexCacheForTable();
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
@@ -3009,21 +3009,21 @@ void InterpreterSystemQuery::clearTimeSeriesCaches()
     storagePtrToTimeSeries(table)->clearCaches();
 }
 
-void InterpreterSystemQuery::clearVectorSimilarityIndexCacheForTable(const ASTSystemQuery & query)
+void InterpreterSystemQuery::clearVectorSimilarityIndexCacheForTable()
 {
     /// Check the access before looking up the table, so that a user without the privilege can't learn whether the table exists.
     getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
 
     auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
-    
+
     /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
     if (!merge_tree)
         return;
 
     /// The cache keys are built from the paths of the parts, which `RENAME TABLE` changes for a table without a UUID.
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-    merge_tree->clearVectorSimilarityIndexCache(query.index_name);
+    merge_tree->clearVectorSimilarityIndexCache();
 }
 
 void InterpreterSystemQuery::prewarmMarkCache()

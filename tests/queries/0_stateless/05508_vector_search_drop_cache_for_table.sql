@@ -5,14 +5,12 @@
 --     cache entry more than once (also when automatic parallel replicas only collect statistics: the plan built for costing
 --     looks it up again)
 
--- Tests `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE <table> [INDEX <index>]`: it evicts the cache entries of that
--- table (or of that index of the table), and keeps the entries of other tables and indexes. It requires the privilege on
--- that table only.
+-- Tests `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE <table>`: it evicts the cache entries of that table, and keeps
+-- the entries of other tables. It requires the privilege on that table only.
 
 DROP TABLE IF EXISTS tab1;
 DROP TABLE IF EXISTS tab2;
 DROP TABLE IF EXISTS tab_outdated;
-DROP TABLE IF EXISTS tab_minmax;
 DROP TABLE IF EXISTS tab_memory;
 DROP USER IF EXISTS user_05508;
 
@@ -20,20 +18,20 @@ SELECT '-- Formatting';
 
 -- `DROP` and `CLEAR` are synonyms, and the query is formatted with `CLEAR`.
 SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab');
-SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE db.tab INDEX idx');
-SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER c FOR TABLE db.tab INDEX idx');
+SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE db.tab');
+SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER c FOR TABLE db.tab');
 SELECT formatQuery('SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE ON CLUSTER c');
 
--- The table and the index are kept in the JSON representation of the query.
-SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER c FOR TABLE db.tab INDEX idx'));
+-- The table is kept in the JSON representation of the query.
+SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON CLUSTER c FOR TABLE db.tab'));
 
--- `FOR TABLE` needs a table name, and `INDEX` needs `FOR TABLE`.
+-- `FOR TABLE` needs a table name.
 SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('SYSTEM DROP VECTOR SIMILARITY INDEX CACHE INDEX idx'); -- { serverError SYNTAX_ERROR }
 
 -- Now we create tables and run queries
 
--- `tab1` has two vector similarity indexes, `tab2` has one.
+-- `tab1` has two vector similarity indexes, so that the test shows that `FOR TABLE` evicts the entries of all indexes of the
+-- table. `tab2` has one.
 -- Each table has a single part, and each vector similarity index has a single index granule in it (its default `GRANULARITY`
 -- is 100000000), so each search below looks up exactly one cache entry: a hit if the entry is cached, and a miss otherwise.
 CREATE TABLE tab1
@@ -92,15 +90,6 @@ SELECT id FROM tab1 ORDER BY L2Distance(vec2, [0.0, 2.0]) LIMIT 3 FORMAT Null
     SETTINGS log_comment = 'after FOR TABLE tab2: tab1.idx2';
 SELECT id FROM tab2 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
     SETTINGS log_comment = 'after FOR TABLE tab2: tab2.idx';
-
--- Evicts the entry of `idx1` of `tab1` only.
-SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1 INDEX idx1;
-SELECT id FROM tab1 ORDER BY L2Distance(vec1, [0.0, 2.0]) LIMIT 3 FORMAT Null
-    SETTINGS log_comment = 'after FOR TABLE tab1 INDEX idx1: tab1.idx1';
-SELECT id FROM tab1 ORDER BY L2Distance(vec2, [0.0, 2.0]) LIMIT 3 FORMAT Null
-    SETTINGS log_comment = 'after FOR TABLE tab1 INDEX idx1: tab1.idx2';
-SELECT id FROM tab2 ORDER BY L2Distance(vec, [0.0, 2.0]) LIMIT 3 FORMAT Null
-    SETTINGS log_comment = 'after FOR TABLE tab1 INDEX idx1: tab2.idx';
 
 -- The table can be qualified with its database. Evicts both entries of `tab1`.
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE {CLICKHOUSE_DATABASE:Identifier}.tab1;
@@ -173,25 +162,12 @@ SELECT 'cells after FOR TABLE tab_outdated', value FROM system.metrics WHERE met
 
 SELECT '-- Errors';
 
--- The table and the index must exist.
+-- The table must exist.
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE does_not_exist; -- { serverError UNKNOWN_TABLE }
-SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1 INDEX does_not_exist; -- { serverError BAD_ARGUMENTS }
-
--- The index exists, but it is not a vector similarity index, so the cache has no entries for it.
-CREATE TABLE tab_minmax
-(
-    id Int32,
-    INDEX idx_minmax id TYPE minmax
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_minmax INDEX idx_minmax; -- { serverError BAD_ARGUMENTS }
 
 -- Should be a no-op for non-`MergeTree` tables.
 CREATE TABLE tab_memory (id Int32) ENGINE = Memory;
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory;
-SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory INDEX idx;
 
 SELECT '-- Access';
 
@@ -199,7 +175,6 @@ SELECT '-- Access';
 CREATE USER user_05508;
 GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON tab1 TO user_05508;
 EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1;
-EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1 INDEX idx1;
 EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab2; -- { serverError ACCESS_DENIED }
 
 -- The access is checked before the table is looked up, so that the user can't learn whether a table exists.
@@ -214,5 +189,4 @@ DROP USER user_05508;
 DROP TABLE tab1;
 DROP TABLE tab2;
 DROP TABLE tab_outdated;
-DROP TABLE tab_minmax;
 DROP TABLE tab_memory;
