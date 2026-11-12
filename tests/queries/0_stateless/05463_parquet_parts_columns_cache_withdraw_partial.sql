@@ -7,6 +7,8 @@
 -- must take its chunks written so far back out of the cache: they cannot serve any read.
 
 SET allow_experimental_parquet_parts = 1;
+-- Read the columns instead of computing `sum` from the column statistics.
+SET use_statistics_for_sum_avg_aggregation = 0;
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
 SET use_indexes_refiner_in_read_pools = 0;
