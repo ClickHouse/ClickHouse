@@ -3400,13 +3400,10 @@ void ReadFromMergeTree::buildIndexes(
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
-#if USE_USEARCH
             factory = [index_helper, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
-                const auto & vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity &>(*index_helper);
-                return vector_similarity_index.createIndexCondition(predicate, query_context, vector_search_parameters);
+                return index_helper->createIndexCondition(predicate, query_context, vector_search_parameters);
             };
-#endif
         }
         else
         {

@@ -278,6 +278,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_ivf_index;
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
@@ -6675,6 +6676,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
+
+    if (!settings[Setting::allow_experimental_ivf_index])
+        for (const auto & index : new_metadata.secondary_indices)
+            if (isIvfVectorSimilarityIndex(index) && !old_metadata.secondary_indices.has(index.name))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "The `ivf` method of the vector similarity index is experimental. Enable the setting 'allow_experimental_ivf_index' to use it");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;

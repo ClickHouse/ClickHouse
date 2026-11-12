@@ -10306,6 +10306,15 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", 0, \
         {"24.10", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."}) \
+    DECLARE(Bool, allow_experimental_ivf_index, false, R"(
+Allows to create a vector similarity index of the `ivf` method, which is built and searched on the GPU.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting."}) \
+    DECLARE(UInt64, vector_search_ivf_probes, 64, R"(
+How many lists a vector similarity index of the `ivf` method searches per query: those of the nearest centroids. More lists
+give a better recall and take proportionally longer.
+)", EXPERIMENTAL, \
+        {"26.11", 64, 64, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
