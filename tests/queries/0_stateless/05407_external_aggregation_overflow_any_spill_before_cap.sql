@@ -32,4 +32,4 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND log_comment = '05407_external_aggregation_overflow_any_spill_before_cap'
     AND type = 'QueryFinish'
-    AND event_date >= yesterday();
+    AND event_date >= yesterday() AND event_time >= now() - 600;

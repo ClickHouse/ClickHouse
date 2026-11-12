@@ -26,4 +26,4 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND log_comment = '05401_external_aggregation_overflow_any_keeps_kept_keys'
     AND type = 'QueryFinish'
-    AND event_date >= yesterday();
+    AND event_date >= yesterday() AND event_time >= now() - 600;

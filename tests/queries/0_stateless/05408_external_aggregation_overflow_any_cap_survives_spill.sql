@@ -26,4 +26,4 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND log_comment = '05408_external_aggregation_overflow_any_cap_survives_spill'
     AND type = 'QueryFinish'
-    AND event_date >= yesterday();
+    AND event_date >= yesterday() AND event_time >= now() - 600;
