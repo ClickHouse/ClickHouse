@@ -114,6 +114,11 @@ namespace
 /// overshoot the threshold by at most this many keys.
 constexpr size_t adaptive_learning_slice_rows = 4'096;
 
+/// The widest light aggregation state, in bytes: two words, such as the sum and the count of `avg` over
+/// 64-bit numbers. A wider state is heavy, and so is one whose destructor frees memory (see
+/// `Aggregator::hasHeavyStates`).
+constexpr size_t max_light_state_bytes = 16;
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -802,7 +807,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
         if (!params.aggregates[i].function->hasTrivialDestructor())
             all_aggregates_has_trivial_destructor = false;
-        has_heavy_states |= params.aggregates[i].function->sizeOfData() > 16 || !params.aggregates[i].function->hasTrivialDestructor();
+        has_heavy_states |= params.aggregates[i].function->sizeOfData() > max_light_state_bytes
+            || !params.aggregates[i].function->hasTrivialDestructor();
     }
 
     if (params.aggregates_size == 1)
