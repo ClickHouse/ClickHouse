@@ -31,6 +31,7 @@ namespace DB
 
 using StorageActionBlockType = size_t;
 
+enum class AccessType : uint16_t;
 class ASTCreateQuery;
 class ASTInsertQuery;
 
@@ -290,6 +291,21 @@ public:
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
     /// and covers only the data visible to the user of `query_context`.
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
+
+    /// Whether the user of `query_context` has `access_type` on the tables whose metadata this table shows as its own, e.g. the
+    /// columns of the target of an `Alias`. An empty `column_name` stands for the whole table. Checked on top of the access to
+    /// this table where its metadata is shown (`DESCRIBE`, `system.columns`, `system.tables`).
+    virtual bool isExposedMetadataGranted(const ContextPtr & /*query_context*/, AccessType /*access_type*/, const String & /*column_name*/) const
+    {
+        return true;
+    }
+
+    /// The subset of `column_names` for which `isExposedMetadataGranted` holds, or nullopt if it holds for all of them.
+    virtual std::optional<NameSet> filterColumnsWithExposedMetadataGranted(
+        const ContextPtr & /*query_context*/, AccessType /*access_type*/, const Names & /*column_names*/) const
+    {
+        return std::nullopt;
+    }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.

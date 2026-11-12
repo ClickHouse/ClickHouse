@@ -2,7 +2,7 @@
 # Tags: no-replicated-database
 # Tag no-replicated-database: re-attaches an `Atomic` database with `lazy_load_tables`.
 
-# The column sizes of an `ABR` table in `system.columns` are hidden from a user who can only read the `ABR` table,
+# The columns of an `ABR` table in `system.columns` are hidden from a user who can only read the `ABR` table,
 # also after re-attaching a database with `lazy_load_tables`, where the `ABR` table is still loaded eagerly.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

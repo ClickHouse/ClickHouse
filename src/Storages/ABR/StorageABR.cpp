@@ -191,23 +191,64 @@ StorageABR::StorageABR(
 {
 }
 
+StoragePtr StorageABR::tryGetFinestSourceTable() const
+{
+    const String database = getStorageID().database_name;
+    for (const UInt64 interval : sample_intervals)
+    {
+        if (auto table = DatabaseCatalog::instance().tryGetTable(
+                StorageID(database, getSourceTableName(table_prefix, interval)), Context::getGlobalContextInstance()))
+            return table;
+    }
+    return nullptr;
+}
+
 StorageMetadataHandle StorageABR::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
     StorageMetadataHandle own_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-    const auto & database = getStorageID().database_name;
-    for (const UInt64 interval : sample_intervals)
+    const auto table = tryGetFinestSourceTable();
+    if (!table)
+        return own_metadata;
+
+    const auto table_metadata = table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    auto metadata = std::make_shared<StorageInMemoryMetadata>(*own_metadata);
+    metadata->setColumns(table_metadata->getColumns());
+    return metadata;
+}
+
+bool StorageABR::isExposedMetadataGranted(const ContextPtr & query_context, AccessType access_type, const String & column_name) const
+{
+    const auto table = tryGetFinestSourceTable();
+    if (!table)
+        return true; /// No columns are exposed.
+    if (!query_context)
+        return false;
+
+    const auto table_id = table->getStorageID();
+    const auto access = query_context->getAccess();
+    return column_name.empty() ? access->isGranted(access_type, table_id.database_name, table_id.table_name)
+                               : access->isGranted(access_type, table_id.database_name, table_id.table_name, column_name);
+}
+
+std::optional<NameSet> StorageABR::filterColumnsWithExposedMetadataGranted(
+    const ContextPtr & query_context, AccessType access_type, const Names & column_names) const
+{
+    const auto table = tryGetFinestSourceTable();
+    if (!table)
+        return std::nullopt;
+
+    NameSet granted;
+    if (!query_context)
+        return granted;
+
+    const auto table_id = table->getStorageID();
+    const auto access = query_context->getAccess();
+    for (const auto & column_name : column_names)
     {
-        const auto table = DatabaseCatalog::instance().tryGetTable(
-            StorageID(database, getSourceTableName(table_prefix, interval)), Context::getGlobalContextInstance());
-        if (table)
-        {
-            const auto table_metadata = table->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-            auto metadata = std::make_shared<StorageInMemoryMetadata>(*own_metadata);
-            metadata->setColumns(table_metadata->getColumns());
-            return metadata;
-        }
+        if (access->isGranted(access_type, table_id.database_name, table_id.table_name, column_name))
+            granted.insert(column_name);
     }
-    return own_metadata;
+    return granted;
 }
 
 StorageABR::Retention StorageABR::getRetention(const ColumnsDescription & columns, const ContextPtr & context) const

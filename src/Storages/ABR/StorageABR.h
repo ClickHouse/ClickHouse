@@ -113,6 +113,11 @@ public:
     /// A missing source table then fails the query in `read` with `UNKNOWN_TABLE` rather than with an unknown column.
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
+    /// The columns are those of the finest source table that exists, so showing them requires the access to that table.
+    bool isExposedMetadataGranted(const ContextPtr & query_context, AccessType access_type, const String & column_name) const override;
+    std::optional<NameSet> filterColumnsWithExposedMetadataGranted(
+        const ContextPtr & query_context, AccessType access_type, const Names & column_names) const override;
+
     ColumnSizeByName getColumnSizes() const override;
     std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
     bool supportsPrewhere() const override;
@@ -228,6 +233,9 @@ private:
     /// Resolves the source tables of `intervals`, see `resolveSourceTable`.
     std::vector<SourceTable> getSourceTables(
         std::span<const UInt64> intervals, const Retention & retention, const ContextPtr & local_context) const;
+
+    /// Finds the finest source table that exists, with the global context, whose columns are the ones of this table.
+    StoragePtr tryGetFinestSourceTable() const;
 
     /// Finds all the source tables with the global context, for methods that have no query context.
     /// Returns an empty vector if any of them does not exist.

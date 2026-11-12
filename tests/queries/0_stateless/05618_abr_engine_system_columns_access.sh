@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# `system.columns` shows the column sizes of an `ABR` table, which are the sizes of its finest source table. They are
-# shown only to a user allowed to see the columns of that table, not to one who can only read the `ABR` table.
+# The columns of an `ABR` table, with their definitions and sizes, are those of its finest source table. `DESCRIBE` and
+# `system.columns` show them only to a user allowed to see the columns of that table, not to one who can only read the
+# `ABR` table, also for a column added to the source tables after the `ABR` table was created.
 # The source tables have wide parts, in which the sizes of each column are known.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -22,13 +23,15 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_abr=1 --query "
     INSERT INTO src_10 SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number, number FROM numbers(1000);
 
     CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'));
+    ALTER TABLE src_1 ADD COLUMN note String DEFAULT 'xyzzy';
+    ALTER TABLE src_10 ADD COLUMN note String DEFAULT 'xyzzy';
 
     CREATE USER ${user} NOT IDENTIFIED;
     GRANT SELECT ON abr_proxy TO ${user};
 "
 
 query="
-    SELECT name, data_compressed_bytes > 0, data_uncompressed_bytes > 0, marks_bytes > 0
+    SELECT name, default_expression, data_compressed_bytes > 0, data_uncompressed_bytes > 0, marks_bytes > 0
     FROM system.columns WHERE database = currentDatabase() AND table = 'abr_proxy' ORDER BY position"
 
 echo "user with access to the source tables"
@@ -36,6 +39,7 @@ ${CLICKHOUSE_CLIENT} --query "${query}"
 
 echo "user with access to the ABR table only"
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "${query}"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "DESCRIBE TABLE abr_proxy" 2>&1 | grep -o -e "ACCESS_DENIED" -e "xyzzy" | sort -u
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON src_1 TO ${user}"
 echo "user with access to the columns of the finest source table"
