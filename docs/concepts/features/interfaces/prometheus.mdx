@@ -92,6 +92,8 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/query_range` | Range PromQL queries |
 | `/prometheus/api/v1/format_query` | PromQL expression formatting |
 | `/prometheus/api/v1/series` | Series metadata |
+| `/prometheus/api/v1/labels` | Label names |
+| `/prometheus/api/v1/label/<name>/values` | Label values |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
 | `/prometheus/api/v1/federate` | Federation of the latest samples |
 
@@ -225,7 +227,7 @@ Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and ad
 With `httpMethod: POST`, Grafana sends the query parameters in the request body. ClickHouse reads the request body and the URL query string, so `customQueryParameters` still applies. Use `POST` for long PromQL expressions, because a URL has a length limit.
 
 <Note>
-Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
+Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query`, the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata`, and the [federation](#federation) endpoint `/api/v1/federate` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
 </Note>
 
 ### SQL entry points {#sql-entry-points}
