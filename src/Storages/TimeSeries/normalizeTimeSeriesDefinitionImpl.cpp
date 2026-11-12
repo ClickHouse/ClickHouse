@@ -700,8 +700,9 @@ namespace
 
     /// The expression of `SET samples = ...` of a downsampling TTL rule: the samples of the group sorted and merged by
     /// `timeSeriesGroupArray`, then only the last sample of each `[k * interval, (k + 1) * interval)` interval is kept.
-    /// `toDateTime` makes the rule work for any type of the timestamps, and the timezone is named because `toStartOfInterval`
-    /// counts from local midnight, while the intervals must count from the Unix epoch like the buckets.
+    /// `toDateTime64` makes the rule work for any type of the timestamps (e.g. a raw `UInt32`) and keeps their full signed
+    /// 64-bit range (no wrap before 1970 or after 2106), and the timezone is named because `toStartOfInterval` counts from
+    /// local midnight, while the intervals must count from the Unix epoch like the buckets.
     ASTPtr makeDownsampledSamplesExpression(UInt64 interval_seconds)
     {
         auto samples = [] { return makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)); };
@@ -710,7 +711,7 @@ namespace
         {
             auto timestamp = makeASTOperator("tupleElement", std::move(sample), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
             return makeASTFunction("toStartOfInterval",
-                makeASTFunction("toDateTime", std::move(timestamp), make_intrusive<ASTLiteral>(String{"UTC"})),
+                makeASTFunction("toDateTime64", std::move(timestamp), make_intrusive<ASTLiteral>(static_cast<UInt64>(3)), make_intrusive<ASTLiteral>(String{"UTC"})),
                 makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(interval_seconds)));
         };
 
@@ -729,7 +730,8 @@ namespace
     /// The generated TTL of an inner samples table with the `samples_downsampling_periods` setting: one `GROUP BY` rule per level.
     /// A row older than the offset of a level is rewritten by the rule of that level; the row keeps its key, so the rule groups
     /// by the whole sorting key `(id, bucket)`. The TTL counts from the start of the bucket plus the step, like the TTL of
-    /// the recent samples table. Returns nullptr if the setting is empty.
+    /// the recent samples table, through `toDateTime64` to keep the full signed 64-bit range of the buckets for any type
+    /// of the timestamps (e.g. a raw `UInt32`). Returns nullptr if the setting is empty.
     ASTPtr getSamplesDownsamplingTTLFromSettings(const TimeSeriesSettings & settings)
     {
         const auto periods = TimeSeriesDownsamplingPeriods::parse(settings[TimeSeriesSetting::samples_downsampling_periods].value);
@@ -750,7 +752,7 @@ namespace
         {
             auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::GROUP_BY, DataDestinationType::DELETE, "", /*if_exists=*/ false);
             ttl_element->setTTL(makeASTOperator("plus",
-                makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket)),
+                makeASTFunction("toDateTime64", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket), make_intrusive<ASTLiteral>(static_cast<UInt64>(0)), make_intrusive<ASTLiteral>(String{"UTC"})),
                 makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(level.offset_seconds + bucket_step_seconds))));
             ttl_element->group_by_key.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
             ttl_element->group_by_key.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
@@ -844,7 +846,7 @@ namespace
         /// so they aren't copied into a table pinned to an earlier version.
         if (new_version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
             old_settings.removeSettings({"samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes",
-                                         "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes"});
+                                         "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes", "samples_downsampling_periods"});
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))

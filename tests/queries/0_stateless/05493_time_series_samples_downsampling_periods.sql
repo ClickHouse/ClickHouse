@@ -21,6 +21,12 @@ CREATE TABLE ts_copy AS ts;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%' AND engine_full LIKE '% TTL %GROUP BY id, bucket%';
 DROP TABLE ts_copy;
 
+SELECT '-- a copy pinned to a version without buckets of samples does not inherit the setting';
+CREATE TABLE ts_copy AS ts SETTINGS version = 10;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%' AND engine_full LIKE '%GROUP BY%';
+SELECT create_table_query LIKE '%samples_downsampling_periods%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
+DROP TABLE ts_copy;
+
 SELECT '-- the rows past both offsets keep the last sample of each 60 second interval';
 
 INSERT INTO ts (metric_name, tags, samples) VALUES
@@ -29,16 +35,16 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
     ('m', map(), [(toDateTime64(130, 3), 9.), (toDateTime64(131, 3), 10.)]);
 
 OPTIMIZE TABLE ts FINAL;
-SELECT bucket, samples FROM timeSeriesSamples(ts) ORDER BY bucket;
+SELECT bucket, samples FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) ORDER BY bucket;
 
 SELECT '-- a late sample in a reduced interval is reduced by the next merge';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(100, 3), 0.)]);
 OPTIMIZE TABLE ts FINAL;
-SELECT bucket, samples FROM timeSeriesSamples(ts) ORDER BY bucket;
+SELECT bucket, samples FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) ORDER BY bucket;
 
 SELECT '-- a merge of a reduced row keeps it';
 OPTIMIZE TABLE ts FINAL;
-SELECT bucket, samples FROM timeSeriesSamples(ts) ORDER BY bucket;
+SELECT bucket, samples FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) ORDER BY bucket;
 
 SELECT '-- the rows past the first offset only keep the last sample of each 20 second interval';
 
@@ -48,7 +54,7 @@ SELECT 'm', map(), arrayMap(i -> (toDateTime64(b, 3) + toIntervalSecond(i), toFl
 
 OPTIMIZE TABLE ts FINAL;
 SELECT arrayMap(x -> (toUnixTimestamp(x.timestamp) - toUnixTimestamp(b), x.value), samples)
-FROM timeSeriesSamples(ts) AS t, base WHERE bucket = b;
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS t, base WHERE bucket = b;
 
 DROP TABLE ts;
 DROP TABLE base;
@@ -59,21 +65,31 @@ CREATE TABLE ts (samples Array(Tuple(UInt32, Float64))) ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:7s';
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toUInt32(i), toFloat64(i)), range(70));
 OPTIMIZE TABLE ts FINAL;
-SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples(ts);
+SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 DROP TABLE ts;
 
 CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:7s';
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64(i, 3, 'UTC'), toFloat64(i)), range(70));
 OPTIMIZE TABLE ts FINAL;
-SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples(ts);
+SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 DROP TABLE ts;
 
 CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'Asia/Kolkata'), Float64))) ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:7s';
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64(i, 3, 'Asia/Kolkata'), toFloat64(i)), range(70));
 OPTIMIZE TABLE ts FINAL;
-SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples(ts);
+SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
+DROP TABLE ts;
+
+SELECT '-- the timestamps keep their full range: a bucket before 1970 is reduced on the epoch grid, a bucket after 2106 is not expired';
+
+CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries
+SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '30d:20s';
+INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64(i - 60, 3, 'UTC'), toFloat64(i)), range(60));
+INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64('2110-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(i), toFloat64(i)), range(60));
+OPTIMIZE TABLE ts FINAL;
+SELECT bucket, length(samples), arrayMap(x -> toUnixTimestamp64Second(x.timestamp), arraySlice(samples, 1, 3)) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) ORDER BY bucket;
 DROP TABLE ts;
 
 SELECT '-- the recent samples table keeps every sample';
