@@ -2229,7 +2229,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         }
         throw DB::Exception(
             DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
-            "Iceberg catalog commit outcome is unknown for table {}.{}; written files must be preserved: {}",
+            "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
             namespace_name,
             table_name,
             ex.displayText());
@@ -2239,7 +2239,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         // non-HTTP exceptions, such as a connection reset or timeout
         throw DB::Exception(
             DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
-            "Iceberg catalog commit outcome is unknown for table {}.{}; written files must be preserved: {}",
+            "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
             namespace_name,
             table_name,
             DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
