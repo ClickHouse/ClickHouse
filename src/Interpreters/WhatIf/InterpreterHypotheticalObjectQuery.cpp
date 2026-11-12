@@ -264,19 +264,18 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
-    /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks;
+    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+
+    /// same privilege as the real ADD PROJECTION, before the table is looked up so nothing about it leaks;
     /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
     if (is_projection)
-        context->checkAccess(
-            AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
+        context->checkAccess(AccessType::ALTER_ADD_PROJECTION, table_id);
     /// Indexes need `SELECT` on their columns, which is checked once the index is built. Before that, the table lookup
     /// and the checks of its engine would reveal the existence and the engine of a table the user cannot see, both
     /// when creating and when dropping, so require the table to be visible first (any grant on it implies this).
     else
-        context->checkAccess(
-            AccessType::SHOW_TABLES, context->resolveDatabase(query.getDatabase()), query.getTable());
+        context->checkAccess(AccessType::SHOW_TABLES, table_id);
 
-    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     auto & store = context->getHypotheticalObjectStore();
 
