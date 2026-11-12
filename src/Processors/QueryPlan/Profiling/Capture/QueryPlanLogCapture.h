@@ -12,11 +12,11 @@ class QueryPipeline;
 class StepProfiler;
 using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
-class QueryPlanProfiler
+class QueryPlanLogCapture
 {
 public:
     /// Whether this query should have its plan captured.
-    static bool canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal);
+    static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, bool internal);
 
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
@@ -25,7 +25,7 @@ public:
     /// both the first moment the index analysis and the lazily built child plans exist, and the
     /// last moment the plan does. Nothing after this touches the plan.
     ///
-    /// May throw: the caller starting the profiling is what keeps a diagnostic from failing a
+    /// May throw: the caller starting the capture is what keeps a diagnostic from failing a
     /// query that would otherwise have run.
     void capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length);
 
@@ -37,8 +37,8 @@ public:
     /// the statistics out of it.
     void captureStatistics(QueryPipeline & pipeline);
 
-    /// The captured plan, if there is one. Rendering it is the caller's business: the profiler
-    /// captures, and only the places that write a plan out decide in what form.
+    /// The captured plan, if there is one. Rendering it is the caller's business: this captures,
+    /// and only the places that write a plan out decide in what form.
     const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
 
 private:

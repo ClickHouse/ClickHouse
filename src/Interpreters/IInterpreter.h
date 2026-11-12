@@ -24,7 +24,7 @@ public:
     virtual bool ignoreQuota() const { return false; }
     virtual bool ignoreLimits() const { return false; }
 
-    virtual void setPlanProfiler(QueryPlanProfilerPtr) {}
+    virtual void setPlanLogCapture(QueryPlanLogCapturePtr) {}
 
     // Fill query log element with query kind, query databases, query tables and query columns.
     void extendQueryLogElem(

@@ -4,7 +4,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBufferFromString.h>
@@ -33,7 +33,7 @@ extern const SettingsBool make_distributed_plan;
 namespace
 {
 
-/// Checks if the query is supported by the profiler
+/// Checks if the query is one whose plan can be captured
 bool isSupportedQuery(const ASTPtr & ast)
 {
     return ast && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
@@ -55,7 +55,7 @@ ExplainPlanOptions planExplainOptions()
 
 }
 
-bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal)
+bool QueryPlanLogCapture::canCapturePlan(const ContextPtr & context, const ASTPtr & ast, bool internal)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -94,28 +94,28 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     return true;
 }
 
-void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * reason)
+void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char * reason)
 {
     if (!context->getSettingsRef()[Setting::log_query_plans])
         return;
 
     LOG_TRACE(
-        getLogger("QueryPlanProfiler"),
+        getLogger("QueryPlanLogCapture"),
         "Not storing the query plan in 'system.query_log' even though setting `log_query_plans`"
         " is true, because {}.",
         reason);
 }
 
-void QueryPlanProfiler::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
+void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
 {
-    /// One plan per query, and nothing is asked of the profiler before this.
+    /// One plan per query, and nothing is asked of this before it.
     chassert(!captured);
 
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 }
 
-void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
+void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 {
     /// The pipeline has owned it since it was built, which is why it is read back from there
     /// rather than kept here: nothing of the query outlives the pipeline.

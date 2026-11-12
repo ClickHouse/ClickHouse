@@ -21,7 +21,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
-#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -10317,17 +10317,17 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-void Context::enablePlanProfiler()
+void Context::enablePlanLogCapture()
 {
-    query_plan_profiler = std::make_shared<QueryPlanProfiler>();
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
     setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
 }
 
-QueryPlanProfilerPtr Context::getPlanProfiler() const
+QueryPlanLogCapturePtr Context::getPlanLogCapture() const
 {
     if (!hasQueryContext())
         return nullptr;
-    return getQueryContext()->query_plan_profiler;
+    return getQueryContext()->query_plan_log_capture;
 }
 
 ServerSettings Context::getServerSettingsCopy() const

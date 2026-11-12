@@ -83,7 +83,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
-#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <Processors/QueryPlan/Profiling/Render/FlatJsonPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
@@ -780,8 +780,8 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
 
-    if (auto plan_profiler = context->getPlanProfiler())
-        plan_profiler->captureStatistics(query_pipeline);
+    if (auto plan_log_capture = context->getPlanLogCapture())
+        plan_log_capture->captureStatistics(query_pipeline);
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -797,11 +797,11 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
 static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
 {
-    auto plan_profiler = context->getPlanProfiler();
-    if (!plan_profiler)
+    auto plan_log_capture = context->getPlanLogCapture();
+    if (!plan_log_capture)
         return;
 
-    const auto & captured = plan_profiler->getCapturedPlan();
+    const auto & captured = plan_log_capture->getCapturedPlan();
     if (!captured)
         return;
 
@@ -3306,7 +3306,7 @@ static BlockIO executeQueryImpl(
 
                         /// A cache hit builds no plan and runs no pipeline, so there is nothing to
                         /// capture.
-                        QueryPlanProfiler::declineCapture(
+                        QueryPlanLogCapture::declineCapture(
                             context, "the result came from the query result cache, so no plan was executed");
 
                         return true;
@@ -3340,8 +3340,8 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanProfiler::canEnableProfiler(context, out_ast, internal))
-                    context->enablePlanProfiler();
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                    context->enablePlanLogCapture();
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
@@ -3353,7 +3353,7 @@ static BlockIO executeQueryImpl(
                 /// to avoid situations where Interpreters are created inside the other interpreter and end up overwriting
                 /// the captured plan. For example: recursive CTEs
                 if (interpreter)
-                    interpreter->setPlanProfiler(context->getPlanProfiler());
+                    interpreter->setPlanLogCapture(context->getPlanLogCapture());
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])

@@ -12,7 +12,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
@@ -244,7 +244,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
     bool do_optimize,
-    QueryPlanProfiler * profiler)
+    QueryPlanLogCapture * log_capture)
 {
     checkInitialized();
 
@@ -263,7 +263,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
     /// capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
-    if (profiler)
+    if (log_capture)
         pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
 
     struct Frame
@@ -314,11 +314,11 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// The last moment the plan is worth reading: the index analysis and the child plans built
     /// along the way exist now, and nothing after this needs the plan at all.
     ///
-    /// The two readings are owned differently. The captured plan goes to the profiler, which the
-    /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
+    /// The two readings are owned differently. The captured plan goes to the log capture, which
+    /// the `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
     /// and analyzers go to the pipeline, which must be their only owner, so that they are freed
     /// with it rather than living as long as the context does.
-    if (profiler)
+    if (log_capture)
     {
         /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
         MemoryTrackerBlockerInThread block_memory_tracker;
@@ -329,13 +329,13 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             /// disagree about which steps there are or what is below what.
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
-            profiler->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
+            log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
             last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            profiler->dropCapturedPlan();
+            log_capture->dropCapturedPlan();
         }
     }
 
