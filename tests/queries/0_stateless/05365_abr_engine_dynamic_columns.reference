@@ -11,3 +11,6 @@ z	\N	\N	str	String
 subcolumns, old analyzer
 x	1	\N
 z	\N	str
+subcolumns, grants on their columns
+x	1	UInt64
+z	\N	String

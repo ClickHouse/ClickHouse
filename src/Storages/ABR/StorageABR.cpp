@@ -1051,11 +1051,21 @@ void StorageABR::read(
 
     /// The table is chosen by inspecting the data of every candidate source table, and the query may be retried on any of them,
     /// so the reader must be allowed to read all of them, before anything about them is resolved or revealed.
+    /// A subcolumn is checked as its column, unless the source has a grant or revoke on the subcolumn itself. The source
+    /// tables have the columns this table was analyzed with, so they are resolved from those.
     Names checked_columns = column_names;
     checked_columns.insert(checked_columns.end(), std::next(retention_expression.begin()), retention_expression.end());
     const String database = getStorageID().database_name;
+    const auto & columns = storage_snapshot->metadata->getColumns();
     for (const UInt64 interval : candidate_intervals)
-        context->checkAccess(AccessType::SELECT, database, getSourceTableName(table_prefix, interval), checked_columns);
+    {
+        const StorageID source_id(database, getSourceTableName(table_prefix, interval));
+        context->checkAccess(
+            AccessType::SELECT,
+            source_id.database_name,
+            source_id.table_name,
+            columns.getColumnNamesForSelectAccessCheck(checked_columns, context, source_id));
+    }
 
     /// The retention columns are taken from the columns the query was analyzed with.
     const Retention retention = getRetention(storage_snapshot->metadata->getColumns(), context);
