@@ -1107,6 +1107,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             {
                 constexpr bool is_implicitly_created = false;
                 constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
+                checkPartialIndexConditionAsUser(index, properties.columns, getContext());
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(
                     index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
                 if (properties.indices.has(index_desc.name))

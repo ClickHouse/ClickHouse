@@ -110,6 +110,11 @@ struct IndexDescription
     Names getRequiredColumns() const;
 };
 
+/// Analyses the `WHERE` condition of a partial index with the permissions of `context`. `getIndexFromAST` analyses it with the
+/// privileges of the server, so call this first, where a user declares the index: they must not reach what they can't access
+/// (for example `hasColumnInTable` of a protected table). Stored metadata is not re-checked.
+void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const ColumnsDescription & columns, const ContextPtr & context);
+
 /// Checks that the functions referenced by the text index preprocessor and postprocessor expressions
 /// may run with the permissions of `context`, and that they read no table, set or dictionary. Call only
 /// where a user declares an index, on the node they submitted it to; elsewhere these resolve under the

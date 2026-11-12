@@ -141,6 +141,23 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
 
 }
 
+void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
+    if (!index_definition || !index_definition->getWhere())
+        return;
+
+    ASTPtr where_ast = index_definition->getWhere()->clone();
+    if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(where_ast.get()))
+        where_with_alias->setAlias("");
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    ReplaceAliasToExprVisitor::Data data{columns, {}};
+    ReplaceAliasToExprVisitor{data}.visit(where_ast);
+
+    auto syntax = TreeRewriter(context).analyze(where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    ExpressionAnalyzer(where_ast, syntax, context).getActions(true);
+}
+
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
 {
     if (index.type == TEXT_INDEX_NAME && index.arguments)
@@ -345,15 +362,6 @@ IndexDescription IndexDescription::getIndexFromAST(
             where_with_alias->setAlias("");
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(result.where_ast);
-
-        /// Analyse the condition as the initiating user first: the analysis below has the privileges of the server and must not
-        /// reach what the user has no access to (for example `hasColumnInTable` of a protected table).
-        {
-            ASTPtr user_where_ast = result.where_ast->clone();
-            auto user_syntax = TreeRewriter(context).analyze(
-                user_where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-            ExpressionAnalyzer(user_where_ast, user_syntax, context).getActions(true);
-        }
 
         /// The part writer runs the condition analysed here, with the settings of the server (global) context.
         /// Its constants are folded in the current time zone, which is recorded.
