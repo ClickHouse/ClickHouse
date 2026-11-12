@@ -21,7 +21,7 @@ SET in_null_as_unknown = 0;
 SELECT count() FROM squality_in_null_projection WHERE x NOT IN (1, NULL)
 SETTINGS optimize_use_projections = 0, optimize_trivial_count_query = 0;
 SELECT count() FROM squality_in_null_projection WHERE x NOT IN (1, NULL)
-SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, optimize_trivial_count_query = 0;
+SETTINGS optimize_use_projections = 1, optimize_trivial_count_query = 0;
 
 DROP TABLE squality_in_null_projection;
 

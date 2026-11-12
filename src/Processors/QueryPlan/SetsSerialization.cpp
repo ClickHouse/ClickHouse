@@ -124,6 +124,12 @@ static bool columnsContainNull(const Columns & columns)
     return false;
 }
 
+static bool sourceStateDiffersFromKeys(bool source_is_empty, bool source_has_null, const Columns & columns)
+{
+    const bool serialized_is_empty = columns.empty() || columns.front()->empty();
+    return source_is_empty != serialized_is_empty || source_has_null != columnsContainNull(columns);
+}
+
 static void writeSetSourceState(
     bool source_is_empty,
     bool source_has_null,
@@ -138,9 +144,7 @@ static void writeSetSourceState(
         return;
     }
 
-    const bool serialized_is_empty = columns.empty() || columns.front()->empty();
-    const bool serialized_has_null = columnsContainNull(columns);
-    if (source_is_empty != serialized_is_empty || source_has_null != serialized_has_null)
+    if (sourceStateDiffersFromKeys(source_is_empty, source_has_null, columns))
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Cannot serialize an IN set whose logical source state differs from its retained keys for query-plan version {}; "
@@ -206,7 +210,13 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                         "it exceeds the transfer limits", num_rows, num_bytes);
 
                 writeIntBinary(SetSerializationKind::TupleValues, out);
-                writeSetSourceState(built_set->sourceIsEmpty(), built_set->hasNull(), columns, out, flags.version);
+                /// Source state affects membership only under SQL three-valued semantics. Keep
+                /// the legacy ready-set encoding when the setting is disabled.
+                const bool source_is_empty = from_subquery->sourceStateRequired()
+                    ? built_set->sourceIsEmpty() : columns.empty() || columns.front()->empty();
+                const bool source_has_null = from_subquery->sourceStateRequired()
+                    ? built_set->hasNull() : columnsContainNull(columns);
+                writeSetSourceState(source_is_empty, source_has_null, columns, out, flags.version);
                 writeSetValues(built_set->getElementsTypes(), columns, out);
             }
             else
@@ -421,13 +431,26 @@ void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffe
     for (const auto & [hash, future_set] : registry.sets)
     {
         (void)hash;
-        const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get());
-        if (!tuple_set)
-            continue;
+        bool needs_source_state = false;
+        if (const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+        {
+            const auto columns = tuple_set->getKeyColumns();
+            needs_source_state = sourceStateDiffersFromKeys(tuple_set->isSourceEmpty(), tuple_set->sourceHasNull(), columns);
+        }
+        else if (const auto * subquery_set = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+        {
+            if (subquery_set->sourceStateRequired())
+            {
+                const auto built_set = subquery_set->get();
+                if (built_set && built_set->hasExplicitSetElements() && !built_set->isTruncated())
+                {
+                    const auto columns = built_set->getSetElements();
+                    needs_source_state = sourceStateDiffersFromKeys(built_set->sourceIsEmpty(), built_set->hasNull(), columns);
+                }
+            }
+        }
 
-        const auto columns = tuple_set->getKeyColumns();
-        const bool serialized_is_empty = columns.empty() || columns.front()->empty();
-        if (tuple_set->isSourceEmpty() != serialized_is_empty || tuple_set->sourceHasNull() != columnsContainNull(columns))
+        if (needs_source_state)
         {
             /// A marker distinguishes this payload from the legacy count-first format. Old peers
             /// can still read ordinary sets; they reject the new semantics instead of misreading them.
