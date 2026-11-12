@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -8,6 +9,7 @@
 #include <Processors/Port.h>
 #include <Core/Defines.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <unordered_set>
 

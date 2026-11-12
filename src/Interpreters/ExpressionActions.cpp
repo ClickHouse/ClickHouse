@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -130,7 +131,7 @@ namespace
     };
 }
 
-static ActionsDAGReverseInfo getActionsDAGReverseInfo(const std::list<ActionsDAG::Node> & nodes, const ActionsDAG::NodeRawConstPtrs & index)
+static ActionsDAGReverseInfo getActionsDAGReverseInfo(const ActionsDAG::Nodes & nodes, const ActionsDAG::NodeRawConstPtrs & index)
 {
     ActionsDAGReverseInfo result_info;
     result_info.nodes_info.resize(nodes.size());
@@ -809,7 +810,7 @@ namespace
     {
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
+        VectorWithMemoryTracking<ssize_t> inputs_pos = {};
         size_t num_rows = 0;
     };
 }
@@ -1093,9 +1094,9 @@ void ExpressionActions::execute(
     num_rows = execution_context.num_rows;
 }
 
-std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
+VectorWithMemoryTracking<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
 {
-    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
+    VectorWithMemoryTracking<ssize_t> inputs_pos(required_columns.size(), -1);
 
     for (size_t pos = 0; pos < header.columns(); ++pos)
     {
@@ -1119,7 +1120,7 @@ std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) 
 Columns ExpressionActions::executeOnColumns(
     Columns columns,
     const Block & header,
-    const std::vector<ssize_t> & input_positions_for_header,
+    const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
     size_t & num_rows,
     bool dry_run,
     const std::atomic<bool> * is_cancelled) const

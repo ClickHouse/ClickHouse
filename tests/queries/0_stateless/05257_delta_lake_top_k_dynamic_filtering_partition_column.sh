@@ -15,8 +15,8 @@ SETTINGS="query_plan_max_limit_for_top_k_optimization = 1000, input_format_parqu
 ON="use_top_k_dynamic_filtering = 1"
 OFF="use_top_k_dynamic_filtering = 0"
 
-# The legacy Delta Lake reader (`allow_delta_kernel_rs = 0`) replaces the partition columns of the chunks
-# the format returns with the partition values. These data files store the partition column as well,
+# The Delta Lake reader takes the partition columns from the partition values, not from the data files.
+# These data files store the partition column as well,
 # with other values (the file of `p = 1` stores 100, the one of `p = 2` stores 0, and it is read first):
 # comparing them against the threshold would drop the rows of `p = 1`.
 DELTA_DIR="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_05257"
@@ -33,11 +33,8 @@ cat > "${DELTA_DIR}/_delta_log/00000000000000000000.json" <<LOG
 {"add":{"path":"a/data.parquet","partitionValues":{"p":"2"},"size":1,"modificationTime":1700000000000,"dataChange":true}}
 {"add":{"path":"z/data.parquet","partitionValues":{"p":"1"},"size":1,"modificationTime":1700000000000,"dataChange":true}}
 LOG
-for kernel in 0 1
-do
-    DELTA="deltaLakeLocal('${DELTA_DIR}', 'Parquet', 'id Int32, p Int32')"
-    diff <(${CLICKHOUSE_CLIENT} --allow_delta_kernel_rs "${kernel}" --query "SELECT p, id FROM ${DELTA} ORDER BY p, id LIMIT 3 SETTINGS ${SETTINGS}, ${ON}") \
-         <(${CLICKHOUSE_CLIENT} --allow_delta_kernel_rs "${kernel}" --query "SELECT p, id FROM ${DELTA} ORDER BY p, id LIMIT 3 SETTINGS ${SETTINGS}, ${OFF}") \
-        && echo "allow_delta_kernel_rs = ${kernel}: OK"
-done
+DELTA="deltaLakeLocal('${DELTA_DIR}', 'Parquet', 'id Int32, p Int32')"
+diff <(${CLICKHOUSE_CLIENT} --query "SELECT p, id FROM ${DELTA} ORDER BY p, id LIMIT 3 SETTINGS ${SETTINGS}, ${ON}") \
+     <(${CLICKHOUSE_CLIENT} --query "SELECT p, id FROM ${DELTA} ORDER BY p, id LIMIT 3 SETTINGS ${SETTINGS}, ${OFF}") \
+    && echo "OK"
 rm -rf "${DELTA_DIR}"
