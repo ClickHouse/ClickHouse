@@ -64,7 +64,7 @@ SELECT 'single thread', uniqExact(number) FROM numbers_mt(400000) SETTINGS max_t
 
 -- The radix partitioned aggregation is used only for a single `uniqExact` of a supported type without keys.
 -- It is not used where the aggregation is not finalized, such as on parallel replicas, or where `uniqExact` is rewritten to `GROUP BY`.
-SET enable_parallel_replicas = 0, count_distinct_optimization = 0;
+SET enable_parallel_replicas = 0;
 
 SELECT 'used', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used with null for empty', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS aggregate_functions_null_for_empty = 1) WHERE explain LIKE '%RadixUniqExact%';
@@ -72,7 +72,7 @@ SELECT 'used with a single thread', count() > 0 FROM (EXPLAIN PIPELINE SELECT un
 SELECT 'used for a constant', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(42) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used for Nullable', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toNullable(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'disabled', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS optimize_uniq_exact_radix_partitioning = 0) WHERE explain LIKE '%RadixUniqExact%';
-SELECT 'LowCardinality', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toLowCardinality(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
+SELECT 'used for LowCardinality', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toLowCardinality(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'two aggregates', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number), uniqExact(number % 7) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'GROUP BY', count() > 0 FROM (EXPLAIN PIPELINE SELECT number % 10 AS k, uniqExact(number) FROM numbers_mt(400000) GROUP BY k) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'two arguments', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number, toString(number)) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';

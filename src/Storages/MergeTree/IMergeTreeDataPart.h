@@ -15,6 +15,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/SecondaryIndexColumnTypes.h>
 #include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -26,6 +27,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartMinMaxIndex.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/PartDirIntent.h>
@@ -247,6 +249,9 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const { return secondary_index_column_types; }
+    void setSecondaryIndexColumnTypes(SecondaryIndexColumnTypes value) { secondary_index_column_types = std::move(value); }
+
     const PartSerializations & getSerializations() const { return *serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
@@ -273,6 +278,9 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
+    /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
+    /// because the statistics of these columns are cached or the part has none for them.
+    bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
     /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
     /// otherwise `std::nullopt`. It never reads from disk.
     std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
@@ -447,49 +455,8 @@ public:
     /// As index always loaded into memory
     MergeTreeIndexGranularityPtr index_granularity;
 
-    /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
-    /// parts based on conditions on these columns imposed by a query.
-    /// Currently this index is built using only columns required by partition expression, but in principle it
-    /// can be built using any set of columns.
-    struct MinMaxIndex
-    {
-        /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        Ranges hyperrectangle;
-        bool initialized = false;
-
-    public:
-        MinMaxIndex() = default;
-
-        /// For month-based partitioning.
-        MinMaxIndex(DayNum min_date, DayNum max_date)
-            : hyperrectangle(1, Range(min_date, true, max_date, true))
-            , initialized(true)
-        {
-        }
-
-        void load(const IMergeTreeDataPart & part);
-
-        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
-
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-        [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-
-        void update(const Block & block, const NamesAndTypesList & columns);
-        void merge(const MinMaxIndex & other);
-
-        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
-        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
-        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
-        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
-        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
-        Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
-        /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
-        /// For Load
-        static String getFileColumnName(const String & column_name, const Checksums & checksums_);
-    };
-
-    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+    using MinMaxIndex = MergeTreePartMinMaxIndex;
+    using MinMaxIndexPtr = MergeTreePartMinMaxIndexPtr;
 
 private:
     mutable std::mutex minmax_idx_mutex;
@@ -736,6 +703,10 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
+    /// See SecondaryIndexColumnTypes. Present only when a skip index was materialized over a column
+    /// type the part has not materialized itself (a JSON type hint applied lazily).
+    static constexpr auto SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME = "secondary_index_column_types.json";
+
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// File that lists persisted system columns whose stored values became stale.
@@ -980,6 +951,9 @@ private:
     /// Kept per-part: it holds the row/default counters of this part's data.
     SerializationInfoByName serialization_infos{{}};
 
+    /// See SecondaryIndexColumnTypes. Empty for almost every part.
+    SecondaryIndexColumnTypes secondary_index_column_types;
+
     /// Serializations for every columns and subcolumns by their names.
     /// Shared across parts of the table with the same serialization kinds; the per-column pieces
     /// inside are shared even when only some columns have the same kinds. Never null.
@@ -1098,6 +1072,11 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 bool isCompressedFromIndexExtension(const String & index_extension);
+
+/// Reads a small file of a part, as `IMergeTreeDataPart::readFile` does, so it works without an `IMergeTreeDataPart`.
+std::unique_ptr<ReadBuffer> readPartFile(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
+/// Same as `readPartFile`, or nullptr if the file does not exist.
+std::unique_ptr<ReadBuffer> readPartFileIfExists(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 

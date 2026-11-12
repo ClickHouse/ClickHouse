@@ -3,7 +3,8 @@
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/SizeLimits.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,8 +33,8 @@ private:
 
     Status preparePair(PortPair & pair);
 
-    std::vector<PortPair> port_pairs;
-    std::unordered_map<const Port *, PortPair *> port_to_pair;
+    VectorWithMemoryTracking<PortPair> port_pairs;
+    UnorderedMapWithMemoryTracking<const Port *, PortPair *> port_to_pair;
     size_t num_finished_port_pairs = 0;
     const SizeLimits size_limits;
     UInt64 rows = 0;

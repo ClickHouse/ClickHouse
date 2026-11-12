@@ -28,6 +28,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
+#include <base/getThreadId.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
@@ -327,10 +328,14 @@ void LocalConnection::sendQuery(
     if (is_cancelled_callback)
     {
         query_context->setInteractiveCancelCallback(
-            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+            [this,
+             check_cancelled = is_cancelled_callback,
+             progress_callback = process_progress_callback,
+             client_thread_id = getThreadId()]() -> bool
         {
             /// Send accumulated progress to the client so the progress bar updates during analysis.
-            if (progress_callback)
+            /// Only from the client's thread: the client is not thread-safe, and this callback also runs on pipeline threads.
+            if (progress_callback && getThreadId() == client_thread_id)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
                 if (progress.read_rows || progress.read_bytes)
@@ -699,6 +704,10 @@ bool LocalConnection::isSendDataNeeded() const
 
 void LocalConnection::sendCancel()
 {
+    /// No query is in flight: like the TCP server, ignore the cancel.
+    if (!state)
+        return;
+
     state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
@@ -710,6 +719,8 @@ void LocalConnection::sendCancel()
 
 bool LocalConnection::pullBlock(Block & block)
 {
+    chassert(state);
+
     if (state->executor)
         return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
@@ -718,6 +729,8 @@ bool LocalConnection::pullBlock(Block & block)
 
 void LocalConnection::finishQuery()
 {
+    chassert(state);
+
     next_packet_type = Protocol::Server::EndOfStream;
 
     if (state->executor)
@@ -1043,6 +1056,9 @@ Packet LocalConnection::receivePacket()
         {
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
+            /// An exception is the last packet of the query, as `EndOfStream` is.
+            state.reset();
+            last_sent_snapshots.clear();
             break;
         }
         case Protocol::Server::Progress:

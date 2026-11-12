@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
@@ -117,7 +118,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         for (const String & name : projection.sample_block.getNames())
-            preferred_order.push_back(name + getMarksFileExtension());
+            preferred_order.push_back(escapeForFileName(name) + getMarksFileExtension());
     }
 
     return preferred_order;
@@ -823,17 +824,26 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
         return false;
     auto marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
+    auto has_stream = [&](const ISerialization::SubstreamPath & substream_path)
+    {
+        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+        return stream_name && checksums.files.contains(*stream_name + marks_file_extension);
+    };
+
+    /// Lets the serialization skip streams the part lacks by design, e.g. a variant appended to the type.
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.check_stream_exists_callback = has_stream;
+
     bool res = true;
-    serialization->enumerateStreams([&](const auto & substream_path)
+    serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
     {
         /// Don't check streams for ephemeral subcolumns that don't store any real data.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-        if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))
+        if (!has_stream(substream_path))
             res = false;
-    });
+    }, ISerialization::SubstreamData(serialization));
 
     return res;
 }
