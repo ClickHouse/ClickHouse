@@ -57,10 +57,12 @@
         },
         {
           "href": "https://langfuse.com/docs",
+          "icon": "/images/icons/logo-langfuse.svg",
           "item": "AI 엔지니어링"
         },
         {
           "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
           "item": "보안"
         },
         {

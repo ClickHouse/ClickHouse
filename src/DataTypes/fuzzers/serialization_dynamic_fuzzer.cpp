@@ -2,6 +2,7 @@
 #include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromMemory.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>

@@ -7,6 +7,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 
 
