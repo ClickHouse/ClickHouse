@@ -3,13 +3,10 @@
 #include <bit>
 
 #include <base/types.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 
 namespace DB
 {
-
-/// The staged records route by the two-level bucket of their key's hash, and their partitions nest in those
-/// buckets, so the staging and the merge come in the same 256 buckets as the two-level hash tables.
-inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
 /// How the staged records of a session are partitioned, and the first chunk that the producers' staging buffers
 /// start every partition with: both follow the same budget (see `forProducers`). A partition is a sub-range of a

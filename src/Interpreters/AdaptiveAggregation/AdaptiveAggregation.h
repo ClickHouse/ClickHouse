@@ -1,11 +1,16 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <string_view>
 #include <vector>
 
 namespace DB
 {
+
+/// The staged records route by the two-level bucket of their key's hash, and their partitions nest in those
+/// buckets, so the staging and the merge come in the same 256 buckets as the two-level hash tables.
+inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
 /// Shared state of the adaptive aggregation.
 /// One instance per aggregation, created by `AggregatingStep` through `Aggregator::createAdaptiveSession`
