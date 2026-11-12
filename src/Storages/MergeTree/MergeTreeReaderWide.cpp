@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnArray.h>
@@ -301,6 +302,63 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
+namespace
+{
+
+/// Whether the default expression of a requested column uses one of `columns`, directly or through the default
+/// expressions of other columns. A default expression can be evaluated before the filter that keeps the selected rows,
+/// for a column that is not read from the part - which is missing, or dropped or renamed by a pending mutation - so
+/// such an expression could use the placeholder values of the rows that are not selected. Whether a column is read from
+/// the part is not checked: every column with a default expression is assumed to be computed from it.
+bool defaultExpressionsUse(const ColumnsDescription & table_columns, const NamesAndTypesList & requested_columns, const NameSet & columns)
+{
+    auto uses_column = [&](const String & name)
+    {
+        /// A subcolumn, such as `vec.size0`, uses its column.
+        for (const auto & column : columns)
+        {
+            if (name == column || (name.starts_with(column) && name.size() > column.size() && name[column.size()] == '.'))
+                return true;
+        }
+        return false;
+    };
+
+    NameSet visited;
+    std::vector<String> pending;
+    for (const auto & column : requested_columns)
+        pending.push_back(column.getNameInStorage());
+
+    while (!pending.empty())
+    {
+        String name = std::move(pending.back());
+        pending.pop_back();
+        if (!visited.insert(name).second)
+            continue;
+
+        const auto column_default = table_columns.getDefault(name);
+        if (!column_default || !column_default->expression)
+            continue;
+
+        std::vector<const IAST *> nodes{column_default->expression.get()};
+        while (!nodes.empty())
+        {
+            const IAST * node = nodes.back();
+            nodes.pop_back();
+            if (const auto * identifier = node->as<ASTIdentifier>())
+            {
+                if (uses_column(identifier->name()))
+                    return true;
+                pending.push_back(identifier->name());
+            }
+            for (const auto & child : node->children)
+                nodes.push_back(child.get());
+        }
+    }
+    return false;
+}
+
+}
+
 void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 {
     one_row_per_block_readers.clear();
@@ -325,36 +383,39 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 
     const auto & metadata = *storage_snapshot->metadata;
 
-    /// A column that is not read from the part - missing, partly missing, or dropped by a pending mutation - can be
-    /// computed from its default expression before the filter, and the expression could use the placeholder values
-    /// of the columns read here.
-    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
-    {
-        const bool not_read_from_part = isColumnAbsentFromPart(pos) || isColumnPartiallyRead(pos) || isColumnSkipped(pos);
-        if (not_read_from_part && mayLeaveColumnToMissingDefaults(storage_snapshot, columns_to_read[pos]))
-            return;
-    }
-
-    std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> readers(columns_to_read.size());
-    bool has_readers = false;
+    /// The layouts of the columns that can be read only for the selected rows. These checks read nothing from disk.
+    std::vector<std::optional<OneRowPerBlockLayout>> layouts(columns_to_read.size());
+    NameSet columns_with_placeholders;
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
     {
         const auto & column = columns_to_read[pos];
         if (column.isSubcolumn() || isColumnSkipped(pos) || isColumnAbsentFromPart(pos))
             continue;
 
-        auto layout = tryGetOneRowPerBlockLayout(*part, column, metadata);
-        if (!layout)
+        layouts[pos] = tryGetOneRowPerBlockLayout(*part, column, metadata);
+        if (layouts[pos])
+            columns_with_placeholders.insert(column.getNameInStorage());
+    }
+
+    if (columns_with_placeholders.empty() || defaultExpressionsUse(metadata.getColumns(), getColumns(), columns_with_placeholders))
+        return;
+
+    std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> readers(columns_to_read.size());
+    bool has_readers = false;
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (!layouts[pos])
             continue;
 
         /// Whether every row has `array_size` elements is known only from the sizes of the arrays, which are read when
         /// a query first reads the column of the part this way.
-        const UInt64 array_size = layout->array_size;
+        const auto & column = columns_to_read[pos];
+        const UInt64 array_size = layouts[pos]->array_size;
         if (!part->hasOneRowPerBlockArraySizes(column.name, array_size, [&] { return checkOneRowPerBlockArraySizes(*part, column, array_size, settings.read_settings); }))
             continue;
 
-        auto path_for_logs = (fs::path(part->getDataPartStorage().getRelativePath()) / layout->file_name).string();
-        readers[pos] = std::make_unique<MergeTreeOneRowPerBlockReader>(std::move(*layout), part->rows_count, std::move(path_for_logs));
+        auto path_for_logs = (fs::path(part->getDataPartStorage().getRelativePath()) / layouts[pos]->file_name).string();
+        readers[pos] = std::make_unique<MergeTreeOneRowPerBlockReader>(std::move(*layouts[pos]), part->rows_count, std::move(path_for_logs));
         has_readers = true;
     }
 

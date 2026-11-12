@@ -27,7 +27,8 @@ CREATE TABLE tab_one_row_per_block
     vec Array(Float32) CODEC(Quantized('int8', 64)) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576;
+SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    index_granularity = 8192, index_granularity_bytes = 10485760;
 
 SYSTEM STOP MERGES tab_one_row_per_block;
 
@@ -45,9 +46,10 @@ SELECT id FROM tab_one_row_per_block ORDER BY L2Distance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05617_one_part_off';
 
 -- The column-level block sizes apply only to the stream of the array elements of a `Quantized` column. The quantized
--- codes, 68 bytes per row, are stored in blocks of the default size, not in a block per 4 rows.
+-- codes, 68 bytes per row, are stored in blocks of the default size, not in a block per 4 rows. The number of blocks
+-- decompressed is counted, so the read is not split.
 SELECT count() FROM tab_one_row_per_block WHERE NOT ignore(vec.quantized)
-SETTINGS log_comment = '05617_codes';
+SETTINGS log_comment = '05617_codes', max_threads = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 -- A Compact part is read with the usual readers. The rows of both parts must keep their order.
 ALTER TABLE tab_one_row_per_block MODIFY SETTING min_bytes_for_wide_part = 1000000000;
