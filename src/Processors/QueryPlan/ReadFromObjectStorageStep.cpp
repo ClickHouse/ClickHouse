@@ -45,6 +45,8 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_join_runtime_filters_for_iceberg_pruning;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
 }
 
 namespace DataLakeStorageSetting
@@ -119,6 +121,10 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     /// query takes their values from the path, so the reader would compare other values than the
     /// ones the threshold is made from.
     if (info.formatReadsHivePartitionColumns())
+        return false;
+
+    /// A column of `format_header` with the name of a column read under another name is another column.
+    if (info.columns_read_under_other_names.contains(sort_column.name))
         return false;
 
     /// The output header is broader than what the format reads: Hive partition columns (from the
@@ -204,6 +210,15 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         top_k_query_condition_cache_key->format_filter_info_tracking_best_values = std::move(format_filter_info_tracking_best_values);
     }
 
+    const auto & settings = context->getSettingsRef();
+    if (join_runtime_filter_predicate && configuration->isIcebergConfiguration()
+        && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
+    {
+        format_filter_info->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
+            top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filter_predicate = join_runtime_filter_predicate;
+    }
+
     auto file_iterator = iterator_wrapper;
     if (top_k_query_condition_cache_key && !top_k_query_condition_cache_key->condition_hash)
         file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(
@@ -282,7 +297,11 @@ void ReadFromObjectStorageStep::createIterator()
     if (!join_runtime_filters_for_file_pruning.empty())
         if (auto query_context = CurrentThread::tryGetQueryContext())
             if (auto lookup = query_context->getRuntimeFilterLookup())
-                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
+            {
+                join_runtime_filter_predicate
+                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, std::move(lookup), context);
+                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filter_predicate);
+            }
 }
 
 std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
