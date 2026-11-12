@@ -866,7 +866,7 @@ public:
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     /// A copy with `allow_compound_table_identifier_qualification` off, for analyzing SQL stored in an object
-    /// definition; `other` itself if it is already off there.
+    /// definition; `other` itself if it is already off there or `allow_experimental_table_namespaces` is off.
     static ContextPtr createCopyForStoredDefinition(const ContextPtr & other);
     static SharedContextHolder createShared();
 

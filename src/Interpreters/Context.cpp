@@ -325,6 +325,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
@@ -1783,7 +1784,9 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 
 ContextPtr Context::createCopyForStoredDefinition(const ContextPtr & other)
 {
-    if (!other->isCompoundTableIdentifierQualificationAllowed())
+    /// The field is read only with `allow_experimental_table_namespaces` on.
+    if (!other->isCompoundTableIdentifierQualificationAllowed()
+        || !other->getSettingsRef()[Setting::allow_experimental_table_namespaces])
         return other;
 
     auto copy = createCopy(other);
