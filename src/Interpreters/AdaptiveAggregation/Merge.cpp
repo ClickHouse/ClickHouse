@@ -63,10 +63,10 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive merge.");
     }
 
-    /// The key holder (see `keyHolderGetKey`) of a staged key read back by `readStagedKey`. A string-like key points
-    /// into its record, which the merge frees only after converting the unit. With `copy_keys`, the record is in a
-    /// block read back from a spill, which the next block overwrites, so the holder copies the key into `arena` when
-    /// a table keeps it.
+    /// The key holder (see `keyHolderGetKey`) of a staged key that its record format read back (see `readStagedKey`). A
+    /// string-like key points into its record, which the merge frees only after converting the unit. With `copy_keys`,
+    /// the record is in a block read back from a spill, which the next block overwrites, so the holder copies the key
+    /// into `arena` when a table keeps it.
     template <bool copy_keys, typename Key>
     auto ALWAYS_INLINE stagedKeyHolder(const Key & key, [[maybe_unused]] DB::Arena * arena)
     {
@@ -78,19 +78,13 @@ namespace
             return key;
     }
 
-    /// Emplaces a staged key into `table` with its routing hash, copying it into `arena` if `copy_keys` (see
-    /// `stagedKeyHolder`).
-    template <typename Key, bool copy_keys, typename Table>
+    /// Emplaces a staged key, as its record format reads it back, into `table` with its routing hash, copying it into
+    /// `arena` if `copy_keys` (see `stagedKeyHolder`).
+    template <bool copy_keys, typename Table, typename Key>
     void ALWAYS_INLINE emplaceStagedKey(
-        Table & table,
-        DB::Arena * arena,
-        const char * key_pos,
-        size_t key_size,
-        size_t routing_hash,
-        typename Table::LookupResult & it,
-        bool & inserted)
+        Table & table, DB::Arena * arena, const Key & key, size_t routing_hash, typename Table::LookupResult & it, bool & inserted)
     {
-        table.emplace(stagedKeyHolder<copy_keys>(readStagedKey<Key>(key_pos, key_size, routing_hash), arena), it, inserted, routing_hash);
+        table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, routing_hash);
     }
 
     /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
@@ -446,7 +440,8 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     };
 
     StagedRecordWalk walk;
-    visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
+    visitStagedRecordFormat<Method>(
+        adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_count)
         {
@@ -460,14 +455,13 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    emplaceStagedKey<Key, copy_keys>(table, arena, key_pos, key_size, hash, it, inserted);
+                    emplaceStagedKey<copy_keys>(table, arena, format.readKey(record, hash), hash, it, inserted);
                     if constexpr (MapAggregationMethod<Method>)
                     {
                         if (inserted)
-                            getInlineCountState(it->getMapped()) = Record::count(record);
+                            getInlineCountState(it->getMapped()) = format.count(record);
                         else
-                            getInlineCountState(it->getMapped()) += Record::count(record);
+                            getInlineCountState(it->getMapped()) += format.count(record);
                     }
                 });
         }
@@ -484,8 +478,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    emplaceStagedKey<Key, copy_keys>(table, arena, key_pos, key_size, hash, it, inserted);
+                    emplaceStagedKey<copy_keys>(table, arena, format.readKey(record, hash), hash, it, inserted);
                     if constexpr (MapAggregationMethod<Method>)
                     {
                         if (inserted)
@@ -518,8 +511,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    emplaceStagedKey<Key, copy_keys>(table, arena, key_pos, key_size, hash, it, inserted);
+                    emplaceStagedKey<copy_keys>(table, arena, format.readKey(record, hash), hash, it, inserted);
                     if (inserted)
                     {
                         it->getMapped() = nullptr;
@@ -532,9 +524,6 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     records.ptrs.push_back(record);
                 });
 
-            /// A numeric key that is also an argument is read from the key's bytes in the record.
-            chassert(!adaptive_argument_layout->key_field
-                || adaptive_argument_layout->key_field->type->getSizeOfValueInMemory() == sizeof(Key));
             if (!places.empty())
                 executeStagedArgumentRecords(format, arena, places, records, use_compiled_functions);
         }
@@ -558,7 +547,8 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(counting_table);
     size_t skipped = 0;
-    visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
+    visitStagedRecordFormat<Method>(
+        adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_arguments)
         {
@@ -572,9 +562,8 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    const Key key = readStagedKey<Key>(key_pos, key_size, hash);
-                    counting_table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, hash);
+                    const Key key = format.readKey(record, hash);
+                    emplaceStagedKey<copy_keys>(counting_table, arena, key, hash, it, inserted);
                     UInt64 & group_count = getInlineCountState(it->getMapped());
                     if (inserted)
                         group_count = 1;
@@ -755,16 +744,25 @@ void Aggregator::executeStagedArgumentRecords(
     /// The arguments are rebuilt into dense columns while the records are hot, so the
     /// ordinary batch executor, and the compiled functions, apply to them as to a block.
     Columns arguments(argument_layout.num_positions);
-    if (const auto & field = argument_layout.key_field)
+    /// Only a single numeric key, a fixed-width one, is an argument too (see `AdaptiveArgumentLayout::key_field`). Its
+    /// records store all of its bytes, from which the argument is read.
+    if constexpr (Record::fixed_width_key)
     {
-        auto column = field->type->createColumn();
-        column->fillFromRowStorePtrs(field->type, records, format.key_offset, column->sizeOfValueIfFixed(), 0, rows);
-        arguments[field->position] = std::move(column);
+        if (const auto & field = argument_layout.key_field)
+        {
+            auto column = field->type->createColumn();
+            const size_t size = column->sizeOfValueIfFixed();
+            chassert(size == format.fixed_key.bytes);
+            column->fillFromRowStorePtrs(field->type, records, format.key_offset, size, 0, rows);
+            arguments[field->position] = std::move(column);
+        }
     }
+    else
+        chassert(!argument_layout.key_field);
     for (const auto & field : argument_layout.fixed_fields)
     {
         auto column = field.type->createColumn();
-        column->fillFromRowStorePtrs(field.type, records, Record::fixed_arguments_offset + field.offset, field.size, 0, rows);
+        column->fillFromRowStorePtrs(field.type, records, field.offset, field.size, 0, rows);
         arguments[field.position] = std::move(column);
     }
 
@@ -906,7 +904,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * merged_group_count) const
 {
     auto & dest = *data[0];
     AggregatedChunks chunks;
@@ -915,7 +913,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
         [&](auto & method)
         {
             chunks = mergeAndConvertAdaptiveBucketImpl(
-                dest, method, data, session, task, final, bucket, is_cancelled, updater, full_group_count);
+                dest, method, data, session, task, final, bucket, is_cancelled, updater, merged_group_count);
         });
     return chunks;
 }
@@ -931,7 +929,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * merged_group_count) const
 {
     /// The task's table, emptied by the conversion of its previous bucket's last unit, moves into this bucket's slot:
     /// the slots are exclusively owned by the tasks that merge their buckets, and a retired bucket's slot is never
@@ -942,7 +940,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         std::swap(dest_method.data.impls[bucket], dest_method.data.impls[task.previous_bucket]);
     task.previous_bucket = bucket;
 
-    using Table = std::decay_t<decltype(dest_method.data.impls[0])>;
+    using Table = AdaptiveBucketTable<Method>;
     static_assert(std::decay_t<decltype(dest_method.data)>::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     auto & table = dest_method.data.impls[bucket];
     /// The unit being merged creates its states in the arena of the bucket's slot, which takes a fresh arena for every
@@ -1150,8 +1148,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             unit_groups = table.size();
         }
 
-        if (full_group_count)
-            *full_group_count += unit_groups;
+        if (merged_group_count)
+            *merged_group_count += unit_groups;
         if (updater)
             updater->recordAggregationStateSizes(dest, bucket);
 

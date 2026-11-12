@@ -6,10 +6,14 @@
 -- Companion of 04338_query_construction_settings_subqueries.
 
 SELECT '-- last-arm `= DEFAULT` is detected: the ambiguous mixed union is rejected';
-SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = DEFAULT)); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 1 UNION ALL SELECT number FROM numbers(100) SETTINGS limit = DEFAULT); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- non-last-arm `= DEFAULT` also enables per-arm mode, so SETTINGS on the last arm is ambiguous';
-SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = DEFAULT) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2)); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = DEFAULT UNION ALL SELECT number FROM numbers(100) SETTINGS limit = 2); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- parenthesized arms keep `= DEFAULT` unambiguous (1 + 100 = 101, 100 + 2 = 102)';
+SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = DEFAULT));
+SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = DEFAULT) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2));
 
 SELECT '-- nesting each arm in a subquery keeps `= DEFAULT` unambiguous (1 + 3 = 4)';
 SELECT count() FROM (SELECT * FROM (SELECT number FROM numbers(3) SETTINGS limit = 1) UNION ALL SELECT * FROM (SELECT number FROM numbers(3) SETTINGS limit = DEFAULT));
