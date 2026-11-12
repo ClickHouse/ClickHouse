@@ -16,8 +16,12 @@ SELECT getSetting('make_distributed_plan');
 SELECT 'wants only, via the workers num: the plan turns on';
 SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_workers_num = 3;
 
+-- distributed_plan_execute_locally = 1: once the plan is on, even a table-less SELECT resolves
+-- the named cluster (not just a real distributed read), and the OSS stateless-test config
+-- (tests/config/config.d/distributed_query.xml) configures only the unnamed default cluster -
+-- local execution does not need a real cluster to resolve at all.
 SELECT 'wants only, via the worker cluster: the plan turns on';
-SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_worker_cluster = 'some_cluster';
+SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_worker_cluster = 'some_cluster', distributed_plan_execute_locally = 1;
 
 SELECT 'refuses only, via an explicit off: the plan stays off, no error';
 SELECT getSetting('make_distributed_plan') SETTINGS make_distributed_plan = 0;
