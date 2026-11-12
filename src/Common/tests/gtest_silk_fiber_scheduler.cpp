@@ -7,9 +7,9 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/Silk/FiberScheduler.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/ThreadStatus.h>
-#include <Common/Silk/tests/gtest_silk_scheduler.h>
+#include <Common/tests/gtest_silk_scheduler.h>
 
 #include <base/defines.h>
 

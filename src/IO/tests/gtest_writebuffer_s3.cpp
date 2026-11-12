@@ -310,7 +310,7 @@ struct Client : DB::S3::Client
             /* s3_slow_all_threads_after_network_error = */ true,
             /* s3_slow_all_threads_after_retryable_error = */ true,
             /* enable_s3_requests_logging = */ true,
-            /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+            /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
             /* request_throttler = */ {});
         /// createClientConfiguration leaves retryStrategy unset; ClientFactory::create() normally
