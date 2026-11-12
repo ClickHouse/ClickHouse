@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (k UInt16, s String) ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO t SELECT number, if(number < 10000, '', repeat(hex(SHA256(toString(number))), 4)) FROM numbers(65536);
+INSERT INTO t SELECT number, if(number < 10000, '', randomString(256)) FROM numbers(65536);
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -21,7 +21,7 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The states take 14217216 bytes uncompressed.
+-- The states take 14217216 bytes and do not compress.
 SELECT ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] BETWEEN 5e6 AND 3e7
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase())
