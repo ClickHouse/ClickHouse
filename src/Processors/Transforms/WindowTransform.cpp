@@ -145,10 +145,11 @@ void WindowTransform::addInputBlock(Chunk chunk)
 
 void WindowTransform::computeReadyRows()
 {
-    /// Cancellation is checked per row here; window functions evaluate each batch without cancellation checks,
-    /// so a batch is also evaluated once its estimated work is large: otherwise a single batch with a moving
-    /// frame (e.g. `quantileExact(x) OVER (ROWS BETWEEN 50000 PRECEDING AND CURRENT ROW)`, which recalculates
-    /// the aggregate over the whole frame on each row) would keep running long after the query is cancelled.
+    /// Cancellation of the processor is checked per row here; window functions evaluate each batch observing
+    /// only the killed flag and the time limit of the query (see `AggregateState`), so a batch is also evaluated
+    /// once its estimated work is large: otherwise a single batch with a moving frame (e.g.
+    /// `quantileExact(x) OVER (ROWS BETWEEN 50000 PRECEDING AND CURRENT ROW)`, which recalculates the aggregate
+    /// over the whole frame on each row) would keep running long after the processor is cancelled.
     while (!isCancelledOrOuterCancelled())
     {
         if (bounds.rows != 0
