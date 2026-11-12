@@ -25,7 +25,6 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Utils.h>
@@ -585,15 +584,6 @@ std::optional<String> getChildColumnToRead(
     if (child_columns.has(column_name) || child_columns.hasSubcolumn(GetColumnsOptions::All, column_name))
         return column_name;
     return getColumnToReadInsteadOfSubcolumn(column_name, child_columns, merge_columns);
-}
-
-/// Whether a subcolumn of a column a child does not have is taken from the column's default. A subcolumn that only a
-/// custom serialization adds (the codes of the `Quantized` codec) is not part of the value and gets its own default.
-bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
-{
-    const auto & type = column.getTypeInStorage();
-    return !type->getCustomSerialization()
-        || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
 }
 
 }

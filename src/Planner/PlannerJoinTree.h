@@ -43,6 +43,11 @@ void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & no
 /// already meant to be off must not surface a parallel-replicas-only exception.
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context);
 
+/// The column `SELECT count()` reads from `storage`: the smallest one of `column_names_allowed_to_select`,
+/// or of all physical columns if none of them can be read.
+NameAndTypePair chooseSmallestColumnToReadFromStorage(
+    const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select);
+
 /// Build JOIN TREE query plan for query node
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,

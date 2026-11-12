@@ -463,6 +463,8 @@ bool shouldIgnoreQuota(const TableNode & table_node)
     return false;
 }
 
+}
+
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
@@ -579,6 +581,9 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
     return result;
 }
+
+namespace
+{
 
 /// True if the table expression carries modifiers that prevent answering a
 /// `SELECT count()` from whole-table statistics. `FINAL`, sampling and `STREAM`
