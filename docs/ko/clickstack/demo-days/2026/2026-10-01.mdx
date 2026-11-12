@@ -1,0 +1,150 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-01
+title: '데모 데이 - 2026-10-01'
+sidebarTitle: '2026-10-01'
+description: '2026-10-01 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 대시보드 로딩 표시기와 라이브 테일 범위 {#dashboard-loading-indicators-and-live-tail-ranges}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 두 가지 변경 사항은 모두 오픈 소스 커뮤니티의 기여로 이루어졌습니다. 로딩 표시기는 [@Harshul1484](https://github.com/Harshul1484)가, 라이브 테일 관련 변경 사항은 [@krishs01](https://github.com/krishs01)가 기여했습니다. 두 변경 모두 지난 몇 주 동안 리포지토리에 등록된 이슈에서 시작되었습니다.
+
+이전에는 대시보드를 갱신할 때 어떤 작업이 진행 중인지 명확하지 않은 경우가 있었습니다. 일부 타일은 스피너에 가려져 사라졌고, 다른 타일은 쿼리가 실행 중이라는 표시 없이 이전 데이터를 그대로 보여 주었습니다. 연결 속도가 느리거나 쿼리 규모가 큰 경우에는 현재 보고 있는 결과가 최신인지 알 수 없었습니다. 라인 및 누적 막대 시계열 차트는 이미 데이터를 다시 가져오는 동안 깜빡임 효과를 표시했지만, 숫자, 막대, 파이, 테이블 타일은 `isLoading`만 확인했습니다. 이 값은 react-query가 플레이스홀더 데이터를 표시하는 동안 `false`로 유지됩니다.
+
+이제 이러한 타일은 이전 데이터를 화면에 유지하면서, 데이터를 다시 가져오는 작업이 끝날 때까지 깜빡임 효과를 표시합니다. 이 변경은 여러 개의 작은 PR을 통해 반영되었습니다. 먼저 숫자, 막대, 파이 타일에 적용되었고, 이후 테이블, 히트맵, Services 대시보드의 list-bar 및 히스토그램 차트로 확대되었습니다. 테이블은 `useOffsetPaginatedQuery`가 Live 모드에서만 이전 행을 유지했기 때문에 갱신 중 타일 전체가 사라지는 문제가 있어 추가 수정이 필요했습니다. 검색 및 이벤트 패턴 타일, 그리고 Kubernetes 대시보드의 Pods, Nodes, Namespaces 테이블은 아직 기존 방식으로 동작합니다. 이에 대한 PR은 현재 검토 중입니다.
+
+라이브 테일에서는 이전에 시간 선택기가 1시간을 초과하는 모든 프리셋을 아무런 설명 없이 회색으로 비활성화했습니다. 또한 이 프리셋을 제어하는 스위치의 레이블이 &quot;Relative Time&quot;으로 되어 있었는데, 애플리케이션의 다른 곳에서는 이 기능을 라이브 테일이라고 부릅니다.
+
+이제 3h 및 6h 프리셋을 사용할 수 있으며, 스위치의 레이블은 **Live tail ranges**로 변경되었습니다. 여전히 비활성화된 프리셋에 마우스를 올리면 &quot;Not available for Live Tail&quot; 도구 설명이 표시됩니다. 12h 이상의 범위는 갱신할 때마다 전체 시간 윈도우를 다시 쿼리하므로 계속 비활성화된 상태로 유지됩니다. 기본 갱신 인터벌이 10초이므로, 이를 허용하면 10초마다 12~24시간 분량의 데이터를 스캔해야 합니다.
+
+**관련 PR:** [#3211](https://github.com/hyperdxio/hyperdx/pull/3211) 대시보드 갱신 중 숫자, 막대, 파이 타일에 깜빡임 효과 표시, [#3212](https://github.com/hyperdxio/hyperdx/pull/3212) 대시보드 갱신 중 테이블 타일의 행을 화면에 유지, [#3221](https://github.com/hyperdxio/hyperdx/pull/3221) 대시보드 갱신 중 히트맵 타일을 화면에 유지, [#3229](https://github.com/hyperdxio/hyperdx/pull/3229) 갱신 중 list-bar 및 히스토그램 차트에 깜빡임 효과 표시, [#3224](https://github.com/hyperdxio/hyperdx/pull/3224) 대시보드 갱신 중 검색 및 패턴 타일을 화면에 유지(검토 중), [#3228](https://github.com/hyperdxio/hyperdx/pull/3228) 페이지 갱신 중 Kubernetes 대시보드 테이블을 화면에 유지(검토 중), [#3219](https://github.com/hyperdxio/hyperdx/pull/3219) 3h 및 6h 라이브 테일 활성화, 스위치 이름 변경, 비활성화 도구 설명 추가
+
+## 이슈 템플릿과 Needs Feedback 흐름 {#issue-templates-and-the-needs-feedback-flow}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=118" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 변경 사항은 제품이 아니라 리포지토리에 관한 것입니다. 이전에는 HyperDX 리포지토리에서 본문을 자유 형식으로 작성해 이슈를 열 수 있었습니다. 이제 새 이슈는 버그 리포트 또는 기능 요청 템플릿 중 하나로 시작해야 하며, 빈 이슈는 비활성화되었습니다. 템플릿은 필요에 따라 추가할 수 있습니다.
+
+버그 리포트 템플릿은 처음부터 디버그 정보를 요청합니다. 앱에는 이미 **Help → Copy debug info** 기능이 있으며, 이 기능은 프론트엔드 및 백엔드 버전, 배포 모드, 브라우저, 세션 ID를 복사합니다. 이때 API 키와 쿼리 매개변수는 제거됩니다. 이 정보를 이슈에 붙여 넣으면 질문을 주고받는 과정을 한 차례 줄일 수 있습니다. collector 및 CLI 관련 이슈에서는 해당 필드가 `N/A`로 표시됩니다.
+
+또한 새 이슈에는 `Needs Feedback` 레이블이 자동으로 지정됩니다. 이 레이블은 해당 이슈가 아직 논의 중이며 PR을 받을 준비가 되지 않았음을 뜻합니다. 범위에 대한 합의가 이루어지면 유지관리자가 레이블을 `Accepting PR`로 변경하며, 그때부터 누구나 작업을 맡을 수 있습니다.
+
+이 흐름은 `CONTRIBUTING.md`에 문서화되어 있습니다. 현재는 관례일 뿐이며, PR 단계에서 이를 강제하는 장치는 없습니다. 이슈와 접근 방식에 대한 합의 없이 수정 작업에 시간을 쏟는 일을 막는 것이 목적입니다. 실제로 운영해 보면서 이 방식을 계속 다듬어 나갈 예정입니다.
+
+**관련 PR:** [#3239](https://github.com/hyperdxio/hyperdx/pull/3239) 디버그 정보 요청 및 Needs Feedback 이슈 흐름 추가
+
+## 하나의 차트에 여러 PromQL 표현식 사용하기 {#multiple-promql-expressions-on-one-chart}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=191" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 PromQL을 시계열 차트에서만 사용할 수 있었고, 타일당 표현식도 하나로 제한되었습니다. 이제 하나의 시계열 차트에 여러 PromQL 표현식을 추가하고 각 표현식에 별칭을 지정할 수 있습니다. 데모에서는 이 기능으로 p50, p95, p99 지연 시간을 함께 표시합니다.
+
+또한 편집기 아래의 쿼리 미리보기에 모든 표현식에 대해 변수가 대입된 PromQL이 표시됩니다. 이전에는 첫 번째 표현식만 표시되었습니다. 따라서 저장하기 전에 각 쿼리가 어떻게 해석되는지 확인할 수 있습니다.
+
+목록의 첫 번째 PR은 이 기능의 기반이 된 리팩터링입니다. 차트 빌더의 PromQL 편집기와 시계열 컨트롤을 공유 구성 요소로 분리하여 각 표현식에서 재사용할 수 있도록 했습니다.
+
+**관련 PR:** [#3145](https://github.com/hyperdxio/hyperdx/pull/3145) PromQL 함수, PromqlExpressionEditor, ChartSeriesControls 분리, [#3146](https://github.com/hyperdxio/hyperdx/pull/3146) 하나의 차트에 여러 PromQL 표현식 표시
+
+## PromQL 숫자, 파이, 테이블 차트 {#promql-number-pie-and-table-charts}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=241" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+*이 영상은 음질이 좋지 않습니다. 양해 부탁드립니다. 영상에서 보여 준 내용은 모두 아래 설명에 담겨 있습니다.*
+
+이제 PromQL은 시계열 차트뿐 아니라 숫자, 파이, 막대, 테이블 차트에서도 사용할 수 있습니다. 가장 크게 달라진 것은 숫자 차트입니다. 이전에는 모든 PromQL 쿼리가 범위 쿼리(range query)로 처리되어, 선택한 시간 범위 전체에 걸쳐 간격마다 평가되었습니다. 차트는 그중 시간과 시계열 이름 기준으로 첫 번째 결과를 표시했습니다. 이제는 범위의 끝 시점에 한 번만 평가되는 인스턴트 쿼리(instant query)와 범위 쿼리 중에서 선택할 수 있습니다. 이는 Grafana stat 타일의 동작 방식과 같습니다.
+
+범위 쿼리를 사용할 때는 last, min, max, avg, sum, count 중에서 리듀서(reducer)도 선택합니다. 리듀서는 client-side에서 실행되며, 각 시계열의 샘플을 하나의 값으로 축약합니다. 여러 시계열이 있거나 축약되지 않은 샘플이 남아 값이 여전히 둘 이상이면, 숫자 타일은 단일 값만 표시하므로 표현식에서 집계해야 한다는 경고가 차트에 표시됩니다.
+
+숫자 차트는 범위 쿼리에서 스파크라인도 지원하며, 숫자 표시용으로 가져온 결과를 그대로 활용합니다. 또한 이 쿼리는 이제 시계열 쿼리와 마찬가지로 대시보드의 시간 범위와 세분화 수준을 따르므로, 숫자와 스파크라인이 같은 결과를 공유할 수 있습니다.
+
+파이 차트와 막대 차트에서도 리듀서와 함께 인스턴트 및 범위 옵션을 똑같이 사용할 수 있으며, 범례 템플릿도 지원합니다. 리듀서는 시계열당 여러 샘플을 반환하는 인스턴트 쿼리에도 적용됩니다. 예를 들어 `up[5m]`은 매트릭스를 반환하는데, 이 매트릭스는 조각이나 막대로 표시되기 전에 시간 축을 따라 인스턴트 벡터로 축약됩니다. 숫자 차트에도 같은 방식의 축약이 적용됩니다.
+
+테이블은 원시 쿼리 결과(query results)를 그대로 표시합니다. 샘플 하나가 하나의 행이 되며, 레이블마다 컬럼이 하나씩 만들어집니다. `__name__`과 Timestamp가 있으면 맨 앞 컬럼에 표시됩니다. 따라서 범위 쿼리에서는 모든 간격의 모든 샘플마다 타임스탬프가 포함된 행이 생성됩니다. 숫자 서식 지정은 이 모든 차트 유형에서 지원됩니다.
+
+**관련 PR:** [#3169](https://github.com/hyperdxio/hyperdx/pull/3169) 인스턴트 및 범위 기반 PromQL 숫자 타일 지원, [#3178](https://github.com/hyperdxio/hyperdx/pull/3178) PromQL 숫자 차트의 스파크라인 지원, [#3238](https://github.com/hyperdxio/hyperdx/pull/3238) PromQL 테이블 차트 지원, [#3253](https://github.com/hyperdxio/hyperdx/pull/3253) PromQL 파이 및 막대 차트 지원
+
+## Markdown 타일의 대시보드 변수 {#dashboard-variables-in-markdown-tiles}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=345" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 대시보드 변수를 쿼리에서만 사용할 수 있었고 Markdown 타일에서는 사용할 수 없었습니다. 이제 Markdown에서도 대시보드 변수를 참조할 수 있으며, 링크 안에서도 사용할 수 있습니다. 변수 선택기에서 값을 변경하면 텍스트와 링크 대상이 함께 갱신됩니다. 데모에서는 이 기능을 활용해 선택한 값을 다른 페이지로 전달합니다.
+
+값에는 기본적으로 새로운 `markdown` 포맷이 적용되며, 이 포맷은 Markdown 문자를 이스케이프 처리합니다. 또한 Markdown 타일에서는 스크립트와 원시 HTML이 차단됩니다. 코드 블록 안에서처럼 이스케이프되지 않은 값이 필요하다면 `${var:csv}`와 같은 다른 포맷을 사용하십시오.
+
+유효하지 않은 변수 참조는 편집기에서 표시되며, MCP 대시보드 유효성 검사와 프롬프트도 이에 맞춰 업데이트되었습니다.
+
+**관련 PR:** [#3246](https://github.com/hyperdxio/hyperdx/pull/3246) Substitute variables in Markdown 타일
+
+## PromQL 매크로 {#promql-macros}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=376" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 PromQL에서 대시보드의 시간 범위와 세분화 수준을 기반으로 하는 Grafana 호환 매크로 3개를 지원합니다. `$__interval`은 차트 또는 대시보드의 세분화 수준을 반환하고, `$__range`는 차트 날짜 범위의 길이를 초 단위로 반환합니다. `$__rate_interval`의 값은 `max(4 × 15s, $__interval)`로, rate 계산 시 여러 스크레이프 인터벌을 포괄하는 윈도우를 제공합니다. 현재는 스크레이프 인터벌을 15초로 가정합니다.
+
+매크로는 변수와 함께 치환되므로, 생성된 PromQL 미리보기에서 해석된 값을 확인할 수 있습니다. 편집기의 자동 완성에도 매크로가 제안됩니다. 내부적으로는 기존 SQL 매크로 메커니즘의 대부분을 재사용합니다.
+
+**관련 PR:** [#3244](https://github.com/hyperdxio/hyperdx/pull/3244) Support PromQL 매크로
+
+## 검색 페이지에서 행 선택하기 {#selecting-rows-on-the-search-page}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=398" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+사용자 요청을 반영해 추가된 작은 기능입니다. 이제 검색 결과에서 체크박스로 개별 행을 선택하거나, Shift 키를 누른 채 클릭하여 범위를 선택할 수 있습니다. 행을 선택하면 **Download CSV**, **Copy CSV**, **Copy JSON** 작업과 선택 해제 옵션을 사용할 수 있습니다. 이 작업에는 현재 테이블에 표시된 모든 컬럼이 포함되므로, 전체 결과 집합을 내보내지 않고도 ClickStack에서 필요한 행 몇 개만 가져올 수 있습니다.
+
+마우스를 올렸을 때 체크박스가 나타나는 동작은 [@MikeShi42](https://github.com/MikeShi42)의 후속 작업으로 추가되었습니다. 체크박스는 기본적으로 숨겨져 있다가 행에 마우스를 올리면 서서히 나타납니다. 키보드 포커스를 받을 때도 표시되므로, 보이지 않는 컨트롤로 탭 이동하는 일이 생기지 않습니다. 행을 하나라도 선택하면 모든 체크박스가 계속 표시되어 Shift 클릭할 위치를 쉽게 확인할 수 있습니다. 터치 기기에서는 체크박스가 항상 표시됩니다.
+
+체크박스 컬럼은 마우스를 올려도 너비가 그대로 유지되므로 테이블 레이아웃이 흔들리지 않습니다. 또한 컬럼 너비가 24px에서 18px로 줄었으며, 체크박스에는 Shift 클릭으로 범위를 선택하는 방법을 안내하는 도구 설명이 표시됩니다.
+
+**관련 PR:** [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) 검색 행 다중 선택 다운로드 및 복사 지원, [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) 마우스를 올리면 검색 행 선택 체크박스 표시
+
+## 행 세부 정보 패널의 materialized 컬럼 및 별칭 컬럼 {#materialized-and-alias-columns-in-the-row-details-panel}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=435" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이 기능은 행 세부 정보 패널에 계산된 컬럼을 표시해 달라는 이슈를 계기로 [@BilalAtique](https://github.com/BilalAtique)가 기여한 오픈 소스 기능입니다. 이 패널은 `SELECT *`로 각 행을 가져오는데, `asterisk_include_materialized_columns` 및 `asterisk_include_alias_columns`가 활성화되어 있지 않으면 `MATERIALIZED` 및 `ALIAS` 컬럼은 결과에서 제외됩니다. 이 때문에 로그 테이블에 추가한 materialized 컬럼과 표준 `otel_logs`의 `*AttributeItems` 별칭이 표시되지 않았습니다.
+
+이제 Column Values 뷰의 톱니바퀴 메뉴에서 **Show materialized 컬럼 and alias columns** 옵션을 사용할 수 있습니다. 이 옵션은 기본적으로 꺼져 있으며, 다른 패널 환경 설정과 함께 로컬 저장소에 저장됩니다. 옵션을 켜면 `*`를 사용하는 행 쿼리에 두 설정이 모두 추가됩니다. Known Columns List가 지정된 소스에는 영향이 없습니다.
+
+또한 행 조회 시 소스 자체의 쿼리 설정(query settings)도 적용되며, 이 설정이 토글보다 우선합니다. 소스에서 두 설정이 모두 활성화되어 있으면 옵션이 꺼져 있어도 컬럼이 표시됩니다. 반대로 소스에 `asterisk_include_alias_columns = 0`이 설정되어 있으면 옵션을 켜도 별칭 컬럼은 표시되지 않습니다.
+
+몇 가지 유의할 점이 있습니다. 연결에 사용된 사용자가 이러한 설정을 변경할 수 없으면(예: `readonly = 1`이거나 설정 프로파일(Settings Profile)에서 해당 설정을 `CONST`로 지정한 경우) 행 쿼리가 실패합니다. 해당 행에서 별칭을 평가할 수 없는 경우에도 쿼리가 실패합니다. 이때 패널에는 ClickHouse 오류와 함께 옵션을 다시 끌 수 있는 **Hide materialized 컬럼 and alias columns** 작업이 표시됩니다.
+
+`__hdx_materialized_*` 컬럼도 함께 가져오지만 뷰어에서는 여전히 숨겨집니다. 이 컬럼에 대한 토글은 이번 변경 사항에 포함되지 않았습니다.
+
+**관련 PR:** [#3234](https://github.com/hyperdxio/hyperdx/pull/3234) 행 사이드 패널의 행 조회에 소스 쿼리 설정 적용, [#3231](https://github.com/hyperdxio/hyperdx/pull/3231) 행 세부 정보 패널에 materialized 컬럼 및 ALIAS 컬럼을 표시하는 옵션 추가
+
+## 키 이름으로 레이블이 지정되는 Map 속성 컬럼 {#map-attribute-columns-labelled-by-their-key}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=495" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번에도 오픈 소스 기여로, [@DevShoaib78](https://github.com/DevShoaib78)이 작업했습니다. 이전에는 필터 사이드바나 행 사이드 패널에서 `host.arch`와 같은 Map 속성을 컬럼으로 추가하면, 결과 테이블(Results Table)에 ClickHouse가 자동으로 생성한 이름(예: `arrayElement(ResourceAttributes, 'host.arch')`)이 표시되었습니다.
+
+이제 검색 페이지에서 두 작업 모두 동일한 로직을 사용하여, 표현식을 별칭과 함께 `SELECT`에 추가합니다: `ResourceAttributes['host.arch'] AS "host.arch"`. 따라서 열 머리글(column header)에는 `host.arch`가 표시됩니다. 별칭은 `SELECT` 입력란에서 확인하고 편집할 수 있습니다. 직접 작성한 SQL은 재작성되지 않으므로 기존의 저장된 검색, 알림, 대시보드에는 영향이 없습니다.
+
+쿼리의 의미가 바뀔 수 있는 경우에는 별칭을 붙이지 않습니다. 테이블 컬럼과 이름이 같은 키가 이에 해당하는데, ClickHouse는 `WHERE` 및 `ORDER BY`에서 컬럼보다 별칭을 먼저 해석하기 때문입니다. 서로 다른 두 Map에 있는 동일한 키처럼 `SELECT`에서 이미 사용 중인 이름도 마찬가지입니다. 키에 `"` 또는 `\`가 포함된 경우에도 별칭을 붙이지 않습니다.
+
+이제 사이드 패널, 필터 사이드바, 중첩된 필터 그룹은 컬럼이 이미 표시되어 있는지 확인할 때 별칭이 있든 없든 동일한 표현식으로 인식합니다. 따라서 이미 테이블에 있는 컬럼을 다시 추가하라고 제안하지 않습니다.
+
+**관련 PR:** [#3163](https://github.com/hyperdxio/hyperdx/pull/3163) Label Map attribute columns by their key instead of arrayElement(...)

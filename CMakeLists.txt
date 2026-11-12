@@ -363,10 +363,6 @@ else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
 
-if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-endif()
-
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
@@ -382,8 +378,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -606,6 +603,9 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     # Link time optimization
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+    # Name each C++ module after its object file, so that units without external definitions are split for
+    # ThinLTO instead of being optimized in one serial regular LTO module. The name must be unique in a link.
+    string (APPEND CMAKE_CXX_COMPILE_OBJECT " -funique-source-file-names -funique-source-file-identifier=<OBJECT>")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
@@ -707,9 +707,12 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
     # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
     # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
-    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    # The FreeBSD sysroot carries no PIC startup objects (Scrt1.o).
+    # Mach-O needs no startup objects for it, so only the linker is asked.
     if (OS_LINUX AND NOT USE_MUSL)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    elseif (OS_DARWIN)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
     endif()
 endif()
 
@@ -894,8 +897,6 @@ add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINT
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
-    add_subdirectory (rust)
-
     # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.
@@ -1017,20 +1018,6 @@ if (FUZZER)
 endif()
 
 include (cmake/sanitize_targets.cmake)
-
-if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
-    message(STATUS "Adding chcache as dependency to all other targets")
-    get_all_targets(all_targets)
-    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
-
-    foreach(target ${all_targets})
-        if (target IN_LIST chcache_targets)
-            continue()
-        endif()
-
-        add_dependencies(${target} cargo-build_chcache)
-    endforeach()
-endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)

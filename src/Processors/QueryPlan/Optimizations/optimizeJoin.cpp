@@ -10,6 +10,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -708,30 +709,30 @@ static bool nullExtensionIsNull(const DataTypePtr & type)
 /// Recurses only through null-propagating functions; any other node is opaque and contributes {}.
 static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
 {
-    switch (node->type)
+    BitSet result;
+    visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
     {
-        case ActionsDAG::ActionType::INPUT:
-        case ActionsDAG::ActionType::PLACEHOLDER:
-            if (!nullExtensionIsNull(node->result_type))
-                return {};
-            /// A leaf column reference is null exactly on its own relation.
-            return JoinActionRef(node, actions).getSourceRelations();
-        case ActionsDAG::ActionType::ALIAS:
-            return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
-        case ActionsDAG::ActionType::FUNCTION:
+        switch (cur->type)
         {
-            if (!node->function_base || !isNullPropagatingFunction(*node))
-                return {};
-            BitSet result;
-            for (const auto * child : node->children)
-                result |= strictOnRelations(child, actions);
-            return result;
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                /// A leaf column reference is null exactly on its own relation.
+                if (nullExtensionIsNull(cur->result_type))
+                    result |= JoinActionRef(cur, actions).getSourceRelations();
+                return VisitResult::SkipChildren;
+            case ActionsDAG::ActionType::ALIAS:
+                return VisitResult::Continue;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (!cur->function_base || !isNullPropagatingFunction(*cur))
+                    return VisitResult::SkipChildren;
+                return VisitResult::Continue;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                return VisitResult::SkipChildren;
         }
-        case ActionsDAG::ActionType::COLUMN:
-        case ActionsDAG::ActionType::ARRAY_JOIN:
-            return {};
-    }
-    return {};
+        return VisitResult::SkipChildren;
+    });
+    return result;
 }
 
 /// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
@@ -1205,7 +1206,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate,
-            .composite = rel.composite};
+            .composite = rel.composite,
+            .column_stats = rel.column_stats};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
@@ -1576,7 +1578,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,
                 .imprecise_estimate = imprecise_estimate,
-                .composite = true};
+                .composite = true,
+                .column_stats = entry->column_stats};
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 

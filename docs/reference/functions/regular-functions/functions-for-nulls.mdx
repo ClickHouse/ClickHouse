@@ -190,6 +190,16 @@ SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))
 0
 ```
 
+**enum**
+
+```sql title=Query
+SELECT firstNonDefault('a' :: Enum8('a' = 1, 'b' = 2), 'b' :: Enum8('a' = 1, 'b' = 2))
+```
+
+```response title=Response
+b
+```
+
 ## ifNull {#ifNull}
 
 Introduced in: v1.1.0
