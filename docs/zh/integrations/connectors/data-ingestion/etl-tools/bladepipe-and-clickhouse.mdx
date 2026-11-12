@@ -55,7 +55,11 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![将 ClickHouse 添加为目标](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </Frame>
 
        </div>
 
@@ -75,7 +79,11 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![将 MySQL 添加为源](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </Frame>
 
        </div>
 
@@ -88,35 +96,55 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
     2. 选择已添加的 MySQL 和 ClickHouse 实例，点击 &quot;Test Connection&quot;，确认 BladePipe 已连接到这些实例。然后，选择要迁移的数据库。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![选择源和目标](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </Frame>
 
        </div>
 
     3. 在 DataJob Type 中选择 &quot;Incremental&quot;，同时勾选 &quot;Full Data&quot; 选项。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![选择同步类型](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </Frame>
 
        </div>
 
     4. 选择要复制的表。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![选择表](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </Frame>
 
        </div>
 
     5. 选择要复制的列。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![选择列](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </Frame>
 
        </div>
 
     6. 确认创建 DataJob 后，DataJob 会自动运行。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![DataJob 正在运行](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -133,7 +161,11 @@ ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动�
     2. 创建一个 <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">验证 DataJob</a>。验证 DataJob 完成后，请检查结果，确认 ClickHouse 中的数据与 MySQL 中的数据一致。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![验证数据](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </Frame>
 
        </div>
   </Step>

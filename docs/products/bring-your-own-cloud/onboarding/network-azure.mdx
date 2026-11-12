@@ -161,7 +161,11 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 3. In the opened flyout, copy the `Service name` (the Private Link service alias) and `DNS name` values — you'll use them in the next steps. (It may take a while for the values to be generated after enabling Private Link.)
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoints](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -171,26 +175,42 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 2. On the **Basics** tab, choose the subscription, resource group, name, and region for the private endpoint. The region should be the region of the VNet your client application connects from.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Create Private Endpoint Basic](/images/cloud/security/azure-pe-create-basic.webp)
+
+   </Frame>
 
    </div>
 3. On the **Resource** tab, select **Connect to an Azure resource by resource ID or alias** and enter the `Service name` obtained from the last step.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoint Resource Selection](/images/cloud/security/azure-pe-resource.webp)
+
+   </Frame>
 
    </div>
 4. On the **Virtual Network** tab, choose the virtual network and subnet where the private endpoint will be created. Optionally, attach an application security group to filter traffic to the private endpoint.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoint Virtual Network Selection](/images/cloud/security/azure-pe-create-vnet.webp)
+
+   </Frame>
 
    </div>
 5. Continue through the remaining tabs and click **Create**. The **Connection status** of the created private endpoint will be in a **Pending** state until you add its `Resource ID` to the ClickHouse service allow list in the next steps.
 6. Open the network interface associated with the private endpoint and copy the **Private IPv4 address** — you'll use it in the DNS setup step.
    <div className="ch-image-lg">
 
+   <Frame>
+
    ![Private Endpoint IP Address](/images/cloud/security/azure-pe-ip.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -256,7 +276,11 @@ nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
 3. In the opened flyout, copy the `DNS name`.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoint DNS Name](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+   </Frame>
 
    </div>
    <Note>

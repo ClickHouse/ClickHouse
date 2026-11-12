@@ -156,7 +156,11 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 3. In the opened flyout, copy the `Service name` value — you'll use it in the next step. (It may take a while for the value to be generated after enabling PrivateLink.)
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoints](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -167,7 +171,11 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 3. Click "Verify service".
    <div className="ch-image-md">
 
+   <Frame>
+
    ![AWS PrivateLink Endpoint Settings](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+   </Frame>
 
    </div>
 4. (Optional) If you want to establish a cross-regional connection via PrivateLink, enable the "Cross region endpoint" checkbox and specify the service region. The service region is where your BYOC infrastructure is created. Meanwhile,
@@ -175,13 +183,21 @@ Make sure the **private load balancer** is turned on as a prerequisite.
    2. Add the region where your client application is running to the supported regions list. By default, only the region of this BYOC infrastructure is supported. You can add multiple regions if you want to connect from different regions, and ClickHouse won't change or reset these values.
       <div className="ch-image-md">
 
+      <Frame>
+
       ![AWS PrivateLink Cross Region Endpoint Settings](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
+
+      </Frame>
 
       </div>
 5. Select your VPC and subnets (one per availability zone is recommended).
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Select VPC and subnets](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+   </Frame>
 
    </div>
 6. **Important**: Enable "Private DNS names" for the endpoint — this is required for Private DNS to function correctly.
@@ -201,7 +217,11 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 9. After creating the endpoint, copy the `Endpoint ID` value — you'll use it in the next step.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![VPC Endpoint ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -211,7 +231,11 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 2. Find the connection request created from your own VPC and click "Accept endpoint connection request" to approve it.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![BYOC PrivateLink Approve](/images/cloud/reference/byoc-privatelink-2.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -243,7 +267,11 @@ The dropdown will show the existing PrivateLink connections to the services with
 3. In the opened flyout, copy the `DNS name`.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoint DNS Name](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+   </Frame>
 
    </div>
 

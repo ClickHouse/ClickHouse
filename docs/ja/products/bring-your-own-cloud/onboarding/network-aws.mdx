@@ -48,7 +48,11 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC ピアリング接続の作成](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -58,7 +62,11 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC ピアリング接続の承認](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -75,7 +83,11 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC ルートテーブルの追加](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -92,7 +104,11 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC ルートテーブルの追加](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -131,7 +147,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC PrivateLink を有効化](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -142,7 +162,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
     3. 開いたフライアウトで、`Service name` の値をコピーします。次の手順で使用します。 (PrivateLink を有効にした後、この値が生成されるまでしばらく時間がかかる場合があります。)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![プライベート エンドポイント](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -155,7 +179,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
     3. &quot;Verify service&quot; をクリックします。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![AWS PrivateLink エンドポイント設定](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </Frame>
 
        </div>
 
@@ -166,14 +194,22 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
     6. クライアントアプリケーションが実行されているリージョンを、サポート対象リージョンのリストに追加します。デフォルトでは、この BYOC インフラストラクチャのリージョンのみがサポートされています。異なるリージョンから接続する場合は複数のリージョンを追加できます。ClickHouse がこれらの値を変更またはリセットすることはありません。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![AWS PrivateLink クロスリージョンエンドポイント設定](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
+
+       </Frame>
 
        </div>
 
     7. VPC とサブネットを選択します (availability zone ごとに 1 つのサブネットを推奨します) 。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![VPC とサブネットを選択](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </Frame>
 
        </div>
 
@@ -197,7 +233,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
     9. エンドポイントを作成した後、`Endpoint ID` の値をコピーします。次の手順で使用します。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![VPC Endpoint ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -207,7 +247,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
     2. 自身の VPC から作成された接続リクエストを見つけ、&quot;Accept endpoint connection request&quot; をクリックして承認します。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![BYOC PrivateLink の承認](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -225,7 +269,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![プライベート エンドポイントのフィルター](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -237,7 +285,11 @@ AWS PrivateLink を使用すると、VPC ピアリングやインターネット
 
        <div className="ch-image-md">
 
+       <Frame>
+
        ![プライベート エンドポイントの DNS 名](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </Frame>
 
        </div>
 

@@ -55,7 +55,11 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![ターゲットとして ClickHouse を追加](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </Frame>
 
        </div>
 
@@ -75,7 +79,11 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![MySQL をソースとして追加](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </Frame>
 
        </div>
 
@@ -88,35 +96,55 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     2. 追加した MySQL インスタンスと ClickHouse インスタンスを選択し、&quot;Test Connection&quot; をクリックして BladePipe がそれぞれのインスタンスに接続できることを確認します。続いて、移行対象のデータベースを選択します。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![ソースとターゲットを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </Frame>
 
        </div>
 
     3. DataJob Type で &quot;Incremental&quot; を選択し、あわせて &quot;Full Data&quot; オプションも選択します。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![同期タイプを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </Frame>
 
        </div>
 
     4. 複製するテーブルを選択します。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![テーブルを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </Frame>
 
        </div>
 
     5. 複製するカラムを選択します。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![カラムを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </Frame>
 
        </div>
 
     6. DataJob の作成を確認すると、DataJob は自動的に実行されます。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![DataJob は実行中です](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -133,7 +161,11 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     2. <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">検証用 DataJob</a> を作成します。検証用 DataJob が完了したら、結果を確認し、ClickHouse のデータが MySQL のデータと一致していることを確認します。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![データを検証](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </Frame>
 
        </div>
   </Step>

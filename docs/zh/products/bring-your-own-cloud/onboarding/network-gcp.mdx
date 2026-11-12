@@ -50,7 +50,11 @@ VPC 对等互连 和 PSC 共同需要执行的步骤。
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC 创建对等连接](/images/cloud/reference/byoc-vpcpeering-gcp-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -58,7 +62,11 @@ VPC 对等互连 和 PSC 共同需要执行的步骤。
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC 接受对等连接](/images/cloud/reference/byoc-vpcpeering-gcp-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -66,7 +74,11 @@ VPC 对等互连 和 PSC 共同需要执行的步骤。
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 接受对等连接](/images/cloud/reference/byoc-vpcpeering-gcp-3.webp)
+
+    </Frame>
 
     </div>
 
@@ -114,7 +126,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![启用 BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -125,7 +141,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     3. 在打开的弹出面板中，复制 `Service name` 和 `DNS name` 的值，下一步将用到它们。 (启用 Private Link 后，可能需要一段时间才能生成这些值。)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![专用终结点](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -136,7 +156,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     2. 点击“Connect Endpoint”按钮，打开 Private Service Connect 创建对话框。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![在 Google Cloud 控制台中打开 Private Service Connect](/images/cloud/security/gcp-psc-open.webp)
+
+       </Frame>
 
        </div>
 
@@ -149,7 +173,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
        * (可选) **启用全局访问**：如果希望可从任意区域访问该端点，请启用此选项
          <div className="ch-image-md">
 
+         <Frame>
+
          ![为 Private Service Connect 启用全局访问](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+         </Frame>
 
          </div>
        * 点击“ADD ENDPOINT”按钮创建端点。
@@ -159,7 +187,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     5. 创建端点后，复制 `PSC Connection ID` 的值，下一步将用到它。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![复制 PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -177,7 +209,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![专用终结点过滤器](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -196,7 +232,11 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     3. 在打开的弹出面板中，复制 `DNS name`。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![专用终结点 DNS 名称](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

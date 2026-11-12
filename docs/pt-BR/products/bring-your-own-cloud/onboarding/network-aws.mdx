@@ -48,7 +48,11 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Criar conexão de peering](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -58,7 +62,11 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Aceitar conexão de peering](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -75,7 +83,11 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Adicionar tabela de rotas](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -92,7 +104,11 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Adicionar tabela de rotas](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -131,7 +147,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Ativar o PrivateLink do BYOC](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -142,7 +162,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     3. No flyout aberto, copie o valor de `Service name` — você o usará no próximo passo. (Pode levar algum tempo para que o valor seja gerado após a ativação do PrivateLink.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Endpoints privados](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -155,7 +179,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     3. Clique em &quot;Verificar serviço&quot;.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Configurações do endpoint AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </Frame>
 
        </div>
 
@@ -164,14 +192,22 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
        2. Adicione à lista de regiões compatíveis a região em que sua aplicação cliente está em execução. Por padrão, apenas a região dessa infraestrutura BYOC é compatível. Você pode adicionar várias regiões para se conectar a partir de regiões diferentes, e o ClickHouse não alterará nem redefinirá esses valores.
           <div className="ch-image-md">
 
+          <Frame>
+
           ![Configurações de endpoint AWS PrivateLink entre regiões](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
+
+          </Frame>
 
           </div>
 
     5. Selecione sua VPC e as sub-redes (recomenda-se uma por zona de disponibilidade).
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Selecionar VPC e sub-redes](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </Frame>
 
        </div>
 
@@ -194,7 +230,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     9. Após criar o endpoint, copie o valor de `Endpoint ID` — você o usará na próxima etapa.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![ID do endpoint da VPC](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -204,7 +244,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     2. Localize a solicitação de conexão criada na sua própria VPC e clique em &quot;Aceitar solicitação de conexão de endpoint&quot; para aprová-la.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Aprovar PrivateLink BYOC](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -222,7 +266,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Filtro de endpoints privados](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -234,7 +282,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
 
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Nome DNS do endpoint privado](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </Frame>
 
        </div>
 

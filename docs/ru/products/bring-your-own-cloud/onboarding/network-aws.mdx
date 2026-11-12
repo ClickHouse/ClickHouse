@@ -48,7 +48,11 @@ ClickHouse BYOC на AWS поддерживает два варианта при
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Создание пирингового соединения](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -58,7 +62,11 @@ ClickHouse BYOC на AWS поддерживает два варианта при
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Принятие пирингового соединения](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -75,7 +83,11 @@ ClickHouse BYOC на AWS поддерживает два варианта при
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Добавление таблицы маршрутизации](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -92,7 +104,11 @@ ClickHouse BYOC на AWS поддерживает два варианта при
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Добавление таблицы маршрутизации](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -131,7 +147,11 @@ AWS PrivateLink обеспечивает безопасное приватное
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Включение BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -142,7 +162,11 @@ AWS PrivateLink обеспечивает безопасное приватное
     3. В открывшейся выдвижной панели скопируйте значение `Service name` — оно понадобится на следующем шаге. (После включения PrivateLink значение может появиться не сразу.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Частные конечные точки](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -155,7 +179,11 @@ AWS PrivateLink обеспечивает безопасное приватное
     3. Нажмите &quot;Verify service&quot;.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Настройки конечной точки AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </Frame>
 
        </div>
 
@@ -164,14 +192,22 @@ AWS PrivateLink обеспечивает безопасное приватное
        2. Добавьте в список поддерживаемых регионов регион, в котором работает ваше клиентское приложение. По умолчанию поддерживается только регион, где размещена эта инфраструктура BYOC. Если требуется подключаться из разных регионов, можно добавить несколько регионов; ClickHouse не будет изменять или сбрасывать эти значения.
           <div className="ch-image-md">
 
+          <Frame>
+
           ![Настройки межрегиональной конечной точки AWS PrivateLink](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
+
+          </Frame>
 
           </div>
 
     5. Выберите VPC и подсети (рекомендуется по одной подсети на каждую зону доступности).
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Выбор VPC и подсетей](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </Frame>
 
        </div>
 
@@ -194,7 +230,11 @@ AWS PrivateLink обеспечивает безопасное приватное
     9. После создания конечной точки скопируйте значение `Endpoint ID` — оно понадобится на следующем шаге.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Идентификатор VPC Endpoint](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -204,7 +244,11 @@ AWS PrivateLink обеспечивает безопасное приватное
     2. Найдите запрос на подключение из вашей VPC и нажмите &quot;Accept endpoint connection request&quot;, чтобы одобрить его.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Одобрение BYOC PrivateLink](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -222,7 +266,11 @@ AWS PrivateLink обеспечивает безопасное приватное
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Фильтр частных конечных точек](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -234,7 +282,11 @@ AWS PrivateLink обеспечивает безопасное приватное
 
        <div className="ch-image-md">
 
+       <Frame>
+
        ![DNS-имя частной конечной точки](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </Frame>
 
        </div>
 

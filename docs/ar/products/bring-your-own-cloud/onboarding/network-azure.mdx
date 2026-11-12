@@ -59,7 +59,11 @@ doc_type: 'reference'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![إنشاء اقتران VNet لـ BYOC](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -67,7 +71,11 @@ doc_type: 'reference'
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![تهيئة اقتران VNet لـ BYOC](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -92,7 +100,11 @@ doc_type: 'reference'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![التحقق من اقتران VNet لـ BYOC](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -143,7 +155,11 @@ doc_type: 'reference'
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![تفعيل PrivateLink لـ BYOC](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -154,7 +170,11 @@ doc_type: 'reference'
     3. في اللوحة المنبثقة التي تفتح، انسخ قيمتي `Service name` (الاسم المستعار لخدمة Private Link) و`DNS name` — ستستخدمهما في الخطوات التالية. (قد يستغرق إنشاء هذه القيم بعض الوقت بعد تمكين Private Link.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![نقاط النهاية الخاصة](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -164,26 +184,42 @@ doc_type: 'reference'
     2. في علامة التبويب **Basics**، اختر الاشتراك ومجموعة الموارد والاسم والمنطقة لنقطة النهاية الخاصة. يجب أن تكون المنطقة هي منطقة شبكة VNet التي يتصل منها تطبيق العميل.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![إنشاء نقطة نهاية خاصة: الأساسيات](/images/cloud/security/azure-pe-create-basic.webp)
+
+       </Frame>
 
        </div>
     3. في علامة التبويب **Resource**، اختر **Connect to an Azure resource by resource ID or alias** وأدخل `Service name` الذي حصلت عليه في الخطوة السابقة.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![اختيار مورد نقطة النهاية الخاصة](/images/cloud/security/azure-pe-resource.webp)
+
+       </Frame>
 
        </div>
     4. في علامة التبويب **Virtual Network**، اختر الشبكة الظاهرية والشبكة الفرعية حيث ستُنشأ نقطة النهاية الخاصة. ويمكنك اختياريًا إرفاق مجموعة أمان للتطبيقات لتصفية حركة المرور إلى نقطة النهاية الخاصة.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![اختيار الشبكة الظاهرية لنقطة النهاية الخاصة](/images/cloud/security/azure-pe-create-vnet.webp)
+
+       </Frame>
 
        </div>
     5. تابع عبر علامات التبويب المتبقية وانقر على **Create**. ستكون **Connection status** لنقطة النهاية الخاصة التي أنشأتها في حالة **Pending** إلى أن تضيف `Resource ID` الخاص بها إلى قائمة السماح لخدمة ClickHouse في الخطوات التالية.
     6. افتح واجهة الشبكة المرتبطة بنقطة النهاية الخاصة وانسخ **Private IPv4 address** — ستستخدمه في خطوة إعداد DNS.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![عنوان IP لنقطة النهاية الخاصة](/images/cloud/security/azure-pe-ip.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -193,7 +229,11 @@ doc_type: 'reference'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![معرّف مورد نقطة النهاية الخاصة](/images/cloud/security/azure-pe-resource-id.webp)
+
+    </Frame>
 
     </div>
 
@@ -209,7 +249,11 @@ doc_type: 'reference'
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![عامل تصفية نقاط النهاية الخاصة](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+    </Frame>
 
     </div>
 
@@ -242,7 +286,11 @@ doc_type: 'reference'
     3. في اللوحة المنبثقة، انسخ `DNS name`.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![اسم DNS لنقطة النهاية الخاصة](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

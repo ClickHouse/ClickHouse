@@ -50,7 +50,11 @@ Pour créer ou supprimer un VPC peering pour ClickHouse BYOC, suivez les étapes
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC Créer une connexion de peering](/images/cloud/reference/byoc-vpcpeering-gcp-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -58,7 +62,11 @@ Pour créer ou supprimer un VPC peering pour ClickHouse BYOC, suivez les étapes
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC Accepter une connexion de peering](/images/cloud/reference/byoc-vpcpeering-gcp-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -66,7 +74,11 @@ Pour créer ou supprimer un VPC peering pour ClickHouse BYOC, suivez les étapes
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Accepter une connexion de peering](/images/cloud/reference/byoc-vpcpeering-gcp-3.webp)
+
+    </Frame>
 
     </div>
 
@@ -114,7 +126,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Activation de BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -125,7 +141,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
     3. Dans le panneau qui s’ouvre, copiez les valeurs `Service name` et `DNS name` ; vous les utiliserez à l’étape suivante. (La génération de ces valeurs peut prendre un certain temps après l’activation de Private Link.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Endpoints privés](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -136,7 +156,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
     2. Ouvrez la boîte de dialogue de création Private Service Connect en cliquant sur le bouton &quot;Connect Endpoint&quot;.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Ouvrir Private Service Connect dans la console Google Cloud](/images/cloud/security/gcp-psc-open.webp)
+
+       </Frame>
 
        </div>
 
@@ -149,7 +173,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
        * (facultatif) **Enable global access** : activez cette option si vous souhaitez rendre l’endpoint accessible depuis n’importe quelle région
          <div className="ch-image-md">
 
+         <Frame>
+
          ![Activer l’accès global pour Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+         </Frame>
 
          </div>
        * Cliquez sur le bouton &quot;ADD ENDPOINT&quot; pour créer l’endpoint.
@@ -159,7 +187,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
     5. Après avoir créé l’endpoint, copiez la valeur `PSC Connection ID` ; vous l’utiliserez à l’étape suivante.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Copier l’identifiant de connexion PSC](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -177,7 +209,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Filtre des endpoints privés](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -196,7 +232,11 @@ GCP PSC (Private Service Connect) offre une connexion privée et sécurisée à 
     3. Dans le panneau qui s’ouvre, copiez le `DNS name`.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Nom DNS de l’endpoint privé](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

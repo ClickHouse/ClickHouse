@@ -51,7 +51,11 @@ More sources are to be supported.
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![Add ClickHouse as a target](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+    </Frame>
 
     </div>
 
@@ -70,7 +74,11 @@ To use MySQL as a source, make sure that the user has the <a href="https://doc.b
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![Add MySQL as a source](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+    </Frame>
 
     </div>
 
@@ -83,35 +91,55 @@ To use MySQL as a source, make sure that the user has the <a href="https://doc.b
 2. Select the added MySQL and ClickHouse instances and click "Test Connection" to ensure BladePipe is connected to the instances. Then, select the databases to be moved.
    <div className="ch-image-lg">
 
+   <Frame>
+
    ![Select source and target](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+   </Frame>
 
    </div>
 
 3. Select "Incremental" for DataJob Type, together with the "Full Data" option.
    <div className="ch-image-lg">
 
+   <Frame>
+
    ![Select sync type](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+   </Frame>
 
    </div>
 
 4. Select the tables to be replicated.
    <div className="ch-image-lg">
 
+   <Frame>
+
    ![Select tables](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+   </Frame>
 
    </div>
 
 5. Select the columns to be replicated.
    <div className="ch-image-lg">
 
+   <Frame>
+
    ![Select columns](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+   </Frame>
 
    </div>
 
 6. Confirm the DataJob creation, and the DataJob runs automatically.
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![DataJob is running](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+    </Frame>
 
     </div>
 </Step>
@@ -126,7 +154,11 @@ Alternatively, you can run the `CREATE VIEW xxx_v AS SELECT * FROM xxx FINAL;` c
 2. Create a <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">Verification DataJob</a>. Once the Verification DataJob is completed, review the results to confirm that the data in ClickHouse is the same as the data in MySQL.
    <div className="ch-image-lg">
 
+   <Frame>
+
    ![Verify data](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+   </Frame>
 
    </div>
    

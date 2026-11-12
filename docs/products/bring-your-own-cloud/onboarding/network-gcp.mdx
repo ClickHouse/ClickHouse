@@ -141,7 +141,11 @@ The PSC subnet can't change while private link is enabled. To switch to a differ
 3. In the opened flyout, copy the `Service name` and `DNS name` value — you'll use them in the next step. (It may take a while for the value to be generated after enabling private link.)
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoints](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -151,7 +155,11 @@ The PSC subnet can't change while private link is enabled. To switch to a differ
 2. Open the Private Service Connect creation dialog by clicking the "Connect Endpoint" button.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Open Private Service Connect in Google Cloud console](/images/cloud/security/gcp-psc-open.webp)
+
+   </Frame>
 
    </div>
 3. Input the following fields:
@@ -163,7 +171,11 @@ The PSC subnet can't change while private link is enabled. To switch to a differ
    - (optional) **Enable global access**: enable it if you want to make the endpoint available from any region
      <div className="ch-image-md">
 
+     <Frame>
+
      ![Enable Global Access for Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+     </Frame>
 
      </div>
    - Click "ADD ENDPOINT" button to create the endpoint.
@@ -172,7 +184,11 @@ The PSC subnet can't change while private link is enabled. To switch to a differ
 5. After creating the endpoint, copy the `PSC Connection ID` value — you'll use it in the next step.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Copy PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+   </Frame>
 
    </div>
 </Step>
@@ -212,7 +228,11 @@ You need to point all subdomains (wildcard) of the "DNS name" to GCP PSC endpoin
 3. In the opened flyout, copy the `DNS name`.
    <div className="ch-image-md">
 
+   <Frame>
+
    ![Private Endpoint DNS Name](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+   </Frame>
 
    </div>
    <Note>

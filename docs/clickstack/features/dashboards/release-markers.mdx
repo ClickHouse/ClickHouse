@@ -35,7 +35,11 @@ By default, ClickStack reads `ResourceAttributes['service.version']`, the OpenTe
 
 To read the version from somewhere else, set **Service Version Expression** on the log or trace source. Edit the source under **Team Settings → Sources**. On a log source the field sits behind **Configure Optional Fields**; on a trace source it appears directly in the form, below **Service Name Expression**.
 
+<Frame>
+
 ![Service Version Expression field in a log source's optional fields, showing the default placeholder ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
+
+</Frame>
 
 The value is a SQL expression, not an attribute name, which covers two common cases:
 

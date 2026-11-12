@@ -39,7 +39,11 @@ De forma predeterminada, ClickStack lee `ResourceAttributes['service.version']`,
 
 Para leer la versión desde otro lugar, establece **Expresión de versión del servicio** en la fuente de logs o fuente de traza. Edita la fuente en **Configuración del equipo → Sources**. En una fuente de logs, el campo se encuentra en **Configurar campos opcionales**; en una fuente de traza, aparece directamente en el formulario, debajo de **Expresión de nombre del servicio**.
 
+<Frame>
+
 ![Campo Expresión de versión del servicio en los campos opcionales de una fuente de logs, que muestra el marcador de posición predeterminado ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
+
+</Frame>
 
 El valor es una expresión SQL, no un nombre de atributo, lo que permite cubrir dos casos habituales:
 

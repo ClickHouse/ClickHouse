@@ -55,7 +55,11 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![ClickHouse를 대상으로 추가](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </Frame>
 
        </div>
 
@@ -75,7 +79,11 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![MySQL을 소스로 추가하기](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </Frame>
 
        </div>
 
@@ -88,35 +96,55 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
     2. 추가한 MySQL 및 ClickHouse 인스턴스를 선택한 다음 &quot;Test Connection&quot;을 클릭하여 BladePipe가 해당 인스턴스에 연결되어 있는지 확인합니다. 그런 다음 옮길 데이터베이스를 선택합니다.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![소스 및 대상 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </Frame>
 
        </div>
 
     3. DataJob Type에서 &quot;Incremental&quot;을 선택하고, &quot;Full Data&quot; 옵션도 함께 선택합니다.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![동기화 유형 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </Frame>
 
        </div>
 
     4. 복제할 테이블을 선택합니다.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![테이블 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </Frame>
 
        </div>
 
     5. 복제할 컬럼을 선택합니다.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![컬럼 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </Frame>
 
        </div>
 
     6. DataJob 생성을 확인하면 DataJob이 자동으로 실행됩니다.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![DataJob 실행 중](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -133,7 +161,11 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
     2. <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">검증용 DataJob</a>을 생성합니다. 검증용 DataJob이 완료되면 결과를 검토하여 ClickHouse의 데이터가 MySQL의 데이터와 동일한지 확인하십시오.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![데이터 검증](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </Frame>
 
        </div>
   </Step>

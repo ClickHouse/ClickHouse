@@ -55,7 +55,11 @@ Próximamente se admitirán más fuentes.
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Agregar ClickHouse como destino](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </Frame>
 
        </div>
 
@@ -75,7 +79,11 @@ Próximamente se admitirán más fuentes.
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Agregar MySQL como fuente](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </Frame>
 
        </div>
 
@@ -88,35 +96,55 @@ Próximamente se admitirán más fuentes.
     2. Selecciona las instancias de MySQL y ClickHouse que has agregado y haz clic en &quot;Test Connection&quot; para comprobar que BladePipe esté conectado a ellas. Luego, selecciona las bases de datos que se van a mover.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Seleccionar origen y destino](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </Frame>
 
        </div>
 
     3. Selecciona &quot;Incremental&quot; en DataJob Type, junto con la opción &quot;Full Data&quot;.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Seleccionar tipo de sincronización](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </Frame>
 
        </div>
 
     4. Selecciona las tablas que se van a replicar.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Seleccionar tablas](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </Frame>
 
        </div>
 
     5. Selecciona las columnas que se van a replicar.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Seleccionar columnas](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </Frame>
 
        </div>
 
     6. Confirma la creación del DataJob y este se ejecutará automáticamente.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![DataJob en ejecución](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -133,7 +161,11 @@ Próximamente se admitirán más fuentes.
     2. Cree un <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">DataJob de verificación</a>. Una vez que se complete el DataJob de verificación, revise los resultados para confirmar que los datos de ClickHouse sean los mismos que los de MySQL.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Verificar datos](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </Frame>
 
        </div>
   </Step>

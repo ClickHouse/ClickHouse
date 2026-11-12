@@ -59,7 +59,11 @@ infrastructure의 **Spoken name**을 기록해 둡니다. ClickHouse는 사용�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC VNet 피어링 생성](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -67,7 +71,11 @@ infrastructure의 **Spoken name**을 기록해 둡니다. ClickHouse는 사용�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC VNet 피어링 구성](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -92,7 +100,11 @@ infrastructure의 **Spoken name**을 기록해 둡니다. ClickHouse는 사용�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC VNet 피어링 확인](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -143,7 +155,11 @@ Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC PrivateLink 활성화](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -154,7 +170,11 @@ Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결
     3. 열린 플라이아웃에서 `Service name`(Private Link 서비스 별칭)과 `DNS name` 값을 복사합니다. 다음 단계에서 이 값들을 사용합니다. (Private Link를 활성화한 후 값이 생성되기까지 다소 시간이 걸릴 수 있습니다.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoints](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -164,26 +184,42 @@ Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결
     2. **Basics** 탭에서 private endpoint의 subscription, 리소스 그룹, 이름, Region을 선택합니다. Region은 클라이언트 애플리케이션이 연결하는 VNet의 Region과 같아야 합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoint 생성 기본 사항](/images/cloud/security/azure-pe-create-basic.webp)
+
+       </Frame>
 
        </div>
     3. **Resource** 탭에서 **Connect to an Azure resource by resource ID or alias**를 선택하고 이전 단계에서 확인한 `Service name`을 입력합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoint 리소스 선택](/images/cloud/security/azure-pe-resource.webp)
+
+       </Frame>
 
        </div>
     4. **Virtual Network** 탭에서 private endpoint를 생성할 가상 네트워크와 서브넷을 선택합니다. 필요에 따라 애플리케이션 보안 그룹을 연결하여 private endpoint로 향하는 트래픽을 필터링할 수 있습니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoint 가상 네트워크 선택](/images/cloud/security/azure-pe-create-vnet.webp)
+
+       </Frame>
 
        </div>
     5. 나머지 탭을 계속 진행한 후 **Create**를 클릭합니다. 생성된 private endpoint의 **Connection status**는 다음 단계에서 해당 `Resource ID`를 ClickHouse 서비스 허용 목록에 추가할 때까지 **Pending** 상태로 유지됩니다.
     6. private endpoint와 연결된 네트워크 인터페이스를 열고 **Private IPv4 address**를 복사합니다. DNS 설정 단계에서 사용합니다.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Private Endpoint IP 주소](/images/cloud/security/azure-pe-ip.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -193,7 +229,11 @@ Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![Private Endpoint Resource ID](/images/cloud/security/azure-pe-resource-id.webp)
+
+    </Frame>
 
     </div>
 
@@ -209,7 +249,11 @@ Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Private Endpoints Filter](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+    </Frame>
 
     </div>
 
@@ -242,7 +286,11 @@ Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결
     3. 열리는 플라이아웃에서 `DNS name`을 복사합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoint DNS 이름](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

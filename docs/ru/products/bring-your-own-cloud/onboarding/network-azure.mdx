@@ -59,7 +59,11 @@ ClickHouse BYOC on Azure поддерживает два варианта час
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Создание пиринга VNet](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -67,7 +71,11 @@ ClickHouse BYOC on Azure поддерживает два варианта час
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC Настройка пиринга VNet](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -92,7 +100,11 @@ ClickHouse BYOC on Azure поддерживает два варианта час
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Проверка пиринга VNet](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -143,7 +155,11 @@ Azure Private Link обеспечивает безопасное частное 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Включение BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -154,7 +170,11 @@ Azure Private Link обеспечивает безопасное частное 
     3. В открывшейся выдвижной панели скопируйте значения `Service name` (псевдоним сервиса Private Link) и `DNS-имя` — они понадобятся на следующих шагах. (После включения Private Link генерация этих значений может занять некоторое время.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Частные конечные точки](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -164,26 +184,42 @@ Azure Private Link обеспечивает безопасное частное 
     2. На вкладке **Basics** выберите подписку, группу ресурсов, имя и регион для частной конечной точки. Регион должен совпадать с регионом VNet, из которой подключается ваше клиентское приложение.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Создание частной конечной точки: основные параметры](/images/cloud/security/azure-pe-create-basic.webp)
+
+       </Frame>
 
        </div>
     3. На вкладке **Resource** выберите **Connect to an Azure resource by resource ID or alias** и введите `Service name`, полученное на предыдущем шаге.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Выбор ресурса частной конечной точки](/images/cloud/security/azure-pe-resource.webp)
+
+       </Frame>
 
        </div>
     4. На вкладке **Virtual Network** выберите виртуальную сеть и подсеть, в которых будет создана частная конечная точка. При необходимости добавьте группу безопасности приложений, чтобы фильтровать трафик к частной конечной точке.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Выбор виртуальной сети для частной конечной точки](/images/cloud/security/azure-pe-create-vnet.webp)
+
+       </Frame>
 
        </div>
     5. Перейдите по оставшимся вкладкам и нажмите **Create**. **Connection status** созданной частной конечной точки будет иметь значение **Pending**, пока на следующих шагах вы не добавите её `Resource ID` в список разрешённых для сервиса ClickHouse.
     6. Откройте сетевой интерфейс, связанный с частной конечной точкой, и скопируйте **Private IPv4 address** — он понадобится на этапе настройки DNS.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![IP-адрес частной конечной точки](/images/cloud/security/azure-pe-ip.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -193,7 +229,11 @@ Azure Private Link обеспечивает безопасное частное 
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![Resource ID частной конечной точки](/images/cloud/security/azure-pe-resource-id.webp)
+
+    </Frame>
 
     </div>
 
@@ -209,7 +249,11 @@ Azure Private Link обеспечивает безопасное частное 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Фильтр частных конечных точек](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+    </Frame>
 
     </div>
 
@@ -242,7 +286,11 @@ Azure Private Link обеспечивает безопасное частное 
     3. В открывшейся выдвижной панели скопируйте `DNS-имя`.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![DNS-имя частной конечной точки](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

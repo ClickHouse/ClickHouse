@@ -55,7 +55,11 @@ ClickHouse — один из готовых коннекторов BladePipe, к
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Добавьте ClickHouse в качестве целевого назначения](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </Frame>
 
        </div>
 
@@ -75,7 +79,11 @@ ClickHouse — один из готовых коннекторов BladePipe, к
 
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Добавление MySQL в качестве источника](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </Frame>
 
        </div>
 
@@ -88,35 +96,55 @@ ClickHouse — один из готовых коннекторов BladePipe, к
     2. Выберите добавленные экземпляры MySQL и ClickHouse и нажмите &quot;Test Connection&quot;, чтобы убедиться, что BladePipe подключён к ним. Затем выберите базы данных, которые нужно перенести.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Выберите источник и назначение](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </Frame>
 
        </div>
 
     3. В качестве типа DataJob выберите &quot;Incremental&quot; вместе с опцией &quot;Full Data&quot;.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Выберите тип синхронизации](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </Frame>
 
        </div>
 
     4. Выберите таблицы для репликации.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Выберите таблицы](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </Frame>
 
        </div>
 
     5. Выберите столбцы для репликации.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Выберите столбцы](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </Frame>
 
        </div>
 
     6. Подтвердите создание DataJob — он запустится автоматически.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![DataJob запущен](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -133,7 +161,11 @@ ClickHouse — один из готовых коннекторов BladePipe, к
     2. Создайте <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">Verification DataJob</a>. После завершения Verification DataJob проверьте результаты, чтобы убедиться, что данные в ClickHouse совпадают с данными в MySQL.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Проверка данных](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </Frame>
 
        </div>
   </Step>

@@ -48,7 +48,11 @@ doc_type: 'مرجع'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC إنشاء peering connection](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -58,7 +62,11 @@ doc_type: 'مرجع'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC قبول peering connection](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -75,7 +83,11 @@ doc_type: 'مرجع'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC إضافة جدول توجيه](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -92,7 +104,11 @@ doc_type: 'مرجع'
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC إضافة جدول توجيه](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -131,7 +147,11 @@ doc_type: 'مرجع'
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![تمكين BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -142,7 +162,11 @@ doc_type: 'مرجع'
     3. في اللوحة المنبثقة، انسخ قيمة `Service name` — ستستخدمها في الخطوة التالية. (قد يستغرق إنشاء القيمة بعض الوقت بعد تفعيل PrivateLink.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![نقاط النهاية الخاصة](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -155,7 +179,11 @@ doc_type: 'مرجع'
     3. انقر على &quot;Verify service&quot;.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![إعدادات نقطة نهاية AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </Frame>
 
        </div>
 
@@ -164,14 +192,22 @@ doc_type: 'مرجع'
        2. أضف المنطقة التي يعمل فيها تطبيق العميل إلى قائمة المناطق المدعومة. افتراضيًا، لا تكون مدعومة إلا منطقة البنية التحتية لـ BYOC هذه. يمكنك إضافة مناطق متعددة إذا أردت الاتصال من مناطق مختلفة، ولن يغيّر ClickHouse هذه القيم أو يعيد تعيينها.
           <div className="ch-image-md">
 
+          <Frame>
+
           ![إعدادات نقطة نهاية AWS PrivateLink العابرة للمناطق](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
+
+          </Frame>
 
           </div>
 
     5. اختر VPC والشبكات الفرعية (يوصى بشبكة فرعية واحدة لكل منطقة توافر).
        <div className="ch-image-md">
 
+       <Frame>
+
        ![اختيار VPC والشبكات الفرعية](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </Frame>
 
        </div>
 
@@ -194,7 +230,11 @@ doc_type: 'مرجع'
     9. بعد إنشاء نقطة النهاية، انسخ قيمة `Endpoint ID`، إذ ستستخدمها في الخطوة التالية.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![معرّف نقطة نهاية VPC](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -204,7 +244,11 @@ doc_type: 'مرجع'
     2. ابحث عن طلب الاتصال المُنشأ من VPC الخاص بك، ثم انقر على &quot;قبول طلب اتصال نقطة النهاية&quot; للموافقة عليه.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![الموافقة على BYOC PrivateLink](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -222,7 +266,11 @@ doc_type: 'مرجع'
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![عامل تصفية لنقاط النهاية الخاصة](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -234,7 +282,11 @@ doc_type: 'مرجع'
 
        <div className="ch-image-md">
 
+       <Frame>
+
        ![اسم DNS لنقطة النهاية الخاصة](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </Frame>
 
        </div>
 

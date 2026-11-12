@@ -50,7 +50,11 @@ ClickHouse BYOC в GCP поддерживает два варианта прив
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC Создание пирингового соединения](/images/cloud/reference/byoc-vpcpeering-gcp-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -58,7 +62,11 @@ ClickHouse BYOC в GCP поддерживает два варианта прив
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC Подтверждение пирингового соединения](/images/cloud/reference/byoc-vpcpeering-gcp-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -66,7 +74,11 @@ ClickHouse BYOC в GCP поддерживает два варианта прив
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Подтверждение пирингового соединения](/images/cloud/reference/byoc-vpcpeering-gcp-3.webp)
+
+    </Frame>
 
     </div>
 
@@ -114,7 +126,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Включение BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -125,7 +141,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
     3. В открывшейся выдвижной панели скопируйте значения `Service name` и `DNS name` — они понадобятся на следующем шаге. (После включения PrivateLink создание этих значений может занять некоторое время.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Частные конечные точки](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -136,7 +156,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
     2. Откройте диалог создания Private Service Connect, нажав кнопку &quot;Connect Endpoint&quot;.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Открытие Private Service Connect в консоли Google Cloud](/images/cloud/security/gcp-psc-open.webp)
+
+       </Frame>
 
        </div>
 
@@ -149,7 +173,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
        * (необязательно) **Enable global access**: включите, если хотите сделать конечную точку доступной из любого региона
          <div className="ch-image-md">
 
+         <Frame>
+
          ![Включение глобального доступа для Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+         </Frame>
 
          </div>
        * Нажмите кнопку &quot;ADD ENDPOINT&quot;, чтобы создать конечную точку.
@@ -159,7 +187,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
     5. После создания конечной точки скопируйте значение `PSC Connection ID` — оно понадобится на следующем шаге.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Копирование PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -177,7 +209,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Фильтр частных конечных точек](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -196,7 +232,11 @@ GCP PSC (Private Service Connect) обеспечивает безопасное 
     3. В открывшейся выдвижной панели скопируйте `DNS name`.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![DNS-имя частной конечной точки](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

@@ -48,7 +48,11 @@ ClickHouse BYOC의 VPC 피어링을 생성하거나 삭제하려면 다음 단�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 피어링 연결 생성](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -58,7 +62,11 @@ ClickHouse BYOC의 VPC 피어링을 생성하거나 삭제하려면 다음 단�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 피어링 연결 수락](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -75,7 +83,11 @@ ClickHouse BYOC의 VPC 피어링을 생성하거나 삭제하려면 다음 단�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 라우트 테이블 추가](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -92,7 +104,11 @@ ClickHouse BYOC의 VPC 피어링을 생성하거나 삭제하려면 다음 단�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 라우트 테이블 추가](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -131,7 +147,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC PrivateLink 활성화](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -142,7 +162,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
     3. 열리는 플라이아웃에서 `Service name` 값을 복사합니다. 이 값은 다음 단계에서 사용합니다. (PrivateLink를 활성화한 후 값이 생성되기까지 다소 시간이 걸릴 수 있습니다.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoints](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -155,7 +179,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
     3. &quot;Verify service&quot;를 클릭합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![AWS PrivateLink 엔드포인트 설정](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </Frame>
 
        </div>
 
@@ -164,14 +192,22 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
        2. 클라이언트 애플리케이션이 실행 중인 리전을 지원 리전 목록에 추가합니다. 기본적으로 이 BYOC 인프라가 있는 리전만 지원됩니다. 여러 리전에서 연결하려는 경우 여러 리전을 추가할 수 있으며, ClickHouse는 이러한 값을 변경하거나 재설정하지 않습니다.
           <div className="ch-image-md">
 
+          <Frame>
+
           ![AWS PrivateLink 리전 간 엔드포인트 설정](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
+
+          </Frame>
 
           </div>
 
     5. VPC와 서브넷을 선택합니다(가용 영역당 하나씩 권장).
        <div className="ch-image-md">
 
+       <Frame>
+
        ![VPC 및 서브넷 선택](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </Frame>
 
        </div>
 
@@ -194,7 +230,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
     9. 엔드포인트를 생성한 후 `Endpoint ID` 값을 복사합니다. 다음 단계에서 사용합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![VPC 엔드포인트 ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -204,7 +244,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
     2. 자체 VPC에서 생성된 연결 요청을 찾아 &quot;Accept endpoint connection request&quot;를 클릭하여 승인합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![BYOC PrivateLink 승인](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -222,7 +266,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Private Endpoint 필터](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -234,7 +282,11 @@ AWS PrivateLink를 사용하면 VPC 피어링이나 인터넷 게이트웨이 �
 
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoint DNS 이름](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </Frame>
 
        </div>
 

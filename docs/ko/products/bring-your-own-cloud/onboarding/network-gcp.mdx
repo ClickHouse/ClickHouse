@@ -50,7 +50,11 @@ ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC 피어링 연결 생성](/images/cloud/reference/byoc-vpcpeering-gcp-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -58,7 +62,11 @@ ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC 피어링 연결 수락](/images/cloud/reference/byoc-vpcpeering-gcp-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -66,7 +74,11 @@ ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 피어링 연결 수락](/images/cloud/reference/byoc-vpcpeering-gcp-3.webp)
+
+    </Frame>
 
     </div>
 
@@ -114,7 +126,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC PrivateLink 활성화](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -125,7 +141,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
     3. 열린 플라이아웃에서 `Service name`과 `DNS name` 값을 복사합니다. 다음 단계에서 사용합니다. (Private Link를 활성화한 후 값이 생성되기까지 다소 시간이 걸릴 수 있습니다.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoints](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -136,7 +156,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
     2. &quot;Connect Endpoint&quot; 버튼을 클릭하여 Private Service Connect 생성 대화상자를 엽니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Google Cloud 콘솔에서 Private Service Connect 열기](/images/cloud/security/gcp-psc-open.webp)
+
+       </Frame>
 
        </div>
 
@@ -149,7 +173,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
        * (선택 사항) **Enable global access**: 모든 Region에서 엔드포인트를 사용할 수 있도록 하려면 활성화합니다.
          <div className="ch-image-md">
 
+         <Frame>
+
          ![Private Service Connect의 Global Access 활성화](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+         </Frame>
 
          </div>
        * &quot;ADD ENDPOINT&quot; 버튼을 클릭하여 엔드포인트를 생성합니다.
@@ -159,7 +187,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
     5. 엔드포인트를 생성한 후 `PSC Connection ID` 값을 복사합니다. 다음 단계에서 사용합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![PSC Connection ID 복사](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -177,7 +209,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Private Endpoints 필터](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -196,7 +232,11 @@ GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 C
     3. 열린 플라이아웃에서 `DNS name`을 복사합니다.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Private Endpoint DNS 이름](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

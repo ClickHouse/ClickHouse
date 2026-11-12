@@ -59,7 +59,11 @@ VNet 对等互连和 Private Link 共用的步骤。
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 创建 VNet 对等互连](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -67,7 +71,11 @@ VNet 对等互连和 Private Link 共用的步骤。
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC 配置 VNet 对等互连](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -92,7 +100,11 @@ VNet 对等互连和 Private Link 共用的步骤。
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC 验证 VNet 对等互连](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -143,7 +155,11 @@ Azure Private Link 为您的 ClickHouse BYOC 服务提供安全的私网连接�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![启用 BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -154,7 +170,11 @@ Azure Private Link 为您的 ClickHouse BYOC 服务提供安全的私网连接�
     3. 在打开的弹出面板中，复制 `Service name` (Private Link 服务别名) 和 `DNS name` 的值——后续步骤中会用到它们。 (启用 Private Link 后，这些值可能需要一段时间才会生成。)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![专用终结点](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -164,26 +184,42 @@ Azure Private Link 为您的 ClickHouse BYOC 服务提供安全的私网连接�
     2. 在 **Basics** 选项卡中，选择专用终结点的订阅、资源组、名称和区域。该区域应与客户端应用程序连接所在的 VNet 区域相同。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![创建专用终结点基本设置](/images/cloud/security/azure-pe-create-basic.webp)
+
+       </Frame>
 
        </div>
     3. 在 **Resource** 选项卡中，选择 **Connect to an Azure resource by resource ID or alias**，然后输入上一步获取的 `Service name`。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![专用终结点资源选择](/images/cloud/security/azure-pe-resource.webp)
+
+       </Frame>
 
        </div>
     4. 在 **Virtual Network** 选项卡中，选择要创建专用终结点的虚拟网络和子网。您也可以附加应用程序安全组，以过滤流向专用终结点的流量。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![专用终结点虚拟网络选择](/images/cloud/security/azure-pe-create-vnet.webp)
+
+       </Frame>
 
        </div>
     5. 继续完成其余选项卡，然后单击 **Create**。创建的专用终结点的 **Connection status** 将保持 **Pending** 状态，直到您在后续步骤中将其 `Resource ID` 添加到 ClickHouse 服务允许列表。
     6. 打开与专用终结点关联的网络接口，并复制 **Private IPv4 address**；您将在 DNS 设置步骤中使用它。
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![专用终结点 IP 地址](/images/cloud/security/azure-pe-ip.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -193,7 +229,11 @@ Azure Private Link 为您的 ClickHouse BYOC 服务提供安全的私网连接�
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![专用终结点 Resource ID](/images/cloud/security/azure-pe-resource-id.webp)
+
+    </Frame>
 
     </div>
 
@@ -209,7 +249,11 @@ Azure Private Link 为您的 ClickHouse BYOC 服务提供安全的私网连接�
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![专用终结点过滤器](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+    </Frame>
 
     </div>
 
@@ -242,7 +286,11 @@ Azure Private Link 为您的 ClickHouse BYOC 服务提供安全的私网连接�
     3. 在打开的弹出面板中，复制 `DNS name`。
        <div className="ch-image-md">
 
+       <Frame>
+
        ![专用终结点 DNS 名称](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>

@@ -59,7 +59,11 @@ Antes de comenzar, familiarícese con el [emparejamiento de VNet de Azure](https
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Crear emparejamiento de VNet](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+
+    </Frame>
 
     </div>
 
@@ -67,7 +71,11 @@ Antes de comenzar, familiarícese con el [emparejamiento de VNet de Azure](https
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![BYOC Configurar emparejamiento de VNet](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+
+    </Frame>
 
     </div>
 
@@ -92,7 +100,11 @@ Antes de comenzar, familiarícese con el [emparejamiento de VNet de Azure](https
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![BYOC Verificar emparejamiento de VNet](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -143,7 +155,11 @@ Azure Private Link proporciona una conexión segura y privada con tus servicios 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Habilitar BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </Frame>
 
     </div>
   </Step>
@@ -154,7 +170,11 @@ Azure Private Link proporciona una conexión segura y privada con tus servicios 
     3. En el flyout que se abre, copie los valores de `Service name` (el alias del servicio Private Link) y `DNS name`; los utilizará en los siguientes pasos. (Los valores pueden tardar un tiempo en generarse después de habilitar Private Link.)
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Endpoints privados](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -164,26 +184,42 @@ Azure Private Link proporciona una conexión segura y privada con tus servicios 
     2. En la pestaña **Basics**, elija la suscripción, el grupo de recursos, el nombre y la región del endpoint privado. La región debe ser la de la VNet desde la que se conecta su aplicación cliente.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Aspectos básicos para crear un endpoint privado](/images/cloud/security/azure-pe-create-basic.webp)
+
+       </Frame>
 
        </div>
     3. En la pestaña **Resource**, seleccione **Connect to an Azure resource by resource ID or alias** e introduzca el `Service name` obtenido en el paso anterior.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Selección de recursos del endpoint privado](/images/cloud/security/azure-pe-resource.webp)
+
+       </Frame>
 
        </div>
     4. En la pestaña **Virtual Network**, elija la red virtual y la subred donde se creará el endpoint privado. De forma opcional, asocie un grupo de seguridad de aplicaciones para filtrar el tráfico hacia el endpoint privado.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Selección de red virtual del endpoint privado](/images/cloud/security/azure-pe-create-vnet.webp)
+
+       </Frame>
 
        </div>
     5. Continúe por las pestañas restantes y haga clic en **Create**. El **Connection status** del endpoint privado creado permanecerá en estado **Pending** hasta que agregue su `Resource ID` a la lista de permitidos del servicio ClickHouse en los pasos siguientes.
     6. Abra la interfaz de red asociada al endpoint privado y copie la **dirección IPv4 privada**; la utilizará en el paso de configuración de DNS.
        <div className="ch-image-lg">
 
+       <Frame>
+
        ![Dirección IP del endpoint privado](/images/cloud/security/azure-pe-ip.webp)
+
+       </Frame>
 
        </div>
   </Step>
@@ -193,7 +229,11 @@ Azure Private Link proporciona una conexión segura y privada con tus servicios 
 
     <div className="ch-image-lg">
 
+    <Frame>
+
     ![Resource ID del Private Endpoint](/images/cloud/security/azure-pe-resource-id.webp)
+
+    </Frame>
 
     </div>
 
@@ -209,7 +249,11 @@ Azure Private Link proporciona una conexión segura y privada con tus servicios 
 
     <div className="ch-image-md">
 
+    <Frame>
+
     ![Filtro de Private Endpoints](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+    </Frame>
 
     </div>
 
@@ -242,7 +286,11 @@ Azure Private Link proporciona una conexión segura y privada con tus servicios 
     3. En el flyout que se abre, copie el `DNS name`.
        <div className="ch-image-md">
 
+       <Frame>
+
        ![Nombre DNS de Private Endpoint](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+       </Frame>
 
        </div>
        <Note>
