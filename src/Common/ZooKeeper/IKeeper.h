@@ -34,11 +34,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperWatchTriggeredOther;
 }
 
-namespace silk
-{
-class FiberEvent;
-}
-
 namespace Coordination
 {
 
@@ -839,9 +834,6 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
 
-    /// The event set when the session expires, for waiters that must also watch something else.
-    virtual silk::FiberEvent & getExpiredEvent() = 0;
-
     /// Get the current connected node idx.
     virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
 
@@ -862,8 +854,6 @@ public:
     /// Returns 0 (epoch) by default, meaning implementations without progress
     /// tracking will fall back to plain timeout.
     virtual Int64 getLastReceivedTimestamp() const { return 0; }
-
-    virtual UInt64 getLastReceivedCycles() const { return 0; }
 
     virtual String tryGetAvailabilityZone() { return ""; }
 

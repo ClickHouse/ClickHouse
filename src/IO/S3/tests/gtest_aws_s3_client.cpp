@@ -205,7 +205,7 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         uri.uri.getScheme());
@@ -726,7 +726,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "https");
@@ -882,7 +882,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -1020,7 +1020,7 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
         /* s3_slow_all_threads_after_network_error = */ true,
         /* s3_slow_all_threads_after_retryable_error = */ true,
         /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
@@ -1082,7 +1082,7 @@ TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
         true,
         true,
         false,
-        DB::HTTPConnectionGroupType::STORAGE,
+        false,
         {},
         {},
         "https");
@@ -1173,7 +1173,7 @@ static DB::S3::PocoHTTPClientConfiguration createWebIdentityClientConfiguration(
         /* s3_slow_all_threads_after_network_error = */ true,
         /* s3_slow_all_threads_after_retryable_error = */ true,
         /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 }
@@ -1455,7 +1455,7 @@ std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
         /* s3_slow_all_threads_after_network_error= */ true,
         /* s3_slow_all_threads_after_retryable_error= */ true,
         /* enable_s3_requests_logging= */ false,
-        /* group= */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3= */ false,
         /* opt_disk_name= */ {},
         /* request_throttler= */ {},
         uri.uri.getScheme());
@@ -1683,7 +1683,7 @@ TEST(IOTestAwsS3Client, CredentialCapDoesNotAffectDataPlaneTimeouts)
         /* s3_slow_all_threads_after_network_error = */ true,
         /* s3_slow_all_threads_after_retryable_error = */ true,
         /* enable_s3_requests_logging = */ false,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {},
         "http");
