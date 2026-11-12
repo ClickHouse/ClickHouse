@@ -26,17 +26,18 @@ run_case() {
 
     local disk_name="objd_${suffix}_${CLICKHOUSE_DATABASE}"
 
+    # async_insert = 0: an async insert writes the part in a separate flush query, not the measured one.
     $CLICKHOUSE_CLIENT -m -q "
         create table local_${suffix} (id UInt64, v String) engine = MergeTree order by id
         settings ${part_setting}${fsync_setting};
         create table objstore_${suffix} (id UInt64, v String) engine = MergeTree order by id
         settings disk = disk(name = '${disk_name}', type = object_storage,
-                             object_storage_type = local_blob_storage, path = '${disk_name}/'),
+                             object_storage_type = local_blob_storage, path = '${CLICKHOUSE_DISKS_FILES}/${disk_name}/'),
                  ${part_setting}${fsync_setting};
         insert into local_${suffix} select number, toString(number) from numbers(2000)
-        settings log_comment = 'c-local-${suffix}';
+        settings async_insert = 0, log_comment = 'c-local-${suffix}';
         insert into objstore_${suffix} select number, toString(number) from numbers(2000)
-        settings log_comment = 'c-objstore-${suffix}';
+        settings async_insert = 0, log_comment = 'c-objstore-${suffix}';
     "
 }
 
@@ -64,7 +65,7 @@ run_merge_case() {
         settings ${common};
         create table objstore_${suffix} (id UInt64, v String) engine = MergeTree order by id
         settings disk = disk(name = '${disk_name}', type = object_storage,
-                             object_storage_type = local_blob_storage, path = '${disk_name}/'),
+                             object_storage_type = local_blob_storage, path = '${CLICKHOUSE_DISKS_FILES}/${disk_name}/'),
                  ${common};
         insert into local_${suffix} select number, toString(number) from numbers(1000);
         insert into local_${suffix} select number + 1000, toString(number) from numbers(1000);
@@ -97,7 +98,7 @@ run_alter_case() {
         settings ${common};
         create table objstore_${suffix} (id UInt64, v UInt64) engine = MergeTree order by id
         settings disk = disk(name = '${disk_name}', type = object_storage,
-                             object_storage_type = local_blob_storage, path = '${disk_name}/'),
+                             object_storage_type = local_blob_storage, path = '${CLICKHOUSE_DISKS_FILES}/${disk_name}/'),
                  ${common};
         insert into local_${suffix} select number, number from numbers(500);
         insert into objstore_${suffix} select number, number from numbers(500);
