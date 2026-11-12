@@ -1341,6 +1341,7 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
 
     auto parent_select_context = select_contexts.at(path.parent(2));
     auto select_context = metadata_snapshots.at(current)->getSQLSecurityOverriddenContext(parent_select_context);
+    select_context->setAllowCompoundTableIdentifierQualification(false);
     select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)

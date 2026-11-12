@@ -756,6 +756,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     ClientInfo client_info = table_context->getClientInfo();
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto refresh_context = view_metadata->getSQLSecurityOverriddenContext(table_context, &client_info);
+    refresh_context->setAllowCompoundTableIdentifierQualification(false);
     /// For `SQL SECURITY DEFINER`, `getSQLSecurityOverriddenContext` fills the empty user names in
     /// the context's `ClientInfo` with the definer. Do not assign the local `client_info` copy to
     /// the context: `setClientInfo` replaces the whole struct and would wipe that identity out.

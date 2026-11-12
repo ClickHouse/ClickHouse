@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
@@ -358,6 +359,9 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
+    /// The query of a table function such as `view` is a part of the query that calls it, not a stored definition.
+    view_context->setAllowCompoundTableIdentifierQualification(
+        view->getStorageID().database_name == ITableFunction::getDatabaseName());
     return view_context;
 }
 
@@ -994,6 +998,7 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
+    view_context->setAllowCompoundTableIdentifierQualification(false);
     return view_context;
 }
 

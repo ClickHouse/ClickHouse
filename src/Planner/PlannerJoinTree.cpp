@@ -1644,6 +1644,7 @@ void pushOrderByIntoView(
     try
     {
         auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+        view_context->setAllowCompoundTableIdentifierQualification(false);
 
         /// The injected inner `ORDER BY`/`LIMIT` is analyzed and executed under the
         /// view's effective context (`getSQLSecurityOverriddenContext`), not the outer
@@ -2504,8 +2505,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// StorageView::readImpl path enforces them in the correct namespace.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
+                        /// The view body is a stored definition; `inner_context` also analyzes user-typed filters.
+                        auto inner_query_context = Context::createCopyForStoredDefinition(inner_context);
+
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
+                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_query_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
                         inner_query_tree->as<QueryNode &>().setIsSubquery(true);
@@ -2595,7 +2599,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// check this pushdown path is meant to be equivalent to. Without this,
                                 /// collectSelectedColumnsFromTable would pick up every column the view
                                 /// body mentions and over-require grants on the underlying table.
-                                InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_context, options, columns_names);
+                                InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_query_context, options, columns_names);
                                 auto access_check_tree = access_check_interp.getQueryTree();
                                 auto access_check_dist_node = findTableNodeByStorage(access_check_tree, underlying_dist);
                                 /// This tree is the same inner query re-analyzed with the read column list;
