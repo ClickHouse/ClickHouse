@@ -721,6 +721,8 @@
     M(1024, BUZZHOUSE_ORACLE) \
     M(1025, GPU_ERROR) \
     M(1026, ICEBERG_CATALOG_CONCURRENT_UPDATE) \
+    M(1027, IDEMPOTENCY_KEY_MISMATCH) \
+    M(1028, IDEMPOTENCY_KEY_NOT_SUPPORTED) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES

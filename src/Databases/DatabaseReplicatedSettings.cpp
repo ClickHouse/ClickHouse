@@ -29,6 +29,7 @@ extern const int UNKNOWN_SETTING;
     DECLARE(String, default_replica_path, "/clickhouse/databases/{uuid}", "The path to the database in ZooKeeper. Used during database creation if arguments are omitted.", 0) \
     DECLARE(String, default_replica_shard_name, "{shard}", "The shard name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
     DECLARE(String, default_replica_name, "{replica}", "The name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
+    DECLARE(UInt64, idempotency_key_ttl_sec, 604800, "How long the `idempotency_key` of a DDL query committed through this replica is kept. The value is stored with the key, so every replica treats the key the same way", 0) \
     DECLARE(Bool, internal_replication, false, "Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas)", 0) \
 
 DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS, DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES)

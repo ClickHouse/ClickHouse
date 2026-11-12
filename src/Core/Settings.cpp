@@ -11679,6 +11679,20 @@ Enable table function `eval`.
 )", EXPERIMENTAL, allow_experimental_eval_table_function, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, enable_ddl_idempotency_key, false, R"(
+Enable the experimental [`idempotency_key`](#idempotency_key) setting for DDL queries on `Replicated` databases.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to gate the experimental `idempotency_key` setting."}) \
+    DECLARE(String, idempotency_key, "", R"(
+A key chosen by the client that makes a DDL query on a `Replicated` database run at most once, so that it can be retried safely after a lost connection or a crash. The commit of the query stores the key in Keeper. A retry with the same key, through any replica of the database, does not run the statement again and returns the status of the original one (no rows once the database has removed its log entry, see `logs_to_keep`), a retry while the original is still running waits for it, and an attempt that did not commit records nothing. A retry does not repeat the local synchronous waits of the original (`SYNC`, `alter_sync`) unless the original set `database_replicated_enforce_synchronous_settings`.
+
+The key identifies the statement text and the user ID: the same key with another statement or another user is an `IDEMPOTENCY_KEY_MISMATCH` error, and the settings of the retry are not compared. Users from configuration files or from replicated access storage have the same ID on every replica. A key expires after the `idempotency_key_ttl_sec` setting of the replica that committed the query.
+
+Supported statements: `CREATE` of a view, a dictionary, a materialized view with `TO`, or a table with the engine `MergeTree` or one of its variants without replication, `Memory`, `Null`, `Log`, `TinyLog`, `StripeLog`, `Distributed` or `Merge`; `DROP` of one table, `RENAME` or `EXCHANGE` of one table, and `ALTER TABLE` of a table with one of these engines, a `ReplicatedMergeTree` variant, `Buffer`, a view or a materialized view with `TO`, other than mutations (`DELETE`, `UPDATE`, `MATERIALIZE ...`) and partition operations (also `CLEAR ... IN PARTITION`). Other statements and engines, statements nested in `PARALLEL WITH` or `EXECUTE AS`, `ON CLUSTER`, `DROP ... IF EXISTS`, `RENAME ... IF EXISTS`, and databases with other engines are refused with an `IDEMPOTENCY_KEY_NOT_SUPPORTED` error before anything is executed, so a client can run them again without the key. `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `SET` and `USE` ignore the key.
+
+Requires [`enable_ddl_idempotency_key`](#enable_ddl_idempotency_key).
+)", IMPORTANT | EXPERIMENTAL, \
+        {"26.11", "", "", "New setting."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

@@ -74,6 +74,8 @@ private:
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
+    void cleanupAuxiliaryNodes(const ZooKeeperPtr & zookeeper) override;
+    static constexpr Int64 IDEMPOTENCY_KEYS_PRUNE_PERIOD_SEC = 3600;
     static bool isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep);
 
     bool checkParentTableExists(const UUID & uuid) const;
@@ -97,6 +99,8 @@ private:
     std::unordered_set<std::shared_ptr<Poco::Event>> log_ptr_waiters;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
     std::atomic_bool unsynced_after_recovery = false;
+    /// Only the cleanup thread touches it.
+    Int64 last_idempotency_keys_prune_time = 0;
 
     /// EphemeralNodeHolder has reference to ZooKeeper, it may become dangling
     ZooKeeperPtr active_node_holder_zookeeper;

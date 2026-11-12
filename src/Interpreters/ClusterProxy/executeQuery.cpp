@@ -69,12 +69,14 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_insert_select_as_async_insert;
+    extern const SettingsBool enable_ddl_idempotency_key;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
     extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsString idempotency_key;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsDouble limit;
     extern const SettingsLoadBalancing load_balancing;
@@ -306,6 +308,18 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::parallel_replicas_for_object_storage_tables].changed = false;
     }
 
+    /// Initiator-only DDL settings; an older shard would reject the `IMPORTANT` `idempotency_key`.
+    if (settings[Setting::idempotency_key].changed || !settings[Setting::idempotency_key].value.empty())
+    {
+        settings[Setting::idempotency_key] = "";
+        settings[Setting::idempotency_key].changed = false;
+    }
+    if (settings[Setting::enable_ddl_idempotency_key].changed || settings[Setting::enable_ddl_idempotency_key])
+    {
+        settings[Setting::enable_ddl_idempotency_key] = false;
+        settings[Setting::enable_ddl_idempotency_key].changed = false;
+    }
+
     /// `database` is an initiator-only setting as well: the query sent to a shard may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
@@ -327,6 +341,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
     "async_insert_select_as_async_insert",
     "parallel_replicas_for_object_storage_tables",
+    "idempotency_key", "enable_ddl_idempotency_key",
     "database",
 };
 

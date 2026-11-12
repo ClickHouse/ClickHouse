@@ -7,6 +7,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <QueryPipeline/BlockIO.h>
@@ -101,6 +102,11 @@ public:
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags, DDLGuardPtr && database_guard) override;
+
+    /// The node of an `idempotency_key` that has not expired (see DDLIdempotencyKey.h).
+    std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKey(const String & key) const;
+    /// The result of a statement with an `idempotency_key` that committed earlier as `entry_name`.
+    BlockIO getDDLIdempotencyKeyAnswer(const String & entry_name, ContextPtr query_context, DDLGuardPtr && database_guard) const;
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
@@ -291,7 +297,13 @@ private:
         const String & replicas_path,
         ContextPtr context,
         const Strings & hosts_to_wait,
-        DDLGuardPtr && database_guard);
+        DDLGuardPtr && database_guard,
+        bool entry_may_be_removed = false);
+
+    /// The replicas of our replica group, without those created after the entry `created_before_entry` if it is set.
+    Strings getHostsToWait(const ZooKeeperPtr & zookeeper, std::optional<UInt32> created_before_entry = {}) const;
+    String getDDLIdempotencyKeyPath(const String & key) const;
+    void checkTablesForDDLIdempotencyKey(const ASTPtr & query, ContextPtr query_context) const;
 
     const String zookeeper_name;
     const String zookeeper_path;

@@ -104,6 +104,8 @@ struct DDLLogEntry
     String toString() const;
     void parse(const String & data);
     void assertVersion() const;
+    /// Whether the replicas executing the entry create `synced` nodes (`database_replicated_enforce_synchronous_settings`).
+    bool enforcesSynchronousSettings() const;
 };
 
 struct DDLTaskBase

@@ -19,6 +19,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -730,6 +731,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
     }
+    throwIfDDLIdempotencyKeyIsSet(getContext());
 
 #if CLICKHOUSE_CLOUD
     if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))

@@ -9723,6 +9723,16 @@ Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
     return ddl_additional_checks_on_enqueue;
 }
 
+void Context::setDDLIdempotencyKey(std::shared_ptr<const DDLIdempotencyKey> key)
+{
+    ddl_idempotency_key = std::move(key);
+}
+
+std::shared_ptr<const DDLIdempotencyKey> Context::getDDLIdempotencyKey() const
+{
+    return ddl_idempotency_key;
+}
+
 void Context::setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback)
 {
     query_execution_started_callback = std::move(callback);

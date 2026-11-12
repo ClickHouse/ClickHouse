@@ -301,6 +301,10 @@ static struct InitFiu
     PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
     PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
     PAUSEABLE(database_replicated_pause_after_database_name_fetch) \
+    PAUSEABLE_ONCE(database_replicated_idempotency_key_pause_after_first_probe) \
+    PAUSEABLE_ONCE(database_replicated_idempotency_key_pause_before_enqueue) \
+    PAUSEABLE_ONCE(database_replicated_idempotency_key_pause_before_commit) \
+    PAUSEABLE_ONCE(database_replicated_idempotency_key_pause_after_commit) \
     REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \

@@ -167,6 +167,8 @@ protected:
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
     void cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
     virtual bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat);
+    /// Removes expired nodes the worker keeps next to the queue, called by the cleanup thread.
+    virtual void cleanupAuxiliaryNodes(const ZooKeeperPtr & /*zookeeper*/) {}
 
     /// Init task node
     void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);

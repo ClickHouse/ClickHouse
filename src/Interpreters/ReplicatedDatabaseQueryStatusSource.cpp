@@ -31,7 +31,8 @@ ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
     const String & zk_replicas_path,
     ContextPtr context_,
     const Strings & hosts_to_wait,
-    DDLGuardPtr && database_guard_)
+    DDLGuardPtr && database_guard_,
+    bool entry_may_be_removed_)
     : DistributedQueryStatusSource(
         zookeeper_name_,
         zk_node_path,
@@ -39,7 +40,8 @@ ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
         std::make_shared<const Block>(getSampleBlock()),
         context_,
         hosts_to_wait,
-        "ReplicatedDatabaseQueryStatusSource")
+        "ReplicatedDatabaseQueryStatusSource",
+        entry_may_be_removed_)
     , database_guard(std::move(database_guard_))
 {
 }

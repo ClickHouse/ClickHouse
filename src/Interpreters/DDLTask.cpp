@@ -151,7 +151,9 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
             "database", "select", "order", "sort", "filter", "additional_result_filter",
             "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
             "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
+            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+            /// The idempotency key is checked by the initiator only (see `DDLIdempotencyKey.h`).
+            "idempotency_key", "enable_ddl_idempotency_key"};
         for (const auto * name : initiator_only_settings)
             settings->removeSetting(name);
     }
@@ -864,22 +866,25 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
     return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
 }
 
-void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
+bool DDLLogEntry::enforcesSynchronousSettings() const
 {
-    chassert(!completely_processed);
-    if (!entry.settings)
-        return;
+    if (!settings)
+        return false;
 
     Field value;
-    if (!entry.settings->tryGet("database_replicated_enforce_synchronous_settings", value))
-        return;
+    if (!settings->tryGet("database_replicated_enforce_synchronous_settings", value))
+        return false;
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
     chassert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
-    if (!value.safeGet<UInt64>())
-        return;
+    return value.safeGet<UInt64>();
+}
 
-    zookeeper->createIfNotExists(getSyncedNodePath(), "");
+void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
+{
+    chassert(!completely_processed);
+    if (entry.enforcesSynchronousSettings())
+        zookeeper->createIfNotExists(getSyncedNodePath(), "");
 }
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)

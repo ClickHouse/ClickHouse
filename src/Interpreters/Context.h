@@ -280,6 +280,7 @@ struct BackgroundTaskSchedulingSettings;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
+struct DDLIdempotencyKey;
 
 class AsynchronousInsertQueue;
 
@@ -808,6 +809,7 @@ protected:
     std::optional<UUID> parent_table_uuid; /// See comment on setParentTable().
     StopToken ddl_query_cancellation; // See comment on setDDLQueryCancellation().
     Coordination::Requests ddl_additional_checks_on_enqueue; // See comment on setDDLAdditionalChecksOnEnqueue().
+    std::shared_ptr<const DDLIdempotencyKey> ddl_idempotency_key; // See comment on setDDLIdempotencyKey().
 
     MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
                                                         /// It's shared with all children contexts.
@@ -2206,6 +2208,9 @@ public:
     /// Allows adding extra zookeeper operations to the transaction that enqueues a DDL query in DatabaseReplicated.
     void setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests);
     Coordination::Requests getDDLAdditionalChecksOnEnqueue() const;
+    /// The `idempotency_key` of a client DDL query; consumed by DatabaseReplicated when the query makes its log entry.
+    void setDDLIdempotencyKey(std::shared_ptr<const DDLIdempotencyKey> key);
+    std::shared_ptr<const DDLIdempotencyKey> getDDLIdempotencyKey() const;
 
     /// Called by the interpreter after the query has passed its checks,
     /// right before it starts its main work.

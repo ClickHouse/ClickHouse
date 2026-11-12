@@ -41,12 +41,15 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
@@ -116,6 +119,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int IDEMPOTENCY_KEY_NOT_SUPPORTED;
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int NO_ACTIVE_REPLICAS;
@@ -139,6 +143,7 @@ namespace FailPoints
     extern const char database_replicated_pause_after_database_name_fetch[];
     extern const char database_replicated_throw_on_stop_replication[];
     extern const char database_replicated_restore_table_created_by_other_replica[];
+    extern const char database_replicated_idempotency_key_pause_before_enqueue[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1654,8 +1659,22 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (!flags.internal && query_context->isDDLOrOnClusterInternal())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
+    auto idempotency_key = query_context->getDDLIdempotencyKey();
+    if (idempotency_key)
+    {
+        if (idempotency_key->state != DDLIdempotencyKey::State::Pending)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A query with idempotency_key makes more than one log entry");
+        checkTablesForDDLIdempotencyKey(query, query_context);
+        idempotency_key->state = DDLIdempotencyKey::State::Enqueued;
+        getZooKeeper()->createIfNotExists(fs::path(zookeeper_path) / "idempotency", "");
+    }
+
     checkQueryValid(query, query_context);
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
+
+    /// The settings of the entry do not carry the key (see `DDLLogEntry::setSettingsIfRequired`), so its text must not either.
+    static constexpr std::string_view idempotency_key_settings[] = {"idempotency_key", "enable_ddl_idempotency_key"};
+    removeSettingsFromQuery(query, idempotency_key_settings);
 
     DDLLogEntry entry;
     entry.query = query->formatWithSecretsOneLine();
@@ -1664,31 +1683,139 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = query_context->getClientInfo().initial_query_id;
     entry.is_backup_restore = flags.distributed_backup_restore;
+
+    if (idempotency_key)
+        FailPointInjection::pauseFailPoint(FailPoints::database_replicated_idempotency_key_pause_before_enqueue);
+
     String node_path = worker->tryEnqueueAndExecuteEntry(entry, query_context, flags);
 
-    Strings hosts_to_wait;
-    Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-
-    std::vector<String> paths;
-    for (const auto & host : unfiltered_hosts)
-        paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-    auto replica_groups = getZooKeeper()->tryGet(paths);
-
-    for (size_t i = 0; i < paths.size(); ++i)
-    {
-        if (replica_groups[i].data == replica_group_name)
-            hosts_to_wait.push_back(unfiltered_hosts[i]);
-    }
-
+    if (idempotency_key && idempotency_key->state == DDLIdempotencyKey::State::Answered)
+        return getDDLIdempotencyKeyAnswer(fs::path(node_path).filename(), query_context, std::move(database_guard));
 
     return getQueryStatus(
         zookeeper_name,
         node_path,
         fs::path(zookeeper_path) / "replicas",
         query_context,
-        hosts_to_wait,
+        getHostsToWait(getZooKeeper()),
         std::move(database_guard));
+}
+
+Strings DatabaseReplicated::getHostsToWait(const ZooKeeperPtr & zookeeper, std::optional<UInt32> created_before_entry) const
+{
+    Strings hosts_to_wait;
+    Strings unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+    std::vector<String> paths;
+    for (const auto & host : unfiltered_hosts)
+        paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+    auto replica_groups = zookeeper->tryGet(paths);
+
+    zkutil::ZooKeeper::MultiTryGetResponse creation_log_ptrs;
+    if (created_before_entry)
+    {
+        paths.clear();
+        for (const auto & host : unfiltered_hosts)
+            paths.push_back(zookeeper_path + "/replicas/" + host + "/max_log_ptr_at_creation");
+        creation_log_ptrs = zookeeper->tryGet(paths);
+    }
+
+    for (size_t i = 0; i < unfiltered_hosts.size(); ++i)
+    {
+        if (replica_groups[i].data != replica_group_name)
+            continue;
+
+        /// A replica created after the entry never executes it.
+        if (created_before_entry && creation_log_ptrs[i].error == Coordination::Error::ZOK
+            && parse<UInt32>(creation_log_ptrs[i].data) >= *created_before_entry)
+            continue;
+
+        hosts_to_wait.push_back(unfiltered_hosts[i]);
+    }
+    return hosts_to_wait;
+}
+
+String DatabaseReplicated::getDDLIdempotencyKeyPath(const String & key) const
+{
+    return fs::path(zookeeper_path) / "idempotency" / getDDLIdempotencyKeyNodeName(key);
+}
+
+std::optional<DDLIdempotencyKeyNode> DatabaseReplicated::tryReadDDLIdempotencyKey(const String & key) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryReadDDLIdempotencyKey");
+    auto zookeeper = getZooKeeper();
+    auto now = getDDLIdempotencyKeeperTime(zookeeper, fs::path(zookeeper_path) / "idempotency");
+    if (!now)
+        return {};
+    return tryReadDDLIdempotencyKeyNode(zookeeper, getDDLIdempotencyKeyPath(key), *now);
+}
+
+BlockIO DatabaseReplicated::getDDLIdempotencyKeyAnswer(const String & entry_name, ContextPtr query_context, DDLGuardPtr && database_guard) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::getDDLIdempotencyKeyAnswer");
+    auto zookeeper = getZooKeeper();
+    String entry_path = fs::path(zookeeper_path) / "log" / entry_name;
+
+    /// The entry committed, but its status is no longer kept.
+    String entry_data;
+    if (!zookeeper->tryGet(entry_path, entry_data))
+        return {};
+
+    DDLLogEntry entry;
+    entry.parse(entry_data);
+    /// Wait for what the original query waited for: replicas create `synced` nodes only if it asked for them.
+    auto status_context = Context::createCopy(query_context);
+    status_context->setSetting("database_replicated_enforce_synchronous_settings", entry.enforcesSynchronousSettings());
+
+    return getQueryStatus(
+        zookeeper_name,
+        entry_path,
+        fs::path(zookeeper_path) / "replicas",
+        status_context,
+        getHostsToWait(zookeeper, DDLTaskBase::getLogEntryNumber(entry_name)),
+        std::move(database_guard),
+        /* entry_may_be_removed */ true);
+}
+
+void DatabaseReplicated::checkTablesForDDLIdempotencyKey(const ASTPtr & query, ContextPtr query_context) const
+{
+    Strings table_names;
+    if (const auto * rename = query->as<ASTRenameQuery>())
+    {
+        for (const auto & element : rename->getElements())
+        {
+            table_names.push_back(element.from.getTable());
+            table_names.push_back(element.to.getTable());
+        }
+    }
+    else if (const auto * ddl_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(query.get()); ddl_query && !query->as<ASTCreateQuery>())
+    {
+        table_names.push_back(ddl_query->getTable());
+    }
+
+    /// Hidden tables are created or dropped while the statement executes, before its commit.
+    for (const auto & table_name : table_names)
+    {
+        auto table = tryGetTable(table_name, query_context);
+        if (!table)
+            continue;
+        auto materialized_view = castStorage<StorageMaterializedView>(table, DeferredTable::Load);
+        if ((materialized_view && materialized_view->hasInnerTable()) || table->getName() == "TimeSeries"
+            || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
+            throw Exception(
+                ErrorCodes::IDEMPOTENCY_KEY_NOT_SUPPORTED,
+                "idempotency_key is not supported for tables that own hidden tables, like {}",
+                backQuoteIfNeed(table_name));
+
+        if (query->as<ASTAlterQuery>())
+        {
+            String engine_name = unwrapStorageProxy(table)->getName();
+            if (!isDDLIdempotencyKeyAlterEngineSupported(engine_name))
+                throw Exception(
+                    ErrorCodes::IDEMPOTENCY_KEY_NOT_SUPPORTED, "idempotency_key is not supported for ALTER of a table with engine {}", engine_name);
+        }
+    }
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -3472,6 +3599,7 @@ The `default_replica_path`, `default_replica_shard_name` and `default_replica_na
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
+| `idempotency_key_ttl_sec`                                                    | 604800                         | How long the `idempotency_key` of a DDL query committed through this replica is kept. The value is stored with the key, so every replica treats the key the same way                                                                                                                                                                  |
 | `internal_replication`                                                       | false                          | Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas) |
 
 Default values may be overwritten in the configuration file
@@ -3502,13 +3630,15 @@ BlockIO DatabaseReplicated::getQueryStatus(
     const String & replicas_path,
     ContextPtr context_,
     const Strings & hosts_to_wait,
-    DDLGuardPtr && database_guard)
+    DDLGuardPtr && database_guard,
+    bool entry_may_be_removed)
 {
     BlockIO io;
     if (context_->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
         return io;
 
-    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(zookeeper_name, node_path, replicas_path, context_, hosts_to_wait, std::move(database_guard));
+    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(
+        zookeeper_name, node_path, replicas_path, context_, hosts_to_wait, std::move(database_guard), entry_may_be_removed);
     io.pipeline = QueryPipeline(std::move(source));
 
     if (context_->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE

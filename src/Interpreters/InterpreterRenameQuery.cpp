@@ -1,6 +1,7 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -148,6 +149,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             ddl_guards[to]->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
         }
+        throwIfDDLIdempotencyKeyIsSet(getContext());
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
         StorageID to_table_id{elem.to_database_name, elem.to_table_name};
