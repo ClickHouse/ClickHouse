@@ -400,6 +400,8 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+    /// The active transaction was passed in at construction (e.g. the one of the parent part), and its owner commits or undoes it.
+    virtual bool hasSharedTransaction() const = 0;
 
     /// Lets the active transaction move the buffered data of the files being written to `tmp_data`
     /// once it takes more than `max_bytes_in_memory` of memory. Applies until the transaction
