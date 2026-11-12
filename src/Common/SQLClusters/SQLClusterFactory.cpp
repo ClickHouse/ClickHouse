@@ -78,12 +78,6 @@ bool isBoolProperty(std::string_view name)
         || name == "allow_distributed_ddl_queries";
 }
 
-/// `Cluster` reads these keys with Poco `getBool`, which expands `${...}` against the
-/// server configuration. A value that is true only after expanding a listener port
-/// (for example `secure = '${tcp_port_secure}'` while this server has `tcp_port_secure = 9440`)
-/// would then be stored as the original SQL and fail on a peer that has no such key.
-/// Parse the raw SQL field here, reject configuration references, and rewrite the field
-/// to a Boolean so persistence and later loads do not interpolate.
 void validateAndNormalizeBoolProperty(Field & value, std::string_view name)
 {
     if (value.getType() == Field::Types::String)
@@ -353,8 +347,6 @@ void resolveOmittedPort(
     if (properties.tryGet("port"))
         return;
 
-    /// Interpret `secure` from the raw SQL field. Do not expand configuration references:
-    /// `getBool` would turn `${tcp_port_secure}` into this server's listener port.
     bool is_secure = false;
     if (const auto * secure = properties.tryGet("secure"))
     {
