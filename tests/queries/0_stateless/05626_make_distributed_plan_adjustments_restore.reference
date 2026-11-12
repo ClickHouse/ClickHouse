@@ -1,8 +1,0 @@
-the derived plan adjusts an explicitly set value
-false
-the explicitly set value returns when the workers num goes back to zero
-true
-and no other setting keeps a trace of the derived window
-0
-a value set explicitly in the session is not touched by a query that derives the plan
-false

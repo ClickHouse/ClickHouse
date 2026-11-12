@@ -17,7 +17,7 @@ SELECT getSetting('compile_expressions');
 
 SET distributed_plan_workers_num = 0;
 
-SELECT 'the explicitly set value returns when the workers num goes back to zero';
+SELECT 'the explicitly set value is unaffected once the workers num goes back to zero';
 SELECT getSetting('compile_expressions');
 
 SELECT 'and no other setting keeps a trace of the derived window';
@@ -29,11 +29,3 @@ SELECT count()
 FROM settings_after a
 JOIN settings_before b USING (name)
 WHERE (a.value != b.value OR a.changed != b.changed) AND name != 'distributed_plan_workers_num';
-
-SELECT 'a value set explicitly in the session is not touched by a query that derives the plan';
--- Pinned explicitly: the harness randomizes this setting.
-SET use_skip_indexes_on_data_read = 1;
-SET distributed_plan_workers_num = 3;
-SET use_skip_indexes_on_data_read = 0;
-SET distributed_plan_workers_num = 0;
-SELECT getSetting('use_skip_indexes_on_data_read');

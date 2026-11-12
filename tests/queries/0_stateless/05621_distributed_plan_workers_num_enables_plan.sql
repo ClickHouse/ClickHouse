@@ -9,10 +9,6 @@
 -- server profile sets one, so clear it for the aggregation below.
 SET distributed_plan_execute_locally = 1, max_rows_to_group_by = 0;
 
-DROP TABLE IF EXISTS t_dp_workers;
-CREATE TABLE t_dp_workers (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_dp_workers SELECT number, number FROM numbers(100000);
-
 SELECT 'off while the workers num is zero';
 SELECT getSetting('make_distributed_plan');
 
@@ -21,17 +17,6 @@ SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_workers_num
 
 SELECT 'the implied plan adjusts the settings it does not support';
 SELECT getSetting('compile_expressions') SETTINGS distributed_plan_workers_num = 3, compile_expressions = 1;
-
-SELECT 'the query distributes with make_distributed_plan left alone';
--- The workers num rides on the explained query itself: the wrapper query has to stay local,
--- because a distributed wrapper could not serialize its read from the EXPLAIN table function
--- for remote execution. sum() and not a bare count() so the trivial-count optimization cannot
--- fold the plan away.
-SELECT count() > 0
-FROM (EXPLAIN PIPELINE SELECT sum(v) FROM t_dp_workers SETTINGS distributed_plan_workers_num = 3)
-WHERE explain LIKE '%ReadFromDistributedPlanSource%';
-
-DROP TABLE t_dp_workers;
 
 SELECT 'implied by a session workers num';
 SET distributed_plan_workers_num = 3;

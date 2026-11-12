@@ -4,8 +4,8 @@
 -- Same invariant as 04656, but with the plan derived from `distributed_plan_workers_num`
 -- instead of set explicitly: local fragment contexts are cloned from the initiator and turn
 -- `make_distributed_plan` off to run their already-split fragments, and that clone must keep
--- the adjusted settings (`compile_expressions` and friends) rather than restore the values
--- remembered on the initiator - for a fragment the adjustments are the point.
+-- the adjusted settings (`compile_expressions` and friends) - for a fragment the adjustments
+-- are the point.
 
 -- Where the environment pins `make_distributed_plan` const (ClickHouse Cloud), the statement
 -- below fails with `should not be changed` and the harness skips the test; the derivation the

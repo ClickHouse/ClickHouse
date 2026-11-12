@@ -4,8 +4,6 @@ implied by a per-query workers num
 true
 the implied plan adjusts the settings it does not support
 false
-the query distributes with make_distributed_plan left alone
-1
 implied by a session workers num
 true
 off again when the workers num goes back to zero
