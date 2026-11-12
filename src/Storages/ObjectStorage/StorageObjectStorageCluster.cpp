@@ -348,7 +348,7 @@ void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & com
 Pipe StorageObjectStorageCluster::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 void StorageObjectStorageCluster::checkAlterPartitionIsPossible(

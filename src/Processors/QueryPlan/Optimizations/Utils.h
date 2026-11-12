@@ -76,9 +76,16 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
+
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
+
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
 
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how

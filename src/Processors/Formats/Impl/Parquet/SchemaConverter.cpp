@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,7 +25,6 @@
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
-#include <unordered_set>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -36,7 +36,6 @@ namespace DB::ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Parquet
@@ -44,7 +43,7 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const FileFooter & file_footer_, const ReadOptions & options_,
-    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
+    const Block * sample_block_, std::optional<UnorderedMapWithMemoryTracking<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_footer(file_footer_), file_metadata(file_footer_.metadata), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
@@ -85,7 +84,7 @@ void SchemaConverter::prepareForReading()
     }
 
     /// Check that all requested columns were found.
-    std::vector<UInt8> found_columns(sample_block->columns());
+    VectorWithMemoryTracking<UInt8> found_columns(sample_block->columns());
     for (const auto & col : output_columns)
     {
         if (!col.idx_in_output_block.has_value())
@@ -176,20 +175,11 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
-        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
-        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
-        /// id means the file does not belong to this table, or its schema was resolved to a wrong
-        /// one, which is reported rather than silently ignored.
-        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
-                "assigned that field id: the highest field id it ever assigned is {}",
-                element.name,
-                element.field_id,
-                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
-
+        /// A reader projects by field id, so a file column whose id is not in the read schema is
+        /// not selected (https://iceberg.apache.org/spec/#column-projection). This covers a column
+        /// dropped from the table, since `DROP COLUMN` is metadata-only and data files keep the
+        /// column, and a private column of the writer, e.g. `_CHANGE_TIMESTAMP` (2147483345) that
+        /// BigQuery writes into the files of its managed Iceberg tables but keeps out of the schema.
         out_not_in_schema = true;
         return element.name;
     }
@@ -234,7 +224,7 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
     if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
 
-    std::unordered_set<std::string_view> seen_names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (size_t i = 0; i < size_t(group.num_children); ++i)
     {
         /// Every child must be a primitive node (checked below), so the children are consecutive.
@@ -645,18 +635,31 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         return false;
     /// If an element is declared as MAP, but doesn't have the expected structure of children
     /// and grandchildren, we fall back to interpreting it as array of tuples, as if there were
-    /// no MAP annotation on it. Also fall back if Tuple type was requested
+    /// no MAP annotation on it. Also fall back if a positional Tuple or one naming the repeated group was requested
     /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
     /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
-        return false;
-    if (typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
         return false;
     if (node.element->num_children != 1)
         return false;
     const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
     if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 2)
         return false;
+    if (const auto * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    {
+        /// Names are matched as in processSubtreeTuple; any other Tuple is rejected below.
+        bool literal = !tuple_type_hint->hasExplicitNames() || tuple_type_hint->getElements().empty();
+        if (!literal)
+        {
+            bool not_in_schema = false;
+            std::string_view child_name = useColumnMapperIfNeeded(child, node.name, not_in_schema);
+            literal = !not_in_schema
+                && tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
+        }
+        if (literal)
+            return false;
+    }
 
     DataTypePtr array_type_hint;
     bool no_map = false; // return plain Array(Tuple) instead of Map
@@ -735,7 +738,12 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
+        return false;
+    /// A LIST map key requested as `Tuple` or `JSON` is read as the tuple of its children.
+    if (node.schema_context == SchemaContext::MapKey
+        && (typeid_cast<const DataTypeTuple *>(node.type_hint.get()) || typeid_cast<const DataTypeObject *>(node.type_hint.get())))
         return false;
     if (node.element->num_children != 1)
         return false;
@@ -795,14 +803,14 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
 /// definition-level null map is exactly the root group's null map. This lets us reconstruct the
 /// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
 /// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
-static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
+static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- reads thrift `parq::FileMetaData::schema`
 {
     /// schema is a flattened pre-order tree; num_children counts direct children, laid out
     /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
     /// remaining-children counters for the groups we descended into.
     if (root_idx >= schema.size())
         return false;
-    std::vector<size_t> stack;
+    VectorWithMemoryTracking<size_t> stack;
     stack.push_back(size_t(schema.at(root_idx).num_children));
     size_t idx = root_idx + 1;
     while (!stack.empty())
@@ -825,7 +833,7 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
     return true;
 }
 
-static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx)
+static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `parq::FileMetaData::schema` is a thrift-generated std::vector
 {
     size_t remaining = 1;
     while (remaining > 0)
@@ -858,7 +866,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     enum ChildRole : size_t { Metadata = 0, Value = 1, TypedValue = 2, NumRoles = 3 };
 
     std::array<std::optional<size_t>, NumRoles> schema_idx_of_role;
-    std::vector<size_t> role_of_child(num_children);
+    VectorWithMemoryTracking<size_t> role_of_child(num_children);
     size_t child_schema_idx = schema_idx;
     for (size_t i = 0; i < num_children; ++i)
     {
@@ -1046,7 +1054,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///    In other modes, we skip the whole tuple if any element is unsupported.
 
     bool lookup_by_name = false;
-    std::vector<size_t> elements;
+    VectorWithMemoryTracking<size_t> elements;
     if (tuple_type_hint)
     {
         if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
@@ -1082,7 +1090,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t primitive_start = primitive_columns.size();
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
-    std::vector<String> element_names_in_file;
+    VectorWithMemoryTracking<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
         bool not_in_schema = false;
@@ -1259,7 +1267,7 @@ std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_
     auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
 
     /// The footer is parsed without column chunks, parse the chunks of only this column.
-    std::vector<FileColumnChunks> parsed;
+    VectorWithMemoryTracking<FileColumnChunks> parsed;
     deserializeColumnChunks(
         file_footer.serialized.data(), file_footer.serialized.size(), file_footer.column_chunk_offsets, {column_idx}, parsed);
     const auto & chunks = parsed.at(0).chunks;
@@ -2119,6 +2127,19 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
             auto converter = std::make_shared<Int96Converter>();
             converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            /// Decode at the requested precision; the rounding must match the cast to the requested type that follows.
+            const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr;
+            if (dt64_hint && dt64_hint->getScale() < 9)
+            {
+                converter->scale = dt64_hint->getScale();
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(converter->scale, "UTC");
+            }
+            else if (type_hint && WhichDataType(type_hint->getTypeId()).isDate32())
+            {
+                converter->scale = 0;
+                converter->round_down = true;
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(0, "UTC");
+            }
             out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;

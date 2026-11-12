@@ -261,6 +261,7 @@ std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPCli
     /// `retryStrategy` is the object the SDK retries with, and `ClientFactory::create` builds it from
     /// `retry_strategy`, so overriding only the latter would keep the retries of the client being cloned.
     auto config = client_configuration_override;
+    config.validateRetryStrategy();
     auto retry_strategy = config.retry_strategy;
     /// As in `ClientFactory::create`: per-thread retries give way to the global coordination.
     if (config.s3_slow_all_threads_after_retryable_error)
@@ -767,6 +768,17 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    /// With an empty key the SDK addresses the bucket itself, e.g. `DeleteObject` becomes `DeleteBucket`.
+    if constexpr (requires { request.GetKey(); })
+    {
+        if (request.GetKey().empty())
+            return std::invoke_result_t<RequestFn, RequestType &>(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                Aws::S3::S3Errors::MISSING_PARAMETER,
+                "MISSING_PARAMETER",
+                fmt::format("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
+                /*isRetryable*/ false));
+    }
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
