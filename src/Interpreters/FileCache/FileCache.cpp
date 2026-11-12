@@ -1602,8 +1602,11 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (shutdown)
         return;
 
-    while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    fiu_do_on(FailPoints::file_cache_stall_free_space_ratio_keeping_thread,
+    {
+        while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    });
 
     Stopwatch watch;
     size_t reschedule_ms = free_space_keeping_reschedule_ms;
