@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS t_fixed_string_coalesce;
 DROP TABLE IF EXISTS t_fixed_string_array;
 DROP TABLE IF EXISTS t_minmax;
 DROP TABLE IF EXISTS t_partition;
+DROP TABLE IF EXISTS t_partition_reverse;
 
 CREATE TABLE t_tuple (a Tuple(DateTime('UTC'), Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_tuple SELECT (toDateTime('2018-01-01 00:00:00', 'UTC') + number * 86400, 1) FROM numbers(10);
@@ -28,6 +29,7 @@ INSERT INTO t_array SELECT [toDateTime('2018-01-01 00:00:00', 'UTC') + number * 
 
 SELECT count() FROM t_array WHERE a = [toDate('2018-01-05')];
 SELECT count() FROM t_array WHERE a >= [toDate('2018-01-05')];
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT * FROM t_array WHERE a = []) WHERE explain ILIKE '%Condition: (a in [[], []])%';
 
 CREATE TABLE t_map (a Map(String, DateTime('UTC'))) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_map SELECT map('k', toDateTime('2018-01-01 00:00:00', 'UTC') + number * 86400) FROM numbers(10);
@@ -41,7 +43,7 @@ INSERT INTO t_enum VALUES (('x', 1));
 SELECT count() FROM t_enum WHERE a = tuple(CAST('x', 'Enum8(\'x\' = 1)'), 1);
 
 -- A FixedString element of a tuple is compared zero-padded: 'abc', 'abc\0' and 'abc\0\0' all match.
-CREATE TABLE t_fixed_string (a Tuple(String, Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_fixed_string (a Tuple(String, Int32)) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_fixed_string VALUES (('abc', 1)), (('abc\0', 1)), (('abc\0\0', 1)), (('abd', 1));
 
 SELECT count() FROM t_fixed_string WHERE a = tuple(toFixedString('abc', 5), 1);
@@ -80,6 +82,15 @@ CREATE TABLE t_partition (k UInt64, a Tuple(DateTime('UTC'), Int32)) ENGINE = Me
 INSERT INTO t_partition SELECT number, (toDateTime('2018-01-01 00:00:00', 'UTC') + number * 86400, 1) FROM numbers(3);
 
 SELECT k FROM t_partition WHERE a = tuple(toDate('2018-01-02'), 1);
+SELECT k FROM t_partition WHERE a = CAST(tuple(toDate('2018-01-02'), 1) AS Dynamic);
+SELECT k FROM t_partition WHERE a = tuple(CAST(toDate('2018-01-02') AS Dynamic), 1);
+
+-- Partition pruning casts the key: a FixedString element is compared zero-padded, an Enum element by value.
+CREATE TABLE t_partition_reverse (a Tuple(FixedString(5)), e Tuple(Enum8('z' = 1, 'a' = 2))) ENGINE = MergeTree PARTITION BY (a, e) ORDER BY tuple();
+INSERT INTO t_partition_reverse VALUES (tuple('abc'), tuple('z')), (tuple('abd'), tuple('a'));
+
+SELECT count() FROM t_partition_reverse WHERE a = tuple('abc\0');
+SELECT count() FROM t_partition_reverse WHERE e >= tuple('z');
 
 DROP TABLE t_tuple;
 DROP TABLE t_array;
@@ -91,3 +102,4 @@ DROP TABLE t_fixed_string_coalesce;
 DROP TABLE t_fixed_string_array;
 DROP TABLE t_minmax;
 DROP TABLE t_partition;
+DROP TABLE t_partition_reverse;

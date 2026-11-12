@@ -2898,7 +2898,11 @@ static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr &
     try
     {
         const ColumnPtr cast_column = castColumn({column, type, ""}, target_type);
-        if ((*castColumn({cast_column, target_type, ""}, type))[0] != (*column)[0])
+        /// An empty `Array` or `Map` casts exactly, and `[]` of type `Array(Nothing)` has no cast back.
+        const Field value = (*column)[0];
+        const bool is_empty_collection = (value.getType() == Field::Types::Array && value.safeGet<Array>().empty())
+            || (value.getType() == Field::Types::Map && value.safeGet<Map>().empty());
+        if (!is_empty_collection && (*castColumn({cast_column, target_type, ""}, type))[0] != value)
             return {};
         return (*cast_column)[0];
     }
@@ -2908,6 +2912,31 @@ static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr &
             throw;
         return {};
     }
+}
+
+/// Whether casting a key value to `common_type` changes how it compares with the constant. Only a single-point
+/// analysis accepts such a cast. A `Dynamic` or `Variant` keeps the key's own type, a `FixedString` loses its zero
+/// padding, and an `Enum` cast to a string compares by name. A `Tuple` is compared element by element; an `Array`
+/// or a `Map` is compared after the same cast.
+static bool keyCastChangesComparison(const DataTypePtr & key_type, const DataTypePtr & common_type)
+{
+    const DataTypePtr key = removeLowCardinalityAndNullable(key_type);
+    const DataTypePtr common = removeLowCardinalityAndNullable(common_type);
+    if (key->equals(*common))
+        return false;
+    if (isDynamic(common) || isVariant(common) || (isFixedString(key) && !isFixedString(common))
+        || (isEnum(key) && isStringOrFixedString(common)))
+        return true;
+
+    const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
+    const auto * common_tuple = typeid_cast<const DataTypeTuple *>(common.get());
+    if (!key_tuple || !common_tuple || key_tuple->getElements().size() != common_tuple->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < key_tuple->getElements().size(); ++i)
+        if (keyCastChangesComparison(key_tuple->getElement(i), common_tuple->getElement(i)))
+            return true;
+    return false;
 }
 
 
@@ -6258,6 +6287,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 }
                 if (!key_expr_type_not_null->equals(*common_type))
                 {
+                    if (keyCastChangesComparison(key_expr_type_not_null, common_type))
+                        return std::nullopt;
+
                     auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                         ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                         : common_type;
