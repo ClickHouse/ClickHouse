@@ -4,6 +4,7 @@
 
 #include <Core/Field.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
@@ -367,7 +368,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state(key_columns, key_sizes, nullptr);
+    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -986,7 +987,8 @@ void NO_INLINE Set::executeImpl(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
-    if (null_map)
+    /// `execute` casts most keys with `castColumnAccurateOrNull`, so a probe without NULLs has an all-zero null map.
+    if (null_map && !memoryIsZero(null_map->data(), 0, rows))
         executeImplCase<Method, true>(method, key_columns, vec_res, negative, rows, null_map);
     else
         executeImplCase<Method, false>(method, key_columns, vec_res, negative, rows, null_map);
@@ -1003,7 +1005,7 @@ void NO_INLINE Set::executeImplCase(
     ConstNullMapPtr null_map) const
 {
     Arena pool;
-    typename Method::State state(key_columns, key_sizes, nullptr);
+    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
     /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
     /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:

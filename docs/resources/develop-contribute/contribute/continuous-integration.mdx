@@ -272,7 +272,8 @@ Runs [integration tests](/resources/develop-contribute/contribute/tests#integrat
 
 The master branch runs the stateless, integration and unit tests on a build with LLVM coverage instrumentation on every commit and publishes the coverage report.
 Pull requests run these jobs only with the `ci-coverage` label (or when they change the code collecting and reporting the coverage); add it to get the coverage report of the pull request and the coverage of the changed lines.
-Without the label, pull requests run the same stateless and integration test configurations on the `arm_binary` build instead; unit tests already run with sanitizers.
+Without the label, pull requests run the same stateless and integration test configurations on the `arm_binary` build instead; the unit tests run on the `amd_debug` build and on the builds with sanitizers in every pull request.
+Integration test modules that skip themselves on ARM run in the targeted sanitizer jobs when the change touches the code they cover.
 A pull request that only adds stateless tests and needs the coverage report can use the `ci-llvm-coverage` label instead: it runs the coverage jobs, the jobs for the tests excluded from coverage, the stateless flaky checks of the changed tests, the style check and the AI code review, and skips every other job. Such a pull request can merge with the label; a pull request that changes anything else cannot.
 
 ## Bugfix validate check {#bugfix-validate-check}
@@ -331,7 +332,7 @@ The threshold counts commits rather than failing rows, so one bad commit that fa
 It also counts them per failure mode: the recorded outputs are fingerprinted with the volatile parts (addresses, timestamps, random database names) normalized away, and a test whose name spans two different causes -- a regression on one commit and an unrelated flake on another -- is not a repeated failure, so nothing is investigated until one cause repeats on its own.
 
 Only an unambiguous answer leads to an action.
-When the agent reports a regression with high confidence, and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
+When the agent reports a regression with high or medium confidence (low confidence is only recorded), and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
 A regression verdict has to name both the pull request and the `master` commit it came in on, and the two have to agree: the job checks the number against GitHub's record of which merge commit that pull request produced, and acts on neither if they disagree.
 Nothing is reverted once the failure is gone: a failure stays in the observation window for a whole day after it stopped, so right before reverting the job asks the CI database again, and a failure absent from the newest `master` commits that every affected check exercised is recorded as already fixed and left alone.
 The newest commits by the branch's own history, not by when their checks ran -- an old commit whose check started late must not be read as fresh green evidence.

@@ -10,6 +10,7 @@
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace Setting
@@ -282,6 +284,15 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
+
+            if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Suspiciously many columns ({}) in a serialized set (maximum: {})",
+                    num_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
+            if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Suspiciously many rows ({}) in a serialized set (maximum: {})",
+                    num_rows, DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS);
 
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);

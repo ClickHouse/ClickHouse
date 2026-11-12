@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="392" viewBox="0 0 720 392" role="img" aria-labelledby="title desc" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="title">Self-managed ClickHouse Observability</title>
+  <desc id="desc">Your app SDKs, collectors, and log shippers send telemetry to an OpenTelemetry collector that you operate, which writes to ClickHouse services in ClickHouse Cloud. ClickHouse Cloud hosts the ClickStack UI and manages infrastructure, upgrades, and backups, while you manage ingestion, schemas, compute, and performance tuning.</desc>
+  <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6.5" refY="4" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M1.5 1.5 6.5 4 1.5 6.5" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+  <rect x="0.8" y="24.8" width="222.5" height="350.5" rx="14" fill="none" stroke="#3A3A36" stroke-width="1.5"/>
+  <text x="16" y="50" fill="#A3A3A0" font-size="10" font-weight="700" text-anchor="start" letter-spacing="0.06em">YOUR INFRASTRUCTURE</text>
+  <rect x="16" y="92" width="88" height="56" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="60" y="124.7" fill="#FFFFFF" font-size="13" font-weight="500" text-anchor="middle">App SDKs</text>
+  <rect x="16" y="172" width="88" height="56" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="60" y="204.7" fill="#FFFFFF" font-size="13" font-weight="500" text-anchor="middle">Collectors</text>
+  <rect x="16" y="252" width="88" height="56" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="60" y="284.5" fill="#FFFFFF" font-size="12.5" font-weight="500" text-anchor="middle">Log shippers</text>
+  <rect x="136" y="108" width="72" height="184" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <image x="155" y="158" width="34" height="34" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHJvbGU9ImltZyIgdmlld0JveD0iLTEyLjcwIC0xMi43MCAxMDI0LjQwIDEwMjQuNDAiPjxwYXRoIGZpbGw9IiNGRkZGRkYiIGQ9Ik01MjguNyA1NDUuOWMtNDIgNDItNDIgMTEwLjEgMCAxNTIuMXMxMTAuMSA0MiAxNTIuMSAwIDQyLTExMC4xIDAtMTUyLjEtMTEwLjEtNDItMTUyLjEgMHptMTEzLjcgMTEzLjhjLTIwLjggMjAuOC01NC41IDIwLjgtNzUuMyAwLTIwLjgtMjAuOC0yMC44LTU0LjUgMC03NS4zIDIwLjgtMjAuOCA1NC41LTIwLjggNzUuMyAwIDIwLjggMjAuNyAyMC44IDU0LjUgMCA3NS4zem0zNi42LTY0M2wtNjUuOSA2NS45Yy0xMi45IDEyLjktMTIuOSAzNC4xIDAgNDdsMjU3LjMgMjU3LjNjMTIuOSAxMi45IDM0LjEgMTIuOSA0NyAwbDY1LjktNjUuOWMxMi45LTEyLjkgMTIuOS0zNC4xIDAtNDdMNzI1LjkgMTYuN2MtMTIuOS0xMi45LTM0LTEyLjktNDYuOSAwek0yMTcuMyA4NTguOGMxMS43LTExLjcgMTEuNy0zMC44IDAtNDIuNWwtMzMuNS0zMy41Yy0xMS43LTExLjctMzAuOC0xMS43LTQyLjUgMEw3Mi4xIDg1MmwtLjEuMS0xOS0xOWMtMTAuNS0xMC41LTI3LjYtMTAuNS0zOCAwLTEwLjUgMTAuNS0xMC41IDI3LjYgMCAzOGwxMTQgMTE0YzEwLjUgMTAuNSAyNy42IDEwLjUgMzggMHMxMC41LTI3LjYgMC0zOGwtMTktMTkgLjEtLjEgNjkuMi02OS4yem0zNDguNi02NTIuOUw0MTkuNSAzNTIuM2MtMTMgMTMtMTMgMzQuNCAwIDQ3LjRsOTAuNCA5MC40YzYzLjktNDYgMTUzLjUtNDAuMyAyMTEgMTcuMmw3My4yLTczLjJjMTMtMTMgMTMtMzQuNCAwLTQ3LjRMNjEzLjMgMjA1LjljLTEzLTEzLjEtMzQuNC0xMy4xLTQ3LjQgMHptLTk0IDMyMi4zbC01My40LTUzLjRjLTEyLjUtMTIuNS0zMy0xMi41LTQ1LjUgMEwxODQuNyA2NjMuMmMtMTIuNSAxMi41LTEyLjUgMzMgMCA0NS41bDEwNi43IDEwNi43YzEyLjUgMTIuNSAzMyAxMi41IDQ1LjUgMEw0NTggNjk0LjFjLTI1LjYtNTIuOS0yMS0xMTYuOCAxMy45LTE2NS45eiIvPjwvc3ZnPg=="/>
+  <text x="172" y="216" fill="#FFFFFF" font-size="10.5" font-weight="600" text-anchor="middle">Collector</text>
+  <text x="172" y="231" fill="#A3A3A0" font-size="9.5" font-weight="400" text-anchor="middle">you operate</text>
+  <path d="M104 120 H135" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <path d="M104 200 H135" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <path d="M104 280 H135" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <path d="M208 200 H247" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <rect x="248.8" y="24.8" width="266.5" height="350.5" rx="14" fill="#FAFF69" fill-opacity="0.05" stroke="#FAFF69" stroke-width="1.5"/>
+  <text x="264" y="50" fill="#FAFF69" font-size="10" font-weight="700" text-anchor="start" letter-spacing="0.06em">CLICKHOUSE CLOUD</text>
+  <rect x="264" y="66" width="236" height="188" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="276" y="86" fill="#FFFFFF" font-size="12" font-weight="600" text-anchor="start">ClickHouse services</text>
+  <rect x="276" y="98" width="47" height="144" rx="6" fill="none" stroke="#3A3A36" stroke-width="1" stroke-dasharray="3 3"/>
+  <rect x="294.5" y="155.7" width="10" height="58.3" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <text x="299.5" y="232" fill="#A3A3A0" font-size="9.5" font-weight="400" text-anchor="middle" font-family="'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">WRITE</text>
+  <rect x="331" y="98" width="47" height="144" rx="6" fill="none" stroke="#3A3A36" stroke-width="1" stroke-dasharray="3 3"/>
+  <rect x="335.5" y="141.9" width="10" height="72.1" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <rect x="349.5" y="108" width="10" height="106" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <rect x="363.5" y="169.5" width="10" height="44.5" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <text x="354.5" y="232" fill="#A3A3A0" font-size="9.5" font-weight="400" text-anchor="middle" font-family="'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">READ</text>
+  <rect x="386" y="98" width="47" height="144" rx="6" fill="none" stroke="#3A3A36" stroke-width="1" stroke-dasharray="3 3"/>
+  <rect x="404.5" y="180.1" width="10" height="33.9" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <text x="409.5" y="232" fill="#A3A3A0" font-size="9.5" font-weight="400" text-anchor="middle" font-family="'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">ALERTS</text>
+  <rect x="441" y="98" width="47" height="144" rx="6" fill="none" stroke="#3A3A36" stroke-width="1" stroke-dasharray="3 3"/>
+  <rect x="452.5" y="108" width="10" height="106" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <rect x="466.5" y="131.3" width="10" height="82.7" rx="2" fill="#6E6E69" stroke="none" stroke-width="1"/>
+  <text x="464.5" y="232" fill="#A3A3A0" font-size="9.5" font-weight="400" text-anchor="middle" font-family="'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">AGENTS</text>
+  <rect x="264" y="270" width="236" height="56" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <g transform="translate(280 281) scale(0.08119) translate(-34 -19)"><path d="M225.999 74.4258V185.277L130 240.702L34 185.277V74.4258L130 19L225.999 74.4258Z" fill="#FAFF69"/><path d="M153.974 55.5749C155.469 56.6697 156.167 58.9177 155.658 60.9989L142.26 115.806H166.983C168.467 115.806 169.809 116.916 170.398 118.63C170.987 120.345 170.709 122.336 169.692 123.696L110.173 203.289C108.987 204.875 107.089 205.222 105.593 204.128C104.098 203.032 103.4 200.785 103.908 198.703L117.307 143.897H92.5839C91.0999 143.897 89.7576 142.787 89.1691 141.072C88.5802 139.358 88.8578 137.367 89.8749 136.006L149.394 56.4132C150.58 54.8275 152.478 54.4801 153.974 55.5749Z" fill="#1F1F1C"/></g>
+  <text x="304" y="294" fill="#FFFFFF" font-size="13" font-weight="600" text-anchor="start">ClickStack UI</text>
+  <text x="280" y="314" fill="#B4B4B0" font-size="9.5" font-weight="400" text-anchor="start">Logs · Traces · Metrics · Dashboards · Alerts</text>
+  <text x="382" y="346" fill="#FAFF69" font-size="9" font-weight="700" text-anchor="middle" letter-spacing="0.06em">CLICKHOUSE CLOUD MANAGES</text>
+  <text x="382" y="362" fill="#A3A3A0" font-size="10" font-weight="400" text-anchor="middle">Infrastructure · Upgrades · Backups · UI hosting</text>
+  <text x="540" y="50" fill="#A3A3A0" font-size="10" font-weight="700" text-anchor="start" letter-spacing="0.06em">YOU MANAGE</text>
+  <clipPath id="task0"><rect x="540" y="66" width="180" height="64" rx="8"/></clipPath>
+  <rect x="540" y="66" width="180" height="64" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="540" y="66" width="4" height="64" fill="#FAFF69" clip-path="url(#task0)"/>
+  <text x="556" y="91" fill="#FFFFFF" font-size="12" font-weight="600" text-anchor="start">Manage ingestion</text>
+  <text x="556" y="108" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">Deploy and configure collectors.</text>
+  <path d="M540 98 H534 Q528 98 528 92 V18 Q528 12 522 12 H178 Q172 12 172 18 V106" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <clipPath id="task1"><rect x="540" y="146" width="180" height="64" rx="8"/></clipPath>
+  <rect x="540" y="146" width="180" height="64" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="540" y="146" width="4" height="64" fill="#FAFF69" clip-path="url(#task1)"/>
+  <text x="556" y="171" fill="#FFFFFF" font-size="12" font-weight="600" text-anchor="start">Optimize schemas</text>
+  <text x="556" y="188" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">Tune layout, indexes, and</text>
+  <text x="556" y="201" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">compression.</text>
+  <path d="M540 178 H517" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <clipPath id="task2"><rect x="540" y="226" width="180" height="64" rx="8"/></clipPath>
+  <rect x="540" y="226" width="180" height="64" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="540" y="226" width="4" height="64" fill="#FAFF69" clip-path="url(#task2)"/>
+  <text x="556" y="251" fill="#FFFFFF" font-size="12" font-weight="600" text-anchor="start">Configure compute</text>
+  <text x="556" y="268" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">Size services, isolate</text>
+  <text x="556" y="281" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">workloads.</text>
+  <path d="M540 258 H517" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <clipPath id="task3"><rect x="540" y="306" width="180" height="64" rx="8"/></clipPath>
+  <rect x="540" y="306" width="180" height="64" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="540" y="306" width="4" height="64" fill="#FAFF69" clip-path="url(#task3)"/>
+  <text x="556" y="331" fill="#FFFFFF" font-size="12" font-weight="600" text-anchor="start">Maintain performance</text>
+  <text x="556" y="348" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">Monitor usage and adjust the</text>
+  <text x="556" y="361" fill="#B4B4B0" font-size="10" font-weight="400" text-anchor="start">setup.</text>
+  <path d="M540 338 H517" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+</svg>
