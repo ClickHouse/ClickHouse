@@ -25,7 +25,7 @@ enum class IdentifierQuotingStyle : uint8_t
 
 enum class IdentifierQuotingRule : uint8_t
 {
-    /// When the identifiers is one of {"distinct", "all", "table"} (defined in `DB::writeProbablyQuotedStringImpl`),
+    /// When the identifier is a keyword listed in `DB::writeProbablyQuotedStringImpl`,
     /// or it can cause ambiguity: column names, dictionary attribute names (passed to `DB::FormatSettings::writeIdentifier` with `ambiguous=true`)
     WhenNecessary,
     /// Always quote identifiers
