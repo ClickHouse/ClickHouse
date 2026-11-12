@@ -14,6 +14,7 @@
 #include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>

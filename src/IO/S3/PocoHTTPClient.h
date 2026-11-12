@@ -96,6 +96,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String google_adc_client_id;
     SecretString google_adc_client_secret;
     SecretString google_adc_refresh_token;
+    /// Content of a Google service account JSON key file, an alternative to the ADC triple.
+    SecretString google_service_account_key;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -115,6 +117,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
+    /// Throws on inconsistent delays and clamps `jitter_factor` into [0, 1].
+    void validateRetryStrategy();
 
     /// `remote_host_filter` is a reference, so it must not be bound to a temporary.
     PocoHTTPClientConfiguration(
@@ -303,12 +307,14 @@ private:
     const String google_adc_client_id;
     const SecretString google_adc_client_secret;
     const SecretString google_adc_refresh_token;
+    const SecretString google_service_account_key;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
     BearerToken requestBearerTokenFromADC() const;
+    BearerToken requestBearerTokenFromServiceAccountKey() const;
 };
 
 }
