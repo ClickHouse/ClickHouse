@@ -155,7 +155,10 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
 /// distributed plans support the corresponding feature - e.g. for the text index direct read,
 /// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::function<bool(std::string_view, const Field &)> & is_allowed)
+void adjustSettingsForMakeDistributedPlan(
+    Settings & settings,
+    const std::function<bool(std::string_view, const Field &)> & is_allowed,
+    const std::function<bool(std::string_view, const Field &)> & is_restore_allowed)
 {
     /// Stateless Workers only run the stages of a distributed plan, so asking for Workers or naming
     /// their cluster implies asking for the plan. Deriving instead of assigning keeps a later reset
@@ -174,10 +177,11 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::functi
         /// turned off explicitly - a cloned context running an already-split local fragment, or a
         /// plan falling back to local execution - keeps its adjustments instead: a fragment still
         /// needs them, and a fallback keeps whatever the plan it fell back from already assumed.
-        /// A remembered value the current constraints forbid (e.g. a profile switched in since it
-        /// was remembered) is dropped to its default instead of restored.
+        /// A remembered value a tightened min, max or disallowed-values constraint now forbids
+        /// (e.g. a profile switched in since it was remembered) is dropped to its default instead
+        /// of restored.
         if (derived)
-            settings.restoreDistributedPlanAdjustments(is_allowed);
+            settings.restoreDistributedPlanAdjustments(is_restore_allowed);
         return;
     }
 

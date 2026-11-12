@@ -4032,12 +4032,15 @@ void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex>
     if (getApplicationType() == ApplicationType::CLIENT)
         return;
 
-    /// The same verdict vetoes deriving `make_distributed_plan` and restoring a remembered
-    /// adjustment the current constraints disallow.
+    /// Deriving `make_distributed_plan` is vetoed by the full verdict, constant-writability locks
+    /// included. Restoring a remembered adjustment ignores a constant lock: putting back a value
+    /// the setting already held before the override is not a change the lock is meant to block.
     auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
     const auto & constraints = constraints_and_profiles->constraints;
     adjustSettingsForMakeDistributedPlan(
-        *settings, [&](std::string_view name, const Field & value) { return constraints.allowsValue(name, value); });
+        *settings,
+        [&](std::string_view name, const Field & value) { return constraints.allowsValue(name, value); },
+        [&](std::string_view name, const Field & value) { return constraints.allowsValue(name, value, /*ignore_const=*/ true); });
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)

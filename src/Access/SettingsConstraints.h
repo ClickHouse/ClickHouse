@@ -91,8 +91,11 @@ public:
     void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
 
     /// Whether the stored constraint allows `value` for the setting, without the readonly-mode and
-    /// feature-tier restrictions that the check functions fold in.
-    bool allowsValue(std::string_view setting_name, const Field & value) const;
+    /// feature-tier restrictions that the check functions fold in. `ignore_const` skips the
+    /// constant-writability lock: a caller restoring a setting to a value it already held before
+    /// an automatic override is not asking to change it, so a lock that forbids all changes should
+    /// not forbid putting the old value back.
+    bool allowsValue(std::string_view setting_name, const Field & value, bool ignore_const = false) const;
 
     void merge(const SettingsConstraints & other);
 

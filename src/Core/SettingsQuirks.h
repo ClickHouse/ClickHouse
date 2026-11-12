@@ -37,9 +37,15 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log = nullptr);
 /// distributed query plans do not support yet. Applied whenever settings changes are applied to a
 /// context, so that every context driving analysis, planning or task execution sees the adjusted
 /// values. `is_allowed(name, value)` is the current settings constraints' verdict on a value for a
-/// setting; a false verdict for `make_distributed_plan = true` vetoes the derivation, and for an
-/// adjusted setting's remembered value drops the restore to that setting's default instead.
-void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::function<bool(std::string_view, const Field &)> & is_allowed);
+/// setting; a false verdict for `make_distributed_plan = true` vetoes the derivation.
+/// `is_restore_allowed(name, value)` is the same verdict for restoring an adjusted setting to its
+/// remembered pre-adjustment value: that value already satisfied every constraint in force when it
+/// was remembered, so only a constraint that has since tightened (a changed min, max or
+/// disallowed-values list) should drop the restore to the setting's default instead.
+void adjustSettingsForMakeDistributedPlan(
+    Settings & settings,
+    const std::function<bool(std::string_view, const Field &)> & is_allowed,
+    const std::function<bool(std::string_view, const Field &)> & is_restore_allowed);
 
 /// Verify that some settings have sane values. Alters the value to a reasonable one if not
 void doSettingsSanityCheckClamp(Settings & settings, LoggerPtr log);
