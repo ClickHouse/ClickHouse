@@ -538,6 +538,13 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
     if (is_materialized_postgresql_database)
         return;
 
+    /// A previous attempt already finished the inner teardown: it dropped the nested table, finalized the
+    /// replication teardown and destroyed the handler, but the outer drop failed afterwards (for example,
+    /// `DatabaseAtomic::dropTable` could not remove the outer table's metadata). Nothing is left to drop, so
+    /// let the retried `DROP TABLE` only remove the outer metadata.
+    if (!replication_handler)
+        return;
+
     if (replication_handler->isCoordinated())
     {
         /// Coordinated single-table engine: make the fail-close last-replica decision - and, if this is the
