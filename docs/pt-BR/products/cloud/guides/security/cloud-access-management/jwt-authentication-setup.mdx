@@ -25,6 +25,12 @@ O ClickHouse Cloud permite autenticar conexões com um serviço usando JSON Web 
 
 Você pode configurar esses provedores JWKS para cada serviço em **Settings → Security** no Cloud Console do ClickHouse.
 
+<Tip>
+  **Usa o Microsoft Entra ID?**
+
+  Siga o guia [Autenticação JWT com o Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) para ver a configuração do Entra ID, os valores do provedor que devem ser informados e como mapear as funções de aplicativo do Entra ID para funções do ClickHouse.
+</Tip>
+
 <div id="before-you-begin">
   ## Antes de começar
 </div>
@@ -99,3 +105,4 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
 </div>
 
 * [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt) — claims de tokens, usuários efêmeros e uso do cliente.
+* [Autenticação JWT com Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — configure o Entra ID como provedor JWT.

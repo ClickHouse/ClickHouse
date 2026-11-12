@@ -731,6 +731,21 @@ TEST(AccessRights, RevokeFilterGrantOption)
     ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://bar/.*"), Exception);
 }
 
+TEST(AccessRights, ElementWithNotGrantableFlags)
+{
+    AccessRights root;
+
+    // Grant on a table doesn't grant source filters
+    root.grant(AccessRightsElement{AccessType::ALL, "db", "tbl"});
+    ASSERT_FALSE(root.isGranted(AccessType::READ, "db", "tbl"));
+
+    // Revoke on a table doesn't produce partial revokes of source filters
+    root = {};
+    root.grantWithGrantOption(AccessType::ALL);
+    root.revoke(AccessRightsElement{AccessType::ALL, "db", "tbl"});
+    ASSERT_EQ(root.getGrantableRights(), root);
+}
+
 TEST(AccessRights, RevokeWithParameters)
 {
     AccessRights root;

@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações definem o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="paimon_metadata_files_cache_max_entries">
-  ## paimon_metadata_files_cache_max_entries
-</div>
+## paimon_metadata_files_cache_max_entries {#paimon_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Sim" />Tamanho máximo do cache de arquivos de metadados do Paimon, em entradas. Zero significa que não há limite para a contagem de entradas.
 
-<div id="paimon_metadata_files_cache_policy">
-  ## paimon_metadata_files_cache_policy
-</div>
+## paimon_metadata_files_cache_policy {#paimon_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de cache dos arquivos de metadados do Paimon.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache de metadados do Paimon. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="paimon_metadata_files_cache_size">
-  ## paimon_metadata_files_cache_size
-</div>
+## paimon_metadata_files_cache_size {#paimon_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Tamanho máximo do cache de metadados do Paimon em bytes. Zero significa que está desabilitado.
 
-<div id="paimon_metadata_files_cache_size_ratio">
-  ## paimon_metadata_files_cache_size_ratio
-</div>
+## paimon_metadata_files_cache_size_ratio {#paimon_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Não" />O tamanho da fila protegida (no caso da política SLRU) no cache de metadados do Paimon em relação ao tamanho total desse cache.
 

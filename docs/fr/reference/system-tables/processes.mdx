@@ -52,6 +52,7 @@ Cette table système sert à implémenter la requête `SHOW PROCESSLIST`.
 * `written_bytes` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’octets écrits dans le stockage.
 * `memory_usage` ([Int64](/fr/reference/data-types/int-uint)) — Quantité de RAM utilisée par la requête. Elle peut ne pas inclure certains types de mémoire dédiée.
 * `peak_memory_usage` ([Int64](/fr/reference/data-types/int-uint)) — Pic actuel d’utilisation de la mémoire.
+* `spillable_memory_bytes` ([Int64](/fr/reference/data-types/int-uint)) — Quantité actuelle de mémoire pouvant faire l’objet d’un déversement.
 * `query` ([String](/fr/reference/data-types/string)) — Texte de la requête. Pour INSERT, il n’inclut pas les données à insérer.
 * `normalized_query_hash` ([UInt64](/fr/reference/data-types/int-uint)) — Valeur de hachage numérique identique pour les requêtes qui ne diffèrent que par les valeurs des littéraux.
 * `query_kind` ([String](/fr/reference/data-types/string)) — Type de requête : SELECT, INSERT, etc.

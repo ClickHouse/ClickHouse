@@ -82,9 +82,9 @@ Tenga en cuenta que, inicialmente (24.12), existía una configuración del servi
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para hacer pushdown de las condiciones de búsqueda de subcadenas en columnas String desde PREWHERE hacia el escaneo de columnas."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para hacer pushdown de las condiciones de búsqueda de subcadenas en columnas `String` desde `PREWHERE` hacia el escaneo de columnas, habilitada de forma predeterminada. El ajuste `compatibility` con versiones anteriores a la 26.10 la deshabilita."}]}]} />
 
 Hace pushdown de las condiciones de búsqueda de subcadenas en columnas `String` desde `PREWHERE` hacia el escaneo de columnas.
 
@@ -94,13 +94,15 @@ durante la deserialización y lee como cadenas vacías los valores que no coinci
 es selectiva, ya que los datos de los valores que no coinciden no se copian en la columna. El resultado de la consulta no varía,
 porque está garantizado que `PREWHERE` descarta las filas con valores que no coinciden y que dichas condiciones nunca coinciden con una cadena vacía.
 
-El filtro se desactiva de forma adaptativa en tiempo de ejecución si resulta ser poco selectivo.
+El filtro se desactiva de forma adaptativa en tiempo de ejecución si resulta ser poco selectivo, o si los valores que no coinciden
+son demasiado cortos como para que compense omitir sus datos.
 
 Además, permite que la optimización de `WHERE` a `PREWHERE` mueva las condiciones de búsqueda de subcadenas (`LIKE`, `position`, `startsWith`, `endsWith`)
 incluso cuando utilizan todas las columnas consultadas (normalmente no tendría sentido, pero con esta configuración el propio escaneo resulta más económico).
 La igualdad con una cadena constante no se mueve por este motivo: se sigue aplicando durante el escaneo cuando ya está en `PREWHERE`.
 
-Compatible con la lectura de tablas `MergeTree` y del formato `Parquet`.
+Compatible con la lectura de tablas `MergeTree` y del formato `Parquet`. En `Parquet`, el filtro se aplica a las páginas con
+codificación `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY` y codificación por diccionario.
 
 Tenga en cuenta que la estimación de los bytes de entrada que se recopila para decidir automáticamente sobre el uso de réplicas paralelas
 (`RuntimeDataflowStatisticsInputBytes`) se basa en el tamaño en memoria de los bloques leídos, por lo que subestima
