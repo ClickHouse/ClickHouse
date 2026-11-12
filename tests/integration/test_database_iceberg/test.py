@@ -979,6 +979,26 @@ def test_timestamps(started_cluster):
     assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
+    berlin_catalog = f"{CATALOG_NAME}_berlin"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        berlin_catalog,
+        {"iceberg_timezone_for_timestamptz": "Europe/Berlin"},
+    )
+    berlin_table = f"{berlin_catalog}.`{root_namespace}.{table_name}`"
+    assert node.query(
+        f"SELECT type FROM system.columns WHERE database = '{berlin_catalog}' AND table = '{root_namespace}.{table_name}' AND name = 'timestamptz'",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\n"
+    assert node.query(
+        f"SELECT toTypeName(timestamptz), timestamptz, toUnixTimestamp(timestamptz) FROM {berlin_table}"
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\t2024-01-01 13:00:00.000000\t1704110400\n"
+    assert node.query(
+        f"SELECT count() FROM {berlin_table} WHERE timestamptz = '2024-01-01 13:00:00'"
+    ) == "1\n"
+    node.query(f"DROP DATABASE {berlin_catalog}")
+
 
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
