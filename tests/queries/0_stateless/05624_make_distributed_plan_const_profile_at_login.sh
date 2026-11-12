@@ -16,6 +16,12 @@
 # own constraints, and the client to not deriving at all - a client context has no constraints,
 # and its adjustments would ride back to the server as explicit changes when it applies the
 # pushed session settings.
+#
+# A `const` constraint that pins the plan ON (not just one that forbids it) must not be refused: a
+# login for a user whose own profile pins make_distributed_plan = 1 const runs a plain query fine.
+# A fresh login, not a profile switch within this script's own session: switching from a profile
+# that already pins make_distributed_plan const checks the incoming profile's settings against the
+# constraints still in effect from the outgoing one, which would reject this pin too.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,13 +31,15 @@ FREE_USER="u_free_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 FREE_PROFILE="p_free_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 PINNED_USER="u_pinned_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 PINNED_PROFILE="p_pinned_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+PINNED_ON_USER="u_pinned_on_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+PINNED_ON_PROFILE="p_pinned_on_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 READONLY_USER="u_readonly_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 READONLY_PROFILE="p_readonly_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${FREE_USER}, ${PINNED_USER}, ${READONLY_USER}"
-    ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${FREE_PROFILE}, ${PINNED_PROFILE}, ${READONLY_PROFILE}"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${FREE_USER}, ${PINNED_USER}, ${PINNED_ON_USER}, ${READONLY_USER}"
+    ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${FREE_PROFILE}, ${PINNED_PROFILE}, ${PINNED_ON_PROFILE}, ${READONLY_PROFILE}"
 }
 trap cleanup EXIT
 cleanup
@@ -41,6 +49,9 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${FREE_USER} SETTINGS PROFILE ${FREE_PROFIL
 
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PINNED_PROFILE} SETTINGS distributed_plan_workers_num = 3, compile_expressions = 1, make_distributed_plan CONST"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${PINNED_USER} SETTINGS PROFILE ${PINNED_PROFILE}"
+
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PINNED_ON_PROFILE} SETTINGS make_distributed_plan = 1 CONST"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${PINNED_ON_USER} SETTINGS PROFILE ${PINNED_ON_PROFILE}"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${READONLY_PROFILE} SETTINGS readonly = 1, distributed_plan_workers_num = 3"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${READONLY_USER} SETTINGS PROFILE ${READONLY_PROFILE}"
@@ -58,6 +69,7 @@ check()
 
 check "derived at login without the constraint" "${FREE_USER}" make_distributed_plan "true"
 check "still derived in a readonly session" "${READONLY_USER}" make_distributed_plan "true"
+check "pinned on by a const constraint runs queries fine" "${PINNED_ON_USER}" make_distributed_plan "true"
 
 echo "vetoed at login by the const constraint"
 PINNED_ERROR=$(${CLICKHOUSE_CLIENT_BINARY} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --user "${PINNED_USER}" -q "SELECT 1" 2>&1)
