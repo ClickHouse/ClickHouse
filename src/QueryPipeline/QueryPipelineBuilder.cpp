@@ -6,6 +6,7 @@
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
@@ -212,6 +213,31 @@ void QueryPipelineBuilder::dropTotalsAndExtremes()
 void QueryPipelineBuilder::dropExtremes()
 {
     pipe.dropExtremes();
+}
+
+void QueryPipelineBuilder::detachExtremes()
+{
+    checkInitializedAndNotCompleted();
+    pipe.detachExtremes();
+}
+
+void QueryPipelineBuilder::attachExtremes()
+{
+    checkInitializedAndNotCompleted();
+
+    ProcessorPtr converting;
+    if (const auto * port = pipe.getDetachedExtremesPort(); port && !blocksHaveEqualStructure(port->getHeader(), getHeader()))
+    {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            port->getHeader().getColumnsWithTypeAndName(),
+            getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
+        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag));
+        converting = std::make_shared<ExpressionTransform>(port->getSharedHeader(), convert_actions);
+    }
+
+    pipe.attachExtremes(std::move(converting));
 }
 
 void QueryPipelineBuilder::addExtremesTransform()
@@ -605,7 +631,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t min_block_size_bytes,
     size_t max_streams,
     IQueryPlanStep * join_step,
-    bool keep_left_read_in_order,
+    bool keep_left_pipeline_layout,
     const std::optional<String> & seal_gate,
     Processors * collected_processors)
 {
@@ -661,7 +687,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     if (join->supportParallelJoin() && !right->hasTotals())
     {
-        if (!keep_left_read_in_order)
+        if (!keep_left_pipeline_layout)
         {
             left->resize(max_streams);
             num_streams = max_streams;

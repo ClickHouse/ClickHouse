@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
@@ -93,13 +94,13 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     return description;
 }
 
-std::vector<size_t> getPermutationForBlock(
+VectorWithMemoryTracking<size_t> getPermutationForBlock(
     const Block & block,
     const Block & lhs_block,
     const Block & rhs_block,
     const NameSet & name_filter)
 {
-    std::vector<size_t> permutation;
+    VectorWithMemoryTracking<size_t> permutation;
     permutation.reserve(block.columns());
     BlockNameMap name_map = getNamesToIndexesMap(block);
 
@@ -135,7 +136,6 @@ JoinStep::JoinStep(
     size_t min_block_size_bytes_,
     size_t max_streams_,
     NameSet required_output_,
-    bool keep_left_read_in_order_,
     bool use_new_analyzer_,
     bool use_join_disjunctions_push_down_)
     : join(std::move(join_))
@@ -144,13 +144,10 @@ JoinStep::JoinStep(
     , min_block_size_bytes(min_block_size_bytes_)
     , max_streams(max_streams_)
     , required_output(std::move(required_output_))
-    , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
     , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
     , disjunctions_optimization_applied(false)
 {
-    if (keep_left_read_in_order)
-        join->keepLeftPipelineInOrder();
     updateInputHeaders({left_header_, right_header_});
 }
 
@@ -194,7 +191,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 min_block_size_bytes,
                 max_streams,
                 this,
-                keep_left_read_in_order,
+                left_pipeline_order != LeftPipelineOrder::None,
                 seal_gate,
                 &processors);
         }
@@ -408,13 +405,30 @@ bool JoinStep::allowPushDownToRight() const
 
 void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
 {
+    /// The order requirement must not be ignored silently: a join that cannot honor it would
+    /// produce a misordered stream the plan believes is sorted. The read-in-order-through-join
+    /// optimization checks `canPreserveLeftBlockOrder` before it commits, so reaching this throw
+    /// means a bug in the caller.
+    if (!join->canPreserveLeftBlockOrder())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The query plan requires the left block order from a join that cannot preserve it ({})",
+            join->getName());
+
+    join->keepLeftPipelineInOrder();
+
     if (disable_squashing)
     {
         min_block_size_rows = 0;
         min_block_size_bytes = 0;
     }
-    keep_left_read_in_order = true;
-    join->keepLeftPipelineInOrder();
+    left_pipeline_order = LeftPipelineOrder::KeepOrder;
+}
+
+void JoinStep::keepLeftPipelineLayout()
+{
+    if (left_pipeline_order == LeftPipelineOrder::None)
+        left_pipeline_order = LeftPipelineOrder::KeepLayout;
 }
 
 std::vector<size_t> JoinStep::getStepGroups() const
@@ -523,11 +537,20 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 {
+    if (left_pipeline_order == LeftPipelineOrder::KeepOrder)
+    {
+        if (!join_->canPreserveLeftBlockOrder())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The query plan requires the left block order from a join that cannot preserve it ({})",
+                join_->getName());
+
+        join_->keepLeftPipelineInOrder();
+    }
+
     join_algorithm_header.reset();
     swap_streams = swap_streams_;
     join = std::move(join_);
-    if (keep_left_read_in_order)
-        join->keepLeftPipelineInOrder();
     updateOutputHeader();
 }
 

@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Formats/FormatSettings.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
@@ -27,9 +28,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-PlanStepIndex::PlanStepIndex()
-: value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
-{}
+IQueryPlanStep::IQueryPlanStep() = default;
+
+IQueryPlanStep::StepIndex::StepIndex()
+    : value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
+{
+}
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
 {
@@ -580,7 +584,7 @@ StepAnalyzer IQueryPlanStep::makeAnalyzer() const
 
 String IQueryPlanStep::getUniqID() const
 {
-    return fmt::format("{}_{}", getName(), step_index.get());
+    return fmt::format("{}_{}", getName(), step_index.value);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const

@@ -3,7 +3,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
+#include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
@@ -15,6 +15,8 @@
 
 namespace DB
 {
+
+class ActionsDAG;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -39,39 +41,19 @@ struct ExplainPlanOptions;
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
+/// Defined in Processors/QueryPlan/Serialization.h.
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
+
 struct ExplainFormatSettings;
 
 
-/// Identity of a plan step, unique within a query.
-class PlanStepIndex
-{
-public:
-    PlanStepIndex();
-
-    /// A copy of a step is a different step -- `clone` is `make_unique<Step>(*this)` and both
-    /// copies can end up in the same plan -- so copying takes a fresh index instead of
-    /// duplicating the source's.
-    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}
-
-    /// Assigning one step over another would either take the source's index, duplicating it, or
-    /// silently keep the old one. Steps are held by pointer and replaced, never assigned over.
-    PlanStepIndex & operator=(const PlanStepIndex &) = delete;
-
-    /// Moving is the same step changing hands, so the index travels with it.
-    PlanStepIndex(PlanStepIndex &&) noexcept = default;
-    PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
-
-    size_t get() const { return value; }
-
-private:
-    size_t value = 0;
-};
 
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
-    IQueryPlanStep() = default;
+    IQueryPlanStep();
 
     IQueryPlanStep(const IQueryPlanStep &) = default;
     IQueryPlanStep(IQueryPlanStep &&) = default;
@@ -102,8 +84,8 @@ public:
     template <size_t size>
     ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 
-    struct Serialization;
-    struct Deserialization;
+    using Serialization = QueryPlanStepSerialization;
+    using Deserialization = QueryPlanStepDeserialization;
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
@@ -153,6 +135,8 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+    /// The number in `getUniqID`, unique within the query.
+    size_t getStepIndex() const { return step_index.value; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -286,7 +270,17 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    PlanStepIndex step_index;
+    /// A copy is a separate step, so it takes a new index; a move keeps it.
+    struct StepIndex
+    {
+        size_t value = 0;
+
+        StepIndex();
+        StepIndex(const StepIndex &) : StepIndex() {}
+        StepIndex(StepIndex &&) = default;
+    };
+
+    StepIndex step_index;
 };
 
 }

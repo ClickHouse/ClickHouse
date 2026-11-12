@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
@@ -117,13 +118,24 @@ struct QueryState
 
     /// Data was sent.
     bool sent_all_data = false;
+    /// The result of a `SELECT` is being streamed to the client, so the client accepts `ProfileEvents`
+    /// packets at any moment, including right before an `Exception`.
+    bool streaming_select_result = false;
+    /// A completed pipeline is being executed with the cancel callback, which sends `ProfileEvents` packets
+    /// periodically, so the client accepts them at any moment, including right before an `Exception`.
+    bool sending_interactive_updates = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
     /// Data was read.
     bool read_all_data = true;
 
-    /// Request requires data from client for function input()
+    /// Request requires data from client for function input() or for INSERT ... RETURNING
     bool need_receive_data_for_input = false;
+    /// The data for input() is received completely (or receiving failed). Set by the thread of the pipeline reading the data.
+    std::atomic_bool received_all_data_for_input = false;
+    /// The result of the query is sent while the data for input() is received (INSERT ... RETURNING).
+    /// In this case the result is sent without `callback_mutex`, which is held by the thread reading the data.
+    bool send_result_while_receiving_data_for_input = false;
     /// temporary place for incoming data block for input()
     Block block_for_input;
     /// sample block from StorageInput
@@ -311,6 +323,7 @@ private:
     InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void killQueryIfStoppedByClient(QueryState & state);
     void processQuery(std::shared_ptr<QueryState> & state);
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
@@ -351,9 +364,11 @@ private:
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);
+    bool shouldSendProfileEvents(const QueryState & state) const;
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// `final_report` is the report after all the data of the `INSERT` has been received.
+    void sendInsertProfileEvents(QueryState & state, bool final_report = false) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
