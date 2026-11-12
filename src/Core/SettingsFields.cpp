@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
-    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int BAD_ARGUMENTS;
@@ -225,18 +224,6 @@ void SettingFieldMaxThreads::parseFromString(const String & str)
     *this = stringToMaxThreads(str);
 }
 
-void SettingFieldMaxThreads::writeBinary(WriteBuffer & out) const
-{
-    writeVarUInt(is_auto ? 0 : value, out);
-}
-
-void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
-{
-    UInt64 x = 0;
-    readVarUInt(x, in);
-    *this = x;
-}
-
 UInt64 SettingFieldMaxThreads::getAuto()
 {
     return getNumberOfCPUCoresToUse();
@@ -340,12 +327,8 @@ Int64 SettingFieldTimespan<unit_>::microsecondsFromUnits(UInt64 units)
 template <SettingFieldTimespanUnit unit_>
 void SettingFieldTimespan<unit_>::writeBinary(WriteBuffer & out) const
 {
-    /// Note that this returns an UInt64 (for both seconds and milliseconds units) for compatibility reasons as the value
-    /// for seconds used to be a integer (now a Float64)
-    /// This method is only used to communicate with clients or servers older than DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
-    /// in which the value was passed as binary (as a UInt64)
-    /// Later versions pass the setting values as String (using toString() and parseFromString()) and there passing "1.2" will
-    /// lead to `1` on releases with integer seconds or `1.2` on more recent releases
+    /// Note that this writes an UInt64 (for both seconds and milliseconds units), so the fractional part is lost.
+    /// It is only used by `BaseSettings::writeChangedBinary`; settings in queries are passed as strings.
     /// See https://github.com/ClickHouse/ClickHouse/issues/36940 for more details
     auto num_units = operator UInt64();
     writeVarUInt(num_units, out);
@@ -414,18 +397,6 @@ void SettingFieldMap::parseFromString(const String & str)
     *this = stringToMap(str);
 }
 
-void SettingFieldMap::writeBinary(WriteBuffer & out) const
-{
-    DB::writeBinary(value, out);
-}
-
-void SettingFieldMap::readBinary(ReadBuffer & in)
-{
-    Map map;
-    DB::readBinary(map, in);
-    *this = map;
-}
-
 namespace
 {
     char stringToChar(const String & str)
@@ -458,30 +429,6 @@ void SettingFieldChar::parseFromString(const String & str)
     *this = stringToChar(str);
 }
 
-void SettingFieldChar::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(toString(), out);
-}
-
-void SettingFieldChar::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinaryGrowing(str, in);
-    *this = stringToChar(str);
-}
-
-
-void SettingFieldURI::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(value.toString(), out);
-}
-
-void SettingFieldURI::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinaryGrowing(str, in);
-    *this = parseURI(str);
-}
 
 Poco::URI SettingFieldURI::parseURI(const String & str)
 {
@@ -539,38 +486,6 @@ void SettingFieldTriBool<Keyword>::parseFromString(const String & str)
         base.parseFromString(str);
 }
 
-template <typename Keyword>
-void SettingFieldTriBool<Keyword>::writeBinary(WriteBuffer & out) const
-{
-    if (is_keyword)
-        writeStringBinary(keyword, out);
-    else
-        base.writeBinary(out);
-}
-
-template <typename Keyword>
-void SettingFieldTriBool<Keyword>::readBinary(ReadBuffer & in)
-{
-    changed = true;
-
-    /// A Bool is a varint 0/1 (see `SettingFieldNumber`); the keyword string starts with its length, which is longer.
-    UInt64 x = 0;
-    readVarUInt(x, in);
-    is_keyword = x > 1;
-    if (!is_keyword)
-    {
-        base = SettingFieldBool(x != 0);
-        return;
-    }
-
-    if (x != keyword.size())
-        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value of a setting", keyword);
-    String str(x, '\0');
-    in.readStrict(str.data(), x);
-    if (str != keyword)
-        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value '{}' of a setting", keyword, str);
-}
-
 template struct SettingFieldTriBool<SettingFieldKeywordForce>;
 
 void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
@@ -583,18 +498,6 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     String str;
     readStringBinaryGrowing(str, in);
     return str;
-}
-
-void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(value, out);
-}
-
-void SettingFieldTimezone::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinaryGrowing(str, in);
-    *this = std::move(str);
 }
 
 void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
@@ -619,18 +522,6 @@ String SettingFieldCustom::toString(bool show_secrets) const
 void SettingFieldCustom::parseFromString(const String & str)
 {
     *this = Field::restoreFromDump(str);
-}
-
-void SettingFieldCustom::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(toString(), out);
-}
-
-void SettingFieldCustom::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinaryGrowing(str, in);
-    parseFromString(str);
 }
 
 SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)

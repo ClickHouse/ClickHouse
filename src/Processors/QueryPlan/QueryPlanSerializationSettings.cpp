@@ -154,12 +154,12 @@ QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
 void QueryPlanSerializationSettings::write(WriteBuffer & out) const
 {
-    impl->write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    impl->write(out);
 }
 
 void QueryPlanSerializationSettings::read(ReadBuffer & in)
 {
-    impl->read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    impl->read(in);
 }
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
