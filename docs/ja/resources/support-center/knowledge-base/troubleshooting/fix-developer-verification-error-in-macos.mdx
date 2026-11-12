@@ -1,6 +1,6 @@
 ---
 title: macOSの開発元検証エラーに対処する
-description: ClickHouseコマンドの実行時に表示されるmacOSの開発元検証エラーに、システム設定またはターミナルを使って対処する方法を学びます。
+description: ClickHouseコマンドの実行時に表示されるmacOSの開発元検証エラーに、システム設定または端末を使って対処する方法を学びます。
 date: 2024-01-09
 tags: ['エラーと例外']
 keywords: ['開発元検証', 'macOS']
@@ -8,49 +8,51 @@ keywords: ['開発元検証', 'macOS']
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-<div id="fix-the-developer-verification-error-in-macos">
-  ## macOSで開発元検証エラーを修正する
-</div>
+## macOS での開発元検証エラーを解決する {#fix-the-developer-verification-error-in-macos}
 
-`brew` を使って ClickHouse をインストールすると、macOS でエラーが発生することがあります。
-デフォルトでは、macOS は開発元を確認できない開発者が作成したアプリケーションやツールを実行しません。
+macOS はデフォルトでは、インターネットからダウンロードしたアプリケーションやツールのうち、確認済みの開発元による署名と Apple による公証がないものは実行しません。
 
-`clickhouse` コマンドを実行しようとすると、次のエラーが表示されることがあります。
+26.7.4 リリース以降 (および 26.8 以降のすべてのリリース) 、ClickHouse の macOS 向けビルドは ClickHouse Inc. の Developer ID で署名され、Apple による公証を受けています。これらのビルドは [GitHub のリリースページ](https://github.com/ClickHouse/ClickHouse/releases) で `clickhouse-macos.zip` (Intel) および `clickhouse-macos-aarch64.zip` (Apple silicon) として公開されており、Homebrew cask でインストールされるのもこれらのビルドです。これらのいずれかを使用していれば、macOS は警告を出さずに `clickhouse` を実行するため、本記事の手順は不要です。
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="macOSの開発元検証エラーダイアログ" border />
+ただし、macOS によって隔離 (quarantine) された署名なしのバイナリを実行すると、引き続きこのエラーが表示されることがあります。たとえば次のような場合です。
 
-この開発元検証エラーを回避するには、システム設定で該当する設定を見つけるか、ターミナルを使用するか、ClickHouse を再インストールして、macOS の隔離からアプリを削除する必要があります。
+* Homebrew でインストールした古い ClickHouse リリース - `brew upgrade --cask clickhouse` を実行して署名済みのリリースに更新してください。
+* GitHub のリリースページから Web ブラウザでダウンロードした自己展開形式の `clickhouse-macos` または `clickhouse-macos-aarch64` バイナリ - 代わりに同じリリースの `.zip` ファイルをダウンロードしてください。
+* Web ブラウザでダウンロードした 26.7.4 より前のリリース。
 
-<div id="system-settings-process">
-  ## システム設定での手順
-</div>
+`curl https://clickhouse.com/ | sh` でインストールしたバイナリは署名されていませんが、`curl` はダウンロードしたファイルを隔離しないため、macOS はこのエラーを出さずに実行します。
 
-`clickhouse` 実行可能ファイルを隔離から外す最も簡単な方法は、次のとおりです。
+隔離された `clickhouse` バイナリを実行しようとすると、次のようなエラーが表示されることがあります。
 
-1. **システム設定**を開きます。
+<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS の開発元検証エラーダイアログ" border />
 
-2. **プライバシーとセキュリティ**に移動します。
+署名済みのビルドに切り替えられない場合は、システム設定または端末で、バイナリの隔離を解除してください。
+
+## システム設定での手順 {#system-settings-process}
+
+1. まず `clickhouse` バイナリを一度実行します。これにより macOS が上記のエラーを表示し、ブロックされたバイナリが記録されます。
+
+2. **システム設定**を開きます。
+
+3. **プライバシーとセキュリティ**に移動します。
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="macOSのプライバシーとセキュリティ設定のデフォルト表示" border />
 
-3. ウィンドウの一番下までスクロールし、*&quot;「clickhouse-macos-aarch64」は、識別された開発元のものではないため、使用がブロックされました&quot;* というメッセージを探します。
+4. **セキュリティ**セクションまでスクロールし、*「clickhouse-macos-aarch64」は、識別された開発元のものではないため、使用がブロックされました* というメッセージを探します。
 
-4. **このまま開く**をクリックします。
+5. **このまま開く**をクリックします (最近の macOS バージョンでは **Open Anyway** に相当するボタンです) 。
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="このまま開くボタンが表示されたmacOSのプライバシーとセキュリティ設定" border />
 
-5. macOS のユーザーパスワードを入力します。
+6. macOS のユーザーパスワードを入力します。
 
-これで、ターミナルで `clickhouse` コマンドを実行できるようになります。
+これで、端末で `clickhouse` コマンドを実行できるようになります。次回の実行時に、macOS から再度確認を求められる場合があります。
 
-<div id="terminal-process">
-  ## ターミナルでの手順
-</div>
+## 端末での手順 {#terminal-process}
 
-`このまま開く` ボタンを押してもこの問題が解決しない場合は、コマンドラインからこの手順を実行することもできます。
-単にコマンドラインで作業したい場合もあるでしょう。
+システム設定のボタンでこの問題が解決しない場合や、コマンドラインで作業したい場合は、`xattr` を使用してバイナリから隔離属性を削除します。
 
-まず、Homebrew が `clickhouse` 実行可能ファイルをどこにインストールしたかを確認します。
+`clickhouse` が `PATH` に含まれている場合は、まずその場所を確認します。
 
 ```shell
 which clickhouse
@@ -74,30 +76,12 @@ xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
 clickhouse
 ```
 
-以下のような出力になるはずです。
+次のような出力が得られるはずです。
 
 ```shell
-以下のコマンドのいずれかを使用してください:
+Use one of the following commands:
 clickhouse local [args]
 clickhouse client [args]
 clickhouse benchmark [args]
 ...
-```
-
-<div id="fix-the-issue-by-reinstalling-clickhouse">
-  ## ClickHouse を再インストールして問題を解決する
-</div>
-
-Brew には、インストールしたバイナリが最初から隔離されないようにするコマンドラインオプションがあります。
-
-まず、ClickHouse をアンインストールします:
-
-```shell
-brew uninstall clickhouse
-```
-
-ここで、`--no-quarantine` を指定して ClickHouse を再インストールします。
-
-```shell
-brew install --no-quarantine clickhouse
 ```

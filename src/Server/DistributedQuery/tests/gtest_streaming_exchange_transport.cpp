@@ -1,17 +1,24 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <atomic>
+#include <charconv>
 #include <chrono>
-#include <csignal>
 #include <condition_variable>
+#include <csignal>
+#include <filesystem>
 #include <future>
 #include <mutex>
 #include <optional>
 #include <thread>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include <gtest/gtest.h>
 #include <fmt/format.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
@@ -22,7 +29,10 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -53,6 +63,9 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
 
 namespace ProfileEvents
 {
@@ -133,7 +146,7 @@ public:
         gate.notify_all();
     }
 
-    std::vector<Chunk> chunks;
+    Chunks chunks;
 
 protected:
     void consume(Chunk chunk) override
@@ -153,7 +166,7 @@ private:
 struct LoopbackExchange
 {
     ExchangeConnectionsPtr connections = std::make_shared<ExchangeConnections>();
-    ExchangeServer server{"127.0.0.1", 0, connections};
+    ExchangeServer server{"127.0.0.1", 0, /*listen_backlog=*/ 64, connections};
 
     LoopbackExchange() { server.start(); }
 };
@@ -243,7 +256,7 @@ UInt64 eventCount(ProfileEvents::Event event)
     return ProfileEvents::global_counters[event];
 }
 
-size_t countRows(const std::vector<Chunk> & chunks)
+size_t countRows(const Chunks & chunks)
 {
     size_t rows = 0;
     for (const auto & chunk : chunks)
@@ -251,7 +264,7 @@ size_t countRows(const std::vector<Chunk> & chunks)
     return rows;
 }
 
-UInt64 sumOfValues(const std::vector<Chunk> & chunks)
+UInt64 sumOfValues(const Chunks & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)
@@ -343,6 +356,90 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
         EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
         EXPECT_EQ(rowless_with_info, 1u);
         EXPECT_EQ(data_chunks_with_info, 1u);
+    }
+}
+
+/// The sender and the receiver keep the types of the columns for the later packets. The stream has two
+/// `UInt64` columns with one type object, and a column of `uniq` states. Both source modes must give the
+/// values that were sent.
+TEST(StreamingExchangeTransport, ColumnsWithASharedTypeAndStatesCrossTheSocket)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t packets = 4;
+    constexpr size_t rows_per_chunk = 100;
+
+    const DataTypePtr number_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr state_type = DataTypeFactory::instance().get("AggregateFunction(uniq, UInt64)");
+    const auto & state_function = assert_cast<const DataTypeAggregateFunction &>(*state_type).getFunction();
+    auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "a"),
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "b"),
+        ColumnWithTypeAndName(state_type->createColumn(), state_type, "s")});
+
+    /// Each row of `s` holds the state of `uniq` over the one value of `a` in that row.
+    auto make_chunk = [&](size_t first_value)
+    {
+        auto numbers = makeChunk(first_value, rows_per_chunk).detachColumns().front();
+        auto states = state_type->createColumn();
+        auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+        const IColumn * arguments[] = {numbers.get()};
+        for (size_t row = 0; row < rows_per_chunk; ++row)
+        {
+            state_column.insertDefault();
+            state_function->add(state_column.getData().back(), arguments, row, &state_column.createOrGetArena());
+        }
+        return Chunk(Columns{numbers, numbers, std::move(states)}, rows_per_chunk);
+    };
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        Chunks chunks;
+        for (size_t index = 0; index < packets; ++index)
+            chunks.push_back(make_chunk(index * rows_per_chunk));
+
+        LoopbackExchange exchange;
+        std::vector<Chunks> chunks_per_stream;
+        chunks_per_stream.push_back(std::move(chunks));
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 1);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        size_t rows = 0;
+        UInt64 sum_a = 0;
+        UInt64 sum_b = 0;
+        UInt64 sum_uniq = 0;
+        for (const auto & chunk : sink->chunks)
+        {
+            if (chunk.getNumRows() == 0)
+                continue;
+            rows += chunk.getNumRows();
+            const auto & columns = chunk.getColumns();
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[0]).getData())
+                sum_a += value;
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[1]).getData())
+                sum_b += value;
+            auto values = ColumnAggregateFunction::convertToValues(IColumn::mutate(columns[2]));
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*values).getData())
+                sum_uniq += value;
+        }
+        const size_t total_rows = packets * rows_per_chunk;
+        EXPECT_EQ(rows, total_rows);
+        EXPECT_EQ(sum_a, UInt64(total_rows) * (total_rows - 1) / 2);
+        EXPECT_EQ(sum_b, sum_a);
+        /// Each state saw one value.
+        EXPECT_EQ(sum_uniq, total_rows);
     }
 }
 
@@ -681,8 +778,8 @@ std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string by
         ExchangeTest::completeSinkHandshake(socket);
         StreamingExchangeProtocol::sendAll(socket, packet_bytes.data(), packet_bytes.size(), "test packet");
         if (then == ThenPeer::Resets)
-            socket.setLinger(true, 0);
-        if (then != ThenPeer::KeepsOpen)
+            ExchangeTest::resetAfterDelivery(socket);
+        else if (then == ThenPeer::Closes)
             socket.close();
     };
 }
@@ -958,6 +1055,229 @@ std::chrono::milliseconds waitAfterCancel(QueryPipeline & pipeline, const std::f
 
 constexpr Int64 well_before_the_handshake_timeout_ms = StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS * 1000 / 2;
 
+/// `SO_SNDBUF` / `SO_RCVBUF` as the kernel reports them. Linux doubles the size passed to
+/// setsockopt and clamps it to `wmem_max` / `rmem_max` first; other kernels adjust differently.
+struct SocketBufferOptions
+{
+    int sndbuf = 0;
+    int rcvbuf = 0;
+};
+
+SocketBufferOptions optionsOf(const Poco::Net::StreamSocket & socket)
+{
+    return SocketBufferOptions{socket.getSendBufferSize(), socket.getReceiveBufferSize()};
+}
+
+/// The options a connected socket keeps after the same setsockopt calls `applySocketBufferSizes`
+/// makes. A zero size is not set, which is what leaves that direction on kernel TCP autotuning.
+SocketBufferOptions buffersTheKernelKeeps(UInt64 sndbuf, UInt64 rcvbuf)
+{
+    Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::Net::StreamSocket client(listener.address());
+    Poco::Net::StreamSocket server_side = listener.acceptConnection();
+    listener.close();
+
+    auto apply = [&](Poco::Net::StreamSocket & socket)
+    {
+        if (sndbuf > 0)
+            socket.setSendBufferSize(static_cast<int>(sndbuf));
+        if (rcvbuf > 0)
+            socket.setReceiveBufferSize(static_cast<int>(rcvbuf));
+    };
+    apply(client);
+    apply(server_side);
+
+    const auto client_options = optionsOf(client);
+    const auto server_options = optionsOf(server_side);
+    EXPECT_EQ(client_options.sndbuf, server_options.sndbuf);
+    EXPECT_EQ(client_options.rcvbuf, server_options.rcvbuf);
+    return client_options;
+}
+
+/// Connected sockets whose local or peer port is `port`. The listening socket has no peer.
+std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
+{
+    std::vector<SocketBufferOptions> found;
+
+    const std::string fd_dir = std::filesystem::exists("/proc/self/fd") ? "/proc/self/fd" : "/dev/fd";
+    std::error_code error;
+    for (auto it = std::filesystem::directory_iterator(fd_dir, error); !error && it != std::filesystem::directory_iterator(); it.increment(error))
+    {
+        const std::string name = it->path().filename().string();
+        int fd = -1;
+        const auto [parse_end, parse_error] = std::from_chars(name.data(), name.data() + name.size(), fd);
+        if (parse_error != std::errc() || parse_end != name.data() + name.size())
+            continue;
+
+        sockaddr_storage local{};
+        socklen_t local_len = sizeof(local);
+        if (getsockname(fd, reinterpret_cast<sockaddr *>(&local), &local_len) != 0 || local.ss_family != AF_INET)
+            continue;
+
+        sockaddr_storage peer{};
+        socklen_t peer_len = sizeof(peer);
+        if (getpeername(fd, reinterpret_cast<sockaddr *>(&peer), &peer_len) != 0 || peer.ss_family != AF_INET)
+            continue;
+
+        const auto local_port = ntohs(reinterpret_cast<sockaddr_in *>(&local)->sin_port);
+        const auto peer_port = ntohs(reinterpret_cast<sockaddr_in *>(&peer)->sin_port);
+        if (local_port != port && peer_port != port)
+            continue;
+
+        SocketBufferOptions options;
+        socklen_t opt_len = sizeof(options.sndbuf);
+        if (getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &options.sndbuf, &opt_len) != 0)
+            continue;
+        opt_len = sizeof(options.rcvbuf);
+        if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &options.rcvbuf, &opt_len) != 0)
+            continue;
+        found.push_back(options);
+    }
+    return found;
+}
+
+/// Passes the first chunk and holds the second, so both exchange sockets stay open with the
+/// buffer sizes already applied: the sink applies them before it sends, and the source applies
+/// them before the hello that lets the sink send.
+class HoldSecondChunk : public ISimpleTransform
+{
+public:
+    explicit HoldSecondChunk(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ false)
+    {
+    }
+
+    String getName() const override { return "HoldSecondChunk"; }
+
+    void release()
+    {
+        std::lock_guard lock(mutex);
+        released = true;
+        gate.notify_all();
+    }
+
+protected:
+    void transform(Chunk &) override
+    {
+        std::unique_lock lock(mutex);
+        if (chunks_seen++ == 0)
+            return;
+        gate.wait(lock, [&] { return released; });
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable gate;
+    bool released = false;
+    size_t chunks_seen = 0;
+};
+
+/// One real sink and one real source on a loopback exchange. Returns the buffer options of the
+/// two connected sockets once the sink has sent, which is after both sides have applied the
+/// current `streaming_exchange_sndbuf` / `streaming_exchange_rcvbuf` values.
+std::vector<SocketBufferOptions> exchangeSocketBuffers()
+{
+    auto header = makeHeader();
+    LoopbackExchange exchange;
+
+    Chunks chunks;
+    chunks.push_back(makeChunk(0, 32));
+    chunks.push_back(makeChunk(32, 32));
+
+    std::shared_ptr<HoldSecondChunk> hold;
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        hold = std::make_shared<HoldSecondChunk>(stream_header);
+        return hold;
+    });
+    builder.addSimpleTransform([](const SharedHeader & stream_header)
+    {
+        return std::make_shared<StreamingExchangeSerializingTransform>(
+            stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+    });
+    if (!hold)
+    {
+        ADD_FAILURE() << "HoldSecondChunk was not inserted";
+        return {};
+    }
+
+    auto future_connection = exchange.connections->getConnection("query", "stream");
+    builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
+    {
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*advisory*/ false);
+    });
+    auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto receiving = makeReceivingPipeline(
+        header, exchange.server.port(), /*source_hands_packets=*/ false, std::make_shared<CollectingSink>(header));
+
+    const UInt64 sent_before = eventCount(ProfileEvents::StreamingExchangeSendBytes);
+    const UInt16 port = exchange.server.port();
+
+    std::optional<int> sending_code;
+    std::optional<int> receiving_code;
+    std::atomic<bool> sender_finished{false};
+    std::atomic<bool> receiver_finished{false};
+    std::thread sender([&]
+    {
+        sending_code = run(sending, 2);
+        sender_finished.store(true);
+    });
+    std::thread receiver([&]
+    {
+        receiving_code = run(receiving, 2);
+        receiver_finished.store(true);
+    });
+
+    std::vector<SocketBufferOptions> open_sockets;
+    {
+        /// On any exit path, releases the held chunk so both pipelines finish, then joins them.
+        struct FinishExchange
+        {
+            std::shared_ptr<HoldSecondChunk> hold;
+            std::thread & sender;
+            std::thread & receiver;
+
+            ~FinishExchange()
+            {
+                hold->release();
+                sender.join();
+                receiver.join();
+            }
+        } finish{hold, sender, receiver};
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (eventCount(ProfileEvents::StreamingExchangeSendBytes) > sent_before)
+            {
+                open_sockets = connectedSocketBuffers(port);
+                if (open_sockets.size() >= 2)
+                    break;
+            }
+            if (sender_finished.load() && receiver_finished.load())
+                break;
+            std::this_thread::yield();
+        }
+    }
+
+    EXPECT_EQ(sending_code, std::nullopt);
+    EXPECT_EQ(receiving_code, std::nullopt);
+    return open_sockets;
+}
+
+/// Restores the published socket buffer sizes when the test exits.
+struct RestoreBufferSizes
+{
+    const StreamingExchangeProtocol::SocketBufferSizes saved = StreamingExchangeProtocol::getSocketBufferSizes();
+
+    ~RestoreBufferSizes()
+    {
+        StreamingExchangeProtocol::setSocketBufferSizes(saved.sndbuf, saved.rcvbuf);
+    }
+};
+
 }
 
 /// A cancel stops a source that waits for the `SinkHello` of a peer that never answers, instead of the query
@@ -1007,6 +1327,48 @@ TEST(StreamingExchangeTransport, CancelStopsTheWaitForTheConnect)
         well_before_the_handshake_timeout_ms);
 }
 #endif
+
+/// Explicit `streaming_exchange_sndbuf` / `streaming_exchange_rcvbuf` values reach both sockets of a
+/// new exchange, and publishing 0 again leaves the next connection on the kernel defaults. The
+/// expected options come from a socket this test configured the same way, so kernel doubling and
+/// clamping are part of the comparison rather than hard-coded.
+TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
+{
+    MainThreadStatus::getInstance();
+
+    const RestoreBufferSizes restore;
+
+    const SocketBufferOptions kernel_defaults = buffersTheKernelKeeps(0, 0);
+    UInt64 sndbuf = 65536;
+    UInt64 rcvbuf = 32768;
+    SocketBufferOptions configured = buffersTheKernelKeeps(sndbuf, rcvbuf);
+    if (configured.sndbuf == kernel_defaults.sndbuf || configured.rcvbuf == kernel_defaults.rcvbuf)
+    {
+        sndbuf = 16384;
+        rcvbuf = 8192;
+        configured = buffersTheKernelKeeps(sndbuf, rcvbuf);
+    }
+    ASSERT_NE(configured.sndbuf, kernel_defaults.sndbuf);
+    ASSERT_NE(configured.rcvbuf, kernel_defaults.rcvbuf);
+
+    StreamingExchangeProtocol::setSocketBufferSizes(sndbuf, rcvbuf);
+    const auto explicit_sockets = exchangeSocketBuffers();
+    ASSERT_EQ(explicit_sockets.size(), 2u);
+    for (const auto & socket : explicit_sockets)
+    {
+        EXPECT_EQ(socket.sndbuf, configured.sndbuf);
+        EXPECT_EQ(socket.rcvbuf, configured.rcvbuf);
+    }
+
+    StreamingExchangeProtocol::setSocketBufferSizes(0, 0);
+    const auto default_sockets = exchangeSocketBuffers();
+    ASSERT_EQ(default_sockets.size(), 2u);
+    for (const auto & socket : default_sockets)
+    {
+        EXPECT_EQ(socket.sndbuf, kernel_defaults.sndbuf);
+        EXPECT_EQ(socket.rcvbuf, kernel_defaults.rcvbuf);
+    }
+}
 
 namespace
 {

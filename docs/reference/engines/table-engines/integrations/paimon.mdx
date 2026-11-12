@@ -14,10 +14,10 @@ It supports snapshot reads, incremental reads, and basic partition pruning provi
 ## Create table {#create-table}
 
 Note that the Paimon table must already exist in the storage, this command does not take DDL parameters to create a new table.
-Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine` (disabled by default), so enable it before running `CREATE TABLE`.
+Creating `Paimon*` tables is gated by `enable_paimon_storage_engine` (disabled by default), so enable it before running `CREATE TABLE`.
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
     ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
@@ -70,12 +70,16 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Partition pruning when `use_paimon_partition_pruning` is enabled.
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
+- Schema evolution: each data file is read with the schema it was written with, and its top-level columns are matched to the current schema by Paimon field id, so renamed columns and columns dropped and re-added under the same name read as in Spark.
 
 ## Primary-key tables {#primary-key-tables}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable. Incremental
+reads of primary-key tables are not supported.
 
 ## Tables with deletion vectors {#deletion-vectors}
 
@@ -102,9 +106,10 @@ Either way, the rows that those deletion vectors removed stay in what the increm
 
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
 
-- `allow_experimental_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
+- `enable_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
 - `use_paimon_metadata_files_cache` — enables the Paimon metadata files cache (caches deserialized manifest lists and manifests). Set to `1` to enable, `0` to disable. Default: `0`. How this setting takes effect differs between table functions and persistent table engines — see the note below.
 - `paimon_incremental_read` — enable incremental read mode.
+- `paimon_incremental_read_append_overwrite` — the incremental read also delivers the rows that `OVERWRITE` snapshots write, like Paimon's `streaming-read-append-overwrite`. Default: `0`.
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
 - `paimon_keeper_path` — Keeper path for incremental read state. Must be set and unique per table; supports macros such as `{database}`, `{table}`, `{uuid}`.
 - `paimon_replica_name` — Replica name for incremental read state. Must be set and unique per replica; supports macros such as `{replica}`.
@@ -112,7 +117,7 @@ This engine uses the same settings as the corresponding object storage engines a
 Example (enable experimental Paimon engine and metadata files cache):
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 SET use_paimon_metadata_files_cache = 1;
 
 CREATE TABLE paimon_cached
@@ -224,7 +229,7 @@ You can build an end-to-end pipeline that continuously syncs data from a Paimon 
 The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the auto-detecting `Paimon` engine as appropriate for your storage backend:
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 -- Local storage
 CREATE TABLE paimon_mv_source
@@ -288,7 +293,10 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - Incremental read uses at-most-once delivery: the committed snapshot is advanced when data files are collected, before the data is actually consumed. If the query fails after file collection, the skipped snapshots will not be re-read on retry.
 - The table engine is read-only; data modification is not supported.
 - Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
+- The first incremental read returns every row of the current snapshot. After that, an incremental read delivers the rows of `APPEND` snapshots only, like Paimon's streaming read of an append table: `COMPACT`, `OVERWRITE` and `ANALYZE` snapshots are skipped. Paimon commits every write that deletes or rewrites data files as `OVERWRITE` (`INSERT OVERWRITE`, `TRUNCATE`, and the copy-on-write rewrites of `DELETE`, `UPDATE` and of a `MERGE INTO` that updates or deletes rows), so the rows such a commit writes, such as the new versions of updated rows, are not delivered, and a warning is logged for every skipped `OVERWRITE` snapshot. With `paimon_incremental_read_append_overwrite = 1` they are delivered, like with Paimon's `streaming-read-append-overwrite`, together with the unchanged rows of every data file the commit rewrote, except for the data files that a later snapshot read by the same query removes. `COMPACT` snapshots are not read, so a query that reads an `APPEND` snapshot, a `COMPACT` that merges the file it added and an `OVERWRITE` that rewrites the merged file returns the rows of both the original and the rewritten file: the unchanged rows appear twice in its result, and the changed ones in their old and new versions. `paimon_target_snapshot_id` still returns the delta of any snapshot.
+- After the first incremental read, a snapshot with a commit kind that ClickHouse does not know fails the incremental read, and every later one fails too until ClickHouse is upgraded or the cursor is moved past the snapshot in Keeper, as the error message describes.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
+- Fields inside a `ROW` column are matched to data files by name, not by Paimon field id. Reading a data file written before a field inside a `ROW` was renamed, or before such a field was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed field and the dropped field's values for the re-added one. Adding and dropping fields is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
 
 ## Aliases {#aliases}
 
@@ -314,7 +322,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -323,6 +331,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 

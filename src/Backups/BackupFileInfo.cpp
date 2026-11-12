@@ -8,7 +8,10 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Interpreters/ProcessList.h>
+
+#include <atomic>
 
 
 namespace ProfileEvents
@@ -74,11 +77,10 @@ namespace
     }
 
     /// We store entries' file names in the backup without leading slashes.
-    String removeLeadingSlash(const String & path)
+    void removeLeadingSlash(String & path)
     {
         if (path.starts_with('/'))
-            return path.substr(1);
-        return path;
+            path.erase(0, 1);
     }
 }
 
@@ -104,21 +106,27 @@ String BackupFileInfo::describe() const
 
 
 BackupFileInfo buildFileInfoForBackupEntry(
-    const String & file_name,
+    String file_name,
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
     LoggerPtr log)
 {
-    auto adjusted_path = removeLeadingSlash(file_name);
-
+    /// The name is taken by value so that the caller can hand over its own copy: a backup of millions of
+    /// files holds gigabytes of path characters, and one copy of them is enough.
     BackupFileInfo info;
-    info.file_name = adjusted_path;
+    info.file_name = std::move(file_name);
+    removeLeadingSlash(info.file_name);
+
+    /// The adjusted path is needed throughout this function - reference the copy stored in `info` instead
+    /// of keeping a second one alive for the whole call.
+    const String & adjusted_path = info.file_name;
 
     /// If it's a "reference" just set the target to a concrete file
     if (backup_entry->isReference())
     {
-        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
+        info.reference_target = backup_entry->getReferenceTarget();
+        removeLeadingSlash(info.reference_target);
         return info;
     }
 
@@ -218,52 +226,86 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
+BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     LoggerPtr log = getLogger("FileInfosFromBackupEntries");
     LOG_TRACE(log, "Building file infos for backup entries");
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
 
-    BackupFileInfos infos;
-    infos.resize(backup_entries.size());
+    const size_t num_entries = backup_entries.size();
 
+    /// Take the names and the entries apart and release the pairs. The names are consumed here, one
+    /// into each file info, so they must not outlive this function; the entries go on to the writing
+    /// phase, which holds a pointer per entry instead of a 40-byte pair slot it can no longer read.
+    Strings names;
+    names.reserve(num_entries);
+    BackupFileInfosAndEntries res;
+    res.entries.reserve(num_entries);
+    for (auto & [name, entry] : backup_entries)
+    {
+        names.push_back(std::move(name));
+        res.entries.push_back(std::move(entry));
+    }
+    BackupEntries{}.swap(backup_entries);
+
+    res.file_infos.resize(num_entries);
+
+    /// A task per entry, so that a slow one holds up nothing, bounded so that millions of them do not keep a task
+    /// each: `TaskTracker::add` admits one while fewer than this are in flight, and rethrows the first failure.
+    const size_t max_tasks_inflight = 2 * std::max<size_t>(1, thread_pool.getMaxThreads());
+
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+
+    /// The tracker rethrows the first failure, which stops the loop below from adding more tasks, but the tasks
+    /// already given to the pool still run. Calculating a checksum reads a whole file, so without this they go on
+    /// reading - up to `max_tasks_inflight` of them - after the backup has failed or been cancelled.
     std::atomic_bool failed = false;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
-    for (size_t i = 0; i != backup_entries.size(); ++i)
+    /// Capturing by reference is fine: everything captured outlives the tracker, being created before it.
+    TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
+
+    try
     {
-        if (failed)
-            break;
-
-        /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
-        /// of an exception
-        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed, current_component = Coordination::getCurrentComponent()]()
+        for (size_t i = 0; i != num_entries; ++i)
         {
-            if (failed)
-                return;
-
-            auto component_guard = Coordination::setCurrentComponent(current_component);
-            try
+            task_tracker.add([&names, &res, &read_settings, &base_backup, &process_list_element, &failed, i, log,
+                              current_component = Coordination::getCurrentComponent()]
             {
-                const auto & name = backup_entries[i].first;
-                const auto & entry = backup_entries[i].second;
+                if (failed)
+                    return;
 
-                if (process_list_element)
-                    process_list_element->checkTimeLimit();
+                auto component_guard = Coordination::setCurrentComponent(current_component);
 
-                infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
-            }
-            catch (...)
-            {
-                failed = true;
-                throw;
-            }
-        });
+                const auto & entry = res.entries[i];
+
+                try
+                {
+                    if (process_list_element)
+                        process_list_element->checkTimeLimit();
+
+                    /// The name is moved out: from here on it lives in `res.file_infos[i]`, indexed the same way.
+                    res.file_infos[i] = buildFileInfoForBackupEntry(std::move(names[i]), entry, base_backup, read_settings, log);
+                }
+                catch (...)
+                {
+                    /// Stop the other tasks, as `copyS3File` does.
+                    failed = true;
+                    throw;
+                }
+            });
+        }
+
+        task_tracker.waitAll();
+    }
+    catch (...)
+    {
+        /// `~TaskTracker` asserts that no task is left before it waits, so a failed or cancelled backup has to
+        /// drain it here, as `copyS3File` does, or the assertion aborts a debug build while it unwinds.
+        task_tracker.safeWaitAll();
+        throw;
     }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
-
-    return infos;
+    return res;
 }
 
 }

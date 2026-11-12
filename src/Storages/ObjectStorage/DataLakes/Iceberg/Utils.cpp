@@ -39,6 +39,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -86,6 +87,10 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int NOT_IMPLEMENTED;
+extern const int FILE_ALREADY_EXISTS;
+extern const int STALE_VERSION;
+extern const int S3_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -111,6 +116,7 @@ namespace ProfileEvents
     extern const Event IcebergMetadataJSONParses;
     extern const Event IcebergMetadataJSONParsedBytes;
     extern const Event IcebergMetadataJSONParseMicroseconds;
+    extern const Event IcebergMetadataJSONValidations;
 }
 
 namespace DB::Setting
@@ -345,6 +351,10 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
+        /// Holding the whole message lets the zstd buffer size its context to it at `finalize`.
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE;
+        if (compression_method == CompressionMethod::Zstd)
+            buf_size = std::max(buf_size, data.size());
         /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
         /// independent of the session `snappy_mode`. The wire format is not encoded in the
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
@@ -355,7 +365,8 @@ void writeMessageToFile(
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
-            SnappyMode::Basic);
+            SnappyMode::Basic,
+            buf_size);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -364,6 +375,13 @@ void writeMessageToFile(
         buffer_metadata->write(data.data(), data.size());
         buffer_metadata->finalize();
     }
+}
+
+bool isConditionalWriteConflict(const Exception & e)
+{
+    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
+        || e.code() == ErrorCodes::STALE_VERSION
+        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
 }
 
 /// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
@@ -426,7 +444,11 @@ bool writeMetadataFile(
         /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
         if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (isConditionalWriteConflict(e))
+            LOG_DEBUG(
+                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
     catch (...)
@@ -513,6 +535,17 @@ bool tryWriteVersionHintFile(
 
             if (!assert_version_exactly)
                 return true;
+        }
+        catch (const Exception & e)
+        {
+            if (isConditionalWriteConflict(e))
+                LOG_DEBUG(
+                    getLogger("IcebergWrites"),
+                    "Version hint {} was changed by a concurrent writer: {}",
+                    storage_version_hint_path,
+                    e.message());
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         catch (...)
         {
@@ -622,7 +655,7 @@ enum class MostRecentMetadataFileSelectionWay
 struct ShortMetadataFileInfo
 {
     Int32 version;
-    UInt64 last_updated_ms;
+    Int64 last_updated_ms;
     String path;
 };
 
@@ -674,14 +707,244 @@ String readMetadataJSONString(
     return json_str;
 }
 
-Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str)
+namespace
+{
+
+enum class MetadataFieldType : uint8_t
+{
+    Int32,
+    Int64,
+    String,
+    Array,
+    Object,
+};
+
+struct MetadataField
+{
+    const char * name;
+    MetadataFieldType type;
+    /// The first format version that requires the field, 0 if the field is optional.
+    Int32 required_since;
+    /// If set, the field is not required from format version `required_unless_since` on when this field is present instead.
+    const char * required_unless = nullptr;
+    Int32 required_unless_since = 0;
+};
+
+/// The fields of a table metadata file and of its entries that the Iceberg spec requires or types,
+/// except the schemas, which are checked when they are parsed.
+constexpr MetadataField table_metadata_fields[] = {
+    {f_location, MetadataFieldType::String, 1},
+    {f_last_updated_ms, MetadataFieldType::Int64, 1},
+    {f_last_column_id, MetadataFieldType::Int32, 1},
+    {f_table_uuid, MetadataFieldType::String, 2},
+    {f_last_sequence_number, MetadataFieldType::Int64, 2},
+    {f_partition_specs, MetadataFieldType::Array, 2},
+    {f_last_partition_id, MetadataFieldType::Int32, 2},
+    {f_sort_orders, MetadataFieldType::Array, 2},
+    {f_current_snapshot_id, MetadataFieldType::Int64, 0},
+    {f_next_row_id, MetadataFieldType::Int64, 0},
+    {f_snapshots, MetadataFieldType::Array, 0},
+    {f_snapshot_log, MetadataFieldType::Array, 0},
+    {f_metadata_log, MetadataFieldType::Array, 0},
+    {f_refs, MetadataFieldType::Object, 0},
+};
+constexpr MetadataField partition_spec_fields[] = {{f_spec_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
+constexpr MetadataField sort_order_fields[] = {{f_order_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
+constexpr MetadataField partition_field_fields[] = {
+    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids, 3},
+    {f_source_ids, MetadataFieldType::Array, 0},
+    {f_field_id, MetadataFieldType::Int32, 0},
+    {f_name, MetadataFieldType::String, 1},
+    {f_transform, MetadataFieldType::String, 1},
+};
+constexpr MetadataField sort_field_fields[] = {
+    {f_transform, MetadataFieldType::String, 1},
+    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids, 3},
+    {f_source_ids, MetadataFieldType::Array, 0},
+    {f_direction, MetadataFieldType::String, 1},
+    {f_null_order, MetadataFieldType::String, 1},
+};
+constexpr MetadataField snapshot_fields[] = {
+    {f_metadata_snapshot_id, MetadataFieldType::Int64, 1},
+    {f_timestamp_ms, MetadataFieldType::Int64, 1},
+    {f_parent_snapshot_id, MetadataFieldType::Int64, 0},
+    {f_metadata_sequence_number, MetadataFieldType::Int64, 0},
+    {f_schema_id, MetadataFieldType::Int32, 0},
+    {f_first_row_id, MetadataFieldType::Int64, 0},
+    {f_added_rows, MetadataFieldType::Int64, 0},
+};
+constexpr MetadataField snapshot_log_fields[] = {{f_metadata_snapshot_id, MetadataFieldType::Int64, 1}, {f_timestamp_ms, MetadataFieldType::Int64, 1}};
+constexpr MetadataField metadata_log_fields[] = {{f_metadata_file, MetadataFieldType::String, 1}, {f_timestamp_ms, MetadataFieldType::Int64, 1}};
+constexpr MetadataField ref_fields[] = {{f_metadata_snapshot_id, MetadataFieldType::Int64, 1}, {f_type, MetadataFieldType::String, 1}};
+
+bool isIntegerInRange(const Poco::Dynamic::Var & value, Int64 min, Int64 max)
+{
+    /// The JSON parser keeps an integer as `Poco::Int64`, and as `Poco::UInt64` only if it does not fit `Poco::Int64`.
+    if (value.type() != typeid(Poco::Int64))
+        return false;
+    const Int64 integer = value.extract<Poco::Int64>();
+    return min <= integer && integer <= max;
+}
+
+bool hasType(const Poco::Dynamic::Var & value, MetadataFieldType type)
+{
+    switch (type)
+    {
+        case MetadataFieldType::Int32:
+            return isIntegerInRange(value, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
+        case MetadataFieldType::Int64:
+            return isIntegerInRange(value, std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max());
+        case MetadataFieldType::String:
+            return value.type() == typeid(std::string);
+        case MetadataFieldType::Array:
+            return value.type() == typeid(Poco::JSON::Array::Ptr);
+        case MetadataFieldType::Object:
+            return value.type() == typeid(Poco::JSON::Object::Ptr);
+    }
+}
+
+std::string_view typeDescription(MetadataFieldType type)
+{
+    switch (type)
+    {
+        case MetadataFieldType::Int32: return "a 32-bit integer";
+        case MetadataFieldType::Int64: return "a 64-bit integer";
+        case MetadataFieldType::String: return "a string";
+        case MetadataFieldType::Array: return "an array";
+        case MetadataFieldType::Object: return "an object";
+    }
+}
+
+void checkField(
+    const Poco::JSON::Object & object, const MetadataField & field, Int32 format_version, std::string_view prefix, const String & metadata_file_path)
+{
+    const auto value = object.get(field.name);
+    if (value.isEmpty())
+    {
+        if (field.required_since && format_version >= field.required_since
+            && (!field.required_unless || format_version < field.required_unless_since || object.isNull(field.required_unless)))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata file '{}' doesn't contain required field '{}{}'",
+                metadata_file_path, prefix, field.name);
+        return;
+    }
+    if (!hasType(value, field.type))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata file '{}' has invalid field '{}{}': expected {}",
+            metadata_file_path, prefix, field.name, typeDescription(field.type));
+}
+
+void checkEntries(
+    const Poco::JSON::Object & parent,
+    const char * array_name,
+    std::span<const MetadataField> fields,
+    Int32 format_version,
+    const String & metadata_file_path,
+    std::string_view parent_prefix = "",
+    std::span<const MetadataField> nested_fields = {})
+{
+    if (parent.isNull(array_name))
+        return;
+    const auto entries = parent.getArray(array_name);
+    size_t i = 0;
+    for (const auto & entry : *entries)
+    {
+        if (entry.type() != typeid(Poco::JSON::Object::Ptr))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata file '{}' has invalid field '{}{}[{}]': expected an object",
+                metadata_file_path, parent_prefix, array_name, i);
+        const auto & object = *entry.extract<Poco::JSON::Object::Ptr>();
+        const String prefix = fmt::format("{}{}[{}].", parent_prefix, array_name, i);
+        for (const auto & field : fields)
+            checkField(object, field, format_version, prefix, metadata_file_path);
+        /// The entries of a partition spec or a sort order are in its `fields`, checked above to be an array.
+        if (!nested_fields.empty())
+            checkEntries(object, f_fields, nested_fields, format_version, metadata_file_path, prefix);
+        ++i;
+    }
+}
+
+Int64 getLastUpdatedMs(const Poco::JSON::Object & metadata, const String & metadata_file_path)
+{
+    checkField(metadata, {f_last_updated_ms, MetadataFieldType::Int64, 1}, 1, "", metadata_file_path);
+    return metadata.getValue<Int64>(f_last_updated_ms);
+}
+
+}
+
+void validateTableMetadata(const Poco::JSON::Object & metadata, const String & metadata_file_path)
+{
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONValidations);
+    checkField(metadata, {f_format_version, MetadataFieldType::Int32, 1}, 1, "", metadata_file_path);
+    const auto format_version = metadata.getValue<Int32>(f_format_version);
+    if (format_version < 1)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata file '{}' has invalid field '{}': expected 1, 2 or 3, got {}",
+            metadata_file_path, f_format_version, format_version);
+    if (format_version > 3)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg format version {} is not supported, only versions 1, 2 and 3 are supported",
+            format_version);
+
+    for (const auto & field : table_metadata_fields)
+        checkField(metadata, field, format_version, "", metadata_file_path);
+    /// Format version 1 may have only the deprecated `partition-spec`.
+    if (metadata.isNull(f_partition_specs))
+        checkField(metadata, {f_partition_spec, MetadataFieldType::Array, 1}, format_version, "", metadata_file_path);
+    else
+        checkField(metadata, {f_default_spec_id, MetadataFieldType::Int32, 1}, format_version, "", metadata_file_path);
+    if (!metadata.isNull(f_sort_orders))
+        checkField(metadata, {f_default_sort_order_id, MetadataFieldType::Int32, 1}, format_version, "", metadata_file_path);
+
+    checkEntries(metadata, f_partition_specs, partition_spec_fields, format_version, metadata_file_path, "", partition_field_fields);
+    /// The deprecated `partition-spec` is ignored when `partition-specs` is present.
+    if (metadata.isNull(f_partition_specs))
+        checkEntries(metadata, f_partition_spec, partition_field_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_sort_orders, sort_order_fields, format_version, metadata_file_path, "", sort_field_fields);
+    checkEntries(metadata, f_snapshots, snapshot_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_snapshot_log, snapshot_log_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_metadata_log, metadata_log_fields, format_version, metadata_file_path);
+
+    if (!metadata.isNull(f_refs))
+    {
+        for (const auto & [name, ref] : *metadata.getObject(f_refs))
+        {
+            if (ref.type() != typeid(Poco::JSON::Object::Ptr))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg table metadata file '{}' has invalid field '{}.{}': expected an object",
+                    metadata_file_path, f_refs, name);
+            const String prefix = fmt::format("{}.{}.", f_refs, name);
+            for (const auto & field : ref_fields)
+                checkField(*ref.extract<Poco::JSON::Object::Ptr>(), field, format_version, prefix, metadata_file_path);
+        }
+    }
+}
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str, const String & metadata_file_path)
 {
     ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
     ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    Poco::Dynamic::Var json;
+    try
+    {
+        json = parser.parse(metadata_json_str);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot parse Iceberg table metadata file '{}': {}",
+            metadata_file_path, e.displayText());
+    }
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
@@ -727,6 +990,50 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
+static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid,
+    bool validate)
+{
+    auto read_fn = [&]()
+    {
+        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
+    };
+
+    if (!metadata_cache || !table_uuid.has_value())
+    {
+        auto metadata_object = parseMetadataJSONString(read_fn(), metadata_file_path);
+        if (validate)
+        {
+            validateTableMetadata(*metadata_object, metadata_file_path);
+            IcebergSchemaProcessor::checkTableSchemas(*metadata_object);
+        }
+        return metadata_object;
+    }
+
+    std::function<void(const Poco::JSON::Object &)> validate_fn;
+    if (validate)
+        validate_fn = [&](const Poco::JSON::Object & metadata)
+        {
+            validateTableMetadata(metadata, metadata_file_path);
+            IcebergSchemaProcessor::checkTableSchemas(metadata);
+        };
+    return metadata_cache->getOrSetTableMetadata(
+        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
+        [&]()
+        {
+            auto metadata_json_str = read_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(
+                parseMetadataJSONString(metadata_json_str, metadata_file_path), metadata_json_str.size());
+        },
+        validate_fn);
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -736,21 +1043,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
-    auto read_fn = [&]()
-    {
-        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
-    };
-
-    if (!metadata_cache || !table_uuid.has_value())
-        return parseMetadataJSONString(read_fn());
-
-    return metadata_cache->getOrSetTableMetadata(
-        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
-        [&]()
-        {
-            auto metadata_json_str = read_fn();
-            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
-        });
+    return getMetadataJSONObjectImpl(
+        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ true);
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1323,10 +1617,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
     /// The spec reserves sort order id 0 for the unsorted order.
-    const Int64 sort_order_id = order_by ? 1 : 0;
-    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
+    Int64 sort_order_id = 0;
     Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
-    sort_order->set(Iceberg::f_order_id, sort_order_id);
 
     if (order_by)
     {
@@ -1341,28 +1633,54 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid iceberg sort order: expected {} elements, but got {}",
-                sort_columns.size(), transform_and_column_pairs.size());
+                sort_columns.size(),
+                transform_and_column_pairs.size());
+
+        /// Resolves columns and struct fields nested in them, but nothing inside a list or a map.
+        IcebergSchemaProcessor schema_processor(/*allow_geo_parser=*/ true);
+        schema_processor.addIcebergTableSchema(schema_representation);
 
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
             const auto & [transform_name, column_name] = transform_and_column_pairs[i];
+            const auto source_id = schema_processor.tryGetColumnIDByName(/*schema_id=*/ 0, column_name);
+            if (!source_id)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot sort an Iceberg table by {}: it is neither a column nor a field of a tuple column",
+                    column_name);
+            if (!column_name_to_source_id.contains(column_name))
+            {
+                const auto source_type = removeNullable(schema_processor.getFieldCharacteristics(/*schema_version=*/ 0, *source_id).type);
+                if (isTuple(source_type) || isArray(source_type) || isMap(source_type))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot sort an Iceberg table by {}: a field of a tuple column must have a primitive type to be sorted by, got {}",
+                        column_name,
+                        source_type->getName());
+            }
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
-            sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
+            sorting_field->set(f_source_id, *source_id);
             sorting_field->set(f_transform, transform_name);
-            if (reverse_flags.empty() || !reverse_flags[i])
-                sorting_field->set(f_direction, "asc");
-            else
-                sorting_field->set(f_direction, "desc");
-            sorting_field->set("null-order", "nulls-first");
+            const bool descending = !reverse_flags.empty() && reverse_flags[i];
+            sorting_field->set(f_direction, descending ? "desc" : "asc");
+            /// ClickHouse sorts NULLs as greater than any value, see `sortBlockByKeyDescription`.
+            sorting_field->set(f_null_order, descending ? "nulls-first" : "nulls-last");
             sorting_fields->add(sorting_field);
         }
         sort_order->set(Iceberg::f_fields, sorting_fields);
+
+        /// ORDER BY with no sorting fields (i.e., ORDER BY tuple()) represents the unsorted order.
+        sort_order_id = sorting_fields->size() ? 1 : 0;
     }
     else
     {
         sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     }
+
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
+    sort_order->set(Iceberg::f_order_id, sort_order_id);
 
     Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
     sort_orders->add(sort_order);
@@ -1371,6 +1689,25 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     setFormatVersion1SchemaAndPartitionSpec(new_metadata_file_content);
 
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
+}
+
+CompressionMethod setMetadataCompressionCodecProperty(Poco::JSON::Object::Ptr metadata_object, const ContextPtr & context)
+{
+    const auto & compression_method_str = context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    const auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    if (compression_method_str.empty())
+        return compression_method;
+
+    /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
+    const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
+    Poco::JSON::Object::Ptr properties = metadata_object->getObject("properties");
+    if (!properties)
+    {
+        properties = new Poco::JSON::Object;
+        metadata_object->set("properties", properties);
+    }
+    properties->set("write.metadata.compression-codec", codec_name);
+    return compression_method;
 }
 
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
@@ -1401,6 +1738,33 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
         "Cannot write Iceberg table metadata: there is no partition spec with '{}' {}",
         f_spec_id,
         default_spec_id);
+}
+
+template <typename LoadFunc>
+static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const String & table_path,
+    const std::optional<String> & table_uuid,
+    const ContextPtr & local_context,
+    bool force_fetch_latest_metadata,
+    LoadFunc && load_fn)
+{
+    /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
+    size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
+    /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
+    if (force_fetch_latest_metadata)
+        tolerated_staleness_ms = 0;
+
+    if (metadata_cache)
+    {
+        return metadata_cache->getOrSetLatestMetadataVersion(
+            table_path,
+            table_uuid,
+            load_fn,
+            tolerated_staleness_ms
+        )->latest_metadata;
+    }
+    return load_fn();
 }
 
 /**
@@ -1441,26 +1805,42 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
-        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        String listed_prefix;
         {
-            /// Manifests and manifest lists share this directory but are never named `v...`.
-            if (list_v_prefixed_names_only)
-                metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
+            PrefixListing listing;
+            Stopwatch listing_watch;
+            for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+            {
+                /// Manifests and manifest lists share this directory but are never named `v...`.
+                if (list_v_prefixed_names_only)
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "v", ".metadata.json");
+                if (!list_v_prefixed_names_only || listing.matched.empty())
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "", ".metadata.json");
+                if (!listing.matched.empty())
+                    break;
+                if (attempt + 1 < MAX_LIST_RETRIES)
+                    LOG_DEBUG(
+                        log,
+                        "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                        "(attempt {} of {}), retrying",
+                        table_path,
+                        attempt + 1,
+                        MAX_LIST_RETRIES);
+            }
+            metadata_files = std::move(listing.matched);
+            listed_prefix = std::move(listing.listed_prefix);
             if (metadata_files.empty())
-                metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-            if (!metadata_files.empty())
-                break;
-            LOG_DEBUG(
-                log,
-                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
-                "(attempt {} of {}), retrying",
-                table_path,
-                attempt + 1,
-                MAX_LIST_RETRIES);
-        }
-        if (metadata_files.empty())
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
+            {
+                throw Exception(
+                    ErrorCodes::FILE_DOESNT_EXIST,
+                    "The metadata file for Iceberg table with path {} doesn't exist. {} listing attempts over {} ms found "
+                    "no .metadata.json under {}, which held {}",
+                    table_path,
+                    MAX_LIST_RETRIES,
+                    listing_watch.elapsedMilliseconds(),
+                    listed_prefix,
+                    describeListedObjects(listing.entries, listed_prefix, MAX_REPORTED_LISTING_ENTRIES));
+            }
         }
 
         /// A candidate outside the scheme the table itself commits through counts a version sequence
@@ -1552,19 +1932,24 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
+        size_t temporary_candidates = 0;
         for (const auto & path : metadata_files)
         {
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
+            {
+                ++temporary_candidates;
                 continue;
+            }
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                /// A candidate may be another table's metadata file, so it is checked only once it is chosen.
+                auto metadata_file_object = getMetadataJSONObjectImpl(
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ false);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -1573,7 +1958,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                         if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
                         {
                             metadata_files_with_versions.emplace_back(
-                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                                version, getLastUpdatedMs(*metadata_file_object, metadata_file_path), metadata_file_path);
                         }
                     }
                     else
@@ -1587,7 +1972,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 }
                 else
                 {
-                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                    metadata_files_with_versions.emplace_back(version, getLastUpdatedMs(*metadata_file_object, metadata_file_path), metadata_file_path);
                 }
             }
             else
@@ -1598,18 +1983,32 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         if (metadata_files_with_versions.empty())
         {
+            const String candidates = describeObjectKeys(metadata_files, listed_prefix, MAX_REPORTED_LISTING_ENTRIES);
+            const char * candidate_noun = metadata_files.size() == 1 ? "candidate" : "candidates";
             if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 throw Exception(
                     ErrorCodes::FILE_DOESNT_EXIST,
-                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist. "
+                    "{} {} found under {}, {} of them temporary commit files: {}",
                     table_path,
-                    table_uuid.value());
+                    table_uuid.value(),
+                    metadata_files.size(),
+                    candidate_noun,
+                    listed_prefix,
+                    temporary_candidates,
+                    candidates);
             }
             throw Exception(
                 ErrorCodes::FILE_DOESNT_EXIST,
-                "The metadata file for Iceberg table with path {} doesn't exist",
-                table_path);
+                "The metadata file for Iceberg table with path {} doesn't exist. "
+                "{} {} found under {}, {} of them temporary commit files: {}",
+                table_path,
+                metadata_files.size(),
+                candidate_noun,
+                listed_prefix,
+                temporary_candidates,
+                candidates);
         }
 
         /// Two schemes among the candidates mean no `v<N>` pointer declared one, and their numbers are
@@ -1705,22 +2104,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
-    /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
-    size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
-    /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
-    if (force_fetch_latest_metadata)
-        tolerated_staleness_ms = 0;
-
-    if (metadata_cache)
-    {
-        return metadata_cache->getOrSetLatestMetadataVersion(
-            table_path,
-            table_uuid,
-            load_fn,
-            tolerated_staleness_ms
-        )->latest_metadata;
-    }
-    return load_fn();
+    return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -1783,21 +2167,35 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
-        auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
-        std::string metadata_file;
-        StoredObject version_hint(version_hint_path);
-        auto buf = object_storage->readObject(version_hint, ReadSettings{});
-        readString(metadata_file, *buf);
-        auto resolved
-            = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
-        if (resolved.has_value())
+        auto load_fn = [&]
         {
-            LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
-            ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-            return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
-        }
-        LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
+            auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
+            std::string metadata_file;
+            StoredObject version_hint(version_hint_path);
+            auto buf = object_storage->readObject(version_hint, ReadSettings{});
+            readString(metadata_file, *buf);
+            auto resolved
+                = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
+            if (resolved.has_value())
+            {
+                LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
+                ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
+                return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
+            }
+            LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
+            return getLatestMetadataFileAndVersion(
+                object_storage,
+                table_path,
+                data_lake_settings,
+                metadata_cache,
+                local_context,
+                table_uuid,
+                false,
+                /* force_fetch_latest_metadata */ true,
+                ignore_metadata_pointer_overrides);
+        };
+        return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
     }
 
     {
@@ -1957,7 +2355,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     {
         auto field = fields->getObject(field_index);
         auto source_id = field->getValue<Int64>(f_source_id);
-        auto column_name = source_id_to_column_name[source_id];
+        auto column = source_id_to_column_name.find(source_id);
+        /// No such column in the current schema: drop the sort order, as for an unknown transform.
+        if (column == source_id_to_column_name.end())
+            return KeyDescription{};
+        const auto & column_name = column->second;
         int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
         auto iceberg_transform_name = field->getValue<String>(f_transform);
         std::optional<TransformAndArgument> clickhouse_transform_name;
@@ -2018,6 +2420,11 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
         initial_column_names.push_back(column_name);
         initial_column_names_set.insert(column_name);
     }
+    /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+    for (const auto & required_column : sort_description.expression->getRequiredColumns())
+        if (!block.has(required_column))
+            if (auto subcolumn = block.findSubcolumnByName(required_column))
+                block.insert(std::move(*subcolumn));
     ASTPtr combined_expr_list = sort_description.expression_list_ast;
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());

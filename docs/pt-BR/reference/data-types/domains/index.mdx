@@ -16,18 +16,14 @@ Você pode usar domínios em qualquer lugar em que o tipo básico correspondente
 * Usá-lo como índice, se um tipo básico puder ser usado como índice
 * Chamar funções com valores de uma coluna de domínio
 
-<div id="extra-features-of-domains">
-  ### Recursos extras de Domínio
-</div>
+### Recursos extras de Domínio {#extra-features-of-domains}
 
 * Nome explícito do tipo da coluna em `SHOW CREATE TABLE` ou `DESCRIBE TABLE`
 * Entrada em um formato legível por humanos com `INSERT INTO domain_table(domain_column) VALUES(...)`
 * Saída em um formato legível por humanos para `SELECT domain_column FROM domain_table`
 * Carregamento de dados de uma fonte externa em um formato legível por humanos: `INSERT INTO domain_table FORMAT CSV ...`
 
-<div id="limitations">
-  ### Limitações
-</div>
+### Limitações {#limitations}
 
 * Não é possível converter a coluna de índice do tipo básico para o tipo de domínio via `ALTER TABLE`.
 * Não é possível converter implicitamente valores de string em valores de domínio ao inserir dados de outra coluna ou tabela.

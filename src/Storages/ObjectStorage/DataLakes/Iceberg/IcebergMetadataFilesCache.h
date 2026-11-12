@@ -1,5 +1,7 @@
 #pragma once
 #include <chrono>
+#include <functional>
+#include <mutex>
 #include <IO/CompressionMethod.h>
 #include <base/defines.h>
 #include "config.h"
@@ -80,6 +82,8 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
     std::variant<Poco::JSON::Object::Ptr, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
     size_t memory_bytes;
+    /// Set once the parsed metadata.json has passed the check of getOrSetTableMetadata's `validate_fn`.
+    std::once_flag table_metadata_validated;
 
     IcebergMetadataFilesCacheCell(Poco::JSON::Object::Ptr metadata_json_object, size_t metadata_json_str_size)
         : cached_element(std::move(metadata_json_object))
@@ -149,15 +153,22 @@ public:
 
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
+    /// If `validate_fn` is given, it checks the parsed metadata.json (and throws if it is invalid) until it succeeds once for the entry:
+    /// the entry may have been loaded by a caller that does not validate it.
     template <typename LoadFunc>
-    Poco::JSON::Object::Ptr getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
+    Poco::JSON::Object::Ptr getOrSetTableMetadata(
+        const String & data_path, LoadFunc && load_fn, const std::function<void(const Poco::JSON::Object &)> & validate_fn = {})
     {
         auto result = Base::getOrSet(data_path, load_fn);
         if (result.second)
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return std::get<Poco::JSON::Object::Ptr>(result.first->cached_element);
+        auto & cell = *result.first;
+        const auto & metadata_object = std::get<Poco::JSON::Object::Ptr>(cell.cached_element);
+        if (validate_fn)
+            std::call_once(cell.table_metadata_validated, [&] { validate_fn(*metadata_object); });
+        return metadata_object;
     }
 
     template <typename LoadFunc>

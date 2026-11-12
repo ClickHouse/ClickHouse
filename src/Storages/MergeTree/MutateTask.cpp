@@ -34,7 +34,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
-#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -139,6 +138,7 @@ namespace FailPoints
     extern const char mutate_task_random_sleep_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
+    extern const char merge_mutate_task_pause_after_part_handoff[];
 }
 
 namespace ErrorCodes
@@ -1927,6 +1927,9 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
+    /// Recomputed and rewritten at the end of mutation, so do not hardlink the source part's copy.
+    files_to_skip.insert(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME);
+
     /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
     files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
@@ -2373,6 +2376,13 @@ static NameToNameVector collectFilesForRenames(
     if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
         add_rename(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
 
+    /// The record is always recomputed and rewritten in finalize, so drop the source part's inherited
+    /// `secondary_index_column_types.json` checksum entry here; otherwise a recomputed-empty record leaves
+    /// `checksums.txt` referencing a file the new part does not have. The new record is unknown this early,
+    /// hence the source-only condition.
+    if (!source_part->getSecondaryIndexColumnTypes().empty())
+        add_rename(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME, "");
+
     return rename_vector;
 }
 
@@ -2659,6 +2669,18 @@ static void finalizeMutatedPart(
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));
+    }
+
+    const auto & secondary_index_column_types = new_data_part->getSecondaryIndexColumnTypes();
+    if (!secondary_index_column_types.empty())
+    {
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME, 4096, context->getWriteSettings());
+        HashingWriteBuffer out_hashing(*out);
+        secondary_index_column_types.writeJSON(out_hashing);
+        out_hashing.finalize();
+        new_data_part->checksums.files[IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME].file_hash = out_hashing.getHash();
+        written_files.push_back(std::move(out));
     }
 
     const auto & statistics = all_gathered_data.statistics;
@@ -3025,6 +3047,8 @@ public:
 
     void cancel() noexcept
     {
+        if (temporary_text_index_storage)
+            tryUndoTransaction(*temporary_text_index_storage);
         tryCleanupTemporaryFiles();
     }
 
@@ -3084,14 +3108,6 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
-    /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
-    /// mutation is background work running next to the queries the server is there for, so bound them by
-    /// the memory limit exactly like the insert path does.
-    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
-    const size_t num_simultaneous_squashes = ctx->projections_to_build.size() + 1;
-    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
-        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
-
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume
     /// the same source blocks. This drastically reduces the number of temporary
@@ -3104,7 +3120,7 @@ void PartMergerWriter::prepare()
         pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
-            min_block_size_bytes);
+            settings[Setting::min_insert_block_size_bytes]);
 
         /// Collect the union of columns required by all projections. Only these columns
         /// (plus `_row_exists` when present in the source block) are pushed into the
@@ -3121,7 +3137,7 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(
             std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
             settings[Setting::min_insert_block_size_rows],
-            min_block_size_bytes);
+            settings[Setting::min_insert_block_size_bytes]);
     }
 
     {
@@ -3243,6 +3259,8 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
+    chassert(!ctx->new_data_part->hasLightweightDelete() || block.has(RowExistsColumn::name));
+
     const auto & projection = *ctx->projections_to_build[projection_idx];
 
     /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
@@ -3935,7 +3953,7 @@ private:
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings(),
+            getWriteSettingsForMergeOrMutation(ctx->context->getWriteSettings(), ctx->data->supportsReplication()),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
             /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
             ctx->stream_base_manifest);
@@ -4436,24 +4454,48 @@ private:
             ctx->out.reset();
         }
 
+        /// `files_to_rename` may be a permutation (a chained rename collapses to the swap
+        /// {a -> b, b -> a}), so a destination may also be a later source. Erase, then assign from an
+        /// immutable snapshot: one pass would overwrite a destination before reading it.
+        const auto & source_files = ctx->source_part->checksums.files;
+        auto & files = ctx->new_data_part->checksums.files;
+
+        /// A file the writer just produced must survive, even when flagged for removal.
+        for (const auto & [rename_from, _] : ctx->files_to_rename)
+            if (!written_files.contains(rename_from))
+                files.erase(rename_from);
+
+        /// `files` is not a valid source of values: `MergedColumnOnlyOutputStream::fillChecksums`
+        /// erases entries from it.
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            /// A stream the writer rewrote for the new column type must survive: stale-file
-            /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
-            /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
-            /// column that became Dynamic/JSON in this mutation).
-            if (written_files.contains(rename_from))
+            if (rename_to.empty() || written_files.contains(rename_to))
                 continue;
 
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
+            if (auto source_it = source_files.find(rename_from); source_it != source_files.end())
+                files[rename_to] = source_it->second;
+        }
+
+        {
+            /// So the read path can still prune with an index materialized over a column type the part
+            /// has not materialized itself. Hardlinked indices keep the source part's record.
+            std::vector<MergeTreeIndexPtr> rebuilt_indices(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end());
+            rebuilt_indices.insert(rebuilt_indices.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
+
+            NameSet rebuilt_index_names;
+            for (const auto & index : rebuilt_indices)
+                rebuilt_index_names.insert(index->index.name);
+
+            std::vector<String> hardlinked_index_names;
+            for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
+                if (!rebuilt_index_names.contains(index.name) && !ctx->indices_to_drop_names.contains(index.name))
+                    hardlinked_index_names.push_back(index.name);
+
+            ctx->new_data_part->setSecondaryIndexColumnTypes(SecondaryIndexColumnTypes::compute(
+                rebuilt_indices,
+                hardlinked_index_names,
+                ctx->new_data_part->getColumnsDescription(),
+                ctx->source_part->getSecondaryIndexColumnTypes()));
         }
 
         MutationHelpers::finalizeMutatedPart(
@@ -4555,7 +4597,6 @@ private:
     void replacePartWithEmpty()
     {
         MergeTreePartInfo part_info = ctx->new_data_part->info;
-        part_info.level += 1;
 
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
@@ -4610,7 +4651,17 @@ MutateTask::MutateTask(
         partition_id = ctx->future_part->part_info.getPartitionId(),
         mutate_entry = ctx->mutate_entry]
     {
-        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+        /// Latched, so that a blocker released between two polls does not resurrect a cancelled read.
+        if ((*mutate_entry)->is_cancelled.load(std::memory_order_relaxed))
+            return true;
+
+        if (merges_blocker->isCancelledForPartition(partition_id))
+        {
+            (*mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+            return true;
+        }
+
+        return false;
     };
     (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
         mutation_cancelled,
@@ -4653,20 +4704,33 @@ bool MutateTask::execute()
             //
             // Fetching a byte-identical part (in case of checksum mismatches) will fail with
             // `Part ... should be deleted after previous attempt before fetch`.
-            promise.set_value(std::exchange(ctx->new_data_part, nullptr));
+            setResultPart(std::exchange(ctx->new_data_part, nullptr));
             return false;
         }
     }
     return false;
 }
 
+void MutateTask::setResultPart(MergeTreeData::MutableDataPartPtr part)
+{
+    result_part = std::move(part);
+    FailPointInjection::pauseFailPoint(FailPoints::merge_mutate_task_pause_after_part_handoff);
+}
+
 void MutateTask::cancel() noexcept
 {
+    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+
     if (task)
         task->cancel();
 
-    if (ctx->new_data_part)
-        ctx->new_data_part->removeIfNeeded();
+    if (auto part = ctx->new_data_part ? ctx->new_data_part : result_part)
+    {
+        LOG_DEBUG(ctx->log, "Rolling back uncommitted part {} of a cancelled mutation", part->getDataPartStorage().getPartDirectory());
+        /// The transaction is uncommitted, and on object storage its blobs are staged only there.
+        tryUndoTransaction(part->getDataPartStorage());
+        part->removeIfNeeded();
+    }
 }
 
 void MutateTask::updateProfileEvents() const
@@ -4960,8 +5024,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
 
+        /// An unsupported archive cannot be updated, so it would keep granules of the old data.
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
-            || (source_has_archive && writer_can_open_archive);
+            || (source_has_archive && writer_can_open_archive)
+            || source_disk_storage->hasUnsupportedSkipIndicesPackedArchive();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
@@ -5152,7 +5218,8 @@ bool MutateTask::prepare()
         ctx->metadata_snapshot,
         *commands_for_execution,
         context_for_reading,
-        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
+        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); },
+        [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); }
     );
 
     ctx->changes_storage_type = ctx->source_part->getDataPartStorage().getType() != ctx->future_part->part_format.storage_type;
@@ -5201,7 +5268,7 @@ bool MutateTask::prepare()
         }
 
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
-        promise.set_value(std::move(part));
+        setResultPart(std::move(part));
         return false;
     }
 
@@ -5232,7 +5299,7 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
-            promise.set_value(std::move(empty_part));
+            setResultPart(std::move(empty_part));
             return false;
         }
     }
