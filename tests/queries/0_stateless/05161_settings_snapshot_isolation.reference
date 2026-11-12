@@ -1,0 +1,9 @@
+3	100001	query
+8	100000	session
+log_comment	second query	1
+max_query_size	100002	1
+max_threads	4	1
+8	100000	session
+22.8	5	compatibility query
+22.8	8	session
+1	8	session

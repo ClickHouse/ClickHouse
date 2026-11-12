@@ -735,17 +735,18 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
 
         /// The effective value from the constructor is already capped by `max_threads` and by the
         /// available memory; the raw setting is not.
-        new_settings[Setting::max_threads] = effective_max_insert_threads;
+        new_settings.set(Setting::max_threads, effective_max_insert_threads);
 
         if (prefer_large_blocks)
         {
             if (settings[Setting::min_insert_block_size_rows])
-                new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
+                new_settings.set(Setting::max_block_size, settings[Setting::min_insert_block_size_rows]);
             if (settings[Setting::min_insert_block_size_bytes])
             {
                 /// On low-memory systems, cap the input format block size.
-                new_settings[Setting::preferred_block_size_bytes]
-                    = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings);
+                new_settings.set(
+                    Setting::preferred_block_size_bytes,
+                    capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings));
             }
         }
 

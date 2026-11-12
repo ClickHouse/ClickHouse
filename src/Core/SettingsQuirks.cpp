@@ -88,19 +88,19 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
     {
         if (!settings[Setting::async_socket_for_remote].changed && settings[Setting::async_socket_for_remote])
         {
-            settings[Setting::async_socket_for_remote] = false;
+            settings.set(Setting::async_socket_for_remote, false);
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
         }
         if (!settings[Setting::async_query_sending_for_remote].changed && settings[Setting::async_query_sending_for_remote])
         {
-            settings[Setting::async_query_sending_for_remote] = false;
+            settings.set(Setting::async_query_sending_for_remote, false);
             if (log)
                 LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
         }
         if (!settings[Setting::use_hedged_requests].changed && settings[Setting::use_hedged_requests])
         {
-            settings[Setting::use_hedged_requests] = false;
+            settings.set(Setting::use_hedged_requests, false);
             if (log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
@@ -116,13 +116,13 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
         && settings[Setting::local_filesystem_read_method].value == "pread_threadpool"
         && !preadNoWaitUnavailableReason().empty())
     {
-        settings[Setting::local_filesystem_read_method] = "pread";
+        settings.set(Setting::local_filesystem_read_method, "pread");
 
         /// This is a property of this host, not of the query. A setting marked as changed goes into
         /// `Settings::changes()`, and `Connection::sendQuery` forwards those to the remote shards -
         /// which would downgrade the read method on hosts where the system call works. Leave it
         /// unchanged instead, so it is only the effective default here.
-        settings[Setting::local_filesystem_read_method].setChanged(false);
+        settings.setChanged(Setting::local_filesystem_read_method, false);
 
         /// `applySettingsQuirks` is called for every settings change as well, in every program:
         /// `clickhouse-client` writes its log to stderr, and an unconditional warning here fails
@@ -161,32 +161,32 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
 
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
     {
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        settings.set(Setting::allow_experimental_parallel_reading_from_replicas, 0);
         adjusted.emplace_back("enable_parallel_replicas = 0");
     }
     if (settings[Setting::automatic_parallel_replicas_mode] != 0)
     {
-        settings[Setting::automatic_parallel_replicas_mode] = 0;
+        settings.set(Setting::automatic_parallel_replicas_mode, 0);
         adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
     }
     if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
     {
-        settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
+        settings.set(Setting::correlated_subqueries_use_in_memory_buffer, false);
         adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
     }
     if (settings[Setting::use_skip_indexes_on_data_read])
     {
-        settings[Setting::use_skip_indexes_on_data_read] = false;
+        settings.set(Setting::use_skip_indexes_on_data_read, false);
         adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
     }
     if (settings[Setting::compile_expressions])
     {
-        settings[Setting::compile_expressions] = false;
+        settings.set(Setting::compile_expressions, false);
         adjusted.emplace_back("compile_expressions = 0");
     }
     if (settings[Setting::query_plan_direct_read_from_text_index])
     {
-        settings[Setting::query_plan_direct_read_from_text_index] = false;
+        settings.set(Setting::query_plan_direct_read_from_text_index, false);
         adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
     }
     /// The concurrency control currently can cause starvation for cases when multiple tasks from one
@@ -194,7 +194,7 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
     /// while holding CPU slots.
     if (settings[Setting::use_concurrency_control])
     {
-        settings[Setting::use_concurrency_control] = false;
+        settings.set(Setting::use_concurrency_control, false);
         adjusted.emplace_back("use_concurrency_control = 0");
     }
 
@@ -213,7 +213,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     {
         if (log)
             LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
-        current_settings[Setting::max_threads] = max_threads_max_value;
+        current_settings.set(Setting::max_threads, max_threads_max_value);
     }
 
     /// Same ceiling as max_threads: an unbounded value drives pipes.reserve()/resize() in
@@ -228,7 +228,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
                 "Sanity check: 'max_streams_for_merge_tree_reading' value is too high ({}). Reduced to {}",
                 max_streams_for_merge_tree_reading,
                 max_threads_max_value);
-        current_settings[Setting::max_streams_for_merge_tree_reading] = max_threads_max_value;
+        current_settings.set(Setting::max_streams_for_merge_tree_reading, max_threads_max_value);
     }
 
     static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
@@ -240,7 +240,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         if (log) \
             LOG_WARNING( \
                 log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, block_size, max_sane_block_rows_size); \
-        current_settings[Setting::SETTING_VALUE] = max_sane_block_rows_size; \
+        current_settings.set(Setting::SETTING_VALUE, max_sane_block_rows_size); \
     }
 
     CHECK_MAX_VALUE(max_block_size)
@@ -259,7 +259,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         if (log) \
             LOG_WARNING( \
                 log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, buffer_size, MAX_SANE_READ_BUFFER_SIZE); \
-        current_settings[Setting::SETTING_VALUE] = MAX_SANE_READ_BUFFER_SIZE; \
+        current_settings.set(Setting::SETTING_VALUE, MAX_SANE_READ_BUFFER_SIZE); \
     }
 
     CHECK_READ_BUFFER_SIZE(max_read_buffer_size)
@@ -277,7 +277,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     { \
         if (log) \
             LOG_WARNING(log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, setting_value, MAX_VALUE); \
-        current_settings[Setting::SETTING_VALUE] = (MAX_VALUE); \
+        current_settings.set(Setting::SETTING_VALUE, (MAX_VALUE)); \
     }
 
     CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_connection_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
@@ -293,7 +293,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     {
         if (log)
             LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
-        current_settings[Setting::max_block_size] = DEFAULT_BLOCK_SIZE;
+        current_settings.set(Setting::max_block_size, DEFAULT_BLOCK_SIZE);
     }
 }
 

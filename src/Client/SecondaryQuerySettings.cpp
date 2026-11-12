@@ -15,7 +15,7 @@ namespace Setting
 void prepareSecondaryQuerySettings(Settings & settings)
 {
     settings.markSettingsChangedByCompatibilityAsUnchanged();
-    settings[Setting::dialect] = Dialect::clickhouse;
+    settings.set(Setting::dialect, Dialect::clickhouse);
 }
 
 }
