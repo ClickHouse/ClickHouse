@@ -75,6 +75,19 @@ produce hundreds of file changes there. Those changes must be committed inside t
 branch named `bump-${LIB}-${VERSION}`; then bump the submodule pointer in ClickHouse. Push the `rust_vendor` branch
 only after the user explicitly confirms (pipeline mode: a missing `rust_vendor` branch is a `BLOCKED.md` reason).
 
+## Host limits seen on the pipeline's build host
+
+- A fork-preparation run may only be able to validate with `cargo check -p <ffi crate>` (e.g. `delta_kernel_ffi`)
+  when `contrib/rust_vendor` is stale against the new `Cargo.lock`; say in the report that ninja was not run.
+- The host has no `pkg-config`/OpenSSL development files: crates whose default features pull `native-tls`/`openssl-sys`
+  fail `cargo check` there; check with the feature set the `*-cmake/` file enables (it passes OpenSSL paths through
+  `corrosion_set_env_vars`) rather than cargo's defaults.
+- After a fresh vendor, the `crc-fast` build script failed to link (`-lgcc_s`/`-lutil` missing from the aarch64
+  sysroot). Sysroot gaps are fixed in `ClickHouse/sysroot`, not with link flags in `contrib/*-cmake`; until then it is
+  a `BLOCKED.md` reason, not something to work around.
+- A crate's `rust-version` above the pinned toolchain (`Rust_TOOLCHAIN` in `contrib/corrosion-cmake/CMakeLists.txt`)
+  means a toolchain bump (CI images too) — a human decision; stop and report it.
+
 ## Build
 
 Discover the actual target names before building — do not guess:
