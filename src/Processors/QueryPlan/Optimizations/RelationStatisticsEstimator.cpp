@@ -182,13 +182,18 @@ RelationStats estimateReadRowsCount(
         if (!analyzed_result)
         {
             /// A read of the probe plan of automatic parallel replicas has no index conditions, and takes the
-            /// analysis of its single-node read if that plan is chosen. Estimate from that analysis as well, if it is
-            /// already there; otherwise leave the read without an estimate rather than analyze it here, which would
-            /// repeat the work and prune nothing.
+            /// analysis of its single-node read if that plan is chosen. Estimate from that analysis as well, or from
+            /// the one the single-node estimate ran under a throwing read limit, which it does not keep as the read's,
+            /// so that the probe chooses what the single-node plan chose. Without either, leave the read without an
+            /// estimate rather than analyze it here, which would repeat the work and prune nothing.
             if (find_single_node_read)
             {
                 if (const auto * single_node_read = find_single_node_read(*reading))
+                {
                     analyzed_result = single_node_read->getAnalyzedResult();
+                    if (!analyzed_result)
+                        analyzed_result = single_node_read->getAnalyzedResultForEstimation();
+                }
             }
             else
             {

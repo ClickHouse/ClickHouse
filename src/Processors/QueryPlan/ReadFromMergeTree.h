@@ -468,6 +468,9 @@ public:
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    /// The last result of `selectRangesToReadForEstimation`. It is never the analysis of the executed read; the probe
+    /// plan of automatic parallel replicas estimates its joins from it to choose what this plan chose.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const { return analyzed_result_for_estimation_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     /// Adopt from another read of the same table, for the same query, everything that
@@ -948,6 +951,7 @@ private:
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
 
