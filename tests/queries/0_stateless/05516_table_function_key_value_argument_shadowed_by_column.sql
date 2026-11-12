@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: Depends on S3
+-- Tag no-parallel: creates a server-global named collection with a fixed name, which concurrent runs would collide on
 
 -- The key of a `key = value` table function argument names a setting of the table function,
 -- not a column of the query that happens to have the same name.
@@ -9,6 +10,9 @@ CREATE TABLE t_05516 (foo String, filename String, format String) ENGINE = Merge
 INSERT INTO t_05516 VALUES ('a', 'f1', 'fmt1'), ('c', 'f3', 'fmt3');
 
 SET s3_truncate_on_insert = 1;
+-- Analyzing the `azureBlobStorage`/`s3` cases below resolves credentials; on a CI host with a managed
+-- identity that falls back to the server's own identity, which is refused unless this is enabled.
+SET s3_allow_server_credentials_in_user_queries = 1;
 INSERT INTO FUNCTION s3(s3_conn, filename = '05516_lookup.csv', format = 'CSV', structure = 'foo String') VALUES ('a'), ('b');
 
 SELECT l.foo, l.filename, l.format
