@@ -265,68 +265,44 @@ SQLQueryPiece applyLabelManipulationFunction(
 
         case StoreMethod::VECTOR_GRID:
         {
-            /// Step 1:
-            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
+            /// SELECT f(<vector_grid>.group, 'arg2', 'arg3', ...) AS group, anyForEach(values) AS values
             /// FROM <vector_grid>
-            /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), new_group) = 0
+            /// GROUP BY f(<vector_grid>.group, 'arg2', 'arg3', ...)
+            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)),
+            ///                                         f(<vector_grid>.group, 'arg2', 'arg3', ...)) = 0
             ///
-            /// Series which get the same `new_group` are merged step by step; an exception is thrown only if two of them
+            /// Series which get the same `group` are merged step by step; an exception is thrown only if two of them
             /// have values at the same step, that's how Prometheus evaluates it.
-            ASTPtr label_replacing_query;
-            {
-                SelectQueryBuilder builder;
+            /// GROUP BY and HAVING repeat the expression: there a bare `group` reads the input column under `prefer_column_name_to_alias`.
+            SelectQueryBuilder builder;
 
-                ASTs group_function_args;
-                group_function_args.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            context.subqueries.emplace_back(
+                SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
 
-                size_t array_argument_index = impl_info->array_argument_index;
-                insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
-                if (array_argument_index != static_cast<size_t>(-1))
-                    group_function_args.push_back(collectStringArgumentsAsArray(arguments, array_argument_index));
+            ASTs group_function_args;
+            group_function_args.push_back(make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}));
 
-                auto group_function = makeASTFunction(impl_info->ch_function_name);
-                group_function->arguments->children = std::move(group_function_args);
+            size_t array_argument_index = impl_info->array_argument_index;
+            insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
+            if (array_argument_index != static_cast<size_t>(-1))
+                group_function_args.push_back(collectStringArgumentsAsArray(arguments, array_argument_index));
 
-                builder.select_list.push_back(std::move(group_function));
-                builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+            auto group_function = makeASTFunction(impl_info->ch_function_name);
+            group_function->arguments->children = std::move(group_function_args);
 
-                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-                builder.select_list.back()->setAlias(ColumnNames::Values);
+            builder.select_list.push_back(group_function->clone());
+            builder.select_list.back()->setAlias(ColumnNames::Group);
 
-                context.subqueries.emplace_back(
-                    SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
-                builder.from_table = context.subqueries.back().name;
+            builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
 
-                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+            builder.group_by.push_back(group_function->clone());
 
-                builder.having = makeNoDuplicateSeriesPerStepCheck(
-                    make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values}),
-                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+            builder.having = makeNoDuplicateSeriesPerStepCheck(
+                make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values}), std::move(group_function));
 
-                label_replacing_query = builder.getSelectQuery();
-            }
-
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
-            ASTPtr column_renaming_query;
-            {
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-                builder.select_list.back()->setAlias(ColumnNames::Group);
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
-                context.subqueries.emplace_back(
-                    SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});
-                builder.from_table = context.subqueries.back().name;
-
-                column_renaming_query = builder.getSelectQuery();
-            }
-
-            res.select_query = std::move(column_renaming_query);
+            res.select_query = builder.getSelectQuery();
 
             if (dest_label == kMetricName)
                 res.metric_name_dropped = false;
