@@ -2350,7 +2350,7 @@ void normalizeColumnExpression(ASTPtr & ast)
 
     /// Queries fold the calls of deterministic functions over literals, so `concat(s, toString(1))` is named `concat(s, '1')` there.
     /// Only a `String` result is folded: its literal is named the same way in both.
-    if (function && function->arguments && !function->arguments->children.empty() && !function->is_lambda_function
+    if (function && function->arguments && !function->arguments->children.empty()
         && std::ranges::all_of(function->arguments->children, [](const auto & argument) { return argument->template as<ASTLiteral>(); }))
     {
         const auto context = Context::getGlobalContextInstance();
