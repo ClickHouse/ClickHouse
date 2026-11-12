@@ -132,7 +132,7 @@ namespace Setting
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
-    extern const SettingsBool allow_experimental_cagra_index;
+    extern const SettingsBool allow_experimental_ivf_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -1013,9 +1013,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
-                if (is_fresh_create && isCagraVectorSimilarityIndex(index_desc) && !settings[Setting::allow_experimental_cagra_index])
+                if (is_fresh_create && isIvfVectorSimilarityIndex(index_desc) && !settings[Setting::allow_experimental_ivf_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "The `cagra` method of the vector similarity index is experimental. Enable the setting 'allow_experimental_cagra_index' to use it");
+                        "The `ivf` method of the vector similarity index is experimental. Enable the setting 'allow_experimental_ivf_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }

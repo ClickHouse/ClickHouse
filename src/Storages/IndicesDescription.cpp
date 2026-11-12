@@ -220,12 +220,12 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
     return result;
 }
 
-bool isCagraVectorSimilarityIndex(const IndexDescription & index)
+bool isIvfVectorSimilarityIndex(const IndexDescription & index)
 {
     if (index.type != "vector_similarity" || !index.arguments || index.arguments->children.empty())
         return false;
     const auto * method = index.arguments->children.front()->as<ASTLiteral>();
-    return method && method->value.getType() == Field::Types::String && method->value.safeGet<String>() == "cagra";
+    return method && method->value.getType() == Field::Types::String && method->value.safeGet<String>() == "ivf";
 }
 
 bool IndexDescription::isSimpleSingleColumnIndex() const

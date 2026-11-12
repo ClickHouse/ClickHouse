@@ -23,7 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityCagra.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 
 #include <atomic>
 #include <cmath>
@@ -75,7 +75,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The only indexing method supported by USearch. `cagra` (cuVS, on the GPU) is handled in MergeTreeIndexVectorSimilarityCagra.
+/// The only indexing method supported by USearch. `ivf` (on the GPU) is handled in MergeTreeIndexVectorSimilarityIvf.
 const std::set<String> methods = {"hnsw"};
 
 /// Maps from user-facing name to internal name
@@ -673,8 +673,8 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
 #if USE_GPU
-    if (args[0].safeGet<String>() == "cagra")
-        return cagraIndexCreator(std::move(metadata_snapshot), index, args);
+    if (args[0].safeGet<String>() == "ivf")
+        return ivfIndexCreator(std::move(metadata_snapshot), index, args);
 #endif
     UInt64 dimensions = args[2].safeGet<UInt64>();
 
@@ -703,9 +703,9 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
 #if USE_GPU
-    if (!args.empty() && args[0].getType() == Field::Types::String && args[0].safeGet<String>() == "cagra")
+    if (!args.empty() && args[0].getType() == Field::Types::String && args[0].safeGet<String>() == "ivf")
     {
-        cagraIndexValidator(index, args);
+        ivfIndexValidator(index, args);
         return;
     }
 #endif

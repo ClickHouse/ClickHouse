@@ -187,9 +187,11 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         auto index_substreams = skip_index->getSubstreams();
 
         /// Full-text indices are not supported and never packed: their merge output goes
-        /// through MergeTextIndexesTask which writes standalone files.
+        /// through MergeTextIndexesTask which writes standalone files. Neither are indices with an
+        /// uncompressed substream, which is read at byte offsets of its own file.
         const bool packs_this_index = packing_enabled
-            && dynamic_cast<const MergeTreeIndexText *>(skip_index.get()) == nullptr;
+            && dynamic_cast<const MergeTreeIndexText *>(skip_index.get()) == nullptr
+            && std::ranges::all_of(index_substreams, [](const auto & substream) { return MergeTreeIndexSubstream::isCompressed(substream.type); });
 
         auto & index_streams = skip_indices_streams.emplace_back();
 

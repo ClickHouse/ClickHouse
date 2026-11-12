@@ -22,9 +22,9 @@ target_link_libraries (clickhouse_gpu_cudf PRIVATE
     ch_gpu::cudart
 )
 
-# CAGRA of cuVS, see CuvsCagra.cuh.
+# The IVF index on the device, on cuVS, see CuvsIvf.cuh.
 add_library (clickhouse_gpu_cuvs STATIC
-    CuvsCagra.cu
+    CuvsIvf.cu
 )
 
 gpu_island_target (clickhouse_gpu_cuvs)

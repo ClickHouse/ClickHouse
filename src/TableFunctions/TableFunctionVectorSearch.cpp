@@ -14,8 +14,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityCagra.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/StorageProxy.h>
@@ -25,22 +24,17 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/Stopwatch.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
 #include <algorithm>
-#include <atomic>
-#include <mutex>
-#include <thread>
 
 namespace DB
 {
 
 namespace Setting
 {
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
-    extern const SettingsBool vector_search_cagra_on_cpu;
+    extern const SettingsUInt64 vector_search_ivf_probes;
 }
 
 namespace ErrorCodes
@@ -51,56 +45,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// `MergeTreeIndexGranuleCagra::searchBatch` for `hnsw`: USearch has no batched search, so one query per core.
-void searchBatchHnsw(const USearchIndexWithSerialization & index, const std::vector<float> & queries, size_t num_queries,
-    size_t dimensions, size_t limit, size_t expansion, std::vector<UInt32> & neighbours, std::vector<float> & distances)
-{
-    if (index.dimensions() != dimensions)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The queries have {} dimensions, the index has {}", dimensions, index.dimensions());
-
-    neighbours.assign(num_queries * limit, std::numeric_limits<UInt32>::max());
-    distances.assign(num_queries * limit, std::numeric_limits<float>::infinity());
-
-    /// USearch has a context per thread, `deserialize` reserves twice the cores.
-    const size_t num_threads = std::min<size_t>(getNumberOfCPUCoresToUse(), num_queries);
-    std::atomic<size_t> next_query = 0;
-    std::mutex mutex;
-    std::exception_ptr exception;
-
-    auto work = [&](size_t thread)
-    {
-        std::vector<USearchIndex::vector_key_t> keys(limit);
-        std::vector<float> found_distances(limit);
-        for (size_t q; (q = next_query.fetch_add(1)) < num_queries;)
-        {
-            auto result = index.search(queries.data() + q * dimensions, limit, thread, false, expansion);
-            if (!result)
-            {
-                std::lock_guard lock(mutex);
-                if (!exception)
-                    exception = std::make_exception_ptr(Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Could not search in vector similarity index. Error: {}", result.error.release()));
-                return;
-            }
-            const size_t found = result.dump_to(keys.data(), found_distances.data());
-            for (size_t i = 0; i < found; ++i)
-            {
-                neighbours[q * limit + i] = static_cast<UInt32>(keys[i]);
-                distances[q * limit + i] = found_distances[i];
-            }
-        }
-    };
-
-    std::vector<std::thread> threads;
-    threads.reserve(num_threads);
-    for (size_t t = 0; t < num_threads; ++t)
-        threads.emplace_back(work, t);
-    for (auto & thread : threads)
-        thread.join();
-    if (exception)
-        std::rethrow_exception(exception);
-}
 
 /// vectorSearch(database, table, index_name, queries, k): the `k` nearest rows to each query. Every granule is searched
 /// once for all queries, and the results are merged. Computed at planning time and held in memory.
@@ -188,11 +132,12 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
     auto metadata = source->getInMemoryMetadataPtr(context, false);
     const auto & index_description = metadata->getSecondaryIndices().getByName(index_name);
     auto index = MergeTreeIndexFactory::instance().get(metadata, index_description, *merge_tree->getSettings());
-    if (!index->isVectorSimilarityIndex())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index {} is not a vector_similarity index", backQuote(index_name));
+    if (!typeid_cast<const MergeTreeIndexIvf *>(index.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index {} is not a vector_similarity index of the method 'ivf'", backQuote(index_name));
 
-    const size_t candidates = context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search];
-    const bool cagra_on_cpu = context->getSettingsRef()[Setting::vector_search_cagra_on_cpu];
+    const size_t ivf_probes = context->getSettingsRef()[Setting::vector_search_ivf_probes];
+    if (ivf_probes == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'vector_search_ivf_probes' must not be 0");
 
     auto mark_cache = context->getIndexMarkCache();
     auto uncompressed_cache = context->getIndexUncompressedCache();
@@ -238,28 +183,18 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
             if (granule_ptr->empty())
                 continue;
 
-            if (const auto * cagra = typeid_cast<const MergeTreeIndexGranuleCagra *>(granule_ptr.get()))
-            {
-                if (cagra->dimensions != dimensions_of_queries)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The queries have {} dimensions, the index has {}", dimensions_of_queries, cagra->dimensions);
+            const auto & ivf = typeid_cast<const MergeTreeIndexGranuleIvf &>(*granule_ptr);
+            if (ivf.dimensions != dimensions_of_queries)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The queries have {} dimensions, the index has {}", dimensions_of_queries, ivf.dimensions);
 
-                if (normalized.empty())
-                {
-                    normalized = queries;
-                    if (cagra->metric == CagraMetric::Cosine)
-                        for (size_t q = 0; q < num_queries; ++q)
-                            MergeTreeIndexGranuleCagra::normalize(normalized.data() + q * dimensions_of_queries, dimensions_of_queries);
-                }
-                if (cagra_on_cpu)
-                    cagra->searchBatchOnCpu(normalized, num_queries, k, candidates, neighbours, distances);
-                else
-                    cagra->searchBatch(normalized, num_queries, k, candidates, neighbours, distances);
-            }
-            else
+            if (normalized.empty())
             {
-                const auto & usearch = typeid_cast<const MergeTreeIndexGranuleVectorSimilarity &>(*granule_ptr);
-                searchBatchHnsw(*usearch.index, queries, num_queries, dimensions_of_queries, k, candidates, neighbours, distances);
+                normalized = queries;
+                if (ivf.metric == IvfMetric::Cosine)
+                    for (size_t q = 0; q < num_queries; ++q)
+                        normalizeIvfVector(normalized.data() + q * dimensions_of_queries, dimensions_of_queries);
             }
+            ivf.searchBatch(normalized, num_queries, k, ivf_probes, reader_settings, neighbours, distances);
             ++searched_granules;
 
             const size_t first_row = granularity.getMarkStartingRow(index_mark * index_granularity);
@@ -311,7 +246,8 @@ void registerTableFunctionVectorSearch(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionVectorSearch>(
         {.description = R"(
-The `k` nearest rows to each of several query vectors, searched in one batch on the GPU by a `vector_similarity` index of the `cagra` method.
+The `k` nearest rows to each of several query vectors, searched in one batch on the GPU by a `vector_similarity` index of the `ivf` method. Every list of the index that any of the
+queries probes (`vector_search_ivf_probes`) is read once for the whole batch.
 
 ```sql
 SELECT query, part, part_offset, distance FROM vectorSearch(database, table, index_name, queries, k)
@@ -319,7 +255,7 @@ SELECT query, part, part_offset, distance FROM vectorSearch(database, table, ind
 
 `queries` is a constant `Array(Array(Float32))`, for example `(SELECT groupArray(vec) FROM queries_table)`. The result has a row for
 each of the `k` nearest rows of each query: the number of the query in `queries`, the part and the number of the row in it (as
-`_part` and `_part_offset`), and the distance, as the `hnsw` method returns it.
+`_part` and `_part_offset`), and the distance: the squared `L2Distance` or the `cosineDistance`, as the index is declared.
 )", .category = FunctionDocumentation::Category::TableFunction},
         SecretArgumentsSpec{},
         {.allow_readonly = true});
