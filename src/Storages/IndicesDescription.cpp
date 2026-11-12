@@ -3,7 +3,6 @@
 #include <Interpreters/misc.h>
 #include <Planner/AnalyzeExpression.h>
 #include <Storages/IndicesDescription.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
