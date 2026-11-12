@@ -247,6 +247,8 @@ private:
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
+        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
+        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
@@ -309,6 +311,9 @@ private:
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
 
+        /// Text indexes are rebuilt for the resulting part instead of being merged.
+        bool rebuild_text_indexes{false};
+
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
         bool isCancelled() const;
@@ -350,7 +355,7 @@ private:
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> is_cancelled{};
+        std::function<bool()> merge_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
@@ -631,7 +636,15 @@ private:
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
+    try
+    {
+        while (task->execute()) {}
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
     return task->getFuture().get();
 }
 

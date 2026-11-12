@@ -483,6 +483,16 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
         new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
 
+    /// The body of a `SQL SECURITY DEFINER` / `NONE` view must not hand its reads to the replicas of a shard,
+    /// in any parallel replicas mode: a replica cannot run them with the privileges of the view definer.
+    /// With the setting cleared, `ReadFromRemote` does not fan the shard query out with `canUseOffsetParallelReplicas` either.
+    /// A `sampling_key` follower is the exception: it must keep the setting, so that the shard reads only the slice
+    /// that `parallel_replicas_count` / `parallel_replica_offset` assign to it, otherwise the result is multiplied
+    /// by the number of replicas. Its new fan-out is prevented by `disableOffsetParallelReplicas` below instead.
+    const bool keep_sampling_key_slice = context->isSQLSecurityOverriddenBody() && context->isSamplingKeyParallelReplicasFollower();
+    if (context->isSQLSecurityOverriddenBody() && !keep_sampling_key_slice)
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
     /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
     /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
     /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
@@ -512,7 +522,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     new_context->setSettings(new_settings);
     new_context->setClientInfo(new_client_info);
 
-    if (context->canUseParallelReplicasCustomKeyForCluster(cluster))
+    if (context->canUseParallelReplicasCustomKeyForCluster(cluster) || keep_sampling_key_slice)
         new_context->disableOffsetParallelReplicas();
 
     return new_context;
@@ -1191,7 +1201,10 @@ void executeQueryWithParallelReplicas(
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
             remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
-            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            /// A null plan means the coordinated read could not be marked in it; fall back to sending the
+            /// query text, which every replica plans for itself (see `createRemotePlanForParallelReplicas`).
+            if (remote_query_plan)
+                remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its

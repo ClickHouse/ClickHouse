@@ -1,0 +1,24 @@
+json html ratio	1	0
+json html ratio	0	0
+json html num	1	0
+json html num	0	0
+json mixed num	1	2
+json mixed num	0	2
+json mixed ratio	1	2
+json mixed ratio	0	2
+tsv num	1	2
+tsv num	0	2
+tsv ratio	1	2
+tsv ratio	0	2
+tsv no errors allowed	3
+INCORRECT_DATA
+cache count tsv plain	3
+cache count tsv num	2
+cache count tsv ratio	2
+cache count tsv plain	3
+cache count json ratio	0
+INCORRECT_DATA
+cache read tsv num	3
+cache read tsv plain	3
+cache read json ratio	0
+INCORRECT_DATA

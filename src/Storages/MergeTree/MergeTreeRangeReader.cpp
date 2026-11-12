@@ -54,30 +54,6 @@ LoggerPtr getMergeTreeRangeReaderLogger()
     return log;
 }
 
-static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
-{
-    if (!column)
-        return true;
-
-    if (filter_column == column)
-        return false;
-
-    if (column->use_count() > 1)
-        return false;
-
-    bool can_inplace = true;
-    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        if (!can_inplace)
-            return;
-
-        if (!canInplaceFilter(subcolumn, filter_column))
-            can_inplace = false;
-    });
-
-    return can_inplace;
-}
-
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
 {
@@ -111,6 +87,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     const auto & filter_data = filter.getData();
+    const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
 
     for (auto & column : columns)
     {
@@ -120,10 +97,14 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            if (canInplaceFilter(column, filter.getColumn()))
+            if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
+                column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData())
             {
-                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
-                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
+                /// The filter keeps exactly the non-default rows of this column, so `index` shares its values.
+                column = column_sparse->index(*sparse_indices, 0);
+            }
+            else if (canInplaceFilter(column))
+            {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->filter(filter_data);
                 column = std::move(mutable_column);
@@ -1797,7 +1778,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const
 {
     result.checkInternalConsistency();
 
@@ -1848,15 +1829,18 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
     {
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        Block additional_columns = block;
-
-        /// Carry over columns projected out at earlier steps: they may be needed
-        /// to evaluate defaults of columns missing in the part.
-        for (const auto & col : result.additional_columns)
+        /// Columns might be projected out. A later step may need them to evaluate defaults of columns missing in the part.
+        Block additional_columns;
+        if (keep_additional_columns)
         {
-            if (!additional_columns.has(col.name))
-                additional_columns.insert(col);
+            additional_columns = block;
+
+            /// Carry over columns projected out at earlier steps.
+            for (const auto & col : result.additional_columns)
+            {
+                if (!additional_columns.has(col.name))
+                    additional_columns.insert(col);
+            }
         }
 
         if (prewhere_info->actions)
@@ -1873,8 +1857,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         result.additional_columns.clear();
 
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!is_last_reader)
+        if (keep_additional_columns)
         {
             const bool filter_column_is_removed = prewhere_info->type == PrewhereExprStep::Filter && prewhere_info->remove_filter_column;
 
@@ -1916,12 +1899,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        /// Null when predicate_statistics_sample_rate = 0 (default). countBytesInFilter()
-        /// is an O(rows) scan that the following optimize() does not otherwise need, so
-        /// keep it behind the guard.
-        if (performance_counters)
-            performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
         result.optimize(current_filter, can_read_incomplete_granules, false);
+        /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
+        if (performance_counters)
+            performance_counters->rows_passed_filter += result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
         {

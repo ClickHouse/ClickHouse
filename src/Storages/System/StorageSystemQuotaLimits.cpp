@@ -2,7 +2,9 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -75,6 +77,9 @@ ColumnsDescription StorageSystemQuotaLimits::getColumnsDescription()
         result.add({column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
     }
 
+    result.add({"max_profile_events", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()),
+        "Maximum allowed consumption of each profile event the quota defines a limit over. A value of 0 means the event is only tracked, without a limit."});
+
     return result;
 }
 
@@ -102,6 +107,8 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
         column_max_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
+    auto & column_max_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+
     auto add_row = [&](const String & quota_name, const Quota::Limits & limits)
     {
         column_quota_name.insertData(quota_name.data(), quota_name.length());
@@ -114,6 +121,12 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
             const auto & type_info = QuotaTypeInfo::get(quota_type);
             addValue(*column_max[quota_type_i], *column_max_null_map[quota_type_i], limits.max[quota_type_i], type_info);
         }
+
+        Map max_profile_events_map;
+        max_profile_events_map.reserve(limits.profile_events_max.size());
+        for (const auto & [event_name, event_max] : limits.profile_events_max)
+            max_profile_events_map.push_back(Tuple{event_name, event_max});
+        column_max_profile_events.insert(max_profile_events_map);
     };
 
     auto add_rows = [&](const String & quota_name, const std::vector<Quota::Limits> & all_limits)
