@@ -11,7 +11,9 @@
 #include <Poco/Exception.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/HTTPSession.h>
 #include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SocketAddress.h>
@@ -20,7 +22,10 @@
 
 #include <openssl/ssl.h>
 
+#include <atomic>
+#include <chrono>
 #include <future>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -91,6 +96,105 @@ private:
     std::thread thread;
 };
 
+
+/// Reports the first send that would block: a TLS socket has a record write pending then.
+struct FirstBlockedSend : public Poco::Net::IHTTPSessionDataHooks
+{
+    void atStart(int /*bytes*/) override {}
+    void atFinish(int /*bytes*/) override {}
+    void atFail() override
+    {
+        if (!reported.exchange(true))
+            blocked.set_value();
+    }
+
+    std::atomic<bool> reported = false;
+    std::promise<void> blocked;
+};
+
+
+/// A TLS 1.2 server that does not read the body until the client has a record write pending. Then it
+/// asks the client to renegotiate, reads the whole body, and answers `200`.
+class RenegotiationDuringPendingWriteServer
+{
+public:
+    RenegotiationDuringPendingWriteServer(std::shared_future<void> client_blocked_, size_t body_size_)
+        : client_blocked(std::move(client_blocked_))
+        , body_size(body_size_)
+    {
+        SSL_CTX_set_max_proto_version(server_context->sslContext(), TLS1_2_VERSION);
+        thread = std::thread([this] { run(); });
+    }
+
+    ~RenegotiationDuringPendingWriteServer()
+    {
+        stop.set_value();
+        thread.join();
+    }
+
+    uint16_t port() const { return listener.address().port(); }
+    Poco::Net::Context::Ptr clientContext() const { return client_context; }
+
+private:
+    void run()
+    {
+        Poco::Net::StreamSocket peer;
+        try
+        {
+            if (!listener.poll(Poco::Timespan(10, 0), Poco::Net::Socket::SELECT_READ))
+                return;
+            peer = listener.acceptConnection();
+            std::string header;
+            char ch = 0;
+            while (!header.ends_with("\r\n\r\n") && peer.receiveBytes(&ch, 1) == 1)
+                header += ch;
+
+            if (client_blocked.wait_for(std::chrono::seconds(10)) != std::future_status::ready)
+            {
+                ADD_FAILURE() << "The client did not block on a send";
+                return;
+            }
+
+            peer.setBlocking(false);
+            SSL * ssl = static_cast<Poco::Net::SecureStreamSocketImpl *>(peer.impl())->ssl();
+            EXPECT_EQ(SSL_renegotiate(ssl), 1);
+            SSL_do_handshake(ssl);
+            peer.setBlocking(true);
+
+            char buf[16384];
+            size_t received = 0;
+            while (received < body_size)
+            {
+                const int n = peer.receiveBytes(buf, sizeof(buf));
+                if (n <= 0)
+                {
+                    ADD_FAILURE() << "The body ended after " << received << " bytes";
+                    return;
+                }
+                received += static_cast<size_t>(n);
+            }
+
+            const std::string answer = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+            peer.sendBytes(answer.data(), static_cast<int>(answer.size()));
+        }
+        catch (const Poco::Exception & e)
+        {
+            ADD_FAILURE() << e.displayText();
+        }
+        stop_future.wait();
+    }
+
+    std::shared_future<void> client_blocked;
+    const size_t body_size;
+    EphemeralCert cert;
+    Poco::Net::Context::Ptr server_context = cert.makeContext(Poco::Net::Context::SERVER_USE);
+    Poco::Net::Context::Ptr client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+    Poco::Net::SecureServerSocket listener{Poco::Net::SocketAddress("127.0.0.1", 0), 64, server_context};
+    std::promise<void> stop;
+    std::future<void> stop_future = stop.get_future();
+    std::thread thread;
+};
+
 }
 
 
@@ -116,6 +220,32 @@ TEST(HTTPTLSBodyWriter, StalledRenegotiationTimesOut)
             request_body->finalize();
         },
         Poco::TimeoutException);
+}
+
+/// OpenSSL allows no other operation that can do I/O while a record write is pending: a read that
+/// starts a renegotiation then would have to write the handshake on top of it. The body writer
+/// reads only when no record write is pending.
+TEST(HTTPTLSBodyWriter, RenegotiationDuringPendingWrite)
+{
+    constexpr size_t body_size = 16 << 20;
+    auto hooks = std::make_shared<FirstBlockedSend>();
+    RenegotiationDuringPendingWriteServer server(hooks->blocked.get_future().share(), body_size);
+    Poco::Net::HTTPSClientSession session("127.0.0.1", server.port(), server.clientContext());
+    session.setTimeout(Poco::Timespan(5, 0), Poco::Timespan(5, 0), Poco::Timespan(5, 0));
+    session.setSendDataHooks(hooks);
+
+    const std::string body(body_size, 'x');
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+    request.setContentLength(body.size());
+    auto request_body = DB::sendHTTPRequest(session, request);
+    session.socket().setSendBufferSize(64 * 1024);
+
+    DB::writeString(body, *request_body);
+    request_body->finalize();
+
+    Poco::Net::HTTPResponse response;
+    auto response_body = DB::receiveHTTPResponse(session, response);
+    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
 }
 
 #endif

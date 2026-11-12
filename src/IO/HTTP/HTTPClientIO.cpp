@@ -236,6 +236,11 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
             throw Poco::TimeoutException("Timeout while sending the HTTP request body");
 
         const bool readable = (fd.revents & (POLLIN | POLLHUP | POLLERR)) != 0;
+
+        /// A read is safe also while an `SSL_write` has a record write pending, though the OpenSSL
+        /// documentation asks for no other I/O then: OpenSSL delays every write that a read can start
+        /// (an alert, a `KeyUpdate`, a session ticket, a renegotiation) until the pending record is
+        /// written. See `ssl3_send_alert`, `ssl3_write_bytes` and `ssl3_renegotiate_check`.
         if (watch_response && readable)
         {
             int received = 0;
