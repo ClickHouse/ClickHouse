@@ -487,7 +487,8 @@ void rewriteSelect(ASTSelectQuery & select)
       * documents before it - the `GROUP BY` and the `ARRAY JOIN` name the fields of the documents,
       * even where an alias of the select list has the same name. Only the clauses that a stage
       * folded on top of the select fills - the `ORDER BY` of a `$sortByCount`, the `HAVING` of an
-      * aggregation - name the columns the select produces.
+      * aggregation - name the columns the select produces, and a key of the `ORDER BY` that is not
+      * one of them is still a field of the input.
       */
     std::unordered_set<String> aliases;
     collectAliases(select.select(), aliases);
@@ -587,12 +588,17 @@ void rewriteSelect(ASTSelectQuery & select)
             rewriteField(child, input_scope, /* keep_name_as_alias = */ false, input_table);
     }
 
+    /** A key of the `ORDER BY` that is not a name of the select list is a field of the input, and is
+      * qualified with the input table like the fields of the `WHERE`: the sort attached to a `find`
+      * orders the stored documents, and `find({}, {json: 1}).sort({a: 1})` must not order them by the
+      * `a` of the projected `json`.
+      */
     for (const auto & list : {select.orderBy(), select.limitBy()})
     {
         if (!list)
             continue;
         for (auto & child : list->children)
-            rewriteField(child, aliases);
+            rewriteField(child, aliases, /* keep_name_as_alias = */ false, input_table);
     }
 
     /// An `ARRAY JOIN` of a `$unwind` names the array it walks, which is a field as well.

@@ -3278,6 +3278,12 @@ def test_a_projected_json_field_does_not_capture_the_stored_document(started_clu
     assert list(collection.find({"a": 99}, {"_id": 0, "json.a": 1})) == []
     assert list(collection.find({"a": 2}, {"_id": 0, "json.a": 1})) == [{"json": {"a": 99}}]
 
+    # The sort of a `find` orders the stored documents too, not by the paths of the projected `json`.
+    collection.delete_many({})
+    collection.insert_many([{"a": 1, "json": {"a": 99}}, {"a": 2, "json": {"a": 0}}])
+    assert list(collection.find({}, {"_id": 0, "json": 1}).sort("a", 1)) == [{"json": {"a": 99}}, {"json": {"a": 0}}]
+    assert list(collection.find({}, {"_id": 0, "json": 1}).sort("a", -1)) == [{"json": {"a": 0}}, {"json": {"a": 99}}]
+
     collection.drop()
 
 
