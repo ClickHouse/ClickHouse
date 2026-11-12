@@ -500,6 +500,7 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::Chunked)
     {
         writeBody("0\r\n\r\n", 5);
+        /// The error response can arrive while the terminator is being sent.
         if (stopped)
             return;
     }
