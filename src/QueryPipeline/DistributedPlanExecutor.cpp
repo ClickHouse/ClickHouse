@@ -1421,20 +1421,16 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
 
     /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
-    /// A zero count falls through: with the client enabled, the cluster it configures still gives
-    /// a real node count for Cascades to plan against even though execution stays local.
     if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
     const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
     {
-        /// Local execution needs no client at all; let a zero count through for the caller's own,
-        /// more specific error.
+        /// Local execution needs no client.
         if (settings[Setting::distributed_plan_execute_locally])
             return requested_workers;
 
-        /// A plan that needs workers cannot serve any selection, named or default, without the client.
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled; cannot run a distributed query plan{}",
             worker_cluster.empty() ? "" : fmt::format(" on worker cluster '{}'", worker_cluster));
