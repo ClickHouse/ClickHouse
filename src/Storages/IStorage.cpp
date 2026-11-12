@@ -33,7 +33,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool async_socket_for_remote;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
 }
 
 namespace ErrorCodes
@@ -59,7 +59,7 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
 {
     const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
     throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-        "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
+        "{} locking attempt on \"{}\" has timed out ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
         type_str, getStorageID(), acquire_timeout.totalMilliseconds(), rwlock->getOwnerQueryIdsDescription());
 }
 
@@ -170,7 +170,7 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_
     auto lock = tryLockForAlter(acquire_timeout);
     if (lock == std::nullopt)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
+                        "Locking attempt for ALTER on \"{}\" has timed out ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.totalMilliseconds());
     return std::move(*lock);

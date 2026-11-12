@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 
@@ -10,6 +11,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
@@ -17,6 +19,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char mt_merge_task_pause_before_transaction_commit[];
+}
 
 namespace ErrorCodes
 {
@@ -184,6 +191,9 @@ void MergePlainMergeTreeTask::finish()
         new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
 
+    if (prewarm_caches.statistics_cache)
+        new_part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
+
     write_part_log({});
 
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
@@ -192,6 +202,7 @@ void MergePlainMergeTreeTask::finish()
     if (auto txn_ = txn_holder.getTransaction())
     {
         /// Explicitly commit the transaction if we own it (it's a background merge, not OPTIMIZE)
+        FailPointInjection::pauseFailPoint(FailPoints::mt_merge_task_pause_before_transaction_commit);
         TransactionManager::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();

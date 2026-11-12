@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 
 SELECT *, ngramMinHash(*) AS minhash, mortonEncode(untuple(ngramMinHash(*))) AS z
 FROM (SELECT toString(number) FROM numbers(10))

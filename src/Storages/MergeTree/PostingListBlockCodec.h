@@ -25,12 +25,13 @@ public:
 
     virtual ~IPostingListBlockCodec() = default;
 
-    /// Append one encoded block of `values` (1..BLOCK_SIZE) to `out`. Returns the number of bytes appended.
+    /// Append one encoded block of row id deltas `values` (1..BLOCK_SIZE) to `out`. Returns the number of bytes appended.
     virtual size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) = 0;
 
-    /// Decode one block of `count` (1..BLOCK_SIZE) values from `in` into `out` (which must hold at least
+    /// Decode one block of `count` (1..BLOCK_SIZE) row ids from `in` into `out` (which must hold at least
     /// `count` slots), advancing `in` past the consumed bytes. Returns the number of bytes consumed.
-    virtual size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) = 0;
+    /// The block stores deltas; `base` is the row id before the block, from which they are restored.
+    virtual size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out, uint32_t base) = 0;
 
     /// Upper bound on the encoded size of one block (1..BLOCK_SIZE values), in bytes.
     virtual size_t maxBlockBytes() const = 0;

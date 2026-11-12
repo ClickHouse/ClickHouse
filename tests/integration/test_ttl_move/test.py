@@ -1352,12 +1352,15 @@ def test_moves_after_merges(started_cluster, engine, request):
         """)
         # we want to control over when to MOVE to eliminate flakinness
         node1.query(f"SYSTEM STOP MOVES {table_name}")
+        # SYSTEM STOP MOVES does not stop a merge from applying the TTL move, so the TTL must outlive the OPTIMIZE below.
+        ttl_ts = int(time.time()) + 10
+        f_ttl_datetime = lambda _: f'toDateTime({ttl_ts})'
         populate_with_records(
             node=node1,
             table_name=table_name,
             generators=[
-                gen_pair_records(10, F_SMALL_STRING, F_SOON_TO_EXPIRE_DATETIME),
-                gen_pair_records(10, F_SMALL_STRING, F_SOON_TO_EXPIRE_DATETIME),
+                gen_pair_records(10, F_SMALL_STRING, f_ttl_datetime),
+                gen_pair_records(10, F_SMALL_STRING, f_ttl_datetime),
             ]
         )
 
@@ -1371,7 +1374,7 @@ def test_moves_after_merges(started_cluster, engine, request):
 
         # 2. Waiting for the data to expire and then expecting it at the target location
         node1.query(f"SYSTEM START MOVES {table_name}")
-        time.sleep(SOON_SECONDS)
+        time.sleep(max(0, ttl_ts - time.time()))
         wait_if_moving_then_assert_disks(node1, table_name, target_state={
             'external' : {'rows': 20}
         })

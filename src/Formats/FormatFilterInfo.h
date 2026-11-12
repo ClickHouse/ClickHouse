@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/ColumnNameMaps.h>
 #include <exception>
 #include <mutex>
 #include <unordered_set>
@@ -12,6 +13,7 @@ namespace DB
 
 class ActionsDAG;
 struct Settings;
+struct FormatSettings;
 class KeyCondition;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -19,6 +21,13 @@ struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+class RuntimeFilterPruningPredicate;
+
+/// The settings of the file format readers that change which row groups a read prunes or which
+/// physical column it binds a column to. They are folded into the query condition cache keys of files.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings);
+/// The same, from the format settings of a reader, e.g. the ones a table fixed at `CREATE`.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings);
 
 /// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
 /// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
@@ -41,6 +50,8 @@ struct FormatTopKFilterInfo
     /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
     /// condition cache.
     bool track_row_group_best_values = false;
+    /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
+    bool filter_rows = true;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
@@ -51,10 +62,10 @@ public:
     /// For tuples, the map contains both the tuple itself and all its elements, e.g. {t, t.x, t.y}.
     /// Note that parquet schema reader has to apply the mapping to all tuple fields recursively
     /// even if the whole tuple was requested, because the names of the fields may be different.
-    void setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_);
+    void setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_);
 
-    const std::unordered_map<String, Int64> & getStorageColumnEncoding() const { return storage_encoding; }
-    const std::unordered_map<Int64, String> & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
+    const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
+    const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
@@ -87,21 +98,26 @@ public:
     }
     bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
 
-    void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
-    std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
+    /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
+    void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
+    {
+        iceberg_time_field_ids = std::move(iceberg_time_field_ids_);
+    }
+    bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
+    bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding) const;
+    std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
 private:
-    std::unordered_map<String, Int64> storage_encoding;
-    std::unordered_map<Int64, String> field_id_to_clickhouse_name;
+    ColumnNameToFieldId storage_encoding;
+    FieldIdToColumnName field_id_to_clickhouse_name;
     std::unordered_set<String> iceberg_string_paths;
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
-    std::optional<Int64> last_assigned_field_id;
+    std::unordered_set<Int64> iceberg_time_field_ids;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -139,9 +155,10 @@ struct FormatFilterInfo
 
     ColumnMapperPtr column_mapper;
 
-    /// Only set when `column_mapper` above was swapped for a per-file mapper (data lake schema
-    /// evolution, e.g. Iceberg): the CURRENT/query-side mapper, i.e. the one `column_mapper` held
-    /// before the swap. Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
+    /// The CURRENT/query-side mapper of a data lake (e.g. Iceberg). It matters when `column_mapper`
+    /// above was swapped for a per-file mapper (schema evolution), and it is set even when the
+    /// current-schema mapper is not given to the reader as `column_mapper` (a table whose write
+    /// format differs from the format of the file). Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
     /// extracted from it) reference columns by their current/query-side name, not the name they had
     /// in the schema this particular file was written under, so resolving a filter's column name back
     /// to a `field_id` requires this mapper, not the per-file one.
@@ -153,8 +170,11 @@ struct FormatFilterInfo
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
     /// else. Sorted, unique, absolute (pre-filtering) row indexes within the file. The format must
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
-    /// in this exact order. Only supported by the Parquet format.
+    /// in this exact order. Supported by Parquet and Vortex.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    // True if someone will use ChunkInfoRowNumbers downstream
+    bool need_row_numbers = false;
 
     /// TopN dynamic filtering; see the struct comment. Assigned by the reading step when the plan
     /// optimization applies (`SourceStepWithFilterBase::setTopKFilter`); formats that don't support
@@ -162,12 +182,23 @@ struct FormatFilterInfo
     /// so applying it partially or not at all is always correct.
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
+    /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
+    /// a key of them. Only the Parquet format uses it.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;
+
+    /// The caller calls `IInputFormat::cacheFilterColumnStatistics` after reading a file.
+    bool keep_filter_column_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
     std::exception_ptr init_exception;
+
+    std::mutex join_runtime_filter_mutex;
+    bool join_runtime_filter_key_condition_built TSA_GUARDED_BY(join_runtime_filter_mutex) = false;
+    std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition TSA_GUARDED_BY(join_runtime_filter_mutex);
 
 public:
     /// True if the format may skip rows of the file.
@@ -176,6 +207,11 @@ public:
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
+
+    /// The condition that every row passing `join_runtime_filter_predicate` satisfies, on `keys` followed by
+    /// `additional_columns` (the columns of `key_condition`). nullopt while a filter is not built,
+    /// nullptr if none gives an `IN` set or a range. Call after `initKeyConditionOnce`.
+    std::optional<std::shared_ptr<const KeyCondition>> tryGetJoinRuntimeFilterKeyCondition(const Block & keys);
 
     /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
     /// the condition is deterministic and covers `prewhere_info`.

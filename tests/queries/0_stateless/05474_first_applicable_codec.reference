@@ -1,0 +1,41 @@
+-- column codecs
+CREATE TABLE default.t_first_applicable\n(\n    `i` UInt32 CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `f` Float64 CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `s` String CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `t` Tuple(\n        a Float32,\n        b UInt16,\n        c String) CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `a` Array(Int64) CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `n` Nullable(Float32) CODEC(firstapplicable(FPC, ZSTD(3))),\n    `d` UInt64 CODEC(Delta, FirstApplicable(FPC, LZ4)),\n    `e` Array(Int64) CODEC(FirstApplicable(FPC, T64))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = \'with_types\', string_serialization_version = \'with_size_stream\', nullable_serialization_version = \'basic\', index_granularity = 8192
+10000	49995000	7142142.857	38890	16665000	4995000	10000	20000	3029697	149985000	3333
+a	a	['T64, ZSTD(1)']
+a	a.size0	['ZSTD(1)']
+d	d	['Delta(1), LZ4']
+e	e	['T64']
+e	e.size0	['NONE']
+f	f	['FPC(12)']
+i	i	['T64, ZSTD(1)']
+n	n	['FPC(12)']
+n	n.null	['ZSTD(1)']
+s	s	['ZSTD(1)']
+s	s.size	['ZSTD(1)']
+t	t%2Ea	['FPC(12)']
+t	t%2Eb	['T64, ZSTD(1)']
+t	t%2Ec	['ZSTD(1)']
+t	t%2Ec.size	['ZSTD(1)']
+-- the codec follows a change of the data type
+10000	49995000
+i	i	['FPC(12)']
+-- default_compression_codec
+20000	99990000	14284285.714	77780	299970000
+d	d	['Delta(1), T64, LZ4']
+f	f	['FPC(12)']
+i	i	['T64, LZ4']
+s	s	['ZSTD(1)']
+s	s.size	['ZSTD(1)']
+-- TTL RECOMPRESS
+10000	49995000	38890
+i	i	['T64']
+s	s	['ZSTD(1)']
+s	s.size	['ZSTD(1)']
+-- estimateCompressionRatio
+1	1
+-- errors
+-- Log engines
+[1,2,3]	(1.5,'a')
+[]	(2.5,'b')
+[1,2,3]	(1.5,'a')
+[]	(2.5,'b')

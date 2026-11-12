@@ -4,7 +4,6 @@
 -- tokenizer/preprocessor/postprocessor when used outside of the WHERE/PREWHERE filter (SELECT list,
 -- aggregate-function arguments), and that a WHERE result is the same regardless of `use_skip_indexes`.
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
