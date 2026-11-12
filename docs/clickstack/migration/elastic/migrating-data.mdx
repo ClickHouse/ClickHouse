@@ -424,12 +424,10 @@ GET .ds-logs-system.syslog-default-2025.06.03-000001/_mapping
 ```
 </Accordion>
 
-The equivalent ClickHouse table schema:
+The equivalent ClickHouse table schema is below. On versions before 25.3, where the `JSON` and `Variant` types are experimental, run `SET allow_experimental_json_type = 1, allow_experimental_variant_type = 1;` before creating the tables on this page.
 
 <Accordion title="ClickHouse schema">
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE logs_system_syslog
 (
     `@timestamp` DateTime,
@@ -529,8 +527,6 @@ This strict schema has a number of benefits:
 Alternatively, you can simply create a table with one `JSON` column.
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE syslog_json
 (
  `json` JSON(`host.name` String, `@timestamp` DateTime)

@@ -917,7 +917,7 @@ PySpark, or shell.
 ## Working with VariantType {#working-with-varianttype}
 
 <Note>
-VariantType support is available in Spark 4.0+ and requires ClickHouse 25.3+ with experimental JSON/Variant types enabled.
+VariantType support is available in Spark 4.0+ and requires ClickHouse 25.3+, where the `JSON` and `Variant` types are production-ready and enabled by default.
 </Note>
 
 The connector supports Spark's `VariantType` for working with semi-structured data. VariantType maps to ClickHouse's `JSON` and `Variant` types, allowing you to store and query flexible schema data efficiently.
@@ -1263,10 +1263,9 @@ If you need to write to a ClickHouse `Variant` type, use JSON format. Arrow form
 
 1. **Use JSON type for JSON-only data**: If you only store JSON objects, use the default JSON type (no `variant_types` property)
 2. **Specify types explicitly**: When using `Variant()`, explicitly list all types you plan to store
-3. **Enable experimental features**: Ensure ClickHouse has `allow_experimental_json_type = 1` enabled
-4. **Use JSON format for writes**: JSON format is recommended for VariantType data for better compatibility
-5. **Consider query patterns**: JSON/Variant types support ClickHouse's JSON path queries for efficient filtering
-6. **Column hints for performance**: When using JSON fields in ClickHouse, adding column hints improves query performance. Currently, adding column hints via Spark isn't supported. See [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) for tracking this feature.
+3. **Use JSON format for writes**: JSON format is recommended for VariantType data for better compatibility
+4. **Consider query patterns**: JSON/Variant types support ClickHouse's JSON path queries for efficient filtering
+5. **Column hints for performance**: When using JSON fields in ClickHouse, adding column hints improves query performance. Currently, adding column hints via Spark isn't supported. See [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) for tracking this feature.
 
 ### Example: Complete Workflow {#varianttype-example-workflow}
 
@@ -1275,9 +1274,6 @@ If you need to write to a ClickHouse `Variant` type, use JSON format. Arrow form
 
 ```scala
 import org.apache.spark.sql.functions._
-
-// Enable experimental JSON type in ClickHouse
-spark.sql("SET allow_experimental_json_type = 1")
 
 // Create table with Variant column
 spark.sql("""
@@ -1326,9 +1322,6 @@ result.show(false)
 ```python
 from pyspark.sql.functions import parse_json, to_timestamp
 
-# Enable experimental JSON type in ClickHouse
-spark.sql("SET allow_experimental_json_type = 1")
-
 # Create table with Variant column
 spark.sql("""
   CREATE TABLE clickhouse.default.events (
@@ -1376,9 +1369,6 @@ result.show(truncate=False)
 
 ```java
 import static org.apache.spark.sql.functions.*;
-
-// Enable experimental JSON type in ClickHouse
-spark.sql("SET allow_experimental_json_type = 1");
 
 // Create table with Variant column
 spark.sql("CREATE TABLE clickhouse.default.events (" +
