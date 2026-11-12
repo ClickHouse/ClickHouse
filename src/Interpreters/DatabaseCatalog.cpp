@@ -344,7 +344,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         /*queue_size=*/ 0,
         /*shutdown_on_exception=*/ false);
 
-    /// Runs inline if the pool cannot start a thread, so the work is still done.
+    /// Runs inline if the OS refuses a new thread, so the work is still done.
     auto run_concurrently = [&](const std::function<void()> & task)
     {
         auto job = [task]
@@ -408,17 +408,18 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         };
 
         /// Background writers do not depend on each other, so they stop concurrently, and all of them before returning.
-        /// Returns whether it stopped any writer that is not in `stopped` yet.
-        auto stop_background_writes = [&](const std::vector<StoragePtr> & tables, std::unordered_set<StoragePtr> & stopped)
+        /// Returns whether it stopped a writer for the first time.
+        std::unordered_set<StoragePtr> stopped_writers;
+        auto stop_background_writes = [&](const std::vector<StoragePtr> & tables)
         {
             bool stopped_new = false;
             for (const auto & table : tables)
             {
                 try
                 {
-                    if (!table || stopped.contains(table) || !table->hasBackgroundWrites())
+                    if (!table || stopped_writers.contains(table) || !table->hasBackgroundWrites())
                         continue;
-                    stopped.insert(table);
+                    stopped_writers.insert(table);
                 }
                 catch (...)
                 {
@@ -494,12 +495,15 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
         /// List again to include the tables that finished loading meanwhile. Tables that write into others in the background
         /// stop first, what they wrote is drained while destinations still accept it, and only then are all tables prepared.
-        /// The listing repeats until no new writer appears, as a writer being stopped can load or create another one.
-        std::unordered_set<StoragePtr> stopped_writers;
-        do
+        /// Stopping a writer or draining can load or create another writer, so both repeat until no new writer appears.
+        bool stopped_new_writers = true;
+        while (stopped_new_writers)
+        {
             user_tables = list_user_tables();
-        while (stop_background_writes(user_tables, stopped_writers));
-        drain_buffers(user_tables);
+            stopped_new_writers = stop_background_writes(user_tables);
+            drain_buffers(user_tables);
+        }
+
         for (const auto & table : user_tables)
         {
             if (!table)
