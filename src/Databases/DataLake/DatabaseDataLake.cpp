@@ -37,7 +37,12 @@
 #if USE_AWS_S3 && USE_SSL
 #include <Databases/DataLake/S3TablesCatalog.h>
 #endif
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
@@ -79,6 +84,7 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
+    extern const DatabaseDataLakeSettingsTimezone iceberg_timezone_for_timestamptz;
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsString auth_header;
@@ -110,6 +116,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsString google_service_account_key;
+    extern const DatabaseDataLakeSettingsString disk;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
     extern const DatabaseDataLakeSettingsDatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
@@ -170,6 +178,46 @@ namespace FailPoints
 namespace
 {
 
+DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
+{
+    if (const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+    {
+        if (datetime->hasExplicitTimeZone() && datetime->getTimeZone().getTimeZone() == "UTC")
+            return std::make_shared<DataTypeDateTime64>(datetime->getScale(), timezone);
+        return type;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return makeNullable(setTimezoneForTimestamptz(nullable->getNestedType(), timezone));
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(setTimezoneForTimestamptz(array->getNestedType(), timezone));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(
+            setTimezoneForTimestamptz(map->getKeyType(), timezone), setTimezoneForTimestamptz(map->getValueType(), timezone));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple->getElements())
+            elements.push_back(setTimezoneForTimestamptz(element, timezone));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    return type;
+}
+
+NamesAndTypesList getTableSchema(
+    const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const DatabaseDataLakeSettings & settings)
+{
+    const String & timezone = settings[DatabaseDataLakeSetting::iceberg_timezone_for_timestamptz];
+    auto schema = table_metadata.getSchema();
+    if (catalog.getTableEngineName(table_metadata) != "Iceberg" || timezone == "UTC")
+        return schema;
+    NamesAndTypesList result;
+    for (const auto & column : schema)
+        result.emplace_back(column.name, setTimezoneForTimestamptz(column.type, timezone));
+    return result;
+}
+
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
 constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
@@ -206,7 +254,7 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
-    bool lazy_init)
+    bool is_existing_definition)
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
@@ -217,19 +265,19 @@ DatabaseDataLake::DatabaseDataLake(
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
     , db_uuid(uuid)
 {
-    validateSettings();
-    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE`,
+    validateSettings(is_existing_definition);
+    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE`, i.e. for an existing definition,
     ///  defer catalog construction to first use: building it can perform network I/O or credential validation
     ///  that must not block startup. On CREATE build eagerly so misconfiguration (including a restricted
     ///  server-credential catalog) is reported immediately.
-    if (!lazy_init)
+    if (!is_existing_definition)
     {
         std::lock_guard lock(catalog_mutex);
         initializeOrLeaveUnavailable();
     }
 }
 
-void DatabaseDataLake::validateSettings()
+void DatabaseDataLake::validateSettings(bool is_existing_definition)
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
@@ -258,6 +306,34 @@ void DatabaseDataLake::validateSettings()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
             "Please specify 'SETTINGS warehouse=<warehouse_name>' in the CREATE DATABASE query");
+    }
+
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        && settings[DatabaseDataLakeSetting::disk].changed)
+    {
+        /// The Google credentials of a BigLake catalog are also the credentials of its tables' data files, and they
+        /// reach the tables through `StorageS3Configuration::fromAST` only (see `applyCatalogSpecificConfiguration`).
+        /// A table built on a disk takes the disk's own credentials instead (`fromDisk`), so the user-supplied
+        /// credentials would silently apply to the catalog but not to the data. Refuse the combination.
+        const bool has_google_credentials = !settings[DatabaseDataLakeSetting::google_service_account_key].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
+        /// Only new definitions are refused: a database that already exists (replayed at server startup, re-attached
+        /// with `ATTACH DATABASE` after `DETACH`, or restored from a backup) must still load, so it keeps the previous
+        /// behavior (the data files are read with the credentials of the disk). This is a usability check, not a
+        /// credential check, so a user `ATTACH` is not fail-closed here: the credentials of the catalog are still
+        /// checked independently when it is built.
+        if (has_google_credentials && is_existing_definition)
+            LOG_WARNING(log, "The `disk` setting of a BigLake catalog is combined with Google credentials: the data files "
+                "are read with the credentials of the disk, not with the credentials of the catalog");
+        else if (has_google_credentials)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `disk` setting cannot be combined with `google_service_account_key` or the Google ADC credentials "
+                "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token) of a BigLake catalog: "
+                "the data files of a table on a disk are read with the credentials of the disk, not with the "
+                "credentials of the catalog");
     }
 }
 
@@ -367,6 +443,7 @@ void DatabaseDataLake::initialize() const
             std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
             std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+            std::string google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
@@ -385,6 +462,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_client_secret,
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
+                google_service_account_key,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries,
                 snapshot_loading_mode);
@@ -751,9 +829,13 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
-    if (endpoint_from_settings.empty())
-        return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    auto table_url = endpoint_from_settings.empty()
+        ? table_metadata.getLocation()
+        : table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    /// Only the S3 configuration parses this as a URI and decodes the key from it, the others take the path verbatim.
+    if (table_metadata.isS3Location())
+        return DataLake::encodeLocationForURI(table_url);
+    return table_url;
 }
 
 bool DatabaseDataLake::catalogManagesProviderChain(const DataLake::ICatalog & catalog)
@@ -907,7 +989,8 @@ void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageCon
         s3_configuration->setInitializationAsBigLake(
             biglake_catalog.getGoogleADCClientId(),
             biglake_catalog.getGoogleADCClientSecret(),
-            biglake_catalog.getGoogleADCRefreshToken()
+            biglake_catalog.getGoogleADCRefreshToken(),
+            biglake_catalog.getGoogleServiceAccountKey()
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
@@ -1284,7 +1367,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto storage_type = table_engine_args.storage_type;
     const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
-    const auto columns = ColumnsDescription(table_metadata.getSchema());
+    const auto columns = ColumnsDescription(getTableSchema(*catalog, table_metadata, settings));
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
@@ -1919,7 +2002,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : table_metadata.getSchema())
+    for (const auto & column_type_and_name : getTableSchema(*catalog, table_metadata, settings))
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
@@ -2237,10 +2320,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /// `RESTORE DATABASE` shouldn't do network I/O: an unreachable or unauthorized catalog must not block it.
-            /// Keyed on the restore flag, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
+            /// `ATTACH DATABASE` (server startup or a user re-attach) and `RESTORE DATABASE` replay an existing
+            /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
+            /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*lazy_init=*/args.create_query.attach || args.is_restore_from_backup);
+            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
@@ -2316,6 +2400,7 @@ The following settings are supported:
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 | `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. `auto` (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
+| `iceberg_timezone_for_timestamptz` | The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns of the tables in the database are mapped to. Default: `UTC`. |
 
 ## Examples {#examples}
 

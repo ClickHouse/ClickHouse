@@ -148,9 +148,7 @@ Sin el encabezado `x-service-id`, las solicitudes se dirigen de forma predetermi
 
 Las implementaciones de Open Source y BYOC usan el endpoint MCP integrado de la instancia de ClickStack con autenticación mediante token Bearer.
 
-<div id="oss-prerequisites">
-  ### Requisitos previos
-</div>
+### Requisitos previos {#oss-prerequisites}
 
 * Una instancia de ClickStack en ejecución (consulta [Implementación](/es/clickstack/deployment/overview) para ver las opciones de configuración)
 * Una **Personal API Access Key** — encontrarás la tuya en HyperDX, en **configuración del equipo → API Keys → Personal API Access Key**
@@ -174,6 +172,7 @@ El servidor MCP está disponible en la ruta `/api/mcp` de la URL del frontend de
 El servidor MCP usa el transporte **Streamable HTTP** con autenticación mediante **token Bearer**.
 
 <div id="managed-connecting-a-client">
+  <a id="oss-connecting-a-client" />
   ### Conectar un cliente MCP
 </div>
 
@@ -271,7 +270,7 @@ Una vez conectado, tu asistente de IA tiene acceso a un conjunto de herramientas
 * **Consulta de datos** — Busca y agrega logs, traces y métricas mediante el constructor de consultas de ClickStack, la sintaxis de búsqueda o SQL puro.
 * **Fuentes de datos** — Enumera las fuentes de datos disponibles, las conexiones a bases de datos, los esquemas de columnas y las claves de atributos.
 * **Dashboards** — Crea, actualiza, elimina e inspecciona dashboards junto con sus tiles.
-* **Alertas** — Crea, actualiza e inspecciona alertas junto con su historial de evaluación.
+* **Alertas** — Crea, actualiza e inspecciona alertas junto con su historial de evaluación. Si la [detección de anomalías](/es/clickstack/features/anomaly-detection) está habilitada, los asistentes también pueden hacer backtesting de la configuración de las alertas de anomalías con el historial reciente antes de guardarlas.
 * **Búsquedas guardadas** — Crea, actualiza e inspecciona definiciones reutilizables de búsquedas guardadas.
 * **Webhooks** — Enumera los destinos de webhook disponibles para las notificaciones de alertas.
 * **Equipos** — Enumera los equipos a los que pertenece el usuario actual e identifica el equipo activo.

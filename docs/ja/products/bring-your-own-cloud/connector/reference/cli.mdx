@@ -1,7 +1,7 @@
 ---
 title: 'CLI リファレンス'
 sidebarTitle: 'CLI'
-description: 'clicklink clctl コマンドのリファレンス: init、preflight、サポートセッション、ゲートウェイの信頼設定、監査、アクセスの Provisioning、マネージドサービス、プラットフォーム承認'
+description: 'clicklink clctl コマンドのリファレンス: init、preflight、サポートセッション、ゲートウェイの信頼設定、監査、アクセスの Provisioning、マネージドサービス、プラットフォーム承認、コンテキスト、コネクタのアップグレード'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
@@ -12,9 +12,9 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 コネクタは `clicklink` という単一のバイナリとして提供され、実行するコマンドは `clicklink clctl` 配下にあります。このページでは、インストール時および日常的な運用で使用するコマンドについて説明します。各コマンドに `--help` を付けて実行すると、詳細なヘルプを確認できます。
 
-`troubleshoot`、`scraper`、`preflight`、`executor`、`instances create`、`platform` の各サブツリーのフラグ、およびグローバルな `--endpoint` と `--cluster` は、`CLCTL_*` 環境変数 (各フラグのヘルプ出力に記載) または `~/.clicklink/clctl.yaml` でも指定できます。グローバルな `-v` は、コマンドが実行する管理 API リクエストをログに記録し、`-vv` ではリクエストボディも記録されます。
+`troubleshoot`、`scraper`、`preflight`、`executor`、`instances create`、`platform`、`connector upgrade` の各サブツリーのフラグ、およびグローバルな `--endpoint`、`--cluster`、`--infra-context` は、`CLCTL_*` 環境変数 (各フラグのヘルプ出力に記載) または `~/.clicklink/clctl.yaml` でも指定できます。グローバルな `-v` は、コマンドが実行する管理 API リクエストをログに記録し、`-vv` ではリクエストボディも記録されます。
 
-`instances` および `commands` コマンドと `executor teardown` は、executor のローカル API を参照します。これを選択するグローバルフラグは 2 つあります: `--endpoint <url>` (デフォルトは `http://127.0.0.1:9999`、環境変数 `CLCTL_ENDPOINT`) と `--cluster <name>` (環境変数 `CLCTL_CLUSTER`) で、後者はコマンドが必要とする場合にマネージドクラスターを指定します。Kubernetes では、まず executor のデプロイメントに対して `kubectl port-forward` を開いてください。詳細は [managed services](/ja/products/bring-your-own-cloud/connector/managed-services#status) を参照してください。
+`instances` および `commands` コマンドと `executor teardown` は、executor のローカル API を参照します。これを選択するグローバルフラグは 2 つあります: `--endpoint <url>` (デフォルトは `http://127.0.0.1:9999`、環境変数 `CLCTL_ENDPOINT`) と `--cluster <name>` (環境変数 `CLCTL_CLUSTER`) で、後者はコマンドが必要とする場合に管理対象クラスターを指定します。Kubernetes では、まず executor のデプロイメントに対して `kubectl port-forward` を開いてください。詳細は [マネージドサービス](/ja/products/bring-your-own-cloud/connector/managed-services#status) を参照してください。
 
 ## clicklink clctl init {#init}
 
@@ -411,6 +411,34 @@ ClickHouse の registry に直接アクセスする場合は、コネクタの E
 | `--output-dir <path>`                             | `_platform` バンドルの削除対象となるアクセスルート(デフォルトは `/etc/clicklink/access/executor`)。                                   |
 | `--secret-namespace <ns>`, `--secret-name <name>` | Kubernetes へのインストール時: 代わりにコネクタのネームスペース内にあるプラットフォームバンドルの Secret を削除します(デフォルト名は `clicklink-platform-bundle`)。 |
 | `--dry-run`                                       | サービスの有無を確認し、クラスターを変更せずにリセットのプランを出力します。                                                                      |
+
+## clicklink clctl context {#context}
+
+`clctl` は、名前付きのコンテキストを通じて登録済みのコネクタを特定します。Kubernetes では実行環境の kubeconfig context、VM ではホスト上の設定ファイルがこれに該当します。`context add` でコンテキストを保存し (最初に保存したものが現在のコンテキストになります) 、`context use <name>` で切り替え、`context list` と `context current` で表示、`context remove <name>` で削除します。`--infra-context <name>` (環境変数 `CLCTL_INFRA_CONTEXT`) を指定すると、その 1 回の実行に限り現在のコンテキストをオーバーライドできます。`--context`、`--config`、`--cluster` を受け付けるコマンドでは、現在のコンテキストがこれらのデフォルト値として使われます。ただし、明示的に指定したフラグや `CLCTL_*` 変数がある場合は、そちらが優先されます。`connector upgrade` の実行にはコンテキストが必要です。
+
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context>
+```
+
+| フラグ                          | 説明                                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--kube-context <name>`      | `kubectl config get-contexts` に表示される kubeconfig context 名を正確に指定します (ローカルで検証されます) 。Kubernetes インストールで使用します。 |
+| `--config <path>`            | このホスト上のコネクタの設定ファイルを指定します。VM インストールで使用します。`--kube-context` と `--config` のいずれかが必須です。                         |
+| `--connector-namespace <ns>` | コネクタのチャートの名前空間が `clicklink` 以外の場合に指定します。                                                                   |
+| `--use`                      | 別のコンテキストが現在のコンテキストに設定されている場合でも、このコンテキストを現在のコンテキストにします。                                                     |
+
+## clicklink clctl connector upgrade {#connector-upgrade}
+
+`context add` で保存された kubeconfig context を使用し、パブリックチャートリポジトリから Kubernetes 上のインストールをアップグレードします。現在のチャートとイメージ、およびアップグレード先のチャートとイメージを表示してから、確認を求めます。リリースの設定値を保持したまま(古くなった `image.tag` はクリアされます)、組み込みの Helm クライアントでアップグレードを実行し、ロールアウトの完了を待ってから、有効なすべてのコンポーネントのポッドが新しいイメージで実行されていることをチェックします。クラスター、アカウント、またはリージョンがコネクタの設定と異なる Kubernetes コンテキストや、イメージリポジトリがパブリックリポジトリではないリリース([プライベートミラー](/ja/products/bring-your-own-cloud/connector/configuration#private-mirrors))に対しては、実行を拒否します。詳細は[運用](/ja/products/bring-your-own-cloud/connector/operations#upgrades-kubernetes)を参照してください。
+
+| フラグ                 | 説明                                                                               |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `--version <X.Y.Z>` | インストールするチャートのバージョン。先頭の `v` を除いたリリースタグを指定します。`--version` と `--latest` のいずれかが必須です。 |
+| `--latest`          | 公開されている最新のチャートを特定してインストールします。                                                    |
+| `--set <key=value>` | Helm の設定値のオーバーライド。複数回指定できます。変更されるのはリリースのみで、`clicklink-values.yaml` は更新されません。     |
+| `--dry-run`         | Helm のサーバー側シミュレーションの後で停止します。変更は一切行われません。                                         |
+| `--yes`, `-y`       | 確認プロンプトをスキップします。                                                                 |
+| `--timeout <dur>`   | ロールアウトとイメージ検証のそれぞれに適用される時間の上限(デフォルトは `15m`)。                                     |
 
 ## リモートチャネルフラグ {#channel-flags}
 
