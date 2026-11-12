@@ -912,16 +912,18 @@ Levels: [F0, F1] -> [F2] -> [F3]
 
 With `fragments` = 1 and `json` = 1, a query that is executed by stateless workers is described as one JSON document with these keys:
 
-- `Result Fragment` — the id of the query fragment that produces the result.
-- `Fragments` — the query fragments by ascending id, each with `Id`, `Stage` (the stage name), `Tasks` (the number of tasks), `Root` (the `Node Id` of the root step of the fragment, the first element of `Steps`) and `Steps`.
-- `Exchanges` — the exchanges by ascending id, each with `Id`, `Name`, `From` and `To` (the ids of the fragment that sends the data and of the fragment that reads it), `Kind` (`hash`, `broadcast`, `gather` or `any`), `Keys` for `hash`, `Sort Description` for a `gather` that keeps the sort order, `Mode` (`streaming` or `persisted`), `Source Buckets`, `Destination Buckets` and, with `estimates` = 1 when the planner has an estimate, `Estimated Rows`.
-- `Levels` — the fragment ids grouped by their depth, as arrays, from the fragments without dependencies to the fragment that produces the result.
+- `resultFragment` — the id of the query fragment that produces the result.
+- `fragments` — the query fragments by ascending id, each with `id`, `stage` (the stage name), `tasks` (the number of tasks), `root` (the `nodeId` of the root step of the fragment, the first element of `steps`) and `steps`.
+- `exchanges` — the exchanges by ascending id, each with `id`, `name`, `from` and `to` (the ids of the fragment that sends the data and of the fragment that reads it), `kind` (`hash`, `broadcast`, `gather` or `any`), `keys` for `hash`, `sortDescription` for a `gather` that keeps the sort order, `mode` (`streaming` or `persisted`), `sourceBuckets`, `destinationBuckets` and, with `estimates` = 1 when the planner has an estimate, `estimatedRows`.
+- `levels` — the fragment ids grouped by their depth, as arrays, from the fragments without dependencies to the fragment that produces the result.
 
-`Steps` is a flat array of the steps of the fragment, root first, each parent before its inputs. A step has the same keys as with `json` = 1 without `fragments`, but instead of `Plans` it has `Children`: the `Node Id` of its inputs in input order, such as the left and the right side of a join, then of the root steps of its nested plans, whose steps are in the same array. `Node Id` is unique within the query.
+`steps` is a flat array of the steps of the fragment, root first, each parent before its inputs. A step has the same keys as with `json` = 1 without `fragments`, in camelCase (see below), but instead of `plans` it has `children`: the `nodeId` of its inputs in input order, such as the left and the right side of a join, then of the root steps of its nested plans, whose steps are in the same array. `nodeId` is unique within the query.
 
-The send and receive steps of an exchange have the key `Exchange Id` with the id of the exchange. The send step of the result (`final_result`) sends it to the client, not to an exchange, and has no `Exchange Id`. Column names are not shortened, whatever the value of `pretty`.
+The send and receive steps of an exchange have the key `exchangeId` with the id of the exchange. The send step of the result (`final_result`) sends it to the client, not to an exchange, and has no `exchangeId`. Column names are not shortened, whatever the value of `pretty`.
 
-When the query is not distributed, the document is the same as without `fragments`, with the nested `Plan`. If the query could not be distributed and fell back to local execution, the document has the key `Fallback Reason` after `Plan`.
+All the keys of the document are written in camelCase, also the keys of the steps, such as those of `actions` = 1 or `indexes` = 1: a key is split into words at every character that is not a letter or a digit, the first word is lowercased, the next words start with a capital letter, and a word in capitals only is lowercased first. For example, `Node Type` with `json` = 1 is `nodeType`, and `HAVING Pre-filter` is `havingPreFilter`. Values are not changed.
+
+When the query is not distributed, the document is the same as without `fragments`, with the nested `plan`, except that the keys are in camelCase. If the query could not be distributed and fell back to local execution, the document has the key `fallbackReason` after `plan`.
 
 Example (trimmed):
 
@@ -937,23 +939,23 @@ FORMAT TSVRaw;
 ```json
 [
   {
-    "Result Fragment": 2,
-    "Fragments": [
-      {"Id": 0, "Stage": "stage_0", "Tasks": 3, "Root": "ShuffleSend_17", "Steps": [
-        {"Node Type": "ShuffleSend", "Node Id": "ShuffleSend_17", "Exchange Id": 0, "Children": ["Aggregating_10"]},
-        {"Node Type": "Aggregating", "Node Id": "Aggregating_10", "Children": ["Expression_6"]},
+    "resultFragment": 2,
+    "fragments": [
+      {"id": 0, "stage": "stage_0", "tasks": 3, "root": "ShuffleSend_17", "steps": [
+        {"nodeType": "ShuffleSend", "nodeId": "ShuffleSend_17", "exchangeId": 0, "children": ["Aggregating_10"]},
+        {"nodeType": "Aggregating", "nodeId": "Aggregating_10", "children": ["Expression_6"]},
         ...
-        {"Node Type": "ReadFromMergeTree", "Node Id": "ReadFromMergeTree_0", "Children": []}]},
-      {"Id": 1, "Stage": "stage_1", "Tasks": 3, "Root": "GatherSend_19", "Steps": [ ... ]},
-      {"Id": 2, "Stage": "main", "Tasks": 1, "Root": "GatherSend_21", "Steps": [
-        {"Node Type": "GatherSend", "Node Id": "GatherSend_21", "Children": ["GatherReceive_20"]},
-        {"Node Type": "GatherReceive", "Node Id": "GatherReceive_20", "Exchange Id": 1, "Children": []}]}
+        {"nodeType": "ReadFromMergeTree", "nodeId": "ReadFromMergeTree_0", "children": []}]},
+      {"id": 1, "stage": "stage_1", "tasks": 3, "root": "GatherSend_19", "steps": [ ... ]},
+      {"id": 2, "stage": "main", "tasks": 1, "root": "GatherSend_21", "steps": [
+        {"nodeType": "GatherSend", "nodeId": "GatherSend_21", "children": ["GatherReceive_20"]},
+        {"nodeType": "GatherReceive", "nodeId": "GatherReceive_20", "exchangeId": 1, "children": []}]}
     ],
-    "Exchanges": [
-      {"Id": 0, "Name": "exchange_0", "From": 0, "To": 1, "Kind": "hash", "Keys": ["modulo(__table1.bid, 10_UInt8)"], "Mode": "streaming", "Source Buckets": 3, "Destination Buckets": 3},
-      {"Id": 1, "Name": "exchange_1", "From": 1, "To": 2, "Kind": "gather", "Mode": "streaming", "Source Buckets": 3, "Destination Buckets": 1}
+    "exchanges": [
+      {"id": 0, "name": "exchange_0", "from": 0, "to": 1, "kind": "hash", "keys": ["modulo(__table1.bid, 10_UInt8)"], "mode": "streaming", "sourceBuckets": 3, "destinationBuckets": 3},
+      {"id": 1, "name": "exchange_1", "from": 1, "to": 2, "kind": "gather", "mode": "streaming", "sourceBuckets": 3, "destinationBuckets": 1}
     ],
-    "Levels": [[0], [1], [2]]
+    "levels": [[0], [1], [2]]
   }
 ]
 ```

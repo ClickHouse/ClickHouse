@@ -63,7 +63,8 @@ void explainAsTree(
     size_t max_step_description_length);
 
 /// `EXPLAIN PLAN fragments = 1, json = 1`: the element of the one-element array of the `json = 1` document; the caller
-/// wraps and formats it. Defined in `FragmentGraphJSON.cpp`. Names are not prettified, as in `json = 1`.
+/// wraps and formats it, with the keys in camelCase (`JSONBuilder::FormatSettings::camel_case_keys`). Defined in
+/// `FragmentGraphJSON.cpp`. Names are not prettified, as in `json = 1`.
 ///
 /// A single node yields `{"Plan": ...}`, as `json = 1` does, with `"Fallback Reason"` when the fragment has one. A cut
 /// plan yields `Result Fragment`, the id of the fragment that produces the result, then `Fragments` and `Exchanges` by
