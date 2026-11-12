@@ -2031,12 +2031,6 @@
         return new TextDecoder().decode(bytes.subarray(0, n));
     }
 
-    function sliceByUtf8ByteOffsetFrom(str, byteOffset) {
-        const bytes = new TextEncoder().encode(str);
-        const n = Math.max(0, Math.min(Number(byteOffset) || 0, bytes.length));
-        return new TextDecoder().decode(bytes.subarray(n));
-    }
-
     function formatColumns(items) {
         if (items.length === 0) return "";
         const maxLen = items.reduce((max, s) => Math.max(max, s.length), 0);
@@ -2132,9 +2126,6 @@
 
             const replaceStart = Number.isFinite(data.replace_start) ? data.replace_start : 0;
             const head = sliceByUtf8ByteOffset(prefix, replaceStart);
-            const typed = sliceByUtf8ByteOffsetFrom(prefix, replaceStart);
-            const visible = matches.filter((m) => m.startsWith(typed));
-            if (visible.length === 0) return;
 
             const applyCompletion = (inserted) => {
                 const completedPrefix = head + inserted;
@@ -2142,14 +2133,13 @@
                 input.setSelectionRange(completedPrefix.length, completedPrefix.length);
             };
 
-            if (visible.length === 1) {
-                applyCompletion(visible[0]);
+            if (matches.length === 1) {
+                applyCompletion(matches[0]);
                 return;
             }
 
-            applyCompletion(longestCommonPrefix(visible));
-            /// Echo the post-LCP line (same text the live prompt shows), like keeper-client.
-            showCompletionMatches(input.value, visible);
+            applyCompletion(longestCommonPrefix(matches));
+            showCompletionMatches(input.value, matches);
         } catch (e) { /* ignore fetch errors */ }
     }
 

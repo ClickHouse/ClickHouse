@@ -24,6 +24,13 @@ namespace
 /// Word breaks used by replxx / clickhouse-keeper-client line editing.
 constexpr std::string_view WORD_BREAK_CHARACTERS = " \t\v\f\a\b\r\n";
 
+bool matchesLastWord(std::string_view completion, const String & prefix, size_t replace_start)
+{
+    if (replace_start > prefix.size())
+        return false;
+    return completion.starts_with(std::string_view(prefix).substr(replace_start));
+}
+
 /// Unescape a bare (unquoted) path that may contain backslash escaping
 /// and inline quoted segments, mirroring what parseKeeperArg accepts:
 ///   /foo\ bar        →  /foo bar       (backslash-escaped space)
@@ -430,7 +437,10 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
         if (last_word_offset > full_completion.size())
             continue;
 
-        result.completions.push_back(full_completion.substr(last_word_offset));
+        String completion = full_completion.substr(last_word_offset);
+        if (!matchesLastWord(completion, prefix, result.replace_start))
+            continue;
+        result.completions.push_back(std::move(completion));
     }
 
     std::sort(result.completions.begin(), result.completions.end());

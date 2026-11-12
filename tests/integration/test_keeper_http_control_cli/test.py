@@ -373,6 +373,46 @@ def test_http_commands_complete(started_cluster):
     execute_completed(f"get /{dirname}/{prefix}_space", "space-val")
     execute_completed(f"get /{dirname}/{prefix}_back", "slash-val")
 
+    # Quoted display forms (e.g. `app;2` → `'app;2'`) must not appear when the
+    # typed last word is the bare parent path; they would shrink LCP.
+    quoted_child = f"{prefix}_app;2"
+    created_quoted = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"command": f"create '/{dirname}/{quoted_child}' q", "cwd": "/"},
+    )
+    assert created_quoted.status_code == 200
+
+    parent_complete = f"ls /{dirname}/"
+    parent_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": parent_complete, "cwd": "/"},
+    )
+    assert parent_resp.status_code == 200
+    parent_body = parent_resp.json()
+    last_word = parent_complete.encode("utf-8")[parent_body["replace_start"] :].decode("utf-8")
+    assert parent_body["completions"]
+    assert all(c.startswith(last_word) for c in parent_body["completions"])
+    assert all("'" not in c for c in parent_body["completions"])
+    assert any(child_a in c for c in parent_body["completions"])
+
+    quoted_typed = f"ls /{dirname}/'"
+    quoted_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": quoted_typed, "cwd": "/"},
+    )
+    assert quoted_resp.status_code == 200
+    quoted_body = quoted_resp.json()
+    quoted_last_word = quoted_typed.encode("utf-8")[quoted_body["replace_start"] :].decode(
+        "utf-8"
+    )
+    assert all(c.startswith(quoted_last_word) for c in quoted_body["completions"])
+
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
     ) as client:
