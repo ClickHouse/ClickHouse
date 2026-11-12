@@ -230,7 +230,7 @@ struct ClientFake : DB::S3::Client
                   true,
                   true,
                   true,
-                  DB::HTTPConnectionGroupType::STORAGE,
+                  false,
                   {},
                   /* request_throttler = */ {},
                   "http"),

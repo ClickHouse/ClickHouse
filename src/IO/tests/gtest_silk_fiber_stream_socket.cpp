@@ -4,15 +4,15 @@
 
 #if USE_SILK && USE_SSL
 
-#include <Common/Silk/FiberStreamSocketImpl.h>
-#include <Common/Silk/SecureFiberStreamSocketImpl.h>
+#include <IO/SilkFiberStreamSocketImpl.h>
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #include <IO/SocketPeerClosed.h>
 
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
-#include <Common/Silk/tests/gtest_silk_scheduler.h>
+#include <Common/tests/gtest_silk_scheduler.h>
 
 #include <silk/fibers/future.h>
 

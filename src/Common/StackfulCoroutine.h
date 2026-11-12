@@ -6,7 +6,7 @@
 #include <Common/CoroutineStack.h>
 #include <Common/Exception.h>
 #include <Common/FiberLocal.h>
-#include <Common/Silk/FiberScheduler.h>
+#include <Common/SilkFiberScheduler.h>
 
 namespace DB::ErrorCodes
 {
