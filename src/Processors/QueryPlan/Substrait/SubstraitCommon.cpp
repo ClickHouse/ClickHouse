@@ -32,16 +32,19 @@ void collectUsedAnchors(const google::protobuf::Message & message, UsedAnchors &
     reflection->ListFields(message, &fields);
     for (const auto * field : fields)
     {
-        /// The names of all fields in the Substrait protos that hold a function or type anchor.
-        if (field->name() == "function_reference" || field->name() == "comparison_function_reference")
+        if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
+        {
+            if (field->is_repeated())
+                for (int i = 0; i < reflection->FieldSize(message, field); ++i)
+                    collectUsedAnchors(reflection->GetRepeatedMessage(message, field, i), used);
+            else
+                collectUsedAnchors(reflection->GetMessage(message, field), used);
+        }
+        /// Function anchors live in `function_reference`, `comparison_function_reference` and `custom_function_reference`.
+        else if (field->name().ends_with("function_reference"))
             used.functions.insert(reflection->GetUInt32(message, field));
         else if (field->name() == "type_reference")
             used.types.insert(reflection->GetUInt32(message, field));
-        else if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE && field->is_repeated())
-            for (int i = 0; i < reflection->FieldSize(message, field); ++i)
-                collectUsedAnchors(reflection->GetRepeatedMessage(message, field, i), used);
-        else if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
-            collectUsedAnchors(reflection->GetMessage(message, field), used);
     }
 }
 
