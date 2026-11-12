@@ -321,28 +321,34 @@ String getStructureHintColumnName(
     const String & table_function_alias,
     const ITableFunction & table_function,
     const ContextPtr & context,
-    std::optional<NameSet> & source_column_names)
+    std::optional<ColumnsDescription> & source_columns)
 {
     if (identifier_parts.size() == 1)
         return identifier_parts.front();
 
-    if (!source_column_names)
-    {
-        try
-        {
-            auto source_columns = table_function.getActualTableStructureWithAccess(context, /*is_insert_query=*/ false);
-            source_column_names = source_columns.getAll().getNameSet();
-        }
-        catch (const Exception &)
-        {
-            /// The source has no structure of its own, like `input`, which takes it from the structure hint.
-            source_column_names.emplace();
-        }
-    }
-
     String full_name = boost::algorithm::join(identifier_parts, ".");
-    if (source_column_names->contains(full_name))
-        return full_name;
+
+    /// `input` has no structure of its own, it takes it from the structure hint.
+    if (table_function.getName() != "input")
+    {
+        if (!source_columns)
+        {
+            try
+            {
+                source_columns = table_function.getActualTableStructureWithAccess(context, /*is_insert_query=*/ false);
+            }
+            catch (const Exception &)
+            {
+                return full_name;
+            }
+        }
+
+        if (source_columns->has(full_name))
+            return full_name;
+
+        if (source_columns->hasSubcolumn(GetColumnsOptions::All, full_name))
+            return {};
+    }
 
     if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
         return identifier_parts.back();

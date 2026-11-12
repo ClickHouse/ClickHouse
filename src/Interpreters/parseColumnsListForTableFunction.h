@@ -44,15 +44,15 @@ void removeMisboundDefaultsFromStructureHint(
     ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
 
 /// Name of the column of `table_function` that the identifier with `identifier_parts` from the `SELECT` list reads, to use it
-/// in the structure hint. A compound identifier is resolved as a column with its full name if the source has one, otherwise
-/// the first part is stripped if it is `table_function_alias`. Empty if the identifier does not read a top-level column of
-/// `table_function`, like a subcolumn or a column of another table. The source columns are read once into `source_column_names`.
+/// in the structure hint. A compound identifier keeps its full name if the source has such a column or its structure cannot be
+/// read, otherwise the first part is stripped if it is `table_function_alias`. Empty if the identifier does not read a top-level
+/// column of `table_function`, like a subcolumn or a column of another table. The source structure is cached in `source_columns`.
 String getStructureHintColumnName(
     const Strings & identifier_parts,
     const String & table_function_alias,
     const ITableFunction & table_function,
     const ContextPtr & context,
-    std::optional<NameSet> & source_column_names);
+    std::optional<ColumnsDescription> & source_columns);
 
 /// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns);
