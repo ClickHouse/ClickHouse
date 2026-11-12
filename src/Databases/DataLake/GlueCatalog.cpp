@@ -69,6 +69,7 @@ namespace DB::ErrorCodes
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char glue_catalog_pause_before_update_table[];
 }
 
 namespace DB::Setting
@@ -866,7 +867,7 @@ bool GlueCatalog::commitTableUpdate(
     const Poco::JSON::Object::Ptr & new_schema,
     const Poco::JSON::Object::Ptr & new_metadata) const
 {
-    bool update_sent = false;
+    bool update_may_have_landed = false;
     for (size_t attempt = 0; attempt < MAX_UPDATE_TABLE_ATTEMPTS; ++attempt)
     {
         Aws::Glue::Model::GetTableRequest get_request;
@@ -897,7 +898,7 @@ bool GlueCatalog::commitTableUpdate(
             : current_metadata_path == base_catalog_metadata_location;
         if (!same_base)
         {
-            if (!update_sent)
+            if (!update_may_have_landed)
             {
                 LOG_DEBUG(log, "Glue table {}.{} points to {} instead of {}, commit of {} conflicts",
                     namespace_name, table_name, current_metadata_path, base_catalog_metadata_location, new_metadata_path);
@@ -915,14 +916,17 @@ bool GlueCatalog::commitTableUpdate(
                 new_metadata_path, namespace_name, table_name, current_metadata_path);
         }
 
+        DB::FailPointInjection::pauseFailPoint(DB::FailPoints::glue_catalog_pause_before_update_table);
+
         Aws::Glue::Model::UpdateTableRequest request;
         request.SetDatabaseName(namespace_name);
         request.SetTableInput(buildUpdatedTableInput(existing, new_metadata_path, new_schema, new_metadata));
         /// Without it, a delayed retry could move the pointer back and drop the columns of a newer commit.
         if (existing.VersionIdHasBeenSet())
             request.SetVersionId(existing.GetVersionId());
+        bool request_retried = false;
+        request.SetRequestRetryHandler([&request_retried](const Aws::AmazonWebServiceRequest &) { request_retried = true; });
 
-        update_sent = true;
         auto response = glue_client->UpdateTable(request);
         if (response.IsSuccess())
             return true;
@@ -933,6 +937,8 @@ bool GlueCatalog::commitTableUpdate(
                 "Can not update metadata of table {}.{} in Glue catalog: {}",
                 namespace_name, table_name, response.GetError().GetMessage());
 
+        /// A rejected single attempt did not land; after an SDK retry the rejection may come from our own landed attempt.
+        update_may_have_landed = update_may_have_landed || request_retried;
         LOG_DEBUG(log, "Glue table {}.{} was modified concurrently, retrying commit of {}", namespace_name, table_name, new_metadata_path);
     }
 

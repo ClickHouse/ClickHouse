@@ -240,13 +240,13 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     )
 
 def create_clickhouse_glue_table(
-    started_cluster, node, database_name, table_name, schema, additional_settings={}
+    started_cluster, node, database_name, table_name, schema, additional_settings={}, catalog_name=CATALOG_NAME
 ):
     settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
 
     node.query(
         f"""
-CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+CREATE TABLE {catalog_name}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 {settings_suffix}
 """,
         settings={
@@ -255,7 +255,7 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
         },
     )
 
-    show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
+    show_result = node.query(f"SHOW DATABASE {catalog_name}")
     assert minio_secret_key not in show_result
 
 def create_glue_table_directly(
@@ -1421,6 +1421,85 @@ def test_writes_do_not_overwrite_replaced_glue_metadata_of_same_version(started_
     node.query(f"INSERT INTO {table_ref} VALUES ('later');", settings=write_settings)
     node.query(f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings)
     assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY x") == "base\t\\N\nlater\t\\N\npaused\t\\N\n"
+
+
+def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    test_ref = uuid.uuid4().hex
+    db_name = f"glue_cas_{test_ref}"
+    root_namespace = f"cas_{test_ref}"
+    table_name = "t"
+    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "glue_catalog_pause_before_update_table"
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, root_namespace, table_name, "(x String)", catalog_name=db_name
+        )
+        glue_client = boto3.client(
+            "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+        )
+
+        node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+        base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        base_location = base["Parameters"]["metadata_location"]
+        external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+
+        def s3_url(location):
+            return "http://minio1:9001/" + location.split("://", 1)[1]
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            paused_insert = executor.submit(
+                node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            # Another engine commits after the insert has read the `VersionId` it sends with `UpdateTable`.
+            node.query(
+                f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+                f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+            )
+            glue_client.update_table(
+                DatabaseName=root_namespace,
+                TableInput={
+                    "Name": table_name,
+                    "TableType": base["TableType"],
+                    "StorageDescriptor": {
+                        "Location": base["StorageDescriptor"]["Location"],
+                        "Columns": base["StorageDescriptor"]["Columns"],
+                    },
+                    "Parameters": {
+                        **base["Parameters"],
+                        "metadata_location": external_location,
+                        "previous_metadata_location": base_location,
+                    },
+                },
+            )
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            # The stale `VersionId` is rejected once; the insert is rebuilt on top of the other commit instead of failing.
+            paused_insert.result(timeout=120)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            executor.shutdown(wait=False)
+
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
+        )
+        assert int(injected) == 1
+
+        after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        assert after["Parameters"]["previous_metadata_location"] == external_location
+        assert metadata_version(after) == 100
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
 def test_alternating_commits_with_pyiceberg(started_cluster):
