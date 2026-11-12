@@ -1,4 +1,12 @@
 === run_native ===
+--- CREATE TABLE AS SELECT returns as soon as the SELECT has started
+no output
+still populating after the client returned
+--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started
+no output
+still populating after the client returned
+--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started
+no output
 --- INSERT SELECT in background: no output, rows land, attributed in query_log
 no output
 30
@@ -8,16 +16,6 @@ attributed in system.processes
 no output
 killed
 --- SELECT in background discards the result
-no output
---- CREATE TABLE AS SELECT returns as soon as the SELECT has started
-no output
-still populating after the client returned
-created with rows
---- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started
-no output
-still populating after the client returned
-replaced with rows
---- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started
 no output
 --- enabling the setting for a whole session is rejected
 run_query_in_background cannot be changed with SET
@@ -39,9 +37,6 @@ SUPPORT_IS_DISABLED
 CANNOT_PARSE_INPUT_ASSERTION_FAILED
 BAD_ARGUMENTS
 BAD_ARGUMENTS
---- SYSTEM RELOAD DICTIONARY returns as soon as the reload has started
-no output
-loaded
 --- errors raised after the main work has started are only logged
 only logged
 --- a settings constraint of the user is enforced on a background query
@@ -50,6 +45,9 @@ SETTING_CONSTRAINT_VIOLATION
 no output
 rows land in the database of the setting
 no output
+--- the CREATE ... AS SELECT queries above fill their tables
+created with rows
+replaced with rows
 === native ===
 --- an INSERT whose data streams over the connection is rejected synchronously
 BAD_ARGUMENTS

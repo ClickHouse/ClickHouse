@@ -50,6 +50,18 @@ Number of threads in the Aggregator thread pool running a task.
 
 Number of queued or active jobs in the Aggregator thread pool.
 
+### AIRequestThreads {#airequestthreads}
+
+Number of threads in the AI request thread pool.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+Number of threads in the AI request thread pool running a task.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+Number of queued or active jobs in the AI request thread pool.
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.
@@ -264,7 +276,7 @@ Number of queued or active tasks in the thread pool of the object storage disk b
 
 ### BrokenDisks {#brokendisks}
 
-Number of disks disks that were marked as broken during disk check.
+Number of disks that were marked as broken during disk check.
 
 ### BrokenDistributedBytesToInsert {#brokendistributedbytestoinsert}
 
@@ -381,18 +393,6 @@ Total number of CPU slot requests are being scheduled currently
 ### ConcurrencyControlSoftLimit {#concurrencycontrolsoftlimit}
 
 Value of soft limit on number of CPU slots
-
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-Number of threads in the thread pool for concurrent hash join.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-Number of threads in the thread pool for concurrent hash join running a task.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-Number of queued or active jobs in the thread pool for concurrent hash join.
 
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
@@ -606,6 +606,14 @@ Number of distributed cache registered servers
 
 Number of distributed cache registered servers in current az
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+Number of committed temporary files owned by this distributed cache server process
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+Total size in bytes of committed temporary files owned by this distributed cache server process
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 Number of open connections to ClickHouse server from Distributed Cache
@@ -621,6 +629,18 @@ Number of distributed cache S3 cached clients
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+Number of active committed temporary-data IDs
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+Distributed Cache client metric. Number of connections opened by temporary data bypassing the connection pool
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+Number of servers with committed temporary data
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -862,6 +882,14 @@ Size of the cache of current Iceberg schema field types in Glue catalogs in byte
 
 Number of entries in the cache of current Iceberg schema field types in Glue catalogs
 
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
+
+Bytes of the PTX of the kernels that the GPU engine compiled for expressions and keeps loaded on the device.
+
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
+
+Kernels that the GPU engine compiled for expressions and keeps loaded on the device.
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 Number of threads in the HashedDictionary thread pool.
@@ -873,6 +901,18 @@ Number of threads in the HashedDictionary thread pool running a task.
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 Number of queued or active jobs in the HashedDictionary thread pool.
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+Number of threads in the thread pool for destroying the right table of a hash join.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+Number of threads in the thread pool for destroying the right table of a hash join running a task.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+Number of queued or active jobs in the thread pool for destroying the right table of a hash join.
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -941,18 +981,6 @@ Number of threads in the IcebergCompaction thread pool running a task.
 ### IcebergCompactionThreadsScheduled {#icebergcompactionthreadsscheduled}
 
 Number of queued or active jobs in the IcebergCompaction thread pool.
-
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-Number of threads in the thread pool used for decoding Iceberg data manifest files.
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-Number of threads in the thread pool used for decoding Iceberg data manifest files running a task.
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-Number of queued or active jobs in the thread pool used for decoding Iceberg data manifest files.
 
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
@@ -1325,6 +1353,18 @@ Number of active threads used to commit snapshot
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 Number of scheduled threads used to commit snapshot
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+Number of threads in the thread pool for loading the statistics of data parts.
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+Number of threads in the thread pool for loading the statistics of data parts running a task.
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+Number of queued or active jobs in the thread pool for loading the statistics of data parts.
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
@@ -2269,6 +2309,18 @@ Number of entries in the deduplication caches of the tags tables of TimeSeries t
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 
 Number of temporary files created
+
+### TransactionLogEntries {#transactionlogentries}
+
+Number of entries in the transaction log (`/log`) at its last listing
+
+### TransactionsRunning {#transactionsrunning}
+
+Number of running transactions started on this replica
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+Latest transaction snapshot minus the global watermark; new transactions read this many CSNs behind
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

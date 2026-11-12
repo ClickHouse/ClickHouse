@@ -11,8 +11,6 @@
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
-#include <Formats/FormatSettings.h>
-
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 
@@ -218,13 +216,11 @@ public:
 
     void setAddressConnectTimeoutExpired() { address_connect_timeout_expired = true; }
 
-    void setFormatSettings(const FormatSettings & settings) override
-    {
-        format_settings = settings;
-    }
+    void setFormatSettings(const FormatSettings & settings) override;
 
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
     UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
+    UInt64 getWorkerClusterFunctionProtocolVersion() const { return worker_cluster_function_protocol_version; }
 
     /// Frees the buffers of the last query, so that the query that allocated them frees them, not the next one.
     void releaseQueryBuffers() noexcept;
@@ -353,8 +349,9 @@ private:
 
     AsyncCallback async_callback = {};
 
-    std::optional<FormatSettings> format_settings;
+    std::shared_ptr<const FormatSettings> format_settings;
 
+    std::optional<FormatSettings> optionalFormatSettings() const;
     void connect(const ConnectionTimeouts & timeouts);
 
     /// Establishes the transport for `connect`: either by connecting to one of the addresses the host

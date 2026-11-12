@@ -1,8 +1,10 @@
 #pragma once
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
+#include <Formats/ColumnNameMaps.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
@@ -34,6 +36,16 @@ public:
         bool use_64_bit_indexes_for_dictionary = false;
         /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
         bool output_date_as_uint16 = false;
+        /// Output DateTime as Arrow TIMESTAMP with second precision instead of UInt32,
+        /// so the temporal type survives a round-trip through the format.
+        bool output_datetime_as_timestamp = false;
+        /// Output the Nothing type (e.g. `SELECT NULL`) as the Arrow Null type.
+        /// By default such columns raise an UNKNOWN_TYPE exception.
+        bool output_nothing_as_null = false;
+        /// Whether `output_string_as_string` also covers FixedString columns not output as Arrow::FixedSizeBinary.
+        bool output_fixed_string_as_string = true;
+        /// Upper bound on one record batch; a chunk holding more is written as several.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
         /// What to do with a type having no conversion: reject it, or write one serialized value per row
         /// into an Arrow `utf8`/`binary` column.
         FormatSettings::ArrowUnsupportedTypes output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
@@ -53,7 +65,7 @@ public:
         const Chunk * chunk,
         const Settings & settings,
         std::optional<size_t> columns_num = std::nullopt,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt
+        const std::optional<ColumnNameToFieldId> & column_to_field_id = std::nullopt
     );
 
     /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
@@ -61,11 +73,11 @@ public:
     static std::shared_ptr<arrow::Table> calculateArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
-        const std::vector<Chunk> & chunks,
+        const Chunks & chunks,
         const Settings & settings,
         size_t columns_num,
         std::shared_ptr<arrow::Schema> schema,
-        std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
+        UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
 
 
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
@@ -84,7 +96,7 @@ public:
     void initializeArrowSchema(
         const Chunk * chunk = nullptr,
         std::optional<size_t> columns_num = std::nullopt,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
+        const std::optional<ColumnNameToFieldId> & column_to_field_id = std::nullopt);
 
     /// Returns the arrow schema (if it's not initialized yet this function will initialize it from the header columns).
     /// Arrow schemas are immutable (all members of class arrow::Schema are const), so
@@ -93,9 +105,9 @@ public:
 
     void chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunk,
+        const Chunks & chunk,
         size_t columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
+        const std::optional<ColumnNameToFieldId> & column_to_field_id = std::nullopt);
 
 private:
     ColumnsWithTypeAndName header_columns;
@@ -110,7 +122,7 @@ private:
     /// Map {column name : arrow dictionary}.
     /// To avoid converting dictionary from LowCardinality to Arrow
     /// Dictionary every chunk we save it and reuse.
-    std::unordered_map<std::string, MutableColumnPtr> dictionary_values;
+    UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> dictionary_values;
 };
 
 }

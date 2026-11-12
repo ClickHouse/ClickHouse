@@ -40,20 +40,16 @@ def endpoint_url(namespace):
     return f"http://localhost:{S3_PORT}/{S3_BUCKET}/perf/{namespace}/"
 
 
-def iceberg_s3_database_ddl_commands(server_path):
-    """Attach the performance job's shared S3 fixture on one server."""
-    metadata = f"{server_path}/db/metadata"
+def iceberg_s3_database_queries():
+    """Queries that create the performance job's shared S3 fixture as a database on one running server. Idempotent."""
     directory, tables = ICEBERG_DATASETS[READ_DATASET]
-    commands = [
-        f"mkdir -p {metadata}/{READ_DATASET_DATABASE}",
-        f'echo "ATTACH DATABASE {READ_DATASET_DATABASE} ENGINE=Ordinary" > {metadata}/{READ_DATASET_DATABASE}.sql',
-    ]
+    queries = [f"CREATE DATABASE IF NOT EXISTS {READ_DATASET_DATABASE}"]
     for table in tables:
-        commands.append(
-            f'echo "ATTACH TABLE {table} ENGINE = IcebergS3(perf_s3_data, filename = '
-            f"'{directory}/{table}/')\" > {metadata}/{READ_DATASET_DATABASE}/{table}.sql"
+        queries.append(
+            f"CREATE TABLE IF NOT EXISTS {READ_DATASET_DATABASE}.{table} "
+            f"ENGINE = IcebergS3(perf_s3_data, filename = '{directory}/{table}/')"
         )
-    return commands
+    return queries
 
 
 def _client():
@@ -111,7 +107,7 @@ def seed_public_data(local_dir):
     return Shell.check(" && ".join(copies) + f" && rm -rf {local_dir}", verbose=True)
 
 
-def seed_catalog(clickhouse):
+def seed_catalog(clickhouse_local):
     """For `requires_s3_catalog="1"`: table bucket `perf-catalog`, namespace `many`, tables t1..t200 with one row (id = n); idempotent."""
     catalog = f"http://localhost:{CATALOG_PORT}/v1"
     queries = [
@@ -136,7 +132,7 @@ def seed_catalog(clickhouse):
         f"timeout 60 sh -c 'until curl -sf -o /dev/null {catalog}/config; do sleep 1; done'"
         f" && (echo 's3tables.bucket -list -account {S3_ACCESS_KEY}' | {shell} | grep -q '{CATALOG_BUCKET}'"
         f" || echo 's3tables.bucket -create -name {CATALOG_BUCKET} -account {S3_ACCESS_KEY}' | {shell})"
-        f" && {clickhouse} local --queries-file {temp_dir}/perf_catalog_seed.sql",
+        f" && {clickhouse_local} --queries-file {temp_dir}/perf_catalog_seed.sql",
         verbose=True,
     )
 

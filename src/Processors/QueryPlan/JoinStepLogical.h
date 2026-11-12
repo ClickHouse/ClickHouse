@@ -219,8 +219,20 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// The algorithm the join order optimizer chose for this join, if any. `join_algorithms` stays the user's list: the
+    /// physical join tries the planned algorithm first and falls back to that list.
+    std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
+    void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
+
     /// Swap left and right sides
     void swapInputs();
+
+    /// The input a hash join builds its table from, and the input it streams through that table. The planner
+    /// builds from the smaller input (`swapInputs`); a sorting join reads both inputs at once.
+    static constexpr JoinTableSide getBuildSide() { return JoinTableSide::Right; }
+    static constexpr JoinTableSide getProbeSide() { return JoinTableSide::Left; }
+    /// The index of the input of `side`, which is also its index in the children of the plan node.
+    static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
@@ -308,6 +320,7 @@ protected:
 private:
 
     bool disjunctions_optimization_applied = false;
+    std::optional<JoinAlgorithm> planned_algorithm;
 };
 
 

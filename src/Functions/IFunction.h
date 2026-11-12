@@ -140,6 +140,8 @@ protected:
       * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    /// The same for these arguments, for a function that throws on the default value of only some argument types.
+    virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
 
     /** True if function might throw an exception during execution.
       */
@@ -199,6 +201,13 @@ public:
 
     /// Get the main function name.
     virtual String getName() const = 0;
+
+    /// True if `rhs` is the same callable for ColumnFunction concatenation.
+    /// `ColumnFunction::insertRangeFrom` keeps the destination FunctionBasePtr for all rows,
+    /// so structureEquals must only succeed when executing either instance is equivalent.
+    /// Default: the same object. Wrappers that mint a fresh IFunctionBase per chunk (e.g.
+    /// FunctionExpression) override this to compare the underlying expression identity.
+    virtual bool isEqual(const IFunctionBase & rhs) const { return this == &rhs; }
 
     /** Contributes whatever decides the values this function produces beyond its name, its
       * parameters and the types it was resolved for: a conversion, for instance, captures the
@@ -731,6 +740,7 @@ public:
     virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
@@ -754,6 +764,11 @@ public:
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    /// The same as `isShortCircuit`, but the settings can depend on the argument types.
+    virtual bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const
+    {
+        return isShortCircuit(settings, arguments.size());
+    }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /** True if the function might throw an exception while it is executed, for these argument types.
