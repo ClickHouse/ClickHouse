@@ -21,7 +21,7 @@ constexpr UInt64 QUERY_PLAN_JSON_VERSION = 1;
 /// `Statistics` of each step. Values are written raw -- nanoseconds, rows and bytes as numbers,
 /// never as `4.04 ms` or `142.86 thousand` -- because the column is meant to be aggregated by a
 /// query, which formatted values would prevent.
-class JsonPlanRenderer : public IPlanRenderer
+class FlatJsonPlanRenderer : public IPlanRenderer
 {
 public:
     void render(const CapturedPlan & captured, WriteBuffer & out) override;

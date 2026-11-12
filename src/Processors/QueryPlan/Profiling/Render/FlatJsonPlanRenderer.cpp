@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/Profiling/Render/JsonPlanRenderer.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJsonPlanRenderer.h>
 
 #include <Common/JSONBuilder.h>
 #include <Formats/FormatSettings.h>
@@ -284,7 +284,7 @@ JSONBuilder::FormatSettings jsonFormatSettings(FormatSettings & format_settings)
 
 }
 
-void JsonPlanRenderer::renderError(const String & message, WriteBuffer & out)
+void FlatJsonPlanRenderer::renderError(const String & message, WriteBuffer & out)
 {
     JSONBuilder::JSONMap error_map;
     error_map.add("Error", message);
@@ -295,7 +295,7 @@ void JsonPlanRenderer::renderError(const String & message, WriteBuffer & out)
     error_map.format(json_format_settings, format_context);
 }
 
-void JsonPlanRenderer::render(const CapturedPlan & captured, WriteBuffer & out)
+void FlatJsonPlanRenderer::render(const CapturedPlan & captured, WriteBuffer & out)
 {
     FormatSettings format_settings;
     auto json_format_settings = jsonFormatSettings(format_settings);
