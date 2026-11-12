@@ -47,6 +47,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -784,6 +785,7 @@ ReadFromMerge::ReadFromMerge(
     , storage_merge(std::move(storage))
     , merge_storage_snapshot(storage_snapshot)
     , common_processed_stage(processed_stage)
+    , default_expressions_sets(createDefaultExpressionsSets())
 {
 }
 
@@ -1958,6 +1960,18 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
     return ok;
 }
 
+/// The defaults of the columns missing in the parts of the children of a `Merge` read are evaluated by their readers.
+/// Make all of them share the sets of these defaults (`x IN table`), so that each set is built once for the read.
+/// Every reading step is visited, including the ones that build sets, since a set keyed by its subquery is the same
+/// wherever it is used.
+static void shareDefaultExpressionsSets(QueryPlan::Node * node, const DefaultExpressionsSetsPtr & sets)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        read_from_merge_tree->setDefaultExpressionsSets(sets);
+    for (auto * child : node->children)
+        shareDefaultExpressionsSets(child, sets);
+}
+
 /// Whether both keys start with the same `prefix_size` columns, sorted in the same directions.
 static bool sortingKeysSharePrefix(const KeyDescription & lhs, const KeyDescription & rhs, size_t prefix_size)
 {
@@ -1984,6 +1998,9 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
     /// referencing a subquery set must not be distributed.
     auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan, child.uses_alias_sets);
+
+    shareDefaultExpressionsSets(child.plan.getRootNode(), default_expressions_sets);
+
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
@@ -3087,6 +3104,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)
     {
+        shareDefaultExpressionsSets(child.plan.getRootNode(), default_expressions_sets);
         input_headers.push_back(child.plan.getCurrentHeader());
         plans.push_back(std::make_unique<QueryPlan>(std::move(child.plan)));
     }

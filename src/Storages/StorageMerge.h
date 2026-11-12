@@ -18,6 +18,9 @@ struct QueryPlanResourceHolder;
 
 class ReadFromMergeTree;
 
+class DefaultExpressionsSets;
+using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
+
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 
@@ -369,6 +372,11 @@ private:
     PreparedSets alias_sets;
     /// The plans which `addCreatingAliasSets` built the pipelines of `alias_sets` from.
     std::vector<std::unique_ptr<QueryPlan>> alias_set_plans;
+    /// Sets for `IN` in the `DEFAULT` expressions of the columns missing in the parts of the children, such as
+    /// `f UInt8 DEFAULT p IN keys` added by `ALTER TABLE ... ADD COLUMN`. These defaults are evaluated by the readers
+    /// of the children, so this is handed to every `ReadFromMergeTree` of the child plans: a set is built once for the
+    /// whole read, by the first reader that needs it, instead of once per child table.
+    DefaultExpressionsSetsPtr default_expressions_sets;
 
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_, PreparedSets & alias_sets_) const;
 

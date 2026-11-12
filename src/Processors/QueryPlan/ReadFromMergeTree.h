@@ -516,6 +516,9 @@ public:
 
     const MergeTreeData & getMergeTreeData() const { return data; }
     const MergeTreeReaderSettings & getReaderSettings() const { return reader_settings; }
+    /// Make the readers of this step share the sets of the defaults that read a table (`x IN table`) with other
+    /// steps of the same logical read, such as the children of a `Merge` read, so that each set is built once for it.
+    void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) { reader_settings.default_expressions_sets = std::move(sets); }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
