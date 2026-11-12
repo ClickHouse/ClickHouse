@@ -1,7 +1,4 @@
 -- Tags: no-parallel, no-fasttest, no-ordinary-database
--- no-parallel: prewarm fills a server-wide cache. The test clears it, which
--- would race with other vector-search tests, and CI's 128 MiB cache is too
--- small to share. Vector similarity indexes need usearch.
 
 SET parallel_replicas_local_plan = 1;
 

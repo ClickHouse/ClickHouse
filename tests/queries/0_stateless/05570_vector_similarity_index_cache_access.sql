@@ -1,7 +1,4 @@
 -- Tags: no-parallel, no-fasttest, no-ordinary-database
--- no-parallel: creates a global user with a fixed name, and clears the server-wide
--- vector similarity index cache so a previous test's delayed drop cannot fill it.
--- Vector similarity indexes need usearch. Ordinary databases have no table UUID.
 
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE;
 
