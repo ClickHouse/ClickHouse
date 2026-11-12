@@ -9934,7 +9934,7 @@ For testing of the automatic parallel replicas cost model - ignore the cap on ho
 
 It deliberately does NOT touch `automatic_parallel_replicas_min_bytes_per_replica`: set that to 0 to disable that gate, which is what it is for. Nor does it change read task sizing, or suppress the recollection of statistics that have drifted - a decision made on stale statistics is not a decision made by the cost model.
 )", 0, \
-        {"26.10", false, false, "New setting: for testing, ignore the reading-thread cap of the automatic parallel replicas cost model so that small reads are decided by the comparison rather than short-circuited by the cap."}) \
+        {"26.11", false, false, "New setting: for testing, ignore the reading-thread cap of the automatic parallel replicas cost model so that small reads are decided by the comparison rather than short-circuited by the cap."}) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
