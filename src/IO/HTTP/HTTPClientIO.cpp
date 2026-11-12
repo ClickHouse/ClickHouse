@@ -226,7 +226,7 @@ std::string_view trimHTTPSpaces(std::string_view value)
 void parseHTTPStatusLine(std::string_view line, Poco::Net::HTTPResponse & response)
 {
     const auto version_end = line.find(' ');
-    if (version_end == std::string_view::npos || version_end > max_version_length)
+    if (version_end > max_version_length)
         throw Poco::Net::MessageException("Invalid HTTP version string");
     auto rest = trimHTTPSpaces(line.substr(version_end));
     const auto status_end = std::min(rest.find(' '), rest.size());
@@ -378,7 +378,7 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         /// OpenSSL allows no read after a failed `SSL_write`. The response is parsed as it arrives:
         /// an error stops the body, a success is finished after the body.
         const bool watch_response = !peer_closed && !response_header_complete;
-        const short events = watch_response ? (POLLIN | POLLOUT) : POLLOUT;
+        const Int16 events = watch_response ? (POLLIN | POLLOUT) : POLLOUT;
         pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
 
         /// The send timeout bounds the whole wait, also when signals interrupt `poll`.
