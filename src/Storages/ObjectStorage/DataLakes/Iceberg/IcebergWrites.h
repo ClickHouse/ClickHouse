@@ -222,7 +222,7 @@ public:
     ChunkPartitioner * getPartitioner() { return partitioner ? &*partitioner : nullptr; }
     const KeyDescription & getSortDescription() const { return sort_description; }
     FileNamesGenerator & getFileNamesGenerator() { return filename_generator; }
-    const Iceberg::IcebergPathResolver & getPathResolver() const { return persistent_table_components.path_resolver; }
+    const std::shared_ptr<const Iceberg::IcebergPathResolver> & getPathResolver() const { return path_resolver; }
 
     void addFiles(const std::vector<IcebergPartitionFilesPtr> & new_files);
     void commit();
@@ -268,6 +268,8 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
+    /// Shared with the data file writers, which may outlive the sink.
+    const std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
 };

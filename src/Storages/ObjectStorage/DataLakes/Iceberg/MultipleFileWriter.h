@@ -22,11 +22,11 @@ public:
         UInt64 max_data_file_num_bytes_,
         Poco::JSON::Array::Ptr schema,
         FileNamesGenerator & filename_generator_,
-        const Iceberg::IcebergPathResolver & path_resolver_,
+        std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
-        const String & write_format_,
+        String write_format_,
         SharedHeader sample_block_);
 
     void consume(const Chunk & chunk);
@@ -82,7 +82,7 @@ private:
     OutputFormatPtr output_format;
     /// Used only while writing. The rest is owned, because the written files may outlive the sink, see `IcebergWrittenFiles`.
     FileNamesGenerator & filename_generator;
-    const Iceberg::IcebergPathResolver path_resolver;
+    std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;

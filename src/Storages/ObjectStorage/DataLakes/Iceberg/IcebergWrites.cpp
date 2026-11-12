@@ -1273,6 +1273,7 @@ IcebergInsertCommitter::IcebergInsertCommitter(
     , catalog(catalog_)
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
+    , path_resolver(std::make_shared<const Iceberg::IcebergPathResolver>(persistent_table_components_.path_resolver))
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
