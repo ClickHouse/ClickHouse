@@ -2397,14 +2397,10 @@ def test_s3_server_credentials_anonymous_on_reload(started_cluster):
     with pytest.raises(helpers.client.QueryRuntimeException):
         instance.query("SELECT count() FROM t_server_credentials_reload")
 
-    # An opted-in read rebuilds the client from the stored definition (the bare URL resolves the server's
-    # environment credentials), which is the operator escape hatch, so it reads the data back.
-    assert (
-        instance.query(
-            "SELECT count() FROM t_server_credentials_reload", settings=allow
-        ).strip()
-        == "100"
-    )
+    # An opted-in read does not upgrade the client either: it is shared with restricted sessions, which may
+    # be reading through it at the same time.
+    with pytest.raises(helpers.client.QueryRuntimeException):
+        instance.query("SELECT count() FROM t_server_credentials_reload", settings=allow)
 
     instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
 

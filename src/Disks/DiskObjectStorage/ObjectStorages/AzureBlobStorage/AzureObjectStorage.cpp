@@ -787,22 +787,22 @@ void AzureObjectStorage::applyNewSettings(
     };
     settings.set(std::move(new_settings));
 
-    /// The storage of a table is built from the query, not from a config section. As in `S3ObjectStorage::applyNewSettings`,
-    /// a client that uses the server's own identity follows the restriction of the accessing session, so a table created
-    /// with the opt-in serves no restricted session, and a table loaded restricted works again for a session that allows it.
+    /// The storage of a table is built from the query, not from a config section. The client is shared by all sessions
+    /// and a query uses it after this call, so, as in `S3ObjectStorage::applyNewSettings`, a session never switches it to
+    /// the server's own identity: a concurrent restricted query that already passed here would use it. A restricted
+    /// session is refused if the client uses that identity. Only a forced rebuild by the server follows the context.
     /// A disk, or a table on a disk, keeps its configuration from the server and goes on below.
     if (const auto params_snapshot = connection_params.get();
         params_snapshot->follows_session_restriction && params_snapshot->usesServerManagedCredentials())
     {
-        std::lock_guard lock(client_inputs_mutex);
-        const auto current_params = connection_params.get();
-
         const bool restrict_now = context->shouldRestrictUserQueryS3Credentials();
-        if (!options.force_client_rebuild && current_params->forbid_implicit_credentials == restrict_now)
+        params_snapshot->checkSessionMayUseServerIdentity(restrict_now);
+        if (!options.force_client_rebuild)
             return;
 
-        /// A restricted session fails with `ACCESS_DENIED`, as for S3; only loading a table falls back to no credentials.
-        auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*current_params);
+        std::lock_guard lock(client_inputs_mutex);
+        /// A restricted context fails with `ACCESS_DENIED`; only loading a table falls back to no credentials.
+        auto params = std::make_unique<AzureBlobStorage::ConnectionParams>(*connection_params.get());
         params->forbid_implicit_credentials = restrict_now;
         params->anonymous_fallback_for_server_credentials = false;
         client.set(AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true));
