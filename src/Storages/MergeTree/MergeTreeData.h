@@ -556,8 +556,7 @@ public:
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
-                  BrokenPartCallback broken_part_callback_ = [](const String &){},
-                  bool replay = false);
+                  BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
     /// doesn't force a full-type include in callers that destroy
@@ -2049,8 +2048,7 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
-        const MergeTreeSettings * alter_effective_settings = nullptr,
-        bool replay = false) const;
+        const MergeTreeSettings * alter_effective_settings = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
     /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
@@ -2060,13 +2058,11 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         ContextPtr local_context) const;
 
-    /// `replay`: `new_metadata` was already validated and committed by the replica that initiated the change.
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
-        ContextPtr local_context = nullptr,
-        bool replay = false);
+        ContextPtr local_context = nullptr);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 

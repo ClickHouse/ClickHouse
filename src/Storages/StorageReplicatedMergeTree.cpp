@@ -437,8 +437,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool need_check_structure,
-    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_,
-    bool replay)
+    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_)
     : MergeTreeData(table_id_,
                     metadata_,
                     context_,
@@ -447,8 +446,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     std::move(settings_),
                     true,                   /// require_part_metadata
                     mode,
-                    [this] (const std::string & name) { enqueuePartForCheck(name); },
-                    replay)
+                    [this] (const std::string & name) { enqueuePartForCheck(name); })
     , zookeeper_info(zookeeper_info_)
     , zookeeper_path(zookeeper_info.path)
     , replica_name(zookeeper_info.replica_name)
@@ -1897,7 +1895,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata, /*attach=*/false, /*local_context=*/nullptr, /*replay=*/true);
+    setProperties(new_metadata, old_metadata);
 
     try
     {
@@ -1906,7 +1904,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata, /*attach=*/false, /*local_context=*/nullptr, /*replay=*/true);
+        setProperties(old_metadata, new_metadata);
         throw;
     }
 }
