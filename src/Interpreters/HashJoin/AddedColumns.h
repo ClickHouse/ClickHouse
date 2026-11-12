@@ -74,6 +74,10 @@ struct JoinOnKeyColumns
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
 };
 
+/// `JoinOnKeyColumns::buildRowSkipData` for the given NULL key map and ON-section mask.
+const UInt8 * buildRowSkipData(
+    ConstNullMapPtr null_map, const JoinCommon::JoinMask & mask, IColumn::Filter & buffer, size_t range_begin, size_t range_size);
+
 struct LazyOutput
 {
     /// Entries share the encoding of the join hash map cell values (see RowRefs.h):

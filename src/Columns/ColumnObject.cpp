@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
@@ -7,6 +8,7 @@
 #include <Columns/canonicalizeNegativeZero.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
@@ -1966,7 +1968,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     for (const auto & [path, column] : dynamic_paths)
         dynamic_paths_source_columns[path].reserve(source_columns.size());
 
-    size_t total_size = 0;
+    /// Include the rows that this column already has: the discriminators and offsets of the dynamic paths are reserved
+    /// exactly, so a smaller reservation makes every dynamic path grow (reallocate and copy) during the squashing.
+    size_t total_size = size();
     for (const auto & source_column : source_columns)
     {
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-fasttest
+# Tags: no-replicated-database
 
 # A row policy on a Buffer column the destination declares differently used to abort the server
 # (Logical error: 'Unexpected return type from materialize') once the implicit WHERE -> PREWHERE

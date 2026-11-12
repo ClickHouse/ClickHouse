@@ -118,7 +118,9 @@ Any MCP client that supports **Streamable HTTP** with OAuth can connect. Configu
 
 ### Targeting a specific service {#managed-service-override}
 
-Without the `x-service-id` header, requests default to the first observability service provisioned and used by your account. To target a different service, pass `x-service-id: <YOUR_SERVICE_ID>` as a header in your MCP client configuration.
+Without the `x-service-id` header, requests default to the first observability service provisioned and used by your account. To change which service is the default, open **User Preferences** in ClickStack and choose a default service.
+
+To target a specific service from one MCP client, pass `x-service-id: <YOUR_SERVICE_ID>` as a header in its configuration. The header overrides the default service.
 
 ## What can you do with MCP? {#capabilities}
 
@@ -148,5 +150,5 @@ The specific set of tools may expand over time. Your MCP client will automatical
 </Accordion>
 
 <Accordion title="Requests go to the wrong service">
-Without the `x-service-id` header, requests default to the first observability service provisioned and used by your account. Pass the header to target a specific service. See [Targeting a specific service](#managed-service-override).
+Without the `x-service-id` header, requests default to the first observability service provisioned and used by your account. Change the default service in **User Preferences** in ClickStack, or pass the header to target a specific service. See [Targeting a specific service](#managed-service-override).
 </Accordion>

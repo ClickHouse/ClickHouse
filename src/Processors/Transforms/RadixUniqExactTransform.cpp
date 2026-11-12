@@ -1785,7 +1785,7 @@ void RadixUniqExactRouteTransform::work()
     /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
     /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        column = column_low_cardinality->getMinimalDictionaryEncodedColumn(0, column_low_cardinality->size()).dictionary;
+        column = column_low_cardinality->getMinimalDictionary(0, column_low_cardinality->size());
     /// The keys are compared by their bits, and negative zero is equal to positive zero, but has a different binary representation.
     if (ColumnPtr canonical_column = canonicalizeNegativeZero(*column))
         column = canonical_column;
