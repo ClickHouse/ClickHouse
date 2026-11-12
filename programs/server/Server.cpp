@@ -62,7 +62,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
@@ -277,6 +277,12 @@ namespace ServerSetting
     extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
     extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
+    extern const ServerSettingsUInt64 amber_connections_soft_limit;
+    extern const ServerSettingsUInt64 amber_connections_warn_limit;
+    extern const ServerSettingsUInt64 amber_connections_store_limit;
+    extern const ServerSettingsUInt64 amber_connections_hard_limit;
+    extern const ServerSettingsUInt64 amber_connections_rcvbuf;
+    extern const ServerSettingsUInt64 amber_connections_sndbuf;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -3139,6 +3145,12 @@ try
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
                     new_server_settings[ServerSetting::http_connections_hard_limit],
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings[ServerSetting::amber_connections_soft_limit],
+                    new_server_settings[ServerSetting::amber_connections_warn_limit],
+                    new_server_settings[ServerSetting::amber_connections_store_limit],
+                    new_server_settings[ServerSetting::amber_connections_hard_limit],
                 });
 
             HTTPConnectionPools::instance().setSocketBufferSizes(
@@ -3153,6 +3165,10 @@ try
                 HTTPConnectionPools::SocketBufferSizes{
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::amber_connections_rcvbuf],
+                    new_server_settings[ServerSetting::amber_connections_sndbuf],
                 });
 
             StreamingExchangeProtocol::setSocketBufferSizes(

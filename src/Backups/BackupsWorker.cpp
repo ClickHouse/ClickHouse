@@ -90,6 +90,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int UNFINISHED;
@@ -155,6 +156,26 @@ namespace
     size_t getNumActiveRestoresChange(BackupStatus status)
     {
         return status == BackupStatus::RESTORING;
+    }
+
+    /// A host fills the unqualified names from its address's `default_database`, or else from its own
+    /// default database, so without an address default they are resolved here, as `executeDDLQueryOnCluster` does.
+    void setCurrentDatabaseForOtherHosts(
+        ASTBackupQuery & query, const Cluster & cluster, size_t shard_num, size_t replica_num, const String & current_database)
+    {
+        bool with_default_database = false;
+        bool without_default_database = false;
+        for (const auto * address : cluster.filterAddressesByShardOrReplica(shard_num, replica_num))
+            (address->default_database.empty() ? without_default_database : with_default_database) = true;
+
+        if (!without_default_database)
+            return;
+
+        if (with_default_database
+            && std::ranges::any_of(query.elements, [](const auto & element) { return element.hasEmptyDatabaseNames(); }))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");
+
+        query.setCurrentDatabase(current_database);
     }
 
     /// A base backup is only ever opened for reading, lazily, and an internal leg's context has no user,
@@ -518,6 +539,7 @@ struct BackupsWorker::BackupStarter
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
+            setCurrentDatabaseForOtherHosts(*backup_query, *cluster, backup_settings.shard_num, backup_settings.replica_num, backup_context->getCurrentDatabase());
 
             /// With `backup_named_collections` unset, a DATABASE or ALL element exports the named
             /// collections only if the user may read their values. That decision belongs to the
@@ -808,12 +830,12 @@ void BackupsWorker::doBackup(
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
-        /// The elements are sent to the other hosts unresolved, and each host fills empty database
-        /// names in from its address's default database (see `DDLTask::setClusterInfo`), so an element
-        /// written unqualified can select a different table on each host. Compute the required access
-        /// per effective database, resolving the elements the way the addresses will, and authorize
-        /// the union - the same way `doRestore` checks the restore rights per address. The hosts
-        /// cannot be relied upon for these checks: with the default
+        /// On a cluster whose addresses set `default_database`, the elements are sent to the other hosts
+        /// unresolved, and each host fills empty database names in from its address's default database
+        /// (see `DDLTask::setClusterInfo`), so an element written unqualified can select a different table
+        /// on each host. Compute the required access per effective database, resolving the elements the
+        /// way the addresses will, and authorize the union - the same way `doRestore` checks the restore
+        /// rights per address. The hosts cannot be relied upon for these checks: with the default
         /// `distributed_ddl_use_initial_user_and_roles = false` they execute the query with full access.
         std::set<String> effective_databases;
         auto addresses = cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num);
@@ -846,25 +868,37 @@ void BackupsWorker::doBackup(
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
 
-        /// Prepare backup entries.
-        BackupEntries backup_entries;
-        {
-            BackupEntriesCollector backup_entries_collector(
-                backup_query->elements,
-                backup_settings,
-                backup_id,
-                backup_coordination,
-                read_settings,
-                context,
-                getThreadPool(backup_thread_pool_id));
-            backup_entries = backup_entries_collector.run();
-        }
-
-        /// Write the backup entries to the backup.
         chassert(backup);
         chassert(backup_coordination);
         chassert(context);
-        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, backup_thread_pool_id, context->getProcessListElement());
+
+        /// The entries without their names: building the file infos moves each name into the info it
+        /// belongs to. Scoped so that the pairs are gone before the backup is written, and so that a
+        /// reader of a name added between the two phases does not compile.
+        std::vector<BackupEntryPtr> backup_entries;
+        {
+            /// Prepare backup entries.
+            BackupEntries entries_with_names;
+            {
+                BackupEntriesCollector backup_entries_collector(
+                    backup_query->elements,
+                    backup_settings,
+                    backup_id,
+                    backup_coordination,
+                    read_settings,
+                    context,
+                    getThreadPool(backup_thread_pool_id));
+                entries_with_names = backup_entries_collector.run();
+            }
+
+            auto built = buildFileInfosForBackupEntries(
+                backup, std::move(entries_with_names), read_settings, backup_coordination, backup_thread_pool_id,
+                context->getProcessListElement());
+            backup_coordination->addFileInfos(std::move(built.file_infos));
+            backup_entries = std::move(built.entries);
+        }
+
+        /// Write the backup entries to the backup.
         writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, backup_thread_pool_id, context->getProcessListElement());
 
         /// We have written our backup entries (there is no need to sync it with other hosts because it's the last stage).
@@ -903,16 +937,17 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
+BackupFileInfosAndEntries BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries && backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
+    return ::DB::buildFileInfosForBackupEntries(
+        std::move(backup_entries), backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element);
 }
 
 
 void BackupsWorker::writeBackupEntries(
     BackupMutablePtr backup,
-    BackupEntries && backup_entries,
+    std::vector<BackupEntryPtr> && backup_entries,
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     bool is_internal_backup,
@@ -955,7 +990,7 @@ void BackupsWorker::writeBackupEntries(
 
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
-        auto & entry = backup_entries[index].second;
+        auto & entry = backup_entries[index];
 
         if (entry->isFromRemoteFile())
         {
@@ -1126,6 +1161,7 @@ struct BackupsWorker::RestoreStarter
             restore_query->cluster = restore_context->getMacros()->expand(restore_query->cluster);
             cluster = restore_context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
+            setCurrentDatabaseForOtherHosts(*restore_query, *cluster, restore_settings.shard_num, restore_settings.replica_num, restore_context->getCurrentDatabase());
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
         restore_coordination->startup();

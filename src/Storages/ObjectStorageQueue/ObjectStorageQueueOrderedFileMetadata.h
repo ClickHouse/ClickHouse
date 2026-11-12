@@ -76,6 +76,7 @@ public:
         const std::string & zookeeper_name,
         LoggerPtr log);
 
+    /// `value` is the new number of buckets, `prev_value` is the old value of the `buckets` setting.
     static void migrateToBuckets(
         const std::string & zk_path,
         size_t value,

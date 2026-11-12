@@ -390,7 +390,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
+    }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, .stores_data_on_disk = true, .supports_temporary = true, },
     Documentation{
         .description = R"DOCS_MD(
 <Note>

@@ -23,6 +23,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -238,7 +239,7 @@ static void injectionImpl(
     double sleep_time_us_max)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (!ThreadFuzzer::isStarted())
+    if (!ThreadFuzzer::isStarted() || Silk::isInsideFiber())
         return;
 
     if (yield_probability > 0

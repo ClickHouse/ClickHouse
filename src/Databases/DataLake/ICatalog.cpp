@@ -223,7 +223,10 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        if (!force_add_bucket && location.contains("/" + bucket))
+        /// An Azure host never names a container, only a segment of the endpoint path can.
+        std::vector<std::string> endpoint_path_segments;
+        Poco::URI(location, /* enable_url_encoding */ false).getPathSegments(endpoint_path_segments);
+        if (!force_add_bucket && std::ranges::contains(endpoint_path_segments, bucket))
             return withTrailingSlash(appendObjectStorageKeySegment(location, path));
         return withTrailingSlash(appendObjectStorageKeySegment(appendObjectStorageKeySegment(location, bucket), path));
     }

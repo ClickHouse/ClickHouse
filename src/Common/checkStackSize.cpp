@@ -4,6 +4,7 @@
 #include <base/scope_guard.h>
 #include <Common/CoroutineStack.h>
 #include <Common/Exception.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/StackfulCoroutine.h>
 #include <cstdint>
 
@@ -189,7 +190,7 @@ void checkStackSize()
 
 #if USE_SILK
     /// Not implemented for Silk fibers: they expose no stack bounds.
-    if (silk::FiberScheduler::getCurrentFiberId().raw)
+    if (Silk::isInsideFiber())
         return;
 #endif
 

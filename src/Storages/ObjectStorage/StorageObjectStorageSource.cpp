@@ -1242,10 +1242,12 @@ Chunk StorageObjectStorageSource::generate()
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
         /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
+        /// The same holds for the row groups a JOIN runtime filter skipped.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
             && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
                 && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
-            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
+            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied())
+            && !(reader.getInputFormat() && reader.getInputFormat()->isJoinRuntimeFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
@@ -1318,7 +1320,8 @@ Chunk StorageObjectStorageSource::generate()
         /// against the final threshold (see `writePendingTopKQueryConditionCacheEntries`). A cancelled
         /// read may stop before it has seen every row group, and the ones it has not read report no
         /// matching rows either, so it writes nothing.
-        if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled())
+        if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled()
+            && !reader.getInputFormat()->isJoinRuntimeFilterApplied())
         {
             const auto * input_format = reader.getInputFormat();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*reader.getObjectInfo(), configuration->isDataLakeConfiguration());
@@ -1333,6 +1336,7 @@ Chunk StorageObjectStorageSource::generate()
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->hasFilter()
+            && !reader.getInputFormat()->isJoinRuntimeFilterApplied()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read
             && !reader.getObjectInfo()->file_bucket_info)
@@ -1883,6 +1887,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
+                    /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
+                    if (keep_in_reader)
+                        result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                     return result;
                 }
             }
@@ -1915,6 +1922,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
+                result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                 return result;
             }
 
@@ -1965,6 +1973,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
                 filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
+                filter_info_with_row_numbers->join_runtime_filter_predicate = filter_info->join_runtime_filter_predicate;
             }
             filter_info_with_row_numbers->need_row_numbers = true;
             filter_info = filter_info_with_row_numbers;

@@ -68,31 +68,47 @@ static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const 
 
     while (true)
     {
+        /// Reading past the last certificate is expected to fail with `PEM_R_NO_START_LINE`.
+        /// Mark the error queue so that only the errors raised by this read are dropped
+        /// when that failure is expected, and unrelated queued errors are left alone.
+        /// The return values of the mark functions are ignored: they are 0 when the queue is empty,
+        /// in which case everything queued after this point is ours anyway.
+        ERR_set_mark();
         X509 * cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
 
-        if (!cert)
+        if (cert)
         {
-            auto err = ERR_peek_last_error();
-            if (err == 0)
-                break;
-
-            /// We read at least one cert, and can't find
-            /// the beginning of a next one.
-            /// This most likely means we reached the end of the file.
-            if (!certs.empty()
-                /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
-                /// https://github.com/openssl/openssl/issues/16776
-                ///
-                /// To be fixed in OpenSSL 3.4+
-                && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
-                /// Means we reached the end of the file.
-                break;
-
-            throw Exception(
-                ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
+            ERR_pop_to_mark();
+            certs.emplace_back(cert);
+            continue;
         }
 
-        certs.emplace_back(cert);
+        auto err = ERR_peek_last_error();
+        if (err == 0)
+        {
+            ERR_pop_to_mark();
+            break;
+        }
+
+        /// We read at least one cert, and can't find
+        /// the beginning of a next one.
+        /// This most likely means we reached the end of the file.
+        if (!certs.empty()
+            /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
+            /// https://github.com/openssl/openssl/issues/16776
+            ///
+            /// To be fixed in OpenSSL 3.4+
+            && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
+        {
+            /// Means we reached the end of the file.
+            ERR_pop_to_mark();
+            break;
+        }
+
+        /// A real failure: keep its errors in the queue for the message below.
+        ERR_clear_last_mark();
+        throw Exception(
+            ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
     }
 
     if (certs.empty())
