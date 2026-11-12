@@ -137,7 +137,7 @@ DROP TABLE rhs_mt;
 DROP TABLE target;
 
 -- A GLOBAL IN filter pushed into the right side, the shape of 04092: its set gets an external table
--- later, so the new set is only built by the deferred build.
+-- later, so the new set source cannot build it and the join stays.
 SELECT 'GLOBAL IN pushed into the right side';
 DROP TABLE IF EXISTS local_table;
 DROP TABLE IF EXISTS dist_table;
@@ -157,6 +157,25 @@ SELECT count() FROM merge_table AS s GLOBAL ANY INNER JOIN second_dist AS f USIN
 WHERE f.id2 GLOBAL IN (SELECT id2 FROM second_dist GROUP BY id2) SETTINGS query_plan_convert_join_to_in = 0;
 SELECT count() FROM merge_table AS s GLOBAL ANY INNER JOIN second_dist AS f USING (id)
 WHERE f.id2 GLOBAL IN (SELECT id2 FROM second_dist GROUP BY id2) SETTINGS query_plan_convert_join_to_in = 1;
+
+-- Readers that evaluate their filter while planning (`merge` selecting tables, `system.tables`
+-- filtering databases) need the new set at once, which a GLOBAL IN in the key rules out: the join stays.
+SELECT 'GLOBAL IN in the key, planning-time readers';
+CREATE TABLE r_keys (k UInt64) ENGINE = Memory;
+INSERT INTO r_keys VALUES (0), (1), (2);
+SELECT count() FROM system.tables AS l ANY INNER JOIN r_keys AS r
+ON l.database = if(r.k GLOBAL IN (SELECT number FROM numbers(2)), currentDatabase(), 'bad')
+SETTINGS query_plan_convert_join_to_in = 0;
+SELECT count() FROM system.tables AS l ANY INNER JOIN r_keys AS r
+ON l.database = if(r.k GLOBAL IN (SELECT number FROM numbers(2)), currentDatabase(), 'bad')
+SETTINGS query_plan_convert_join_to_in = 1;
+SELECT count() FROM merge(currentDatabase(), '^local_table$') AS l ANY INNER JOIN r_keys AS r
+ON l._table = if(r.k GLOBAL IN (SELECT number FROM numbers(2)), 'local_table', 'bad')
+SETTINGS query_plan_convert_join_to_in = 0;
+SELECT count() FROM merge(currentDatabase(), '^local_table$') AS l ANY INNER JOIN r_keys AS r
+ON l._table = if(r.k GLOBAL IN (SELECT number FROM numbers(2)), 'local_table', 'bad')
+SETTINGS query_plan_convert_join_to_in = 1;
+DROP TABLE r_keys;
 
 DROP TABLE merge_table;
 DROP TABLE dist_table;

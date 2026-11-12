@@ -172,10 +172,11 @@ struct SetSourcePrerequisites
     /// Unbuilt sets that the right side or its keys read and do not own; they are built for the outer plan.
     PreparedSets::Subqueries sets;
     std::unordered_set<const FutureSetFromSubquery *> seen_sets;
-    /// A dependency whose writer an outer gate owns, so a synchronous build of the new set cannot run
-    /// it first. The deferred build sits where the join's right side was, under the gates the join
-    /// relies on, so the set is still correct there; only the in-place builds have to be skipped.
-    bool needs_outer_gate = false;
+    /// A dependency that the source cannot build itself: a `GLOBAL IN` set, a CTE that another plan has
+    /// claimed but not run yet, a set whose source has moved. The new set could then only be built by
+    /// the deferred build, but some readers evaluate the new filter while planning (`ReadFromMerge`
+    /// selecting tables, `system.tables` filtering databases), so the join has to stay.
+    bool unsatisfiable = false;
 
     void addCTE(MaterializedCTEPtr cte)
     {
@@ -186,7 +187,7 @@ struct SetSourcePrerequisites
         /// neither materialize it nor wait for it.
         if (cte->is_materialization_planned.load())
         {
-            needs_outer_gate = true;
+            unsatisfiable = true;
             return;
         }
 
@@ -277,7 +278,7 @@ struct SetSourcePrerequisites
             /// Without a source plan the set is built elsewhere and cannot be built from here.
             if (global_in_sets.contains(&node) || !subquery_set || !subquery_set->getQueryPlan())
             {
-                needs_outer_gate = true;
+                unsatisfiable = true;
                 continue;
             }
 
@@ -463,6 +464,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     prerequisites.collectFromPlan(right_root);
     prerequisites.collectFromSteps(right_root);
     prerequisites.collectFromDAG(right_pre_join_actions);
+    if (prerequisites.unsatisfiable)
+        return 0;
 
     /// Decline the conversion if the rewritten plan could not resolve some
     /// input of `join_output_actions`: `mergeInplace` with
@@ -512,9 +515,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     set_settings.size_limits = settings.network_transfer_limits;
 
     auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes));
-    /// Prerequisites serve only the in-place builds, which a dependency owned by an outer gate rules out.
-    if (!prerequisites.needs_outer_gate)
-        prerequisites.addTo(*in_source, settings.network_transfer_limits);
+    prerequisites.addTo(*in_source, settings.network_transfer_limits);
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
@@ -528,9 +529,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         auto step = std::make_unique<FilterStep>(header, std::move(in_conversion.dag), filter_name, true);
         lhs_in_node = &nodes.emplace_back(QueryPlan::Node{std::move(step), {lhs_in_node}});
     }
-
-    if (prerequisites.needs_outer_gate)
-        in_conversion.set->disableInplaceBuild();
 
     auto output_header = lhs_in_node->step->getOutputHeader();
     auto creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(

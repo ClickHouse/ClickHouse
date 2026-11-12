@@ -454,9 +454,6 @@ void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context
 
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
-    if (is_inplace_build_disabled)
-        return;
-
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
@@ -527,9 +524,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
         return nullptr;
     }
-
-    if (is_inplace_build_disabled)
-        return nullptr;
 
     if (external_table_set)
     {

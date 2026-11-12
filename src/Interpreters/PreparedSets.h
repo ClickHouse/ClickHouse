@@ -252,11 +252,6 @@ public:
     void setOptimizePlanOnBuild(bool value) { optimize_plan_on_build = value; }
     std::optional<bool> getOptimizePlanOnBuild() const { return optimize_plan_on_build; }
 
-    /// The source reads something whose writer an outer gate owns (a claimed CTE, a set whose source
-    /// has moved), so only the deferred build, which runs under that gate, can build the set. The
-    /// in-place builds leave it unbuilt, as they do once the source has moved out.
-    void disableInplaceBuild() { is_inplace_build_disabled = true; }
-
     /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
     /// set that fills that table or through the table stored next to the set itself.
     bool hasExternalTable() const;
@@ -271,7 +266,6 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     std::optional<bool> optimize_plan_on_build;
-    bool is_inplace_build_disabled = false;
     QueryTreeNodePtr query_tree;
 
     /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
