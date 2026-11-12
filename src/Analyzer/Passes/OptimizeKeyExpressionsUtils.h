@@ -77,8 +77,7 @@ QueryTreeNodes getGroupByKeys(const QueryNode & query_node);
 bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
 
 /// Returns true if `query_node` can have several rows with the same values of `GROUP BY` keys. Subtotals are not considered.
-/// `compare_names` also considers an `arrayJoin` that is equal to a key, but has another name, so it can be calculated again.
-bool canHaveSeveralRowsPerGroup(const QueryNode & query_node, bool compare_names);
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node);
 
 /// Returns true if `query_node`, which is a `SELECT DISTINCT`, can return equal rows.
 bool canHaveEqualRowsAfterDistinct(const QueryNode & query_node);

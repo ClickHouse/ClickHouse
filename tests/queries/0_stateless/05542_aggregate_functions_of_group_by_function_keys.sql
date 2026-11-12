@@ -35,6 +35,8 @@ SELECT intDiv(number, 4) AS x, intDiv(number, toUInt8(4)) AS y, count() AS c FRO
 SELECT intDiv(number, toUInt8(4)) AS x, count() AS c FROM numbers(10) GROUP BY x, intDiv(number, intDiv(8, 2)) WITH ROLLUP ORDER BY x, c LIMIT 1 BY x, bitAnd(intDiv(number, 4), 7);
 SELECT max(intDiv(number, 4)) AS m, count() AS c FROM numbers(10) GROUP BY intDiv(number, toUInt8(4)), intDiv(number, intDiv(8, 2)) ORDER BY ALL;
 SELECT arrayJoin([number, 2]) AS x, toString(x) AS y, count() AS c FROM numbers(3) GROUP BY x, toString(arrayJoin([number, toUInt8(2)])) WITH TOTALS ORDER BY x, y, c;
+SELECT arrayJoin([number, 2]) AS x, toString(x) AS y, count() AS c FROM numbers(3) GROUP BY x, toString(arrayJoin([number, toUInt8(2)])) ORDER BY x, y, c SETTINGS max_block_size = 1;
+SELECT arrayJoin([number, 2]) AS x, arrayJoin([number, toUInt8(2)]) AS y, count() AS c FROM numbers(3) GROUP BY x, y ORDER BY x, c, y SETTINGS max_block_size = 1;
 SELECT number AS x, arrayMap(a -> a + toUInt8(2), [x]) AS y FROM numbers(2) GROUP BY x, arrayMap(a -> a + 2, [x]) WITH ROLLUP ORDER BY ALL;
 SELECT arrayMap(a -> a + toUInt8(2), [number]) AS x, count() AS c FROM numbers(2) GROUP BY arrayMap(a -> a + 2, [number]) ORDER BY ALL;
 DROP TABLE IF EXISTS t;

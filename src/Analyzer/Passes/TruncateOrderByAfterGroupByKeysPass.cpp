@@ -70,7 +70,11 @@ public:
         const auto & group_by_nodes = query->getGroupBy().getNodes();
         QueryTreeNodePtrWithHashSet group_by_keys;
         for (const auto & key : group_by_nodes)
-            group_by_keys.insert(QueryTreeNodePtrWithHash(key));
+        {
+            auto [equal_key, inserted] = group_by_keys.emplace(key);
+            if (!inserted && !haveSameValue(key, equal_key->node))
+                return;
+        }
 
         if (group_by_keys.empty())
             return;
@@ -135,7 +139,7 @@ public:
         /// value of a stateful function depends on whether it is calculated before the sorting.
         const auto has_stateful_function
             = [](const auto & sort_elem) { return hasStatefulFunction(sort_elem->template as<SortNode &>().getExpression()); };
-        if (!canHaveSeveralRowsPerGroup(*query, /*compare_names=*/false) && !has_merged_keys
+        if (!canHaveSeveralRowsPerGroup(*query) && !has_merged_keys
             && std::none_of(order_by_nodes.begin() + truncate_after, order_by_nodes.end(), has_stateful_function))
             order_by_nodes.resize(truncate_after);
 
@@ -231,6 +235,13 @@ private:
         return std::ranges::any_of(node->getChildren(), [&](const auto & child) { return child && readsOtherColumns(child, keys); });
     }
 
+    /// Equal expressions with constants written differently have the same value, but an `arrayJoin` is calculated separately for each of
+    /// them, so the rows have all combinations of their values.
+    static bool haveSameValue(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        return !hasFunctionNode(lhs, "arrayJoin") || areConstantsWrittenAlike(lhs, rhs);
+    }
+
     /// Finds the GROUP BY keys that an expression covers.
     /// An expression covers a key if it equals the key directly,
     /// or if it is an injective function whose arguments cover the key(s).
@@ -241,7 +252,7 @@ private:
         bool replaces_aggregates,
         const Callback & callback)
     {
-        if (auto key = group_by_keys.find(expr); key != group_by_keys.end())
+        if (auto key = group_by_keys.find(expr); key != group_by_keys.end() && haveSameValue(expr, key->node))
         {
             callback(*key);
             return;

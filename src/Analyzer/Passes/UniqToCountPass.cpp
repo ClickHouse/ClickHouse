@@ -226,7 +226,7 @@ public:
                 || subquery_node->isGroupByWithTotals() || subquery_node->isGroupByWithGroupingSets())
                 return false;
 
-            if (canHaveSeveralRowsPerGroup(*subquery_node, /*compare_names=*/true))
+            if (canHaveSeveralRowsPerGroup(*subquery_node))
                 return false;
 
             /// uniq argument node list == subquery group by node list

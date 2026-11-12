@@ -412,26 +412,26 @@ bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTree
 namespace
 {
 
-/// Whether `node` has an `arrayJoin`, and is not one of `calculated_nodes`.
-bool hasArrayJoinThatIsNotCalculated(const QueryTreeNodePtr & node, const QueryTreeNodes & calculated_nodes, bool compare_names)
+/// Whether `node` has an `arrayJoin`, and is not one of `calculated_nodes`. If it only has another name, it can be calculated again.
+bool hasArrayJoinThatIsNotCalculated(const QueryTreeNodePtr & node, const QueryTreeNodes & calculated_nodes)
 {
     return hasFunctionNode(node, "arrayJoin")
         && std::ranges::none_of(
                calculated_nodes,
                [&](const QueryTreeNodePtr & calculated_node)
-               { return calculated_node->isEqual(*node) && (!compare_names || areConstantsWrittenAlike(calculated_node, node)); });
+               { return calculated_node->isEqual(*node) && areConstantsWrittenAlike(calculated_node, node); });
 }
 
 }
 
-bool canHaveSeveralRowsPerGroup(const QueryNode & query_node, bool compare_names)
+bool canHaveSeveralRowsPerGroup(const QueryNode & query_node)
 {
     /// The groups of different shards are not merged.
     if (query_node.getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
         return true;
 
     const auto & keys = query_node.getGroupBy().getNodes();
-    auto adds_rows = [&](const QueryTreeNodePtr & node) { return hasArrayJoinThatIsNotCalculated(node, keys, compare_names); };
+    auto adds_rows = [&](const QueryTreeNodePtr & node) { return hasArrayJoinThatIsNotCalculated(node, keys); };
 
     for (const auto & node : query_node.getOrderBy().getNodes())
     {
@@ -464,7 +464,7 @@ bool canHaveEqualRowsAfterDistinct(const QueryNode & query_node)
     const auto & projection = query_node.getProjection().getNodes();
     return std::ranges::any_of(
         query_node.getLimitBy().getNodes(),
-        [&](const QueryTreeNodePtr & node) { return hasArrayJoinThatIsNotCalculated(node, projection, /*compare_names=*/true); });
+        [&](const QueryTreeNodePtr & node) { return hasArrayJoinThatIsNotCalculated(node, projection); });
 }
 
 namespace
