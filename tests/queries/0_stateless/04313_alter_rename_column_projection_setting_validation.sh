@@ -79,7 +79,7 @@ $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT --query="
     SELECT count()
     FROM system.text_log
-    WHERE query_id = '$alter_query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$alter_query_id'
       AND message LIKE '%may be inconsistent until restart%'
 "
 

@@ -30,6 +30,9 @@ struct WriteSettings
 
     bool use_adaptive_write_buffer = false;
     size_t adaptive_write_buffer_initial_size = 16 * 1024;
+    /// Whether a `MergeTree` writer may also activate adaptive write buffers by the share of the server memory limit
+    /// (`max_memory_ratio_to_activate_adaptive_write_buffer`). Turned off for merges and mutations of replicated tables.
+    bool allow_adaptive_write_buffer_by_memory_ratio = true;
 
     bool write_through_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
@@ -39,9 +42,12 @@ struct WriteSettings
     bool is_initial_access_check = false;
 
     /// A requested compare-and-swap. Honoured only by S3-like object storages; a storage that cannot
-    /// express the condition must refuse the write, never perform it unconditionally.
+    /// express the condition must refuse the write, never perform it unconditionally, unless
+    /// `object_storage_write_if_none_match_best_effort` is set.
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
+    /// `object_storage_write_if_none_match` may be dropped where the storage cannot express it (a multipart upload to GCS).
+    bool object_storage_write_if_none_match_best_effort = false;
 
     /// A reader must never see a partially written object, even if the writing process is killed: it has to see either
     /// the previous version or the new one. Object storages like S3 and Azure always publish an object at once; a local
