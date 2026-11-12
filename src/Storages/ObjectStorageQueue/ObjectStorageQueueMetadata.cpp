@@ -501,12 +501,13 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (buckets_num > 1)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "It is not allowed to modify `buckets` settings "
-                    "when it is already set to a non-zero value");
+                    "It is not allowed to modify `buckets` setting when the table already uses {} buckets "
+                    "(`buckets` is {}, `processing_threads_num` is {})",
+                    buckets_num, table_metadata.buckets.load(), table_metadata.processing_threads_num.load());
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
