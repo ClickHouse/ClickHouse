@@ -2430,7 +2430,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 #if ENABLE_DISTRIBUTED_CACHE
     /// `auto` follows the decision for the other reads (the server setting `enable_read_through_distributed_cache`,
     /// overridden by `force_read_through_distributed_cache`), resolved into `read_through_distributed_cache`.
+    /// Not for `Web`: its connection to the distributed cache has only the first base URL, without the URL shard of
+    /// the object (`read_source_index`) and without the headers, so the cache server could read another object.
     if (!reads_explicit_object_version
+        && object_storage->getType() != ObjectStorageType::Web
         && settings[Setting::table_engine_read_through_distributed_cache].valueOr(effective_read_settings.read_through_distributed_cache)
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az)
