@@ -58,6 +58,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_bernoulli_sample;
+    extern const SettingsUInt64 bernoulli_sample_seed;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
     extern const SettingsString obfuscate_seed;
@@ -292,13 +294,63 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     return false;
 }
 
+/// Bernoulli sampling (`SAMPLE` on a table without a `SAMPLE BY` key) with `bernoulli_sample_seed = 0` draws a fresh seed
+/// for every query, so its result is non-deterministic. The cache key contains the literal setting value `0`, not the
+/// generated seed, so caching such a result would replay one sample for every later execution. Whether the sampled table
+/// has a `SAMPLE BY` key is unknown at this point, so every `SAMPLE` is treated as Bernoulli sampling when the zero seed
+/// may be in effect - either from the query settings or from a nested `SETTINGS` clause.
+namespace
+{
+
+struct HasZeroSeedBernoulliSampleMatcher
+{
+    struct Data
+    {
+        bool has_sample = false;
+        bool nested_zero_seed = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (const auto * table_expression = node->as<ASTTableExpression>(); table_expression && table_expression->sample_size)
+            data.has_sample = true;
+
+        if (const auto * set_query = node->as<ASTSetQuery>())
+        {
+            for (const auto & change : set_query->changes)
+                if (change.name == "bernoulli_sample_seed" && change.value.getType() == Field::Types::UInt64 && change.value.safeGet<UInt64>() == 0)
+                    data.nested_zero_seed = true;
+        }
+    }
+};
+
+using HasZeroSeedBernoulliSampleVisitor = InDepthNodeVisitor<HasZeroSeedBernoulliSampleMatcher, true>;
+
+}
+
+static bool astContainsZeroSeedBernoulliSample(ASTPtr ast, ContextPtr context)
+{
+    HasZeroSeedBernoulliSampleMatcher::Data finder_data;
+    HasZeroSeedBernoulliSampleVisitor(finder_data).visit(ast);
+    if (!finder_data.has_sample)
+        return false;
+
+    const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::allow_experimental_bernoulli_sample] && settings[Setting::bernoulli_sample_seed] == 0)
+        return true;
+    return finder_data.nested_zero_seed;
+}
+
 /// Does AST contain non-deterministic functions like rand() and now()?
 static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions
-        || hasNonDeterministicObfuscate(ast, context);
+        || hasNonDeterministicObfuscate(ast, context)
+        || astContainsZeroSeedBernoulliSample(ast, context);
 }
 
 /// Does AST contain system tables like "system.processes"?
