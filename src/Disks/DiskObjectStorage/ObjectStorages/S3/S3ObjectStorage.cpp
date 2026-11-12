@@ -869,6 +869,15 @@ void S3ObjectStorage::applyNewSettings(
     s3_settings.set(std::move(modified_settings));
 }
 
+void S3ObjectStorage::checkSessionMayUseServerCredentials(const ContextPtr & context) const
+{
+    if (for_disk_s3 || client_restricts_server_credentials || !context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    /// Building the client under the restricted context throws if the definition needs the server's credentials.
+    getClient(uri, *s3_settings.get(), context, for_disk_s3, disk_name);
+}
+
 ObjectStoragePtr S3ObjectStorage::cloneImpl() const
 {
     /// `S3::Client::clone` builds an equivalent client sharing no mutable state with the
