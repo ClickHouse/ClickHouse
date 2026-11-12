@@ -3,13 +3,13 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'Minimize and optimize JOINs'
 title: 'Minimize and optimize JOINs'
 description: 'Document describing best practices for using JOINs in ClickHouse'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 import { Image } from "/snippets/components/Image.jsx";
 
-This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [Joining tables](/concepts/features/operations/select/joining-tables).
+This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [JOIN algorithms](/concepts/features/operations/select/join-algorithms).
 
 ## Prefer avoiding JOINs {#prefer-avoiding-joins}
 
@@ -36,9 +36,10 @@ Multi-table JOIN reordering and optimizer use of available statistics are enable
 
 Follow these best practices to improve JOIN performance:
 
-- **Use `ANY` JOINs when only one match is needed.** A regular JOIN returns every matching row and can produce a Cartesian product for duplicate keys. Use `LEFT ANY JOIN` or `ANY INNER JOIN` when one match is sufficient to reduce result size and memory use.
+- **Use `ANY` JOINs when only one match is needed.** A regular JOIN returns every matching row and can produce a Cartesian product for duplicate keys. To enrich each left-hand row with one matching right-hand row, use `LEFT ANY JOIN`, which reduces result size and memory use. To check whether a matching row exists, use `IN` or `LEFT SEMI JOIN`. With the default [`any_join_distinct_right_table_keys = 0`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys), an `INNER ANY JOIN` also limits the left-hand side to one row per key, so it can drop left-hand rows that share a key. See [`ALL` and `ANY` strictness](/concepts/features/operations/select/joining-tables#all-and-any-strictness).
 - **Reduce both sides before the JOIN.** Apply selective conditions in `WHERE` and `JOIN ON` clauses. ClickHouse pushes filters down when possible, but explicit subqueries can ensure that each input is filtered before the JOIN.
 - **Consider `IN` instead of `INNER JOIN`.** When a query only needs to test whether a key exists in the other table, an `IN` subquery expresses that requirement directly and can use less memory than producing an `INNER JOIN` result.
+- **Use dictionaries for repeated key-value lookups.** With a layout such as `HASHED` or `COMPLEX_KEY_HASHED`, a [dictionary](/concepts/features/dictionaries) is loaded into memory ahead of the query and refreshed according to its `LIFETIME`. The [`dictGetOrDefault`](/reference/functions/regular-functions/ext-dict-functions#dictGetOrDefault) function looks up each key in the dictionary without a JOIN, for example `dictGetOrDefault('stackoverflow.users_dict', 'DisplayName', tuple(p.OwnerUserId), '')`.
 - **Prefer the `Join` table engine for reusable lookups.** The [`Join` table engine](/reference/engines/table-engines/special/join) stores a precomputed in-memory structure for a declared JOIN type, strictness, and key. In ClickHouse Cloud, it is implemented as `SharedJoin` with a `MergeTree` backing table, and `Join(ANY, LEFT, key)` provides an updatable per-key lookup. See [Fast, updatable lookups with the Join table engine](https://clickhouse.com/blog/join-table-engine).
 - **Join on table sorting keys when possible.** When both tables are physically ordered by the JOIN key, `full_sorting_merge` can skip sorting and reduce memory use. Confirm the execution plan and benchmark this algorithm against the default on representative data.
 - **Avoid disk-spilling JOINs.** Spilling intermediate JOIN state to disk can keep a query within its memory limit, but disk I/O usually increases latency. Hash joins can switch to grace hash at configured spill thresholds, while merge joins can use external sorting. Reduce input rows and columns or change the data model before relying on spilling. See [Choosing the optimal JOIN algorithm](#choosing-the-optimal-join-algorithm) for details.
@@ -47,7 +48,7 @@ Follow these best practices to improve JOIN performance:
 ## Choosing the optimal JOIN algorithm {#choosing-the-optimal-join-algorithm}
 
 ClickHouse supports several JOIN algorithms that trade off between speed and memory.
-The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,parallel_hash,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [Choosing a JOIN algorithm](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/join-algorithms).
 
 If your key optimization metric is performance and you're looking to execute the join as fast as possible, then you can use the following decision tree for choosing the right join algorithm:
 
@@ -57,11 +58,11 @@ If your key optimization metric is performance and you're looking to execute the
 
 <br />
 
-- **(1)** If the data from the right-hand side table can be pre-loaded into an in-memory low-latency key-value data structure, e.g. a dictionary, and if the join key matches the key attribute of the underlying key-value storage, and if `LEFT ANY JOIN` semantics are adequate - then the **direct join** is applicable and is often the fastest approach.
+- **(1)** If the right-hand side is a dictionary or another storage with low-latency key-value lookups, the [`direct`](/concepts/features/operations/select/join-algorithms#direct) algorithm is applicable and is often the fastest approach. It requires an `INNER JOIN`, `LEFT JOIN`, `LEFT ANY JOIN`, `LEFT SEMI JOIN`, or `LEFT ANTI JOIN` whose `ON` clause contains only one equality condition on the single-column key of the storage, and otherwise ClickHouse uses the next algorithm in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) without an error.
 
 - **(2)** If your table's [physical row order](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) matches the join key sort order, then it depends. In this case, the **full sorting merge join** [skips](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) the sorting phase resulting in significantly reduced memory usage plus, depending on data size and join key value distribution, faster execution times than some of the hash join algorithms.
 
-- **(3)** If the right table fits into memory, even with the [additional memory usage overhead](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) of the **parallel hash join**, then this algorithm or the hash join can be faster. This depends on data size, data types, and value distribution of the join key columns.
+- **(3)** If the right table fits into memory, use the [`hash`](/concepts/features/operations/select/join-algorithms#hash) algorithm. It is typically the fastest in-memory option, depending on data size, data types, and the value distribution of the join key columns. For each query, ClickHouse decides whether to build a single hash table or to split the hash table into parts that several threads fill concurrently, which the decision tree shows as parallel hash. The [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold) setting controls this decision: the hash table is split when the estimated number of rows in the right table reaches the threshold, or when no estimate is available. Since 26.11, `parallel_hash` is an obsolete alias of `hash`, so listing it in `join_algorithm` does not change this decision.
 
 - **(4)** If the right table does not fit into memory, hash and parallel hash joins can spill by switching to grace hash when [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) is reached. Full sorting merge and partial merge joins can also use external storage. Which approach is fastest depends on the data volume, data types, and value distribution of the join key columns.
 
@@ -70,6 +71,74 @@ Partial merge join is optimized for minimizing memory usage when large tables ar
 Grace hash join is the most flexible of the three non-memory-bound join algorithms and offers good control of settings. The [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) setting controls the initial number of buckets and provides a tradeoff between memory use and join speed.
 
 Which one of the three disk based algorithms is the fastest depends on the volume of data, the data types, and the value distribution of the join key columns. It is always best to run some benchmarks with realistic data volumes of your data in order to determine which algorithm is the fastest.
+
+### Decision tree examples {#decision-tree-examples}
+
+The following examples apply each step of the decision tree to the [Stack Overflow dataset](/getting-started/example-datasets/stackoverflow). To see which algorithm executes a JOIN, run the query with `EXPLAIN actions = 1` and read the `Algorithm` line in the output.
+
+**(1) `direct`.** The following dictionary stores the display name of each user, and the query looks up the author of each highly rated post:
+
+```sql
+CREATE DICTIONARY stackoverflow.users_dict
+(
+    Id Int32,
+    DisplayName String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(DB 'stackoverflow' TABLE 'users'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 600 MAX 900);
+
+SELECT p.Id, p.Score, u.DisplayName
+FROM stackoverflow.posts AS p
+LEFT JOIN stackoverflow.users_dict AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000;
+```
+
+The `Algorithm` line reports `DirectKeyValueJoin`. The dictionary uses the `COMPLEX_KEY_HASHED` layout to keep the `Int32` type of `users.Id`. A layout with a simple key, such as `HASHED`, converts the key to `UInt64`, which cannot be joined with the `Int32` column `posts.OwnerUserId`.
+
+**(2) `full_sorting_merge`.** The `badges` table is sorted by `UserId`, and the sorting key of the `users` table starts with `Id`, so both tables are physically ordered by the JOIN key:
+
+```sql
+SELECT u.Location, count() AS famous_questions
+FROM stackoverflow.badges AS b
+INNER JOIN stackoverflow.users AS u ON b.UserId = u.Id
+WHERE b.Name = 'Famous Question'
+GROUP BY u.Location
+ORDER BY famous_questions DESC
+LIMIT 5
+SETTINGS join_algorithm = 'full_sorting_merge';
+```
+
+The `Algorithm` line reports `FullSortingMergeJoin`, and both `ReadFromMergeTree` steps report the `InOrder` read type. ClickHouse reads both tables in the order of the JOIN key instead of sorting them.
+
+**(3) `hash`.** The default `join_algorithm` executes the following JOIN with `hash`:
+
+```sql
+SELECT u.Location, count() AS popular_posts
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.users AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000
+GROUP BY u.Location
+ORDER BY popular_posts DESC
+LIMIT 5
+SETTINGS parallel_hash_join_threshold = 0;
+```
+
+Without the `SETTINGS` clause, ClickHouse splits the hash table only when the estimated number of rows in the right-hand table reaches the default `parallel_hash_join_threshold` of 100,000. With `parallel_hash_join_threshold = 0`, it splits the hash table regardless of the estimate.
+
+**(4) Spilling.** The following query allows the hash table to grow to 10 GiB in memory. Above this size, ClickHouse switches the JOIN to `grace_hash` and writes part of the data to temporary storage:
+
+```sql
+SELECT u.Location, count() AS popular_posts
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.users AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000
+GROUP BY u.Location
+ORDER BY popular_posts DESC
+LIMIT 5
+SETTINGS max_bytes_before_external_join = '10Gi';
+```
 
 ## Optimizing for memory {#optimizing-for-memory}
 
@@ -82,7 +151,7 @@ If you want to optimize a join for the lowest memory usage instead of the fastes
 <br />
 
 - **(1)** If your table's physical row order matches the join key sort order, then the memory usage of the **full sorting merge join** is as low as it gets with the additional benefit of good join speed because the sorting phase is [disabled](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
-- **(2)** The **grace hash join** can be tuned for very low memory usage by increasing [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) at the expense of join speed. The **partial merge join** intentionally uses a low amount of main memory. The **full sorting merge join** with external sorting enabled generally uses more memory than the partial merge join when the row order does not match the key sort order, with the benefit of significantly better join execution time. Hash and parallel hash joins can also reduce memory pressure by switching to grace hash at the configured spill threshold.
+- **(2)** The [`grace_hash`](/concepts/features/operations/select/join-algorithms#grace-hash) algorithm can be tuned for very low memory usage by increasing [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) at the expense of JOIN speed. The [`partial_merge`](/concepts/features/operations/select/join-algorithms#partial-merge) algorithm intentionally uses a low amount of main memory. The [`full_sorting_merge`](/concepts/features/operations/select/join-algorithms#full-sorting-merge) algorithm with external sorting enabled generally uses more memory than `partial_merge` when the row order does not match the key sort order, with the benefit of significantly better JOIN execution time. The [`hash`](/concepts/features/operations/select/join-algorithms#hash) algorithm can also reduce memory pressure by switching to `grace_hash` at the configured spill threshold.
 
 ## JOIN optimization examples {#join-optimization-examples}
 
@@ -126,6 +195,8 @@ WHERE
 
 The `IN` query also returns `86`. Its median elapsed time was 10.206 seconds, with 162.81 MiB peak memory. It read 174.20 million rows and 19.02 GiB of data.
 
+The two queries return the same result because `posts.Id` is unique. The rewrite is equivalent only when the left-hand JOIN key is unique, because `ANY INNER JOIN` returns at most one left-hand row per key, while `IN` returns every left-hand row that has a match.
+
 ### Filter both sides before replacing the JOIN {#filter-both-sides-before-replacing-the-join}
 
 In this test, the rewrite reduced median elapsed time by 18% and peak memory by 14%.
@@ -163,9 +234,15 @@ WHERE
 
 The `IN` query also returns `261915`. Its median elapsed time was 0.696 seconds, with 51.70 MiB peak memory. It read 46.20 million rows and 817.49 MiB of data.
 
+The rewrite is equivalent because `posts.Id` is unique, so each vote matches at most one post.
+
 ## Further reading {#further-reading}
 
-- [Joining tables](/concepts/features/operations/select/joining-tables)
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
+- [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
+- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
+- [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
+- [JOIN settings](/concepts/features/operations/select/join-settings)
 - [`JOIN` clause reference](/reference/statements/select/join)
 - [Dictionary best practices](/concepts/features/dictionaries/best-practices)
 - [Full SQL JOIN support, Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)

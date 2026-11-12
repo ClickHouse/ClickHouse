@@ -9,14 +9,24 @@ No build job.
 Tests: `tests/performance` and `tests/benchmarks` as of the tested commit, plus a branch's own changes; harness
 scripts from HEAD. The first night after this workflow is merged fails if the tested build predates it (`calibration.xml`).
 
-One job set `master_head`, 4 batches over the sorted test list, `calibration.xml` in every batch.
+One job set `master_head`: the `NIGHTLY_PERF_BATCH_JOBS` round-robin batches over the sorted test list, plus one job per extra
+name in `NIGHTLY_PERF_PLACEMENT` (`ci/defs/defs.py`, see `tests/performance/README.md`); `calibration.xml` in every job.
+After editing either, regenerate the workflow YAML: `PYTHONPATH=./ci:. python3 -m praktika yaml`. The dict is read from HEAD,
+the tests from the tested commit: a pinned test absent there is only listed in the job log, an extra job with no existing
+test is red, so extra jobs belong on validation branches.
 `partial`: failed on the (older) reference only, measured on the tested side only.
+
+Also the Iceberg configuration (`perf.py --table-engine`, see the "Iceberg configuration" section of
+`tests/performance/README.md`): the jobs `arm_release, master_head, nightly, iceberg_local|iceberg_s3, N/2`, with the same
+binaries and reference, run every query of the tests with a MergeTree or `Memory` table, minus the `long` ones and
+`tests/performance/iceberg_skip_list.txt`. Their rows have `arch = 'arm_iceberg_local'` or `'arm_iceberg_s3'`: filter on
+`arch = 'arm'` for the MergeTree tests in the queries below.
 
 Red: any tested-side error (query, setup, missing binary, dataset or reference, test wall clock, required report or
 upload), a tested-side timeout, or a non-timeout error in a measured run on either server. Not red: reference-only
 errors in settings, setup or prewarm, reference-only timeouts (censored rows).
 A failing query is reported as its own run error and skipped; the rest of its test is still measured.
-A test whose teardown did not complete stops the batch. Changes do not gate and are unconfirmed (no confirmation reruns).
+A test whose teardown did not complete, or whose S3 cleanup failed, stops the batch. Changes do not gate and are unconfirmed (no confirmation reruns).
 
 Rerun: `gh workflow run NightlyExtendedPerformance` (`--ref <branch>` runs are excluded from the nightly history).
 
@@ -54,7 +64,7 @@ workflow = Workflow.Config(
     name="NightlyExtendedPerformance",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
-    jobs=JobConfigs.nightly_extended_performance_jobs,
+    jobs=JobConfigs.nightly_extended_performance_jobs + JobConfigs.nightly_iceberg_performance_jobs,
     dockers=DOCKERS,
     disable_dockers_build=True,
     enable_cache=False,

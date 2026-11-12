@@ -58,6 +58,11 @@ public:
 };
 
 
+Pipe StorageInput::createInputFromClient(ContextPtr query_context, SharedHeader header)
+{
+    return Pipe(std::make_shared<StorageInputSource>(std::move(query_context), std::move(header)));
+}
+
 void StorageInput::setPipe(Pipe pipe_)
 {
     pipe = std::move(pipe_);
@@ -106,10 +111,10 @@ void StorageInput::readImpl(
         /// Send structure to the client.
         if (!is_input_initialized)
         {
-            query_context->initializeInput(shared_from_this());
+            query_context->initializeInput(storage_snapshot->metadata->getColumns(), *sample_block);
             is_input_initialized = true;
         }
-        input_source_pipe = Pipe(std::make_shared<StorageInputSource>(query_context, sample_block));
+        input_source_pipe = createInputFromClient(query_context, sample_block);
     }
 
     auto reading = std::make_unique<ReadFromInput>(

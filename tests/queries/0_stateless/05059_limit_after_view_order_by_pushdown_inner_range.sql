@@ -19,9 +19,9 @@ CREATE VIEW v_range_until AS SELECT x FROM t_view_range_src LIMIT UNTIL x = 3;
 
 -- The views expose [5, 6, 7], [4, 5, 6] and [0, 1, 2] respectively; the outer query takes the two
 -- largest values of each.
-SELECT groupArray(x) FROM (SELECT x FROM v_range_unbounded ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 1;
-SELECT groupArray(x) FROM (SELECT x FROM v_range_counted ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 1;
-SELECT groupArray(x) FROM (SELECT x FROM v_range_until ORDER BY x DESC LIMIT 2) SETTINGS enable_analyzer = 1;
+SELECT groupArray(x) FROM (SELECT x FROM v_range_unbounded ORDER BY x DESC LIMIT 2);
+SELECT groupArray(x) FROM (SELECT x FROM v_range_counted ORDER BY x DESC LIMIT 2);
+SELECT groupArray(x) FROM (SELECT x FROM v_range_until ORDER BY x DESC LIMIT 2);
 
 DROP VIEW v_range_unbounded;
 DROP VIEW v_range_counted;

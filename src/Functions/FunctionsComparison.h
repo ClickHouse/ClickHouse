@@ -216,7 +216,7 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 /// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
 template <typename Op, bool b_is_constant>
 X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
@@ -269,14 +269,14 @@ struct NumComparisonImpl
         }
     }))
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
     static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
 #endif
 
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if constexpr (is_ordered_ipv6)
@@ -309,7 +309,7 @@ struct NumComparisonImpl
         }
     }))
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
     static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -320,7 +320,7 @@ struct NumComparisonImpl
 
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             if constexpr (is_ordered_ipv6)
@@ -440,7 +440,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
@@ -459,7 +459,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
@@ -935,10 +935,35 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         left_scaled && left_scaled == scale_and_kind(right, which_right))
         return false;
 
+    /// Tuples are compared element-wise by `executeTuple`. A tuple comparison cannot throw if and
+    /// only if both sides have the same non-zero number of elements and each corresponding element
+    /// comparison cannot throw.
+    if (const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left.get()))
+    {
+        if (const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right.get()))
+        {
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+
+            if (left_elements.empty() || left_elements.size() != right_elements.size())
+                return true;
+
+            for (size_t i = 0; i < left_elements.size(); ++i)
+            {
+                if (comparisonCanThrow(left_elements[i], right_elements[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
-    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
-    /// dispatches on the type of every individual row.
-    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+    /// as they are stored. `Variant`, `Dynamic`, `JSON` and `Tuple` are excluded: a comparison of
+    /// those dispatches on the type of every individual row, or decomposes into element comparisons.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject() && !which_left.isTuple())
         return false;
 
     return true;
@@ -981,11 +1006,11 @@ public:
 
     /// Ordering an `Enum` with a string converts the string to the `Enum`, which throws for an unused default value
     /// of a `LowCardinality` dictionary and for a value behind a NULL.
-    bool canBeExecutedOnDefaultArguments(const DataTypes & arguments) const override
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         if ((IsOperation<Op>::equals || IsOperation<Op>::not_equals) && !params.compare_enum_with_string_by_value)
             return true;
-        return arguments.size() != 2 || !ordersEnumWithString(arguments[0], arguments[1]);
+        return arguments.size() != 2 || !ordersEnumWithString(arguments[0].type, arguments[1].type);
     }
 
 private:
@@ -1952,7 +1977,22 @@ public:
     /// have to be answered separately.
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
-        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+        if (arguments.size() != 2)
+            return true;
+        if (!comparisonCanThrow(arguments[0].type, arguments[1].type))
+            return false;
+        /// A constant string is converted to the other argument's type once, before any row is compared (`executeWithConstString`).
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const ColumnConst * constant = arguments[i].column ? checkAndGetColumnConstStringOrFixedString(arguments[i].column) : nullptr;
+            if (!constant)
+                continue;
+            const DataTypePtr type_to_compare = removeNullable(removeLowCardinality(arguments[1 - i].type));
+            const DataTypePtr type_string = removeNullable(removeLowCardinality(arguments[i].type));
+            return comparisonCanThrow(type_to_compare, type_to_compare)
+                || tryConvertFieldToType(constant->getField(), *type_to_compare, type_string.get(), params.format_settings).isNull();
+        }
+        return true;
     }
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

@@ -2,8 +2,6 @@
 -- the effective timezone comes from the column type. `DateTime64` sources and explicit-timezone
 -- function overloads require result- or argument-aware bounds and are outside this iteration.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_optimize_to_date_preimage;
 CREATE TABLE t_optimize_to_date_preimage
 (

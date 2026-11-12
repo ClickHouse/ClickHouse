@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -20,6 +21,7 @@
 #include <DataTypes/Utils.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/indexHint.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -182,6 +184,15 @@ static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeN
     const auto [_, inserted] = set.emplace(node);
     if (inserted)
         nodes.push_back(std::move(node));
+}
+
+static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || function_node->getFunctionName() != "indexHint")
+        return false;
+    const auto * index_hint = FunctionIndexHint::tryGet(function_node->getFunction());
+    return index_hint && index_hint->isImplied();
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
@@ -1172,6 +1183,13 @@ struct CommonExpressionExtractionResult
     QueryTreeNodes common_expressions;
 };
 
+/// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
+/// Dropping such an element from a filter also drops the rows its `arrayJoin` produces.
+static bool hasArrayJoinOutside(const QueryTreeNodePtrWithHashSet & nodes, const QueryTreeNodePtrWithHashSet & kept)
+{
+    return std::ranges::any_of(nodes, [&kept](const auto & node) { return !kept.contains(node) && hasFunctionNode(node.node, "arrayJoin"); });
+}
+
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
@@ -1220,7 +1238,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
                 }
             }
 
-            if (is_subset)
+            if (is_subset && !hasArrayJoinOutside(disjunct_sets[j], current_set))
             {
                 should_keep[j] = false;
                 ++removed;
@@ -1313,8 +1331,11 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
             for (auto & and_argument : and_node->getArguments())
             {
-                if (common_exprs_set.contains(and_argument))
-                    insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, and_argument);
+                auto it = common_exprs_set.find(and_argument);
+                if (it == common_exprs_set.end())
+                    continue;
+                /// A factored hint stays implied only if every copy is, so keep a copy that is not.
+                insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, isImpliedIndexHint(and_argument) ? it->node : and_argument);
             }
 
             common_exprs_set = std::move(new_common_exprs_set);
@@ -1354,8 +1375,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         if (filtered_and_arguments.empty())
         {
             has_completely_extracted_and_expression = true;
-            // As we will discard new_or_arguments, no need for further processing
-            break;
+            continue;
         }
         else if (filtered_and_arguments.size() == 1)
         {
@@ -1374,7 +1394,12 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     // If all the arguments of the OR expression is eliminated or one argument is completely eliminated, there is no need for new node.
     if (new_or_arguments.empty() || has_completely_extracted_and_expression)
+    {
+        /// Discarding `new_or_arguments` also discards the rows of an `arrayJoin` inside one of them.
+        if (std::ranges::any_of(new_or_arguments, [](const QueryTreeNodePtr & argument) { return hasFunctionNode(argument, "arrayJoin"); }))
+            return {};
         return CommonExpressionExtractionResult{nullptr, std::move(common_exprs)};
+    }
 
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
@@ -2081,7 +2106,8 @@ private:
             /// share a single value, we do not want pruning, folding (e.g. `rand() % 2 < 1 AND
             /// rand() % 2 >= 1` → false) or merging notEquals into NOT IN to rely on that. Keep such
             /// operands as-is.
-            if (hasNonDeterministicFunction(expression))
+            /// Same for aggregate functions: removing the operand can leave the query without any.
+            if (hasNonDeterministicFunction(expression) || hasAggregateFunctionNodes(expression))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2120,6 +2146,10 @@ private:
 
             /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
             if (isNothing(function_node.getResultType()))
+                return;
+
+            /// The constant would also drop the kept operands, and with them the query's aggregation or `arrayJoin`.
+            if (hasAggregateFunctionNodes(node) || hasFunctionNode(node, "arrayJoin"))
                 return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
@@ -2614,8 +2644,7 @@ private:
                                     /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
-                                    index_hint_node->resolveAsFunction(
-                                        FunctionFactory::instance().get("indexHint", getContext()));
+                                    index_hint_node->resolveAsFunction(FunctionIndexHint::createImplied());
                                     function_node.getArguments().getNodes().push_back(index_hint_node);
                                 }
                             }

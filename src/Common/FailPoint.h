@@ -2,6 +2,8 @@
 
 #include <Core/Types.h>
 
+/// `fiu.h` includes `<stdatomic.h>` inside `extern "C"`, which compiles only if `<atomic>` comes first.
+#include <atomic>
 #include <mutex>
 
 #include "config.h"
@@ -92,7 +94,7 @@ public:
     static void pauseFailPoint(const String & fail_point_name);
 
     /** Fast-path check used to avoid even local failpoint guards when no failpoint
-      * has ever been enabled in this process.
+      * is enabled.
       */
     static bool hasAnyFailPointBeenRegistered();
 
