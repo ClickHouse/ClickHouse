@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: builds 120-column wide parts and runs eight `clickhouse local` instances over them.
+# no-fasttest: builds 120-column wide parts and runs four `clickhouse local` instances over them.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,33 +32,46 @@ for i in $(seq 0 119); do
     values_str="${values_str:+${values_str}, }toString(number)"
 done
 
-# Files opened by one query, bracketed inside the process that runs it: `FileOpen` counts the whole
-# process, and what a `clickhouse local` opens to start differs between runs by enough to swamp this.
+# The two arms of one phase are measured in the same process, and neither is the first query in it.
 #
-# A measured query that fails must not be read as a measurement. Its status does not reach `set -e`
-# through the assignment below, and the first `SELECT` has already printed by the time the query
-# itself throws, so a single surviving line would make the subtraction a unary minus and yield a
-# plausible-looking count. Both the status and the two counters are therefore checked here, and the
+# `FileOpen` counts the whole process, so a measurement carries whatever the process happened to do
+# besides the query: starting up, touching the data directory for the first time, creating the
+# system tables a `BACKUP` writes on its first run. Those costs cancel out of the difference between
+# the arms only when both arms pay them on the same side of it. Measuring each arm in a process of
+# its own did not do that, and the backup arm failed 4 of 50 runs of the flaky check, reporting an
+# excess of 420 against a bound of 300 - noise the size of the signal.
+#
+# So a phase is one process: a warm-up query that is not measured, then the `Map` arm, then the
+# `String` arm, with the counter read between them. The warm-up pays the once-per-process and
+# once-per-directory costs, and the two deltas that follow differ by the column type alone.
+#
+# A measured query that fails must not be read as a measurement: its status does not reach `set -e`
+# through the assignment below, and the readings printed before it would still subtract into a
+# plausible-looking count. The status and the shape of the output are both checked here, and the
 # diagnostic is kept rather than discarded so a failure says what went wrong.
-opened_files() {
-    local dir=$1 query=$2 out before after
+phase() {
+    local dir=$1 warmup=$2 query_map=$3 query_str=$4 out r0 r1 r2
     if ! out=$(${CLICKHOUSE_LOCAL} --path "${dir}/db" --config-file "${dir}/config.xml" --multiquery --query "
+        ${warmup} FORMAT Null;
         SELECT value FROM system.events WHERE event = 'FileOpen';
-        ${query} FORMAT Null;
+        ${query_map} FORMAT Null;
+        SELECT value FROM system.events WHERE event = 'FileOpen';
+        ${query_str} FORMAT Null;
         SELECT value FROM system.events WHERE event = 'FileOpen';" 2>"${root}/stderr")
     then
-        echo "measured query failed: ${query}" >&2
+        echo "measured queries failed: ${query_map} / ${query_str}" >&2
         cat "${root}/stderr" >&2
         return 1
     fi
-    before=$(echo "${out}" | sed -n 1p)
-    after=$(echo "${out}" | sed -n 2p)
-    if ! [[ "${before}" =~ ^[0-9]+$ && "${after}" =~ ^[0-9]+$ ]]; then
-        echo "no FileOpen counter on both sides of: ${query}" >&2
+    r0=$(echo "${out}" | sed -n 1p)
+    r1=$(echo "${out}" | sed -n 2p)
+    r2=$(echo "${out}" | sed -n 3p)
+    if ! [[ "${r0}" =~ ^[0-9]+$ && "${r1}" =~ ^[0-9]+$ && "${r2}" =~ ^[0-9]+$ ]]; then
+        echo "no FileOpen counter at all three points of: ${query_map} / ${query_str}" >&2
         echo "${out}" >&2
         return 1
     fi
-    echo $(( after - before ))
+    echo "$(( r1 - r0 )) $(( r2 - r1 ))"
 }
 
 setup() {
@@ -81,26 +94,25 @@ EOF
 }
 
 # Without the fix the `Map` arm opens five files per column more than it did and the `String` arm
-# opens none more, so the two differ by 600 of them here; with it they differ by none. The bound is
-# set well above zero rather than near it: the counts come from four processes, and one of them
-# occasionally reads a couple of hundred files fewer than its fellows.
+# opens none more, so the two differ by 600 of them here; with it they differ by none.
 measure() {
-    local name=$1 dir=$2 query_map=$3 query_str=$4 query_map2=$5 query_str2=$6
+    local name=$1 dir=$2 warm_before=$3 query_map=$4 query_str=$5 warm_after=$6 query_map2=$7 query_str2=$8
     setup "${dir}"
-    local mb sb ma sa legacy
-    mb=$(opened_files "${dir}" "${query_map}") || exit 1
-    sb=$(opened_files "${dir}" "${query_str}") || exit 1
+    local before after mb sb ma sa legacy
+    before=$(phase "${dir}" "${warm_before}" "${query_map}" "${query_str}") || exit 1
     # `columns_substreams.txt` carries no checksum, so the part stays valid without it. Removing
-    # nothing would leave both arms measuring the same part twice and the difference near zero, which
+    # nothing would leave both phases measuring the same part and the difference near zero, which
     # reads as the fix working, so require that the parts were made legacy.
     legacy=$(find "${dir}/db/store" -name 'columns_substreams.txt' -print -delete | wc -l)
     if [[ "${legacy}" -eq 0 ]]; then
         echo "no columns_substreams.txt under ${dir}/db/store" >&2
         exit 1
     fi
-    ma=$(opened_files "${dir}" "${query_map2}") || exit 1
-    sa=$(opened_files "${dir}" "${query_str2}") || exit 1
-    local excess=$(( (ma - mb) - (sa - sb) ))
+    after=$(phase "${dir}" "${warm_after}" "${query_map2}" "${query_str2}") || exit 1
+    read -r mb sb <<<"${before}"
+    read -r ma sa <<<"${after}"
+    # Grouped per phase: each subtraction is between two queries of one process.
+    local excess=$(( (ma - sa) - (mb - sb) ))
     if [[ "${excess}" -lt 300 ]]; then
         echo -e "${name}\t1"
     else
@@ -109,9 +121,10 @@ measure() {
 }
 
 measure "check table opens no sample" "${root}/check" \
-    "CHECK TABLE t_map" "CHECK TABLE t_str" "CHECK TABLE t_map" "CHECK TABLE t_str"
+    "CHECK TABLE t_str" "CHECK TABLE t_map" "CHECK TABLE t_str" \
+    "CHECK TABLE t_str" "CHECK TABLE t_map" "CHECK TABLE t_str"
 measure "backup opens no sample" "${root}/backup" \
-    "BACKUP TABLE t_map TO File('mb')" "BACKUP TABLE t_str TO File('sb')" \
-    "BACKUP TABLE t_map TO File('ma')" "BACKUP TABLE t_str TO File('sa')"
+    "BACKUP TABLE t_str TO File('warm_b')" "BACKUP TABLE t_map TO File('mb')" "BACKUP TABLE t_str TO File('sb')" \
+    "BACKUP TABLE t_str TO File('warm_a')" "BACKUP TABLE t_map TO File('ma')" "BACKUP TABLE t_str TO File('sa')"
 
 rm -rf "${root}"
