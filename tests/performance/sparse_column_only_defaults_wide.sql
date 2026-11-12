@@ -1,0 +1,10 @@
+SELECT * FROM sparse_only_defaults WHERE k = 30000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 31000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 32000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 33000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 34000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 35000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 36000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 37000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 38000 FORMAT Null;
+SELECT * FROM sparse_only_defaults WHERE k = 39000 FORMAT Null;
