@@ -450,10 +450,8 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     const size_t first_stripe = stripes.stripeOf(first_mark);
     const size_t end_stripe = stripes.stripeOf(end_mark - 1) + 1;
 
-    /// The keys of the columns of the block that miss granules, and those of them in the stripes the
-    /// block reads whole and will write: only such a write is sure to be done by the end of the block.
-    /// So nothing is claimed unless the block is sized to whole stripes, as `canReadWholeColumnsCacheStripe`
-    /// makes it for the reads that write to the cache.
+    /// `needed`: the keys of the columns that miss granules of the block. `to_claim`: those in stripes the
+    /// block reads whole and will write, because only such a write is done by the end of the block.
     std::vector<ColumnsCache::Key> needed;
     std::vector<ColumnsCache::Key> to_claim;
     auto collect = [&]
@@ -481,8 +479,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
                 if (!missing)
                     continue;
                 needed.push_back(ColumnsCache::Key{column_identities[pos], stripe});
-                /// Only a column that has no granule of the stripe in the cache is read from the part over the
-                /// whole stripe, so that its entry is finished, and written, by the end of the block.
+                /// Only a column with no cached granule of the stripe reads the whole stripe from the part.
                 if (claim && !cachedEntryFor(pos, stripes.firstMark(stripe)))
                     to_claim.push_back(needed.back());
             }
@@ -498,8 +495,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     const auto stripes_seen = std::span(stripes_released_fills_seen).subspan(first_stripe - range_first_stripe, end_stripe - first_stripe);
     const bool stripes_current = std::ranges::all_of(stripes_seen, [&](UInt64 seen) { return seen == released_fills; });
 
-    /// Nothing to claim, nothing to wait for and nothing written by a fill since the stripes were looked up:
-    /// the common case of a block that is less than a stripe, which must not pay for a lock and a lookup.
+    /// The common case of a block smaller than a stripe must not pay for a lock and a lookup.
     if (to_claim.empty() && stripes_current && !columns_cache->anyFillsInProgress())
         return {};
 
@@ -507,8 +503,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     auto claims = columns_cache->claimFills(needed, to_claim, in_progress);
     if (in_progress.empty())
     {
-        /// The stripes another reader wrote and released after they were looked up are served from the
-        /// cache: a reader that trails another one through a part finds most of its stripes written so.
+        /// A reader trailing another one through a part finds most of its stripes written since its lookup.
         if (!stripes_current)
         {
             refreshColumnsCacheStripes(first_stripe, end_stripe);
@@ -519,7 +514,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
         return claims;
     }
 
-    /// Bounded by how long reading the needed stripes would take this reader, see `ColumnsCache::waitForFills`.
+    /// See `ColumnsCache::waitForFills`.
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
     size_t values = 0;
     for (const auto & key : needed)
@@ -535,9 +530,8 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     refreshColumnsCacheStripes(first_stripe, end_stripe);
     collect();
 
-    /// What is still missing - the other reader could not write it, is still at it, or someone else
-    /// claimed it meanwhile - is read without waiting again, so that no reader queues up behind fills
-    /// that keep failing: what nobody has claimed is claimed, the rest is read without a claim.
+    /// What is still missing is read without waiting again, so that no reader queues up behind fills that
+    /// keep failing.
     auto remaining_claims = columns_cache->claimFills({}, to_claim, in_progress);
     if (!remaining_claims.empty())
         FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_after_claim);
@@ -546,8 +540,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
 
 void MergeTreeReaderWide::refreshColumnsCacheStripes(size_t first_stripe, size_t end_stripe)
 {
-    /// Every regular column, not only those the block misses: the stripes are current afterwards, and a column
-    /// that a later block of the stripe misses must not keep an entry looked up before.
+    /// Every regular column, not only those the block misses: a later block of the stripe must not use a stale entry.
     std::vector<ColumnsCache::Key> keys;
     std::vector<size_t> positions;
     for (size_t pos = 0; pos < column_kinds.size(); ++pos)
@@ -564,8 +557,7 @@ void MergeTreeReaderWide::refreshColumnsCacheStripes(size_t first_stripe, size_t
     auto entries = columns_cache->getMany(keys);
     for (size_t i = 0; i < entries.size(); ++i)
     {
-        /// An entry looked up before is kept unless the new one holds all its granules: it stays valid
-        /// even if the cache has evicted it since.
+        /// The old entry stays valid even if it was evicted since, so keep it unless the new one covers it.
         auto & slot = cached_entries[positions[i]][keys[i].stripe - range_first_stripe];
         if (entries[i] && (!slot || entries[i]->coversMarks(slot->first_mark, slot->end_mark)))
             slot = std::move(entries[i]);
@@ -771,8 +763,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
     for (const auto & segment : segments)
         block_rows += segment.rows;
 
-    /// Released after the write at the end of this call, so that the readers that wait for the
-    /// claimed stripes find them in the cache. See `ColumnsCache::claimFills`.
+    /// Released at the end of this call, after the write, so that the waiters find the stripes in the cache.
     const bool fill_waits_possible = columns_cache_reads_possible && settings.columns_cache_wait_for_concurrent_fills;
     const auto & first = segments.front();
     const auto & last = segments.back();
@@ -891,8 +882,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
                 &sizes_before_reading);
             partial_columns_started = true;
 
-            /// How long this reader takes to read a value from the part, for how long it waits for the fills
-            /// of other readers, see `claimColumnsCacheFills`.
+            /// For the bound on waits for fills, see `claimColumnsCacheFills`.
             if (fill_waits_possible && disk_columns && rows_from_disk)
             {
                 const double sample = static_cast<double>(read_watch.elapsedNanoseconds()) / static_cast<double>(rows_from_disk * disk_columns);

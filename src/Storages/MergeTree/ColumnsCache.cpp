@@ -668,9 +668,7 @@ ColumnsCacheFillClaims ColumnsCache::claimFills(
     if (!in_progress.empty() || to_claim.empty())
         return result;
 
-    /// Allocated before the first key is claimed, so that nothing throws between claiming a key and
-    /// recording it in the result, which releases what it records: a key claimed and not released
-    /// would make its waiters wait until they give up.
+    /// Allocated before claiming anything: a key claimed but not recorded in `result` would never be released.
     result.fill = std::allocate_shared<ColumnsCacheFill>(ServerOwnedCacheEntryAllocator<ColumnsCacheFill>{});
     result.keys.reserve(to_claim.size());
 
@@ -680,7 +678,6 @@ ColumnsCacheFillClaims ColumnsCache::claimFills(
     {
         if (fills.try_emplace(key, result.fill).second)
         {
-            /// Counted key by key: if a later insertion throws, the result releases exactly these.
             result.keys.push_back(key);
             ++claimed_keys;
         }
@@ -695,8 +692,6 @@ void ColumnsCache::releaseFills(ColumnsCacheFillClaims & claims)
         std::lock_guard lock(fills_mutex);
         for (const auto & key : claims.keys)
         {
-            /// The key is claimed by this reader until it is erased here, so nobody else can have put
-            /// another fill under it.
             chassert(fills.contains(key) && fills.at(key) == claims.fill);
             fills.erase(key);
         }
@@ -727,8 +722,7 @@ void ColumnsCache::waitForFills(const std::vector<ColumnsCacheFillPtr> & fills_t
     for (const auto & fill : fills_to_wait)
     {
         std::unique_lock lock(fill->mutex);
-        /// In slices, so that a cancelled query stops waiting promptly. It does not throw: the reader that
-        /// waits would take the exception for a broken part. The query is cancelled by its pipeline.
+        /// In slices, to notice cancellation. Does not throw: the reader would take it for a broken part.
         while (!fill->done_cv.wait_until(lock, std::min(Clock::now() + std::chrono::milliseconds(100), deadline), [&] { return fill->done; }))
         {
             if (Clock::now() >= deadline)

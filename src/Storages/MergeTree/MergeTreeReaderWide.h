@@ -297,14 +297,11 @@ private:
         size_t first_mark, size_t end_mark, size_t num_columns,
         std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns);
 
-    /// Before a block reads granules from the part: wait for the fills other readers have in flight
-    /// for its stripes, see `ColumnsCache::claimFills`, and claim the stripes it reads whole and will
-    /// write. The block touches the granules [first_mark, end_mark) and reads the granules
-    /// [complete_first_mark, complete_end_mark) from their first row to their last. The claims must
-    /// be released by the end of the block.
+    /// Wait for other readers' fills of the block's stripes and claim those it reads whole and will write,
+    /// see `ColumnsCache::claimFills`. The block touches the granules [first_mark, end_mark) and reads
+    /// [complete_first_mark, complete_end_mark) in full. The claims must be released by the end of the block.
     ColumnsCacheFillClaims claimColumnsCacheFills(size_t first_mark, size_t end_mark, size_t complete_first_mark, size_t complete_end_mark);
 
-    /// Whether the stripe, once read whole, is written to the cache.
     bool willWriteColumnsCacheStripe(size_t stripe);
 
     /// Add the granules in [begin, end) that the entries hold to the per-granule counts of cached
@@ -315,12 +312,10 @@ private:
     /// Per stripe of the range, `ColumnsCache::releasedFills` as of its last lookup.
     std::vector<UInt64> stripes_released_fills_seen;
 
-    /// How long this reader takes to read one value of a column from the part, in nanoseconds: a running
-    /// average over its reads, 0 before the first one. See `ColumnsCache::waitForFills`.
+    /// Running average over the reads of this reader, 0 before the first one.
     double read_nanoseconds_per_value = 0;
 
-    /// Look the stripes [first_stripe, end_stripe) of the current range up again, after other readers wrote
-    /// them, and update the entries and the counts of the range.
+    /// Look the stripes up again after other readers wrote them.
     void refreshColumnsCacheStripes(size_t first_stripe, size_t end_stripe);
 
     /// Whether the granules [begin, end) of a lookup can be served from the cache as a whole.

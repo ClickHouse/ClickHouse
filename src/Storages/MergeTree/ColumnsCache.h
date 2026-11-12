@@ -189,8 +189,7 @@ struct ColumnsCacheWeightFunction
     }
 };
 
-/// A fill of the cache in progress: a reader is reading a stripe of a column from the part to write
-/// it to the cache. See `ColumnsCache::claimFills`.
+/// A stripe of a column that a reader is reading from the part to write it to the cache, see `ColumnsCache::claimFills`.
 struct ColumnsCacheFill
 {
     std::mutex mutex;
@@ -200,8 +199,7 @@ struct ColumnsCacheFill
 
 using ColumnsCacheFillPtr = std::shared_ptr<ColumnsCacheFill>;
 
-/// A running average that moves `1 / inverse_weight` of the way towards every new sample; the first
-/// sample when the average is still 0.
+/// Exponential moving average with weight `1 / inverse_weight`; starts at the first sample.
 inline double updateRunningAverage(double average, double sample, double inverse_weight)
 {
     return average > 0 ? average + (sample - average) / inverse_weight : sample;
@@ -209,8 +207,7 @@ inline double updateRunningAverage(double average, double sample, double inverse
 
 class ColumnsCache;
 
-/// The keys a reader has claimed, see `ColumnsCache::claimFills`: all of them under one fill, since they
-/// are released together. Releases them on destruction, which wakes up the readers that wait for them.
+/// The keys a reader has claimed, see `ColumnsCache::claimFills`. Released on destruction, which wakes up their waiters.
 class ColumnsCacheFillClaims
 {
 public:
@@ -269,7 +266,7 @@ public:
     /// Does not update hit/miss profile events; the reader counts them per granule it reads.
     std::vector<MappedPtr> getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe);
 
-    /// The entries of the keys, nullptr for those that are not in the cache. Each shard is locked once.
+    /// nullptr for the keys that are not in the cache.
     std::vector<MappedPtr> getMany(const std::vector<Key> & keys);
 
     /// Insert the entries of several stripes. The key of every entry is `entry->key`.
@@ -300,42 +297,32 @@ public:
     /// priorities of the entries nor marks them as used, so a writer can check what of its write survived.
     bool containsAll(const std::vector<Key> & keys) const;
 
-    /// Fills in flight, so that concurrent reads of the same cold stripes read and deserialize them
-    /// once: one reader claims a stripe of a column, the others wait for its write and are served
-    /// from the cache.
+    /// Concurrent reads of the same uncached stripes read them from the part once: one reader claims
+    /// a stripe, the others wait for its write and are served from the cache.
     ///
-    /// `needed` are the keys a reader is about to read from the part, `to_claim` those of them it
-    /// will also write to the cache in full. The fills of `needed` claimed by other readers are put
-    /// into `in_progress`. When there are none, the keys of `to_claim` that nobody has claimed are
-    /// claimed for the reader, all in one critical section; otherwise nothing is.
+    /// `needed` are the keys a reader is about to read from the part, `to_claim` those of them it will
+    /// write to the cache in full. Fills of `needed` by other readers are returned in `in_progress`;
+    /// only when there are none, the unclaimed keys of `to_claim` are claimed.
     ///
-    /// A reader must not wait for fills while it holds claims, and must release its claims before
-    /// it gives control back to the pipeline executor: then no reader that holds a claim ever waits
-    /// for another one, and no wait can be part of a cycle. A claim is a promise to try: the write
-    /// can still be rejected (budget, invalidation, size), and the waiters then read for themselves.
+    /// A reader must not wait while it holds claims, and must release them before it returns to the
+    /// pipeline executor, so that waits cannot form a cycle. The claimant's write can still be
+    /// rejected; the waiters then read for themselves.
     ColumnsCacheFillClaims claimFills(const std::vector<Key> & needed, const std::vector<Key> & to_claim, std::vector<ColumnsCacheFillPtr> & in_progress);
 
-    /// How many claims were released so far: a reader that has seen this count when it looked keys up, and
-    /// sees it unchanged, knows that no fill has written them since.
+    /// Unchanged since a lookup: no fill has written anything since.
     UInt64 releasedFills() const { return released_fills.load(); }
-    /// Whether any key is claimed: when none is, `claimFills` would find no fill to wait for.
     bool anyFillsInProgress() const { return claimed_keys.load() != 0; }
 
-    /// Wait until the fills are released, but no longer than `max_wait_ns` if it is given, nor after the
-    /// query is cancelled. Parks the CPU lease of the thread meanwhile.
+    /// Waits until the fills are released, at most `max_wait_ns` if given, and not after the query is cancelled.
     ///
-    /// A claim does not say how fast the claimant reads: it can read from slower storage, or get
-    /// little CPU. So a reader waits at most `MAX_WAIT_TO_READ_RATIO` times as long as it would take
-    /// it to read the data itself, see `readNanosecondsPerValue`, and then reads it itself. Not less:
-    /// when the CPUs are oversubscribed, the claimant reads slower than the waiter measured its own
-    /// reads, and a waiter that gives up early reads the data a second time and slows down every
-    /// other read in turn.
+    /// The claimant can be slower than the waiter (slower storage, less CPU), so a reader waits at most
+    /// `MAX_WAIT_TO_READ_RATIO` times as long as reading the data itself would take, then reads it itself.
+    /// Not less: with oversubscribed CPUs, waiters that give up early read the data again and slow down
+    /// every other read.
     static constexpr double MAX_WAIT_TO_READ_RATIO = 4;
     static void waitForFills(const std::vector<ColumnsCacheFillPtr> & fills, std::optional<UInt64> max_wait_ns);
 
-    /// How long reading one value of a column from a part takes, in nanoseconds: a running average
-    /// over the reads of all readers, for a reader that has not measured its own reads yet.
-    /// `DEFAULT_READ_NANOSECONDS_PER_VALUE` before any read was measured.
+    /// Average over all readers, for a reader that has not measured its own reads yet.
     static constexpr double DEFAULT_READ_NANOSECONDS_PER_VALUE = 1.0;
     double readNanosecondsPerValue() const;
     void recordRead(double nanoseconds_per_value);
@@ -456,16 +443,14 @@ public:
 private:
     friend class ColumnsCacheFillClaims;
 
-    /// The fills in flight, see `claimFills`. Touched only by reads that miss, once per block, so one
-    /// mutex is enough, and it is what makes claiming all keys of a block at once trivial.
+    /// See `claimFills`. Touched only by reads that miss, once per block, so one mutex is enough.
     std::unordered_map<Key, ColumnsCacheFillPtr, ColumnsCacheKeyHash> fills;
     std::mutex fills_mutex;
     /// See `releasedFills` and `anyFillsInProgress`. Changed under `fills_mutex`, read without it.
     std::atomic<UInt64> released_fills{0};
     std::atomic<size_t> claimed_keys{0};
 
-    /// See `readNanosecondsPerValue`. Updated without a lock: a lost update only delays the average.
-    /// On a cache line of its own: every reader writes it.
+    /// Updated without a lock: a lost update only delays the average. Own cache line: every reader writes it.
     alignas(64) std::atomic<double> read_nanoseconds_per_value{0.0};
 
     void releaseFills(ColumnsCacheFillClaims & claims);
