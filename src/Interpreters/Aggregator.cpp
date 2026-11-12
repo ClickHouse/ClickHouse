@@ -1180,7 +1180,7 @@ void Aggregator::executeImpl(
             /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
             /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+                && (bytesForPrefetch(method.data) > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
