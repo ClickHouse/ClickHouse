@@ -1450,7 +1450,8 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     /// A view stores no data of its own, so the gates on types chosen for storage do not apply to it;
     /// a materialized view's inner table is created by its own statement and validated there.
-    if ((isFreshDefinition(mode) || mode == LoadingStrictnessLevel::SECONDARY_CREATE) && !create.isView())
+    /// `RESTORE` and replica replays load types that were accepted when the table was created.
+    if (isFreshDefinition(mode) && !create.isView())
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
