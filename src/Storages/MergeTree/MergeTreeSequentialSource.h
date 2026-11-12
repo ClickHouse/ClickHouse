@@ -66,7 +66,6 @@ void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline);
 /// Whether a merge or mutation reading `columns_to_read` of `parts` fits into `filesystem_prefetches_limit`
 /// and `filesystem_prefetch_max_memory_usage` of `task_context`, as a query does.
 bool canPrefetchInMergeOrMutation(
-    const MergeTreeData & storage,
     const MergeTreeData::DataPartsVector & parts,
     const Names & columns_to_read,
     const ContextPtr & task_context);

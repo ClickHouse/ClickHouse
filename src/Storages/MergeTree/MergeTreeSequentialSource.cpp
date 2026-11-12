@@ -636,7 +636,6 @@ void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline)
 }
 
 bool canPrefetchInMergeOrMutation(
-    const MergeTreeData & storage,
     const MergeTreeData::DataPartsVector & parts,
     const Names & columns_to_read,
     const ContextPtr & task_context)
@@ -647,7 +646,9 @@ bool canPrefetchInMergeOrMutation(
     if (prefetches_limit && parts.size() * columns_to_read.size() > prefetches_limit)
         return false;
 
-    const size_t buffer_size = storage.getContext()->getReadSettings().remote_fs_settings.buffer_size;
+    /// The readers take their buffer sizes from the task context (see `MergeTreeSequentialSource`),
+    /// so the admission must price the same buffers.
+    const size_t buffer_size = task_context->getReadSettings().remote_fs_settings.buffer_size;
     size_t estimated_memory = 0;
     for (const auto & part : parts)
     {
