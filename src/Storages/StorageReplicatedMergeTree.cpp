@@ -9362,6 +9362,14 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
+    /// With `enable_shared_storage_snapshot_in_query` the update reads with the snapshot of this table
+    /// cached for the whole query. Anything analyzed before this point may have cached one: the pruning
+    /// analysis in `allocateBlockNumbersInAffectedPartitions`, or the validation of `IN` operands in
+    /// `InterpreterUpdateQuery`. Such a snapshot predates the wait for committing inserts above, so the
+    /// parts that arrived during the wait would be invisible to the update and their rows would stay
+    /// unchanged. Discard it, so that the update and its subqueries share a snapshot taken now.
+    discardSharedStorageSnapshot(context_copy);
+
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(

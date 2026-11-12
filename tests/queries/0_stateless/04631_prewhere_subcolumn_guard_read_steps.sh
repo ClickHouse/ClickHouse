@@ -19,6 +19,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "
   DROP TABLE IF EXISTS t_steps_group;
   DROP TABLE IF EXISTS t_steps_throwing;
+  DROP TABLE IF EXISTS t_steps_top_k;
 
   CREATE TABLE t_steps_group (id UInt64, gate UInt8, gate2 UInt8, tags Map(String, String))
   ENGINE = MergeTree ORDER BY id
@@ -32,6 +33,11 @@ ${CLICKHOUSE_CLIENT} -q "
            ratio_of_defaults_for_sparse_serialization = 1.0,
            map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
+  CREATE TABLE t_steps_top_k (id UInt64, s String)
+  ENGINE = MergeTree ORDER BY id
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           add_minmax_index_for_string_columns = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
+
   INSERT INTO t_steps_group
   SELECT number, 1, 1, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayMap(i -> toString(number + i), range(4)))
   FROM numbers(100000);
@@ -40,8 +46,11 @@ ${CLICKHOUSE_CLIENT} -q "
   SELECT number, map('safe', if(number % 3 = 0, '', 'y'), 'val', if(number % 3 = 0, 'not a number', toString(number % 100)))
   FROM numbers(100000);
 
+  INSERT INTO t_steps_top_k SELECT number, if(number % 3 = 0, '', toString(number)) FROM numbers(100000);
+
   OPTIMIZE TABLE t_steps_group FINAL;
   OPTIMIZE TABLE t_steps_throwing FINAL;
+  OPTIMIZE TABLE t_steps_top_k FINAL;
 "
 
 query_id_group=group_$CLICKHOUSE_DATABASE
@@ -50,6 +59,8 @@ query_id_interleaved=interleaved_$CLICKHOUSE_DATABASE
 query_id_nested=nested_$CLICKHOUSE_DATABASE
 query_id_nested_split=nested_split_$CLICKHOUSE_DATABASE
 query_id_read_ahead=read_ahead_$CLICKHOUSE_DATABASE
+query_id_top_k_where=top_k_where_$CLICKHOUSE_DATABASE
+query_id_top_k_prewhere=top_k_prewhere_$CLICKHOUSE_DATABASE
 
 opts=(
   --optimize_functions_to_subcolumns 1
@@ -129,6 +140,18 @@ steps_nested_split=$(read_steps "$query_id_nested_split" "
   SETTINGS optimize_prewhere_after_pushdown = 1
 ")
 
+# A condition on the column of `ORDER BY ... LIMIT` gets its own step after `__topKFilter`, which reads that
+# column first, whether it is written in WHERE (and moved to PREWHERE) or in PREWHERE.
+steps_top_k_where=$(read_steps "$query_id_top_k_where" "
+  SELECT s FROM t_steps_top_k WHERE s != 'zzzz' ORDER BY s LIMIT 5 FORMAT Null
+  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
+")
+
+steps_top_k_prewhere=$(read_steps "$query_id_top_k_prewhere" "
+  SELECT s FROM t_steps_top_k PREWHERE s != 'zzzz' ORDER BY s LIMIT 5 FORMAT Null
+  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
+")
+
 ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
@@ -166,6 +189,11 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_nested_split' AND type = 'QueryFinish';
 
+  -- __topKFilter in the first step, the condition on its column in the second.
+  SELECT 'top-k where steps', '$steps_top_k_where' = '2';
+  SELECT 'top-k prewhere steps', '$steps_top_k_prewhere' = '2';
+
   DROP TABLE t_steps_group;
   DROP TABLE t_steps_throwing;
+  DROP TABLE t_steps_top_k;
 "

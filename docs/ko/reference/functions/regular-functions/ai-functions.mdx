@@ -28,6 +28,7 @@ AI 함수는 ClickHouse에 내장된 함수로, AI를 호출하거나 임베딩�
 
 * **Quota 적용**: 토큰에 대한 쿼리별 제한([`ai_function_max_input_tokens_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) 및 API 호출 제한([`ai_function_max_api_calls_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **백오프를 사용하는 재시도**: 일시적인 실패는 지수형 백오프([`ai_function_retry_initial_delay_ms`](/ko/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms))를 적용하여 재시도됩니다([`ai_function_max_retries`](/ko/reference/settings/session-settings/ai-function#ai_function_max_retries)).
+* **동시 요청**: 요청은 서버 전역 스레드 풀에서 한 번에 여러 개씩 동시에 전송됩니다([`ai_function_max_concurrent_requests_per_thread`](/ko/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)로 제어).
 
 ## 구성 {#configuration}
 
@@ -115,6 +116,24 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 모든 AI 관련 설정은 [설정](/ko/reference/settings/session-settings) 문서에서 `ai_function_` 접두사 아래에 나열되어 있습니다.
 
+### 서버 구성 {#server-configuration}
+
+서버 설정 `ai_function_allow_sql_named_collections`(기본값 `true`)는 AI 함수에서 사용할 수 있는 명명된 컬렉션의 범위를 제어합니다. `false`로 설정하면 AI 함수는 서버 설정 파일에 정의된 명명된 컬렉션만 허용하며, `CREATE NAMED COLLECTION`으로 생성한 컬렉션을 사용하면 예외가 발생합니다. 이 동작은 `credentials` 매개변수와 default-credentials 설정 모두에 적용됩니다. 이 설정을 변경하려면 서버를 재시작해야 합니다.
+
+```xml
+<clickhouse>
+    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
+            <model>gpt-4o-mini</model>
+            <api_key>sk-...</api_key>
+        </ai_text_credentials>
+    </named_collections>
+</clickhouse>
+```
+
 ### `엔드포인트` 호스트 제한 {#restricting-endpoint-hosts}
 
 AI 명명된 컬렉션의 `엔드포인트` URL은 서버가 자체 아이덴티티로 연결하는 아웃바운드 대상입니다. 이때 요청 헤더에는 지정된 경우 명명된 컬렉션의 `api_key`가 포함될 수 있습니다. 기본적으로 ClickHouse는 모든 호스트를 허용합니다. 함수를 특정 프로바이더 집합으로 제한하려면 서버 config에서 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)를 구성하십시오. 예:
@@ -138,6 +157,35 @@ AI 명명된 컬렉션의 `엔드포인트` URL은 서버가 자체 아이덴티
 기본적으로 AI 함수는 원격 host로 데이터를 평문으로 전송하는 `endpoint`를 거부합니다. host가 루프백이 아닌 HTTPS 이외의 모든 엔드포인트는 예외를 발생시킵니다. 루프백 host(`localhost`, `127.0.0.0/8`, `::1`)는 예외이므로 로컬 `http://localhost` 모델 server는 별도 설정 없이 작동합니다. 원격 host에서 평문 `http://` 엔드포인트를 허용하려면 [`ai_function_allow_insecure_endpoint`](/ko/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint)를 `1`로 설정하십시오. 이 검사는 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)와 독립적입니다. 이 설정은 host allowlist이며 URL 스킴은 검사하지 않으므로, 허용된 host를 가리키는 `http://` 엔드포인트도 이 검사를 통과합니다.
 
 어느 경우든 프로바이더는 TLS 종료 이후 입력 데이터를 평문으로 받습니다. TLS는 server와 프로바이더 사이의 네트워크 경로에서만 데이터를 보호합니다.
+
+### 처리량 {#throughput}
+
+AI 함수는 처리량이 로컬 CPU나 I/O가 아니라 요청을 보내는 원격 엔드포인트에 의해 거의 전적으로 좌우된다는 점에서 대부분의 기존 ClickHouse 함수와 다릅니다. 따라서 ClickHouse 전반에서 사용하는 표준 `max_threads`보다 동시성을 높이면 성능이 크게 향상됩니다. 이러한 이유로 요청은 서버 전체에서 공유하는 전용 스레드 풀에서 실행됩니다. 이 풀의 크기(서버 설정인 `ai_function_max_thread_pool_size`)는 모든 쿼리를 통틀어 서버 전체에서 동시에 처리 중일 수 있는 AI 프로바이더 요청 수의 상한을 결정합니다.
+
+[`ai_function_max_concurrent_requests_per_thread`](/ko/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)는 각 쿼리 스레드가 이 풀에서 사용할 수 있는 몫을 제한합니다. 따라서 여러 스레드(최대 `max_threads`개)에서 실행되는 쿼리는 스레드마다 이 값만큼의 요청을 동시에 처리할 수 있습니다. 쿼리에서 이 값을 높이지 못하게 하려면 [설정 프로파일 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 사용하여 이 설정에 상한을 지정하십시오. 이 상한 역시 스레드 단위로 적용되므로, 하나의 쿼리가 동시에 처리할 수 있는 요청 수는 최대 상한값에 스레드 수를 곱한 값이 됩니다. 예시:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+기본값은 `8`입니다. `1`보다 큰 값을 사용하면 다음 두 가지 보장이 완화됩니다.
+
+* 요청의 토큰 사용량은 응답이 도착해야 알 수 있으므로, [`ai_function_max_input_tokens_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) 및 [`ai_function_max_output_tokens_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)는 전체적으로 요청 1개 분량만큼이 아니라 처리 중인 요청마다 요청 1개 분량만큼 한도를 초과할 수 있습니다.
+* 오류가 하나라도 확인되기 전에 여러 요청이 한꺼번에 전달되므로, 첫 번째 행(First row)에서 실패하는 쿼리라도 이미 동시성이 허용하는 만큼의 요청을 보냈고 그만큼 비용이 청구되었을 수 있습니다.
+
+[`ai_function_max_api_calls_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)는 각 요청이 전달되기 전에 슬롯이 예약되므로 영향을 받지 않으며, 정확한 상한으로 계속 유지됩니다.
+
+<Note>
+  materialized view에서는 설정을 `CREATE MATERIALIZED VIEW` SQL 문이 아니라 뷰(view)의 원본 테이블에 데이터를 공급하는 `INSERT`에 지정해야 합니다. 쿼터는 최상위 쿼리(top-level query)에서 읽어 오며, 뷰 정의(view definition)에 포함된 `SETTINGS` 절은 무시됩니다.
+</Note>
 
 ## 지원되는 프로바이더 {#supported-providers}
 
@@ -179,7 +227,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-## aiClassify
+## aiClassify {#aiClassify}
 
 도입 버전: v26.4.0
 
@@ -231,7 +279,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-## aiEmbed
+## aiEmbed {#aiEmbed}
 
 도입 버전: v26.6.0
 
@@ -294,7 +342,7 @@ INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-## aiExtract
+## aiExtract {#aiExtract}
 
 도입 버전: v26.4.0
 
@@ -352,7 +400,7 @@ INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only tw
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-## aiFilter
+## aiFilter {#aiFilter}
 
 도입 버전: v26.8.0
 
@@ -406,7 +454,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-## aiGenerate
+## aiGenerate {#aiGenerate}
 
 도입된 버전: v26.4.0
 
@@ -469,7 +517,7 @@ INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-## aiRedact
+## aiRedact {#aiRedact}
 
 도입 버전: v26.8.0
 
@@ -541,7 +589,7 @@ INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-## aiSimilarity
+## aiSimilarity {#aiSimilarity}
 
 도입 버전: v26.8.0
 
@@ -604,7 +652,7 @@ INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse databas
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-## aiTranslate
+## aiTranslate {#aiTranslate}
 
 도입 버전: v26.4.0
 
