@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge />
 
-Secure organization network connectivity lets one ClickHouse Cloud service query another service in the same organization and region with [`remoteSecure()`](/reference/functions/table-functions/remote). Traffic stays on ClickHouse Cloud's private network instead of the public internet, so it works even when the service you're reading from is locked down with [PrivateLink](/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) or an [IP access list](/products/cloud/guides/security/connectivity/setting-ip-filters) that allows nothing.
+Secure organization network connectivity lets one ClickHouse Cloud service query another service in the same organization and region with [`remoteSecure()`](/reference/functions/table-functions/remote). Traffic stays on ClickHouse Cloud's private network instead of the public internet, so it works even when the service you're reading from is locked down with [PrivateLink](/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) or an [IP access list](/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 Use it when:
 
@@ -20,7 +20,7 @@ Use it when:
 - Your services don't share data through [warehouses](/products/cloud/features/infrastructure/warehouses) (compute-compute separation), but you need to query across them.
 
 <Note>
-This feature is in private preview, and our team sets up each connection for you. To join, contact your ClickHouse account team or [ClickHouse support](https://clickhouse.com/support/program). We'd love your feedback on what works, what's confusing, and what you need before using it in production.
+This feature is in private preview, and our team sets up each connection for you. To join, contact your ClickHouse account team or [ClickHouse support](https://clickhouse.com/support/program).
 </Note>
 
 ## How it works {#how-it-works}
@@ -34,13 +34,13 @@ ClickHouse Cloud creates a one-way connection from the Consumer to the Producer.
 
 A query has to pass three checks:
 
-1. **Network**: only a Consumer with a connection can reach the Producer over the private network. Traffic never uses the Producer's public endpoint, so it works even if the Producer only accepts PrivateLink traffic or its IP access list allows nothing.
-2. **Identity**: the Consumer authenticates with a certificate tied to its hostname. The [named collection](/concepts/features/configuration/server-config/named-collections) you query through holds no static credentials.
+1. **Network**: only a Consumer with a connection can reach the Producer over the private network.
+2. **Identity**: the Consumer authenticates with a certificate tied to its hostname.
 3. **Table permissions**: the Producer decides which tables the Consumer can read with `GRANT`. Anything not granted returns an access denied error.
 
 ## Prerequisites {#prerequisites}
 
-- Both services are in the same ClickHouse Cloud organization, cloud provider, and region. For example, a service in AWS `us-east-2` can't connect to one in AWS `us-west-2`. Our team confirms that your services are eligible before creating the connection.
+- Both services are in the same ClickHouse Cloud organization, cloud provider, and region. For example, a service in AWS `us-east-2` can't connect to one in AWS `us-west-2`. Our team will confirm that your services are eligible before creating the connection.
 - Neither service is a regulated (HIPAA or PCI) service.
 - You have the service ID and hostname of both services. You can find both on each service's **Settings** page in the console.
 - You can run SQL as an admin on both services.
@@ -53,10 +53,10 @@ Start with test services to avoid production impact. The Consumer has one rollin
 
 ### Send us your service details {#send-service-details}
 
-During the private preview there's no console UI for connections. Send your ClickHouse contact:
+During the private preview, there's no console UI for connections. Send your ClickHouse contact:
 
 - The service IDs of the Producer and the Consumer. Say which is which, and whether you need to query in both directions.
-- A time when a rolling restart of the Consumer is acceptable. New replicas start in about a minute and old ones retire over about five minutes, so the service stays available. Later connections don't restart anything.
+- A time when a rolling restart of the Consumer is acceptable. Later connections don't restart anything.
 
 ### ClickHouse creates the connection {#clickhouse-creates-connection}
 
@@ -64,7 +64,7 @@ We confirm both services are eligible and create the connection. We then create 
 
 ### Grant the Consumer access to tables {#grant-access}
 
-Run the following on the Producer. It creates a sample table and grants the Consumer access to it, then creates a second table with no grant so you can see a denied query:
+Either run the test queries below or grant select on your own tables on the Producer.
 
 ```sql
 CREATE TABLE default.rs_demo_events (id UInt32, val String) ENGINE = MergeTree ORDER BY id;
@@ -76,11 +76,9 @@ GRANT SELECT ON default.rs_demo_events TO `rt_<Consumer service ID>`;
 CREATE TABLE default.rs_demo_no_grant (id UInt32) ENGINE = MergeTree ORDER BY id;
 ```
 
-To confirm that traffic stays on the private network, set the Producer's IP access list to allow nothing. Queries from the Consumer still work.
-
 ### Query from the Consumer {#query-from-consumer}
 
-Run the following on the Consumer. It creates a [named collection](/concepts/features/configuration/server-config/named-collections) that points at the Producer, then queries through it. Use the Producer's hostname from the console, the same one you'd use to connect to it directly. Traffic still stays on the private network.
+Run the following on the Consumer. We will enable the private preview Named Collections feature for you. The SQL below creates a [named collection](/concepts/features/configuration/server-config/named-collections) that points at the Producer, then queries through it. Use the Producer's hostname from the console, the same one you'd use to connect to it directly.
 
 ```sql
 CREATE NAMED COLLECTION IF NOT EXISTS my_producer AS
@@ -94,7 +92,7 @@ SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_events');
 SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_no_grant');
 ```
 
-The first query returns two rows. The second returns an access denied error, because the Consumer has no grant on `rs_demo_no_grant`.
+If you used the test queries, you will have noticed that the first query returns results while the second one got an access denied error due to insufficient permissions.
 
 ### Check the reverse direction {#check-reverse-direction}
 
@@ -115,7 +113,6 @@ The query fails, because connections only go one way. To query in both direction
 - A connection covers one service. If you use [warehouses](/products/cloud/features/infrastructure/warehouses), a connection to one service doesn't cover the other services that share its data. Each needs its own connection.
 - Connections are one way. Querying in both directions needs two connections.
 - The Producer executes the read, the same as with the [`remoteSecure()`](/reference/functions/table-functions/remote) table function today.
-- Our team creates and removes connections during the private preview. The console doesn't show which connections exist yet. Self-serve setup in the console is planned.
 
 ### Idling {#idling}
 
@@ -128,7 +125,7 @@ Most failures show up as a generic network error, such as connection refused, ha
 
 ### Deleting a service {#deleting-a-service}
 
-A connection doesn't block deleting either service. During the private preview, let us know if you delete one so we can clean up the connection. Until then, queries return connection refused.
+A connection doesn't block deleting either service. During the private preview, let us know if you delete one so we can clean up the connection.
 
 ## Troubleshooting {#troubleshooting}
 
