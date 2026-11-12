@@ -49,8 +49,10 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   *     data.prefetch(std::move(key_holder));
   *
   * ahead of the `emplaceKey`/`findKey` loop, so the look-ahead row's key holder is built once for
-  * the prefetch and once again when that row is actually processed. Hiding a cache miss is only a
-  * win when that duplicated work is cheaper than the miss.
+  * the prefetch and once again when that row is actually processed. A key that stores its hash
+  * (`key_holder_key_stores_hash`) is the exception: the loop keeps the keys built for the prefetch
+  * and inserts them (see `LookAheadKeysFor`). Hiding a cache miss is only a win when the duplicated
+  * work is cheaper than the miss.
   *
   * `true` means `getKeyHolder` reads the key in place: an unaligned load, a `packFixed`, or a
   * `string_view` over the column's own memory. Rebuilding it costs a handful of instructions.
@@ -279,8 +281,8 @@ protected:
 /// Computing the hash inside `build` keeps a single pass over the string data:
 /// a separate per-block hashing pass would read every key twice and allocate a
 /// hash array per block. When the `Aggregator` prefetches (hash table larger than
-/// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
-/// key, the other loops build and hash it again.
+/// L2) it builds a row's key ahead of the row and keeps it for the insert (see
+/// `KeptLookAheadKeys`), so the string is hashed once.
 ///
 /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
 /// aggregation derives a 64-bit hash via a dedicated conversion path.
@@ -345,8 +347,8 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    /// `PackedStringRef::build` reads the key in place; see the note on `PackedStringHash` for why
-    /// rebuilding it (and its content hash) in the look-ahead is an accepted trade here.
+    /// `PackedStringRef::build` reads the key in place, and the look-ahead keeps the keys it builds (see
+    /// `KeptLookAheadKeys`), so a key and its content hash are built once.
     static constexpr bool has_cheap_key_holder = true;
 
     /// The content hash stored in the packed key. Callers that rebuild a key from its bytes to probe a table
@@ -409,7 +411,8 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     using Self = HashMethodKeysAndPackedString<Value, Mapped, Keys, for_sub_range>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    /// The fixed-width values are packed and the string is hashed in place, as by `HashMethodPackedString`.
+    /// As in `HashMethodPackedString`, the key is read in place, and the look-ahead keeps the keys it builds
+    /// (see `KeptLookAheadKeys`), so a key and its hash are built once.
     static constexpr bool has_cheap_key_holder = true;
 
     /// The hash that the key stores (see `KeysAndPackedString`): the content hash of the string, continued

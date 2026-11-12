@@ -301,6 +301,18 @@ public:
         return emplaceImpl<true>(key_holder, data, 0);
     }
 
+    /// Inserts the key of `key_holder`, which the caller built with `getKeyHolder`, for example ahead of
+    /// its row to prefetch its cell (see `KeptLookAheadKeys`). It does what this class's `emplaceKey` does
+    /// after building the key. The caller guarantees that the state does not override `emplaceKey`, as
+    /// `HashMethodSingleLowCardinalityColumn`, `HashMethodSerialized` and `HashMethodHashed` do: this method
+    /// would skip the override.
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceKeyHolder(Data & data, KeyHolder & key_holder)
+    {
+        static_assert(!nullable && !Derived::has_pre_computed_hashes);
+        return emplaceImpl<true>(key_holder, data, 0);
+    }
+
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {

@@ -41,6 +41,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/ColumnsHashing/LookAheadKeys.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
@@ -1354,9 +1355,10 @@ void Aggregator::executeImpl(
         {
             /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
             /// It also doesn't make sense when building the key holder is expensive: the look-ahead
-            /// below calls `getKeyHolder` a second time for every row, so a method that materializes
-            /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
-            /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+            /// below calls `getKeyHolder` a second time for every row whose key does not store its
+            /// hash, so a method that materializes its key there (e.g. serializing all key columns)
+            /// would pay its dominant per-row cost twice - far more than the cache miss the prefetch
+            /// hides. See `has_cheap_key_holder`.
             /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
             /// smaller threshold.
             const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
@@ -1590,7 +1592,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     /// Returns nothing and is force-inlined on purpose: a variant of this that returned the emplace
     /// result was compiled into an out-of-line call per row for the string methods, and the call is
     /// what the loop's speed is made of - it costs more than the work it wraps.
-    auto process_row = [&](size_t row) ALWAYS_INLINE
+    auto process_row = [&](size_t row, auto && emplace_result) ALWAYS_INLINE
     {
         // For some methods we simply don't have a set counterpart, so a map method is used.
         // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
@@ -1598,20 +1600,15 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         // again is a store into a random place of the table on every row.
         if constexpr (State::has_mapped)
         {
-            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
             if (emplace_result.isInserted())
                 emplace_result.setMapped(place);
-            heap_push(row, emplace_result);
         }
-        else
-        {
-            heap_push(row, state.emplaceKey(method.data, row, *aggregates_pool));
-        }
+        heap_push(row, emplace_result);
     };
 
     if (all_keys_are_const)
     {
-        process_row(0);
+        process_row(0, state.emplaceKey(method.data, 0, *aggregates_pool));
         return;
     }
 
@@ -1624,19 +1621,18 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
+    static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+    ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
+
     /// For all rows.
     for (size_t i = row_begin; i < row_end; ++i)
     {
-        if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+        if constexpr (prefetch_cells)
         {
             if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
                 prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-            if (i + prefetch_look_ahead < row_end)
-            {
-                auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                method.data.prefetch(std::move(key_holder));
-            }
+            look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
         }
 
         if constexpr (top_k)
@@ -1650,7 +1646,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             }
         }
 
-        process_row(i);
+        process_row(i, look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool));
 
         if constexpr (top_k)
         {
@@ -1885,49 +1881,17 @@ void NO_INLINE Aggregator::executeImplBatch(
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
             }
 
-            if constexpr (prefetch && !top_k && key_holder_key_stores_hash<KeyHolder>)
-            {
-                /// Building a packed key computes its hash, so the keys built for the prefetch are reused by the insert.
-                static constexpr size_t ring_size = 64; /// A power of two above the maximum look-ahead.
-                using PackedKey = typename Method::Key;
-                PackedKey ring[ring_size]{};
-                size_t built_end = row_begin;
-                for (size_t i = row_begin; i < row_end; ++i)
-                {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    const size_t want_end = std::min(row_end, i + std::min(prefetch_look_ahead, ring_size - 1) + 1);
-                    for (; built_end < want_end; ++built_end)
-                    {
-                        const PackedKey key = state.getKeyHolder(built_end, *aggregates_pool).key;
-                        ring[built_end % ring_size] = key;
-                        method.data.prefetch(key);
-                    }
-
-                    typename Method::Data::LookupResult it;
-                    bool inserted = false;
-                    method.data.emplace(KeyHolder{ring[i % ring_size], *aggregates_pool}, it, inserted);
-                    if (inserted)
-                        getInlineCountState(it->getMapped()) = 1;
-                    else
-                        ++getInlineCountState(it->getMapped());
-                }
-                return;
-            }
+            static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+            ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
 
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+                if constexpr (prefetch_cells)
                 {
                     if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
                         prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-                    if (i + prefetch_look_ahead < row_end)
-                    {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                        method.data.prefetch(std::move(key_holder));
-                    }
+                    look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
                 }
 
                 if constexpr (top_k)
@@ -1940,7 +1904,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+                auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
 
                 if constexpr (top_k)
                 {
@@ -2033,22 +1997,21 @@ void NO_INLINE Aggregator::executeImplBatch(
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
+        static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+        ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
+
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
 
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            if constexpr (prefetch_cells)
             {
                 if (i == key_start + PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                 /// Bound by `key_end` (not `row_end`): when all keys are const the key
                 /// columns hold 1 row, so the look-ahead must not cross that row.
-                if (i + prefetch_look_ahead < key_end)
-                {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
-                }
+                look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, key_end, *aggregates_pool);
             }
 
             if constexpr (top_k)
@@ -2063,7 +2026,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
 
             if constexpr (top_k)
             {
