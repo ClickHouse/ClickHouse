@@ -57,7 +57,8 @@ run_local "
     CREATE TABLE db.test (a UInt64, b String) ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 'cached';
     INSERT INTO db.test SELECT number, toString(number) FROM numbers(1000);
     SYSTEM DROP FILESYSTEM CACHE 'blob_cache';
-    SELECT sum(a), count() FROM db.test;
+    -- sum(length(b)) makes the query read a column: sum(a), count() alone can be answered without reading any data.
+    SELECT sum(a), count(), sum(length(b)) FROM db.test;
     SELECT count() > 0, sum(downloaded_size) > 0, countIf(cache_path LIKE '%/кэш_キャッシュ/%') = count() FROM system.filesystem_cache;
     -- Do not load the table in the next run: loading its parts reads through the cache.
     DETACH TABLE db.test PERMANENTLY;
