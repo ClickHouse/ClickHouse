@@ -1465,21 +1465,24 @@ void applyDistributedPlanSettings(ContextMutablePtr context)
     if (wants.empty())
         return;
 
+    const char * requests_verb = wants.size() > 1 ? "request" : "requests";
+    const char * conflicting_settings = wants.size() > 1 ? "those settings" : "that setting";
+
     if (make_plan.changed && !make_plan.value)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "`make_distributed_plan = 0` conflicts with {}, which requests a distributed query plan. Set "
-            "`make_distributed_plan = DEFAULT`, or set the conflicting setting back to `DEFAULT`.",
-            fmt::join(wants, ", "));
+            "`make_distributed_plan = 0` conflicts with {}, which {} a distributed query plan. Set "
+            "`make_distributed_plan = DEFAULT`, or set {} back to `DEFAULT`.",
+            fmt::join(wants, ", "), requests_verb, conflicting_settings);
 
     if (workers_num.changed && workers_num.value == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "`distributed_plan_workers_num = 0` conflicts with {}, which requests a distributed query plan. Set "
-            "`distributed_plan_workers_num = DEFAULT`, or set the conflicting setting back to `DEFAULT`.",
-            fmt::join(wants, ", "));
+            "`distributed_plan_workers_num = 0` conflicts with {}, which {} a distributed query plan. Set "
+            "`distributed_plan_workers_num = DEFAULT`, or set {} back to `DEFAULT`.",
+            fmt::join(wants, ", "), requests_verb, conflicting_settings);
 
-    /// `execute_locally` runs the plan in-process, which cannot resolve to a named cluster of
-    /// remote workers; "on" is enough to conflict, explicit or not, since it is never implied.
-    if (settings[Setting::distributed_plan_execute_locally] && worker_cluster.changed && !worker_cluster.value.empty())
+    /// `distributed_plan_execute_locally` requests local execution, `distributed_plan_worker_cluster`
+    /// remote execution; reject the conflict.
+    if (settings[Setting::distributed_plan_execute_locally] && !worker_cluster.value.empty())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "`distributed_plan_worker_cluster = '{}'` cannot be used with `distributed_plan_execute_locally = 1`, "
             "which runs the plan in-process. Set one of them back to `DEFAULT`.",
