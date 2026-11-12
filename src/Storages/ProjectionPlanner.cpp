@@ -8,101 +8,18 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/CollectSets.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
-#include <Processors/ISource.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/Pipe.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/StorageSnapshot.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageDummy.h>
 
 namespace DB
 {
 
 namespace
 {
-
-/// Provides source data for the projection pipeline
-class ProjectionDataSource final : public ISource
-{
-public:
-    explicit ProjectionDataSource(SharedHeader block)
-        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
-        , chunk(block->getColumns(), block->rows())
-    {
-    }
-
-    String getName() const override { return "ProjectionDataSource"; }
-
-    /// Avoid tracking read progress for projection calculation pipeline.
-    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
-
-protected:
-    Chunk generate() override { return std::move(chunk); }
-
-private:
-    Chunk chunk;
-};
-
-/// Fake storage which stands in for the missing `FROM` clause of a projection query,
-/// both when the projection metadata is built and when the projection is calculated.
-///
-/// It borrows the name of `system.one`, which is what a `SELECT` without a `FROM` clause reads from
-/// anyway. The Analyzer plans a read from a table expression as a read from a table, so it checks the
-/// access rights and applies the quotas for it, and calculating a projection must not require
-/// anything beyond the rights of the query which writes the data: `system.one` is readable by every
-/// user and is exempt from quotas and limits.
-class StorageProjectionSource final : public IStorage
-{
-public:
-    StorageProjectionSource(const ColumnsDescription & columns_description, VirtualColumnsDescription virtuals, Block data_)
-        : IStorage({DatabaseCatalog::SYSTEM_DATABASE, "one"})
-        , data(std::move(data_))
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description);
-        storage_metadata.setVirtuals(std::move(virtuals));
-        setInMemoryMetadata(storage_metadata);
-    }
-
-    std::string getName() const override { return "ProjectionSource"; }
-
-    /// The storage is not a table of the catalog, it only borrows the name of `system.one`, so the
-    /// row policies and the `additional_table_filters` of that name must not be applied to it: they
-    /// would silently reshape the data written into the projection part.
-    bool isSyntheticDataSource() const override { return true; }
-
-    bool supportsSubcolumns() const override { return true; }
-
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
-
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo &,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processing_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        if (data.columns() == 0)
-            return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
-
-        Block block;
-        for (const auto & name : column_names)
-            block.insert(data.getColumnOrSubcolumnByName(name));
-
-        return Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(block))));
-    }
-
-private:
-    Block data;
-};
 
 /// Remembers the names of the functions of `node` as they are written in the projection query.
 void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName & result)
@@ -128,11 +45,37 @@ void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToNa
             collectUnresolvedNodeNames(child, result);
 }
 
+/// collects the stored name of each expression in node
+void collectStoredNodeNames(const QueryTreeNodePtr & node, const QueryTreeNodeToName & unresolved_node_names, QueryTreeNodeToName & result)
+{
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION)
+    {
+        /// a constant folded from an expression takes the name of that expression
+        const QueryTreeNodePtr * written_node = &node;
+        if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+            written_node = &constant_node->getSourceExpression();
+
+        if (auto it = unresolved_node_names.find(*written_node); it != unresolved_node_names.end())
+        {
+            result.emplace(node, it->second);
+        }
+        else
+        {
+            /// the analysis made this node: a column has no table prefix and a constant is a plain literal
+            ConvertToASTOptions ast_options;
+            ast_options.use_source_expression_for_constants = true;
+            ast_options.add_cast_for_constants = false;
+            ast_options.fully_qualified_identifiers = false;
+            result.emplace(node, node->toAST(ast_options)->getColumnName());
+        }
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectStoredNodeNames(child, unresolved_node_names, result);
 }
 
-StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals, Block data)
-{
-    return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals), std::move(data));
 }
 
 QueryTreeNodePtr buildProjectionQueryTree(
@@ -179,40 +122,25 @@ QueryTreeNodePtr buildProjectionQueryTree(
     return query_tree;
 }
 
-ProjectionPlanner::ProjectionPlanner(
-    const ASTPtr & query_ast,
-    const ColumnsDescription & source_columns,
-    VirtualColumnsDescription virtuals,
-    const ContextPtr & context_)
+ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context)
 {
-    auto mut_context = Context::createCopy(context_);
-    /// The projection query is analyzed as it is stored: the settings which rewrite the aggregate
-    /// functions and `IN` of a query would change the columns of the projection.
-    mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
-    mut_context->setSetting("transform_null_in", Field(0));
-    /// Building the metadata replaces the positional arguments of `query_ast`, so resolving them
-    /// again would re-interpret the integer literals they were replaced with.
-    mut_context->setSetting("enable_positional_arguments", false);
-    /// Analyze the projection query as an initial one, as its metadata is built, also when the data
-    /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
-    mut_context->setQueryKindInitial();
-    context = mut_context;
+    auto query_context = Context::createCopy(context);
+    /// the stored query is final, so the settings of the session must not rewrite it again
+    query_context->setSetting("enable_positional_arguments", false);
+    query_context->setSetting("rewrite_in_to_join", false);
 
-    auto source = createProjectionQuerySource(source_columns, std::move(virtuals));
+    auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
     QueryTreeNodeToName unresolved_node_names;
-    query_tree = buildProjectionQueryTree(query_ast, source, context, &unresolved_node_names);
-
-    auto select_query_options = SelectQueryOptions{}.ignoreASTOptimizations().ignoreSettingConstraints();
-    planner_context = std::make_shared<PlannerContext>(
-        mut_context, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}), select_query_options);
-    collectSets(query_tree, *planner_context);
-    collectTableExpressionData(query_tree, planner_context);
-    collectNodeNames(query_tree, unresolved_node_names);
-
+    query_tree = buildProjectionQueryTree(query_ast, source, query_context, &unresolved_node_names);
     auto & query_node = query_tree->as<QueryNode &>();
-    is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
-    if (!is_aggregate)
-        return;
+
+    /// the analysis resolved the tree with the context of the query node
+    planner_context = std::make_shared<PlannerContext>(
+        query_node.getMutableContext(),
+        std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}),
+        SelectQueryOptions{});
+    collectSets(query_tree, *planner_context);
+    collectStoredNodeNames(query_tree, unresolved_node_names, node_to_name);
 
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
@@ -226,61 +154,25 @@ ProjectionPlanner::ProjectionPlanner(
         collectAggregateFunctionNodes(query_tree), *planner_context, node_to_name, /*use_column_identifier_as_action_node_name=*/false);
 }
 
-void ProjectionPlanner::collectNodeNames(const QueryTreeNodePtr & node, const QueryTreeNodeToName & unresolved_node_names)
-{
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION)
-    {
-        /// A constant folded from an expression is named by that expression, as it is written.
-        const QueryTreeNodePtr * written_node = &node;
-        if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-            written_node = &constant_node->getSourceExpression();
-
-        if (auto it = unresolved_node_names.find(*written_node); it != unresolved_node_names.end())
-        {
-            node_to_name.emplace(node, it->second);
-        }
-        else
-        {
-            /// A node the analysis created: a column, which is not qualified with its table expression,
-            /// or a constant, which is written as a plain literal (`NULL`, never `_CAST(NULL, 'Nullable(Nothing)')`).
-            ConvertToASTOptions ast_options;
-            ast_options.use_source_expression_for_constants = true;
-            ast_options.add_cast_for_constants = false;
-            ast_options.fully_qualified_identifiers = false;
-            node_to_name.emplace(node, node->toAST(ast_options)->getColumnName());
-        }
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectNodeNames(child, unresolved_node_names);
-}
-
 ActionsDAG ProjectionPlanner::buildBeforeAggregationActions() const
 {
     ActionsDAG actions_dag;
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, /*use_column_identifier_as_action_node_name=*/false, node_to_name);
+    ColumnNodePtrWithHashSet no_correlated_columns;
+    PlannerActionsVisitor actions_visitor(planner_context, no_correlated_columns, /*use_column_identifier_as_action_node_name=*/false, node_to_name);
 
-    auto & outputs = actions_dag.getOutputs();
     NameSet output_names;
-    auto add_output = [&](const QueryTreeNodePtr & expression_node)
+    auto add_outputs = [&](const QueryTreeNodePtr & expressions)
     {
-        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(actions_dag, expression_node);
+        auto [nodes, correlated_subtrees] = actions_visitor.visit(actions_dag, expressions);
         correlated_subtrees.assertEmpty("in a projection");
-        for (const auto * dag_node : expression_dag_nodes)
-            if (output_names.emplace(dag_node->result_name).second)
-                outputs.push_back(dag_node);
+        for (const auto * node : nodes)
+            if (output_names.emplace(node->result_name).second)
+                actions_dag.getOutputs().push_back(node);
     };
 
-    const auto & query_node = query_tree->as<const QueryNode &>();
-    for (const auto & key_node : query_node.getGroupBy().getNodes())
-        add_output(key_node);
-
+    add_outputs(query_tree->as<QueryNode &>().getGroupByNode());
     for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
-        for (const auto & argument_node : aggregate_function_node->as<FunctionNode &>().getArguments().getNodes())
-            add_output(argument_node);
+        add_outputs(aggregate_function_node->as<FunctionNode &>().getArgumentsNode());
 
     return actions_dag;
 }

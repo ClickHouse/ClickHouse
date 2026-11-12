@@ -316,7 +316,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 {
     auto source_columns = metadata_snapshot->getColumns().getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns);
-    ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), /*virtuals=*/{}, context);
+    ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), context);
 
     AggregateProjectionInfo info;
     info.context = projection_planner.getContext();
