@@ -152,7 +152,7 @@ VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configur
     /// before it classifies positional and named arguments (see `S3SecretArguments` and the S3/Azure
     /// `Configuration` parsers). They may appear in any position, and their nested `key = value` arguments
     /// (e.g. `role_arn = ...`) must not resolve to a column or alias either, so skip their whole subtree.
-    auto is_wrapper_argument = [](const String & name) { return name == "headers" || name == "extra_credentials"; };
+    auto is_wrapper_argument = [](const String & wrapper_name) { return wrapper_name == "headers" || wrapper_name == "extra_credentials"; };
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
