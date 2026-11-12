@@ -85,32 +85,33 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
     return WhichDataType(subcolumn_with_type->second).idx;
 }
 
-Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
+Int64 getFormatVersionFromAvroMetadata(
+    const std::map<std::string, std::vector<uint8_t>> & metadata,
+    bool has_sequence_number_field,
+    const IcebergPathFromMetadata & file_path)
 {
-    auto format_version_value = tryGetAvroMetadataValue("format-version");
-    if (format_version_value.has_value())
+    if (auto it = metadata.find("format-version"); it != metadata.end())
     {
         try
         {
-            return std::stoi(format_version_value.value());
+            return std::stoi(std::string{it->second.begin(), it->second.end()});
         }
         catch (const std::exception & e)
         {
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
-                manifest_file_path,
+                file_path,
                 e.what());
         }
     }
 
-    /// Older ClickHouse versions wrote both manifest lists and manifest files without the
-    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
-    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
-    /// manifest entries, but is absent from their v1 counterparts.
-    if (hasPath(f_sequence_number))
-        return 2;
-    return 1;
+    return has_sequence_number_field ? 2 : 1;
+}
+
+Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
+{
+    return getFormatVersionFromAvroMetadata(metadata, hasPath(f_sequence_number), manifest_file_path);
 }
 
 

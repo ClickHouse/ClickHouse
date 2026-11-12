@@ -91,6 +91,15 @@ public:
     String getMetadataContent() const;
 };
 
+/// Returns the Iceberg format version of a manifest list or manifest file, from its Avro metadata.
+/// Reads the "format-version" key when it exists. Older ClickHouse versions did not write the key.
+/// For these files, `has_sequence_number_field` tells whether the top-level schema has `sequence_number`:
+/// this field is in v2 files and not in v1 files.
+Int64 getFormatVersionFromAvroMetadata(
+    const std::map<std::string, std::vector<uint8_t>> & metadata,
+    bool has_sequence_number_field,
+    const IcebergPathFromMetadata & file_path);
+
 }
 
 #endif
