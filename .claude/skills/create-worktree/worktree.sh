@@ -60,13 +60,30 @@ WT=""    # worktree
 WGD=""   # git dir of the worktree, `$GD/worktrees/<name>`
 CREATED=""  # what `create` added, for the message on failure
 PHASE=""    # of `create`: "parent" until the superproject checkout finished, then "submodules"
+STAGING=""  # staging directories that this run created, one per line; only these are ever deleted
+STAGE=""    # the last one, set by new_staging
+NL=$'\n'
 
 die() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
+
+# Creates a staging directory directly in git dir $1 and sets STAGE to it. The name `worktree-sh-staging.XXXXXX` is
+# outside `modules/` and outside the worktree files, so no submodule git data and no tracked file can have it, and
+# mktemp makes it unique. A complete result is moved from it into place with one rename.
+new_staging()
+{
+    STAGE=$(mktemp -d "$1/worktree-sh-staging.XXXXXX")
+    STAGING="$STAGING$STAGE$NL"
+}
 
 # On failure after `create` added the worktree, say what is left and how to continue. Nothing is removed automatically.
 on_exit()
 {
-    local rc=$?
+    local rc=$? d
+    # The staging directories of this run hold only copies, or nothing after the rename.
+    while IFS= read -r d
+    do
+        [ -z "$d" ] || rm -rf "$d"
+    done <<< "$STAGING"
     if [ "$rc" != 0 ] && [ -n "$CREATED" ]
     then
         printf 'The worktree %s exists (%s).\n' "$WT" "$CREATED" >&2
@@ -151,13 +168,13 @@ heavy_first()
 }
 
 # Copies submodule git data $1 to $2, which must not exist, and writes the marker of the first checkout into it. See
-# "Storage sharing" above. The copy is made in a temporary sibling directory and renamed to $2 only when it is complete:
-# an interrupted copy must not look like existing git data. A temporary directory left by an interrupted copy has no
-# local work, only a copy of the main git data, so it is replaced.
+# "Storage sharing" above. The copy is made in a staging directory and renamed to $2 only when it is complete: an
+# interrupted copy must not look like existing git data.
 copy_store()
 {
-    local stage=$2.worktree-sh-tmp
-    rm -rf "$stage"
+    local stage
+    new_staging "$WGD"
+    stage=$STAGE/git
     if [ "$OS" = Darwin ]
     then
         cp -Rc "$1" "$stage"
@@ -210,7 +227,7 @@ set_module_worktree()
 # that the git data of that worktree already has are skipped, for example a local commit in one of its submodules.
 refresh_main_stores()
 {
-    local wgd=${2:-} sha path name url store stage tmp up
+    local wgd=${2:-} sha path name url store up
     while IFS="$TAB" read -r sha path name url
     do
         if [ -n "$wgd" ] && [ -d "$wgd/modules/$name" ] &&
@@ -228,16 +245,13 @@ refresh_main_stores()
         then
             note "main git data: cloning new submodule $path"
             mkdir -p "$(dirname "$store")"
-            # As in copy_store: clone into a temporary sibling directory, rename it when the clone is complete.
-            stage=$store.worktree-sh-tmp
-            rm -rf "$stage"
-            tmp=$(mktemp -d "$GD/worktree-sh.XXXXXX")
-            git clone -q --no-checkout --separate-git-dir="$stage" -- "$url" "$tmp/files"
-            rm -rf "$tmp"
+            # As in copy_store: clone into a staging directory, rename the git data when the clone is complete.
+            new_staging "$GD"
+            git clone -q --no-checkout --separate-git-dir="$STAGE/git" -- "$url" "$STAGE/files"
             # The same relative path that `git submodule update --init` writes, so that the main checkout can init it.
             up=$(printf '%s' "modules/$name" | awk -F / '{ for (i = 0; i <= NF; ++i) printf "../" }')
-            git config --file "$stage/config" core.worktree "$up$path"
-            mv "$stage" "$store"
+            git config --file "$STAGE/git/config" core.worktree "$up$path"
+            mv "$STAGE/git" "$store"
         fi
         if ! git_store "$store" cat-file -e "$sha^{commit}" 2> /dev/null
         then
@@ -327,10 +341,11 @@ refresh_main_worktree()
 }
 
 # Runs for one submodule in parallel with the others.
-# Arguments: worktree, main checkout, OS, checkout workers, name of the marker file, submodule git data, commit, path.
+# Arguments: worktree, main checkout, OS, checkout workers, name of the marker file, git dir of the worktree, submodule
+# git data, commit, path.
 # shellcheck disable=SC2016 # Expanded by the inner shell.
 WORKER='
-    wt=$1 main=$2 os=$3 workers=$4 incomplete=$5 store=$6 sha=$7 path=$8
+    wt=$1 main=$2 os=$3 workers=$4 incomplete=$5 wgd=$6 store=$7 sha=$8 path=$9
     dst=$wt/$path
     marker=$store/$incomplete
     opts="-c advice.detachedHead=false -c checkout.workers=$workers -c checkout.thresholdForParallelism=100"
@@ -348,15 +363,19 @@ WORKER='
         then
             if [ "$os" = Darwin ] && [ -f "$main/$path/.git" ]
             then
-                # Clone the files of the main checkout into a temporary sibling directory, give it the .git file of
-                # this worktree, and move it into place only then: an interrupted clone must not leave the .git file
-                # of the main checkout at the destination. A leftover temporary directory has only clones: replace it.
-                stage=$dst.worktree-sh-tmp
-                rm -rf "$stage" || exit 1
-                cp -Rcp "$main/$path" "$stage" || { echo "FAILED: $path: clone of the main checkout files" >&2; exit 1; }
-                printf "gitdir: %s\n" "$store" > "$stage/.git" || exit 1
-                if [ -d "$dst" ]; then rmdir "$dst" || exit 1; fi
-                mv "$stage" "$dst" || exit 1
+                # Clone the files of the main checkout into a staging directory of this worker, give them the .git
+                # file of this worktree, and move them into place only then: an interrupted clone must not leave the
+                # .git file of the main checkout at the destination. Only this staging directory is ever deleted.
+                stage=$(mktemp -d "$wgd/worktree-sh-staging.XXXXXX") || exit 1
+                if cp -Rcp "$main/$path" "$stage/files" && printf "gitdir: %s\n" "$store" > "$stage/files/.git" &&
+                    { [ ! -d "$dst" ] || rmdir "$dst"; } && mv "$stage/files" "$dst"
+                then
+                    rmdir "$stage"
+                else
+                    rm -rf "$stage"
+                    echo "FAILED: $path: clone of the main checkout files" >&2
+                    exit 1
+                fi
             else
                 mkdir -p "$dst" || exit 1
             fi
@@ -398,14 +417,14 @@ materialize()
         do
             printf '%s\0%s\0%s\0' "$WGD/modules/$name" "$sha" "$path"
         done |
-        xargs -0 -n 3 -P "$jobs" sh -c "$WORKER" sh "$WT" "$MAIN" "$OS" "$workers" "$INCOMPLETE" ||
+        xargs -0 -n 3 -P "$jobs" sh -c "$WORKER" sh "$WT" "$MAIN" "$OS" "$workers" "$INCOMPLETE" "$WGD" ||
         die "some submodules were not set up (see the FAILED lines above)"
 }
 
 # Checks that every submodule of the gitlink list $1 is at its recorded commit, and reports modified submodules.
 verify()
 {
-    local sha path name url cur bad="" n=0 dirty
+    local sha path name url cur bad="" n=0 dirty d left
     while IFS="$TAB" read -r sha path name url
     do
         n=$((n + 1))
@@ -414,6 +433,20 @@ verify()
     done <<< "$1"
     [ -z "$bad" ] || die "not at the recorded commit, or the first checkout did not finish:$bad"
     note "submodules: all $n at the recorded commits"
+    left=""
+    for d in "$GD"/worktree-sh-staging.* "$WGD"/worktree-sh-staging.*
+    do
+        [ -e "$d" ] || continue
+        case "$NL$STAGING" in
+            *"$NL$d$NL"*) continue ;;
+        esac
+        left="$left $d"
+    done
+    if [ -n "$left" ]
+    then
+        note "staging directories of an interrupted earlier run (only copies; remove them when no other run of this" \
+            "script is active):$left"
+    fi
     dirty=$(git -C "$WT" status --porcelain --ignore-submodules=untracked |
         awk -v paths="$(cut -f2 <<< "$1" | tr '\n' ' ')" '
             BEGIN { n = split(paths, p, " "); for (i = 1; i <= n; ++i) is_sub[p[i]] = 1 }
