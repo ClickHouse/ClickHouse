@@ -13,3 +13,7 @@ single_b OPTIMIZE: OK
 victim after Part C:    ['from_ok','legit_b','original']
 ## Part D: destinationless buffer keeps rows from different users
 destinationless rows:   ['win_low','win_ok']
+## Part E: a Buffer -> Alias chain does not leak target column names
+real column denied:     OK
+absent column denied:   OK
+victim after Part E:    ['from_ok','legit_b','original']

@@ -72,5 +72,21 @@ run_low --query "INSERT INTO ${db}.windowed VALUES ('win_low')"
 run_ok  --query "INSERT INTO ${db}.windowed VALUES ('win_ok')"
 echo -n "destinationless rows:   "; ${CH} --query "SELECT groupArray(s) FROM (SELECT s FROM ${db}.windowed ORDER BY s)"
 
+echo "## Part E: a Buffer -> Alias chain does not leak target column names"
+# low may insert into the buffer and the alias but not the alias's target (victim). Whether low declares the
+# target's real column or an absent one, the oversized (direct) flush must deny it the same way, so the
+# difference cannot be used as an oracle for which columns the target has.
+${CH} --multiquery <<EOF
+CREATE TABLE ${db}.al ENGINE = Alias('${victim_db}', 'victim');
+CREATE TABLE ${db}.b_probe_real (s String) ENGINE = Buffer(${db}, al, 1, 1, 1, 1, 1, 1, 1);
+CREATE TABLE ${db}.b_probe_fake (absent_col String) ENGINE = Buffer(${db}, al, 1, 1, 1, 1, 1, 1, 1);
+GRANT INSERT ON ${db}.al TO ${low};
+GRANT INSERT ON ${db}.b_probe_real TO ${low};
+GRANT INSERT ON ${db}.b_probe_fake TO ${low};
+EOF
+echo -n "real column denied:     "; denied run_low --query "INSERT INTO ${db}.b_probe_real VALUES ('probe')"
+echo -n "absent column denied:   "; denied run_low --query "INSERT INTO ${db}.b_probe_fake VALUES ('probe')"
+echo -n "victim after Part E:    "; victim
+
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}" 2>/dev/null
 ${CH} --query "DROP DATABASE IF EXISTS ${victim_db}"
