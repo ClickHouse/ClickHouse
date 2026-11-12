@@ -7,6 +7,7 @@
 #include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -19,6 +20,7 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+class RuntimeFilterPruningPredicate;
 
 struct ObjectInfo
 {
@@ -40,6 +42,8 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
+    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
     virtual bool isArchive() const { return false; }
@@ -50,6 +54,17 @@ struct ObjectInfo
 
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+
+    virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
+
+    /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
+    /// It is only an estimate used to report the progress of a query, not to compute any result.
+    virtual std::optional<size_t> getNumRowsHint() const
+    {
+        if (data_lake_metadata)
+            return data_lake_metadata->num_rows;
+        return std::nullopt;
+    }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
@@ -89,6 +104,10 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    /// The predicate of the JOIN runtime filters every row of the read passes, set before the first `next`.
+    /// An iterator may skip the objects that cannot contain any of their keys once it is built.
+    virtual void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> /*predicate*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -115,6 +134,11 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
+    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override
+    {
+        iterator->setJoinRuntimeFilters(std::move(predicate));
+    }
+
 private:
     const ObjectIterator iterator;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -130,7 +154,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        const String & format_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -142,7 +166,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    String format;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;

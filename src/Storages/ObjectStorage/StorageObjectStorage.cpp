@@ -19,6 +19,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Interpreters/SetSerialization.h>
+#include <IO/ReadBufferFromString.h>
+#include <Common/Base64.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -62,6 +66,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
+    extern const SettingsString cluster_table_function_pushed_down_filter;
     extern const SettingsBool throw_on_hive_partitioning_resolution_failure;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
@@ -454,6 +459,9 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
+    /// The files of a data lake snapshot can have other formats than the one new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context);
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
@@ -702,6 +710,9 @@ std::optional<UInt64> StorageObjectStorage::totalRowsInSnapshot(const StorageSna
     if (distributed_processing)
         return std::nullopt;
 
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     std::optional<DataLakeTableStateSnapshot> state;
     if (storage_snapshot && storage_snapshot->metadata)
         state = storage_snapshot->metadata->datalake_table_state;
@@ -720,6 +731,9 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         return std::nullopt;
 
     if (distributed_processing)
+        return std::nullopt;
+
+    if (query_context->totalsWithoutStorageAccess())
         return std::nullopt;
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
@@ -977,6 +991,50 @@ void StorageObjectStorage::read(
         num_streams);
 
     query_plan.addStep(std::move(read_step));
+
+    if (distributed_processing)
+        addFilterPushedDownByInitiator(query_plan, local_context);
+}
+
+void StorageObjectStorage::addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context)
+{
+    const String & serialized = local_context->getSettingsRef()[Setting::cluster_table_function_pushed_down_filter].value;
+    if (serialized.empty())
+        return;
+
+    const String decoded = base64Decode(serialized);
+    ReadBufferFromString in(decoded);
+    DeserializedSetsRegistry registry;
+    auto filter = ActionsDAG::deserialize(in, registry, local_context);
+    QueryPlan::deserializeAndMakeSets(registry, in, local_context);
+
+    const auto header = query_plan.getCurrentHeader();
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto * input : filter.getInputs())
+    {
+        const auto * column = header->findByName(input->result_name);
+        if (!column || !column->type->equals(*input->result_type))
+            return;
+        inputs.emplace(input->result_name, input);
+    }
+
+    const auto * filter_node = filter.getOutputs().at(0);
+    const String filter_column_name = filter_node->result_name;
+    const bool filter_is_read_column = filter_node->type == ActionsDAG::ActionType::INPUT;
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_node};
+    for (const auto & column : header->getColumnsWithTypeAndName())
+    {
+        auto it = inputs.find(column.name);
+        const auto * node = it != inputs.end() ? it->second : &filter.addInput(column.name, column.type);
+        if (node != filter_node)
+            outputs.push_back(node);
+    }
+    filter.getOutputs() = std::move(outputs);
+
+    auto filter_step = std::make_unique<FilterStep>(header, std::move(filter), filter_column_name, !filter_is_read_column);
+    filter_step->setStepDescription("Filter pushed down by the initiator");
+    query_plan.addStep(std::move(filter_step));
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
@@ -1035,21 +1093,26 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
-    auto paths = configuration->getPaths();
+    const auto paths = configuration->getPaths();
+    /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
+    auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
     {
-        paths.push_back({*new_key});
+        configuration->addPath({*new_key});
+        write_path = *new_key;
     }
-    configuration->setPaths(paths);
 
+    /// Another writer can take the same name between the probe above and the end of the upload.
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+        write_path,
         object_storage,
         format_settings,
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        /* format_filter_info */ nullptr,
+        /* fail_if_exists */ settings.create_new_file_on_insert && !settings.truncate_on_insert);
 }
 
 bool StorageObjectStorage::optimize(
@@ -1422,7 +1485,7 @@ Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 

@@ -1,0 +1,18 @@
+-- only partition columns
+1	a
+1	a
+2	b
+-- count() without the trivial count optimization
+3
+-- only virtual columns
+part-00000-a.parquet	2
+part-00000-b.parquet	1
+-- s3: only partition columns
+1	a
+1	a
+2	b
+-- s3: count() without the trivial count optimization
+3
+-- s3: only virtual columns
+part-00000-a.parquet	2
+part-00000-b.parquet	1
