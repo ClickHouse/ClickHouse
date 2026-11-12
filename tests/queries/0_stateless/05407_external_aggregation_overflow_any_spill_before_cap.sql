@@ -1,4 +1,4 @@
-SET max_threads = 1, max_block_size = 2, enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 SET max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
 SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 0;
 SET max_bytes_ratio_before_external_group_by = 0, max_untracked_memory = 0;
@@ -12,7 +12,7 @@ SELECT multiIf(number < 2, toUInt64(0),
        count(), sum(number)
 FROM numbers(6)
 GROUP BY k ORDER BY k
-SETTINGS max_bytes_before_external_group_by = 0;
+SETTINGS max_threads = 1, max_block_size = 2, max_bytes_before_external_group_by = 0;
 
 -- The first block is spilled before the limit is reached, so its key is no longer
 -- in the table: dropping the rows of the third block would undercount a key that
@@ -23,7 +23,7 @@ SELECT multiIf(number < 2, toUInt64(0),
        count(), sum(number)
 FROM numbers(6)
 GROUP BY k ORDER BY k
-SETTINGS max_bytes_before_external_group_by = 1,
+SETTINGS max_threads = 1, max_block_size = 2, max_bytes_before_external_group_by = 1,
          log_comment = '05407_external_aggregation_overflow_any_spill_before_cap';
 
 SYSTEM FLUSH LOGS query_log;
