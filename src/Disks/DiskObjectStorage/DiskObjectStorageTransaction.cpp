@@ -756,13 +756,31 @@ void DiskObjectStorageTransaction::undo() noexcept
 
     for (const auto & [location, blobs] : written_blobs)
     {
+        /// A decorator such as `CachedObjectStorage` removes only its own state for the blobs (the cache entries),
+        /// so remove them through every layer down to the base object storage, which deletes them.
+        /// Each layer is tried separately, so that a failure in a decorator does not leave the blobs in the base storage.
+        ObjectStoragePtr object_storage;
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            object_storage = object_storages->takePointingTo(location);
         }
         catch (...)
         {
             tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), fmt::format("An error occurred during transaction cleanup from location '{}'", location));
+        }
+
+        for (; object_storage; object_storage = object_storage->getUnderlying())
+        {
+            try
+            {
+                object_storage->removeObjectsIfExist(blobs);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("DiskObjectStorageTransaction"),
+                    fmt::format("An error occurred during transaction cleanup from location '{}' in `{}`", location, object_storage->getName()));
+            }
         }
     }
 
