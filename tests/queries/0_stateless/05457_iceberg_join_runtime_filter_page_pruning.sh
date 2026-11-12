@@ -38,7 +38,7 @@ echo '--- layout: data files, row groups; pages skipped by a filter of the query
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(num_row_groups) FROM file('${ROOT}/fact/data/*.parquet', ParquetMetadata);
     SELECT count() FROM fact WHERE k IN (705, 1510)
-    SETTINGS use_query_condition_cache = 0, use_iceberg_metadata_files_cache = 0, log_comment = '${CLICKHOUSE_DATABASE}_layout';
+    SETTINGS use_query_condition_cache = 0, use_iceberg_metadata_files_cache = 0, enable_parallel_replicas = 0, log_comment = '${CLICKHOUSE_DATABASE}_layout';
     SYSTEM FLUSH LOGS query_log;
     SELECT ProfileEvents['ParquetPrunedPages'] FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_layout'
