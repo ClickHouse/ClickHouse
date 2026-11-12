@@ -10,3 +10,8 @@ SELECT formatQuery('SELECT ' || repeat('CASE(', 30)); -- { serverError SYNTAX_ER
 SELECT defaultValueOfTypeName('SimpleAggregateFunction(any(' || repeat('CASE(', 30)); -- { serverError SYNTAX_ERROR }
 
 SELECT formatQuerySingleLine('SELECT case(CASE WHEN 1 THEN 2 END), CASE (case(1)) WHEN 1 THEN 2 END, interval(INTERVAL 1 DAY), INTERVAL (interval(1)) DAY, INTERVAL 1 DAY + interval');
+
+-- The same readings in separate parser calls: a type after `::` in the argument of `SimpleAggregateFunction`, and scalar subqueries.
+SELECT defaultValueOfTypeName(repeat('SimpleAggregateFunction(f(CASE(1::', 10) || 'UInt8'); -- { serverError SYNTAX_ERROR }
+SELECT length(formatQuery('SELECT ' || repeat('case + (SELECT ', 10) || '1' || repeat(')', 10))) > 0 SETTINGS max_parser_backtracks = 1600;
+SELECT length(formatQuery('SELECT ' || repeat('interval + (SELECT ', 10) || '1' || repeat(')', 10))) > 0 SETTINGS max_parser_backtracks = 1600;
