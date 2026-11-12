@@ -50,6 +50,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/ComparisonNames.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
@@ -1331,9 +1332,11 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     const ContextPtr & context)
 {
     if (compare_nulls)
-        return buildResolvedFunction(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom", {left_argument, right_argument}, context);
+        return buildResolvedFunction(
+            is_not_in ? "__exactNumericIsDistinctFrom" : "__exactNumericIsNotDistinctFrom",
+            {left_argument, right_argument}, context);
 
-    QueryTreeNodePtr result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    QueryTreeNodePtr result = buildResolvedFunction(NameExactNumericEquals::name, {left_argument, right_argument}, context);
     const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
     const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
     if (left_nullable || right_nullable)

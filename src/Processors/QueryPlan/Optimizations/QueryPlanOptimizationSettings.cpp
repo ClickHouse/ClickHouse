@@ -59,7 +59,6 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
     extern const SettingsBool optimize_use_projections;
-    extern const SettingsBool allow_lossy_numeric_supertype;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
@@ -349,10 +348,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
-    /// Stored projections are calculated with the default comparison semantics. Until projection
-    /// matching records the comparison setting, a query with exact numeric equality must read
-    /// the base table to avoid reusing an approximate predicate or grouping expression.
-    optimize_projection = from[Setting::optimize_use_projections] && !from[Setting::allow_lossy_numeric_supertype];
+    optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
     use_query_condition_cache_for_time_conditions = from[Setting::use_query_condition_cache_for_time_conditions];

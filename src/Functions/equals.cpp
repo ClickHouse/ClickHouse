@@ -8,6 +8,7 @@ namespace DB
 {
 
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+using FunctionExactNumericEquals = FunctionComparison<EqualsOp, NameExactNumericEquals>;
 
 /// Used through `FunctionIsNotDistinctFrom` in `executeArrayLexicographic`; instantiated in isNotDistinctFrom.cpp.
 extern template class FunctionComparison<EqualsOp, NameEquals, true>;
@@ -36,6 +37,31 @@ REGISTER_FUNCTION(Equals)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionEquals>(documentation);
+    factory.registerFunction<FunctionExactNumericEquals>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+}
+
+template <>
+ColumnPtr FunctionExactNumericEquals::executeTupleImpl(
+    const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr comparison
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionExactNumericEquals>(params));
+    FunctionOverloadResolverPtr conjunction
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+    return executeTupleEqualityImpl(comparison, conjunction, x, y, tuple_size, input_rows_count);
+}
+
+template <>
+ColumnPtr FunctionExactNumericEquals::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr comparison
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
+
+    return executeArrayLexicographicEqualityImpl(comparison, column_type_name0, column_type_name1, input_rows_count);
 }
 
 template <>
@@ -78,5 +104,6 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeArrayLexicographic(
 /// complete-object constructor (`C1`) by name and fail to link. This must come after the explicit member
 /// specializations above.
 template class FunctionComparison<EqualsOp, NameEquals>;
+template class FunctionComparison<EqualsOp, NameExactNumericEquals>;
 
 }

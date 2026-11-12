@@ -1137,7 +1137,7 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
-    /// Compare `Decimal` with numeric operands exactly when lossy numeric supertypes are enabled.
+    /// Used by the internal comparison functions generated for numeric `IN`.
     bool exact_decimal_numeric_equality = false;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
@@ -1159,7 +1159,13 @@ class FunctionComparison final : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        ComparisonParams params = context ? ComparisonParams(context) : ComparisonParams();
+        if constexpr (std::is_same_v<Name, NameExactNumericEquals>)
+            params.exact_decimal_numeric_equality = true;
+        return std::make_shared<FunctionComparison>(std::move(params));
+    }
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -2121,7 +2127,7 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameNotEquals::name))
+        if ((name == NameEquals::name || name == NameNotEquals::name || name == NameExactNumericEquals::name))
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
@@ -2182,7 +2188,8 @@ public:
 
                     /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
                     /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
-                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name
+                        || name == NameExactNumericEquals::name);
                     const bool element_result_ok
                         = WhichDataType(element_result_type.get()).isUInt8()
                         || (is_equality && element_result_type->isNullable()
@@ -2409,9 +2416,10 @@ public:
                     getName(),
                     left_type->getName(),
                     right_type->getName());
-            /// With lossy numeric supertypes enabled, compare `Decimal` to numeric operands
-            /// without narrowing integers or rounding integral floats through `Float64`.
-            if constexpr (std::is_same_v<Name, NameEquals> || std::is_same_v<Name, NameNotEquals>)
+            /// Generated numeric `IN` comparisons avoid narrowing integers or rounding integral
+            /// floats through `Float64` when comparing them with `Decimal`.
+            if constexpr (std::is_same_v<Name, NameEquals> || std::is_same_v<Name, NameNotEquals>
+                || std::is_same_v<Name, NameExactNumericEquals>)
             {
                 if (params.exact_decimal_numeric_equality)
                 {

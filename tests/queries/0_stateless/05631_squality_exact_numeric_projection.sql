@@ -1,67 +1,40 @@
-DROP TABLE IF EXISTS squality_exact_numeric_projection;
-CREATE TABLE squality_exact_numeric_projection
+SET allow_lossy_numeric_supertype = 1;
+SET use_variant_as_common_type = 0;
+
+DROP TABLE IF EXISTS squality_numeric_projection_type;
+CREATE TABLE squality_numeric_projection_type
 (
-    d Decimal(18, 0),
+    n UInt8,
+    d Decimal(18, 2),
     x Float64,
-    PROJECTION p (SELECT count() WHERE d = x)
+    PROJECTION p (SELECT sum(if(n = 0, d, x)))
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO squality_exact_numeric_projection SETTINGS allow_lossy_numeric_supertype = 1
-VALUES ('9007199254740993', 9007199254740992.);
+SELECT count() FROM system.projections
+WHERE database = currentDatabase() AND table = 'squality_numeric_projection_type' AND name = 'p';
+DETACH TABLE squality_numeric_projection_type;
+ATTACH TABLE squality_numeric_projection_type;
+SELECT count() FROM system.projections
+WHERE database = currentDatabase() AND table = 'squality_numeric_projection_type' AND name = 'p';
 
-SELECT count() FROM squality_exact_numeric_projection WHERE d = x
-SETTINGS allow_lossy_numeric_supertype = 0, optimize_use_projections = 0, optimize_trivial_count_query = 0;
-SELECT count() FROM squality_exact_numeric_projection WHERE d = x
-SETTINGS allow_lossy_numeric_supertype = 0, optimize_use_projections = 1,
-    force_optimize_projection = 1, optimize_trivial_count_query = 0;
-SELECT count() FROM squality_exact_numeric_projection WHERE d = x
-SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 0, optimize_trivial_count_query = 0;
-SELECT count() FROM squality_exact_numeric_projection WHERE d = x
-SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 1, optimize_trivial_count_query = 0;
+DROP TABLE squality_numeric_projection_type;
 
-DROP TABLE squality_exact_numeric_projection;
-
-DROP TABLE IF EXISTS squality_exact_numeric_group_projection;
-CREATE TABLE squality_exact_numeric_group_projection
+DROP TABLE IF EXISTS squality_numeric_expression_index;
+CREATE TABLE squality_numeric_expression_index
 (
     d Decimal(18, 0),
     x Float64,
-    PROJECTION p (SELECT d = x AS m, count() GROUP BY m)
+    INDEX i (d = x) TYPE set(0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO squality_exact_numeric_group_projection
+INSERT INTO squality_numeric_expression_index
 VALUES ('9007199254740993', 9007199254740992.);
 
-SELECT d = x AS m, count() FROM squality_exact_numeric_group_projection GROUP BY m
-SETTINGS allow_lossy_numeric_supertype = 0, optimize_use_projections = 1,
-    force_optimize_projection = 1;
-SELECT d = x AS m, count() FROM squality_exact_numeric_group_projection GROUP BY m
-SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 0;
-SELECT d = x AS m, count() FROM squality_exact_numeric_group_projection GROUP BY m
-SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 1;
+SELECT count() FROM squality_numeric_expression_index WHERE (d = x) = 0
+SETTINGS use_skip_indexes = 0;
+SELECT count() FROM squality_numeric_expression_index WHERE (d = x) = 0
+SETTINGS use_skip_indexes = 1;
 
-DROP TABLE squality_exact_numeric_group_projection;
-
-DROP TABLE IF EXISTS squality_exact_numeric_null_safe_projection;
-CREATE TABLE squality_exact_numeric_null_safe_projection
-(
-    d Decimal(18, 0),
-    x Float64,
-    PROJECTION p (SELECT count() WHERE isNotDistinctFrom(d, x))
-)
-ENGINE = MergeTree ORDER BY tuple();
-
-INSERT INTO squality_exact_numeric_null_safe_projection
-VALUES ('9007199254740993', 9007199254740992.);
-
-SELECT count() FROM squality_exact_numeric_null_safe_projection WHERE isNotDistinctFrom(d, x)
-SETTINGS allow_lossy_numeric_supertype = 0, optimize_use_projections = 1,
-    force_optimize_projection = 1, optimize_trivial_count_query = 0;
-SELECT count() FROM squality_exact_numeric_null_safe_projection WHERE isNotDistinctFrom(d, x)
-SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 0, optimize_trivial_count_query = 0;
-SELECT count() FROM squality_exact_numeric_null_safe_projection WHERE isNotDistinctFrom(d, x)
-SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 1, optimize_trivial_count_query = 0;
-
-DROP TABLE squality_exact_numeric_null_safe_projection;
+DROP TABLE squality_numeric_expression_index;

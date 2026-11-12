@@ -30,7 +30,8 @@ template <
     typename Name,                                              // Function Name
     NullSafeCmpMode cmp_mode,                                   // Null-safe mode (Equal or NotEqual)
     template <typename, typename > class CompareOp,             // EqualsOp / NotEqualsOp
-    typename CompareName>                                       // NameEquals / NameNotEquals
+    typename CompareName,                                       // NameEquals / NameNotEquals
+    bool exact_numeric = false>
 class FunctionsNullSafeCmp final : public IFunction
 {
 private:
@@ -61,7 +62,9 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionsNullSafeCmp>(context ? ComparisonParams(context) : ComparisonParams());
+        ComparisonParams params = context ? ComparisonParams(context) : ComparisonParams();
+        params.exact_decimal_numeric_equality = exact_numeric;
+        return std::make_shared<FunctionsNullSafeCmp>(std::move(params));
     }
 
     String getName() const override { return name; }

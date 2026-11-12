@@ -193,7 +193,7 @@ FROM numbers(1000000)
 WHERE toDecimal64(number, 0) IN (materialize(toFloat64(number)))
 SETTINGS allow_lossy_numeric_supertype = 1;
 
--- Exact membership and ordinary equality use the same comparison setting in either order.
+-- Generated membership keeps its exact comparison separate from ordinary equality.
 SELECT d = materialize(x), d IN (materialize(x)), d NOT IN (materialize(x))
 FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
 SETTINGS allow_lossy_numeric_supertype = 1;
