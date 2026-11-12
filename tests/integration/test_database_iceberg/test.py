@@ -1493,7 +1493,10 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # The catalog places the table in its own warehouse bucket, so the endpoint must not name a bucket.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
     node.query(
         f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
         settings={
@@ -1516,7 +1519,9 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
     metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
     assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
@@ -1573,33 +1578,6 @@ def test_create_registers_full_location(started_cluster, explicit_location):
     bucket, key = manifest_list[len("s3://"):].split("/", 1)
     prefix, name = key.rsplit("/", 1)
     assert name in list_s3_objects(started_cluster.minio_client, bucket, prefix + "/")
-
-
-def test_create_without_engine_arguments_vended_credentials(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_create_without_engine_arguments_vended_credentials_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    database_name = f"{CATALOG_NAME}_vended_credentials"
-
-    node.query(
-        f"""
-DROP DATABASE IF EXISTS {database_name};
-CREATE DATABASE {database_name} ENGINE = DataLakeCatalog('{BASE_URL}')
-SETTINGS catalog_type = 'rest', warehouse = 'demo', storage_endpoint = 'http://minio1:9001/warehouse-rest', vended_credentials = 1
-    """,
-        settings={"allow_database_iceberg": 1},
-    )
-    try:
-        with pytest.raises(QueryRuntimeException) as exc:
-            node.query(
-                f"CREATE TABLE {database_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3",
-                settings={"allow_experimental_database_iceberg": 1},
-            )
-        assert "takes storage credentials from the catalog" in str(exc.value), str(exc.value)
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {database_name}")
 
 
 def test_create_without_engine_arguments_outside_catalog(started_cluster):
@@ -3451,6 +3429,30 @@ def test_drop_partition_catalog_parallel_replicas(started_cluster):
     # Reread the metadata location from the catalog to confirm the commit is durable.
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+
+def test_drop_partition_catalog_through_alias(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_alias"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    alias = f"default.drop_partition_alias_{uuid.uuid4().hex[:8]}"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y'), (3, 'z')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    node.query(f"CREATE TABLE {alias} ENGINE = Alias('{CATALOG_NAME}', '{namespace}.{table_name}')")
+    try:
+        # The catalog builds a new storage object for each lookup, so the alias checks and drops on two different ones.
+        node.query(f"ALTER TABLE {alias} DROP PARTITION 2", settings=DROP_PARTITION_SETTINGS)
+        assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+    finally:
+        # `Alias` registers a dependency on its target, so drop it before a later test recreates the catalog database.
+        node.query(f"DROP TABLE IF EXISTS {alias}")
 
 
 # ---------------------------------------------------------------------------

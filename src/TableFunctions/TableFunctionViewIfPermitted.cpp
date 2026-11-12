@@ -50,6 +50,7 @@ public:
         else_table_function->checkSourceAccess(context, /*is_insert_query=*/ false);
         else_table_function->checkEngineAccess(context);
         else_table_function->checkSourceObjectAccess(context, /*for_structure=*/ true);
+        else_table_function->checkCreateTemporaryTableAccess(context, /*is_insert_query=*/ false);
     }
 
     /// The branch this function chooses depends on the current user, and a persisted table has no

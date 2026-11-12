@@ -5,6 +5,7 @@
 #include <Core/SettingsObsoleteMacros.h>
 #include <Core/SettingsFields.h>
 #include <Core/Defines.h>
+#include <Formats/FormatSettings.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)
@@ -1705,6 +1706,11 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0, \
         {"26.2", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."}) \
+    DECLARE(Bool, output_format_arrow_uuid_as_fixed_byte_array, false, R"(
+Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
+Use it for Arrow readers that do not support the `arrow.uuid` extension type.
+)", 0, \
+        {"26.11", false, false, "New setting to write UUID as plain FixedSizeBinary(16) without the `arrow.uuid` extension type."}) \
     DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
@@ -1761,6 +1767,10 @@ Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record
 Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
 )", 0, \
         {"26.11", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."}) \
+    DECLARE(Bool, output_format_vortex_string_as_string, true, R"(
+Write `String` columns of the `Vortex` format as `Utf8` instead of `Binary`. Vortex compresses `Utf8` better. A `Utf8` value has to be valid UTF-8 and the Vortex writer does not check that, so ClickHouse checks every value and throws an exception if one is not valid UTF-8; disable the setting to write such data as `Binary`. `FixedString` columns are always written as `Binary`. Both types are read back as `String`.
+)", 0, \
+        {"26.11", true, true, "New setting to write `String` columns of the `Vortex` format as `Utf8`, which Vortex compresses better than `Binary`."}) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1999,7 +2009,7 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly. Columns with a native (GeoArrow) encoding of GeoParquet 1.1 are then read as the underlying nested `Array` and `Tuple` types.
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
     DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(

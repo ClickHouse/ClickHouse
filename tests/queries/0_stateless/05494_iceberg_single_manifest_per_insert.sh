@@ -36,9 +36,16 @@ count_manifests()
     find "$1metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | wc -l | tr -d ' '
 }
 
+# The current snapshot's manifest list: commits racing within one INSERT can leave manifest lists with the same mtime.
 latest_manifest_list()
 {
-    find "$1metadata" -maxdepth 1 -name 'snap-*.avro' -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-
+    local metadata
+    metadata=$(find "$1metadata" -maxdepth 1 -name 'v*.metadata.json' -type f | sort -V | tail -1)
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT '$1metadata/' || splitByChar('/', JSONExtractString(snapshot, 'manifest-list'))[-1]
+        FROM file('${metadata}', JSONAsString, 'json String')
+        ARRAY JOIN JSONExtractArrayRaw(json, 'snapshots') AS snapshot
+        WHERE JSONExtractInt(snapshot, 'snapshot-id') = JSONExtractInt(json, 'current-snapshot-id')"
 }
 
 # One line per manifest-list entry: counts and the decoded Int64 partition bounds.

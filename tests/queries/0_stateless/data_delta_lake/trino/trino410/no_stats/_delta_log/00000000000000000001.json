@@ -1,0 +1,2 @@
+{"commitInfo":{"version":1,"timestamp":1679908475552,"userId":"user","userName":"user","operation":"WRITE","operationParameters":{"queryId":"20230327_091416_00002_uve6g"},"clusterId":"trino-testversion-1a06e982-46d8-4376-a944-64994496bd1c","readVersion":0,"isolationLevel":"WriteSerializable","isBlindAppend":true}}
+{"add":{"path":"20230327_091416_00002_uve6g-b5644025-1cec-4ea5-b7f0-34ee34621ad4","partitionValues":{},"size":336,"modificationTime":1679908475175,"dataChange":true,"tags":{}}}

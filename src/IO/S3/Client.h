@@ -304,6 +304,12 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
+    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
+    /// `x-goog-if-generation-match` (GCS rejects the mix). So an HMAC create-if-absent is
+    /// signed with GOOG4 instead, with generation 0, which succeeds only when the object does not exist.
+    bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
+    Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
+
     /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
     /// One HeadObject. Logs a failed proof, at warning level if asked.
     bool isObjectWrittenWithIdempotencyId(

@@ -3943,7 +3943,7 @@ private:
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings(),
+            getWriteSettingsForMergeOrMutation(ctx->context->getWriteSettings(), ctx->data->supportsReplication()),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
             /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
             ctx->stream_base_manifest);
@@ -4444,24 +4444,26 @@ private:
             ctx->out.reset();
         }
 
+        /// `files_to_rename` may be a permutation (a chained rename collapses to the swap
+        /// {a -> b, b -> a}), so a destination may also be a later source. Erase, then assign from an
+        /// immutable snapshot: one pass would overwrite a destination before reading it.
+        const auto & source_files = ctx->source_part->checksums.files;
+        auto & files = ctx->new_data_part->checksums.files;
+
+        /// A file the writer just produced must survive, even when flagged for removal.
+        for (const auto & [rename_from, _] : ctx->files_to_rename)
+            if (!written_files.contains(rename_from))
+                files.erase(rename_from);
+
+        /// `files` is not a valid source of values: `MergedColumnOnlyOutputStream::fillChecksums`
+        /// erases entries from it.
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            /// A stream the writer rewrote for the new column type must survive: stale-file
-            /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
-            /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
-            /// column that became Dynamic/JSON in this mutation).
-            if (written_files.contains(rename_from))
+            if (rename_to.empty() || written_files.contains(rename_to))
                 continue;
 
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
+            if (auto source_it = source_files.find(rename_from); source_it != source_files.end())
+                files[rename_to] = source_it->second;
         }
 
         {
@@ -4701,6 +4703,8 @@ bool MutateTask::execute()
 
 void MutateTask::cancel() noexcept
 {
+    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+
     if (task)
         task->cancel();
 
@@ -4999,8 +5003,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
 
+        /// An unsupported archive cannot be updated, so it would keep granules of the old data.
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
-            || (source_has_archive && writer_can_open_archive);
+            || (source_has_archive && writer_can_open_archive)
+            || source_disk_storage->hasUnsupportedSkipIndicesPackedArchive();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
@@ -5191,7 +5197,8 @@ bool MutateTask::prepare()
         ctx->metadata_snapshot,
         *commands_for_execution,
         context_for_reading,
-        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
+        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); },
+        [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); }
     );
 
     ctx->changes_storage_type = ctx->source_part->getDataPartStorage().getType() != ctx->future_part->part_format.storage_type;

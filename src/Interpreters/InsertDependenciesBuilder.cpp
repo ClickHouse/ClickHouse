@@ -1,7 +1,7 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
-#include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ForkProcessor.h>
@@ -150,16 +150,6 @@ namespace ErrorCodes
 
 namespace
 {
-/// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
-/// squashing does not accumulate more data than the host can hold. Shared between direct
-/// INSERT and materialized-view pipelines so the cap is applied symmetrically.
-size_t capMinBlockSizeBytesForMemoryLimit(size_t value)
-{
-    if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
-        return std::min<size_t>(value, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
-    return value;
-}
-
 /// True when `target` is an Enum that contains `source` with the same in-memory width, i.e. `source`
 /// is a narrower Enum whose members are a subset of `target`. This mirrors the compatibility that
 /// StorageInMemoryMetadata::check allows but that is not type equality.
@@ -730,7 +720,7 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]),
+            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1236,7 +1226,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]) : 0ULL,
+                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings) : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));
@@ -1524,9 +1514,20 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         }
     }
 
-    storages[current] = storage;
-    metadata_snapshots[current] = metadata;
-    storage_locks[current] = std::move(lock);
+    /// A node is observed once per path, so keep the first observation: everything derived below, in
+    /// particular `output_headers`, is paired with this storage and snapshot when the sink is built.
+    auto [snapshot_it, snapshot_inserted] = metadata_snapshots.try_emplace(current, metadata);
+    if (snapshot_inserted)
+    {
+        storages[current] = storage;
+        storage_locks[current] = std::move(lock);
+    }
+    else
+    {
+        metadata = snapshot_it->second;
+        /// Re-derive from the pinned handle, so the branch below describes the object it came from.
+        materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
+    }
 
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {

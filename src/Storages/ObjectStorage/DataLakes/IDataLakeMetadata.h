@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <IO/Progress.h>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
@@ -269,6 +270,13 @@ protected:
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_,
         UInt64 snapshot_version_) const;
+
+    /// `schema_transforms_` is empty or has the `DataLakeObjectMetadata::schema_transform` of each data file, nullptr for none.
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        std::vector<std::shared_ptr<ActionsDAG>> && schema_transforms_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
