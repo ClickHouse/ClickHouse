@@ -9,11 +9,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
-#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
+struct FormatSettings;
 class Block;
 class Chunk;
 class NamesAndTypesList;
@@ -57,7 +57,7 @@ bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// The same, but a set built from a subquery keeps its explicit elements when
 /// `use_index_for_in_with_subqueries` allows it (the way `buildOrderedSetsForDAG` builds it), so a
-/// condition on the set can still be read back afterwards - `extractConstantStringValuesForColumn`
+/// condition on the set can still be read back afterwards - `extractConstantValuesForColumn`
 /// finds nothing in a set built without them. When the setting forbids that, the sets are built
 /// the plain way and stay ready for the filter to run.
 void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context);
@@ -122,9 +122,11 @@ NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::optional<FormatSettings> & format_settings,
     std::optional<PartitionStrategyFactory::StrategyType> partition_strategy = std::nullopt,
     const std::string & path = "");
+/// The overloads without format settings exist so that this header does not need the definition of FormatSettings.
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, ContextPtr context);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const ActionsDAG::Node * predicate,
@@ -132,7 +134,7 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const ContextPtr & context,
     const NamesAndTypesList & hive_columns = {});
 
-/// If `predicate` pins the String column read through `column_node` down to a finite set of
+/// If `predicate` pins the `T` column read through `column_node` down to a finite set of
 /// constant values, return that set. This covers `col = 'x'`, `col IN ('x', 'y')`, `IN` over a
 /// prepared set, and conjunctions and disjunctions of those; it gives up (returns `nullopt`)
 /// when the column is left open-ended - no predicate on it, a range comparison, a `LIKE`, a
@@ -143,11 +145,13 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 /// good for pruning an enumeration - looking the candidates up directly instead of walking
 /// everything - and the caller must still apply the real filter to what it enumerated. An
 /// empty set means the predicate cannot be satisfied at all.
-std::optional<Strings> extractConstantStringValues(
+template <typename T>
+std::optional<std::vector<T>> extractConstantValues(
     const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
 
 /// Same, for the column read through the `predicate`'s input named `column_name`.
-std::optional<Strings> extractConstantStringValuesForColumn(
+template <typename T>
+std::optional<std::vector<T>> extractConstantValuesForColumn(
     const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
 
 /// Extracts constant values expected for `_path` input from the query filter DAG.
@@ -162,21 +166,18 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::optional<FormatSettings> & format_settings,
     const std::vector<String> * file_names = nullptr);
-
-template <typename T>
-void filterByPathOrFile(
-    std::vector<T> & sources,
+ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt,
-    const std::vector<String> * file_names = nullptr)
+    const ContextPtr & context);
+
+template <typename T>
+void filterSourcesByIndexes(std::vector<T> & sources, const ColumnPtr & indexes_column)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -186,6 +187,18 @@ void filterByPathOrFile(
     for (auto index : indexes)
         filtered_sources.emplace_back(std::move(sources[index]));
     sources = std::move(filtered_sources);
+}
+
+template <typename T>
+void filterByPathOrFile(
+    std::vector<T> & sources,
+    const std::vector<String> & paths,
+    const ExpressionActionsPtr & actions,
+    const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
+    const ContextPtr & context)
+{
+    filterSourcesByIndexes(sources, getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context));
 }
 
 struct VirtualsForFileLikeStorage
@@ -210,7 +223,10 @@ struct VirtualsForFileLikeStorage
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt);
+    const std::optional<FormatSettings> & format_settings);
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with

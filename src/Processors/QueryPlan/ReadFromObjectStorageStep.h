@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -39,9 +40,9 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
     const StorageID & getStorageID() const { return storage_id; }
 
-    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. std::nullopt when the
-    /// storage gives no estimate and with distributed processing.
-    std::optional<DataLakeReadEstimate> estimateReadFromDataLakeMetadata() const;
+    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. nullptr when the storage gives
+    /// no estimate and with distributed processing.
+    std::shared_ptr<const DataLakeReadEstimate> getOrCreateDataLakeReadEstimate() const;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -91,6 +92,9 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
+    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes.
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
@@ -103,9 +107,13 @@ private:
     /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
     StorageMetadataPtr iterator_metadata;
 
-    /// Memoized `estimateReadFromDataLakeMetadata`, which walks the manifests; reset when the filter changes.
-    /// A storage without an estimate returns nullopt without any work, so nullopt is not memoized.
-    mutable std::optional<DataLakeReadEstimate> data_lake_read_estimate;
+    RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
+    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, shared by the file iterator and the formats.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+
+    /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
+    /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
+    mutable std::shared_ptr<const DataLakeReadEstimate> data_lake_read_estimate;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
