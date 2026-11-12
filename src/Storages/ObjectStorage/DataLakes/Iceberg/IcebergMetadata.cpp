@@ -90,6 +90,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -130,9 +131,16 @@ extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace FailPoints
+{
+extern const char iceberg_metadata_prefetch_pause[];
+}
+
 namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsBool use_iceberg_manifest_statistics;
+extern const SettingsBool use_statistics;
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
@@ -143,7 +151,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
-extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
@@ -360,6 +367,9 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 
     try
     {
+        /// Lets a test hold the refresher before it reads the latest metadata
+        FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_prefetch_pause);
+
         if (!Context::getGlobalContextInstance())
         {
             /// Should never happen, but if seen, this is clear indicator that the task should be started/stopped via startup/shutdown mechanism (check TODOs above)
@@ -406,9 +416,6 @@ Int32 IcebergMetadata::parseTableSchema(const Poco::JSON::Object::Ptr & metadata
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-
     if (format_version > 3)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -432,8 +439,6 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -1081,7 +1086,7 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        std::vector<String> metadata_files = listFilesNonRecursive(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
         if (!metadata_files.empty())
         {
             if (if_not_exists)
@@ -1101,24 +1106,14 @@ void IcebergMetadata::createInitial(
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_format_version]);
-    auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
-    auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    const auto compression_method = setMetadataCompressionCodecProperty(metadata_content_object, local_context);
+    if (metadata_content_object->has("properties"))
+        metadata_content = stringifyJSON(metadata_content_object, 4);
 
     /// Use the Iceberg spec file extension (gzip -> "gz"), not the raw setting token.
     auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
-
-    if (!compression_method_str.empty())
-    {
-        /// A catalog that writes the first metadata file itself reads the codec from this property.
-        /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
-        const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("write.metadata.compression-codec", codec_name);
-        metadata_content_object->set("properties", properties);
-        metadata_content = stringifyJSON(metadata_content_object, 4);
-    }
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
@@ -1708,6 +1703,9 @@ std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
     StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
 {
+    if (!context->getSettingsRef()[Setting::use_iceberg_manifest_statistics] || !context->getSettingsRef()[Setting::use_statistics])
+        return std::nullopt;
+
     auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     if (table_state_snapshot == nullptr)
     {
@@ -1810,6 +1808,7 @@ IcebergMetadata::estimateRead(
                         data_file->resolved_schema_id,
                         pruning_filter,
                         files_handle.getPartitionKeyDescription(),
+                        *data_file->common_partition_specification,
                         context,
                         /* require_ready_sets */ true);
 

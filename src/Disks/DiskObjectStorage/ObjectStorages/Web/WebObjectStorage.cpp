@@ -327,13 +327,10 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         settings,
         request_context->getServerSettings());
 
-    auto get_metadata_from_uri = [&](const Poco::URI & uri) -> std::optional<ObjectMetadata>
+    auto get_metadata_from_uri = [&](const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) -> std::optional<ObjectMetadata>
     {
         /// Carry the same HTTP request semantics as direct `url()` reads: credentials from the URL
         /// userinfo, `max_http_get_redirects`, and `enable_url_encoding`.
-        Poco::Net::HTTPBasicCredentials credentials;
-        setCredentialsFromURL(credentials, uri);
-
         auto create_probe_buffer = [&](const String & method)
         {
             auto read_settings = request_context->getReadSettings();
@@ -438,9 +435,12 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
     for (const auto & url : urls)
     {
+        const Poco::URI uri(url, enable_url_encoding);
+        Poco::Net::HTTPBasicCredentials credentials;
+        setCredentialsFromURL(credentials, uri, request_context->getHTTPHeaderFilter());
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
+            auto metadata = get_metadata_from_uri(uri, credentials);
             if (metadata)
                 return metadata;
             has_not_found = true;

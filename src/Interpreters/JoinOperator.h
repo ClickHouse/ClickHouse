@@ -127,10 +127,14 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
     bool enable_hash_join_row_store;
     Float64 min_rows_ratio_for_hash_join_row_store;
+    UInt64 min_string_column_bytes_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
     bool join_runtime_filter_from_fixed_hash_table;
+    /// A deserialized plan without these names compares `String` keys exactly.
+    bool enable_packed_string_keys_in_hash_join;
+    UInt64 min_rows_for_packed_string_keys_in_hash_join;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
