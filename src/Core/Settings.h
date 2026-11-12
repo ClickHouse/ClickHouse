@@ -181,8 +181,10 @@ struct Settings
     void rememberBeforeDistributedPlanAdjustment(std::string_view name);
 
     /// Restore every remembered pre-adjustment value, except one `is_allowed` refuses: that setting
-    /// is reset to its default instead, like a `compatibility`-derived value the current constraints
-    /// disallow.
+    /// is reset to its default instead. `is_allowed` is expected to judge the value against the
+    /// current settings constraints (CONST / min / max / disallowed values); it does not have to
+    /// apply the feature-tier policy the way the `compatibility` path's own checker does, since this
+    /// restores a value the session already held, not a new one `compatibility` is deriving.
     void restoreDistributedPlanAdjustments(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.

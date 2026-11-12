@@ -172,8 +172,8 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::functi
     {
         /// A derived plan must leave no trace once it is off; an explicitly enabled plan never
         /// remembers, so its adjustments stay, as they always have. A remembered value the current
-        /// constraints forbid is dropped to its default instead of restored, like a disallowed
-        /// `compatibility`-derived value.
+        /// constraints forbid (e.g. a profile switched in since it was remembered) is dropped to
+        /// its default instead of restored.
         settings.restoreDistributedPlanAdjustments(is_allowed);
         return;
     }
