@@ -13,7 +13,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SensitiveDataMasker.h>
@@ -529,7 +528,7 @@ public:
         const String & uri = request.getURI();
         /// This endpoint accepts user/password (and other secrets) as query-string parameters via
         /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
-        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
+        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), parent().getURIForLogging(request));
 
         response.setContentType("application/json");
 
@@ -656,7 +655,7 @@ public:
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", parent().getURIForLogging(request), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
             }
@@ -793,6 +792,9 @@ public:
     }
 
     bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
+
+    /// The request URI is recorded before `current_impl` is selected, so the PromQL parameters are hidden for any endpoint.
+    bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
 
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,
@@ -951,13 +953,16 @@ OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(co
         global_context->getSettingsRef(),
         global_context->getOpenTelemetrySpanLog());
     thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-    thread_trace_context->root_span.addAttribute(
-        "clickhouse.uri",
-        [&] { return maskSensitiveQueryParametersInURI(request.getURI(), [this](const String & name) { return impl->isQueryTextParameter(name); }); });
+    thread_trace_context->root_span.addAttribute("clickhouse.uri", [&] { return getURIForLogging(request); });
     thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
     thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
     thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
     return thread_trace_context;
+}
+
+String PrometheusRequestHandler::getURIForLogging(const HTTPServerRequest & request) const
+{
+    return maskSensitiveQueryParametersInURI(request.getURI(), [this](const String & name) { return impl->isQueryTextParameter(name); });
 }
 
 WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)

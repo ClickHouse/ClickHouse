@@ -40,6 +40,9 @@ private:
     /// Parses the client's trace context from the request and starts the server span of the current thread.
     OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request);
 
+    /// Returns the request URI with the values of sensitive parameters and PromQL expressions hidden.
+    String getURIForLogging(const HTTPServerRequest & request) const;
+
     IServer & server;
     const PrometheusRequestHandlerConfig config;
     const AsynchronousMetrics & async_metrics;

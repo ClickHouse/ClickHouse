@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Generate some random trace id so that the previous runs of the test do not interfere.
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select replaceAll(toString(generateUUIDv4()), '-', '')")
 parent_span_id="5150000000000515"
 
 ${CLICKHOUSE_CURL} -sS \
