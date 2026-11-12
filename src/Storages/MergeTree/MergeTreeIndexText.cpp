@@ -24,7 +24,9 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <IO/WriteBufferFromVector.h>
@@ -2345,6 +2347,23 @@ void normalizeColumnExpression(ASTPtr & ast)
         normalizeColumnExpression(child);
 
     const auto * function = ast->as<ASTFunction>();
+
+    /// Queries fold the calls of deterministic functions over literals, so `concat(s, toString(1))` is named `concat(s, '1')` there.
+    /// Only a `String` result is folded: its literal is named the same way in both.
+    if (function && function->arguments && !function->arguments->children.empty() && !function->is_lambda_function
+        && std::ranges::all_of(function->arguments->children, [](const auto & argument) { return argument->template as<ASTLiteral>(); }))
+    {
+        const auto context = Context::getGlobalContextInstance();
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isDeterministic())
+        {
+            if (auto result = tryEvaluateConstantExpression(ast, context); result && WhichDataType(result->second).isString())
+            {
+                ast = make_intrusive<ASTLiteral>(result->first);
+                return;
+            }
+        }
+    }
+
     if (!function || (function->name != "equals" && function->name != "notEquals")
         || !function->arguments || function->arguments->children.size() != 2)
         return;
