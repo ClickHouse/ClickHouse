@@ -59,4 +59,26 @@ TRUNCATE TABLE t_structure_hint_alias;
 INSERT INTO t_structure_hint_alias SELECT f.t.a, f.`t.a` FROM file(currentDatabase() || '_structure_hint_alias_nested.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 SELECT * FROM t_structure_hint_alias ORDER BY ALL;
 
+INSERT INTO FUNCTION file(currentDatabase() || '_structure_hint_alias_quoted.jsonl', 'JSONEachRow', 't Tuple(a UInt32), v UInt32') SELECT tuple(7), 10 SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT f.`t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT f.`t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
+SELECT f.`t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT f.`t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
+SELECT `t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT `t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
+SELECT `t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT `t.a`, v FROM file(currentDatabase() || '_structure_hint_alias_quoted.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
 DROP TABLE t_structure_hint_alias;

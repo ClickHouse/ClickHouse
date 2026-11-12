@@ -324,11 +324,11 @@ String getStructureHintColumnName(
     const ContextPtr & context,
     std::optional<ColumnsDescription> & source_columns)
 {
-    if (identifier_parts.size() == 1)
-        return identifier_parts.front();
-
     String full_name = boost::algorithm::join(identifier_parts, ".");
-    bool alias_prefix = !table_function_alias.empty() && identifier_parts.front() == table_function_alias;
+    if (identifier_parts.size() == 1 && !full_name.contains('.'))
+        return full_name;
+
+    bool alias_prefix = identifier_parts.size() > 1 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias;
 
     /// `input` has no structure of its own, it takes it from the structure hint.
     if (table_function.getName() != "input")
@@ -341,9 +341,13 @@ String getStructureHintColumnName(
             }
             catch (const Exception &)
             {
-                return full_name;
+                /// A source always has columns, so an empty description remembers the failed lookup.
+                source_columns.emplace();
             }
         }
+
+        if (source_columns->empty())
+            return full_name;
 
         if (alias_prefix && context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
         {
@@ -359,7 +363,13 @@ String getStructureHintColumnName(
 
         if (source_columns->hasSubcolumn(GetColumnsOptions::All, full_name))
             return {};
+
+        if (alias_prefix && identifier_parts.size() == 2 && source_columns->hasSubcolumn(GetColumnsOptions::All, identifier_parts.back()))
+            return {};
     }
+
+    if (identifier_parts.size() == 1)
+        return full_name;
 
     if (alias_prefix && identifier_parts.size() == 2)
         return identifier_parts.back();
