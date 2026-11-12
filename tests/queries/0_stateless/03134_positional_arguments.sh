@@ -5,29 +5,31 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Without --tmp or --path, clickhouse-local locks its default data directory in the home, so parallel tests
-# that run it through the bare binary must each get a home of their own.
-home_dir="${CLICKHOUSE_TMP}/home_${CLICKHOUSE_DATABASE}"
-rm -rf "$home_dir"
-mkdir -p "$home_dir"
+# Without `--path` or `--tmp`, `clickhouse local` locks a persistent data directory inside the home directory.
+# Point HOME (and XDG_DATA_HOME) at a private directory, so that concurrent tests do not fight over that lock.
+home_dir="${CLICKHOUSE_TMP}/home-${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "${home_dir}"
+mkdir -p "${home_dir}"
+export HOME="${home_dir}"
+export XDG_DATA_HOME=""
 
 # The best way to write the query parameter, explicit long option.
-HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} --query "SELECT 1"
+${CLICKHOUSE_BINARY} --query "SELECT 1"
 
 # Shorthand option:
-HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} -q "SELECT 2"
+${CLICKHOUSE_BINARY} -q "SELECT 2"
 
 # It is also accepted as a positional argument
-HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} "SELECT 3"
+${CLICKHOUSE_BINARY} "SELECT 3"
 
 # The positional argument can go after normal arguments.
-HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} --param_test Hello "SELECT {test:String}"
+${CLICKHOUSE_BINARY} --param_test Hello "SELECT {test:String}"
 
 # This is ambiguous: currently works, but does not have to.
-HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} --query "SELECT 1" "SELECT 2"
+${CLICKHOUSE_BINARY} --query "SELECT 1" "SELECT 2"
 
 # Multiple positional arguments are not allowed.
-HOME="$home_dir" XDG_DATA_HOME="" ${CLICKHOUSE_BINARY} "SELECT 1" "SELECT 2" 2>&1 | grep -o -F 'is not supported'
+${CLICKHOUSE_BINARY} "SELECT 1" "SELECT 2" 2>&1 | grep -o -F 'is not supported'
 
 # This is ambiguous - in case of a single word, it can be confused with a tool name.
 ${CLICKHOUSE_BINARY} "SELECT" 2>&1 | grep -o -F 'Use one of the following commands'
@@ -44,4 +46,4 @@ ${CLICKHOUSE_CLIENT_BINARY} -q "SELECT 2"
 ${CLICKHOUSE_CLIENT_BINARY} "SELECT 3"
 ${CLICKHOUSE_CLIENT_BINARY} --param_test Hello "SELECT {test:String}"
 
-rm -rf "$home_dir"
+rm -rf "${home_dir}"

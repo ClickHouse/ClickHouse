@@ -107,6 +107,11 @@ namespace CurrentMetrics
 
         Increment & operator=(Increment && old) noexcept
         {
+            if (this == &old)
+                return *this;
+            /// Release what this object holds, otherwise the amount is never subtracted.
+            if (what)
+                what->fetch_sub(amount, std::memory_order_relaxed);
             what = old.what;
             amount = old.amount;
             old.what = nullptr;

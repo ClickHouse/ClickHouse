@@ -440,6 +440,31 @@ LZ4 或 ZSTD 的压缩率平均可提升 20–40%。
 对于高基数主键 (例如包含 `DateTime64` 类型时间戳列的主键) ，
 预计无法从此设置中受益。
 
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于为没有 sorting key 的普通 MergeTree 家族表自动启用行顺序优化。"}]}]} />
+
+控制对于 sorting key 为空的表 (即使用 `ORDER BY ()` 或 `ORDER BY tuple()` 声明的表) ，
+是否在 insert 时自动应用行顺序优化 (参见 `optimize_row_order`) 。
+
+默认禁用。如果对于某些表而言，提升新插入 parts 在 LZ4 或 ZSTD 下的可压缩性
+比保留插入顺序和插入吞吐量更重要，可为这些表启用此设置。
+
+与 `optimize_row_order` 一样，启用后插入操作会产生额外的 CPU 开销，用于分析并
+优化新数据的行顺序。如果保留行的原始插入顺序或最大化插入吞吐量
+比压缩更重要，请禁用此设置。
+
+显式设置的 `optimize_row_order = 0` 优先级更高：无论此设置取值如何，
+此类表都不会进行行顺序优化。
+
+与 `optimize_row_order` 一样，该优化仅适用于普通的
+`MergeTree` 家族表，包括 `ReplicatedMergeTree`。该家族中的专用
+引擎，例如 `ReplacingMergeTree`、
+`CollapsingMergeTree` 或 `AggregatingMergeTree`，始终不会进行行顺序优化，
+而是保留插入行的原有顺序。
+
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
