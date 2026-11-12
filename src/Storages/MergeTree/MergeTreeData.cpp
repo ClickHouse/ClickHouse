@@ -1058,6 +1058,19 @@ void MergeTreeData::checkProperties(
                 }
 
                 MergeTreeIndexFactory::instance().validate(index, attach);
+
+                if (!attach)
+                {
+                    /// The create path and the projection recursion pass the same metadata object as both arguments,
+                    /// so nothing can be inherited there.
+                    const IndexDescription * old_index = nullptr;
+                    if (&old_metadata != &new_metadata)
+                        for (const auto & candidate : old_metadata.secondary_indices)
+                            if (candidate.name == index.name)
+                                old_index = &candidate;
+
+                    bloomFilterIndexTextCheckTotalSize(index, old_index);
+                }
             }
             catch (Exception & e)
             {
