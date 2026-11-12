@@ -46,6 +46,11 @@ FROM numbers(1000);
 -- Duplicate keys: the first value of a key must be kept.
 INSERT INTO src_05621 (id, u8, s, n_u64) SELECT number, 255, 'duplicate', 1 FROM numbers(10);
 
+-- A `QUERY` source runs in the default database of the session, so read through a view with a `TABLE` source,
+-- which takes the current database. The view puts the duplicates first.
+DROP VIEW IF EXISTS ordered_05621;
+CREATE VIEW ordered_05621 AS SELECT * FROM src_05621 ORDER BY u8 = 255 DESC, id;
+
 DROP DICTIONARY IF EXISTS dict_hashed_05621;
 DROP DICTIONARY IF EXISTS dict_sparse_05621;
 DROP DICTIONARY IF EXISTS dict_sharded_05621;
@@ -58,7 +63,7 @@ CREATE DICTIONARY dict_hashed_05621
     n_u64 Nullable(UInt64), n_s Nullable(String), n_d64 Nullable(Decimal64(4)), arr Array(UInt32)
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(QUERY 'SELECT * FROM src_05621 ORDER BY u8 = 255 DESC, id'))
+SOURCE(CLICKHOUSE(TABLE 'ordered_05621'))
 LAYOUT(HASHED())
 LIFETIME(0);
 
@@ -69,7 +74,7 @@ CREATE DICTIONARY dict_sparse_05621
     n_u64 Nullable(UInt64), n_s Nullable(String), n_d64 Nullable(Decimal64(4)), arr Array(UInt32)
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(QUERY 'SELECT * FROM src_05621 ORDER BY u8 = 255 DESC, id'))
+SOURCE(CLICKHOUSE(TABLE 'ordered_05621'))
 LAYOUT(SPARSE_HASHED())
 LIFETIME(0);
 
@@ -80,7 +85,7 @@ CREATE DICTIONARY dict_sharded_05621
     n_u64 Nullable(UInt64), n_s Nullable(String), n_d64 Nullable(Decimal64(4)), arr Array(UInt32)
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(QUERY 'SELECT * FROM src_05621 ORDER BY u8 = 255 DESC, id'))
+SOURCE(CLICKHOUSE(TABLE 'ordered_05621'))
 LAYOUT(HASHED(SHARDS 4))
 LIFETIME(0);
 
@@ -89,7 +94,7 @@ CREATE DICTIONARY dict_complex_05621
     id UInt64, s String, u8 UInt8, d128 Decimal128(10), n_u64 Nullable(UInt64), n_s Nullable(String), arr Array(UInt32)
 )
 PRIMARY KEY id, s
-SOURCE(CLICKHOUSE(QUERY 'SELECT id, s, u8, d128, n_u64, n_s, arr FROM src_05621'))
+SOURCE(CLICKHOUSE(TABLE 'src_05621'))
 LAYOUT(COMPLEX_KEY_SPARSE_HASHED(SHARDS 2))
 LIFETIME(0);
 
@@ -133,4 +138,5 @@ DROP DICTIONARY dict_hashed_05621;
 DROP DICTIONARY dict_sparse_05621;
 DROP DICTIONARY dict_sharded_05621;
 DROP DICTIONARY dict_complex_05621;
+DROP VIEW ordered_05621;
 DROP TABLE src_05621;
