@@ -1,0 +1,325 @@
+---
+slug: /clickstack/observability/integration-examples/kafka-logs
+title: 'Monitoring Kafka logs with ClickHouse Observability'
+sidebarTitle: 'Kafka logs'
+description: 'Collect Kafka broker logs with OpenTelemetry and send them to ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['Kafka', 'logs', 'OTEL', 'ClickHouse Observability', 'broker monitoring', 'Log4j']
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/components/Image.jsx";
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Collect Kafka broker logs with the OpenTelemetry `filelog` receiver and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without a Kafka deployment.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- Docker and `curl`
+- For your own logs, access to Kafka broker log files matching the format below
+
+### Connection details {#connection-details}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/logs` suffix; the exporter appends the signal path.
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
+
+The endpoint must be reachable from the collector container. For a destination collector running on this computer, use `http://host.docker.internal:4318`. The Docker commands below include the host mapping.
+
+## Integration with existing Kafka {#existing-kafka}
+
+<Steps>
+<Step title="Verify Kafka logging configuration" id="verify-kafka">
+
+Locate your broker logs. Common locations include `$KAFKA_HOME/logs` and `/var/log/kafka`, depending on your installation and logging configuration:
+
+```bash
+ls "$KAFKA_HOME/logs/"
+ls /var/log/kafka/
+```
+
+Common files are `server.log` (broker events), `controller.log` (controller events), and `state-change.log` (partition and replica transitions). Separate files exist only when configured in your logging appenders.
+
+The parser in this guide expects this Log4j text format:
+
+```text
+[2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+```
+
+If your broker logs only to stdout, configure a file appender in the broker's logging configuration and share that directory with the collector. The `filelog` receiver does not read container stdout directly. Adjust the parser if your logging pattern differs.
+
+</Step>
+<Step title="Configure the collector" id="configure-collector">
+
+Save this as `kafka-logs-monitoring.yaml`:
+
+```yaml
+receivers:
+  filelog/kafka:
+    include:
+      - /var/log/kafka/server.log
+      - /var/log/kafka/controller.log
+      - /var/log/kafka/state-change.log
+    start_at: end
+    force_flush_period: 1s
+    multiline:
+      line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+    operators:
+      - type: regex_parser
+        regex: '(?s)^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)$'
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%d %H:%M:%S,%L'
+          location: UTC
+        severity:
+          parse_from: attributes.severity
+      - type: move
+        from: attributes.message
+        to: body
+      - type: add
+        field: attributes.source
+        value: kafka
+      - type: add
+        field: resource["service.name"]
+        value: kafka-service
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+  transform/kafka:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(log.severity_text, ToLowerCase(log.severity_text))
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+service:
+  pipelines:
+    logs/kafka:
+      receivers: [filelog/kafka]
+      processors: [memory_limiter, transform/kafka, batch]
+      exporters: [otlp_http/observability]
+```
+
+Set `location` to the timezone used by your broker logs; the example assumes UTC. Multiline entries retain their complete stack traces. The collector reads new entries with `start_at: end` and normalizes severity text to lowercase.
+
+</Step>
+<Step title="Run the collector" id="run-collector">
+
+Set the [connection variables](#connection-details), then run from the configuration directory. Adjust the host log path if needed. For group-readable files, add `--group-add LOG_GROUP_ID` using the numeric group shown by `ls -ln /var/log/kafka`.
+
+```bash
+docker run --rm --name kafka-logs-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v /var/log/kafka:/var/log/kafka:ro \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+Leave the terminal open and generate broker activity that writes new log entries. Stop with **Ctrl+C** when finished testing.
+
+</Step>
+<Step title="Verify logs" id="verify-logs">
+
+Open **Search**, select **Logs**, filter for `ServiceName:kafka-service`, and select **Last 15 minutes**. You should see broker messages with parsed timestamps and severity.
+
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+The sample contains 6,376 Kafka broker log entries spanning approximately 24 hours. The collector refreshes their timestamps while preserving messages and stack traces.
+
+<Steps>
+<Step title="Download the sample" id="download-sample">
+
+```bash
+curl -fL -o server.log \
+  https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+```
+
+</Step>
+<Step title="Configure the demo collector" id="configure-demo">
+
+Save this as `kafka-logs-demo.yaml`:
+
+```yaml
+receivers:
+  filelog/kafka:
+    include:
+      - /var/log/kafka/server.log
+    start_at: beginning
+    force_flush_period: 1s
+    multiline:
+      line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+    operators:
+      - type: regex_parser
+        regex: '(?s)^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)$'
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%d %H:%M:%S,%L'
+          location: UTC
+        severity:
+          parse_from: attributes.severity
+      - type: move
+        from: attributes.message
+        to: body
+      - type: add
+        field: attributes.source
+        value: kafka-demo
+      - type: add
+        field: resource["service.name"]
+        value: kafka-demo
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+  transform/kafka:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(log.severity_text, ToLowerCase(log.severity_text))
+  transform/demo_timestamps:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(log.time, Now() - Duration("2m") - (Time("2026-03-09T23:59:58.180Z", "%Y-%m-%dT%H:%M:%S.%LZ") - log.time))
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+service:
+  pipelines:
+    logs/kafka:
+      receivers: [filelog/kafka]
+      processors: [memory_limiter, transform/kafka, transform/demo_timestamps, batch]
+      exporters: [otlp_http/observability]
+```
+
+</Step>
+<Step title="Run the demo collector" id="run-demo">
+
+Set the [connection variables](#connection-details), then run from the directory containing both files:
+
+```bash
+docker run --rm --name kafka-logs-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v "$(pwd)/server.log:/var/log/kafka/server.log:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+Leave the terminal open while verifying ingestion. Stop with **Ctrl+C** when finished. Running the demo again re-ingests the sample with refreshed timestamps.
+
+</Step>
+<Step title="Verify demo logs" id="verify-demo">
+
+Open **Search**, select **Logs**, filter for `ServiceName:kafka-demo`, and select **Last 2 days**.
+
+<Image img="/images/clickstack/observability-kafka-demo-logs.png" alt="Kafka demo logs with parsed severity in ClickHouse Observability Search"/>
+
+</Step>
+</Steps>
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json" download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `kafka-logs-dashboard.json`.
+3. Map the charts to your **Logs** source and click **Finish Import**.
+
+<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+
+</Step>
+<Step title="View the dashboard" id="view-dashboard">
+
+For the sample, optionally filter for `ServiceName:kafka-demo` and select **Last 2 days**. For your own logs, use `ServiceName:kafka-service` and a time range covering your records.
+
+<Image img="/images/clickstack/observability-kafka-logs-dashboard.png" alt="Kafka logs dashboard in ClickHouse Observability showing log volume, severity, replication, and connection events"/>
+
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### No logs appearing {#no-logs}
+
+Check the collector output for file permission, parsing, authentication, or export errors. Confirm your broker writes to the mounted directory and the filenames match the receiver's `include` list. The live configuration reads new entries only.
+
+### Logs not parsing correctly {#parsing-errors}
+
+Compare a broker log entry with the expected format:
+
+```bash
+tail -n 20 /var/log/kafka/server.log
+```
+
+Adjust the regex and multiline start pattern if your logging format differs. Set the timestamp parser's `location` to your broker's logging timezone.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for broker failures or replication errors.
+- Combine with [Kafka metrics](/clickstack/observability/integration-examples/kafka-metrics).
+- Create additional [dashboards](/clickstack/observability/features/dashboards/overview) for controller events or partition reassignment.
+- See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for deployment guidance.

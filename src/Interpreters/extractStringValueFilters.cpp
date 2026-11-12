@@ -24,10 +24,12 @@ using Condition = StringValueFilter::Condition;
 /// this column: the nodes of the extracted predicates that reference it directly.
 /// Any other reader of the column would observe the empty string substituted by the scan before the
 /// filter has rejected the row, so the optimization must be disabled for such a column.
+/// `conjuncts` are the extracted conjuncts the conditions come from.
 struct ColumnCandidate
 {
     std::vector<Condition> conditions;
     std::unordered_set<const ActionsDAG::Node *> allowed_readers;
+    std::unordered_set<const ActionsDAG::Node *> conjuncts;
 };
 
 using ConditionsByColumn = std::unordered_map<String, ColumnCandidate>;
@@ -53,6 +55,14 @@ std::optional<String> tryGetStringInputName(const ActionsDAG::Node * node)
     if (!isString(removeNullable(node->result_type)))
         return {};
 
+    return node->result_name;
+}
+
+std::optional<String> tryGetStringOrLowCardinalityInputName(const ActionsDAG::Node * node)
+{
+    node = skipAliases(node);
+    if (node->type != ActionsDAG::ActionType::INPUT || !isString(removeNullable(removeLowCardinality(node->result_type))))
+        return {};
     return node->result_name;
 }
 
@@ -251,6 +261,7 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
         auto & candidate = res[*column_name];
         candidate.conditions.insert(candidate.conditions.end(), conditions.begin(), conditions.end());
         candidate.allowed_readers.insert(atom);
+        candidate.conjuncts.insert(atom);
     }
     else if (name == "startsWith" || name == "endsWith")
     {
@@ -266,6 +277,7 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
         auto & candidate = res[*column_name];
         candidate.conditions.push_back({type, std::move(*needle)});
         candidate.allowed_readers.insert(atom);
+        candidate.conjuncts.insert(atom);
     }
     else if (name == "position")
     {
@@ -276,6 +288,7 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
             auto & candidate = res[position->first];
             candidate.conditions.push_back({Condition::Type::Substring, std::move(position->second)});
             candidate.allowed_readers.insert(skipAliases(atom));
+            candidate.conjuncts.insert(atom);
         }
     }
     else if (name == "equals" || name == "notEquals" || name == "greater" || name == "less" || name == "greaterOrEquals" || name == "lessOrEquals")
@@ -295,6 +308,7 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
                     auto & candidate = res[*column_name];
                     candidate.conditions.push_back({Condition::Type::Equals, std::move(*needle)});
                     candidate.allowed_readers.insert(atom);
+                    candidate.conjuncts.insert(atom);
                     return;
                 }
             }
@@ -318,12 +332,73 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
                 auto & candidate = res[position->first];
                 candidate.conditions.push_back({Condition::Type::Substring, std::move(position->second)});
                 candidate.allowed_readers.insert(skipAliases(atom->children[position_pos]));
+                candidate.conjuncts.insert(atom);
             }
             return;
         }
     }
 }
 
+bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const String & column_name)
+{
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(skipAliases(filter_node));
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        const String & name = node->function_base->getName();
+        if (name == "and")
+        {
+            for (const auto * child : node->children)
+                stack.push_back(skipAliases(child));
+            continue;
+        }
+
+        if (name == "notEmpty" && node->children.size() == 1)
+        {
+            if (tryGetStringOrLowCardinalityInputName(node->children[0]) == column_name)
+                return true;
+            continue;
+        }
+
+        if ((name == "notEquals" || name == "greater" || name == "less") && node->children.size() == 2)
+        {
+            for (size_t column_pos : {0, 1})
+            {
+                if ((name == "greater" && column_pos != 0) || (name == "less" && column_pos != 1))
+                    continue;
+                auto constant = tryGetConstString(node->children[1 - column_pos]);
+                if (constant && constant->empty() && tryGetStringOrLowCardinalityInputName(node->children[column_pos]) == column_name)
+                    return true;
+            }
+        }
+
+        /// The conditions of string value filters never match the empty string.
+        ConditionsByColumn conditions_by_column;
+        tryExtractConditionsFromAtom(node, conditions_by_column);
+        auto it = conditions_by_column.find(column_name);
+        if (it != conditions_by_column.end() && !it->second.conditions.empty())
+            return true;
+    }
+    return false;
+}
+
+}
+
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filter_column_name, const String & column_name)
+{
+    const auto * root = filter_dag.tryFindInOutputs(filter_column_name);
+    return root && filterNodeRejectsEmptyString(root, column_name);
+}
+
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name)
+{
+    const auto & outputs = filter_dag.getOutputs();
+    return outputs.size() == 1 && filterNodeRejectsEmptyString(outputs.front(), column_name);
 }
 
 bool likePatternHasStringValueFilterConditions(const String & pattern)
@@ -342,6 +417,7 @@ StringValueFiltersPtr extractStringValueFilters(
     /// Only conjuncts can be used: every row not matching a conjunct is filtered out regardless
     /// of the rest of the expression.
     std::vector<const ActionsDAG::Node *> atoms;
+    std::unordered_set<const ActionsDAG::Node *> and_nodes;
     std::vector<const ActionsDAG::Node *> stack;
     stack.push_back(skipAliases(root));
 
@@ -352,6 +428,7 @@ StringValueFiltersPtr extractStringValueFilters(
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
         {
+            and_nodes.insert(node);
             for (const auto * child : node->children)
                 stack.push_back(skipAliases(child));
             continue;
@@ -391,6 +468,60 @@ StringValueFiltersPtr extractStringValueFilters(
             if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
                 it->second.conditions.clear();
         }
+    }
+
+    /// With conditions from two or more readers, a value matching one reader but not another is substituted, which flips
+    /// the first reader's result. So every node depending on the column must be a part of the conjunction.
+    std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>> consumers;
+    for (auto & [column_name, candidate] : conditions_by_column)
+    {
+        if (candidate.conditions.empty() || candidate.allowed_readers.size() < 2)
+            continue;
+
+        if (consumers.empty())
+            for (const auto & node : filter_dag.getNodes())
+                for (const auto * child : node.children)
+                    consumers[child].push_back(&node);
+
+        std::vector<const ActionsDAG::Node *> to_visit;
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        for (const auto & node : filter_dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::INPUT && node.result_name == column_name)
+            {
+                to_visit.push_back(&node);
+                visited.insert(&node);
+            }
+        }
+
+        bool only_conjunction = true;
+        while (only_conjunction && !to_visit.empty())
+        {
+            const auto * node = to_visit.back();
+            to_visit.pop_back();
+
+            auto it = consumers.find(node);
+            if (it == consumers.end())
+                continue;
+
+            for (const auto * consumer : it->second)
+            {
+                if (!visited.insert(consumer).second)
+                    continue;
+
+                if (consumer->type != ActionsDAG::ActionType::ALIAS && !and_nodes.contains(consumer)
+                    && !candidate.conjuncts.contains(consumer) && !candidate.allowed_readers.contains(consumer))
+                {
+                    only_conjunction = false;
+                    break;
+                }
+
+                to_visit.push_back(consumer);
+            }
+        }
+
+        if (!only_conjunction)
+            candidate.conditions.clear();
     }
 
     /// The row-level filter (row policy) is a separate expression that the readers evaluate on the
