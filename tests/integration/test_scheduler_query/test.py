@@ -349,3 +349,72 @@ def test_admission_timeout_query_slot() -> None:
         holder.join()
 
 
+
+
+def test_metadata_statements_are_exempt() -> None:
+    # `production` admits a single query at a time, and its only slot is taken by a long-running query.
+    node.query(
+        """
+        create resource query (query);
+        create workload all;
+        create workload production in all settings max_concurrent_queries=1;
+        create table t (x UInt64) engine=MergeTree order by x;
+        """
+    )
+
+    def hold_the_slot():
+        try:
+            node.query(
+                "select sleepEachRow(1) from numbers(120) settings max_block_size=1, workload='production'",
+                query_id="metadata_slot_holder",
+            )
+        except QueryRuntimeException:
+            pass  # killed at exit
+
+    def run(sql: str) -> None:
+        node.query(sql, settings={"workload": "production", "workload_admission_timeout_ms": 1000})
+
+    def run_times_out(sql: str) -> None:
+        error = node.query_and_get_error(sql, settings={"workload": "production", "workload_admission_timeout_ms": 1000})
+        assert "QUERY_SLOT_ACQUISITION_TIMEOUT" in error, error
+
+    holder = threading.Thread(target=hold_the_slot)
+    holder.start()
+    try:
+        # Presence in system.processes implies the slot was admitted: ProcessList::insert admits before publishing.
+        while node.query("select count() from system.processes where query_id = 'metadata_slot_holder'").strip() == "0":
+            time.sleep(0.1)
+        run_times_out("select 1")
+
+        # Metadata statements are exempt from workload scheduling.
+        run("create table t2 (x UInt64) engine=MergeTree order by x")
+        run("alter table t2 add column y UInt64")
+        run("alter table t2 update y = 1 where 1")
+        run("rename table t2 to t3")
+        run("truncate table t3")
+        run("detach table t3 sync")
+        run("attach table t3")
+        run("drop table t3 sync")
+        run("alter table t drop partition tuple()")
+        run("create database db2 engine=Atomic")
+        run("drop database db2 sync")
+        run("create function f as (x) -> x + 1")
+        run("drop function f")
+        run("system reload config")
+
+        # Statements that may move a lot of data stay under `workload`.
+        run_times_out("create table t2 engine=MergeTree order by x as select 1 as x")
+        run_times_out("create table t2 as numbers(10)")
+        run_times_out("create view v as select x from t")
+        run_times_out("optimize table t final")
+        run_times_out("alter table t freeze")
+        run_times_out("alter table t attach partition tuple()")
+    finally:
+        node.query("kill query where query_id = 'metadata_slot_holder' sync")
+        holder.join()
+        node.query("drop table if exists t sync")
+        node.query("drop table if exists t2 sync")
+        node.query("drop view if exists v sync")
+        node.query("drop function if exists f")
+        node.query("drop database if exists db2 sync")
+        node.query("drop table if exists t3 sync")

@@ -61,6 +61,8 @@ class Capabilities:
         "binary",
         "uuid",
     )
+    # (transform, source kind) pairs that are never generated.
+    excluded_partition_shapes: Tuple[Tuple[str, str], ...] = ()
     partition_on_id: bool = True
     initial_partition_fields: Tuple[int, ...] = (0, 0, 1, 1, 2)
     rename_partition_sources: bool = True
