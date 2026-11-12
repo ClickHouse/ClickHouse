@@ -16,7 +16,7 @@ BASE_SETTINGS = {
     "output_format_arrow_string_as_string": 0,
     "output_format_arrow_low_cardinality_as_dictionary": 0,
     "output_format_arrow_fixed_string_as_fixed_byte_array": 1,
-    "allow_experimental_paimon_storage_engine": 1,
+    "enable_paimon_storage_engine": 1,
     "allow_insert_into_iceberg": 1,
     "allow_delta_lake_writes": 1,
     "allow_experimental_iceberg_compaction": 1,
