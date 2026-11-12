@@ -137,6 +137,11 @@ struct BufferWriteIdentity
     /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`.
     std::optional<Poco::Net::SocketAddress> current_address;
     std::optional<Poco::Net::SocketAddress> initial_address;
+    /// The remaining quota bucket selectors: `forwarded_for` for `KEYED BY forwarded_ip_address` and the
+    /// originating query's normalized hash for `KEYED BY normalized_query_hash`. Without them the flush would
+    /// bill an empty forwarded address and hash 0 from the buffer context.
+    String forwarded_for;
+    UInt64 normalized_query_hash = 0;
 
     /// Two identities may share a buffer shard only when the flush would replay them identically. The whole
     /// identity is restored onto the nested insert, so beyond the access-control fields (user, roles, grants)
@@ -147,9 +152,11 @@ struct BufferWriteIdentity
     bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
     {
         if (std::tie(user_id, current_roles, external_roles, authentication_valid_until,
-                     current_user, initial_user, authenticated_user, quota_key, current_address, initial_address)
+                     current_user, initial_user, authenticated_user, quota_key, current_address, initial_address,
+                     forwarded_for, normalized_query_hash)
             != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until,
-                        other.current_user, other.initial_user, other.authenticated_user, other.quota_key, other.current_address, other.initial_address))
+                        other.current_user, other.initial_user, other.authenticated_user, other.quota_key, other.current_address, other.initial_address,
+                        other.forwarded_for, other.normalized_query_hash))
             return false;
 
         /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
@@ -183,6 +190,8 @@ std::shared_ptr<const BufferWriteIdentity> captureWriteIdentity(const ContextPtr
     identity->quota_key = client_info.quota_key;
     identity->current_address = client_info.current_address;
     identity->initial_address = client_info.initial_address;
+    identity->forwarded_for = client_info.forwarded_for;
+    identity->normalized_query_hash = context->getNormalizedQueryHash();
     return identity;
 }
 
@@ -235,6 +244,14 @@ void restoreWriteIdentity(const ContextMutablePtr & insert_context, const Buffer
         insert_context->setCurrentAddress(*identity.current_address);
     if (identity.initial_address)
         insert_context->setInitialAddress(*identity.initial_address);
+
+    /// Restore the remaining quota bucket selectors so a `KEYED BY forwarded_ip_address` or
+    /// `KEYED BY normalized_query_hash` quota bills the originating bucket instead of an empty forwarded
+    /// address and hash 0 from the buffer context.
+    if (!identity.forwarded_for.empty())
+        insert_context->setForwardedFor(identity.forwarded_for);
+    if (identity.normalized_query_hash != 0)
+        insert_context->setNormalizedQueryHash(identity.normalized_query_hash);
 }
 
 }
