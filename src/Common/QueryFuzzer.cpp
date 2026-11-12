@@ -8573,7 +8573,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// Occasionally swap the EXECUTE command name between the two registered commands.
                 if (fuzz_rand() % 30 == 0)
                 {
-                    static const Strings real_execute_commands = {"expire_snapshots", "remove_orphan_files"};
+                    static const Strings real_execute_commands
+                        = {"expire_snapshots", "remove_orphan_files", "create_snapshot_ref", "drop_snapshot_ref"};
                     alter_cmd->execute_command_name = pickRandomly(fuzz_rand, real_execute_commands);
                 }
                 break;

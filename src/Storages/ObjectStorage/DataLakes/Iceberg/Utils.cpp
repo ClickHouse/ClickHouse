@@ -2629,4 +2629,47 @@ PartitionColumnValues getIdentityPartitionColumnValues(
 
 }
 
+Int64 resolveSnapshotIdFromRef(const Poco::JSON::Object::Ptr & metadata, const String & ref_name)
+{
+    if (ref_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot reference name must not be empty");
+
+    if (metadata->has(f_refs) && !metadata->isNull(f_refs))
+    {
+        auto refs = metadata->getObject(f_refs);
+        if (refs && refs->has(ref_name))
+        {
+            auto ref = refs->getObject(ref_name);
+            if (!ref || !ref->has(f_metadata_snapshot_id))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg snapshot reference '{}' has no snapshot-id",
+                    ref_name);
+            if (ref->has(f_type))
+            {
+                const String type = Poco::toLower(ref->getValue<String>(f_type));
+                if (type != f_branch && type != f_tag)
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Iceberg snapshot reference '{}' has unexpected type '{}'",
+                        ref_name,
+                        ref->getValue<String>(f_type));
+            }
+            return ref->getValue<Int64>(f_metadata_snapshot_id);
+        }
+    }
+
+    /// A table with no `refs` map still has an implied `main` at `current-snapshot-id`.
+    if (ref_name == f_main && metadata->has(f_current_snapshot_id) && !metadata->isNull(f_current_snapshot_id))
+    {
+        Int64 snapshot_id = metadata->getValue<Int64>(f_current_snapshot_id);
+        if (snapshot_id >= 0)
+            return snapshot_id;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot reference '{}' does not exist", ref_name);
+}
+
+}
+
 #endif

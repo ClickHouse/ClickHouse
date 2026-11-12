@@ -62,6 +62,7 @@ namespace Setting
 {
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsInt64 iceberg_timestamp_ms;
+extern const SettingsString iceberg_ref;
 }
 
 namespace DataLakeStorageSetting
@@ -706,10 +707,11 @@ void AlterDropPartitionExecutor::run()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION does not support the iceberg_metadata_file_path setting");
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed
+        || settings[Setting::iceberg_ref].changed)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "DROP PARTITION does not support iceberg_snapshot_id or iceberg_timestamp_ms settings");
+            "DROP PARTITION does not support iceberg_snapshot_id, iceberg_timestamp_ms, or iceberg_ref settings");
 
     const auto & partition_ast = command.partition->as<ASTPartition &>();
     validateDropPartitionAST(partition_ast, command);

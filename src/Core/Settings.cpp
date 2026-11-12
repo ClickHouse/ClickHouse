@@ -9775,6 +9775,11 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 Query Iceberg table using the specific snapshot id.
 )", 0, \
         {"25.4", 0, 0, "New setting."}) \
+    DECLARE(String, iceberg_ref, "", R"(
+Query Iceberg table using a named snapshot reference (`branch` or `tag`) from table metadata `refs`.
+Cannot be combined with `iceberg_snapshot_id` or `iceberg_timestamp_ms`. Writes with this setting set are rejected until writing to a non-`main` branch is implemented.
+)", 0, \
+        {"26.11", "", "", "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, allow_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0, allow_experimental_geo_types_in_iceberg, \
@@ -11328,6 +11333,10 @@ Allow to execute the Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL, allow_experimental_expire_snapshots, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_expire_snapshots`."}, \
         {"26.3", false, false, "New setting."}) \
+    DECLARE(Bool, allow_experimental_iceberg_snapshot_refs, false, R"(
+Allow `ALTER TABLE ... EXECUTE create_snapshot_ref` and `ALTER TABLE ... EXECUTE drop_snapshot_ref` for Iceberg tables.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
 )", EXPERIMENTAL, \

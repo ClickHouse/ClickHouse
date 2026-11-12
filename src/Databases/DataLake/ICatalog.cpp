@@ -485,6 +485,26 @@ Poco::JSON::Object::Ptr ICatalog::removeSnapshots(
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "removeSnapshots is not implemented");
 }
 
+Poco::JSON::Object::Ptr ICatalog::setSnapshotRef(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    Poco::JSON::Object::Ptr /*base_metadata*/,
+    const String & /*ref_name*/,
+    const String & /*type*/,
+    Int64 /*snapshot_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "setSnapshotRef is not implemented");
+}
+
+Poco::JSON::Object::Ptr ICatalog::removeSnapshotRef(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    Poco::JSON::Object::Ptr /*base_metadata*/,
+    const String & /*ref_name*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "removeSnapshotRef is not implemented");
+}
+
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");

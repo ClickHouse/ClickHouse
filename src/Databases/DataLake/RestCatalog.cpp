@@ -2334,6 +2334,167 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     return response_object->getObject("metadata");
 }
 
+Poco::JSON::Object::Ptr RestCatalog::setSnapshotRef(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const String & ref_name,
+    const String & type,
+    Int64 snapshot_id) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        if (base_metadata->has("table-uuid"))
+        {
+            Poco::JSON::Object::Ptr uuid_requirement = new Poco::JSON::Object;
+            uuid_requirement->set("type", "assert-table-uuid");
+            uuid_requirement->set("uuid", base_metadata->getValue<String>("table-uuid"));
+            requirements->add(uuid_requirement);
+        }
+        /// Omitting snapshot-id means the named ref must not already exist.
+        Poco::JSON::Object::Ptr ref_requirement = new Poco::JSON::Object;
+        ref_requirement->set("type", "assert-ref-snapshot-id");
+        ref_requirement->set("ref", ref_name);
+        requirements->add(ref_requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+        Poco::JSON::Object::Ptr set_ref = new Poco::JSON::Object;
+        set_ref->set("action", "set-snapshot-ref");
+        set_ref->set("ref-name", ref_name);
+        set_ref->set("type", type);
+        set_ref->set("snapshot-id", snapshot_id);
+        updates->add(set_ref);
+        request_body->set("updates", updates);
+    }
+
+    String response;
+    try
+    {
+        response = sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "setSnapshotRef conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return nullptr;
+        }
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog commit of set-snapshot-ref failed for table {}.{}: {}",
+            namespace_name,
+            table_name,
+            ex.displayText());
+    }
+
+    Poco::JSON::Parser parser;
+    auto response_object = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
+    if (!response_object || !response_object->has("metadata"))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog response to set-snapshot-ref for table {}.{} has no metadata",
+            namespace_name,
+            table_name);
+    return response_object->getObject("metadata");
+}
+
+Poco::JSON::Object::Ptr RestCatalog::removeSnapshotRef(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const String & ref_name) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        if (base_metadata->has("table-uuid"))
+        {
+            Poco::JSON::Object::Ptr uuid_requirement = new Poco::JSON::Object;
+            uuid_requirement->set("type", "assert-table-uuid");
+            uuid_requirement->set("uuid", base_metadata->getValue<String>("table-uuid"));
+            requirements->add(uuid_requirement);
+        }
+
+        Int64 current_id = -1;
+        if (base_metadata->has("refs") && !base_metadata->isNull("refs"))
+        {
+            auto refs = base_metadata->getObject("refs");
+            if (refs && refs->has(ref_name))
+                current_id = refs->getObject(ref_name)->getValue<Int64>("snapshot-id");
+        }
+        Poco::JSON::Object::Ptr ref_requirement = new Poco::JSON::Object;
+        ref_requirement->set("type", "assert-ref-snapshot-id");
+        ref_requirement->set("ref", ref_name);
+        if (current_id >= 0)
+            ref_requirement->set("snapshot-id", current_id);
+        requirements->add(ref_requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+        Poco::JSON::Object::Ptr remove_ref = new Poco::JSON::Object;
+        remove_ref->set("action", "remove-snapshot-ref");
+        remove_ref->set("ref-name", ref_name);
+        updates->add(remove_ref);
+        request_body->set("updates", updates);
+    }
+
+    String response;
+    try
+    {
+        response = sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "removeSnapshotRef conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return nullptr;
+        }
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog commit of remove-snapshot-ref failed for table {}.{}: {}",
+            namespace_name,
+            table_name,
+            ex.displayText());
+    }
+
+    Poco::JSON::Parser parser;
+    auto response_object = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
+    if (!response_object || !response_object->has("metadata"))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog response to remove-snapshot-ref for table {}.{} has no metadata",
+            namespace_name,
+            table_name);
+    return response_object->getObject("metadata");
+}
+
 bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,

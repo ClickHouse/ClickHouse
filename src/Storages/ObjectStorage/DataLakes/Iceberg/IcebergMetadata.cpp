@@ -71,6 +71,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExpireSnapshotsExecute.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/RemoveOrphanFilesExecute.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotRefExecute.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -146,6 +147,7 @@ extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
+extern const SettingsString iceberg_ref;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
@@ -156,6 +158,7 @@ extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_expire_snapshots;
+extern const SettingsBool allow_experimental_iceberg_snapshot_refs;
 extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsSeconds iceberg_compaction_delay_bias;
@@ -201,6 +204,15 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
         return nullptr;
     chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
+}
+
+void throwIfIcebergRefSet(const Settings & settings, std::string_view operation)
+{
+    if (settings[Setting::iceberg_ref].changed)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} does not support the iceberg_ref setting; writing to a named snapshot reference is not implemented",
+            operation);
 }
 
 }
@@ -542,10 +554,11 @@ bool IcebergMetadata::optimize(
     checkTableRootIsQueriedPath("OPTIMIZE");
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed
+        || settings[Setting::iceberg_ref].changed)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE is not supported with iceberg_snapshot_id or iceberg_timestamp_ms");
+            "OPTIMIZE is not supported with iceberg_snapshot_id, iceberg_timestamp_ms, or iceberg_ref");
 
     /// `iceberg_metadata_file_path` also carries the catalog's metadata pointer, so reject it only without a catalog.
     if (!catalog)
@@ -649,11 +662,12 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
 
     bool timestamp_changed = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].changed;
     bool snapshot_id_changed = local_context->getSettingsRef()[Setting::iceberg_snapshot_id].changed;
-    if (timestamp_changed && snapshot_id_changed)
+    bool ref_changed = local_context->getSettingsRef()[Setting::iceberg_ref].changed;
+    if (static_cast<int>(timestamp_changed) + static_cast<int>(snapshot_id_changed) + static_cast<int>(ref_changed) > 1)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Time travel with timestamp and snapshot id for iceberg table by path {} cannot be changed simultaneously",
+            "Time travel with timestamp, snapshot id and snapshot reference for iceberg table by path {} cannot be changed simultaneously",
             persistent_components.table_path);
     }
     if (timestamp_changed)
@@ -690,6 +704,12 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     else if (snapshot_id_changed)
     {
         Int64 current_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
+        return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
+    }
+    else if (ref_changed)
+    {
+        Int64 current_snapshot_id = resolveSnapshotIdFromRef(metadata_object, local_context->getSettingsRef()[Setting::iceberg_ref]);
         auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
@@ -775,6 +795,8 @@ void IcebergMetadata::mutate(
             "Iceberg mutations is experimental. "
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
+
+    throwIfIcebergRefSet(context->getSettingsRef(), "Iceberg mutations");
 
     /// The per-data-file Parquet validation now lives inside `DB::Iceberg::mutate`'s
     /// retry loop, bound to the metadata version actually being mutated. That closes
@@ -921,6 +943,9 @@ Pipe IcebergMetadata::alterPartition(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Alter iceberg is experimental. To allow its usage, enable setting allow_insert_into_iceberg");
     }
+
+    throwIfIcebergRefSet(context->getSettingsRef(), "ALTER PARTITION");
+
     if (commands.size() != 1)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -991,6 +1016,8 @@ void IcebergMetadata::alter(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
+    throwIfIcebergRefSet(context->getSettingsRef(), "ALTER");
+
     Iceberg::alter(params, context, storage_id, object_storage, *data_lake_settings, persistent_components, write_format, catalog);
 }
 
@@ -1010,6 +1037,8 @@ Pipe IcebergMetadata::executeCommand(
             "Iceberg EXECUTE commands are experimental. "
             "To allow their usage, enable setting allow_insert_into_iceberg");
     }
+
+    throwIfIcebergRefSet(context->getSettingsRef(), "EXECUTE");
 
     if (command_name == "expire_snapshots")
     {
@@ -1040,6 +1069,25 @@ Pipe IcebergMetadata::executeCommand(
         return Iceberg::executeRemoveOrphanFiles(
             args, context, object_storage_, *data_lake_settings, persistent_components,
             catalog_, storage_id.getTableName());
+    }
+    else if (command_name == "create_snapshot_ref" || command_name == "drop_snapshot_ref")
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_iceberg_snapshot_refs].value)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg snapshot references are experimental. "
+                "To allow create_snapshot_ref and drop_snapshot_ref, enable setting allow_experimental_iceberg_snapshot_refs");
+        }
+
+        checkTableRootIsQueriedPath(command_name);
+        if (command_name == "create_snapshot_ref")
+            return Iceberg::executeCreateSnapshotRef(
+                args, context, object_storage_, *data_lake_settings, persistent_components,
+                write_format, catalog_, storage_id.getTableName());
+        return Iceberg::executeDropSnapshotRef(
+            args, context, object_storage_, *data_lake_settings, persistent_components,
+            write_format, catalog_, storage_id.getTableName());
     }
     else
     {
@@ -2176,6 +2224,7 @@ SinkToStoragePtr IcebergMetadata::write(
 {
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
+        throwIfIcebergRefSet(context->getSettingsRef(), "INSERT");
         checkTableRootIsQueriedPath("INSERT");
         return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
     }

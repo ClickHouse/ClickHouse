@@ -544,6 +544,33 @@ Poco::JSON::Object::Ptr UnityV2Catalog::removeSnapshots(
     });
 }
 
+Poco::JSON::Object::Ptr UnityV2Catalog::setSnapshotRef(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const String & ref_name,
+    const String & type,
+    Int64 snapshot_id) const
+{
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->setSnapshotRef(
+            namespace_name, table_name, base_metadata, ref_name, type, snapshot_id);
+    });
+}
+
+Poco::JSON::Object::Ptr UnityV2Catalog::removeSnapshotRef(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const String & ref_name) const
+{
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->removeSnapshotRef(namespace_name, table_name, base_metadata, ref_name);
+    });
+}
+
 void UnityV2Catalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
