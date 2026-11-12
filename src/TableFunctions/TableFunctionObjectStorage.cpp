@@ -148,25 +148,30 @@ VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configur
 
     VectorWithMemoryTracking<size_t> result;
 
-    /// `headers(...)` may appear in any position.
+    /// `headers(...)` and `extra_credentials(...)` are wrapper arguments that the storage parser removes
+    /// before it classifies positional and named arguments (see `S3SecretArguments` and the S3/Azure
+    /// `Configuration` parsers). They may appear in any position, and their nested `key = value` arguments
+    /// (e.g. `role_arn = ...`) must not resolve to a column or alias either, so skip their whole subtree.
+    auto is_wrapper_argument = [](const String & name) { return name == "headers" || name == "extra_credentials"; };
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
+        if (function_node && is_wrapper_argument(function_node->getFunctionName()))
             result.push_back(i);
     }
 
     /// A `key = value` named argument is a trailing argument whose key names a parameter of the table
     /// function, so it must not resolve to a column or alias. A positional `identifier = value` expression
     /// (one followed by a positional argument, e.g. the partition_columns_in_data_file Boolean) is an
-    /// ordinary comparison, so only the trailing run of `key = value` arguments is skipped.
+    /// ordinary comparison, so only the trailing run of `key = value` arguments is skipped. A wrapper
+    /// argument is removed by the storage parser, so it does not end the run: a named argument can precede it.
     for (size_t i = table_function_arguments_size; i-- > 0;)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
         if (!function_node)
             break;
         const auto & function_name = function_node->getFunctionName();
-        if (function_name == "headers")
+        if (is_wrapper_argument(function_name))
             continue; /// already recorded above; part of the trailing named-argument run
         const auto & function_arguments = function_node->getArguments().getNodes();
         if (function_name == "equals" && function_arguments.size() == 2 && function_arguments[0]->as<IdentifierNode>())
