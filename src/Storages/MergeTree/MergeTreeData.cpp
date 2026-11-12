@@ -9246,7 +9246,7 @@ void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
 
 std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & query_context) const
 {
-    std::weak_ptr<const IStorage> weak_table = shared_from_this();
+    std::weak_ptr<const MergeTreeData> weak_table = std::static_pointer_cast<const MergeTreeData>(shared_from_this());
     /// Only the limits are retained, not the context: a `Buffer` may keep the check until a much later flush,
     /// and the context would pin the query-scoped state (external tables, etc.) until then.
     const auto limits = getTooManyPartsLimits(query_context);
@@ -9256,12 +9256,13 @@ std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & qu
         /// and `DETACH` / `ATTACH` of the table in between creates another instance with the same `UUID`. The flush
         /// writes into the current instance then, so check it, not skip the check. If the table does not exist
         /// anymore, the nested INSERT fails without writing anything.
-        auto table = weak_table.lock();
-        if (!table)
-            table = DatabaseCatalog::instance().tryGetTable(storage_id, Context::getGlobalContextInstance());
-        if (!table)
-            return;
-        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+        std::shared_ptr<const MergeTreeData> merge_tree = weak_table.lock();
+        if (!merge_tree)
+        {
+            /// The flush is about to write into this table, so loading a lazily loaded one is its expected cost.
+            if (auto table = DatabaseCatalog::instance().tryGetTable(storage_id, Context::getGlobalContextInstance()))
+                merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+        }
         if (!merge_tree)
             return;
         /// Only the throw thresholds are used without `allow_delay`, the delay ones fall back to the table settings.
