@@ -286,9 +286,7 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
 {
     LOG_TRACE(log, "Starting to lookup replica's state");
     TopicPartitionSet locked_partitions;
-    /// Only the lock node names are needed to tell which partitions are taken. The content
-    /// (owning replica) used to feed the quota invariant removed from lockTemporaryLocksLocked;
-    /// skipping the reads also removes the getChildren()/get() race on vanishing locks.
+    /// Only the lock node names matter: the content fed the quota guard removed from lockTemporaryLocksLocked.
     auto lock_nodes = keeper->getChildren(keeper_path / "topic_partition_locks");
 
     for (const auto & lock_name : lock_nodes)
@@ -432,8 +430,7 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
 void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     const TopicPartitions & available_topic_partitions) TSA_REQUIRES(topic_partition_locks_mutex)
 {
-    /// Temporary locks are released at the start of every refresh round, so a lockless replica
-    /// can always take the freed partitions as permanent locks; no hold-back guard is needed.
+    /// Temporary locks are released every refresh round, so a lockless replica can take the freed partitions anyway.
     /// There are no available topic partitions, so drop the quota to 0
     if (available_topic_partitions.empty())
     {
