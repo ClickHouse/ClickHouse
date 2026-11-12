@@ -1,0 +1,15 @@
+cold engine	TableProxy
+select	4
+engine	MergeTree
+parts	1
+parts_columns	1
+total_bytes_uncompressed	1
+after alter delete	3
+after lightweight delete	2
+cold lightweight delete	1
+cold alter delete	0
+cold rejected lightweight delete	2
+projection parts	1
+stopped merges parts	2
+started merges parts	1
+engine after start merges	TableProxy
