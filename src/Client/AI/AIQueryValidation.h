@@ -135,6 +135,14 @@ bool isAllowedTableEngineForAIAgent(const String & engine);
 /// tool refuses these tables, as the read-only tool refuses to read them.
 bool isStoredQueryTableEngineForAIAgent(const String & engine);
 
+/// Whether a definition returned by `SHOW CREATE` is the one of an object that stores the text of a
+/// query (a view or a materialized view), or one this client cannot parse. The `show_create_table`
+/// tool checks the definition it actually received with this, in addition to the engine it looked up
+/// in `system.tables` before: the name can be bound to another object in between (`EXCHANGE TABLES`
+/// or `CREATE OR REPLACE` from another connection), and only the returned text is certainly the one
+/// of the object the server resolved.
+bool isStoredQueryDefinitionForAIAgent(const String & create_query);
+
 /// Whether a database with this engine keeps its tables on this server and lists all of them in
 /// `system.tables`. This is what makes "the name did not resolve to a table" a safe answer: in a
 /// database backed by an external catalog (`S3`, `Iceberg`, `MySQL`, ...) a name that is absent

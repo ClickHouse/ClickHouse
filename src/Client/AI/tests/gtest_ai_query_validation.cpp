@@ -346,6 +346,16 @@ TEST(AIQueryValidation, AllowsOnlyLocalTableEngines)
     EXPECT_FALSE(isStoredQueryTableEngineForAIAgent(""));
 }
 
+TEST(AIQueryValidation, DetectsStoredQueryDefinitions)
+{
+    EXPECT_TRUE(isStoredQueryDefinitionForAIAgent("CREATE VIEW db.v (`x` UInt8) AS SELECT * FROM url('http://host/', CSV, 'x UInt8')"));
+    EXPECT_TRUE(isStoredQueryDefinitionForAIAgent("CREATE MATERIALIZED VIEW db.mv TO db.t (`x` UInt8) AS SELECT x FROM db.src"));
+    EXPECT_FALSE(isStoredQueryDefinitionForAIAgent("CREATE TABLE db.t\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x"));
+    EXPECT_FALSE(isStoredQueryDefinitionForAIAgent("CREATE TABLE db.t (`x` UInt8) ENGINE = MySQL('host:3306', 'db', 't', 'user', '[HIDDEN]')"));
+    /// A definition that does not parse is not trusted to be the shape of a table.
+    EXPECT_TRUE(isStoredQueryDefinitionForAIAgent("not a definition"));
+}
+
 TEST(AIQueryValidation, AllowsOnlyLocalDatabaseEngines)
 {
     /// A database that lists all of its tables in `system.tables` is what makes "this name is not

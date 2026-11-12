@@ -117,14 +117,26 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                         String engine = hooks->execute_scalar(
                             "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
                             {{"database", database}, {"table", table}});
-                        if (!isPredefinedServerOwnedTableForAIAgent(database, table, engine) && isStoredQueryTableEngineForAIAgent(engine))
+                        bool is_predefined = isPredefinedServerOwnedTableForAIAgent(database, table, engine);
+                        if (!is_predefined && isStoredQueryTableEngineForAIAgent(engine))
                             return errorResult(
                                 "The table " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table) + " has the " + engine
                                 + " engine: its definition is the text of a stored query, which is not read without "
                                   "the user seeing it. Use the run_query tool to read it");
 
-                        return successResult(hooks->execute_internal_masking_secrets(
-                            "SHOW CREATE TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table), {}));
+                        String definition = hooks->execute_internal_masking_secrets(
+                            "SHOW CREATE TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table), {});
+
+                        /// The lookup above and `SHOW CREATE` resolve the name separately, and another
+                        /// connection can bind it to a view in between (`EXCHANGE TABLES`), so the
+                        /// definition that came back is checked as well before the model sees it.
+                        if (!is_predefined && isStoredQueryDefinitionForAIAgent(definition))
+                            return errorResult(
+                                "The definition of " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table)
+                                + " is the text of a stored query, which is not read without the user seeing it. "
+                                  "Use the run_query tool to read it");
+
+                        return successResult(definition);
                     });
             });
     }

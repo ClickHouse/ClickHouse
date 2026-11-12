@@ -12,6 +12,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -983,6 +984,23 @@ bool isAllowedTableEngineForAIAgent(const String & engine)
 bool isStoredQueryTableEngineForAIAgent(const String & engine)
 {
     return engine == "View" || engine == "MaterializedView" || engine == "LiveView" || engine == "WindowView";
+}
+
+bool isStoredQueryDefinitionForAIAgent(const String & create_query)
+{
+    ParserCreateQuery parser;
+    const char * begin = create_query.data();
+    const char * end = create_query.data() + create_query.size();
+    String error;
+    const ASTPtr ast = tryParseQuery(
+        parser, begin, end, error, false, "table definition", false,
+        /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
+
+    /// A definition this client cannot classify is treated as one that may store a query.
+    if (!ast)
+        return true;
+    const auto * create = ast->as<ASTCreateQuery>();
+    return !create || create->isView() || create->select;
 }
 
 bool isAllowedDatabaseEngineForAIAgent(const String & engine)
