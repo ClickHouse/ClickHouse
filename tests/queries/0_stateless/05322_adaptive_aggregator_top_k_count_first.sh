@@ -15,9 +15,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # keys sit in the frozen tables as source cells and the tail in the staged records. Every cell compares the top with
 # the one of the feature off: the counts as a multiset, which ties cannot reorder, and every returned row against the
 # row of its key in the full aggregation, which catches a group whose other aggregates missed records or source cells.
-# The last column says whether units were merged count first. An ascending order and a throw-mode group limit, which
-# turn the top-K pruning off, still count first; the group limit is checked against the groups the counting found, so
-# the last query, whose limit is below them, fails although every unit keeps only its best groups.
+# The last column says whether units were merged count first. An ascending order, which the count bins do
+# not prune, still counts first, and so does a throw-mode group limit, which keeps the pruning: the merge
+# checks the limit against the groups that the counting finds. The last query freezes the tables at once,
+# so no thread holds a group, and sets a limit far below the groups of a bucket: it fails although every
+# unit keeps only its best groups.
 # `optimize_injective_functions_in_group_by = 0` keeps `toString(k)` a string key. Each cell runs in its own
 # clickhouse-local process, so the counters in `system.events` belong to it alone.
 
@@ -54,10 +56,10 @@ check 'Spilled records' 'max_bytes_before_external_group_by = 3200000' 'k' 'coun
 check 'Throw-mode group limit' "max_rows_to_group_by = 10000000, group_by_overflow_mode = 'throw'" 'k' 'count() AS c, sum(number) AS s' 'c DESC LIMIT 10'
 
 $CLICKHOUSE_LOCAL --query "
-SET max_threads = 4, max_block_size = 8192, adaptive_aggregator_freeze_threshold = 128;
+SET max_threads = 4, max_block_size = 8192, adaptive_aggregator_freeze_threshold = 0;
 SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;
-SET max_rows_to_group_by = 100000, group_by_overflow_mode = 'throw';
+SET max_rows_to_group_by = 100, group_by_overflow_mode = 'throw';
 SELECT k, count() AS c, sum(number) AS s
 FROM (SELECT if(number % 4 = 0, toUInt64(sqrt(number % 10000)), number + 1000000) AS k, number FROM numbers_mt(400000))
 GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null;

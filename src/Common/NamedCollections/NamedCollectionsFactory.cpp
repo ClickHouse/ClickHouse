@@ -425,6 +425,19 @@ NamedCollectionFactory::MetadataStorageProperties NamedCollectionFactory::getMet
     return properties;
 }
 
+#if CLICKHOUSE_CLOUD && USE_SSL
+NamedCollectionsEncryptionKeyInfo NamedCollectionFactory::getEncryptionKeyInfo()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    auto key_info = metadata_storage->getEncryptionKeyInfo();
+    if (!key_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata storage for named collections is not encrypted");
+    return std::move(*key_info);
+}
+#endif
+
 std::map<std::string, std::string> NamedCollectionFactory::getRawEntriesForBackup()
 {
     std::lock_guard lock(mutex);

@@ -3,7 +3,6 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
@@ -742,6 +741,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             storage_columns,
             delta_schema,
             log);
+        if (result_name_and_type.name != name_and_type.name)
+            info.columns_read_under_other_names.insert(name_and_type.name);
         name_and_type = result_name_and_type;
     }
 
