@@ -3955,6 +3955,8 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// disabling `parallel_distributed_insert_select` and parallel-replica reading for this insert.
     populate_context->setSetting("parallel_distributed_insert_select", Field{0});
     populate_context->setSetting("enable_parallel_replicas", Field{0});
+    /// The population runs the stored definition of the view.
+    populate_context->setAllowCompoundTableIdentifierQualification(false);
 
     StorageSnapshotPtr snapshot;
     {
