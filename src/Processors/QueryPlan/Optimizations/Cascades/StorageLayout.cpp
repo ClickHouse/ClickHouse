@@ -182,7 +182,9 @@ StorageLayoutFunctionPtr StorageLayoutFunction::tryCreate(const KeyDescription &
 
     std::shared_ptr<StorageLayoutFunction> function(new StorageLayoutFunction);
     function->dag = ActionsDAG::cloneSubDAG({component}, /*remove_aliases=*/ true);
-    if (function->dag.hasArrayJoin() || function->dag.hasNonDeterministicOrStatefulFunctions())
+    /// The value of a part was computed when the part was written. A function that is deterministic only
+    /// within one query (`dictGet`, for example) can give another value later or in another table.
+    if (function->dag.hasArrayJoin() || function->dag.hasNonDeterministic() || function->dag.hasStatefulFunctions())
         return nullptr;
 
     SipHash hash;

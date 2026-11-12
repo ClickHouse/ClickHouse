@@ -33,6 +33,11 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
+        /// A read of a distributed plan has only the marks of its bucket. Reading by layers takes the
+        /// layers from all parts of the table; without this check every task would read all rows.
+        if (reading->getDistributedReadBucketCount() > 0)
+            return nullptr;
+
         /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
         /// LIMIT BY or aggregation) outputs one port per partition, while reading by layers outputs
         /// one port per primary-key range. Both are contracts about which rows go to which output
