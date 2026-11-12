@@ -7,7 +7,7 @@ namespace DB
 
 bool currentThreadHasGroup()
 {
-    return DB::CurrentThread::hasGroup();
+    return DB::CurrentThread::getGroup() != nullptr;
 }
 
 LogsLevel currentThreadLogsLevel()

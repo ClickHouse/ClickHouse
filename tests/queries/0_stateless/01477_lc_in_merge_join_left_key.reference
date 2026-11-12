@@ -1,3 +1,4 @@
+- analyzer -
 1	l	\N	LowCardinality(String)	Nullable(String)
 \N		\N	LowCardinality(String)	Nullable(String)
 1	l	\N	LowCardinality(String)	Nullable(String)

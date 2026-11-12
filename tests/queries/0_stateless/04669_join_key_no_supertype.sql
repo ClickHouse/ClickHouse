@@ -2,6 +2,9 @@
 -- It is enough to convert both keys to the type of the values they have in common.
 -- https://github.com/ClickHouse/ClickHouse/issues/21794
 
+-- It is implemented only in the analyzer; with `enable_analyzer = 0` such a query is still rejected.
+SET enable_analyzer = 1;
+
 SELECT 'The query from the issue';
 SELECT *
 FROM (SELECT number FROM numbers(10)) AS a

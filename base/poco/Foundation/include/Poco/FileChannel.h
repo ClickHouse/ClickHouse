@@ -246,7 +246,6 @@ protected:
     void unsafeOpen();
 
 private:
-    void unsafeRotate();
     LogFile * newLogFile();
     void archiveCorrupted(const std::string & path);
     bool setNoPurge(const std::string & value);

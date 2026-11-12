@@ -17,25 +17,33 @@ La programmation par tableaux est utilisée dans le traitement des données scie
 
 Il existe deux approches différentes pour accélérer le query processing : l’exécution vectorisée des requêtes et la génération de code à l’exécution. Cette dernière élimine toute indirection et tout dispatch dynamique. Aucune de ces approches n’est intrinsèquement supérieure à l’autre. La génération de code à l’exécution peut être plus efficace lorsqu’elle fusionne de nombreuses opérations, exploitant ainsi pleinement les unités d’exécution du CPU et le pipeline. L’exécution vectorisée des requêtes peut être moins pratique, car elle implique des vecteurs temporaires qui doivent être écrits dans le cache puis relus. Si les données temporaires ne tiennent pas dans le cache L2, cela devient problématique. En revanche, l’exécution vectorisée des requêtes exploite plus facilement les capabilities SIMD du CPU. Un [article de recherche](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) rédigé par des collègues montre qu’il est préférable de combiner les deux approches. ClickHouse utilise l’exécution vectorisée des requêtes et prend en charge, de façon encore limitée, la génération de code à l’exécution.
 
-## Colonnes {#columns}
+<div id="columns">
+  ## Colonnes
+</div>
 
 L’interface `IColumn` sert à représenter les colonnes en mémoire (en réalité, des fragments de colonnes). Cette interface fournit des méthodes utilitaires pour implémenter différents opérateurs relationnels. Presque toutes les opérations sont immuables : elles ne modifient pas la colonne d’origine, mais en créent une nouvelle, modifiée. Par exemple, la méthode `IColumn :: filter` accepte un masque d’octets servant de filtre. Elle est utilisée pour les opérateurs relationnels `WHERE` et `HAVING`. Autres exemples : la méthode `IColumn :: permute` pour prendre en charge `ORDER BY`, et la méthode `IColumn :: cut` pour prendre en charge `LIMIT`.
 
 Les différentes implémentations de `IColumn` (`ColumnUInt8`, `ColumnString`, etc.) sont responsables de la disposition en mémoire des colonnes. Cette disposition est généralement un tableau contigu. Pour les colonnes de type entier, il s’agit simplement d’un tableau contigu, comme `std :: vector`. Pour les colonnes `String` et `Array`, il y a deux vecteurs : un pour tous les éléments du tableau, stockés de manière contiguë, et un second pour les décalages jusqu’au début de chaque tableau. Il existe aussi `ColumnConst`, qui ne stocke qu’une seule valeur en mémoire, mais se présente comme une colonne.
 
-## Field {#field}
+<div id="field">
+  ## Field
+</div>
 
 Néanmoins, il est également possible de travailler avec des valeurs individuelles. Pour représenter une valeur individuelle, on utilise `Field`. `Field` est simplement une union discriminée de `UInt64`, `Int64`, `Float64`, `String` et `Array`. `IColumn` fournit la méthode `operator []` pour récupérer la n-ième valeur sous forme de `Field`, ainsi que la méthode `insert` pour ajouter un `Field` à la fin d&#39;une colonne. Ces méthodes ne sont pas très efficaces, car elles nécessitent de manipuler des objets `Field` temporaires représentant une valeur individuelle. Il existe des méthodes plus efficaces, telles que `insertFrom`, `insertRangeFrom`, etc.
 
 `Field` ne contient pas suffisamment d&#39;informations sur le type de données spécifique d&#39;une table. Par exemple, `UInt8`, `UInt16`, `UInt32` et `UInt64` sont tous représentés sous la forme de `UInt64` dans un `Field`.
 
-## Fuites d’abstraction {#leaky-abstractions}
+<div id="leaky-abstractions">
+  ## Fuites d’abstraction
+</div>
 
 `IColumn` possède des méthodes pour les transformations relationnelles courantes des données, mais elles ne couvrent pas tous les besoins. Par exemple, `ColumnUInt64` n’a pas de méthode pour calculer la somme de deux colonnes, et `ColumnString` n’a pas de méthode pour effectuer une recherche de sous-chaîne. Ces innombrables routines sont implémentées en dehors de `IColumn`.
 
 Diverses fonctions sur les colonnes peuvent être implémentées de façon générique, mais peu efficace, à l’aide des méthodes de `IColumn` pour extraire des valeurs `Field`, ou de façon spécialisée en s’appuyant sur la connaissance de l’agencement mémoire interne des données dans une implémentation `IColumn` donnée. Cela se fait en transtypant les fonctions vers un type `IColumn` spécifique et en manipulant directement la représentation interne. Par exemple, `ColumnUInt64` expose la méthode `getData`, qui renvoie une référence à un tableau interne ; une routine distincte lit alors ce tableau directement ou le remplit directement. Nous avons des « abstractions à fuites » pour permettre des spécialisations efficaces de diverses routines.
 
-## Types de données {#data_types}
+<div id="data_types">
+  ## Types de données
+</div>
 
 `IDataType` est responsable de la sérialisation et de la désérialisation : il lit et écrit des blocs de colonnes ou des valeurs individuelles sous forme binaire ou textuelle. `IDataType` correspond directement aux types de données des tables. Par exemple, il existe `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString`, etc.
 
@@ -45,7 +53,9 @@ Diverses fonctions sur les colonnes peuvent être implémentées de façon gén�
 
 `IDataType` dispose de méthodes utilitaires pour différents formats de données. Il peut s&#39;agir, par exemple, de méthodes permettant de sérialiser une valeur avec d&#39;éventuels guillemets, de sérialiser une valeur pour JSON ou de sérialiser une valeur dans le format XML. Il n&#39;existe pas de correspondance directe avec les formats de données. Par exemple, les différents formats de données `Pretty` et `TabSeparated` peuvent utiliser la même méthode utilitaire `serializeTextEscaped` de l&#39;interface `IDataType`.
 
-## Block {#block}
+<div id="block">
+  ## Block
+</div>
 
 Un `Block` est un conteneur qui représente un sous-ensemble (fragment) d’une table en mémoire. Il s’agit simplement d’un ensemble de triplets : `(IColumn, IDataType, column name)`. Lors de l’exécution d’une requête, les données sont traitées par des `Block`. Si nous avons un `Block`, nous avons des données (dans l’objet `IColumn`), des informations sur leur type (dans `IDataType`) qui indiquent comment traiter cette colonne, ainsi que le nom de la colonne. Il peut s’agir soit du nom de colonne d’origine de la table, soit d’un nom artificiel attribué pour obtenir des résultats de calcul temporaires.
 
@@ -53,15 +63,21 @@ Lorsque nous calculons une fonction sur des colonnes dans un block, nous ajouton
 
 Des blocks sont créés pour chaque fragment de données traité. Notez que, pour un même type de calcul, les noms et les types des colonnes restent les mêmes d’un block à l’autre, et seules les données des colonnes changent. Il est préférable de séparer les données du block de son en-tête, car les blocks de petite taille entraînent un surcoût important lié aux chaînes temporaires lors de la copie des `shared_ptr` et des noms de colonnes.
 
-## Processeurs {#processors}
+<div id="processors">
+  ## Processeurs
+</div>
 
 Voir la description sur [https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h).
 
-## Formats {#formats}
+<div id="formats">
+  ## Formats
+</div>
 
 Les formats de données sont implémentés à l’aide de processeurs.
 
-## E/S {#io}
+<div id="io">
+  ## E/S
+</div>
 
 Pour les entrées/sorties orientées octets, il existe les classes abstraites `ReadBuffer` et `WriteBuffer`. Elles sont utilisées à la place des `iostream` de C++. Ne vous inquiétez pas : tout projet C++ mature utilise autre chose que les `iostream`, et ce pour de bonnes raisons.
 
@@ -78,7 +94,9 @@ Ensuite, vous connectez le résultat du pipeline de requête à `JSONRowOutputFo
 Cela peut être fait via la méthode `complete`, qui transforme un `QueryPipeline` pulling en `QueryPipeline` complété.
 En interne, `JSONRowOutputFormat` écrira différents délimiteurs JSON et appellera la méthode `IDataType::serializeTextJSON` avec une référence à `IColumn` et le numéro de ligne comme arguments. Par conséquent, `IDataType::serializeTextJSON` appellera une méthode de `WriteHelpers.h` : par exemple, `writeText` pour les types numériques et `writeJSONString` pour `DataTypeString`.
 
-## Tables {#tables}
+<div id="tables">
+  ## Tables
+</div>
 
 L’interface `IStorage` représente les tables. Les différentes implémentations de cette interface correspondent à différents moteurs de table. `StorageMergeTree`, `StorageMemory`, etc. en sont des exemples. Les instances de ces classes ne sont rien d’autre que des tables.
 
@@ -102,29 +120,35 @@ Pour vous faire rapidement une idée de la manière d’implémenter votre moteu
 
 > En résultat de la méthode `read`, `IStorage` renvoie `QueryProcessingStage` : des informations sur les parties de la requête déjà calculées dans le stockage.
 
-## Analyseurs syntaxiques {#parsers}
+<div id="parsers">
+  ## Analyseurs syntaxiques
+</div>
 
 Une requête est analysée par un analyseur syntaxique récursif descendant, écrit à la main. Par exemple, `ParserSelectQuery` appelle simplement de manière récursive les analyseurs syntaxiques sous-jacents pour différentes parties de la requête. Les analyseurs syntaxiques créent un `AST`. L&#39;`AST` est représenté par des nœuds, qui sont des instances de `IAST`.
 
 > Les générateurs d&#39;analyseurs syntaxiques ne sont pas utilisés pour des raisons historiques.
 
-## Interpreter {#interpreters}
+<div id="interpreters">
+  ## Interpréteurs
+</div>
 
-Les Interpreter sont chargés de créer le pipeline d’exécution des requêtes à partir d’un AST. Il existe des Interpreter simples, comme `InterpreterExistsQuery` et `InterpreterDropQuery`, ainsi que l’Interpreter plus sophistiqué `InterpreterSelectQuery`.
+Les interpréteurs sont chargés de créer le pipeline d’exécution des requêtes à partir d’un AST. Il existe des interpréteurs simples, comme `InterpreterExistsQuery` et `InterpreterDropQuery`, ainsi que l’interpréteur plus sophistiqué `InterpreterSelectQuery`.
 
 Le pipeline d’exécution des requêtes est un ensemble de processeurs capables de consommer et de produire des fragments (ensembles de colonnes de types spécifiques).
 Un processeur communique via des ports et peut avoir plusieurs ports d’entrée et plusieurs ports de sortie.
 Vous trouverez une description plus détaillée dans [src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h).
 
-Par exemple, le résultat de l’interprétation de la requête `SELECT` est un `QueryPipeline` « pulling » doté d’un port de sortie spécial permettant de lire le jeu de résultats.
-Le résultat de la requête `INSERT` est un `QueryPipeline` « pushing » avec un port d’entrée permettant d’écrire les données à insérer.
-Et le résultat de l’interprétation de la requête `INSERT SELECT` est un `QueryPipeline` « complété » qui n’a ni entrée ni sortie, mais copie simultanément les données de `SELECT` vers `INSERT`.
+Par exemple, le résultat de l’interprétation de la requête `SELECT` est un `QueryPipeline` « pulling » doté d’un port de sortie spécial permettant de lire le jeu de résultats.
+Le résultat de la requête `INSERT` est un `QueryPipeline` « pushing » avec un port d’entrée permettant d’écrire les données à insérer.
+Et le résultat de l’interprétation de la requête `INSERT SELECT` est un `QueryPipeline` « complété » qui n’a ni entrée ni sortie, mais copie simultanément les données de `SELECT` vers `INSERT`.
 
-`InterpreterSelectQueryAnalyzer` interprète une requête `SELECT`. Il introduit une couche d’abstraction supplémentaire entre `AST` et `QueryPipeline`, appelée `QueryTree`. Il est utilisé par défaut depuis la version `24.3`, constitue la seule analyse qu’une requête puisse demander depuis la version `26.9`, lorsque le paramètre `enable_analyzer` est devenu obsolète et figé à `1`, et il est la seule analyse de requêtes existante depuis la version `26.10`, lorsque l’autre a été supprimée. Jusque-là, `InterpreterSelectQuery` remplissait le même rôle à l’aide des mécanismes `ExpressionAnalyzer` et `ExpressionActions`, et `enable_analyzer` permettait de choisir entre les deux.
+`InterpreterSelectQuery` utilise les mécanismes `ExpressionAnalyzer` et `ExpressionActions` pour l’analyse et la transformation des requêtes. C’est à cet endroit qu’est effectuée la majorité des optimisations de requêtes fondées sur des règles. `ExpressionAnalyzer` est assez confus et devrait être réécrit : les différentes transformations et optimisations de requêtes devraient être extraites dans des classes distinctes afin de permettre des transformations modulaires de la requête.
 
-`ExpressionAnalyzer` et `ExpressionActions` restent utilisés pour les expressions autonomes — une expression `TTL`, une clé de partitionnement, une valeur par défaut de colonne, une projection — qui sont compilées sans requête englobante.
+Pour remédier aux problèmes des interpréteurs, un nouvel `InterpreterSelectQueryAnalyzer` a été développé. Il s’agit d’une nouvelle version de `InterpreterSelectQuery`, qui n’utilise pas `ExpressionAnalyzer` et introduit une couche d’abstraction supplémentaire entre `AST` et `QueryPipeline`, appelée `QueryTree`. Cette version est entièrement prête pour une utilisation en production, mais, par précaution, elle peut être désactivée en définissant la valeur du paramètre `enable_analyzer` sur `false`.
 
-## Fonctions {#functions}
+<div id="functions">
+  ## Fonctions
+</div>
 
 Il existe des fonctions ordinaires et des fonctions d’agrégation. Pour les fonctions d’agrégation, voir la section suivante.
 
@@ -140,7 +164,9 @@ C’est un excellent cas d’usage pour implémenter la génération de code à 
 
 En raison de l’exécution vectorisée des requêtes, les fonctions ne sont pas évaluées en court-circuit. Par exemple, si vous écrivez `WHERE f(x) AND g(y)`, les deux côtés sont calculés, y compris pour les lignes où `f(x)` vaut zéro (sauf lorsque `f(x)` est une expression constante nulle). Mais si la sélectivité de la condition `f(x)` est élevée et que le calcul de `f(x)` est bien moins coûteux que celui de `g(y)`, il vaut mieux implémenter un calcul en plusieurs passes. On commencerait par calculer `f(x)`, puis on filtrerait les colonnes selon le résultat, et on ne calculerait `g(y)` que pour des fragments de données plus petits et filtrés.
 
-## Fonctions d&#39;agrégation {#aggregate-functions}
+<div id="aggregate-functions">
+  ## Fonctions d&#39;agrégation
+</div>
 
 Les fonctions d&#39;agrégation sont des fonctions à état. Elles accumulent les valeurs qui leur sont transmises dans un état interne et permettent d&#39;obtenir des résultats à partir de cet état. Elles sont gérées via l&#39;interface `IAggregateFunction`. Les états peuvent être assez simples (l&#39;état de `AggregateFunctionCount` n&#39;est qu&#39;une valeur `UInt64`) ou très complexes (l&#39;état de `AggregateFunctionUniqCombined` combine un tableau linéaire, une table de hachage et une structure de données probabiliste `HyperLogLog`).
 
@@ -150,7 +176,9 @@ Les états d&#39;agrégation peuvent être sérialisés et désérialisés pour 
 
 > Le format de données sérialisé des états de fonctions d&#39;agrégation n&#39;est actuellement pas versionné. Ce n&#39;est pas gênant si les états d&#39;agrégation ne sont stockés que temporairement. Mais nous disposons du moteur de table `AggregatingMergeTree` pour l&#39;agrégation incrémentielle, et il est déjà utilisé en production. C&#39;est pourquoi la rétrocompatibilité est indispensable si le format sérialisé d&#39;une fonction d&#39;agrégation doit être modifié à l&#39;avenir.
 
-## Serveur {#server}
+<div id="server">
+  ## Serveur
+</div>
 
 Le serveur prend en charge plusieurs interfaces :
 
@@ -168,7 +196,9 @@ Nous assurons une compatibilité ascendante et descendante complète pour le pro
   Pour la plupart des applications externes, nous recommandons d&#39;utiliser l&#39;interface HTTP, car elle est simple et facile à utiliser. Le protocole TCP est plus étroitement lié aux structures de données internes : il utilise un format interne pour transmettre des blocs de données, ainsi qu&#39;un mécanisme de tramage personnalisé pour les données compressées.
 </Note>
 
-## Configuration {#configuration}
+<div id="configuration">
+  ## Configuration
+</div>
 
 Le serveur ClickHouse repose sur les bibliothèques POCO C++ et utilise `Poco::Util::AbstractConfiguration` pour représenter sa configuration. La configuration est stockée par la classe `Poco::Util::ServerApplication`, dont hérite la classe `DaemonBase`, elle-même héritée par la classe `DB::Server`, qui implémente `clickhouse-server`. La configuration est donc accessible via la méthode `ServerApplication::config()`.
 
@@ -176,7 +206,9 @@ La configuration est lue depuis plusieurs fichiers (au format XML ou YAML), puis
 
 Pour les requêtes et les sous-systèmes autres que `Server`, la configuration est accessible à l&#39;aide de la méthode `Context::getConfigRef()`. Chaque sous-système capable de recharger sa configuration sans redémarrer le serveur doit s&#39;enregistrer dans le callback de rechargement de la méthode `Server::main()`. Notez que si la nouvelle configuration contient une erreur, la plupart des sous-systèmes l&#39;ignoreront, consigneront des avertissements dans le journal et continueront de fonctionner avec la configuration précédemment chargée. En raison de la nature de `AbstractConfiguration`, il n&#39;est pas possible de transmettre une référence à une section spécifique ; `String config_prefix` est donc généralement utilisé à la place.
 
-### Contexte {#context}
+<div id="context">
+  ### Contexte
+</div>
 
 ClickHouse gère les paramètres selon une hiérarchie de contextes :
 
@@ -198,7 +230,9 @@ Lors de la planification d’une opération (requêtes, mutations, etc.), le ser
   Les opérations d’arrière-plan peuvent être configurées via les paramètres globaux et ceux du profil &#39;background&#39; ; les paramètres de session et de requête n’ont aucun effet dans ce cas. Si aucune configuration explicite n’est fournie, la configuration hérite du contexte global. Le nom de profil par défaut pour ces opérations est &#39;background&#39;, mais il peut être redéfini via le paramètre serveur `background_profile`.
 </Note>
 
-## Threads et jobs {#threads-and-jobs}
+<div id="threads-and-jobs">
+  ## Threads et jobs
+</div>
 
 Pour exécuter des requêtes et effectuer des activités annexes, ClickHouse alloue des threads à partir de l’un de ses pools de threads afin d’éviter les créations et destructions fréquentes de threads. Il existe plusieurs pools de threads, sélectionnés selon le rôle et la structure d’un job :
 
@@ -228,7 +262,9 @@ Quel que soit le pool utilisé pour un job, une instance `ThreadStatus` est cré
 
 Si le thread est lié à l’exécution d’une requête, alors l’élément le plus important attaché à `ThreadStatus` est le contexte de requête `ContextPtr`. Chaque requête a son thread principal dans le pool serveur. Le thread principal effectue cet attachement en conservant un objet `ThreadStatus::QueryScope query_scope(query_context)`. Il crée également un groupe de threads représenté par l’objet `ThreadGroupStatus`. Chaque thread supplémentaire alloué pendant l’exécution de cette requête est attaché à son groupe de threads via l’appel `CurrentThread::attachTo(thread_group)`. Les groupes de threads servent à agréger les compteurs d’événements de profil et à suivre la consommation mémoire de tous les threads dédiés à une seule tâche (voir les classes `MemoryTracker` et `ProfileEvents::Counters` pour plus d’informations).
 
-## Contrôle de la concurrence {#concurrency-control}
+<div id="concurrency-control">
+  ## Contrôle de la concurrence
+</div>
 
 Une requête qui peut être parallélisée utilise le paramètre `max_threads` pour limiter son parallélisme. La valeur par défaut de ce paramètre est choisie de manière à permettre à une seule requête d’exploiter au mieux tous les cœurs CPU. Mais que se passe-t-il s’il y a plusieurs requêtes concurrentes et que chacune utilise la valeur par défaut du paramètre `max_threads` ? Les requêtes se partageront alors les ressources CPU. Le système d’exploitation garantira l’équité en basculant constamment d’un thread à l’autre, ce qui entraîne une certaine pénalité en termes de performances. `ConcurrencyControl` permet de réduire cette pénalité et d’éviter d’allouer un trop grand nombre de threads. Le paramètre de configuration `concurrent_threads_soft_limit_num` sert à limiter le nombre de threads concurrents pouvant être alloués avant d’appliquer une forme de pression sur le CPU.
 
@@ -264,7 +300,9 @@ L’API de `ConcurrencyControl` se compose des fonctions suivantes :
 
 Cette API permet aux requêtes de démarrer avec au moins un thread (en cas de pression sur le CPU), puis de monter progressivement jusqu’à `max_threads`.
 
-## Exécution distribuée des requêtes {#distributed-query-execution}
+<div id="distributed-query-execution">
+  ## Exécution distribuée des requêtes
+</div>
 
 Les serveurs d’un cluster sont, dans l’ensemble, indépendants. Vous pouvez créer une table `Distributed` sur un seul serveur ou sur tous les serveurs d’un cluster. La table `Distributed` ne stocke pas elle-même les données : elle fournit uniquement une « vue » de toutes les tables locales réparties sur plusieurs nœuds du cluster. Lorsque vous effectuez un SELECT sur une table `Distributed`, celle-ci réécrit la requête, choisit les nœuds distants selon les paramètres d’équilibrage de charge, puis leur transmet la requête. La table `Distributed` demande aux serveurs distants de traiter la requête uniquement jusqu’à l’étape où les résultats intermédiaires provenant de différents serveurs peuvent être fusionnés. Elle reçoit ensuite ces résultats intermédiaires et les fusionne. La table distribuée essaie de déléguer autant de travail que possible aux serveurs distants et évite d’envoyer trop de données intermédiaires sur le réseau.
 
@@ -272,7 +310,9 @@ Les choses se compliquent lorsque vous avez des sous-requêtes dans des clauses 
 
 Il n’existe pas de plan de requête global pour l’exécution distribuée des requêtes. Chaque nœud dispose de son propre plan de requête local pour sa part du travail. Nous ne prenons en charge qu’une exécution distribuée simple, en un seul passage : nous envoyons les requêtes aux nœuds distants, puis nous fusionnons les résultats. Mais cela n’est pas faisable pour des requêtes complexes avec des `GROUP BY` à forte cardinalité ou avec de grandes quantités de données temporaires pour JOIN. Dans ce type de cas, il faut « redistribuer » les données entre les serveurs, ce qui nécessite une coordination supplémentaire. ClickHouse ne prend pas en charge ce type d’exécution de requête, et nous devons encore travailler sur ce point.
 
-## MergeTree {#merge-tree}
+<div id="merge-tree">
+  ## MergeTree
+</div>
 
 `MergeTree` est une famille de moteurs de stockage qui prend en charge l’indexation par clé primaire. La clé primaire peut être un tuple arbitraire de colonnes ou d’expressions. Les données d’une table `MergeTree` sont stockées dans des « parts ». Chaque part stocke les données dans l’ordre de la clé primaire, de sorte qu’elles sont ordonnées lexicographiquement selon le tuple de la clé primaire. Toutes les colonnes de la table sont stockées dans des fichiers `column.bin` distincts au sein de ces parts. Les fichiers se composent de blocs compressés. Chaque bloc contient généralement entre 64 KB et 1 MB de données non compressées, selon la taille moyenne des valeurs. Les blocs se composent de valeurs de colonnes placées de façon contiguë les unes à la suite des autres. Les valeurs sont dans le même ordre pour chaque colonne (la clé primaire définit l’ordre), de sorte que lorsque vous parcourez plusieurs colonnes, vous obtenez les valeurs des lignes correspondantes.
 
@@ -286,7 +326,9 @@ Lorsque vous `INSERT` un lot de données dans `MergeTree`, ce lot est trié selo
 
 Il existe des moteurs MergeTree qui effectuent un travail supplémentaire pendant les fusions en arrière-plan. `CollapsingMergeTree` et `AggregatingMergeTree` en sont des exemples. Cela peut être considéré comme une prise en charge spéciale des mises à jour. Gardez à l’esprit qu’il ne s’agit pas de véritables mises à jour, car les utilisateurs n’ont généralement aucun contrôle sur le moment où les fusions en arrière-plan sont exécutées, et les données d’une table `MergeTree` sont presque toujours stockées dans plus d’une part, et non sous une forme entièrement fusionnée.
 
-## Réplication {#replication}
+<div id="replication">
+  ## Réplication
+</div>
 
 Dans ClickHouse, la réplication peut être configurée table par table. Vous pouvez avoir sur le même serveur certaines tables répliquées et d’autres non répliquées. Vous pouvez également avoir des tables répliquées de différentes façons, par exemple une table avec un facteur de réplication de deux et une autre de trois.
 

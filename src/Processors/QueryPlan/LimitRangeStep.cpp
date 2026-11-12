@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -8,7 +7,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -163,25 +161,12 @@ void LimitRangeStep::serialize(Serialization & ctx) const
     if (limit)
         writeVarUInt(*limit, ctx.out);
 
-    /// The boundary columns are outputs of `conditions`, and their names are composed by the planner, so a
-    /// cache key refers to them by what they compute rather than by how this build named them - the same
-    /// choice `FilterStep` makes for its filter column.
     if (start_column_name)
-    {
-        if (ctx.for_cache_key)
-            writeIntBinary(conditions.getOutputIdentity(*start_column_name, ctx.input_header), ctx.out);
-        else
-            writeStringBinary(*start_column_name, ctx.out);
-    }
+        writeStringBinary(*start_column_name, ctx.out);
     if (end_column_name)
-    {
-        if (ctx.for_cache_key)
-            writeIntBinary(conditions.getOutputIdentity(*end_column_name, ctx.input_header), ctx.out);
-        else
-            writeStringBinary(*end_column_name, ctx.out);
-    }
+        writeStringBinary(*end_column_name, ctx.out);
 
-    conditions.serialize(ctx.out, ctx.registry, ctx.input_header);
+    conditions.serialize(ctx.out, ctx.registry);
 }
 
 QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)

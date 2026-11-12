@@ -2,8 +2,7 @@
 /// compiled, see the SRCS list in contrib/librdkafka-cmake/CMakeLists.txt) and adds an accessor
 /// for the static rd_kafka_properties table, which is the source of truth for the _RK_SENSITIVE
 /// flag. ClickHouse uses the flag to hide the values of sensitive properties (e.g. sasl.password)
-/// in its logs. Pointer properties (e.g. log_cb) are included: their values are memory addresses.
-/// No public librdkafka API exposes the flag: the redacting dump
+/// in its logs. No public librdkafka API exposes the flag: the redacting dump
 /// (rd_kafka_anyconf_dump with redact_sensitive) is static, and the public rd_kafka_conf_dump
 /// does not redact.
 
@@ -21,7 +20,7 @@ static void chrd_fill_sensitive_names(void)
     const struct rd_kafka_property * prop = NULL;
     size_t n = 0;
     for (prop = rd_kafka_properties; prop->name; prop++)
-        if ((prop->scope & _RK_SENSITIVE) || prop->type == _RK_C_PTR)
+        if (prop->scope & _RK_SENSITIVE)
             chrd_sensitive_names[n++] = prop->name;
 }
 

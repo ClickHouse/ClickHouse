@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 
 # Tests for SYSTEM WAIT FAILPOINT ... PAUSE:
 #
