@@ -795,7 +795,8 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_
     return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_size, b, b_size);
 }
 
-#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#if (defined(__x86_64__) && defined(__SSE2__)) \
+    || (defined(__aarch64__) && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 /// Compare the common prefix of `UInt8` columns without ordering mismatching characters.
 inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
 {
