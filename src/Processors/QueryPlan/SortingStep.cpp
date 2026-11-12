@@ -968,6 +968,7 @@ void SortingStep::describePipeline(FormatSettings & settings) const
     else if (type == Type::FinishSorting)
     {
         IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(scatter_stage, settings);
         IQueryPlanStep::describePipeline(merge_streams, settings);
     }
     else if (type == Type::PartitionedFinishSorting)
