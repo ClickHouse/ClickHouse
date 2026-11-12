@@ -25,12 +25,15 @@ for scale in 1 3 6 9; do
     ${CLICKHOUSE_LOCAL} -q "SELECT groupArray(t) FROM file('$WORK_DIR/t$scale.orc', ORC, 't DateTime64($scale, \\'UTC\\')')"
 done
 
-echo "-- the timestamps between -1 and 0 seconds keep negative nanoseconds"
+echo "-- the timestamps between -1 and 0 seconds, which ORC cannot store, are written as the epoch"
 ${CLICKHOUSE_LOCAL} -q "
     SELECT toDateTime64(s, 9, 'UTC') AS t
-    FROM (SELECT arrayJoin(['1969-12-31 23:59:59.5', '1969-12-31 23:59:59.999999999', '1969-12-31 23:59:59.001']) AS s)
-    INTO OUTFILE '$WORK_DIR/between.orc' TRUNCATE FORMAT ORC"
+    FROM (SELECT arrayJoin(['1969-12-31 23:59:59.5', '1969-12-31 23:59:59.999999999', '1969-12-31 23:59:59.001', '1969-12-31 23:59:59.000999999']) AS s)
+    INTO OUTFILE '$WORK_DIR/between.orc' TRUNCATE FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'"
+${CLICKHOUSE_LOCAL} -q "SELECT position(raw, unhex('FFFFFFFFFFFF')) = 0 AS no_negative_nanoseconds FROM file('$WORK_DIR/between.orc', RawBLOB, 'raw String')"
 ${CLICKHOUSE_LOCAL} -q "SELECT groupArray(t) FROM file('$WORK_DIR/between.orc', ORC, 't DateTime64(9, \\'UTC\\')')"
+# The statistics have the written values.
+${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('$WORK_DIR/between.orc', ORC, 't DateTime64(9, \\'UTC\\')') WHERE t = toDateTime64('1970-01-01 00:00:00', 9, 'UTC') SETTINGS input_format_orc_filter_push_down = 1"
 
 echo "-- the files written with negative nanoseconds are read correctly"
 ${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$DATA_DIR/negative_nanoseconds_legacy.orc') SETTINGS session_timezone = 'UTC'"
