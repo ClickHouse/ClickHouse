@@ -8,7 +8,10 @@
 -- settings constraint forbidding `make_distributed_plan = 1` - are judged together, once per
 -- query, from their explicitly set values only (an unset setting counts toward neither side).
 -- Wanting and refusing at once is rejected with an error instead of silently resolved one way, so
--- the result does not depend on which of the two settings was set first.
+-- the result does not depend on which of the two settings was set first. A non-empty
+-- `distributed_plan_worker_cluster` is rejected the same way together with
+-- `distributed_plan_execute_locally = 1`, which runs the plan in-process and could not serve a
+-- named cluster of remote workers.
 
 SELECT 'neither wants nor refuses: the plan stays off';
 SELECT getSetting('make_distributed_plan');
@@ -33,6 +36,9 @@ SELECT getSetting('make_distributed_plan') SETTINGS make_distributed_plan = 1, d
 
 SELECT 'wants via the worker cluster, refuses via a zero workers num: rejected';
 SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_worker_cluster = 'some_cluster', distributed_plan_workers_num = 0; -- { serverError INVALID_SETTING_VALUE }
+
+SELECT 'a worker cluster conflicts with running the plan in-process: rejected';
+SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_worker_cluster = 'some_cluster', distributed_plan_execute_locally = 1; -- { serverError INVALID_SETTING_VALUE }
 
 DROP SETTINGS PROFILE IF EXISTS profile_05628;
 CREATE SETTINGS PROFILE profile_05628 SETTINGS make_distributed_plan CONST;

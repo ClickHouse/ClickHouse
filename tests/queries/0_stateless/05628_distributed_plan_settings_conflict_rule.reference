@@ -10,4 +10,5 @@ false
 wants via the workers num, refuses via an explicit off: rejected
 wants via make_distributed_plan, refuses via a zero workers num: rejected
 wants via the worker cluster, refuses via a zero workers num: rejected
+a worker cluster conflicts with running the plan in-process: rejected
 wants via the workers num, refuses via a settings constraint: rejected
