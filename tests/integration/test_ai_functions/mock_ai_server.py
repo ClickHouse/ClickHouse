@@ -21,7 +21,7 @@ Endpoints:
   POST /v1/chat/slow_first           — like `/v1/chat/completions` without a schema, but the request
       with the user message `0` sleeps SLOW_FIRST_RESPONSE_SECONDS. `/concurrency` reports in
       `served_while_slow` how many other requests were served while it was in flight.
-  POST /v1/chat/jitter              — like `/v1/chat/completions` without a schema (echoes the user
+  POST /v1/chat/jitter               — like `/v1/chat/completions` without a schema (echoes the user
       message), but sleeps a random 0 to JITTER_MAX_SECONDS first, so concurrent requests complete out
       of order.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests

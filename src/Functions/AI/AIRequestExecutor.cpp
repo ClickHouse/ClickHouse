@@ -144,13 +144,19 @@ void checkResponseIsComplete(const AIResponse & response)
 }
 
 /// The attempt loop every request kind shares: reserve an API-call slot, run one attempt, retry a
-/// transient failure after a backoff. Returns nothing when the API-call quota is exhausted, or when
-/// the request failed (after all retries) and `throw_on_error` is disabled.
+/// transient failure after a backoff. Returns nothing when the API-call quota is exhausted, when
+/// another request of the caller has thrown, or when the request failed (after all retries) and
+/// `throw_on_error` is disabled.
 template <typename Response, typename Attempt>
-std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracker & quota, Attempt && attempt_fn)
+std::optional<Response> runRequest(
+    const AIRequestPolicy & policy, AIQuotaTracker & quota, AIRequestCompletions & completions, Attempt && attempt_fn)
 {
     for (UInt64 attempt = 0; attempt <= policy.max_retries; ++attempt)
     {
+        /// The caller throws the other request's exception, so this request's response is not used.
+        if (completions.hasFailed())
+            return {};
+
         /// Reserve an API-call slot before each request; this also performs a quota check.
         if (!quota.recordApiCall())
             return {};
@@ -207,6 +213,32 @@ void runAttempt(IAIProvider & provider, const AIEmbeddingRequest & request, cons
     provider.embed(request, timeouts, response);
 }
 
+/// The task of a job on the AI request thread pool. Notifies `completions` once the task's future is
+/// ready, whether the pool runs the job or drops it.
+template <typename Task>
+struct ScheduledTask
+{
+    ScheduledTask(std::unique_ptr<Task> task_, AIRequestCompletionsPtr completions_)
+        : task(std::move(task_)), completions(std::move(completions_))
+    {
+    }
+
+    ~ScheduledTask()
+    {
+        /// Destroying a task that did not run makes its future ready with an exception.
+        task.reset();
+        if (scheduled)
+            completions->notifyCompleted();
+    }
+
+    std::unique_ptr<Task> task;
+    AIRequestCompletionsPtr completions;
+
+    /// Set by `submit` once the job is scheduled, before `submit` releases its reference. A job that
+    /// was never scheduled is not counted by the caller, so it does not notify.
+    bool scheduled = false;
+};
+
 template <typename Response, typename Request>
 std::future<std::optional<Response>> submit(
     std::shared_ptr<IAIProvider> provider,
@@ -223,7 +255,7 @@ std::future<std::optional<Response>> submit(
     {
         try
         {
-            return runRequest<Response>(my_policy, *my_quota, [&]
+            return runRequest<Response>(my_policy, *my_quota, *my_completions, [&]
             {
                 Response response;
 
@@ -253,8 +285,9 @@ std::future<std::optional<Response>> submit(
     };
 
     using Task = detail::CallbackRunnerTask<std::optional<Response>, decltype(task)>;
-    auto runner_task = std::make_shared<Task>(getCurrentThreadGroup(), ThreadName::AI_REQUEST, std::move(task));
-    auto future = runner_task->promise.get_future();
+    auto scheduled_task = std::make_shared<ScheduledTask<Task>>(
+        std::make_unique<Task>(getCurrentThreadGroup(), ThreadName::AI_REQUEST, std::move(task)), completions);
+    auto future = scheduled_task->task->promise.get_future();
 
     /// Wait for a free slot in the queue in short steps, so a killed or timed-out query stops waiting.
     constexpr Int64 wait_microseconds = 100'000;
@@ -264,14 +297,7 @@ std::future<std::optional<Response>> submit(
         Stopwatch watch;
         try
         {
-            pool.scheduleOrThrow(
-                [runner_task, completions]
-                {
-                    runner_task->run();
-                    completions->notifyCompleted();
-                },
-                {},
-                wait_microseconds);
+            pool.scheduleOrThrow([scheduled_task] { scheduled_task->task->run(); }, {}, wait_microseconds);
             break;
         }
         catch (const Exception & e)
@@ -283,6 +309,7 @@ std::future<std::optional<Response>> submit(
         quota->throwIfCancelled();
     }
 
+    scheduled_task->scheduled = true;
     return future;
 }
 
