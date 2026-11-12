@@ -165,7 +165,7 @@ std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilt
 }
 
 RelationStats estimateReadRowsCount(
-    QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport, const FindSingleNodeReadsOfTable & find_single_node_reads_of_table)
+    QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport, const FindSingleNodeRead & find_single_node_read)
 {
     if (prunesNothingAtPlanTime(filter))
         filter = nullptr;
@@ -181,34 +181,24 @@ RelationStats estimateReadRowsCount(
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
-            auto analyze = [](const ReadFromMergeTree & read) -> ReadFromMergeTree::AnalysisResultPtr
+            /// A read of the probe plan of automatic parallel replicas has no index conditions, and takes the
+            /// analysis of its single-node read if that plan is chosen. Estimate from that analysis as well, if it is
+            /// already there; otherwise leave the read without an estimate rather than analyze it here, which would
+            /// repeat the work and prune nothing.
+            if (find_single_node_read)
             {
-                if (auto result = read.getAnalyzedResult())
-                    return result;
+                if (const auto * single_node_read = find_single_node_read(*reading))
+                    analyzed_result = single_node_read->getAnalyzedResult();
+            }
+            else
+            {
                 /// Range analysis normally enforces throwing read limits and memoizes its result.
                 /// At this stage, however, later planning may make the executed read exempt from those
                 /// limits. In that case use an estimation-only analysis; execution will analyze again
                 /// after its final read mode is known.
-                return read.hasThrowingReadRowLimit() ? read.selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-                                                      : read.selectRangesToRead();
-            };
-
-            /// A read of the probe plan of automatic parallel replicas has no index conditions, and takes the
-            /// analysis of its single-node read if that plan is chosen. Analyzing the read itself would repeat the
-            /// work and prune nothing, so estimate from the single-node reads of the table. Which of them this read
-            /// stands for cannot always be told, so take the largest: the whole analysis when the table is read once
-            /// or several times alike (a CTE used twice), and an upper bound when its reads are filtered differently.
-            std::span<const ReadFromMergeTree * const> single_node_reads;
-            if (find_single_node_reads_of_table)
-                single_node_reads = find_single_node_reads_of_table(*reading);
-
-            if (single_node_reads.empty())
-                analyzed_result = analyze(*reading);
-            for (const auto * single_node_read : single_node_reads)
-            {
-                auto result = analyze(*single_node_read);
-                if (!analyzed_result || (result && result->selected_rows > analyzed_result->selected_rows))
-                    analyzed_result = std::move(result);
+                analyzed_result = reading->hasThrowingReadRowLimit()
+                    ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                    : reading->selectRangesToRead();
             }
         }
 
@@ -394,7 +384,7 @@ RelationStats estimateReadRowsCount(
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport, find_single_node_read);
     }
 
     /// A join that has already been optimized enters its parent's join graph as a single relation,
@@ -421,7 +411,7 @@ RelationStats estimateReadRowsCount(
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -434,7 +424,7 @@ RelationStats estimateReadRowsCount(
     if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
     {
         /// A filter above the array join can read its output, which the statistics of the input do not describe.
-        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport, find_single_node_reads_of_table);
+        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport, find_single_node_read);
         if (stats.estimated_rows && *stats.estimated_rows != 0)
         {
             /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
@@ -456,7 +446,7 @@ RelationStats estimateReadRowsCount(
 
     if (expression_step)
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -465,21 +455,21 @@ RelationStats estimateReadRowsCount(
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport, find_single_node_reads_of_table);
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport, find_single_node_read);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -495,11 +485,11 @@ RelationStats estimateReadRowsCount(
     /// exact phase from this estimate, and the build filter sits below the join shuffle, so
     /// the walk has to cross exchanges on every build.
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_reads_of_table);
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
 
     return {};
 }

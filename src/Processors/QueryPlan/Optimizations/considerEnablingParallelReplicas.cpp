@@ -646,24 +646,6 @@ FindSingleNodeRead makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
     };
 }
 
-/// Groups the reads of the single-node plan by the table they read, for the probe plan's row estimates. They need no
-/// pairing: any read of the table gives a usable estimate, while pairing by name fails where the two plans number
-/// their table expressions differently, see `transplantAnalysisToAllReads`.
-FindSingleNodeReadsOfTable makeSingleNodeReadsOfTableFinder(QueryPlan::Node & single_node_root)
-{
-    std::map<const MergeTreeData *, std::vector<const ReadFromMergeTree *>> reads_by_table;
-    for (const auto * read : collectReadingSteps(single_node_root))
-        reads_by_table[&read->getMergeTreeData()].push_back(read);
-
-    return [reads = std::move(reads_by_table)](const ReadFromMergeTree & read) -> std::span<const ReadFromMergeTree * const>
-    {
-        auto it = reads.find(&read.getMergeTreeData());
-        if (it == reads.end())
-            return {};
-        return it->second;
-    };
-}
-
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
 /// the same read. Without this only the matched read gets an analysis and the rest scan everything - on
 /// TPC-H q03, 1045 marks against 614.
@@ -1107,7 +1089,7 @@ void considerEnablingParallelReplicas(
     auto built_sets = collectBuiltSets(query_plan);
     Stopwatch plan_build_watch;
     auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(
-        built_sets, makeSingleNodeReadFinder(root), makeSingleNodeReadsOfTableFinder(root), getLogger("AutoParallelReplicas"));
+        built_sets, makeSingleNodeReadFinder(root), getLogger("AutoParallelReplicas"));
 
     /// The builder checks what it can before it builds anything, and logs the specific reason when it
     /// stops there. Those are skips, like the ones above, not plans that could not be compared.

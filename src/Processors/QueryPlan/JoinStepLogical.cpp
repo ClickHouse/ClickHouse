@@ -2055,10 +2055,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
         if (eligible_conditions > 2)
         {
             planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(
-                *children[0], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_reads_of_table)
+                *children[0], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_read)
                 .column_stats;
             planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(
-                *children[1], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_reads_of_table)
+                *children[1], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_read)
                 .column_stats;
         }
     }

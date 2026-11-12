@@ -36,7 +36,7 @@ WHERE fact.k BETWEEN 100000 AND 110000 AND dim.d < 100
 GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_join_off', enable_parallel_replicas = 0;
 
 -- The plan with parallel replicas numbers its table expressions differently from the single-node plan when the big
--- table is written last, so the names of the reads do not tell which read is which.
+-- table is written last, so only explicit aliases tell which read is which.
 SELECT sum(b.v), sum(m.name = ''), sum(s.name = '') FROM dim AS m, dim2 AS s, fact AS b
 WHERE m.d = b.d AND s.d = b.d AND b.k BETWEEN 100000 AND 110000 AND m.d < 100
 FORMAT Null SETTINGS log_comment = '05508_big_table_last_auto';
@@ -64,7 +64,8 @@ SELECT count(), sum(c1.v) FROM dim AS m, c AS c1, c AS c2 WHERE c1.d = c2.d AND 
 FORMAT Null SETTINGS log_comment = '05508_cte_twice_off', enable_parallel_replicas = 0;
 
 -- A CTE over a join, used twice. The plan with parallel replicas numbers the table expressions of each copy from 1,
--- so both copies of a table get the same name there and different names in the single-node plan.
+-- so both copies of a table get the same name there and different names in the single-node plan. Its reads cannot be
+-- paired, and they are left without an estimate rather than analyzed.
 WITH inv AS (SELECT f.d AS d, c.m AS m, sum(f.v) AS s FROM fact AS f, dim AS a, dim2 AS b, dim3 AS c
              WHERE f.d = a.d AND f.d = b.d AND f.d = c.d AND f.k BETWEEN 100000 AND 110000 GROUP BY f.d, c.m)
 SELECT count(), sum(i1.s + i2.s) FROM inv AS i1, inv AS i2 WHERE i1.d = i2.d AND i1.m = 1 AND i2.m = 2
@@ -74,6 +75,16 @@ WITH inv AS (SELECT f.d AS d, c.m AS m, sum(f.v) AS s FROM fact AS f, dim AS a, 
              WHERE f.d = a.d AND f.d = b.d AND f.d = c.d AND f.k BETWEEN 100000 AND 110000 GROUP BY f.d, c.m)
 SELECT count(), sum(i1.s + i2.s) FROM inv AS i1, inv AS i2 WHERE i1.d = i2.d AND i1.m = 1 AND i2.m = 2
 FORMAT Null SETTINGS log_comment = '05508_cte_over_join_twice_off', enable_parallel_replicas = 0;
+
+-- Under a throwing read limit the single-node join estimates do not keep their analysis, so the probe finds none to
+-- take, and its reads are left without an estimate rather than analyzed.
+SELECT dim.name, sum(fact.v) FROM fact INNER JOIN dim ON fact.d = dim.d
+WHERE fact.k BETWEEN 100000 AND 110000 AND dim.d < 100
+GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_throwing_limit_auto', max_rows_to_read = 1000000000;
+
+SELECT dim.name, sum(fact.v) FROM fact INNER JOIN dim ON fact.d = dim.d
+WHERE fact.k BETWEEN 100000 AND 110000 AND dim.d < 100
+GROUP BY dim.name FORMAT Null SETTINGS log_comment = '05508_throwing_limit_off', max_rows_to_read = 1000000000, enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
