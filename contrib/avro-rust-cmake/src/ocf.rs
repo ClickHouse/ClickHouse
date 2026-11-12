@@ -21,7 +21,8 @@
 use std::collections::HashMap;
 
 use crate::varint::{decode_int, decode_long, VarintError};
-use crate::{Error, ErrorCode, Result, MAX_ZERO_SIZE_ROWS_PER_BLOCK};
+use crate::{Error, ErrorCode, Result};
+
 
 /// The four magic bytes `Obj` and version 1.
 pub const MAGIC: [u8; 4] = *b"Obj\x01";
@@ -313,13 +314,6 @@ pub fn check_object_count(object_count: u64, payload_len: u64, min_record_size: 
                 ),
             ));
         }
-    } else if object_count > MAX_ZERO_SIZE_ROWS_PER_BLOCK {
-        return Err(Error::new(
-            ErrorCode::TooManyItems,
-            format!(
-                "Invalid data file. Object count {object_count} in block header exceeds the limit of {MAX_ZERO_SIZE_ROWS_PER_BLOCK} for records that occupy no bytes"
-            ),
-        ));
     }
     Ok(())
 }
@@ -667,23 +661,9 @@ mod tests {
                 "Invalid data file. Negative byte count in block header: -5"
             )
         );
-        // Zero-size records: capped.
-        assert!(parse_block_header(
-            &block(MAX_ZERO_SIZE_ROWS_PER_BLOCK as i64, 0),
-            false,
-            &ctx(Codec::Null, 0)
-        )
-        .is_ok());
-        let e = parse_block_header(
-            &block(MAX_ZERO_SIZE_ROWS_PER_BLOCK as i64 + 1, 0),
-            false,
-            &ctx(Codec::Null, 0),
-        )
-        .unwrap_err();
-        assert_eq!(e.code, ErrorCode::TooManyItems);
-        let e = parse_block_header(&block(i64::MAX, 1 << 40), false, &ctx(Codec::Zstandard, 0))
-            .unwrap_err();
-        assert_eq!(e.code, ErrorCode::TooManyItems);
+        // Zero-size records are valid at any declared count; the payload itself remains empty and the
+        // decoder's per-row/cancellation guards apply during materialization.
+        assert!(parse_block_header(&block(i64::MAX, 0), false, &ctx(Codec::Null, 0)).is_ok());
         // Block size cap.
         let c = BlockCtx {
             codec: Codec::Null,

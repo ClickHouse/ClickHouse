@@ -322,7 +322,7 @@ fn zero_byte_items_are_capped_per_array_and_per_row() {
 }
 
 #[test]
-fn zero_size_rows_need_a_caller_bound_and_a_block_cap() {
+fn zero_size_rows_follow_caller_bounds_and_not_block_framing() {
     // Rows that occupy no bytes: the executor stops at max_rows, not at the end of the input.
     let s = schema("\"null\"");
     let skip = skip_program(&s);

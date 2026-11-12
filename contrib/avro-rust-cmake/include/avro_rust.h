@@ -144,8 +144,9 @@
 ///    loop, at most 16777216 per row.
 ///  * Blocks: for the null codec `avro_ocf_block_header` checks that the object
 ///    count fits the payload; for compressed blocks use `avro_ocf_check_object_count`
-///    with the decompressed size. Rows that occupy no bytes are capped at
-///    268435456 per block.
+///  * Rows: the caller's materialization budget and cancellation policy. The OCF block header alone does not cap
+///    the declared count of empty records.
+
 
 #include <stddef.h>
 #include <stdint.h>

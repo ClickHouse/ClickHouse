@@ -51,9 +51,8 @@ pub const HARD_MAX_DEPTH: usize = 100_000;
 /// at least one byte, the end of each array or map.
 pub const MAX_ZERO_SIZE_ITEMS: u64 = 1 << 24;
 
-/// Cap on the number of rows of a block whose rows can occupy zero bytes.
-/// Applied by [`ocf::parse_block_header`].
-pub const MAX_ZERO_SIZE_ROWS_PER_BLOCK: u64 = 1 << 28;
+/// Limits on rows are enforced by the caller's materialization budget and cancellation policy, not the
+/// framing of an OCF block. Empty records have valid zero-byte payload blocks with any declared row count.
 
 /// Stable numeric error codes. The numbers are part of the C ABI (the FFI
 /// returns `-code`) and never change meaning once assigned.
