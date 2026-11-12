@@ -149,3 +149,58 @@ ORDER BY table;
 
 DROP TABLE t_text_lwd_merged;
 DROP TABLE t_text_lwd_rebuilt;
+
+-- A merge that keeps at most a tenth of the source rows builds the index of the resulting part from them.
+
+DROP TABLE IF EXISTS t_text_built;
+DROP TABLE IF EXISTS t_text_built_rebuilt;
+
+CREATE TABLE t_text_built
+(
+    id UInt64,
+    version UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1, posting_list_block_size = 128) GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS index_granularity = 256, allow_experimental_text_index_phrase_search = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
+    merge_text_indexes_and_projections_on_delete_only_merges = 1;
+
+CREATE TABLE t_text_built_rebuilt
+(
+    id UInt64,
+    version UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1, posting_list_block_size = 128) GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree(version) ORDER BY id
+SETTINGS index_granularity = 256, allow_experimental_text_index_phrase_search = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
+    merge_text_indexes_and_projections_on_delete_only_merges = 0;
+
+INSERT INTO t_text_built SELECT number % 1000, intDiv(number, 1000), concat('row ', toString(number % 1000), ' version ', toString(intDiv(number, 1000)))
+FROM numbers(12000) SETTINGS max_block_size = 1000, max_insert_block_size = 1000, min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0;
+INSERT INTO t_text_built_rebuilt SELECT number % 1000, intDiv(number, 1000), concat('row ', toString(number % 1000), ' version ', toString(intDiv(number, 1000)))
+FROM numbers(12000) SETTINGS max_block_size = 1000, max_insert_block_size = 1000, min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0;
+
+OPTIMIZE TABLE t_text_built FINAL;
+OPTIMIZE TABLE t_text_built_rebuilt FINAL;
+
+SELECT 'built';
+SELECT (SELECT count() FROM t_text_built WHERE hasPhrase(text, 'version 11') SETTINGS force_data_skipping_indices = 'idx_text'),
+    (SELECT count() FROM t_text_built WHERE hasToken(text, '10') SETTINGS force_data_skipping_indices = 'idx_text');
+SELECT
+    (SELECT groupArray((token, cardinality, num_posting_blocks, has_embedded_postings, has_raw_postings, has_compressed_postings, row_id, positions))
+     FROM (SELECT token, cardinality, num_posting_blocks, has_embedded_postings, has_raw_postings, has_compressed_postings, row_id, positions
+           FROM mergeTreeTextIndex(currentDatabase(), t_text_built, idx_text) ORDER BY token, row_id))
+    =
+    (SELECT groupArray((token, cardinality, num_posting_blocks, has_embedded_postings, has_raw_postings, has_compressed_postings, row_id, positions))
+     FROM (SELECT token, cardinality, num_posting_blocks, has_embedded_postings, has_raw_postings, has_compressed_postings, row_id, positions
+           FROM mergeTreeTextIndex(currentDatabase(), t_text_built_rebuilt, idx_text) ORDER BY token, row_id));
+
+SYSTEM FLUSH LOGS part_log;
+SELECT table, ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'] FROM system.part_log
+WHERE database = currentDatabase() AND table IN ('t_text_built', 't_text_built_rebuilt') AND event_type = 'MergeParts' AND error = 0
+ORDER BY table;
+
+DROP TABLE t_text_built;
+DROP TABLE t_text_built_rebuilt;

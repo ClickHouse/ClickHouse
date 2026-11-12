@@ -48,7 +48,14 @@ public:
     const std::vector<MergeTreeIndexPtr> & getIndexes() const { return indexes; }
     bool hasIndex(const String & index_name) const { return index_position_by_name.contains(index_name); }
 
+    /// Defers the build until all blocks are received: their indexed columns are kept and aggregated in `finalize`.
+    /// If they exceed `max_rows` rows or the memory limit of the build, or there are none, the build is abandoned and has no segments.
+    void deferBuild(size_t max_rows) { max_deferred_rows = max_rows; }
+    bool isAbandoned() const { return abandoned; }
+
 private:
+    void aggregateBlock(const Block & block);
+
     /// Resets current index granule and flush a segment
     /// of the text index to the temporary storage.
     void writeTemporarySegment(size_t i);
@@ -70,6 +77,13 @@ private:
     std::vector<size_t> estimated_allocated_bytes;
     size_t max_processed_tokens;
     size_t max_allocated_bytes;
+
+    /// Deferred build: the limit of rows and the kept blocks with the columns that the indexes read.
+    std::optional<size_t> max_deferred_rows;
+    std::vector<Block> deferred_blocks;
+    size_t deferred_rows = 0;
+    size_t deferred_bytes = 0;
+    bool abandoned = false;
 };
 
 /// Task that merges text indexes from data parts,

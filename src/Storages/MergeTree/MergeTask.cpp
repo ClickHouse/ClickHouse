@@ -2221,6 +2221,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
     ctx->need_sync = global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
 }
 
+namespace
+{
+
+/// Building the text indexes of the resulting part is cheaper than merging them when it keeps at most one row per this many source rows.
+constexpr UInt64 SOURCE_ROWS_PER_BUILT_ROW = 10;
+
+/// Whether the index reads a column as is, so that keeping the values for a deferred build computes nothing.
+bool isTextIndexOfColumn(const IndexDescription & index)
+{
+    return index.column_names.size() == 1 && index.expression->getRequiredColumns() == index.column_names;
+}
+
+}
+
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 {
     /// No need to execute this part if it is horizontal merge.
@@ -2349,6 +2363,13 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     /// Collect statistics transforms for this column separately.
     BuildStatisticsTransformMap column_build_statistics_transforms;
 
+    /// The key columns are merged, so the number of surviving rows is known. If the merge keeps few rows,
+    /// the text indexes of this column are built for the resulting part instead of merging the source indexes.
+    const bool build_text_indexes_of_result = global_ctx->rebuild_text_indexes
+        || (global_ctx->merged_part_offsets && global_ctx->merged_part_offsets->isMappingWithDrops()
+            && global_ctx->rows_written != 0
+            && global_ctx->rows_written * SOURCE_ROWS_PER_BUILT_ROW <= global_ctx->merge_list_element_ptr->total_rows_count);
+
     const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
 
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
@@ -2375,7 +2396,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
         /// Add steps for building missed text indexes and statistics for single parts.
         /// Otherwise they are rebuilt for the resulting part in the end of the pipeline.
-        if (!global_ctx->rebuild_text_indexes)
+        if (!build_text_indexes_of_result)
             addBuildTextIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
 
         if (!global_ctx->merge_may_reduce_rows)
@@ -2433,7 +2454,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_it->second, global_ctx);
     }
 
-    if (global_ctx->rebuild_text_indexes)
+    if (build_text_indexes_of_result)
         addBuildTextIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
 
     /// If merge may reduce rows, rebuild statistics for the resulting part.
@@ -2920,24 +2941,38 @@ bool MergeTask::MergeTextIndexStage::prepare() const
 
     auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
-    if (!global_ctx->ttl_drop_short_circuit)
+    /// Whether the index was built for the resulting part: always if the indexes are rebuilt, and in a merge that dropped
+    /// most rows unless the build was abandoned (see `createMergedStream` and `createPipelineForReadingOneColumn`).
+    auto is_built_for_result = [&](const String & index_name)
     {
-        ProfileEvents::increment(
-            global_ctx->rebuild_text_indexes ? ProfileEvents::RebuiltTextIndexes : ProfileEvents::MergedTextIndexes,
-            global_ctx->text_indexes_to_merge.size());
-    }
+        if (global_ctx->rebuild_text_indexes)
+            return true;
+
+        auto it = global_ctx->build_text_index_transforms.find(global_ctx->new_data_part->name);
+        if (it == global_ctx->build_text_index_transforms.end())
+            return false;
+
+        return std::ranges::any_of(it->second, [&](const auto & transform)
+        {
+            return transform->hasIndex(index_name) && !transform->isAbandoned();
+        });
+    };
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
         std::vector<TextIndexSegment> segments;
+        const bool built_for_result = !global_ctx->ttl_drop_short_circuit && is_built_for_result(index.name);
+
+        if (!global_ctx->ttl_drop_short_circuit)
+            ProfileEvents::increment(built_for_result ? ProfileEvents::RebuiltTextIndexes : ProfileEvents::MergedTextIndexes);
 
         if (global_ctx->ttl_drop_short_circuit)
         {
             /// No read pipeline ran, so no transform built segments. The resulting part has no
             /// rows, which is exactly what a 0-row pipeline would have produced anyway.
         }
-        else if (global_ctx->rebuild_text_indexes)
+        else if (built_for_result)
         {
             /// Text index was built for the resulting part.
             segments = getTextIndexSegments(global_ctx->new_data_part->name, index.name, 0);
@@ -2979,7 +3014,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             global_ctx->new_data_part,
             global_ctx->rows_written,
             index_ptr,
-            global_ctx->rebuild_text_indexes ? nullptr : global_ctx->merged_part_offsets,
+            built_for_result ? nullptr : global_ctx->merged_part_offsets,
             reader_settings,
             global_ctx->to->getWriterSettings(),
             ctx->need_sync);
@@ -3961,7 +3996,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         addSkipIndexesExpressionSteps(merge_parts_query_plan, global_ctx->merging_skip_indexes, global_ctx);
 
     if (global_ctx->rebuild_text_indexes)
+    {
         addBuildTextIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
+    }
+    else if (global_ctx->merged_part_offsets && global_ctx->merged_part_offsets->isMappingWithDrops()
+        && !global_ctx->text_indexes_to_merge.empty() && std::ranges::all_of(global_ctx->text_indexes_to_merge, isTextIndexOfColumn))
+    {
+        /// How many rows the merge drops is known only at its end. Keep the surviving values of the indexed columns while
+        /// they are few and build the indexes of the resulting part from them, otherwise merge the source indexes.
+        addBuildTextIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
+
+        auto it = global_ctx->build_text_index_transforms.find(global_ctx->new_data_part->name);
+        if (it != global_ctx->build_text_index_transforms.end())
+        {
+            for (const auto & transform : it->second)
+                transform->deferBuild(global_ctx->merge_list_element_ptr->total_rows_count / SOURCE_ROWS_PER_BUILT_ROW);
+        }
+    }
 
     /// If merge may reduce rows, rebuild statistics for the resulting part.
     if (global_ctx->merge_may_reduce_rows)

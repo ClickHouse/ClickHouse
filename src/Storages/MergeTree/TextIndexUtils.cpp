@@ -166,9 +166,40 @@ IProcessor::Status BuildTextIndexTransform::prepare()
 
 void BuildTextIndexTransform::aggregate(const Block & block)
 {
-    if (block.rows() == 0)
+    if (block.rows() == 0 || abandoned)
         return;
 
+    if (!max_deferred_rows)
+    {
+        aggregateBlock(block);
+        return;
+    }
+
+    Block indexed_columns;
+    for (const auto & index : indexes)
+    {
+        for (const auto & column_name : index->index.column_names)
+        {
+            if (!indexed_columns.has(column_name))
+                indexed_columns.insert(block.getByName(column_name));
+        }
+    }
+
+    deferred_rows += block.rows();
+    deferred_bytes += indexed_columns.bytes();
+
+    if (deferred_rows > *max_deferred_rows || deferred_bytes > max_allocated_bytes)
+    {
+        abandoned = true;
+        deferred_blocks = {};
+        return;
+    }
+
+    deferred_blocks.push_back(std::move(indexed_columns));
+}
+
+void BuildTextIndexTransform::aggregateBlock(const Block & block)
+{
     num_processed_rows += block.rows();
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -189,6 +220,17 @@ void BuildTextIndexTransform::aggregate(const Block & block)
 
 void BuildTextIndexTransform::finalize()
 {
+    /// A deferred build without rows is abandoned too: the source indexes of a merge that keeps no rows are skipped anyway.
+    if (max_deferred_rows && deferred_rows == 0)
+        abandoned = true;
+
+    if (abandoned)
+        return;
+
+    auto blocks = std::exchange(deferred_blocks, {});
+    for (auto & block : blocks)
+        aggregateBlock(std::exchange(block, {}));
+
     for (size_t i = 0; i < indexes.size(); ++i)
     {
         if (!aggregators[i]->empty())
@@ -198,6 +240,9 @@ void BuildTextIndexTransform::finalize()
 
 std::vector<TextIndexSegment> BuildTextIndexTransform::getSegments(const String & index_name, size_t part_idx) const
 {
+    if (abandoned)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index {} has no segments because its build was abandoned", index_name);
+
     auto it = index_position_by_name.find(index_name);
     if (it == index_position_by_name.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in BuildTextIndexTransform", index_name);
