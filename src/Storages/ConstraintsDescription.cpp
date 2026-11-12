@@ -28,6 +28,7 @@
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
@@ -81,6 +82,12 @@ bool isSetTable(const ASTPtr & set_side, const ContextPtr & context)
     auto table_id = context->tryResolveStorageID(table_identifier->getTableId());
     if (!table_id)
         return false;
+
+    /// Whether the table exists and which engine it has decides whether the constraint is accepted, so check
+    /// that the user may see the table before looking it up: otherwise the outcome of the DDL would reveal the
+    /// existence and the engine of a table the user has no access to. The check does not depend on whether the
+    /// table exists.
+    context->checkAccess(AccessType::SHOW_TABLES, table_id.getDatabaseName(), table_id.getTableName());
 
     auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
     return storage && castStorage<StorageSet>(storage, DeferredTable::Load);
