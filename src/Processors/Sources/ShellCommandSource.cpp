@@ -614,6 +614,12 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
+            {
+                std::lock_guard lock(send_data_lock);
+                if (exception_during_send_data)
+                    command_is_invalid = true;
+            }
+
             /// Record this borrow's resource usage before the child is gone. The two
             /// executable UDF types measure it differently.
             if (configuration.sampler)
