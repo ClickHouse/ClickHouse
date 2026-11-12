@@ -118,6 +118,9 @@ private:
     /// Whether the transform functions of the partition spec `spec_id` accept its source columns, which reading a
     /// manifest of the spec requires.
     bool canInstantiatePartitionSpec(Int32 spec_id) const;
+    /// Whether the manifest has an entry that is not `DELETED`. Reads only the entry statuses, so it does not need the
+    /// partition spec of the manifest.
+    static bool hasLiveEntries(const ManifestFileCacheableInfo & manifest_file);
     Poco::JSON::Object::Ptr getSchemaObjectById(Int32 schema_id) const;
 
     void writeManifest(

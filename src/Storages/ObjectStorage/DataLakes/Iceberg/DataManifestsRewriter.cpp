@@ -185,8 +185,10 @@ void DataManifestsRewriter::collect(
         /// Reading the manifest builds the partition key of its spec, which instantiates the transform functions.
         if (!canInstantiatePartitionSpec(manifest.partition_spec_id))
         {
-            /// The live files of the manifest cannot be collected, so the manifests cannot be rewritten.
-            if (manifest.live_files_count != 0)
+            /// The live files of the manifest cannot be collected, so the manifests cannot be rewritten unless the
+            /// manifest is empty. The counts of the manifest list do not establish that: they are optional in v1, and a
+            /// missing or null count is read as zero. Check the status of the entries, which does not need the spec.
+            if (manifest.live_files_count != 0 || hasLiveEntries(fetch->get()))
                 has_unsupported_partition_values = true;
             continue;
         }
@@ -585,12 +587,19 @@ bool DataManifestsRewriter::canInstantiatePartitionSpec(Int32 spec_id) const
 
     /// A source column keeps its field id across schemas while its type can be widened (e.g. `decimal(P, S)` to
     /// `decimal(P', S)`), and the manifest may have been written under any of them: check the type in every schema.
+    /// The type of the source column must be established: a source nested in a struct, or a dropped column whose
+    /// schemas were expired from the metadata (its type is then known only from the manifest header), is not
+    /// supported, since reading the manifest would instantiate the transform with a type that is not checked here.
     auto spec_fields = spec->getArray(f_fields);
     for (UInt32 i = 0; i < spec_fields->size(); ++i)
     {
         auto spec_field = spec_fields->getObject(i);
         Int32 source_id = spec_field->getValue<Int32>(f_source_id);
         String transform = spec_field->getValue<String>(f_transform);
+        /// `void` does not read its source column.
+        if (Poco::toLower(transform) == "void")
+            continue;
+        bool source_found = false;
         for (UInt32 j = 0; j < schemas->size(); ++j)
         {
             auto schema_fields = schemas->getObject(j)->getArray(f_fields);
@@ -599,6 +608,7 @@ bool DataManifestsRewriter::canInstantiatePartitionSpec(Int32 spec_id) const
                 auto schema_field = schema_fields->getObject(k);
                 if (schema_field->getValue<Int32>(f_id) != source_id || schema_field->isObject(f_type))
                     continue;
+                source_found = true;
                 if (!canInstantiatePartitionTransform(transform, schema_field->getValue<String>(f_type)))
                 {
                     LOG_DEBUG(
@@ -611,8 +621,33 @@ bool DataManifestsRewriter::canInstantiatePartitionSpec(Int32 spec_id) const
                 }
             }
         }
+        if (!source_found)
+        {
+            LOG_DEBUG(
+                log,
+                "Iceberg data manifests of partition spec {} are not rewritten: the type of the source column {} of transform {} "
+                "is not a top-level primitive type in the schemas of the metadata",
+                spec_id,
+                source_id,
+                transform);
+            return false;
+        }
     }
     return true;
+}
+
+bool DataManifestsRewriter::hasLiveEntries(const ManifestFileCacheableInfo & manifest_file)
+{
+    auto deserializer = manifest_file.getDeserializer();
+    if (!deserializer->hasPath(f_status))
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_status);
+    for (size_t row = 0; row < deserializer->rows(); ++row)
+    {
+        auto status = deserializer->getValueFromRowByName(row, f_status, TypeIndex::Int32).safeGet<Int32>();
+        if (status != static_cast<Int32>(ManifestEntryStatus::DELETED))
+            return true;
+    }
+    return false;
 }
 
 Poco::JSON::Object::Ptr DataManifestsRewriter::getSchemaObjectById(Int32 schema_id) const

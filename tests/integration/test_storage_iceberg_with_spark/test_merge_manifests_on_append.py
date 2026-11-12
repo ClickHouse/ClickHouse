@@ -104,8 +104,12 @@ def test_merge_manifests_after_schema_cleanup(started_cluster_iceberg_with_spark
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_merge_manifests_unsupported_historical_transform(started_cluster_iceberg_with_spark, storage_type):
-    """`icebergTruncate` does not support `decimal(20, 2)`, so the manifests of such a spec are kept as they are."""
+@pytest.mark.parametrize("nested", [False, True])
+def test_merge_manifests_unsupported_historical_transform(started_cluster_iceberg_with_spark, storage_type, nested):
+    """`icebergTruncate` does not support `decimal(20, 2)`, so the manifests of such a spec are kept as they are.
+
+    With `nested`, the source column is a field of a struct, which the check of the transform must also find.
+    """
     cluster = started_cluster_iceberg_with_spark
     instance = cluster.instances["node1"]
     spark = cluster.spark_session
@@ -114,20 +118,37 @@ def test_merge_manifests_unsupported_historical_transform(started_cluster_iceber
     def spark_query(query):
         execute_spark_query_general(spark, cluster, storage_type, table_name, query)
 
+    if nested:
+        column, source = "s STRUCT<d: DECIMAL(20, 2)>", "s.d"
+
+        def value(d):
+            return f"named_struct('d', CAST({d} AS DECIMAL(20, 2)))"
+
+        def clickhouse_value(d):
+            return f"tuple({d})"
+
+    else:
+        column, source = "d DECIMAL(20, 2)", "d"
+
+        def value(d):
+            return d
+
+        clickhouse_value = value
+
     spark_query(
         f"""
-        CREATE TABLE {table_name} (d DECIMAL(20, 2), v INT)
+        CREATE TABLE {table_name} ({column}, v INT)
         USING iceberg
-        PARTITIONED BY (truncate(10, d))
+        PARTITIONED BY (truncate(10, {source}))
         OPTIONS('format-version'='2')
         """
     )
-    spark_query(f"INSERT INTO {table_name} VALUES (1.50, 1)")
-    spark_query(f"INSERT INTO {table_name} VALUES (25.00, 2)")
-    spark_query(f"ALTER TABLE {table_name} DROP PARTITION FIELD truncate(10, d)")
+    spark_query(f"INSERT INTO {table_name} VALUES ({value('1.50')}, 1)")
+    spark_query(f"INSERT INTO {table_name} VALUES ({value('25.00')}, 2)")
+    spark_query(f"ALTER TABLE {table_name} DROP PARTITION FIELD truncate(10, {source})")
 
     create_iceberg_table(storage_type, instance, table_name, cluster)
-    instance.query(f"INSERT INTO {table_name} VALUES (3.25, 3)", settings=MERGE_SETTINGS)
+    instance.query(f"INSERT INTO {table_name} VALUES ({clickhouse_value('3.25')}, 3)", settings=MERGE_SETTINGS)
 
     local_dir = download_table(cluster, storage_type, table_name)
     assert len(current_manifests(local_dir)) == 3
