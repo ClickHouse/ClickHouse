@@ -2,6 +2,7 @@
 #include <Processors/Formats/Impl/ORC/Statistics.h>
 
 #include <Common/Exception.h>
+#include <Common/UTF8Helpers.h>
 
 #include <bit>
 #include <cstring>
@@ -308,6 +309,15 @@ namespace StringStatisticsField
 /// Such a statistic can be on the wrong side of the values, but the part before the first U+FFFD is unchanged.
 constexpr std::string_view REPLACEMENT_CHARACTER = "\xEF\xBF\xBD";
 
+/// The value without its last UTF-8 character.
+std::string_view withoutLastCharacter(std::string_view value)
+{
+    size_t end = value.size();
+    while (end > 0 && value.size() - end < 3 && UTF8::isContinuationOctet(static_cast<UInt8>(value[end - 1])))
+        --end;
+    return value.substr(0, end > 0 ? end - 1 : 0);
+}
+
 StringStatistics parseStringStatistics(std::string_view data)
 {
     StringStatistics res;
@@ -335,8 +345,12 @@ StringStatistics parseStringStatistics(std::string_view data)
             res.upper_bound.reset();
             if (size_t pos = value.find(REPLACEMENT_CHARACTER); pos != std::string_view::npos)
                 res.upper_bound = truncateStringUpperBound(value.substr(0, pos));
+            else if (!exact)
+                /// The Java writer copies a bound from the value except the last character, which it computes from
+                /// the value, also from invalid UTF-8, into any character. Increment the copied part instead.
+                res.upper_bound = truncateStringUpperBound(withoutLastCharacter(value));
             else if (value.size() <= MAX_STRING_STATISTICS_SIZE)
-                (exact ? res.maximum : res.upper_bound) = std::string(value);
+                res.maximum = std::string(value);
             else
                 res.upper_bound = truncateStringUpperBound(value);
         };

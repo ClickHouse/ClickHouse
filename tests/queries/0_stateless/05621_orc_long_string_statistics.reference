@@ -26,8 +26,9 @@ s < repeat('b', 2000): [0], read 2 rows
 1
 -- the statistics of the Java writer that contain U+FFFD are cut before it
 s = concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail'): [999], read 4000 rows
-s = concat(repeat('b', 1021), unhex('EFBFBE'), 'tail'): [1999], read 5000 rows
+s = concat(repeat('b', 1021), unhex('EFBFBE'), 'tail'): [1999], read 6000 rows
 s = concat(repeat('b', 1000), unhex(repeat('FF', 50))): [2999], read 3000 rows
-s = repeat('b', 2000): [3999], read 6000 rows
+s = repeat('b', 2000): [3999], read 7000 rows
 s = repeat('c', 3000): [4999], read 2000 rows
 s = unhex('6280'): [5998], read 2000 rows
+s = concat(repeat('b', 1021), unhex('FF8080'), 'tail'): [6999], read 6000 rows

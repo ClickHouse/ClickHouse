@@ -98,15 +98,17 @@ ${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('$DATA_DIR/duplicate_string_min
 
 echo "-- the statistics of the Java writer that contain U+FFFD are cut before it"
 # Written by Apache ORC Java 2.2.1: row groups of 1000 rows, each with 999 values 'a' and one long value. For the
-# first three long values the Java writer stores an upper bound with U+FFFD that is less than the value. The last row
-# group has one value 'b\x80', stored as the minimum 'b' U+FFFD that is greater than the value, and a long value.
+# first three long values the Java writer stores an upper bound with U+FFFD that is less than the value. The
+# sixth row group has one value 'b\x80', stored as the minimum 'b' U+FFFD that is greater than the value, and a long
+# value. In the last row group the Java writer increments the invalid UTF-8 at the end of the long value into U+FFFE.
 for condition in \
     "s = concat(repeat('b', 1020), unhex('F48FBFBF'), 'tail')" \
     "s = concat(repeat('b', 1021), unhex('EFBFBE'), 'tail')" \
     "s = concat(repeat('b', 1000), unhex(repeat('FF', 50)))" \
     "s = repeat('b', 2000)" \
     "s = repeat('c', 3000)" \
-    "s = unhex('6280')"
+    "s = unhex('6280')" \
+    "s = concat(repeat('b', 1021), unhex('FF8080'), 'tail')"
 do
     query "$DATA_DIR/java_unsafe_string_bounds.orc" "$condition" _row_number
 done
