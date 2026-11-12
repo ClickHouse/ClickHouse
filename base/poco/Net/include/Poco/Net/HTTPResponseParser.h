@@ -84,24 +84,24 @@ namespace Net
     private:
         enum class State
         {
-            Start,
-            LeadingSpace,
-            Version,
-            SpaceBeforeStatus,
-            Status,
-            SpaceBeforeReason,
-            Reason,
-            StatusLineCR,
-            LineStart,
-            Name,
-            SpaceBeforeValue,
-            Value,
-            ValueCR,
-            AfterLine,
-            FoldValue,
-            FoldCR,
-            FinalLine,
-            Done,
+            Start, /// -> LeadingSpace
+            LeadingSpace, /// -> LeadingSpace, Version
+            Version, /// -> Version, SpaceBeforeStatus
+            SpaceBeforeStatus, /// -> SpaceBeforeStatus, Status
+            Status, /// -> Status, SpaceBeforeReason
+            SpaceBeforeReason, /// -> SpaceBeforeReason, Reason
+            Reason, /// -> Reason, StatusLineCR, LineStart
+            StatusLineCR, /// -> LineStart
+            LineStart, /// -> Name, FinalLine, Done, Start (after a `100 Continue`)
+            Name, /// -> Name, SpaceBeforeValue, LineStart (a line without a colon)
+            SpaceBeforeValue, /// -> SpaceBeforeValue, Value
+            Value, /// -> Value, ValueCR, AfterLine
+            ValueCR, /// -> AfterLine
+            AfterLine, /// -> FoldValue, LineStart
+            FoldValue, /// -> FoldValue, FoldCR, AfterLine
+            FoldCR, /// -> AfterLine
+            FinalLine, /// -> FinalLine, Done, Start (after a `100 Continue`)
+            Done, /// -> none
         };
 
         bool step(char ch);
