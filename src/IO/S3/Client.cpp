@@ -18,6 +18,7 @@
 #include <Common/Hex.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/external/cjson/cJSON.h>
@@ -1659,7 +1660,7 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
 
     std::string key_secret = "GOOG4";
     key_secret.append(secret.data(), secret.size());
-    const auto date_key = hmacSHA256(std::vector<uint8_t>(key_secret.begin(), key_secret.end()), datestamp);
+    const auto date_key = hmacSHA256(VectorWithMemoryTracking<uint8_t>(key_secret.begin(), key_secret.end()), datestamp);
     const auto region_key = hmacSHA256(date_key, "auto");
     const auto service_key = hmacSHA256(region_key, "s3");
     const auto signing_key = hmacSHA256(service_key, "goog4_request");
