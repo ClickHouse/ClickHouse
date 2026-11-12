@@ -521,14 +521,21 @@ def test_query_context_parameters_get_and_post():
         host, port, "/api/v1/query", "post_body_metric", timestamp=1000
     )
 
-    node.query("DROP USER IF EXISTS prom_context_user")
-    node.query("DROP ROLE IF EXISTS prom_context_role")
-    node.query("CREATE ROLE prom_context_role")
-    node.query("GRANT SELECT ON default.* TO prom_context_role")
+    suffix = uuid.uuid4().hex[:8]
+    user_name = f"prom_ctx_user_{suffix}"
+    role_name = f"prom_ctx_role_{suffix}"
+
+    node.query(f"DROP USER IF EXISTS {user_name}")
+    node.query(f"DROP ROLE IF EXISTS {role_name}")
+    node.query(f"CREATE ROLE {role_name}")
+    # PromQL runs with `enable_materialized_cte=1`, which needs `CREATE TEMPORARY TABLE`.
     node.query(
-        "CREATE USER prom_context_user IDENTIFIED WITH no_password DEFAULT ROLE NONE"
+        f"GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO {role_name}"
     )
-    node.query("GRANT prom_context_role TO prom_context_user")
+    node.query(
+        f"CREATE USER {user_name} IDENTIFIED WITH no_password DEFAULT ROLE NONE"
+    )
+    node.query(f"GRANT {role_name} TO {user_name}")
 
     try:
         denied_error = execute_query_via_http_api(
@@ -537,7 +544,7 @@ def test_query_context_parameters_get_and_post():
             "/api/v1/query",
             "post_body_metric",
             timestamp=1000,
-            params={"user": "prom_context_user"},
+            params={"user": user_name},
             expect_error=True,
         )
         assert "Not enough privileges" in denied_error
@@ -548,8 +555,8 @@ def test_query_context_parameters_get_and_post():
             req_params = {
                 "query": "post_body_metric",
                 "time": "1000",
-                "user": "prom_context_user",
-                "role": "prom_context_role",
+                "user": user_name,
+                "role": role_name,
                 "query_id": query_id,
                 "stacktrace": stacktrace,
                 "quota_key": quota_key,
@@ -575,5 +582,5 @@ def test_query_context_parameters_get_and_post():
                 sleep_time=1,
             )
     finally:
-        node.query("DROP USER IF EXISTS prom_context_user")
-        node.query("DROP ROLE IF EXISTS prom_context_role")
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        node.query(f"DROP ROLE IF EXISTS {role_name}")
