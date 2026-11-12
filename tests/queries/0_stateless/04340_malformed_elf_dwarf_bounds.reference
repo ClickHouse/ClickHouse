@@ -1,4 +1,13 @@
-overflow_shoff: rejected
-overflow_phoff: rejected
-too_small: rejected
-no_sections: rejected
+valid: 1 rows
+overflow_shoff: rejected ELF
+overflow_phoff: rejected ELF
+too_small: rejected ELF
+no_program_headers: rejected ELF
+elf32_class: rejected ELF
+big_endian_data: rejected ELF
+bad_ident_version: rejected ELF
+bad_shentsize: rejected ELF
+shstrtab_not_strtab: rejected ELF
+oob_irrelevant_section: rejected ELF
+nobits_debug_info: rejected ELF
+unclosed_tree: rejected DWARF

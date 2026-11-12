@@ -7,5 +7,17 @@ members = [
     "../vortex-cmake",
     "../pcodec-cmake",
     "../wasmtime-cmake",
+    "../dwarf-cmake",
 ]
 resolver = "2"
+
+# Debug builds use Cargo's default `dev` profile (`opt-level = 0`); keep the DWARF parser and its
+# parsing dependencies at `opt-level = 2` so Debug stateless tests (`02896`, `03641`) do not time out.
+[profile.dev.package._ch_rust_dwarf]
+opt-level = 2
+[profile.dev.package.gimli]
+opt-level = 2
+[profile.dev.package.object]
+opt-level = 2
+[profile.dev.package.memchr]
+opt-level = 2

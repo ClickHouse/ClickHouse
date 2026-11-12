@@ -1,0 +1,19 @@
+12	18	compile_unit	cu_from_strx	0	[]	cu_from_strx		0	[]	['name','str_offsets_base','addr_base','rnglists_base','stmt_list']	['strx1','sec_offset','sec_offset','sec_offset','sec_offset']	[0,8,0,0,0]	['cu_from_strx','','','','']
+30	55	subprogram	cu_from_strx	0	['compile_unit']		f0.c	77	[(8192,8240)]	['entry_pc','const_value','type','specification','abstract_origin','import','description','decl_line','decl_column','decl_file','call_file','ranges']	['LLVM_addrx_offset','data16','ref_sig8','ref_sup4','ref_sup8','GNU_ref_alt','strp_sup','indirect','implicit_const','data1','data1','rnglistx']	[8277,16,0,0,0,0,0,77,42,0,1,0]	['','','','','','','sup_str','','','f0.c','<error>','']
+85	1		cu_from_strx	0	['compile_unit']			0	[]	[]	[]	[]	[]
+11	21	compile_unit	cu_v4	0	[]	cu_v4		0	[(4096,4097)]	['name','GNU_addr_base','low_pc','stmt_list']	['strp','sec_offset','addr','sec_offset']	[0,8,4096,0]	['cu_v4','','','']
+32	8	subprogram	cu_v4	0	['compile_unit']		v4.c	0	[(4112,4128),(20481,20483),(20477,20489)]	['entry_pc','decl_file','call_file','ranges']	['GNU_addr_index','data1','data1','sec_offset']	[16384,1,0,0]	['','v4.c','<invalid>','']
+40	1		cu_v4	0	['compile_unit']			0	[]	[]	[]	[]	[]
+[]
+[12]
+[12]
+[0,8,0,0,0]
+[8277,16,0,0,0,0,0,77,42,0,1,0]
+3	4089888941241388008
+66
+repeated_line_strp: memory limit enforced
+bad_addr_size_1: rejected DWARF
+dup_abbrev: rejected DWARF
+bad_children_byte: rejected DWARF
+unknown_form: rejected DWARF
+truncated_second_unit: rejected DWARF

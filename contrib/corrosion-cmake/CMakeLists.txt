@@ -196,6 +196,18 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+if (ENABLE_FUZZING)
+    # Match CMakeLists.txt:1017 (`-fsanitize=fuzzer-no-link -fno-sanitize-coverage=pc-table`):
+    # C++ targets omit `pc-table` to stay within the 2 GiB small code model, and libFuzzer
+    # aborts at startup if `__sancov_cntrs` and `__sancov_pcs` have different total counts.
+    list(APPEND RUSTFLAGS
+        "-Cpasses=sancov-module"
+        "-Cllvm-args=-sanitizer-coverage-level=4"
+        "-Cllvm-args=-sanitizer-coverage-inline-8bit-counters"
+        "-Cllvm-args=-sanitizer-coverage-trace-compares"
+    )
+endif()
+
 # rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
@@ -271,8 +283,16 @@ set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contr
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
     set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
-codegen-units = 4")
-    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+codegen-units = 4
+[profile.release.package._ch_rust_dwarf]
+opt-level = 2
+[profile.release.package.gimli]
+opt-level = 2
+[profile.release.package.object]
+opt-level = 2
+[profile.release.package.memchr]
+opt-level = 2")
+    message(STATUS "Rust release profile: opt-level = 1 (opt-level = 2 for DWARF parser), to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")

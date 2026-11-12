@@ -149,6 +149,7 @@ elseif (ENABLE_RUST)
     add_contrib (pcodec-cmake)
     add_contrib (vortex-cmake)
     add_contrib (wasmtime-cmake)
+    add_contrib (dwarf-cmake)
 endif()
 
 if (ENABLE_FUZZING)

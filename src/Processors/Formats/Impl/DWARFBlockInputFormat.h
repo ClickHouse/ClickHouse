@@ -2,23 +2,41 @@
 #include "config.h"
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h>
-#include <llvm/DebugInfo/DWARF/DWARFDataExtractor.h>
-#include <llvm/DebugInfo/DWARF/DWARFContext.h>
-#include <llvm/DebugInfo/DWARF/DWARFUnit.h>
-
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Common/Elf.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
+#include <Common/PODArray.h>
+#include <IO/MMappedFile.h>
+#include <Processors/Chunk.h>
+
+#include <dwarf_rust.h>
+
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <exception>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
 
 namespace DB
 {
 
+
+/// The `DWARF` input format backed by the Rust parser (`contrib/dwarf-cmake`).
+///
+/// This class only owns the input bytes, the worker threads and the delivery queue, and it turns the
+/// column buffers filled by Rust into ClickHouse columns. Parsing of the ELF container, the DWARF
+/// sections, the DIEs, the line table and the range lists happens entirely in Rust.
+///
+/// Lifetime order (enforced by `releaseState`): stop and join the workers, free the unit handles,
+/// free the file handle, and only then release the input bytes the handles point into.
 class DWARFBlockInputFormat final : public IInputFormat
 {
 public:
@@ -34,39 +52,39 @@ public:
 protected:
     Chunk read() override;
 
-    void onCancel() noexcept override
-    {
-        is_stopped = 1;
-    }
+    void onCancel() noexcept override;
 
 private:
-    struct StackEntry
+    struct FileDeleter
     {
-        uint64_t offset;
-        llvm::dwarf::Tag tag;
+        void operator()(ChDwarfFile * handle) const noexcept { ch_dwarf_file_free(handle); }
     };
 
+    struct UnitDeleter
+    {
+        void operator()(ChDwarfUnit * handle) const noexcept { ch_dwarf_unit_free(handle); }
+    };
+
+    using FilePtr = std::unique_ptr<ChDwarfFile, FileDeleter>;
+    using UnitPtr = std::unique_ptr<ChDwarfUnit, UnitDeleter>;
+
+    /// A unit handle migrates between worker threads between calls, but is never used concurrently.
     struct UnitState
     {
-        const llvm::DWARFUnit * dwarf_unit;
-        const llvm::DWARFAbbreviationDeclarationSet * abbrevs;
-        uint64_t end_offset;
-
+        size_t unit_index = 0;
+        UnitPtr handle;
+        UInt64 unit_offset = 0;
+        /// Copied out of Rust after every chunk, because Rust only keeps it valid until the next call.
         std::string unit_name;
-        ColumnPtr filename_table; // from .debug_line
-        size_t filename_table_size = 0;
-        /// Starting offset of this unit's data in .debug_addr and .debug_rnglists sections.
-        uint64_t debug_addr_base = UINT64_MAX;
-        uint64_t rnglists_base = UINT64_MAX;
-        /// "Base address" for parsing range lists. Not to be confused with "addr base".
-        uint64_t base_address = UINT64_MAX;
+    };
 
-        uint64_t offset = 0;
-        VectorWithMemoryTracking<StackEntry> stack;
-
-        bool eof() const { return offset == end_offset; }
-
-        explicit UnitState(llvm::DWARFUnit * u);
+    struct ChunkResult
+    {
+        Chunk chunk;
+        /// `.debug_info` bytes advanced by this chunk.
+        size_t bytes_advanced = 0;
+        /// No more chunks will be produced for this unit (it is complete or the read was cancelled).
+        bool finished = false;
     };
 
     const FormatSettings format_settings;
@@ -76,6 +94,14 @@ private:
     ColumnPtr tag_dict_column;
     ColumnPtr attr_name_dict_column;
     ColumnPtr attr_form_dict_column;
+
+    /// For each column of the requested header, its position in the fixed DWARF schema.
+    VectorWithMemoryTracking<size_t> output_columns;
+    /// Which of the fixed-schema columns were requested.
+    std::array<bool, 16> need{};
+    ChDwarfProjection projection{};
+    /// Which Rust output sinks the projection needs.
+    std::array<bool, CH_DWARF_SINK_COUNT> sink_active{};
 
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
@@ -89,39 +115,28 @@ private:
     DequeWithMemoryTracking<std::pair<Chunk, size_t>> delivery_queue;
     size_t units_in_progress = 0;
 
-    std::optional<Elf> elf;
-    PODArray<char> file_contents; // if we couldn't mmap it
+    bool initialized = false;
 
-    std::unique_ptr<llvm::DWARFContext> dwarf_context;
-    std::optional<llvm::DWARFDataExtractor> extractor; // .debug_info
-    std::optional<llvm::DWARFDataExtractor> debug_line_extractor; // .debug_line
-    std::optional<std::string_view> debug_addr_section; // .debug_addr
-    std::optional<llvm::DWARFDataExtractor> debug_rnglists_extractor; // .debug_rnglists
-    std::optional<llvm::DWARFDataExtractor> debug_ranges_extractor; // .debug_ranges
+    /// The immutable input bytes. Either a dedicated read-only mapping of a regular local file,
+    /// or a full copy of the input. Neither is resized or remapped while `file` is alive.
+    std::optional<MMappedFile> mapped_file;
+    PODArray<char> file_contents;
+    const uint8_t * input_data = nullptr;
+    size_t input_size = 0;
 
-    std::atomic<size_t> seen_debug_line_warnings {0};
+    /// Declared after the input bytes so that, even without `releaseState`, it is destroyed first.
+    FilePtr file;
 
     void initializeIfNeeded();
-    void initELF();
+    /// Maps or copies the input. Returns false if the read was cancelled while copying.
+    bool loadInput();
     void stopThreads();
-    void parseFilenameTable(UnitState & unit, uint64_t offset);
-    Chunk parseEntries(UnitState & unit);
-
-    llvm::DWARFFormValue parseAttribute(
-        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
-        const UnitState & unit) const;
-    void skipAttribute(
-        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
-        const UnitState & unit) const;
-    uint64_t parseAddress(llvm::dwarf::Attribute attr, const llvm::DWARFFormValue & val, const UnitState & unit);
-    /// Parse .debug_addr entry.
-    uint64_t fetchFromDebugAddr(uint64_t addr_base, uint64_t idx) const;
-    /// Parse .debug_ranges (DWARF4) or .debug_rnglists (DWARF5) entry.
-    void parseRanges(
-        uint64_t offset, bool form_rnglistx, const UnitState & unit,
-        const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
-        const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
+    /// Frees everything that depends on the input bytes, in the required order, and the bytes themselves.
+    /// The workers must have been stopped and joined.
+    void releaseState();
+    ChunkResult parseChunk(UnitState & unit);
 };
+
 
 class DWARFSchemaReader final : public ISchemaReader
 {

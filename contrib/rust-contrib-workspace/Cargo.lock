@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "_ch_rust_dwarf"
+version = "0.1.0"
+dependencies = [
+ "gimli",
+ "object",
+]
+
+[[package]]
 name = "_ch_rust_pco"
 version = "0.1.0"
 dependencies = [
