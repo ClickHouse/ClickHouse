@@ -26,4 +26,9 @@ WITH 'x' AS format
 SELECT foo FROM s3(s3_conn, filename = '05516_lookup.csv', format = 'CSV', structure = 'foo String')
 ORDER BY foo;
 
+-- Without a named collection, `x = 1` is an ordinary comparison and `x` resolves to the alias.
+WITH 1 AS x SELECT count() FROM numbers(x = 1);
+WITH 1 AS x SELECT * FROM values('v UInt8', x = 1);
+WITH 1 AS x SELECT * FROM (VALUES (x = 1));
+
 DROP TABLE t_05516;
