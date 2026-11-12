@@ -1,10 +1,10 @@
-Select 'Launch ClickStack' to access the ClickStack UI (HyperDX). You will automatically authenticated and redirected. 
+Select 'Launch ClickStack' to access the ClickStack UI. You will be automatically authenticated and redirected.
 
 <Tabs>
 
 <Tab title="OpenTelemetry">
 
-Data sources will be pre-created for any OpenTelemetry data.
+ClickStack automatically detects tables that use the standard OpenTelemetry schema and creates the corresponding data sources. No confirmation dialog or manual source creation is required.
 
 <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
 
@@ -21,7 +21,7 @@ We also recommend updating the `Default SELECT` to explicitly define which colum
 
 In the example above, a `Body` column doesn't exist in the data. Instead, it is defined using a SQL expression that reconstructs an Nginx log line from the available fields.
 
-For other possible options, see the [configuration reference](/clickstack/managing/config).
+For other possible options, see the [configuration reference](/clickstack/self-configured/managing/config).
 
 Once created, you should be directed to the search view where you can immediately begin exploring your data.
 

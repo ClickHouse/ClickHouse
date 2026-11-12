@@ -17,6 +17,7 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
 struct StorageID;
 
@@ -116,6 +117,9 @@ public:
     /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
+    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by `ITableFunctionCluster`.
+    virtual bool isClusterFunction() const { return false; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
@@ -168,17 +172,17 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
-    /// Normalizes `uri` as source grant filters are matched against; an unparsable URI becomes empty.
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
+
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
 
     virtual ~ITableFunction() = default;
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
-
-    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
-    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
-    virtual bool isClusterFunction() const { return false; }
 
     /// Check `access_type` on the name the function was given, before that name is resolved.
     void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
@@ -206,9 +210,6 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
-
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

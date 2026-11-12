@@ -73,13 +73,10 @@ bool StorageAlias::isMergeTree() const
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
 {
+    /// Table-level access check only. Column-level checks resolve subcolumns against the target
+    /// metadata snapshot, so they are done by the caller that owns that snapshot (see `StorageAlias::read`).
     if (access_check)
-    {
-        if (access_check->column_names.empty())
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table);
-        else
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
-    }
+        access_check->context->checkAccess(access_check->access_type, target_database, target_table);
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
@@ -136,9 +133,67 @@ NameSet StorageAlias::filterColumnsGrantedThroughChain(
     return granted;
 }
 
+std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
+{
+    std::vector<std::pair<String, String>> chain;
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    const StorageAlias * alias = this;
+    /// Owns the storage `alias` points into, from the second hop on.
+    StoragePtr alias_holder;
+
+    while (alias && visited.emplace(alias->target_database, alias->target_table).second)
+    {
+        chain.emplace_back(alias->target_database, alias->target_table);
+        alias_holder = alias->tryGetTargetTable();
+        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
+    }
+
+    return chain;
+}
+
+NameSet StorageAlias::filterColumnsSelectableThroughChain(
+    ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const
+{
+    NameSet selectable(column_names.begin(), column_names.end());
+    auto access = query_context->getAccess();
+    for (const auto & [database, table] : getTargetChain())
+    {
+        if (selectable.empty())
+            break;
+        const StorageID table_id(database, table);
+        std::erase_if(selectable, [&](const String & column_name)
+        {
+            return !access->isGranted(
+                AccessType::SELECT,
+                database,
+                table,
+                columns.getColumnNamesForSelectAccessCheck({column_name}, query_context, table_id).front());
+        });
+    }
+    return selectable;
+}
+
 bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     return !filterColumnsGrantedThroughChain(query_context, access_type, {column_name}).empty();
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const ContextPtr & query_context) const
+{
+    auto target = tryGetTargetTable();
+    if (!target)
+        return std::nullopt;
+
+    auto sizes = target->tryGetColumnSizes(query_context);
+    if (sizes)
+    {
+        Names names;
+        for (const auto & [name, _] : *sizes)
+            names.push_back(name);
+        auto granted = filterColumnsGrantedThroughChain(query_context, AccessType::SHOW_COLUMNS, names);
+        std::erase_if(*sizes, [&](const auto & column_size) { return !granted.contains(column_size.first); });
+    }
+    return sizes;
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -161,7 +216,7 @@ public:
 
     ~AliasSink() override
     {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// On cancellation without an exception (e.g. `KILL QUERY`) neither
         /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
         /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
         if (executor)
@@ -252,6 +307,13 @@ public:
         block_io = {};
     }
 
+    void onPipelineFinished() override
+    {
+        /// Stopped by `timeout_overflow_mode = 'break'`: the nested INSERT finishes as if the input had ended.
+        if (isCancelled() && stage != Stage::Exception && executor)
+            onFinish();
+    }
+
     void onException(std::exception_ptr) override
     {
         if (executor)
@@ -282,12 +344,28 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SELECT, column_names});
+    /// Any grant on the target implies `SHOW_TABLES` on it, so this denies a user with no access to the target before
+    /// the lookup, which could otherwise tell them whether the target exists or fail to load its metadata.
+    /// The column-level check below needs the target's metadata, so it is done once the target is known.
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SHOW_TABLES});
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+
+    /// Resolve subcolumns against the same target metadata snapshot the read below uses, so the
+    /// authorized columns are exactly the ones that are read.
+    if (column_names.empty())
+        local_context->checkAccess(AccessType::SELECT, target_database, target_table);
+    else
+        local_context->checkAccess(
+            AccessType::SELECT,
+            target_database,
+            target_table,
+            target_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, StorageID(target_database, target_table)));
+
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(
@@ -562,8 +640,13 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     if (!has_select_access)
         return false;
 
-    auto target = tryGetTargetTable();
-    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    /// Ask the storage the snapshot was taken from instead of resolving the target again: a storage
+    /// can only interpret its own snapshot, and the target may have been replaced in between, e.g.
+    /// the proxy of a lazily loaded table by the loaded table.
+    const IStorage & target = storage_snapshot->storage;
+    if (&target == this)
+        return false;
+    return target.supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
 /// The delegation below re-enters this method on an Alias target, so each hop asks for its own declared

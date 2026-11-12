@@ -61,6 +61,8 @@ AggregateFunctionTuple::AggregateFunctionTuple(
         offset = ::Memory::alignUp(offset, align);
         state_offsets[i] = offset;
         offset += nested_functions[i]->sizeOfData();
+        if (nested_functions[i]->sizeOfData() == 0)
+            ++num_zero_sized_states;
     }
     total_state_size = ::Memory::alignUp(offset, max_state_align);
 }
@@ -118,6 +120,9 @@ DataTypePtr AggregateFunctionTuple::getStateType() const
 
 void AggregateFunctionTuple::create(AggregateDataPtr __restrict place) const
 {
+    IAggregateFunction::NestedStatesScope scope;
+    if (num_zero_sized_states != 0)
+        scope.addZeroSizedStates(num_zero_sized_states, *this);
     size_t i = 0;
     try
     {

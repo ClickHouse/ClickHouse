@@ -6,7 +6,6 @@
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <base/FnTraits.h>
 
@@ -197,8 +196,9 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
+/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
+ColumnPtr filterWithBlanks(
+    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
 
 }
 
