@@ -351,6 +351,10 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
+        /// Holding the whole message lets the zstd buffer size its context to it at `finalize`.
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE;
+        if (compression_method == CompressionMethod::Zstd)
+            buf_size = std::max(buf_size, data.size());
         /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
         /// independent of the session `snappy_mode`. The wire format is not encoded in the
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
@@ -361,7 +365,8 @@ void writeMessageToFile(
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
-            SnappyMode::Basic);
+            SnappyMode::Basic,
+            buf_size);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }

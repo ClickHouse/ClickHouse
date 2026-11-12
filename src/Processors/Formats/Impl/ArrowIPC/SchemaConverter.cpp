@@ -893,14 +893,16 @@ buildField(
     /// A dictionary-encoded (`LowCardinality`) field cannot carry the `arrow.uuid` extension keys: Arrow rejects
     /// the UUID extension over dictionary storage. Such a field gets only the ClickHouse-specific discriminator,
     /// for both UUID types (as the Apache Arrow writer does in `CHColumnToArrowColumn`), which `isUUIDField` accepts.
+    /// `output_format_arrow_uuid_as_fixed_byte_array` asks for the plain storage type without any metadata.
+    const bool is_uuid_field = (isUUID(t) || isUUID2(t)) && !settings.arrow.output_uuid_as_fixed_byte_array;
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
-    if ((isUUID(t) || isUUID2(t)) && plan.here)
+    if (is_uuid_field && plan.here)
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ClickHouse:type"), b.CreateString(isUUID2(t) ? "UUID2" : "UUID")));
         custom_metadata_off = b.CreateVector(kvs);
     }
-    else if (isUUID(t) || isUUID2(t))
+    else if (is_uuid_field)
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
