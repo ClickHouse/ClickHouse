@@ -209,8 +209,8 @@ run_all() {
 # Apart from the two files around the epoch, data files are at least a millisecond apart: delta-kernel
 # lowers a literal compared with a max statistic by 999 microseconds, because Spark truncates timestamp
 # statistics to milliseconds. The last-but-one file lies beyond 2262-04-11, outside the `Int64` nanoseconds:
-# a row there may compare differently from its statistics (see below), so that file is not skipped when the
-# comparison scales the column up with `decimal_check_overflow = 0` or the constant is on or beyond that range.
+# a comparison that scales the column up may compare a row there differently from its statistics (see below),
+# so that file is not skipped for such a comparison.
 DATA_FILES=(
     '1969-12-31 23:59:59.999999'
     '1970-01-01 00:00:00.000000'
@@ -295,19 +295,20 @@ check ts "NOT (ts = ${NS_EXACT})" "decimal_check_overflow=0"
 check ts "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
 check ts "ts <= ${NS_BEFORE_EPOCH}"
 check ntz "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
-# With `date_time_overflow_behavior = 'saturate'` the Parquet reader clamps an INT96 timestamp to the
-# `Int64` nanoseconds while its statistics keep the real value. Clamping keeps the order with a constant
-# inside that range, so such a constant still skips the file beyond (here an INT64, read exactly).
+# With `date_time_overflow_behavior = 'saturate'` the Parquet reader clamps a timestamp to the range of
+# `DateTime64(6)` while its statistics keep the real value. Clamping keeps the order with a constant inside
+# that range, so such a constant still skips files as usual.
 check ts "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='saturate'"
 check ntz "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='saturate'"
 
-# The INT96 9999-12-31 23:59:59 is read as 2262-04-11 23:47:16.854775 under 'saturate', while the statistics
-# keep 9999-12-31, so the file must not be skipped for the clamped value.
+# The INT96 9999-12-31 23:59:59 lies beyond the `Int64` nanoseconds and is read as written, in any
+# overflow mode, as its statistics say.
 copy_table int96 timestamp "${CUR_DIR}/data_parquet/05534_int96_beyond_int64_nanoseconds.parquet" '9999-12-31 23:59:59.000000'
-check int96 "ts = '2262-04-11 23:47:16.854775'" "date_time_overflow_behavior='saturate'"
+check int96 "ts = '9999-12-31 23:59:59'"
+check int96 "ts < '2262-04-12 00:00:00'"
+check int96 "ts > '2262-04-12 00:00:00'"
 check int96 "ts < '2262-04-12 00:00:00'" "date_time_overflow_behavior='saturate'"
-check int96 "ts < '2262-04-11 23:47:16.854774'" "date_time_overflow_behavior='saturate'"
-check int96 "ts > '2026-01-01 00:00:00'" "date_time_overflow_behavior='saturate'"
+check int96 "ts >= '9999-12-31 23:59:59.999999'" "date_time_overflow_behavior='saturate'"
 # The reader of a table engine takes the setting from the table, not from the query.
 declare_table int96_saturate int96 "" "date_time_overflow_behavior='saturate'"
 check int96_saturate "ts < '2262-04-12 00:00:00'"

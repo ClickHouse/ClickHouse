@@ -19,6 +19,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
+#include <Functions/DateTimeTransforms.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
@@ -29,6 +30,7 @@
 #include <Parsers/ASTHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <limits>
@@ -328,17 +330,20 @@ namespace
     /// Scale of the `DateTime64` that a Delta `timestamp` / `timestamp_ntz` is read as: microseconds.
     constexpr UInt32 DELTA_TIMESTAMP_SCALE = 6;
 
-    /// Outside `[TIMESTAMP_FENCE_MIN, TIMESTAMP_FENCE_MAX]` microseconds, the range of `Int64` nanoseconds
-    /// (about 1677 to 2262), a row may compare otherwise than its statistics say:
-    /// - with `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by up to
-    ///   1000 and wraps around `Int64`;
-    /// - with `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps an `INT96` timestamp
-    ///   to these bounds, while the statistics keep the value as written. The reader takes this setting
-    ///   from its own format settings (for a table engine, the table's `SETTINGS` and the server's default
-    ///   profile; on a cluster, each replica's), which pruning cannot see. Clamping keeps the order with a
-    ///   literal strictly between the bounds, so only a literal on or beyond a bound is fenced for it.
-    constexpr Int64 TIMESTAMP_FENCE_MIN = std::numeric_limits<Int64>::min() / 1000;
-    constexpr Int64 TIMESTAMP_FENCE_MAX = std::numeric_limits<Int64>::max() / 1000;
+    /// With `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by up to 1000
+    /// and wraps around `Int64` outside these microseconds, the range of `Int64` nanoseconds (about 1677 to
+    /// 2262). Whether it wraps depends on that setting of the comparison, which pruning cannot read.
+    constexpr Int64 SCALED_COMPARISON_MIN = std::numeric_limits<Int64>::min() / 1000;
+    constexpr Int64 SCALED_COMPARISON_MAX = std::numeric_limits<Int64>::max() / 1000;
+
+    /// With `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps a timestamp to the range
+    /// of `DateTime64(6)` (0000-01-01 to 9999-12-31 23:59:59.999999), while the statistics keep the value
+    /// as written. The reader takes this setting from its own format settings (for a table engine, the
+    /// table's `SETTINGS` and the server's default profile; on a cluster, each replica's), which pruning
+    /// cannot see. Clamping keeps the order with a literal strictly between the bounds, so only a literal
+    /// on or beyond a bound is fenced for it.
+    const Int64 READ_MIN = DB::minTicksForDateTime64(DB::DecimalUtils::scaleMultiplier<Int64>(DELTA_TIMESTAMP_SCALE));
+    const Int64 READ_MAX = DB::maxTicksForDateTime64(DB::DecimalUtils::scaleMultiplier<Int64>(DELTA_TIMESTAMP_SCALE));
 
     /// Before the epoch, a value finer than microseconds (`INT96`, `TIMESTAMP(NANOS)`) is read rounded
     /// towards zero, that is up, while the statistics hold its floor truncated to milliseconds. The read
@@ -427,9 +432,10 @@ namespace
         DeltaTimestampKind kind;
         Int64 micros;
         ComparisonVisitor visitor;
-        /// Whether the rows outside `[fence_min, TIMESTAMP_FENCE_MAX]` are kept undecided.
+        /// Whether the rows outside `[fence_min, fence_max]` are kept undecided.
         bool fenced;
         Int64 fence_min;
+        Int64 fence_max;
     };
 
     /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
@@ -483,15 +489,30 @@ namespace
                 return std::nullopt;
             }
 
-            /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most
-            /// 1000: the fence covers the scaled comparison too. Whether it wraps there depends on its
-            /// `decimal_check_overflow`, which pruning cannot read, so a scaled comparison is always fenced.
+            /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most 1000.
             chassert(value->multiplier <= 1000);
+            const bool scaled = value->multiplier > 1;
+            const bool at_read_bound = value->micros <= READ_MIN || value->micros >= READ_MAX;
             const bool before_epoch = value->micros <= TIMESTAMP_ROUNDING_FENCE_MIN;
-            const bool fenced = before_epoch || value->multiplier > 1 || value->micros >= TIMESTAMP_FENCE_MAX;
-            const Int64 fence_min = before_epoch ? TIMESTAMP_ROUNDING_FENCE_MIN : TIMESTAMP_FENCE_MIN;
 
-            return TimestampComparison{column, delta_column.kind, value->micros, getComparisonVisitor(column_op), fenced, fence_min};
+            Int64 fence_min = std::numeric_limits<Int64>::min();
+            Int64 fence_max = std::numeric_limits<Int64>::max();
+            if (scaled)
+            {
+                fence_min = SCALED_COMPARISON_MIN;
+                fence_max = SCALED_COMPARISON_MAX;
+            }
+            if (at_read_bound)
+            {
+                fence_min = std::max(fence_min, READ_MIN);
+                fence_max = std::min(fence_max, READ_MAX);
+            }
+            if (before_epoch)
+                fence_min = std::max(fence_min, TIMESTAMP_ROUNDING_FENCE_MIN);
+
+            return TimestampComparison{
+                column, delta_column.kind, value->micros, getComparisonVisitor(column_op),
+                scaled || at_read_bound || before_epoch, fence_min, fence_max};
         }
         return std::nullopt;
     }
@@ -894,7 +915,7 @@ uintptr_t EngineIterator::visitTimestampComparison(
     auto compared = predicates.compare(comparison.visitor, comparison.micros);
     if (!comparison.fenced)
         return compared;
-    return predicates.fenced(compared, comparison.fence_min, TIMESTAMP_FENCE_MAX, visitUntranslated(iterator_data));
+    return predicates.fenced(compared, comparison.fence_min, comparison.fence_max, visitUntranslated(iterator_data));
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)

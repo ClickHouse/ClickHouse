@@ -4,19 +4,19 @@ ts: ts < '2026-01-01 00:00:00.123456'	3
 ts: ts >= '2026-01-01 00:00:01'	3
 ts: ts = '2026-01-01 05:30:00.123456' SETTINGS session_timezone='Asia/Kolkata'	1
 ts: ts >= toDate('2026-01-02')	2
-ts: ts < toDate32('1970-01-01')	2
+ts: ts < toDate32('1970-01-01')	1
 ts: ts < toDate('2026-01-01') SETTINGS session_timezone='America/New_York'	5
 ts: ts >= toDateTime('2026-01-01 00:00:01', 'UTC')	3
 ts: ts < toDateTime('2026-01-01 05:30:01', 'Asia/Kolkata')	4
 ts: ts < '2026-01-01 00:00:00.1234565'	3
 ts: ts >= '2026-01-01 00:00:00.1234565'	4
-ts: ts > '2300-01-01 00:00:00'	1
-ts: ts < '1899-12-31 00:00:00'	2
+ts: ts > '2300-01-01 00:00:00'	0
+ts: ts < '1899-12-31 00:00:00'	1
 ntz: ts = '2026-01-01 00:00:00.123456'	1
 ntz: ts = '2026-01-01 05:30:00.123456' SETTINGS session_timezone='Asia/Kolkata'	1
 ntz: ts < toDate('2026-01-01') SETTINGS session_timezone='America/New_York'	5
-ntz: ts > '2300-01-01 00:00:00'	1
-ntz: ts < '1899-12-31 00:00:00'	2
+ntz: ts > '2300-01-01 00:00:00'	0
+ntz: ts < '1899-12-31 00:00:00'	1
 ts: ts < '20260102' SETTINGS date_time_input_format='basic'	5
 ts: ts >= '20260102' SETTINGS cast_string_to_date_time_mode='basic'	5
 ts_best_effort: ts > '20260102' SETTINGS cast_string_to_date_time_mode='basic'	5
@@ -49,11 +49,12 @@ ts: ts <= toDateTime64('1969-12-31 23:59:59.9999995', 9, 'UTC')	2
 ntz: ts < toDateTime64('2026-01-01 00:00:00.123456500', 9, 'UTC') SETTINGS decimal_check_overflow=0	5
 ts: ts = '2026-01-01 00:00:00.123456' SETTINGS date_time_overflow_behavior='saturate'	1
 ntz: ts = '2026-01-01 00:00:00.123456' SETTINGS date_time_overflow_behavior='saturate'	1
-int96: ts = '2262-04-11 23:47:16.854775' SETTINGS date_time_overflow_behavior='saturate'	1
-int96: ts < '2262-04-12 00:00:00' SETTINGS date_time_overflow_behavior='saturate'	1
-int96: ts < '2262-04-11 23:47:16.854774' SETTINGS date_time_overflow_behavior='saturate'	0
-int96: ts > '2026-01-01 00:00:00' SETTINGS date_time_overflow_behavior='saturate'	1
-int96_saturate: ts < '2262-04-12 00:00:00'	1
+int96: ts = '9999-12-31 23:59:59'	1
+int96: ts < '2262-04-12 00:00:00'	0
+int96: ts > '2262-04-12 00:00:00'	1
+int96: ts < '2262-04-12 00:00:00' SETTINGS date_time_overflow_behavior='saturate'	0
+int96: ts >= '9999-12-31 23:59:59.999999' SETTINGS date_time_overflow_behavior='saturate'	0
+int96_saturate: ts < '2262-04-12 00:00:00'	0
 int96_before_epoch: ts = '1970-01-01 00:00:00'	1
 int96_before_epoch: ts >= '1970-01-01 00:00:00'	1
 int96_before_epoch: ts > '1969-12-31 23:59:59.999999'	1
