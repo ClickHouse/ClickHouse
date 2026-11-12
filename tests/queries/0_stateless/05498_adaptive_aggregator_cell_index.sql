@@ -48,6 +48,16 @@ SELECT
      SETTINGS enable_adaptive_aggregator = 0, group_by_two_level_threshold_bytes = 0)
 SETTINGS enable_adaptive_aggregator = 1, log_comment = 'chunks';
 
+-- A single `Nullable(Int128)` key packs its null map into the key (`nullable_keys256`), so NULL is an
+-- ordinary cell. The single-key Nullable methods keep NULL in a separate cell instead, and the adaptive
+-- aggregator does not take them. No table freezes: each holds 8001 keys, NULL included, and the partitions of
+-- the merge read them through the indexes.
+SELECT 'single Nullable(Int128) key, no freeze';
+SELECT
+    (SELECT sum(cityHash64(isNull(k), ifNull(k, 0), s)) FROM (SELECT if(number % 7 = 0, NULL, toInt128(number % 8000)) AS k, sum(number) AS s FROM lanes GROUP BY k))
+  = (SELECT sum(cityHash64(isNull(k), ifNull(k, 0), s)) FROM (SELECT if(number % 7 = 0, NULL, toInt128(number % 8000)) AS k, sum(number) AS s FROM lanes GROUP BY k) SETTINGS enable_adaptive_aggregator = 0)
+SETTINGS enable_adaptive_aggregator = 1, log_comment = 'nullable_wide';
+
 -- Every table freezes at 1000 keys and stages the rows of the other keys. The adaptive merge reads the cells of the
 -- frozen tables through their indexes. The states own memory, so a table must not destroy the states that the merge
 -- took from it.
@@ -109,7 +119,7 @@ SELECT log_comment, ProfileEvents['AggregationIndexedTables'] > 0, ProfileEvents
     ProfileEvents['AggregationConvertedToTwoLevel'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
-    AND log_comment IN ('cheap', 'chunks', 'frozen', 'mixed')
+    AND log_comment IN ('cheap', 'chunks', 'frozen', 'mixed', 'nullable_wide')
 ORDER BY log_comment;
 
 -- Only the thawed tables convert to two-level, each once, and the frozen one stays indexed.
