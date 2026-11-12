@@ -21,23 +21,24 @@ mkdir -p "${BASE_DIR}"
 CLIENT="${CLICKHOUSE_CLIENT} --session_timezone UTC --allow_insert_into_iceberg=1 --async_insert=0"
 DB="${CLICKHOUSE_DATABASE}"
 
-# arm_name|column type|write format|inserted literal. datetime64_0 and datetime64_9 used to
-# produce a file that could not be read back at all ("Cannot insert Avro decimal with scale N
-# ... scale 6"). The last two arms are controls: correct both before and after the fix.
-ARMS="datetime|DateTime|Avro|'2020-01-02 03:04:05'
-datetime64_3|DateTime64(3)|Avro|'2020-01-02 03:04:05.123'
-datetime64_0|DateTime64(0)|Avro|'2020-01-02 03:04:05'
-datetime64_9|DateTime64(9)|Avro|'2020-01-02 03:04:05.123456789'
-array_datetime|Array(DateTime)|Avro|[toDateTime('2020-01-02 03:04:05')]
-datetime64_6_ctl|DateTime64(6)|Avro|'2020-01-02 03:04:05.123456'
-parquet_ctl|DateTime|Parquet|'2020-01-02 03:04:05'"
+# arm_name|column type|write format|Iceberg format version|inserted literal. datetime64_0 and
+# datetime64_9 used to produce a file that could not be read back at all ("Cannot insert Avro
+# decimal with scale N ... scale 6"). `DateTime64(9)` maps to `timestamp_ns`, which requires
+# format version 3. The last two arms are controls: correct both before and after the fix.
+ARMS="datetime|DateTime|Avro|2|'2020-01-02 03:04:05'
+datetime64_3|DateTime64(3)|Avro|2|'2020-01-02 03:04:05.123'
+datetime64_0|DateTime64(0)|Avro|2|'2020-01-02 03:04:05'
+datetime64_9|DateTime64(9)|Avro|3|'2020-01-02 03:04:05.123456789'
+array_datetime|Array(DateTime)|Avro|2|[toDateTime('2020-01-02 03:04:05')]
+datetime64_6_ctl|DateTime64(6)|Avro|2|'2020-01-02 03:04:05.123456'
+parquet_ctl|DateTime|Parquet|2|'2020-01-02 03:04:05'"
 
 ARM_SETUP=""
 ARM_DROP=""
-while IFS='|' read -r arm col_type format value; do
+while IFS='|' read -r arm col_type format version value; do
     ARM_SETUP="${ARM_SETUP}
     CREATE TABLE src_${arm}_${DB} (c0 ${col_type}) ENGINE = MergeTree ORDER BY tuple();
-    CREATE TABLE tgt_${arm}_${DB} (c0 ${col_type}) ENGINE = IcebergLocal('${BASE_DIR}/${arm}/', '${format}');
+    CREATE TABLE tgt_${arm}_${DB} (c0 ${col_type}) ENGINE = IcebergLocal('${BASE_DIR}/${arm}/', '${format}') SETTINGS iceberg_format_version = ${version};
     CREATE MATERIALIZED VIEW mv_${arm}_${DB} TO tgt_${arm}_${DB} AS SELECT c0 FROM src_${arm}_${DB};
     INSERT INTO src_${arm}_${DB} VALUES (${value});"
     ARM_DROP="${ARM_DROP}
