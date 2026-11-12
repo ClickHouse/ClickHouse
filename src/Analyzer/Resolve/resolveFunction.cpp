@@ -1420,6 +1420,12 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
 {
     QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
 
+    /// SQL `NULL` is recorded separately from the values that can match. Complex element
+    /// types such as `Array` and `Map` cannot hold a nullable element, so do not cast a
+    /// genuine `NULL` into their non-nullable common type.
+    if (scope.context->getSettingsRef()[Setting::in_null_as_unknown])
+        std::erase_if(array_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
+
     bool left_is_null = isNullConstant(in_first_argument);
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
@@ -3026,8 +3032,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Preserve top-level `NULL` membership before complex values are cast to a
                     /// common array element type. `Array` and `Map` cannot be wrapped in `Nullable`,
                     /// so that conversion would otherwise turn the `NULL` into a default value.
+                    const auto source_elements = getArrayElementsForInTupleArguments(
+                        tuple_args, in_first_argument, scope, expand_single_tuple_value);
                     const bool source_has_null = in_rhs_has_explicit_null
-                        || std::any_of(tuple_args.begin(), tuple_args.end(),
+                        || std::any_of(source_elements.begin(), source_elements.end(),
                             [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
 
                     /// convert tuple to array and rewrite to has()
@@ -3064,6 +3072,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// of the constant path.
                     QueryTreeNodePtr right_argument = fn_args[1];
                     const auto & left_type = in_first_argument->getResultType();
+                    bool right_argument_was_cast = false;
                     if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
                     {
                         const auto & right_type = non_const_set_candidate->getResultType();
@@ -3075,6 +3084,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             if (canContainNull(*right_type) || !compare_nulls)
                                 cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
                             right_argument = castNodeToType(right_argument, cast_elements_to, scope);
+                            right_argument_was_cast = true;
                         }
                     }
 
@@ -3084,6 +3094,40 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         is_not_in,
                         compare_nulls,
                         scope.context->getSettingsRef()[Setting::in_null_as_unknown]);
+
+                    if (right_argument_was_cast && use_standard_null_semantics)
+                    {
+                        /// A failed conversion to the nullable left type produces `NULL`, but it is
+                        /// not a source `NULL` and cannot make membership unknown.
+                        auto cast_is_null = std::make_shared<FunctionNode>("isNull");
+                        cast_is_null->getArguments().getNodes().push_back(right_argument);
+                        auto no_match = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
+                        auto failed_conversion = std::make_shared<FunctionNode>("if");
+                        failed_conversion->getArguments().getNodes() = {std::move(cast_is_null), std::move(no_match), std::move(node)};
+                        node = std::move(failed_conversion);
+
+                        if (canContainNull(*fn_args[1]->getResultType()))
+                        {
+                            auto source_is_null = std::make_shared<FunctionNode>("isNull");
+                            source_is_null->getArguments().getNodes().push_back(fn_args[1]);
+                            auto unknown = std::make_shared<ConstantNode>(
+                                Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+                            auto source_null_result = std::make_shared<FunctionNode>("if");
+                            source_null_result->getArguments().getNodes() = {std::move(source_is_null), std::move(unknown), std::move(node)};
+                            node = std::move(source_null_result);
+                        }
+
+                        if (canContainNull(*left_type))
+                        {
+                            auto left_is_null = std::make_shared<FunctionNode>("isNull");
+                            left_is_null->getArguments().getNodes().push_back(fn_args[0]);
+                            auto unknown = std::make_shared<ConstantNode>(
+                                Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+                            auto left_null_result = std::make_shared<FunctionNode>("if");
+                            left_null_result->getArguments().getNodes() = {std::move(left_is_null), std::move(unknown), std::move(node)};
+                            node = std::move(left_null_result);
+                        }
+                    }
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }

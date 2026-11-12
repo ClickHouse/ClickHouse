@@ -28,6 +28,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -1196,7 +1197,10 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
             "Index analysis engaged on join key '{}': pruning by exact IN-set of {} value(s)",
             column_name,
             exact_values->size());
-        return &dag.addFunction(FunctionFactory::instance().get("in", context), {&key_casted, &set_node}, {});
+        /// Runtime filters compare stored join keys, independently of user-facing SQL `IN` semantics.
+        auto key_context = Context::createCopy(context);
+        key_context->setSetting("in_null_as_unknown", Field(0));
+        return &dag.addFunction(FunctionFactory::instance().get("in", key_context), {&key_casted, &set_node}, {});
     }
 
     if (range)

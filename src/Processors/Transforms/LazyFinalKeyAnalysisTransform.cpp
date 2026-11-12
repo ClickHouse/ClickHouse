@@ -183,7 +183,10 @@ void LazyFinalKeyAnalysisTransform::work()
         const auto * set_node = &filter_dag.addColumn(std::move(set_column), std::move(set_type), "");
         /// A skip index evaluates this predicate on stored key values, so a set that holds NULL keys needs `nullIn`.
         const auto set = future_set->get();
-        auto function_in = FunctionFactory::instance().get(set && set->transformNullIn() ? "nullIn" : "in", query_context);
+        /// This predicate compares stored primary keys; SQL three-valued membership does not apply.
+        auto key_context = Context::createCopy(query_context);
+        key_context->setSetting("in_null_as_unknown", Field(0));
+        auto function_in = FunctionFactory::instance().get(set && set->transformNullIn() ? "nullIn" : "in", key_context);
         const auto * in_func = &filter_dag.addFunction(function_in, {key_node, set_node}, {});
         filter_dag.getOutputs().push_back(in_func);
 
