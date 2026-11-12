@@ -4,6 +4,8 @@
 -- COLUMN must re-compress the stored data with the new effective codec. The wide in-place fast path
 -- resolves the codec against the part's *stored* default codec and cannot honor the change, so such
 -- columns must fall back to a whole-part rewrite (the same as a column with no explicit CODEC).
+-- `index_granularity` is pinned: with a randomized tiny granularity the whole-part rewrite of 20000 rows
+-- produces thousands of granules and takes minutes under the CI thread fuzzer.
 
 SET allow_experimental_recompress_column = 1;
 SET mutations_sync = 2;
@@ -14,7 +16,7 @@ DROP TABLE IF EXISTS t_recompress_codec_default;
 
 CREATE TABLE t_recompress_codec_default (id UInt64, s String CODEC(Default))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'NONE';
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi', default_compression_codec = 'NONE';
 
 INSERT INTO t_recompress_codec_default SELECT number, repeat('a', 100) FROM numbers(20000);
 
@@ -39,7 +41,7 @@ DROP TABLE IF EXISTS t_recompress_codec_delta_default;
 
 CREATE TABLE t_recompress_codec_delta_default (id UInt64, v UInt64 CODEC(Delta, Default))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'NONE';
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi', default_compression_codec = 'NONE';
 
 INSERT INTO t_recompress_codec_delta_default SELECT number, number FROM numbers(20000);
 
