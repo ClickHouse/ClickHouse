@@ -294,6 +294,47 @@ else()
     set(RUST_DEV_PROFILE "")
 endif()
 
+# ccache cannot wrap rustc, so a new build directory compiles every Rust crate again. With RUST_BUILD_CACHE_DIR, Cargo keeps
+# its intermediate artifacts (`build.build-dir`) there, one subdirectory per Rust configuration, and other build directories
+# reuse them; Cargo's fingerprints decide what to rebuild. The directory is not size-limited.
+set(RUST_BUILD_CACHE_DIR "" CACHE PATH "Directory where Cargo keeps compiled Rust crates for other build directories to reuse (empty: in the build directory)")
+set(RUST_BUILD_DIR_CONFIG "")
+if (RUST_BUILD_CACHE_DIR)
+    if (Rust_CARGO_VERSION VERSION_LESS "1.91")
+        message(FATAL_ERROR "RUST_BUILD_CACHE_DIR needs Cargo 1.91 or newer (`build.build-dir`), found ${Rust_CARGO_VERSION}")
+    endif()
+    # Cargo does not track the headers that build scripts compile C/C++ code against (libc++ and the compiler's implicit include
+    # directories: libc and the compiler's own headers), so their contents are part of the key, and changing them (directories
+    # included, for added and removed files) re-runs CMake.
+    set(_rust_native_dirs ${CXX_INCLUDE_DIR} ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+    list(REMOVE_DUPLICATES _rust_native_dirs)
+    set(_rust_native_headers "")
+    foreach (_dir IN LISTS _rust_native_dirs)
+        file(GLOB_RECURSE _files LIST_DIRECTORIES true "${_dir}/*")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_dir}" ${_files})
+        foreach (_file IN LISTS _files)
+            if (IS_SYMLINK "${_file}" AND IS_DIRECTORY "${_file}")
+                file(READ_SYMLINK "${_file}" _file_hash)
+            elseif (IS_DIRECTORY "${_file}")
+                continue()
+            else()
+                file(SHA256 "${_file}" _file_hash)
+            endif()
+            string(APPEND _rust_native_headers "${_file} ${_file_hash}\n")
+        endforeach()
+    endforeach()
+    string(SHA256 _rust_native_headers "${_rust_native_headers}")
+    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${_rust_native_headers}")
+    string(FIND "${_rust_build_key}" "${CMAKE_BINARY_DIR}/" _rust_build_key_has_build_dir)
+    if (NOT _rust_build_key_has_build_dir EQUAL -1)
+        message(FATAL_ERROR "RUST_BUILD_CACHE_DIR does not work for this configuration: its Rust compiler flags contain the build directory (as in musl builds), so no other build directory could reuse the cache")
+    endif()
+    string(SHA256 _rust_build_key "${_rust_build_key}")
+    string(SUBSTRING "${_rust_build_key}" 0 16 _rust_build_key)
+    set(RUST_BUILD_DIR_CONFIG "[build]\nbuild-dir = \"${RUST_BUILD_CACHE_DIR}/${_rust_build_key}/{workspace-path-hash}\"\n")
+    message(STATUS "Cargo build directory: ${RUST_BUILD_CACHE_DIR}/${_rust_build_key}")
+endif()
+
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
 configure_file("config.toml.in" "config.toml" @ONLY)
 set(RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
