@@ -84,3 +84,43 @@ SELECT (SELECT (sum(a), sum(b), sum(c), max(s)) FROM t_sparse_index ARRAY JOIN i
 
 DROP TABLE t_sparse_index;
 DROP TABLE t_full_index;
+
+-- `PREWHERE` by a condition that keeps exactly the non-default rows of a sparse column must match a table without sparse columns.
+
+DROP TABLE IF EXISTS t_sparse_prewhere;
+DROP TABLE IF EXISTS t_full_prewhere;
+
+CREATE TABLE t_sparse_prewhere (id UInt64, s String, u UInt64, v UInt32)
+ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, index_granularity = 8192;
+
+CREATE TABLE t_full_prewhere AS t_sparse_prewhere
+ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 8192;
+
+INSERT INTO t_sparse_prewhere SELECT
+    number,
+    cityHash64(number) % 20 = 0 ? repeat('x', number % 30) || toString(number) : '',
+    cityHash64(number) % 20 = 0 ? number : 0,
+    intHash32(number) % 10 < 3 ? toUInt32(number) : 0
+FROM numbers(300000);
+
+INSERT INTO t_full_prewhere SELECT * FROM t_sparse_prewhere;
+
+SELECT table, column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table IN ('t_sparse_prewhere', 't_full_prewhere') AND active AND column != 'id'
+GROUP BY ALL ORDER BY ALL;
+
+-- The filtered column itself; `u` has the same non-default rows.
+SELECT (SELECT (count(), sum(cityHash64(s)), max(s), sum(u), sum(v)) FROM t_sparse_prewhere PREWHERE s != '')
+     = (SELECT (count(), sum(cityHash64(s)), max(s), sum(u), sum(v)) FROM t_full_prewhere PREWHERE s != '');
+
+SELECT (SELECT (count(), sum(cityHash64(s)), max(s), sum(u)) FROM t_sparse_prewhere PREWHERE s != '' SETTINGS max_block_size = 1000)
+     = (SELECT (count(), sum(cityHash64(s)), max(s), sum(u)) FROM t_full_prewhere PREWHERE s != '' SETTINGS max_block_size = 1000);
+
+-- Two steps: the second one filters `v` by its non-default rows among the rows kept by the first one.
+SELECT (SELECT (count(), sum(cityHash64(s)), sum(v)) FROM t_sparse_prewhere PREWHERE s != '' AND v != 0 SETTINGS enable_multiple_prewhere_read_steps = 1)
+     = (SELECT (count(), sum(cityHash64(s)), sum(v)) FROM t_full_prewhere PREWHERE s != '' AND v != 0 SETTINGS enable_multiple_prewhere_read_steps = 1);
+
+DROP TABLE t_sparse_prewhere;
+DROP TABLE t_full_prewhere;
