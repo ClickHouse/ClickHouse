@@ -210,6 +210,13 @@ static void skipEndOfLine(ReadBuffer & in, bool allow_cr_end_of_line)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected end of line");
 }
 
+static bool isCRLF(PeekableReadBuffer & in)
+{
+    PeekableReadBufferCheckpoint checkpoint(in, true);
+    ++in.position();
+    return !in.eof() && *in.position() == '\n';
+}
+
 /// Skip `whitespace` symbols allowed in CSV.
 static inline void skipWhitespacesAndTabs(ReadBuffer & in, const bool & allow_whitespace_or_tab_as_delimiter)
 {
@@ -386,7 +393,8 @@ bool CSVFormatReader::readField(
     /// A field is empty if it is followed by the field delimiter or the end of the row.
     /// The row can end before the last file column with `input_format_csv_allow_variable_number_of_columns`.
     const bool is_empty_field = buf->eof() || *buf->position() == format_settings.csv.delimiter
-        || *buf->position() == '\n' || *buf->position() == '\r';
+        || *buf->position() == '\n'
+        || (*buf->position() == '\r' && (format_settings.csv.allow_cr_end_of_line || isCRLF(*buf)));
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
