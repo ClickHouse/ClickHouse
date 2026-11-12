@@ -548,9 +548,15 @@ void DiskObjectStorage::shutdown()
     blob_killer->shutdown();
     blob_copier->shutdown();
 
-    metadata_storage->shutdown();
-    for (const auto & [location, _] : cluster->getConfiguration())
-        object_storages->takePointingTo(location)->shutdown();
+    /// A cache layer (see `wrapWithCache`) is built out of the metadata storage and the object storages
+    /// of the disk it wraps, which is a disk of its own and may still be used directly or by another
+    /// layer. They are shut down together with that disk, not with the layer.
+    if (!wrapped_disk)
+    {
+        metadata_storage->shutdown();
+        for (const auto & [location, _] : cluster->getConfiguration())
+            object_storages->takePointingTo(location)->shutdown();
+    }
 
     LOG_INFO(log, "Disk {} shut down", name);
 }

@@ -122,6 +122,14 @@ DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
     return disk;
 }
 
+std::pair<DiskPtr, CustomDiskRegistrationPtr> StorageFactory::Arguments::getDiskWithCustomDiskRegistration(const String & name) const
+{
+    auto result = getContext()->getDiskWithCustomDiskRegistration(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureDiskIsAllowed(result.first, getLocalContext());
+    return result;
+}
+
 StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
 {
     auto storage_policy = getContext()->getStoragePolicy(name);

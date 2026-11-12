@@ -1,0 +1,7 @@
+numeric name	1
+disks after detach	0
+rows in the base table	5
+rows in the cache table	6
+rows in the table on the implicit policy	7
+disks after attach	2
+disks after drop	0

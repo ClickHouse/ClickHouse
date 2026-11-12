@@ -14,9 +14,10 @@ CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_q
 # A session without `s3_allow_server_credentials_in_user_queries` may not wrap, by name, a disk that a session with it
 # created with the server's own credentials, nor a wrapper of such a disk. A `type` read with `from_zk` counts as a
 # disk that may use server credentials; here it resolves to an `encrypted` disk, so no object storage is needed.
-# The `encrypted` disks wrap local disks under `custom_local_disks_base_directory`. A disk stays registered when its
-# table is dropped, so every table is dropped right away: a table naming a disk of another table could not be loaded
-# after a restart.
+# The `encrypted` disks wrap local disks under `custom_local_disks_base_directory`. A disk is released when the last
+# table using it is dropped, so the tables defining the disks that are named later are kept until the end, and dropped
+# before the test ends: a table naming a disk of another table could not be loaded after a restart. The other tables
+# are dropped right away.
 
 ZK_PATH="/clickhouse/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 KEY="1234567812345678"
@@ -39,9 +40,9 @@ local_disk() { echo "disk(type = local, path = '${CLICKHOUSE_DISKS_FILES}/${CLIC
 $CLICKHOUSE_KEEPER_CLIENT -q "create '${ZK_PATH}' 'disk'"
 $CLICKHOUSE_KEEPER_CLIENT -q "create '${ZK_PATH}/type' 'encrypted'"
 
-echo "with the opt-in: create a disk with server credentials: $(run ${OPT_IN} -q "$(create created "disk(name = '${SERVER_DISK}', type = 'from_zk ${ZK_PATH}/type', disk = $(local_disk server), path = 'encrypted/', key = '${KEY}')")")"
-echo "with the opt-in: wrap it: $(run ${OPT_IN} -q "$(create created "disk(name = '${WRAPPER_DISK}', type = encrypted, disk = '${SERVER_DISK}', path = 'wrapper/', key = '${KEY}')")")"
-echo "with the opt-in: create a disk without server credentials: $(run ${OPT_IN} -q "$(create created "disk(name = '${PLAIN_DISK}', type = encrypted, disk = $(local_disk plain), path = 'encrypted/', key = '${KEY}')")")"
+echo "with the opt-in: create a disk with server credentials: $(run ${OPT_IN} -q "$(create t_server "disk(name = '${SERVER_DISK}', type = 'from_zk ${ZK_PATH}/type', disk = $(local_disk server), path = 'encrypted/', key = '${KEY}')")")"
+echo "with the opt-in: wrap it: $(run ${OPT_IN} -q "$(create t_wrapper "disk(name = '${WRAPPER_DISK}', type = encrypted, disk = '${SERVER_DISK}', path = 'wrapper/', key = '${KEY}')")")"
+echo "with the opt-in: create a disk without server credentials: $(run ${OPT_IN} -q "$(create t_plain "disk(name = '${PLAIN_DISK}', type = encrypted, disk = $(local_disk plain), path = 'encrypted/', key = '${KEY}')")")"
 
 echo "without the opt-in: wrap the disk with server credentials: $(run -q "$(create created "$(wrap "${SERVER_DISK}" t1)")")"
 echo "without the opt-in: wrap its wrapper: $(run -q "$(create created "$(wrap "${WRAPPER_DISK}" t2)")")"
@@ -49,10 +50,10 @@ echo "without the opt-in: wrap the disk without server credentials: $(run -q "$(
 echo "with the opt-in: wrap the disk with server credentials: $(run ${OPT_IN} -q "$(create created "$(wrap "${SERVER_DISK}" t4)")")"
 
 # The wrapped disk is read with `from_zk`: after the node changes, the same definition no longer resolves to the disk with
-# server credentials, but it still names the disk created from it.
+# server credentials, but it still names the disk created from it, which its table keeps registered.
 $CLICKHOUSE_KEEPER_CLIENT -q "create '${ZK_PATH}/wrapped' '${SERVER_DISK}'"
 INDIRECT_WRAPPER="disk(type = encrypted, disk = 'from_zk ${ZK_PATH}/wrapped', path = 'indirect/', key = '${KEY}')"
-echo "with the opt-in: wrap it with from_zk: $(run ${OPT_IN} -q "$(create created "${INDIRECT_WRAPPER}")")"
+echo "with the opt-in: wrap it with from_zk: $(run ${OPT_IN} -q "$(create t_indirect "${INDIRECT_WRAPPER}")")"
 $CLICKHOUSE_KEEPER_CLIENT -q "set '${ZK_PATH}/wrapped' '${PLAIN_DISK}'"
 echo "without the opt-in: the same definition after the node changed: $(run -q "$(create created "${INDIRECT_WRAPPER}")")"
 
@@ -75,4 +76,5 @@ echo "without the opt-in: Join on the disk: $(run -q "CREATE TABLE created (x UI
 echo "without the opt-in: Distributed on its storage policy: $(run -q "CREATE TABLE created (x UInt8) ENGINE = Distributed('test_shard_localhost', currentDatabase(), t_plain, rand(), '__${SERVER_DISK}')")"
 echo "without the opt-in: Log on the disk without server credentials: $(run -q "CREATE TABLE created (x UInt8) ENGINE = Log SETTINGS disk = '${PLAIN_DISK}'")"
 
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_indirect SYNC; DROP TABLE t_wrapper SYNC; DROP TABLE t_server SYNC; DROP TABLE t_plain SYNC"
 $CLICKHOUSE_KEEPER_CLIENT -q "rmr '${ZK_PATH}'"

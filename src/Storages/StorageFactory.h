@@ -4,6 +4,7 @@
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/CustomDiskRegistration.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -71,6 +72,9 @@ public:
         /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
         DiskPtr getDisk(const String & name) const;
         StoragePolicyPtr getStoragePolicy(const String & name) const;
+        /// The same as `getDisk`, together with a registration that keeps a custom disk registered for as long as the
+        /// table uses it (see `Context::getDiskWithCustomDiskRegistration`).
+        std::pair<DiskPtr, CustomDiskRegistrationPtr> getDiskWithCustomDiskRegistration(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers

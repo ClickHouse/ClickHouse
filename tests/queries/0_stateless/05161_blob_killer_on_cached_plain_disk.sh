@@ -28,20 +28,21 @@ SETTINGS disk = disk(
 
 INSERT INTO t_cached_plain_rewritable VALUES (1);
 SELECT * FROM t_cached_plain_rewritable;
-DROP TABLE t_cached_plain_rewritable SYNC;
 
 -- The queue of the cache layer is drained, and nothing is deferred on the disk under it.
+-- This is done while the table exists: an inline disk is unregistered together with its last table.
 SYSTEM WAIT BLOBS CLEANUP '05161_cache_over_plain_rewritable';
-
-SYSTEM FLUSH LOGS text_log;
 
 -- Both disks are registered under the names given above, so that the loggers below are the right ones.
 SELECT 'disks', count() FROM system.disks
 WHERE name IN ('05161_cache_over_plain_rewritable', '05161_plain_rewritable_under_cache');
 
--- The disk stays registered after its table is dropped, so a rerun of the test in the same server finds the
--- message from the first run only: the scans cannot be bounded by the start of the test. Late in a long CI run
--- the whole log exceeds the max_rows_to_read limit of the test profile.
+-- The blobs removed by the drop are not lost: the shutdown of the released disk drains its queue.
+DROP TABLE t_cached_plain_rewritable SYNC;
+
+SYSTEM FLUSH LOGS text_log;
+
+-- Late in a long CI run the whole log exceeds the max_rows_to_read limit of the test profile.
 SELECT 'cache layer, blob killer started', count() > 0 FROM system.text_log
 WHERE logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%'
 SETTINGS max_rows_to_read = 0;
