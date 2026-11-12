@@ -736,7 +736,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     /// the next record or the chunk's padding go, as the overflow of `copyPaddedKeyBytes` does.
     const auto batch_keeps_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     const char * kept_key_bytes = staged_keys;
-    const auto write_key = [&](size_t record, size_t key_size, char * to, [[maybe_unused]] const auto & format) ALWAYS_INLINE
+    const auto write_key = [&](size_t record, [[maybe_unused]] size_t key_size, char * to, [[maybe_unused]] const auto & format) ALWAYS_INLINE
     {
         if constexpr (is_keys_and_packed_string<RecordKey>)
         {
