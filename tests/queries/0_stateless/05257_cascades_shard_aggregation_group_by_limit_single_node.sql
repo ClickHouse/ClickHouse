@@ -20,9 +20,9 @@ SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 -- The query parameter, not `distributed_plan_workers_num`: this file never leases a real Stateless
 -- Worker (`distributed_plan_execute_locally` keeps every fragment local), it only needs Cascades to
--- cost the shard's aggregation as if it had this many nodes to split across, and the parameter sizes
--- that without an explicit `make_distributed_plan = 0` on the EXPLAIN wrapper queries below
--- conflicting with it.
+-- cost the shard's aggregation as if it had this many nodes to split across. Unlike
+-- `distributed_plan_workers_num`, the parameter needs no explicit `make_distributed_plan = 0` on
+-- the EXPLAIN wrapper queries below to avoid conflicting with it.
 SET param__internal_cascades_cluster_node_count = 2;
 SET use_statistics = 0;
 SET enable_parallel_blocks_marshalling = 0;

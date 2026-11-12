@@ -5,9 +5,8 @@
 
 # Restoring a remembered pre-adjustment value must be judged under the current settings
 # constraints, not just the ones active when the value was remembered: a profile switch
-# mid-session can forbid a value the derived plan is about to restore. Before this was fixed, the
-# restore below put automatic_parallel_replicas_mode back to 1, bypassing the profile's MAX 0 that
-# arrived after the value was remembered.
+# mid-session can forbid a value the derived plan is about to restore, and the restore must then
+# fall back to the setting's default rather than put back a value the new profile forbids.
 #
 # automatic_parallel_replicas_mode = 1 arrives through a profile, not a bare SET: clickhouse-client
 # mirrors every bare SET and resends it with each later query it sends, but never a profile

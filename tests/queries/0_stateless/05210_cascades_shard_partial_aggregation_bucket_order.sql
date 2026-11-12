@@ -26,9 +26,10 @@ SET distributed_plan_execute_locally = 1;
 -- Two planning nodes, so the shard has a multi-node partial aggregation to choose from. The query
 -- parameter, not `distributed_plan_workers_num`: this file never leases a real Stateless Worker
 -- (`distributed_plan_execute_locally` above keeps every fragment local), it only needs Cascades to
--- cost the shard's aggregation as if it had this many nodes to split across, and the parameter
--- sizes that without an explicit `make_distributed_plan = 0` on the queries below (turning the
--- distributed-plan derivation off for just the wrapper around each EXPLAIN) conflicting with it.
+-- cost the shard's aggregation as if it had this many nodes to split across. Unlike
+-- `distributed_plan_workers_num`, the parameter needs no explicit `make_distributed_plan = 0` on
+-- the queries below (turning the distributed-plan derivation off for just the wrapper around each
+-- EXPLAIN) to avoid conflicting with it.
 SET param__internal_cascades_cluster_node_count = 2;
 -- The column statistics give the real group count, 2000 for 200000 rows, so splitting the shard's
 -- aggregation over the nodes is clearly cheaper than keeping it on one node. Without statistics the
