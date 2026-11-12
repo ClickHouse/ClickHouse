@@ -154,14 +154,23 @@ inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std
 inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
     size_t offset = 0;
+    std::string result;
     while (true)
     {
         auto [password_begin, password_end] = findURIPasswordRange(uri.substr(offset), authority_terminators);
         if (password_begin == std::string::npos)
-            return offset > 0;
+        {
+            if (offset > 0)
+            {
+                result.append(uri, offset);
+                uri = result;
+                return true;
+            }
+            return false;
+        }
 
-        uri.replace(offset + password_begin, password_end - password_begin, HIDDEN_SECRET);
-        offset += password_begin + HIDDEN_SECRET.length();
+        result.append(uri, offset, password_begin).append(HIDDEN_SECRET);
+        offset += password_end;
     }
 }
 
