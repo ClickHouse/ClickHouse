@@ -609,7 +609,7 @@ buildField(
     }
 
     DataTypePtr t = removeLowCardinality(type);
-    const bool nullable = t->isNullable();
+    bool nullable = t->isNullable();
     t = removeNullable(t);
 
     flatbuf::Type type_type = flatbuf::Type_NONE;
@@ -794,6 +794,15 @@ buildField(
             }
             case TypeIndex::Variant:
             {
+                /// `RecordBatchEncoder::encodeVariantAsJSONText` writes the JSON text of each value, and NULL as an Arrow null.
+                if (settings.arrow.output_variant_as_string)
+                {
+                    nullable = true;
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                    break;
+                }
+
                 /// Mirror the library writer: a dense union with one child per variant (in global order)
                 /// plus a trailing `null`-typed child that NULL rows refer to.
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
