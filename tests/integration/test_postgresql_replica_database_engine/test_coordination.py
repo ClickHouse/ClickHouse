@@ -4083,6 +4083,10 @@ def test_single_table_publication_recreated_after_external_drop(started_cluster)
         assert len(publications) == 1, publications
         publication_name = publications[0][0]
         pg_query(f'DROP PUBLICATION "{publication_name}"')
+        # A change written while the publication is absent cannot be decoded from the old slot any more (logical
+        # decoding looks the publication up in the historic catalog), so the recreation must reload the table
+        # from a new slot instead of resuming the old one.
+        pg_query("DELETE FROM test_table WHERE key = 1")
 
         # Force the same handler through its recreation path: expire the worker's Keeper session, so
         # the re-election re-runs startSynchronization -> createPublicationIfNeeded with the publication
@@ -4109,11 +4113,17 @@ def test_single_table_publication_recreated_after_external_drop(started_cluster)
             f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
         ) == [("test_table",)]
 
-        # Replication resumed through the recreated publication.
+        # The table was reloaded with the delete from the publication gap, and replication resumed through the
+        # recreated publication.
+        wait_for_count(99)
         instance.query(
             "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
         )
-        wait_for_count(200)
+        wait_for_count(199)
+        assert (
+            int(instance.query("SELECT count() FROM test_single_pub WHERE key = 1"))
+            == 0
+        )
 
         instance.query("DROP TABLE test_single_pub SYNC")
     finally:

@@ -424,6 +424,17 @@ private:
     void invalidateInitialSnapshot(const String & reason);
     void markInitialSnapshotCompleted(const String & lsn);
 
+    /// The fence of a replica that replaces its stopped nested copies while recovering a refused drop: the record
+    /// `<keeper_path>/nested_recreations/<replica>` exists from before the first stopped copy is discarded until every
+    /// nested table of the replica exists again. While any record exists, no snapshot is started or completed.
+    String getPendingNestedRecreationsPath() const;
+    String getOwnPendingNestedRecreationPath() const;
+    void recordPendingNestedRecreation();
+    void removePendingNestedRecreation(const zkutil::ZooKeeperPtr & zookeeper);
+    /// Throws if any replica has a pending recreation; returns the data version of the parent node to be checked
+    /// in the multi-request that publishes the marker.
+    int32_t assertNoPendingNestedRecreations(const zkutil::ZooKeeperPtr & zookeeper);
+
     /// Throws when the Keeper session backing this worker's /leader node is no longer alive. Fences the
     /// coordinated `startSynchronization` steps that must only be performed by the live active worker
     /// (loading the shared snapshot, publishing the snapshot marker, starting the consumer): a worker that

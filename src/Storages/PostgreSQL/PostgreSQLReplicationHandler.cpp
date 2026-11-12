@@ -1550,6 +1550,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// the nested tables are empty or do not exist yet, which makes the truncation a no-op.
         if (coordination_enabled)
         {
+            /// Checked again when the marker is published; this only avoids loading a snapshot that cannot complete.
+            assertNoPendingNestedRecreations(coordination_zookeeper);
+
             if (isInitialSnapshotCompleted())
             {
                 LOG_WARNING(log,
@@ -1649,6 +1652,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// just created. `truncateNestedTables` re-checks the fence per table, and it is re-checked here
         /// once more before the slot is touched (the truncate can take a while on large tables).
         assertReplicationLeadershipIsLive();
+
+        /// Checked again when the marker is published; this only avoids loading a snapshot that cannot complete.
+        assertNoPendingNestedRecreations(coordination_zookeeper);
 
         truncateNestedTables();
 
@@ -2037,11 +2043,22 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
             /// when the slot exists without the marker). This costs a reload of the snapshot, but it is only done
             /// in the recovery from a refused drop. The marker is removed durably before the drop, and a failure to
             /// remove it fails the attempt without discarding the copy.
+            ///
+            /// Removing the marker alone is not enough: the active worker could redo the snapshot and publish a new
+            /// marker before this copy is dropped, into a tree that this copy cannot fetch from, and its replica
+            /// could then be dropped while this replica stays registered. Dropping this copy would then remove the
+            /// last data, and the replacement would trust the new marker. So first record in Keeper that this
+            /// replica is recreating its nested tables. While the record exists, no worker starts or completes a
+            /// snapshot (see `assertNoPendingNestedRecreations`). It is removed only after every nested table of
+            /// this replica exists again, so the next snapshot is loaded into a tree this replica belongs to.
             const auto shut_down_engine_spec = makeNestedEngineSpec(table_name);
             if (coordination_enabled && shut_down_engine_spec.replicated)
+            {
+                recordPendingNestedRecreation();
                 invalidateInitialSnapshot(fmt::format(
                     "The shut-down copy of the shared nested table at {} is being dropped and recreated, and it may be "
                     "the last copy that holds the data of the completed snapshot", shut_down_engine_spec.zookeeper_path));
+            }
 
             /// Use the wrapper's internal nested-table context: for the database engine the nested table
             /// lives inside the coordinated DatabaseMaterializedPostgreSQL, whose `dropTable` refuses a
@@ -2128,6 +2145,12 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
         /// replicated) until the active worker has loaded the whole snapshot and this replica has fetched it.
         /// `markCaughtUpNestedTablesAvailable` publishes it once that is the case.
     }
+
+    /// Every nested table of this replica exists and is registered in its shared tree, so a snapshot loaded from
+    /// now on replicates to this replica. Release the fence of a recreation, possibly recorded by an earlier
+    /// attempt, a previous handler or before a restart.
+    if (coordination_enabled && nested_engine_name != "ReplacingMergeTree")
+        removePendingNestedRecreation(getContext()->getZooKeeper());
 }
 
 
@@ -3217,6 +3240,10 @@ bool PostgreSQLReplicationHandler::tryRemoveOwnReplicaRegistration(const zkutil:
         return false;
     }
 
+    /// An unregistered replica never completes a pending recreation of its nested tables, which would block the
+    /// snapshot of the remaining replicas.
+    removePendingNestedRecreation(zookeeper);
+
     if (auto code = zookeeper->tryRemove(replica_path);
         code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
         throw zkutil::KeeperException::fromPath(code, replica_path);
@@ -3488,6 +3515,9 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast(bool keep_regis
                 /// Post-data teardown: the local nested tables are already gone, so the registration must go
                 /// too. Remove it and re-run the fence: a concurrent dropper may be doing the same, and
                 /// removing this node may leave the parent empty, making this replica the last one out.
+                /// A pending recreation of this replica's nested tables will never complete, and it would block
+                /// the snapshot of the remaining replicas.
+                removePendingNestedRecreation(zookeeper);
                 if (const auto remove_code = zookeeper->tryRemove(replica_path, replica_stat.version);
                     remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE
                     && remove_code != Coordination::Error::ZBADVERSION)
@@ -3562,6 +3592,8 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
     }
     remove_checked(coordination_keeper_path + "/replicas", /* recursive */ true);
     remove_checked(coordination_keeper_path + "/snapshot_completed");
+    /// The records of `recordPendingNestedRecreation` are meaningless once the setup is torn down.
+    remove_checked(getPendingNestedRecreationsPath(), /* recursive */ true);
     /// The naming fingerprint and table set remain until the local nested tables are actually gone. A refused
     /// DROP then restarts against their authoritative coordinated identity instead of treating the still-live
     /// publication as a leak and deriving a different set from the current PostgreSQL schema.
@@ -3635,6 +3667,82 @@ void PostgreSQLReplicationHandler::invalidateInitialSnapshot(const String & reas
 }
 
 
+String PostgreSQLReplicationHandler::getPendingNestedRecreationsPath() const
+{
+    return coordination_keeper_path + "/nested_recreations";
+}
+
+
+String PostgreSQLReplicationHandler::getOwnPendingNestedRecreationPath() const
+{
+    /// The replica name can contain slashes (for example `<shard>/<replica>`).
+    return getPendingNestedRecreationsPath() + "/" + escapeForFileName(coordination_replica_name);
+}
+
+
+void PostgreSQLReplicationHandler::recordPendingNestedRecreation()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::recordPendingNestedRecreation");
+
+    /// The record is created together with a change of the data version of the parent node. A worker that is about
+    /// to publish the `snapshot_completed` marker checks this version in the same multi-request, so a record created
+    /// after its check of the children still makes the publication fail.
+    auto zookeeper = getContext()->getZooKeeper();
+    const String parent_path = getPendingNestedRecreationsPath();
+    const String path = getOwnPendingNestedRecreationPath();
+    zookeeper->createIfNotExists(parent_path, "");
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(path, coordination_replica_owner, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeSetRequest(parent_path, "", -1));
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZOK)
+    {
+        LOG_INFO(log, "Recorded the pending recreation of the nested tables of replica '{}' at {}", coordination_replica_name, path);
+        return;
+    }
+
+    /// Kept from an earlier attempt that failed before every nested table was recreated. It has been fencing the
+    /// snapshot since then.
+    if (zkutil::getFailedOpIndex(code, responses) == 0 && code == Coordination::Error::ZNODEEXISTS)
+        return;
+
+    throw zkutil::KeeperMultiException(code, ops, responses);
+}
+
+
+void PostgreSQLReplicationHandler::removePendingNestedRecreation(const zkutil::ZooKeeperPtr & zookeeper)
+{
+    const String path = getOwnPendingNestedRecreationPath();
+    const auto code = zookeeper->tryRemove(path);
+    if (code == Coordination::Error::ZOK)
+        LOG_INFO(log, "Removed the pending recreation of the nested tables of replica '{}'", coordination_replica_name);
+    else if (code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(code, path);
+}
+
+
+int32_t PostgreSQLReplicationHandler::assertNoPendingNestedRecreations(const zkutil::ZooKeeperPtr & zookeeper)
+{
+    /// A replica that recovers a refused drop records that it is replacing its stopped nested copies before it
+    /// discards any of them (see `ensureNestedTablesExist`). Until the replacements exist, a snapshot loaded now
+    /// would not replicate to that replica, and the copies that do receive it could be dropped before the
+    /// replacements fetch anything. Do not start or complete a snapshot then; the coordination task retries.
+    const String parent_path = getPendingNestedRecreationsPath();
+    zookeeper->createIfNotExists(parent_path, "");
+
+    Coordination::Stat stat;
+    const Strings pending = zookeeper->getChildren(parent_path, &stat);
+    if (!pending.empty())
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Replica(s) {} of the coordinated MaterializedPostgreSQL setup at Keeper path '{}' are recreating their "
+            "nested tables after a refused drop. The initial snapshot is loaded once they have finished; will retry",
+            fmt::join(pending, ", "), coordination_keeper_path);
+    return stat.version;
+}
+
+
 void PostgreSQLReplicationHandler::assertReplicationLeadershipIsLive() const
 {
     if (!coordination_enabled)
@@ -3671,8 +3779,12 @@ void PostgreSQLReplicationHandler::markInitialSnapshotCompleted(const String & l
     /// session fails them, which is the authoritative fence - only a live leader can publish the marker.
     coordination_zookeeper->tryRemove(marker_path);
 
+    /// A replica that began to recreate its nested tables while the snapshot was loading may not have received it.
+    const int32_t pending_recreations_version = assertNoPendingNestedRecreations(coordination_zookeeper);
+
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCheckRequest(coordination_keeper_path + "/leader", -1));
+    ops.emplace_back(zkutil::makeCheckRequest(getPendingNestedRecreationsPath(), pending_recreations_version));
     ops.emplace_back(zkutil::makeCreateRequest(marker_path, lsn, zkutil::CreateMode::Persistent));
     coordination_zookeeper->multi(ops);
 
@@ -3755,7 +3867,28 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         /// against the relations of the original setup: otherwise a replica whose role has a different `search_path`
         /// would publish other relations and mix their changes into the shared nested tables.
         if (coordination_enabled)
+        {
             ensureCoordinatedSourceRelationsCompatible(tx);
+
+            /// The shared slot cannot be resumed through a recreated publication: logical decoding looks the
+            /// publication up in the historic catalog at the position of each change, so the changes written
+            /// while the publication was absent fail to decode with `publication "..." does not exist` forever,
+            /// and skipping them would lose them. Invalidate the completed snapshot before the publication is
+            /// recreated, so `startSynchronization` reloads every table from a new slot (it drops the existing
+            /// slot when there is no marker). If the publication is recreated but this worker dies before that,
+            /// the marker is already gone, and the next active worker takes the same path. On the first startup
+            /// of the setup there is no marker, and this does nothing. The removal goes through the session that
+            /// backs /leader, so a deposed worker cannot remove the marker of its successor's snapshot.
+            assertReplicationLeadershipIsLive();
+            const String marker_path = coordination_keeper_path + "/snapshot_completed";
+            const auto code = coordination_zookeeper->tryRemove(marker_path);
+            if (code == Coordination::Error::ZOK)
+                LOG_WARNING(log, "Publication {} does not exist and is recreated. Removed the initial snapshot marker, "
+                                 "so all tables are reloaded from a new snapshot and replication slot",
+                            doubleQuoteString(publication_name));
+            else if (code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, marker_path);
+        }
 
         /// 'ONLY' means just a table, without descendants.
         std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), publication_tables_list);
