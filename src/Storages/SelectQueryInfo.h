@@ -5,13 +5,15 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
 namespace DB
 {
+
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -27,9 +29,6 @@ using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-
-class ReadInOrderOptimizer;
-using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
@@ -48,6 +47,17 @@ struct PrewhereInfo
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
+    /// Set when only a leading part of the PREWHERE conjunction consists of conjuncts of
+    /// `SelectQueryInfo::filter_actions_dag`. Marks emptied by that part alone are recorded under its key.
+    struct QueryConditionCacheAttribution
+    {
+        UInt64 key;
+        String condition;
+        /// Hashes of the leading conjuncts of the PREWHERE condition that the key covers.
+        std::vector<UInt64> conjunct_hashes;
+    };
+    std::optional<QueryConditionCacheAttribution> query_condition_cache_attribution;
+
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
@@ -56,8 +66,8 @@ struct PrewhereInfo
 
     PrewhereInfo clone() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -69,8 +79,8 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -137,6 +147,11 @@ struct SelectQueryInfo
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     TableExpressionNodePtr table_expression;
 
+    /// A parallel-replicas read through a table function is coordinated under the name of the storage the call
+    /// resolved to, not under the identity of the call: set for a read shipped in a plan fragment, which a replica
+    /// rebuilds from the storage alone. Kept here so that every step rebuilt from this read inherits it.
+    bool parallel_replicas_coordinated_under_storage_name = false;
+
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
@@ -181,8 +196,8 @@ struct SelectQueryInfo
     /// (See comment in ReadFromMergeTree::applyFilters.)
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
-    ReadInOrderOptimizerPtr order_optimizer;
-    /// Can be modified while reading from storage
+    /// Set by `ReadFromMergeTree::requestReadingInOrder` / `ReadFromMerge::requestReadingInOrder`
+    /// when the query plan optimizer decides to read in the order of the sorting key.
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
@@ -207,6 +222,7 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
@@ -222,6 +238,10 @@ struct SelectQueryInfo
 
     /// Whether the table expression has the STREAM modifier.
     bool isStream() const;
+
+    /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
+    std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

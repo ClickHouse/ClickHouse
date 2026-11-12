@@ -6,6 +6,9 @@
 -- The threshold is given as an absolute value (rather than via
 -- `max_bytes_ratio_before_external_join`, which derives it from the server's memory
 -- tracker) so the wrapper is used deterministically and never actually spills.
+--
+-- The counters are read from this server's query_log row, so the join runs without parallel replicas:
+-- a remote replica can build the hash table, and its ProfileEvents are not added to that row.
 
 DROP TABLE IF EXISTS t_post_build_left;
 DROP TABLE IF EXISTS t_post_build_right;
@@ -22,9 +25,12 @@ SELECT count()
 FROM t_post_build_left AS l
 INNER JOIN t_post_build_right AS r ON l.k = r.k
 SETTINGS join_algorithm = 'hash',
+         hash_join_layout = 'serial', -- the only layout that converts
+         query_plan_join_shard_by_pk_ranges = 0,
          enable_join_fixed_hash_table_conversion = 1,
          max_bytes_ratio_before_external_join = 0,
          max_bytes_before_external_join = 100000000000,
+         enable_parallel_replicas = 0,
          log_comment = '04647_post_build_phase';
 
 SYSTEM FLUSH LOGS query_log;

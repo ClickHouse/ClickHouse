@@ -1,0 +1,4 @@
+Valid parameters reach the source
+An unknown parameter is rejected before the source is read
+An invalid num_iterations is rejected before the source is read
+A multiclass objective is rejected before the source is read

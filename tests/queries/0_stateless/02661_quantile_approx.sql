@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 
 -- { echoOn }
 with arrayJoin([0, 1, 2, 10]) as x select quantilesGK(100, 0.5, 0.4, 0.1)(x);
@@ -29,9 +28,9 @@ FROM
     FROM numbers(49999)
 );
 
-select medianGK()(number) from numbers(10) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select medianGK()(number) from numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-select quantileGK()(number) from numbers(10) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select quantileGK()(number) from numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 select medianGK(100)(number) from numbers(10);
 select quantileGK(100)(number) from numbers(10);
@@ -41,7 +40,7 @@ select quantileGK('abc', 0.5)(number) from numbers(10); -- { serverError ILLEGAL
 select quantileGK(1.23, 0.5)(number) from numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select quantileGK(-100, 0.5)(number) from numbers(10); -- { serverError BAD_ARGUMENTS }
 
-select quantilesGK()(number) from numbers(10) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select quantilesGK()(number) from numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 select quantilesGK(100)(number) from numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select quantilesGK(100, 0.5)(number) from numbers(10);

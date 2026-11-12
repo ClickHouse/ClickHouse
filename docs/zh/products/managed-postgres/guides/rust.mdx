@@ -1,0 +1,327 @@
+---
+slug: /cloud/managed-postgres/guides/rust
+sidebarTitle: 'Rust (sqlx)'
+title: '将 Rust (sqlx) 与 ClickHouse Managed Postgres 搭配使用'
+description: '使用 sqlx 和 axum 将 Rust 应用连接到 ClickHouse Managed Postgres，通过 sqlx-cli 执行迁移，并基于经过验证的 TLS 连接执行查询'
+keywords: ['managed postgres', 'rust', 'sqlx', 'sqlx-cli', 'axum', 'tokio', 'rustls', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-rust-beta" />
+
+[sqlx](https://github.com/launchbadge/sqlx) 是一个异步的纯 Rust SQL 工具包，内置连接池和迁移功能。在本指南中，您将使用 `sqlx-cli` 迁移创建一个 `todos` 表，并通过一个小型 [axum](https://github.com/tokio-rs/axum) 服务器处理增删改查 (CRUD) 请求。所有连接均使用 TLS，并启用完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* [Rust](https://www.rust-lang.org/tools/install) 1.94 或更高版本。本指南已在 Rust 1.98.1、`sqlx` 0.9.0、`sqlx-cli` 0.9.0 和 `axum` 0.8.9 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。您也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。详细操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接详细信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。保持选中 **Directly**，并开启 **Use SSL**。此时，**url** 选项卡中的连接 URL 将以 `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem` 结尾，端口为 `5432`。
+
+点击 **Download CA certificate**。您也可以稍后在 **Settings → CA Certificate** 中下载。该证书为您的实例所独有，因此驱动程序可借此验证与之通信的确实是您的服务器。
+
+在本指南中，应用和 `sqlx-cli` 均**直接**连接到端口 `5432` 上的 Postgres。axum 服务器是长期运行的进程，而 `PgPool` 本身就维护着连接池，因此无需在 Postgres 前再额外部署连接池器。迁移应始终使用直接连接。如果您运行多个应用实例，请参阅[使用 PgBouncer](#pgbouncer)。
+
+## 设置项目 {#project-setup}
+
+创建一个项目，添加 `sqlx` (启用 Postgres 驱动程序、Tokio 运行时和 `rustls` TLS 后端) ，再添加 axum 以及几个辅助 crate：
+
+```bash
+cargo new todo-api && cd todo-api
+cargo add sqlx --features postgres,runtime-tokio,tls-rustls,chrono
+cargo add axum dotenvy
+cargo add tokio --features full
+cargo add serde --features derive
+cargo add chrono --features serde
+```
+
+安装 `sqlx-cli`，并使用相同的 TLS 后端：
+
+```bash
+cargo install sqlx-cli --no-default-features --features rustls,postgres
+```
+
+<Warning>
+  **在 macOS 上请使用 `rustls`，而非 `native-tls`**
+
+  ClickHouse Managed Postgres 仅接受 TLS 1.3。在 macOS 上，`native-tls` 后端使用系统的 Secure Transport 库，而该库不支持 TLS 1.3。直接运行 `cargo install sqlx-cli` 会使用 `native-tls`，此后每条命令都会失败，并报错 `error occurred while attempting to establish a TLS connection: One or more parameters passed to a function were not valid.` (或 `bad protocol version`) 。使用 `tls-native-tls` feature 构建的应用也会出现同样的问题。在 Linux 上，`native-tls` 使用 OpenSSL，能够正常连接，但只会加载 `ca-certificate.pem` 中的第一个证书。`rustls` 在所有平台上均支持 TLS 1.3，并会加载文件中的全部证书。
+</Warning>
+
+<Tip>
+  **要集成到现有应用中？**
+
+  跳过 `cargo new`，直接在您的项目中运行上述 `cargo add` 和 `cargo install` 命令，然后继续阅读[配置连接](#configure-connection)。如果应用通过 sqlx 使用 SQLite：
+
+  * 在 `Cargo.toml` 中从 `sqlx` 的 features 里移除 `sqlite`，并将 `SqlitePool` 替换为 `PgPool`。
+  * 将 `?` 占位符改为 `$1`、`$2` 等形式。
+  * 按 Postgres 语法重写迁移，例如用 `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` 代替 `INTEGER PRIMARY KEY AUTOINCREMENT`。
+</Tip>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移动到项目目录中，并重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机替换为 **Connect** 对话框中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_rust;"
+```
+
+```text
+CREATE DATABASE
+```
+
+在项目根目录下创建 `.env` 文件，或修改现有 `.env` 文件中的 `DATABASE_URL`，使其指向 `guide_rust` 数据库。应用程序和 `sqlx-cli` 都会从该文件读取 `DATABASE_URL`：
+
+```bash title=".env"
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+sqlx 会从 URL 中读取 `sslmode` 和 `sslrootcert`。使用 `verify-full` 时，它会检查服务器证书是否由您实例的 CA 签名，以及证书是否与主机名匹配。`sslrootcert` 路径相对于您执行命令时所在的目录进行解析。请勿将 `.env` 纳入版本控制；如果密码中包含 `@`、`/` 或 `#` 等字符，请对其进行百分号编码。
+
+<Warning>
+  **务必设置 `sslmode=verify-full`**
+
+  如果未设置 `sslmode`，sqlx 会使用 `prefer` 模式：连接会被加密，但即使设置了 `sslrootcert`，也会接受任意证书。使用 `verify-full` 时，如果 CA 证书缺失或有误，连接会因 `UnknownIssuer` 而失败；如果主机与证书不匹配 (例如使用 IP 地址) ，则会因 `NotValidForNameContext` 而失败 (在 `sqlx-cli` 中显示为 `certificate not valid for name`) 。如果 `sslrootcert` 路径有误，则会报错 `No such file or directory`。
+</Warning>
+
+## 通过迁移创建表 {#migrations}
+
+创建一个迁移文件：
+
+```bash
+sqlx migrate add create_todos
+```
+
+```text
+Creating migrations/20261001142218_create_todos.sql
+```
+
+打开 `migrations` 目录下新建的文件，添加以下表定义：
+
+```sql title="migrations/<timestamp>_create_todos.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+执行该迁移：
+
+```bash
+sqlx migrate run
+```
+
+```text
+Applied 20261001142218/migrate create todos (233.971666ms)
+```
+
+`sqlx migrate run` 会将已应用的迁移记录在 `_sqlx_migrations` 表中，之后再次调用时只会运行新增的迁移。请将 `migrations` 目录随代码一起提交。如果希望改为在应用启动时执行迁移，可以在 `main` 中调用 `sqlx::migrate!().run(&pool).await?`，前提是该连接池使用的是直接连接。
+
+## 构建 API {#query}
+
+将 `src/main.rs` 替换为一个小型 axum 服务器，每个路由执行一条查询。如果是在现有应用中，请按照 `main` 中的方式创建连接池，然后将 `Todo` 结构体、各个处理函数以及路由添加到你自己的路由器中：
+
+```rust title="src/main.rs"
+use std::str::FromStr;
+
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, patch},
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+#[derive(Serialize, sqlx::FromRow)]
+struct Todo {
+    id: i64,
+    title: String,
+    done: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+struct NewTodo {
+    title: String,
+}
+
+type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+
+// Return 404 when no row matches, and 500 for any other database error.
+fn db_error(err: sqlx::Error) -> (StatusCode, String) {
+    match err {
+        sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "Not found\n".into()),
+        err => {
+            eprintln!("Database error: {err}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error\n".into())
+        }
+    }
+}
+
+// Read
+async fn list_todos(State(pool): State<PgPool>) -> ApiResult<Vec<Todo>> {
+    let todos = sqlx::query_as::<_, Todo>("SELECT * FROM todos ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todos))
+}
+
+// Create
+async fn create_todo(State(pool): State<PgPool>, Json(new): Json<NewTodo>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("INSERT INTO todos (title) VALUES ($1) RETURNING *")
+        .bind(new.title)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Update: toggle the done flag
+async fn toggle_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("UPDATE todos SET done = NOT done WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Delete
+async fn delete_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("DELETE FROM todos WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load DATABASE_URL from .env, if the variable isn't already set
+    dotenvy::dotenv().ok();
+
+    // sslmode and sslrootcert come from the URL. Not sending extra_float_digits
+    // lets the same code also connect through PgBouncer, which rejects it.
+    let options = PgConnectOptions::from_str(&std::env::var("DATABASE_URL")?)?
+        .extra_float_digits(None);
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect_with(options)
+        .await?;
+
+    // Confirm that the connection is encrypted
+    let tls: Option<String> =
+        sqlx::query_scalar("SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+            .fetch_one(&pool)
+            .await?;
+    println!("Connected to Postgres, TLS version: {}", tls.as_deref().unwrap_or("none"));
+
+    let app = Router::new()
+        .route("/todos", get(list_todos).post(create_todo))
+        .route("/todos/{id}", patch(toggle_todo).delete(delete_todo))
+        .with_state(pool);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3117").await?;
+    println!("Listening on http://localhost:3117/todos");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+```
+
+值始终通过 `.bind` 以参数 (`$1`) 的形式传入，绝不会直接拼接进 SQL 字符串。每条不同的 SQL 字符串在每个连接上只预编译一次，并存入可容纳 100 条语句的语句缓存；语句被逐出缓存时，sqlx 会将其关闭。
+
+<Tip>
+  **编译时检查的查询**
+
+  本指南使用 `query_as` 函数，它在运行时检查 SQL，因此执行 `cargo build` 时无需连接数据库。而 `query!` 和 `query_as!` 宏则会在编译时对照数据库检查 SQL 和列类型。它们在构建期间会从 `.env` 读取 `DATABASE_URL`，因此请确保该值指向直接连接地址。如需在没有数据库的环境中构建 (例如在 CI 中) ，请运行 `cargo sqlx prepare`，提交生成的 `.sqlx` 目录，并设置 `SQLX_OFFLINE=true`。
+</Tip>
+
+## 运行与验证 {#verify}
+
+启动服务器：
+
+```bash
+cargo run
+```
+
+```text
+Connected to Postgres, TLS version: TLSv1.3
+Listening on http://localhost:3117/todos
+```
+
+第一行输出来自 `pg_stat_ssl`，表明该会话已加密。在另一个终端中创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Try sqlx"}'
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Write a migration"}'
+curl -w '\n' -X PATCH localhost:3117/todos/1
+curl -w '\n' -X DELETE localhost:3117/todos/2
+```
+
+每个请求都会返回受影响的行。`-w '\n'` 选项的作用只是在每个响应之后添加一个换行符：
+
+```text
+{"id":1,"title":"Try sqlx","done":false,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+```
+
+在浏览器中打开 `http://localhost:3117/todos`，即可查看剩余的待办事项列表：
+
+```json
+[{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}]
+```
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_rust` 和 `public`，然后点击 `todos` 表。旁边的 `_sqlx_migrations` 表记录了迁移历史。`todos` 表中保留的那一行如下：
+
+| id | title    | done | created&#95;at                |
+| -- | -------- | ---- | ----------------------------- |
+| 1  | Try sqlx | true | 2026-10-01 14:22:32.475739+00 |
+
+## 使用 PgBouncer {#pgbouncer}
+
+如需让应用通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 进行连接，请在 **Connect** 对话框中选择 **via PgBouncer**，并在应用的 `DATABASE_URL` 中使用端口 `6432`。CA 证书无需更换。例如，可以让 `.env` 继续使用直接连接以供 `sqlx-cli` 使用，并在启动应用时设置该变量：
+
+```bash
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem" cargo run
+```
+
+```text
+Connected to Postgres, TLS version: none
+Listening on http://localhost:3117/todos
+```
+
+通过 PgBouncer 连接时，`pg_stat_ssl` 报告的是 PgBouncer 自身到 Postgres 的连接，因此该检查会输出 `none`。但应用到 PgBouncer 的连接仍会经过验证：如果 CA 证书不正确，同样会报 `UnknownIssuer` 错误。
+
+PgBouncer 以事务池化模式运行，因此每个事务都可能在不同的 Postgres 连接上执行。使用 sqlx 时需注意：
+
+* **建立连接**时需要设置 `.extra_float_digits(None)`，参见 `main.rs`。默认情况下，sqlx 会将 `extra_float_digits` 作为启动参数发送，而 PgBouncer 会拒绝该连接并报错 `unsupported startup parameter: extra_float_digits`。出于同样的原因，`PgConnectOptions::options` 也会报错 `unsupported startup parameter in options`。
+* **预处理语句**在默认设置下即可正常使用。sqlx 从缓存中逐出语句时，会通过协议层的 `Close` 消息将其释放，PgBouncer 能够处理该消息，在事务内部也不例外。不要设置 `statement_cache_capacity(0)`：这样做既无必要，而且关闭缓存后，sqlx 仍会预处理命名语句，却永远不会关闭它们。
+* **不要对事务之外运行的查询使用 `.persistent(false)`**。否则 sqlx 会预处理一条未命名语句，并在第二次往返中执行，而 PgBouncer 可能会将这次请求发送到另一个 Postgres 连接。这会导致查询报错 `unnamed prepared statement does not exist`，或者悄无声息地执行其他客户端的语句并返回错误结果。
+* 通过 `SET` 进行的**会话设置** (包括在连接池的 `after_connect` hook 中进行的设置) 不会保留在你的连接上，还可能泄漏给其他客户端。请改为在事务中使用 `SET LOCAL`。
+* **迁移**必须使用直接连接。`sqlx-cli` 和 `query!` 宏无法通过 PgBouncer 连接，因为它们总会发送 `extra_float_digits`。`sqlx::migrate!` 会获取一个会话级咨询锁 (`pg_advisory_lock`) ，而经由 PgBouncer 时，解锁请求可能被发送到另一个 Postgres 连接。这样一来，该锁会一直被池中的某个连接持有，后续的迁移 (包括通过直接连接执行的迁移) 都会挂起，直到 PgBouncer 关闭该连接为止。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：通过第二个 `PgPool` 将只读查询路由到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私有网络

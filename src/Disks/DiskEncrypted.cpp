@@ -69,6 +69,22 @@ namespace
         Strings config_keys;
         config.keys(config_prefix, config_keys);
 
+        /// The keys are picked by a pattern of their names (`key`, `key[1]`, ...). Look up the bare names,
+        /// so that a configuration tracking the read keys (`ConfigurationWithUsageTracking`, used for
+        /// a definition of a disk) knows that the elements with these names are read even when they are absent.
+        config.has(config_prefix + ".key");
+        config.has(config_prefix + ".key_hex");
+#if CLICKHOUSE_CLOUD
+        config.has(config_prefix + ".key_aws");
+        config.has(config_prefix + ".key_gcp");
+        config.has(config_prefix + ".key_azure");
+        /// The options of a key management service are read only to decrypt a key, so they are read only
+        /// when there is such a key. Look them up as well, so that they are known for a disk that gets
+        /// such a key on a configuration reload.
+        config.has(config_prefix + ".no_sign_request");
+        config.has(config_prefix + ".aws_kms_endpoint");
+#endif
+
         for (const std::string & config_key : config_keys)
         {
             Key key;
@@ -408,6 +424,15 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
+ReservationPtr DiskEncrypted::reserveAndGetUnreservedSpace(
+    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
+{
+    auto reservation = delegate->reserveAndGetUnreservedSpace(bytes, constraints, unreserved_space);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
+}
+
 
 void DiskEncrypted::copyDirectoryContent(
     const String & from_dir,
@@ -591,7 +616,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         bool attach,
         bool custom_disk) -> DiskPtr
     {
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
 
         if (custom_disk && !attach)
         {

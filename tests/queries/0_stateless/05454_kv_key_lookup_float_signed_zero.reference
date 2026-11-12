@@ -1,0 +1,18 @@
+k = 0	[0,1]
+k = -0.	[0,1]
+k = 0 OR k = 5	[0,1,2]
+k IN (0., -0.)	[0,1]
+ReadType: FullScan
+ReadType: GetKeys
+ReadType: GetKeys
+ALTER DELETE	[2]
+ALTER UPDATE	[2,100,101]
+Float32	[0,1]
+k1 = 0 AND k2 = 1	[0,1]
+(k1, k2) = (0., 1)	[0,1]
+(k1, k2) IN ((0., 1), (-0., 1))	[0,1]
+Tuple	[0,1]
+Array	[0,1]
+Map	[0,1]
+KeeperMap k = 0	[0,1]
+KeeperMap ALTER DELETE	[2]

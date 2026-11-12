@@ -5,10 +5,13 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/HiddenSecret.h>
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -18,6 +21,7 @@
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
+#include <chrdkafka_conf_sensitive.h>
 #include <csignal>
 #include <unordered_set>
 
@@ -48,8 +52,36 @@ namespace KafkaSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// librdkafka prints pointers with `%p`, e.g. `log_cb = 0x55d1c0a3e2f0` with `debug=conf`.
+/// Its messages reach clients through `send_logs_level`, so every hexadecimal number is hidden.
+std::string hideHexNumbers(std::string_view message)
+{
+    std::string res;
+    res.reserve(message.size());
+    for (size_t i = 0; i < message.size();)
+    {
+        if (message[i] == '0' && i + 2 < message.size() && message[i + 1] == 'x' && isHexDigit(message[i + 2]))
+        {
+            res += "0x";
+            res += HIDDEN_SECRET;
+            i += 2;
+            while (i < message.size() && isHexDigit(message[i]))
+                ++i;
+        }
+        else
+            res += message[i++];
+    }
+    return res;
+}
+
 }
 
 template <typename TKafkaStorage>
@@ -200,6 +232,9 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
         return;
 
     const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+    /// librdkafka testing properties, e.g. `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member ids.
+    if (setting_name_in_kafka_config.starts_with("test."))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", setting_name_in_kafka_config);
     kafka_config.set(setting_name_in_kafka_config, value);
 }
 
@@ -496,6 +531,7 @@ void updateConfigurationFromConfig(
             cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
             auto [poco_level, client_logs_level] = parseSyslogLevel(level);
+            const std::string safe_message = hideHexNumbers(message);
             const auto & kafka_object_config = handle.get_configuration();
             const std::string client_id_key{"client.id"};
             chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
@@ -506,7 +542,7 @@ void updateConfigurationFromConfig(
                 "[client.id:{}] [rdk:{}] {}",
                 kafka_object_config.get(client_id_key),
                 facility,
-                message);
+                safe_message);
             if (client_logs_level <= DB::LogsLevel::error)
             {
                 if (auto sink_shared_ptr = sink.lock())
@@ -515,7 +551,7 @@ void updateConfigurationFromConfig(
                     // librdkafka-originated errors (auth failures, broker disconnects) have no
                     // useful ClickHouse stack trace - the trace only shows poll->log_callback.
                     // Skip stack trace to reduce noise in system.kafka_consumers.exceptions.
-                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ false);
+                    sink_shared_ptr->setExceptionInfo(safe_message, /* with_stacktrace = */ false);
                 }
             }
         });
@@ -552,6 +588,36 @@ void updateConfigurationFromConfig(
 
 }
 
+namespace
+{
+
+/// Sensitive properties must not be logged in cleartext: the log records can reach not only the
+/// server log, but also clients that set `send_logs_level`.
+bool isSensitiveProperty(std::string_view name)
+{
+    /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
+    /// substring safety net for properties unknown to the vendored librdkafka version.
+    static const std::unordered_set<std::string_view> sensitive_properties = []
+    {
+        std::unordered_set<std::string_view> res;
+        for (const char * const * prop_name = chrd_kafka_conf_sensitive_properties(); *prop_name; ++prop_name)
+            res.emplace(*prop_name);
+        return res;
+    }();
+    return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
+}
+
+/// Log all properties of a Kafka client configuration, replacing the values of sensitive
+/// properties, e.g. `sasl.password` or `sasl.oauthbearer.client.secret`, with `[HIDDEN]`.
+void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr & log, std::string_view client_type)
+{
+    for (const auto & property : conf.get_all())
+        LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
+            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+}
+
+}
+
 template <typename TKafkaStorage>
 cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
@@ -577,17 +643,16 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     updateConfigurationFromConfig(loadConsumerConfig, conf, storage, params, exception_info_sink_ptr);
 
+    /// Re-validate the broker list in case they are changed in the merged configuration
+    if (const auto merged_broker_list = conf.get("metadata.broker.list"); merged_broker_list != params.brokers)
+        conf.set("metadata.broker.list", StorageKafkaUtils::validateBrokerList(merged_broker_list, params.context));
+
     // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false"); // Ignore EOF messages
 
-    for (auto & property : conf.get_all())
-    {
-        if (property.first.contains("password"))
-            continue;
-        LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
-    }
+    logConfigProperties(conf, params.log, "Consumer");
 
     return conf;
 }
@@ -608,8 +673,11 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
-    for (auto & property : conf.get_all())
-        LOG_TRACE(params.log, "Producer set property {}:{}", property.first, property.second);
+    /// See the same check in getConsumerConfiguration.
+    if (const auto merged_broker_list = conf.get("metadata.broker.list"); merged_broker_list != params.brokers)
+        conf.set("metadata.broker.list", StorageKafkaUtils::validateBrokerList(merged_broker_list, params.context));
+
+    logConfigProperties(conf, params.log, "Producer");
 
     /// compression.codec is a global and topic level property, however compression.level is only a topic level property.
     /// cppkafka::Configuration::get_all returns the global properties only, so we need to check compression.level separately.

@@ -772,6 +772,46 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperationsEmpty)
     changelog_reader.init(5, 0);
 }
 
+TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperationsInvalidSize)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+    auto entry = getLogEntry("hello_world", 10);
+    changelog.append(entry);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    /// A pack of one entry holds the entry count, the entry size and the entry itself. A peer controls the size,
+    /// so only the size is rewritten here.
+    auto entries = changelog.pack(1, 1);
+    const auto entry_size = static_cast<int32_t>(entries->size() - 2 * sizeof(int32_t));
+    auto apply_with_size = [&](int32_t size)
+    {
+        entries->pos(sizeof(int32_t));
+        entries->put(size);
+        changelog.apply_pack(2, *entries);
+    };
+
+    /// On master a size past the entry over-reads the pack in `nuraft::buffer::get` and a negative size
+    /// wraps the allocation size in `nuraft::buffer::alloc`.
+    EXPECT_THROW(apply_with_size(entry_size + 1), DB::Exception);
+    EXPECT_THROW(apply_with_size(-1), DB::Exception);
+    EXPECT_EQ(changelog.next_slot(), 2);
+
+    apply_with_size(entry_size);
+    changelog.apply_pack(3, *changelog.pack(1, 0));
+    changelog.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog.next_slot(), 3);
+    EXPECT_EQ(changelog.entry_at(2)->get_term(), 10);
+}
+
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
 {
@@ -2121,7 +2161,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("data", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -2192,7 +2232,7 @@ TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
         writer.init(0, 0);
         for (size_t i = 0; i < 10; ++i)
         {
-            auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+            auto entry = getLogEntry("d", i + 1);
             writer.append(entry);
         }
         writer.end_of_append_batch(0, 0);
@@ -2276,7 +2316,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("d", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -2508,7 +2548,7 @@ TYPED_TEST(CoordinationChangelogTest, DirectPathEvictedReadsAndByteHints)
 
         for (size_t i = 0; i < 20; ++i)
         {
-            auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+            auto entry = getLogEntry("data", i + 1);
             writer.append(entry);
         }
         writer.end_of_append_batch(0, 0);
@@ -2566,7 +2606,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("base", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("base", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3471,7 +3511,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
 
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test1", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3504,7 +3544,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
     changelog_disabled.init(0, 0);
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test1", i + 1);
         changelog_disabled.append(entry);
     }
     changelog_disabled.end_of_append_batch(0, 0);
@@ -3543,7 +3583,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFill)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test5", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test5", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3866,7 +3906,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadNonSequentialRewind)
 
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test9", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test9", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3908,7 +3948,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionReaderLifecycle)
 
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("compaction_lifecycle", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("compaction_lifecycle", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3965,7 +4005,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTSanStress)
 
     for (size_t i = 0; i < 50; ++i)
     {
-        auto entry = getLogEntry("l2_stress", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("l2_stress", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);

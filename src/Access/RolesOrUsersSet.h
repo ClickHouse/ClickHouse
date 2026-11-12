@@ -55,6 +55,9 @@ struct RolesOrUsersSet
     bool match(const UUID & id) const;
     bool match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const;
 
+    /// Throws ACCESS_DENIED if any explicitly listed User belongs to the users.xml storage.
+    void throwIfTargetingUsersFromUsersConfig(const AccessControl & access_control) const;
+
     /// Returns a list of matching IDs. The function must not be called if `all` == `true`.
     std::vector<UUID> getMatchingIDs() const;
 

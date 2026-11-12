@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -19,6 +20,7 @@
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
+#include <Formats/FormatSettings.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
@@ -26,7 +28,9 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
@@ -79,6 +83,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -196,6 +201,12 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
     auto addresses = DNSResolver::instance().resolveAddressList(host, port);
     const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
 
+    /// The local address to bind to is resolved once, before the loop over the peer addresses: it
+    /// does not change between the attempts.
+    std::optional<Poco::Net::SocketAddress> bind_address;
+    if (!bind_host.empty())
+        bind_address = makeBindAddress(bind_host, 0);
+
     /// An address that is already known to accept connections goes first: the addresses are tried
     /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
     if (preferred_address)
@@ -228,24 +239,16 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
             /// so any errors during negotiation would be properly processed
             static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
 
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-            }
+            if (bind_address)
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->bind(*bind_address, true);
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
         }
         else
         {
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
-            }
+            if (bind_address)
+                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(*bind_address, true);
         }
 
         try
@@ -306,6 +309,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     disconnect();
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
+
+    /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
+    /// program has no `DNSCacheUpdater`, so a cached source address that is no longer assigned to
+    /// this host would otherwise fail every bind until the process is restarted.
+    auto remove_stale_entries_from_dns_cache = [this]
+    {
+        DNSResolver::instance().removeHostFromCache(host);
+        if (!bind_host.empty())
+            DNSResolver::instance().removeHostFromCache(bind_host);
+    };
+
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -344,11 +358,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #endif
         }
 
-        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
-        in->setAsyncCallback(async_callback);
+        {
+            /// The buffers live as long as the connection, which outlives the query that connects it. Only here: the
+            /// I/O around can suspend the coroutine that connects, and a blocker left active would block its thread.
+            MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+            in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
+            in->setAsyncCallback(async_callback);
 
-        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
-        out->setAsyncCallback(async_callback);
+            out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
+            out->setAsyncCallback(async_callback);
+        }
         connected = true;
         setDescription();
 
@@ -421,8 +440,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Exception will preserve stack trace.
         e.addMessage("({})", getDescription(/*with_extra*/ true));
@@ -432,8 +450,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
@@ -442,8 +459,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
@@ -479,7 +495,11 @@ void Connection::cancel() noexcept
 void Connection::reset() noexcept
 {
     maybe_compressed_out.reset();
-    out.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        out.reset();
+    }
     socket.reset();
     nonce.reset();
 
@@ -489,7 +509,11 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    in.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        in.reset();
+    }
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections
@@ -944,8 +968,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     {
 #if USE_SSL
         std::string data(salt);
-        if (nonce.has_value())
-            data += std::to_string(nonce.value());
+        data += std::to_string(nonce.value());
         data += cluster_secret;
         data += "TablesStatusRequest";
         /// Bind the hash to the request body so a relayed hash cannot be reused for a
@@ -1045,6 +1068,20 @@ void Connection::sendQuery(
             disconnect();
     });
 
+    /// Over the cluster secret a shard authenticates as `initial_user` without a password, so forward
+    /// only an `initial_user` equal to the authenticated `current_user`. Skip the check when
+    /// `current_user` is empty -- server-internal paths (async `Distributed` insert, buffer flush) have none.
+    if (!cluster_secret.empty() && client_info && !client_info->current_user.empty()
+        && client_info->initial_user != client_info->current_user)
+    {
+        /// A mismatch means a forged SECONDARY_QUERY impersonating another user -- including an empty
+        /// initial_user, which the shard would otherwise run with full access -- so refuse it.
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Refusing to forward a query over the cluster secret: its initial_user '{}' differs "
+            "from the authenticated user '{}'.",
+            client_info->initial_user, client_info->current_user);
+    }
+
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -1102,18 +1139,16 @@ void Connection::sendQuery(
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
         /// Hash
-        ///
-        /// Send correct hash only for !INITIAL_QUERY, due to:
-        /// - this will avoid extra protocol complexity for simplest cases
-        /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/non-secure changes)
-        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        if (client_info && !cluster_secret.empty())
         {
 #if USE_SSL
+            if (!nonce.has_value())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Server {} with protocol revision {} is too old for interserver secret, the minimum is {}",
+                    getDescription(), server_revision, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
+
             std::string data(salt);
-            // For backward compatibility
-            if (nonce.has_value())
-                data += std::to_string(nonce.value());
+            data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -1157,14 +1192,7 @@ void Connection::sendQuery(
         /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
-    maybe_compressed_in.reset();
-    if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->finalize();
-    maybe_compressed_out.reset();
-    block_in.reset();
-    block_logs_in.reset();
-    block_profile_events_in.reset();
-    block_out.reset();
+    resetQueryBuffers();
 
     out->finishChunk();
 
@@ -1176,6 +1204,28 @@ void Connection::sendQuery(
     }
 
     completed = true;
+}
+
+
+void Connection::resetQueryBuffers()
+{
+    maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->finalize();
+    maybe_compressed_out.reset();
+    block_in.reset();
+    block_logs_in.reset();
+    block_profile_events_in.reset();
+    block_out.reset();
+}
+
+
+void Connection::releaseQueryBuffers() noexcept
+{
+    /// Data still buffered is flushed by the next `sendQuery`.
+    if (maybe_compressed_out && maybe_compressed_out != out && maybe_compressed_out->offset())
+        return;
+    resetQueryBuffers();
 }
 
 
@@ -1217,7 +1267,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), optionalFormatSettings());
     }
 
     if (scalar)
@@ -1570,8 +1620,11 @@ Packet Connection::receivePacket()
                 // materializing it (do not resize a vector to a peer-chosen size).
                 UInt64 num_part_uuids = 0;
                 readVarUInt(num_part_uuids, *in);
-                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                /// The count comes from the server and is only used to skip the payload, but it
+                /// still decides how much the client reads from the socket, so keep it realistic.
+                static constexpr UInt64 max_part_uuids = 1000000;
+                if (num_part_uuids > max_part_uuids)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", max_part_uuids);
                 in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
             }
@@ -1688,7 +1741,7 @@ void Connection::initBlockInput()
         initMaybeCompressedInput();
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
-            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
+            *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
     }
 }
 
@@ -1705,7 +1758,7 @@ void Connection::initBlockLogsInput()
         }
 
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, optionalFormatSettings());
     }
 }
 
@@ -1721,7 +1774,7 @@ void Connection::initBlockProfileEventsInput()
             profile_events_buf = maybe_compressed_in.get();
         }
 
-        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, optionalFormatSettings());
     }
 }
 
@@ -1854,6 +1907,18 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
     }
 
     return connection;
+}
+
+void Connection::setFormatSettings(const FormatSettings & settings)
+{
+    format_settings = std::make_shared<const FormatSettings>(settings);
+}
+
+std::optional<FormatSettings> Connection::optionalFormatSettings() const
+{
+    if (format_settings)
+        return *format_settings;
+    return std::nullopt;
 }
 
 }
