@@ -7,11 +7,10 @@
 #include <Common/Hex.h>
 #include <Common/Stopwatch.h>
 
-#include <Poco/Ascii.h>
 #include <Poco/Net/HTTPBasicStreamBuf.h>
+#include <Poco/Net/HTTPResponseParser.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
-#include <Poco/String.h>
 
 #include <cerrno>
 #include <limits>
@@ -73,168 +72,38 @@ bool isFiberSocket([[maybe_unused]] Poco::Net::SocketImpl & socket_impl)
 /// `std::iostream` path used for it.
 constexpr size_t scratch_buffer_size = 8192;
 
-/// A port of `Poco::Net::MessageHeader::read`, reading the bytes from the session instead of an
-/// `std::istream`. Keeps the behaviour of the original, including the limits, the folding of
-/// continuation lines and the exceptions it throws.
-/// Returns the character the header block was terminated with.
-int readHTTPMessageHeader(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response)
+Poco::Net::HTTPHeaderLimits headerLimitsOf(const Poco::Net::HTTPResponse & response)
 {
-    static const int eof = std::char_traits<char>::eof();
-
-    const int field_limit = response.getFieldLimit();
-    const size_t name_length_limit = static_cast<size_t>(response.getNameLengthLimit());
-    const size_t value_length_limit = static_cast<size_t>(response.getValueLengthLimit());
-
-    std::string name;
-    std::string value;
-    name.reserve(32);
-    value.reserve(64);
-
-    int ch = session.getCharRaw();
-    int fields = 0;
-    while (ch != eof && ch != '\r' && ch != '\n')
-    {
-        if (field_limit > 0 && fields == field_limit)
-            throw Poco::Net::MessageException("Too many header fields");
-
-        name.clear();
-        value.clear();
-
-        while (ch != eof && ch != ':' && ch != '\n' && name.length() < name_length_limit)
-        {
-            name += static_cast<char>(ch);
-            ch = session.getCharRaw();
-        }
-        if (ch == '\n')
-        {
-            ch = session.getCharRaw();
-            continue; /// ignore invalid header lines
-        }
-        if (ch != ':')
-            throw Poco::Net::MessageException("Field name too long/no colon found");
-        if (ch != eof)
-            ch = session.getCharRaw(); /// ':'
-
-        while (ch != eof && Poco::Ascii::isSpace(ch) && ch != '\r' && ch != '\n')
-            ch = session.getCharRaw();
-        while (ch != eof && ch != '\r' && ch != '\n' && value.length() < value_length_limit)
-        {
-            value += static_cast<char>(ch);
-            ch = session.getCharRaw();
-        }
-        if (ch == '\r')
-            ch = session.getCharRaw();
-        if (ch == '\n')
-            ch = session.getCharRaw();
-        else if (ch != eof)
-            throw Poco::Net::MessageException("Field value too long/no CRLF found");
-
-        while (ch == ' ' || ch == '\t') /// folding
-        {
-            while (ch != eof && ch != '\r' && ch != '\n' && value.length() < value_length_limit)
-            {
-                value += static_cast<char>(ch);
-                ch = session.getCharRaw();
-            }
-            if (ch == '\r')
-                ch = session.getCharRaw();
-            if (ch == '\n')
-                ch = session.getCharRaw();
-            else if (ch != eof)
-                throw Poco::Net::MessageException("Folded field value too long/no CRLF found");
-        }
-
-        Poco::trimRightInPlace(value);
-        response.add(name, Poco::Net::MessageHeader::decodeWord(value));
-        ++fields;
-    }
-
-    return ch;
+    return {.fields = response.getFieldLimit(), .name_length = response.getNameLengthLimit(), .value_length = response.getValueLengthLimit()};
 }
 
-/// A port of `Poco::Net::HTTPResponse::read`, reading the bytes from the session.
-void readHTTPResponseHeader(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response)
+/// Continues `parser` with the data the session has buffered, and then with blocking reads, until
+/// the response header is complete. The bytes after the header stay buffered for the body.
+void readHTTPResponseHeader(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponseParser & parser)
 {
-    static const int eof = std::char_traits<char>::eof();
+    while (true)
+    {
+        if (session.buffered() > 0)
+            session.consumeBuffered(static_cast<int>(parser.feed(session.bufferedData(), static_cast<size_t>(session.buffered()))));
+        if (parser.complete())
+            return;
 
-    std::string version;
-    std::string status;
-    std::string reason;
-
-    int ch = session.getCharRaw();
-    if (ch == eof)
-        throw Poco::Net::NoMessageException();
-    while (Poco::Ascii::isSpace(ch))
-        ch = session.getCharRaw();
-    if (ch == eof)
-        throw Poco::Net::MessageException("No HTTP response header");
-    while (!Poco::Ascii::isSpace(ch) && ch != eof && version.length() < max_version_length)
-    {
-        version += static_cast<char>(ch);
-        ch = session.getCharRaw();
-    }
-    if (!Poco::Ascii::isSpace(ch))
-        throw Poco::Net::MessageException("Invalid HTTP version string");
-    while (Poco::Ascii::isSpace(ch))
-        ch = session.getCharRaw();
-    while (!Poco::Ascii::isSpace(ch) && ch != eof && status.length() < max_status_length)
-    {
-        status += static_cast<char>(ch);
-        ch = session.getCharRaw();
-    }
-    if (!Poco::Ascii::isSpace(ch))
-        throw Poco::Net::MessageException("Invalid HTTP status code");
-    while (Poco::Ascii::isSpace(ch) && ch != '\r' && ch != '\n' && ch != eof)
-        ch = session.getCharRaw();
-    while (ch != '\r' && ch != '\n' && ch != eof && reason.length() < max_reason_length)
-    {
-        reason += static_cast<char>(ch);
-        ch = session.getCharRaw();
-    }
-    if (!Poco::Ascii::isSpace(ch))
-        throw Poco::Net::MessageException("HTTP reason string too long");
-    if (ch == '\r')
-        ch = session.getCharRaw();
-    if (ch != '\n')
-        throw Poco::Net::MessageException("Unterminated HTTP response line");
-
-    /// `readHTTPMessageHeader` stops on the first character of the empty line that ends the
-    /// header block; the rest of that line is consumed here, as `Poco` does.
-    ch = readHTTPMessageHeader(session, response);
-    while (ch != '\n' && ch != eof)
-        ch = session.getCharRaw();
-
-    try
-    {
-        response.setVersion(version);
-        response.setStatus(status);
-        response.setReason(reason);
-    }
-    catch (const Poco::SyntaxException & e)
-    {
-        throw Poco::SyntaxException(
-            e.message(), ", while reading HTTP response: version='" + version + "', status='" + status + "', reason='" + reason + "'");
+        /// The parser took all the buffered data, so the buffer has space.
+        const int received = session.fillBuffer();
+        if (received < 0)
+            parser.feedEof();
+        else if (received == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A blocking read of an HTTP response header returned no data");
     }
 }
 
-void readHTTPResponseHeaderOrReset(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response)
+void copyHTTPResponseHeader(const Poco::Net::HTTPResponse & from, Poco::Net::HTTPResponse & to)
 {
-    try
-    {
-        response.clear();
-        readHTTPResponseHeader(session, response);
-    }
-    catch (const Poco::Exception &)
-    {
-        /// Same cleanup as the `Poco::Net::HTTPClientSession::receiveResponse` this replaces: a
-        /// half-parsed response header leaves the socket at an unknown offset, so the session must
-        /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
-        /// would otherwise write the next request on top of the leftover bytes.
-        session.reset();
-        if (const auto * network_exception = session.networkException())
-            network_exception->rethrow();
-        throw;
-    }
+    to.clear();
+    to.setVersion(from.getVersion());
+    to.setStatusAndReason(from.getStatus(), from.getReason());
+    for (const auto & [name, value] : from)
+        to.add(name, value);
 }
 
 std::string_view trimHTTPSpaces(std::string_view value)
@@ -890,7 +759,7 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
         }
         catch (const Poco::Exception &)
         {
-            /// Same cleanup as in `readHTTPResponseHeaderOrReset`.
+            /// Same cleanup as below.
             session.reset();
             if (const auto * network_exception = session.networkException())
                 network_exception->rethrow();
@@ -899,10 +768,30 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
         return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
     }
 
-    do
+    Poco::Net::HTTPResponseParser parser(headerLimitsOf(response));
+    try
     {
-        readHTTPResponseHeaderOrReset(session, response);
-    } while (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONTINUE);
+        while (true)
+        {
+            readHTTPResponseHeader(session, parser);
+            /// An interim `100 Continue`: the final response follows, as in `Poco`.
+            if (parser.response().getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
+                break;
+            parser.reset();
+        }
+    }
+    catch (const Poco::Exception &)
+    {
+        /// Same cleanup as the `Poco::Net::HTTPClientSession::receiveResponse` this replaces: a
+        /// half-parsed response header leaves the socket at an unknown offset, so the session must
+        /// not be kept alive for a retry. Callers that reuse one session, such as `HTTPAuthClient`,
+        /// would otherwise write the next request on top of the leftover bytes.
+        session.reset();
+        if (const auto * network_exception = session.networkException())
+            network_exception->rethrow();
+        throw;
+    }
+    copyHTTPResponseHeader(parser.response(), response);
 
     return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
 }
