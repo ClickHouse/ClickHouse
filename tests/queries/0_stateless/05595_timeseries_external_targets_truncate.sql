@@ -70,6 +70,7 @@ DROP TABLE t_05595_samples;
 -- An unsupported bulk truncate must reject before any table (including unrelated tables) is changed.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.samples
     (id UUID, timestamp DateTime64(3), value Float64)
@@ -82,9 +83,9 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.metrics
     ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.unrelated (value UInt8) ENGINE = Memory;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts ENGINE = TimeSeries SETTINGS version = 9
-    SAMPLES {CLICKHOUSE_DATABASE_1:Identifier}.samples
-    TAGS {CLICKHOUSE_DATABASE_1:Identifier}.tags
-    METRIC FAMILIES {CLICKHOUSE_DATABASE_1:Identifier}.metrics;
+    SAMPLES samples
+    TAGS tags
+    METRIC FAMILIES metrics;
 
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts (metric_name, tags, samples) VALUES
     ('m', map('env', 'a'), [(toDateTime64('2100-01-01 00:00:00', 3), 1.)]);
@@ -103,4 +104,5 @@ SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.samples;
 TRUNCATE ALL TABLES FROM {CLICKHOUSE_DATABASE_1:Identifier} LIKE 'unrelated';
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.unrelated;
 
+USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
