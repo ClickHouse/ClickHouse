@@ -665,7 +665,11 @@ ExpireSnapshotsResult expireSnapshots(
     while (--max_retries > 0)
     {
         throwIfQueryCancelled(context);
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
         auto log = getLogger("IcebergExpireSnapshots");
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
@@ -679,7 +683,7 @@ ExpireSnapshotsResult expireSnapshots(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        filename_generator.setVersion(last_version + 1);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(
