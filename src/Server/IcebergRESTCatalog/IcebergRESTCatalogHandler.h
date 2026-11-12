@@ -1,16 +1,9 @@
 #pragma once
 
-#include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseRegistry.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogRouter.h>
-#include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogService.h>
 #include <Common/logger_useful.h>
-
-#include <Poco/JSON/Object.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/URI.h>
 
 #include <optional>
 
@@ -20,12 +13,13 @@ namespace DB
 class IServer;
 class Session;
 
-/// Serves the Iceberg REST catalog v1 API (RFC: issue #114697).
+/// Serves the Iceberg REST catalog v1 API (RFC: issue #114697) over HTTP.
 /// Every request is authenticated with the regular HTTP credentials (Basic, `X-ClickHouse-User`, certificates).
+/// The catalog logic is in `IcebergRESTCatalogService`.
 class IcebergRESTCatalogHandler : public HTTPRequestHandler
 {
 public:
-    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_);
+    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogServicePtr service_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -33,58 +27,14 @@ private:
     /// Returns nullptr when the response has already been sent (401 with `WWW-Authenticate`).
     ContextMutablePtr authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const;
 
-    void handleGetConfig(const Poco::URI & uri, HTTPServerResponse & response) const;
-    void handleListNamespaces(const IcebergRESTCatalogWarehouse & warehouse, const Poco::URI & uri, HTTPServerResponse & response) const;
-    void handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
-    void handleLoadNamespace(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-    void handleNamespaceExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-    void handleUpdateNamespaceProperties(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
-
-    void handleListTables(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-    void handleCreateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
-    void handleLoadTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-    void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-    void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
-    void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const String & body, HTTPServerResponse & response, const Context & context) const;
-    void handleRenameTable(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const;
-    void handleReportMetrics(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-
-    /// Writes the new metadata file and moves the table pointer to it with a version check. Sends the response.
-    void commitTableMetadata(
-        const IcebergRESTCatalogWarehouse & warehouse,
-        const IcebergNamespaceName & ns,
-        const String & table,
-        const IcebergTablePointer & pointer,
-        const Poco::JSON::Object::Ptr & metadata,
-        CompressionMethod compression_method,
-        HTTPServerResponse & response) const;
-
-    static void checkNotReadonly(const Context & context, const String & action);
-    static void checkDDLAllowed(const Context & context, const String & action);
-
-    static std::optional<IcebergNamespaceName> getNamespaceOrSendNotFound(
-        const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response);
-
-    Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
-
-    static void sendLoadTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
-    static void sendCommitTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
-    /// Maps `NOT_IMPLEMENTED` to `UnsupportedOperationException` and other codes to `BadRequestException`.
-    static void sendCommitRequestError(HTTPServerResponse & response, int code, const String & message);
-
     /// Reads the whole request body. Returns nullopt after answering 413 if the body exceeds max_size.
     static std::optional<String> readRequestBody(HTTPServerRequest & request, HTTPServerResponse & response, size_t max_size);
 
-    static void sendJSON(HTTPServerResponse & response, const Poco::JSON::Object & json, Poco::Net::HTTPResponse::HTTPStatus status);
-    static void sendNoContent(HTTPServerResponse & response);
-    static void sendError(
-        HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
-    static void sendNoSuchNamespace(HTTPServerResponse & response, const IcebergNamespaceName & ns);
-    static void sendNoSuchTable(HTTPServerResponse & response, const IcebergNamespaceName & ns, const String & table);
+    static void sendResponse(HTTPServerResponse & response, const IcebergRESTResponse & result);
 
     LoggerPtr log;
     IServer & server;
-    IcebergRESTCatalogWarehouseRegistryPtr warehouses;
+    IcebergRESTCatalogServicePtr service;
 };
 
 }
