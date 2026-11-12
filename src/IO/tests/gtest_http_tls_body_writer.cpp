@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -149,6 +150,82 @@ private:
     std::promise<void> stop;
     std::future<void> stop_future = stop.get_future();
     std::thread thread;
+};
+
+
+/// A TLS server that accepts one connection and reads the request header. The test answers on the
+/// accepted socket itself.
+class AcceptingServer
+{
+public:
+    AcceptingServer() { thread = std::thread([this] { run(); }); }
+    ~AcceptingServer() { thread.join(); }
+
+    uint16_t port() const { return listener.address().port(); }
+    Poco::Net::Context::Ptr clientContext() const { return client_context; }
+
+    /// The accepted connection, after the request header has arrived.
+    Poco::Net::StreamSocket & peer()
+    {
+        header_read_future.wait();
+        return accepted;
+    }
+
+private:
+    void run()
+    {
+        try
+        {
+            if (listener.poll(Poco::Timespan(10, 0), Poco::Net::Socket::SELECT_READ))
+            {
+                accepted = listener.acceptConnection();
+                std::string header;
+                char ch = 0;
+                while (!header.ends_with("\r\n\r\n") && accepted.receiveBytes(&ch, 1) == 1)
+                    header += ch;
+            }
+        }
+        catch (const Poco::Exception & e)
+        {
+            ADD_FAILURE() << e.displayText();
+        }
+        header_read.set_value();
+    }
+
+    EphemeralCert cert;
+    Poco::Net::Context::Ptr server_context = cert.makeContext(Poco::Net::Context::SERVER_USE);
+    Poco::Net::Context::Ptr client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+    Poco::Net::SecureServerSocket listener{Poco::Net::SocketAddress("127.0.0.1", 0), 64, server_context};
+    Poco::Net::StreamSocket accepted;
+    std::promise<void> header_read;
+    std::future<void> header_read_future = header_read.get_future();
+    std::thread thread;
+};
+
+
+/// Runs `answer` once, in the first send that starts after `armed` is set. The scheduler waits in the
+/// same place, so this is where a response can arrive after the socket was found writable.
+struct AnswerBeforeSend : public Poco::Net::IHTTPSessionDataHooks
+{
+    explicit AnswerBeforeSend(std::function<void()> answer_)
+        : answer(std::move(answer_))
+    {
+    }
+
+    void atStart(int /*bytes*/) override
+    {
+        if (armed && !answered)
+        {
+            answered = true;
+            answer();
+        }
+    }
+    void atFinish(int /*bytes*/) override {}
+    void atFail() override {}
+
+    bool armed = false;
+    bool answered = false;
+    std::function<void()> answer;
 };
 
 
@@ -324,6 +401,39 @@ TEST(HTTPTLSBodyWriter, ErrorAfterLongInterimResponseInOneRecord)
     request.setContentLength(body.size());
     auto request_body = DB::sendHTTPRequest(session, request);
     ASSERT_TRUE(session.socket().poll(Poco::Timespan(5, 0), Poco::Net::Socket::SELECT_READ));
+
+    DB::writeString(body, *request_body);
+    request_body->finalize();
+
+    Poco::Net::HTTPResponse response;
+    auto response_body = DB::receiveHTTPResponse(session, response);
+    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+}
+
+/// The server answers and resets the connection while the send waits for the scheduler. The send
+/// must not go out: OpenSSL allows no read after the failed write, and the answer would be lost.
+TEST(HTTPTLSBodyWriter, AnswerWhileTheSendWaits)
+{
+    AcceptingServer server;
+    Poco::Net::HTTPSClientSession session("127.0.0.1", server.port(), server.clientContext());
+    session.setTimeout(Poco::Timespan(5, 0), Poco::Timespan(5, 0), Poco::Timespan(5, 0));
+    auto hooks = std::make_shared<AnswerBeforeSend>([&]
+    {
+        auto & peer = server.peer();
+        const std::string answer = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        peer.sendBytes(answer.data(), static_cast<int>(answer.size()));
+        peer.setLinger(true, 0);
+        peer.close();
+        EXPECT_TRUE(session.socket().poll(Poco::Timespan(5, 0), Poco::Net::Socket::SELECT_READ));
+    });
+    session.setSendDataHooks(hooks);
+
+    const std::string body(1 << 20, 'x');
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+    request.setContentLength(body.size());
+    auto request_body = DB::sendHTTPRequest(session, request);
+    server.peer();
+    hooks->armed = true;
 
     DB::writeString(body, *request_body);
     request_body->finalize();

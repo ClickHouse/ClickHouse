@@ -279,11 +279,23 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         const bool can_send = peer_closed || (send_wait == Wait::Read ? readable : writable);
         if (can_send)
         {
+            /// The send throttler and the scheduler can wait before the send. A response that arrives
+            /// meanwhile is read first: the write after it could fail, and lose it over TLS.
+            const auto ready_to_send = [&]
+            {
+                if (peer_closed || response_header_complete)
+                    return true;
+                if (socket.secure() && socket.impl()->available() > 0)
+                    return false;
+                pollfd check{.fd = socket.impl()->sockfd(), .events = POLLIN, .revents = 0};
+                return ::poll(&check, 1, 0) <= 0;
+            };
+
             /// Only the send is non-blocking: a response header is read with the timeouts of the session.
             int sent = 0;
             {
                 ScopedNonBlocking non_blocking(*socket.impl());
-                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size), send_wait);
+                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size), send_wait, ready_to_send);
             }
             if (sent > 0)
             {

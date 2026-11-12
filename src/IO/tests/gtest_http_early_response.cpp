@@ -7,12 +7,14 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPResponseParser.h>
+#include <Poco/Net/HTTPSession.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -59,6 +61,37 @@ protected:
 }
 
 
+namespace
+{
+
+/// Runs `answer` once, in the first send that starts after `armed` is set. The scheduler waits in the
+/// same place, so this is where a response can arrive after the socket was found writable.
+struct AnswerBeforeSend : public Poco::Net::IHTTPSessionDataHooks
+{
+    explicit AnswerBeforeSend(std::function<void()> answer_)
+        : answer(std::move(answer_))
+    {
+    }
+
+    void atStart(int /*bytes*/) override
+    {
+        if (armed && !answered)
+        {
+            answered = true;
+            answer();
+        }
+    }
+    void atFinish(int /*bytes*/) override {}
+    void atFail() override {}
+
+    bool armed = false;
+    bool answered = false;
+    std::function<void()> answer;
+};
+
+}
+
+
 /// A field longer than the read buffer of the session, but within its limit, is accepted also when
 /// it arrives while the body is sent.
 TEST_F(HTTPEarlyResponseTest, LongFieldWithinItsLimit)
@@ -97,4 +130,37 @@ TEST_F(HTTPEarlyResponseTest, FieldLimitHoldsBeforeTheHeaderEnds)
     {
         EXPECT_EQ(e.message(), "Too many header fields");
     }
+}
+
+/// The server answers and resets the connection while the send waits for the scheduler. The send
+/// must not go out: it would fail on the reset connection instead of reporting the answer.
+TEST_F(HTTPEarlyResponseTest, AnswerWhileTheSendWaits)
+{
+    auto hooks = std::make_shared<AnswerBeforeSend>([this]
+    {
+        const std::string answer = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        peer.sendBytes(answer.data(), static_cast<int>(answer.size()));
+        peer.setLinger(true, 0);
+        peer.close();
+        EXPECT_TRUE(session.socket().poll(Poco::Timespan(5, 0), Poco::Net::Socket::SELECT_READ));
+    });
+    session.setSendDataHooks(hooks);
+
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+    request.setContentLength(body_size);
+    auto body = DB::sendHTTPRequest(session, request);
+
+    peer = listener.acceptConnection();
+    std::string header;
+    char ch = 0;
+    while (!header.ends_with("\r\n\r\n") && peer.receiveBytes(&ch, 1) == 1)
+        header += ch;
+    hooks->armed = true;
+
+    DB::writeString(std::string(body_size, 'x'), *body);
+    body->finalize();
+
+    Poco::Net::HTTPResponse response;
+    auto response_body = DB::receiveHTTPResponse(session, response);
+    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
 }

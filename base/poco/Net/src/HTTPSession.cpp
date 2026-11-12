@@ -273,7 +273,8 @@ int HTTPSession::fillBuffer()
 }
 
 
-int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length, Wait& wait)
+int HTTPSession::writeRawNonBlocking(
+	const char* buffer, std::streamsize length, Wait& wait, const std::function<bool()>& ready_to_send)
 {
 	_socket.impl()->throttleSendBlocking(static_cast<size_t>(length));
 
@@ -281,6 +282,13 @@ int HTTPSession::writeRawNonBlocking(const char* buffer, std::streamsize length,
 	{
 		if (_sendDataHooks)
 			_sendDataHooks->atStart((int) length);
+		if (ready_to_send && !ready_to_send())
+		{
+			if (_sendDataHooks)
+				_sendDataHooks->atFail();
+			wait = Wait::Write;
+			return 0;
+		}
 		/// A negative result means that the socket would block: -1 for `EAGAIN`, and for a TLS socket
 		/// `SecureStreamSocket::ERR_SSL_WANT_READ` (-1) and `ERR_SSL_WANT_WRITE` (-2).
 		int result = _socket.sendBytes(buffer, (int) length);

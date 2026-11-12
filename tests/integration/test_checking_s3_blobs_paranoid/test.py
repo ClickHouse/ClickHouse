@@ -458,6 +458,7 @@ def test_early_error_response_at_upload_is_not_retried(
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=33554432,
             s3_max_inflight_parts_for_one_file=1,
+            max_remote_write_network_bandwidth=1000000,
             s3_check_objects_after_upload=0
         """,
         query_id=insert_query_id,

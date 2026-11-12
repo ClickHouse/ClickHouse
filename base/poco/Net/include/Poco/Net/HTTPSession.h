@@ -196,13 +196,17 @@ namespace Net
             Write,
         };
 
-        int writeRawNonBlocking(const char * buffer, std::streamsize length, Wait & wait);
+        int writeRawNonBlocking(
+            const char * buffer, std::streamsize length, Wait & wait, const std::function<bool()> & ready_to_send = {});
         /// Sends up to `length` bytes on a socket that the caller has set to non-blocking mode.
         /// Returns the number of bytes sent, or 0 when the socket would block. `wait` tells what the
         /// next attempt has to wait for: a TLS write can wait for the socket to become readable, for
         /// example during a renegotiation. For a TLS socket the next call must pass the same data,
-        /// because OpenSSL retries the pending record write. The send throttler waits before the
-        /// call, as for a blocking send.
+        /// because OpenSSL retries the pending record write.
+        ///
+        /// The send throttler and the send data hooks wait before the send, as for a blocking send.
+        /// What the caller checked before the call can change during these waits, so `ready_to_send`
+        /// is called after them: when it returns false, nothing is sent, and the result is 0.
 
         int buffered() const;
         /// Returns the number of bytes in the buffer.
