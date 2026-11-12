@@ -1504,7 +1504,7 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
 }
 
-void StorageKafka2::pollIdleConsumerEvents(size_t idx)
+void StorageKafka2::pollConsumerEvents(size_t idx)
 {
     try
     {
@@ -1518,7 +1518,6 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
             consumer = consumers[idx];
         }
 
-        /// Non-owning: acquiring a consumer that just turned busy would block for kafka_consumer_acquire_timeout_ms.
         consumer->pollEventsNonOwning();
     }
     catch (...)
@@ -1532,7 +1531,7 @@ void StorageKafka2::drainEventsTask()
     /// Independent of the streaming and activation tasks: a blocked MV insert can keep the
     /// streaming task inside streamToViews, a Keeper outage the activation task in partialShutdown.
     for (size_t idx = 0; idx < tasks.size(); ++idx)
-        pollIdleConsumerEvents(idx);
+        pollConsumerEvents(idx);
 
     drain_task->scheduleAfter(500);
 }

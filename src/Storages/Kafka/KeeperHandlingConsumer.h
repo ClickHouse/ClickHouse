@@ -25,7 +25,8 @@ namespace DB
 ///
 /// From thread-safety perspective the functions of this class falls into four categories:
 ///   a) Functions `startUsing`, `stopUsing` and `moveConsumer`: they need exclusive access to the object, so they
-/// cannot be called simultaneously with other functions, except for `pollEventsNonOwning`, see d).
+/// cannot be called simultaneously with other functions, except that `startUsing` and `stopUsing` can run
+/// together with `pollEventsNonOwning`, see d).
 ///   b) Function `getStat`: it can be called simultaneously with any other functions (including itself), except for
 /// the functions of category a).
 ///   c) All other functions: they can be called simultaneously with `getStat`, but nothing else, not even each other
