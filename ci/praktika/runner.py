@@ -779,11 +779,13 @@ class Runner:
         if job.enable_gh_read_token:
             # Keep the read token out of the parent process: report publication
             # authenticates separately, after the job command finishes.
-            job_env["GITHUB_TOKEN"] = (
+            read_token = (
                 os.environ.get("PRAKTIKA_GITHUB_READ_TOKEN")
                 or os.environ.get("GITHUB_TOKEN")
             )
-            if not job_env["GITHUB_TOKEN"]:
+            if read_token:
+                job_env["GITHUB_TOKEN"] = read_token
+            elif not env.LOCAL_RUN:
                 raise RuntimeError("GitHub read token is missing or empty")
 
         if param:
