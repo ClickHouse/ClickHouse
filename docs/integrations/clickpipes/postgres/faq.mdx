@@ -190,8 +190,10 @@ A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mir
 
 ```sql
 ALTER TABLE <db>._peerdb_raw_mirror_<id>
-    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 90 DAY
-    SETTINGS ttl_only_drop_parts = 1;
+    MODIFY SETTING ttl_only_drop_parts = 1;
+
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 90 DAY;
 ```
 
 If the raw table has no partition key, the first TTL pass rewrites existing parts and can cause noticeable background I/O on a large table. Follow its progress in `system.mutations`.
