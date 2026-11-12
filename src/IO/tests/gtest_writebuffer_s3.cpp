@@ -663,7 +663,7 @@ struct CompleteMPURecordingInjection : InjectionModel
 {
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
     {
-        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_none_match.emplace_back(request.GetIfNoneMatch());
         return std::nullopt;
     }
 
