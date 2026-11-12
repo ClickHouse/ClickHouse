@@ -2822,12 +2822,11 @@ def test_namespace_two_part_name_resolution(started_cluster):
         _, err = node.query_and_get_answer_with_error(
             f"USE {CATALOG_NAME}; ALTER TABLE default.{T2} DELETE WHERE symbol IN {X}.{T}", settings=on
         )
-        assert "AMBIGUOUS_IDENTIFIER" not in err, f"mutation must not read the catalog table: {err}"
         assert "UNKNOWN_IDENTIFIER" in err, f"mutation must not read the catalog table: {err}"
-        unfinished = node.query(
-            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{T2}' AND NOT is_done"
+        mutations = node.query(
+            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{T2}'"
         ).strip()
-        assert unfinished == "0", f"rejected mutation must not be left in system.mutations: {unfinished}"
+        assert mutations == "0", f"rejected mutation must not be left in system.mutations: {mutations}"
 
         node.query(f"CREATE TABLE `{X}`.{T} (id UInt64) ENGINE = Memory")
         node.query(f"INSERT INTO `{X}`.{T} VALUES (1), (2), (3)")
@@ -2910,6 +2909,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
             f"USE {CATALOG_NAME}; SELECT count() FROM default.{T2}", settings=on, user=policy_user
         )
         assert "ACCESS_DENIED" in err, f"row policy must read the database table: {err}"
+        assert f"{X}.{P}" in err, f"the missing grant must be on the database table: {err}"
     finally:
         for kind in ("catalog", "database", "neither"):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
