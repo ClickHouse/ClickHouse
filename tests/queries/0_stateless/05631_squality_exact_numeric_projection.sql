@@ -15,5 +15,9 @@ SETTINGS allow_lossy_numeric_supertype = 0, optimize_use_projections = 0, optimi
 SELECT count() FROM squality_exact_numeric_projection WHERE d = x
 SETTINGS allow_lossy_numeric_supertype = 0, optimize_use_projections = 1,
     force_optimize_projection = 1, optimize_trivial_count_query = 0;
+SELECT count() FROM squality_exact_numeric_projection WHERE d = x
+SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 0, optimize_trivial_count_query = 0;
+SELECT count() FROM squality_exact_numeric_projection WHERE d = x
+SETTINGS allow_lossy_numeric_supertype = 1, optimize_use_projections = 1, optimize_trivial_count_query = 0;
 
 DROP TABLE squality_exact_numeric_projection;
