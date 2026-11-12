@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -708,10 +709,11 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 namespace
 {
 
-/// The gate guards only new declarations; tables that have them load, are restored and are altered without it.
+/// The gate guards only new declarations; tables that have them load, are restored, are altered and are refreshed without it.
 void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
-    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getParentTable()
+        && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
 }
 
@@ -1537,12 +1539,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
 namespace
 {
-    void checkTemporaryTableEngineName(const String & name)
-    {
-        if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
-    }
-
     void setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine)
     {
         if (engine == DefaultTableEngine::None)
@@ -1743,7 +1739,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (!create.storage->engine)
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_temporary_table_engine].value);
 
-        checkTemporaryTableEngineName(create.storage->engine->name);
+        StorageFactory::instance().checkTemporaryTableEngine(create.storage->engine->name, getContext());
         return;
     }
 
@@ -2085,6 +2081,24 @@ AccessType getDropAccessType(const IStorage & table)
     return AccessType::DROP_TABLE;
 }
 
+/// A stub ATTACH has no definition of its own, the table is attached from its stored metadata.
+bool isStubAttach(const ASTCreateQuery & create)
+{
+    return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+}
+
+/// The query-scoped snapshot cache keeps every table the query has read alive until the query ends.
+void releaseQueryStorageSnapshots(const ContextPtr & context)
+{
+    if (!context->hasQueryContext())
+        return;
+    if (auto metadata_cache = context->getQueryMetadataCache())
+    {
+        auto [snapshot_cache, snapshot_cache_lock] = metadata_cache->getStorageSnapshotCache();
+        snapshot_cache->clear();
+    }
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2125,7 +2139,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    if (isStubAttach(create))
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
@@ -2470,6 +2484,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
+        /// Release before the guard: this replica runs the entry in this thread, and a synchronous drop waits for every snapshot.
+        releaseQueryStorageSnapshots(getContext());
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
@@ -3375,6 +3391,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (fill_io.pipeline.initialized())
             getContext()->onQueryExecutionStarted();
         executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
+        /// No table is read past this point. Release before the rename: a synchronous drop of the old table waits for every snapshot.
+        releaseQueryStorageSnapshots(current_context);
 
         /// Replace target table with created one
         ASTRenameQuery::Element elem
@@ -4109,6 +4127,17 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// In Cloud, a user query can attach a detached table, but cannot create a table from a definition.
+    /// Checked here because ON CLUSTER can send the query to other hosts before `createTable` runs.
+    if (!is_create_database && create.attach && !isStubAttach(create)
+        && !internal && !getContext()->isDDLOrOnClusterInternal()
+        && getContext()->getSettingsRef()[Setting::cloud_mode])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ATTACH TABLE with a full table definition is not supported. "
+            "Use ATTACH TABLE {} to reattach an existing detached table.",
+            create.getTable());
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())

@@ -127,6 +127,7 @@ uniq_states_read_merge.xml                               # AggregateFunction col
 uniq_stored.xml                                          # AggregateFunction column
 uuid_ip_comparison.xml                                   # IPv4 widened to UInt32
 vector_binary_serialization.xml                          # AggregateFunction column
+wide_integer_add_sub.xml                                 # Int128 widened to Decimal
 wide_integer_comparison.xml                              # UInt128 widened to Decimal
 wide_integer_division.xml                                # UInt256 widened to Decimal
 window_transform.xml                                     # type UInt64 in CREATE ... AS SELECT

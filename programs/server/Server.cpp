@@ -3088,6 +3088,9 @@ try
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_GPU
+                global_context->updateGPUKernelCacheConfiguration(new_server_settings);
+#endif
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
