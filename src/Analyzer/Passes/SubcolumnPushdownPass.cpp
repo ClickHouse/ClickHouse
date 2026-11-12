@@ -24,6 +24,9 @@
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageFile.h>
+#include <Storages/StorageURL.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -243,6 +246,28 @@ bool isKeyColumn(const StorageMetadataPtr & metadata, const NameAndTypePair & co
     return false;
 }
 
+/// Whether the storage reads the data it stores itself, so that its own metadata describes what is read.
+/// A forwarding storage (`Merge`, `Buffer`, `MaterializedView`, `Alias`, `Distributed`, a lazily loaded table,
+/// ...) passes the flattened name `tup.a` to the underlying tables, where it can resolve to a different column
+/// (a declared column `` `tup.a` ``), to a column of a different type that the forwarding storage would have
+/// converted as a whole, or to a column used by a primary key or skip index that the metadata of the forwarding
+/// storage does not have, so that the index would no longer be used. None of this can be checked from the
+/// metadata of the forwarding storage, so such storages are not accepted.
+bool storageReadsItsOwnData(const IStorage & storage)
+{
+    /// NOLINT(storage-cast): a lazily loaded table is a proxy that forwards the read, so it must fail this cast and be rejected.
+    if (dynamic_cast<const MergeTreeData *>(&storage))
+        return true;
+
+    /// NOLINT(storage-cast): as above, a proxy in front of these storages forwards the read and must fail the cast.
+    if (dynamic_cast<const StorageFile *>(&storage) || dynamic_cast<const IStorageURLBase *>(&storage)
+        || dynamic_cast<const StorageObjectStorage *>(&storage)) /// NOLINT(storage-cast)
+        return true;
+
+    const auto & name = storage.getName();
+    return name == "Memory" || name == "Log" || name == "TinyLog" || name == "StripeLog";
+}
+
 /// Whether the storage behind `proj_column` can serve its subcolumn `subcolumn_name` directly. This is the same
 /// gate `FunctionToSubcolumnsPass` applies before reading a subcolumn instead of the whole column: some storages
 /// (system tables, ...) report `supportsOptimizationToSubcolumns` = false, others (`file`, `url`, ...) can serve
@@ -260,6 +285,9 @@ bool storageCanReadSubcolumn(
         return false;
 
     const auto & storage = storage_snapshot->storage;
+
+    if (!storageReadsItsOwnData(storage))
+        return false;
 
     /// The storage is replaced with the view source only after the passes, see `FunctionToSubcolumnsPass`.
     auto view_source = context->getViewSource();
@@ -705,6 +733,26 @@ private:
     std::unordered_map<IQueryTreeNode *, std::vector<ColumnNode *>> all_columns_by_source;
 };
 
+/// Count the references to the column `column_name` of `column_source` in the tree of `node`.
+size_t countColumnReferences(const QueryTreeNodePtr & node, const IQueryTreeNode * column_source, const String & column_name)
+{
+    if (!node)
+        return 0;
+
+    size_t count = 0;
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        auto source = column_node->getColumnSourceOrNull();
+        if (source.get() == column_source && column_node->getColumnName() == column_name)
+            ++count;
+    }
+
+    for (const auto & child : node->getChildren())
+        count += countColumnReferences(child, column_source, column_name);
+
+    return count;
+}
+
 /// Try to clone the target QueryNode if it IS the join_tree root.
 /// We must clone to avoid modifying shared nodes (e.g., CTEs referenced multiple times).
 /// Returns nullptr if cloning is not possible or not needed.
@@ -830,11 +878,48 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             ++total_references_by_base_column[col->getColumnName()];
     }
 
+    auto & cloned_projection_nodes = cloned_query_source->getProjection().getNodes();
+
+    /// A subcolumn is pushed down only if the whole column is no longer needed afterwards. Otherwise the
+    /// source would read the subcolumn in addition to the whole column, from which `getSubcolumn` extracts it
+    /// anyway, and there is nothing to prune. The whole column stays needed if the outer query references it
+    /// not only through the accesses that are pushed down (`SELECT tup, tup.a FROM (SELECT tup FROM t)`), or if
+    /// the source query reads the same column elsewhere: in another projection column (`SELECT tup, tup AS u`),
+    /// in `WHERE`, `ORDER BY`, ...
+    std::unordered_map<String, size_t> pushable_references_by_base_column;
+    for (const auto & access : accesses)
+    {
+        if (unique_subcolumns.contains(access.full_subcolumn_name))
+            ++pushable_references_by_base_column[access.base_column_name];
+    }
+
+    std::unordered_set<String> base_columns_still_needed;
+    for (const auto & [full_subcolumn_name, access_ptr] : unique_subcolumns)
+    {
+        const auto & access = *access_ptr;
+        if (base_columns_still_needed.contains(access.base_column_name))
+            continue;
+
+        bool still_needed = total_references_by_base_column[access.base_column_name] != pushable_references_by_base_column[access.base_column_name];
+        if (!still_needed && access.projection_index < cloned_projection_nodes.size())
+        {
+            if (const auto * proj_column = cloned_projection_nodes[access.projection_index]->as<ColumnNode>())
+            {
+                auto proj_source = proj_column->getColumnSourceOrNull();
+                still_needed = countColumnReferences(cloned_source, proj_source.get(), proj_column->getColumnName()) != 1;
+            }
+        }
+
+        if (still_needed)
+            base_columns_still_needed.insert(access.base_column_name);
+    }
+
+    std::erase_if(unique_subcolumns, [&](const auto & entry) { return base_columns_still_needed.contains(entry.second->base_column_name); });
+
     /// Candidate base columns to drop, mapped to their index in the source projection.
     std::unordered_map<String, size_t> removal_candidates;
 
     /// Add new subcolumn projections
-    auto & cloned_projection_nodes = cloned_query_source->getProjection().getNodes();
     auto projection_columns = cloned_query_source->getProjectionColumns();
 
     /// Map from full_subcolumn_name to its new projection index
