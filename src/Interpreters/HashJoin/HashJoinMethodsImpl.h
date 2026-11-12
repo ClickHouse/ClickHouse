@@ -19,6 +19,8 @@
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event JoinPackedStringKeysInline;
+extern const Event JoinPackedStringKeysHashed;
 }
 
 namespace DB
@@ -367,6 +369,13 @@ BuildResult insertFromBlockImplTypeCase(
     };
 
     slots.insert(per_slot, insert_slot);
+
+    /// `insertSlotRows` takes a key getter that is not trivially copyable by reference, so these counts cover all slots.
+    if constexpr (requires { key_getter.hashed_keys; })
+    {
+        ProfileEvents::increment(ProfileEvents::JoinPackedStringKeysInline, key_getter.emplaced_keys - key_getter.hashed_keys);
+        ProfileEvents::increment(ProfileEvents::JoinPackedStringKeysHashed, key_getter.hashed_keys);
+    }
     return result;
 }
 

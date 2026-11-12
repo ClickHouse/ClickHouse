@@ -530,6 +530,11 @@ HashJoin::HashJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot choose JOIN method without keys");
 
     data->type = build_layout.two_level ? toTwoLevelType(*selected_join_method) : *selected_join_method;
+    if (table_join->enablePackedStringKeysInHashJoin() && (data->type == Type::key_string || data->type == Type::two_level_key_string))
+    {
+        data->type = data->type == Type::key_string ? Type::key_packed_string : Type::two_level_key_packed_string;
+        LOG_TRACE(log, "{}Using packed keys for the single String join key", instance_log_id);
+    }
 
     LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, data->type);
     LOG_TEST(

@@ -30,9 +30,9 @@ echo "${EMPTY_ERROR}" | grep -qE "5 listing attempts over [0-9]+ ms found no \.m
     && echo "f: the listing attempts and the time they spanned are reported"
 
 UNMATCHED_ERROR=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM icebergLocal('${T_UNMATCHED}/')" 2>&1)
-echo "${UNMATCHED_ERROR}" | grep -qF "1 entry: /version-hint.text" \
+echo "${UNMATCHED_ERROR}" | grep -qF "1 entry: version-hint.text" \
     && echo "b1: an entry the suffix filter dropped is named"
-echo "${UNMATCHED_ERROR}" | grep -qF "/version-hint.text (2001-09-09T01:46:40Z)" \
+echo "${UNMATCHED_ERROR}" | grep -qF "version-hint.text (2001-09-09T01:46:40Z)" \
     && echo "b2: its modification time is reported"
 
 MANY_ERROR=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM icebergLocal('${T_MANY}/')" 2>&1)
@@ -50,11 +50,11 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=trace -q "SELECT * FROM icebergLocal('${T
     && echo "g: the raw and the filtered listing counts are both logged"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM icebergLocal('${T_TEMPORARY}/')" 2>&1 \
-    | grep -qE "1 candidate found under .*/metadata, 1 of them temporary commit files: /00000000-0000-0000-0000-000000000000\.metadata\.json" \
+    | grep -qE "1 candidate found under .*/metadata/, 1 of them temporary commit files: 00000000-0000-0000-0000-000000000000\.metadata\.json" \
     && echo "h: a candidate rejected as a temporary commit file is reported"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM icebergLocal('${T_TEMPORARY}/', SETTINGS iceberg_metadata_table_uuid = '00000000-0000-0000-0000-000000000001')" 2>&1 \
-    | grep -qE "and table UUID 00000000000000000000000000000001 doesn't exist\. 1 candidate found under .*/metadata, 1 of them temporary commit files: /00000000-0000-0000-0000-000000000000\.metadata\.json" \
+    | grep -qE "and table UUID 00000000000000000000000000000001 doesn't exist\. 1 candidate found under .*/metadata/, 1 of them temporary commit files: 00000000-0000-0000-0000-000000000000\.metadata\.json" \
     && echo "h2: candidates are reported when table UUID selection finds none"
 
 rm -rf "${BASE}"

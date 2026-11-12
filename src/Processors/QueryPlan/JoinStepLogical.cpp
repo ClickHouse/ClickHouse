@@ -2891,9 +2891,8 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
             continue;
         }
 
-        /// Replace keys expression with calculated inputs
-        /// We also could possibly remove some nodes from dag,
-        /// but they will simply remain unused when converting to a physical step
+        /// Replace keys expression with calculated inputs. The replaced expression and the inputs only it read stay
+        /// unused in the DAG; the unused-columns pass after the runtime filters prunes them and the columns they read.
         if (left_node->type != ActionsDAG::ActionType::INPUT ||
             right_node->type != ActionsDAG::ActionType::INPUT)
         {
@@ -2995,6 +2994,10 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
+        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate.
+        if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
+            && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
+            optimizer_flags |= 8;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3071,6 +3074,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
+        if (optimizer_flags & 8)
+            step->join_settings.enable_packed_string_keys_in_hash_join = false;
     }
     return step;
 }

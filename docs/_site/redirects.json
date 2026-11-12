@@ -1948,6 +1948,10 @@
     "source": "/cloud/manage/dashboards"
   },
   {
+    "destination": "/products/cloud/guides/deletion-protection",
+    "source": "/cloud/manage/deletion-protection"
+  },
+  {
     "destination": "/products/cloud/features/sql-console-features/clickstack",
     "source": "/cloud/manage/hyperdx"
   },

@@ -37,6 +37,7 @@ protected:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override { return function->canBeExecutedOnDefaultArguments(arguments); }
     /// TODO: most functions still answer this through `isSuitableForShortCircuitArgumentsExecution`
     /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
     /// should become the conservative `true` instead of that approximation.
