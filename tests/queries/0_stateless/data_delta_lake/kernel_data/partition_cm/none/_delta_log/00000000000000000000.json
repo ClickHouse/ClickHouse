@@ -1,0 +1,3 @@
+{"protocol":{"minReaderVersion":1,"minWriterVersion":1}}
+{"metaData":{"id":"test-partitioned-cm-none","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"value\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"category\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":["category"],"configuration":{"delta.columnMapping.mode":"none"},"createdTime":1677811175819}}
+

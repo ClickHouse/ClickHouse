@@ -948,7 +948,8 @@ bool Client::buzzHouse()
                          BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DO_NOTHING;
 
                          rg.pickWeighted(
-                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
+                             /// `OPTIMIZE` drops all-zero `SummingMergeTree` rows that `SELECT ... FINAL` keeps
+                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges && !tbl.get().isSummingMergeTree(true)),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
                               {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),
@@ -1026,6 +1027,8 @@ bool Client::buzzHouse()
                                  BuzzHouse::SQLQueryToString(full_query, reload);
                                  fuzz_config->outf << full_query << std::endl;
                                  server_up &= processBuzzHouseQuery(full_query);
+                                 /// A failed reload keeps the previous version, which a reattach then drops.
+                                 qo.setIntermediateStepSuccess(!have_error);
                              },
                              [&](auto s)
                              { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },

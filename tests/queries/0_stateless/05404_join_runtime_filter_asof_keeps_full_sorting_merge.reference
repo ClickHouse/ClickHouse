@@ -1,0 +1,10 @@
+--- full_sorting_merge listed first: ASOF on a String key must still succeed with the filter enabled ---
+1	b	a	10
+1	d	c	11
+3	z	x	30
+1	b	a	10
+1	d	c	11
+3	z	x	30
+--- full_sorting_merge listed first: no runtime filter is built (would force hash) ---
+--- hash listed first: runtime filter is still built, same as before this test ---
+BuildRuntimeFilter (Build runtime join filter on id)

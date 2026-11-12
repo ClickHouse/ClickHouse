@@ -31,9 +31,7 @@ Os recursos a seguir diferenciam o ClickHouse Private das implantações open so
 * Versões do banco de dados ClickHouse e do operador totalmente testadas e validadas no ClickHouse Cloud
 * API para operações programáticas, incluindo backups e operações de escalonamento
 
-<div id="architecture">
-  ## Arquitetura
-</div>
+## Arquitetura {#architecture}
 
 O ClickHouse Private é totalmente autocontido no seu ambiente de implantação, oferecendo nossa arquitetura nativa de nuvem com separação entre computação e armazenamento.
 
@@ -47,12 +45,14 @@ O ClickHouse Private é totalmente autocontido no seu ambiente de implantação,
   ## Configurações suportadas
 </div>
 
-Atualmente, o ClickHouse Private oferece suporte às seguintes configurações:
+O ClickHouse Private está disponível nas seguintes configurações, com o status de suporte indicado para cada ambiente:
 
-| Ambiente | Orquestração                     | Armazenamento               | Status     |
-| :------- | :------------------------------- | :-------------------------- | :--------- |
-| AWS      | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Disponível |
-| GCP      | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | Prévia     |
+| Ambiente                  | Orquestração                     | Armazenamento               | Status     |
+| :------------------------ | :------------------------------- | :-------------------------- | :--------- |
+| AWS                       | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Compatível |
+| GCP                       | Google Kubernetes Engine (GKE)   | Google Cloud Storage (GCS)  | Compatível |
+| Em infraestrutura própria | Kubernetes auto-hospedado        | MinIO AIStor                | Compatível |
+| Azure                     | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | Prévia     |
 
 <div id="onboarding-process">
   ## Processo de onboarding

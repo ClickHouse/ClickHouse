@@ -473,13 +473,22 @@ void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
         {
             const uint32_t nopt = rg.nextSmallNumber();
 
-            if (nopt < 4)
+            if (nopt < 3)
             {
                 buf += "%";
             }
-            else if (nopt < 7)
+            else if (nopt < 5)
             {
                 buf += "_";
+            }
+            else if (nopt < 7)
+            {
+                /// `SIMILAR TO` metacharacters, plus characters it keeps literal
+                static const std::vector<String> similarMeta
+                    = {"|", "*", "+", "?", "{2}", "{1,3}", "{2,}", "(", ")", "(a|b)", "[a-z]", "[^0-9]", "[[:alpha:]]", "[]",
+                       "\\%", "\\_", "\\", "#%", ".", "^", "$"};
+
+                buf += rg.pickRandomly(similarMeta);
             }
             else
             {
@@ -492,6 +501,15 @@ void StatementGenerator::generateLikeExpr(RandomGenerator & rg, Expr * expr)
     {
         this->generateExpression(rg, expr);
     }
+}
+
+String StatementGenerator::generateLikeEscape(RandomGenerator & rg)
+{
+    /// Quoted `ESCAPE` literals, a few of them invalid (empty, multi-char, non-ASCII)
+    static const std::vector<String> escapes
+        = {"'#'", "'!'", "'\\\\'", "'%'", "'_'", "'|'", "'['", "''''", "'$'", "'a'", "''", "'ab'", "'é'"};
+
+    return rg.pickRandomly(escapes);
 }
 
 Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const
@@ -748,6 +766,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 
             elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(like_range(rg.generator)));
             elike->set_not_(rg.nextBool());
+            if (rg.nextSmallNumber() < 3)
+            {
+                elike->set_escape(generateLikeEscape(rg));
+            }
             this->depth++;
             this->generateExpression(rg, elike->mutable_expr1());
             this->width++;
@@ -812,6 +834,69 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     for (const auto & [key, val] : ctes_backup)
     {
         this->ctes[key] = val;
+    }
+}
+
+/// The function composition operator `f | g`: the first stage takes `nparams` arguments, each next one the result before it
+void StatementGenerator::generateFuncComposition(RandomGenerator & rg, const uint32_t nparams, FuncComposition * comp)
+{
+    const uint32_t nstages = rg.randomInt<uint32_t>(1, 3);
+
+    for (uint32_t i = 0; i < nstages; i++)
+    {
+        const uint32_t arity = i == 0 ? nparams : 1;
+        /// A function name composes only if its number of arguments is fixed
+        const auto name_filter
+            = [arity](const CHFunction & f) { return f.lambda_kind == LambdaKind::None && f.min_args == arity && f.max_args == arity; };
+        const auto call_filter
+            = [arity](const CHFunction & f) { return f.lambda_kind == LambdaKind::None && f.min_args <= arity + 1 && arity <= f.max_args; };
+        ComposeStage * stage = comp->add_stages();
+        const uint32_t nopt = rg.nextSmallNumber();
+
+        if (arity == 1 && nopt < 2)
+        {
+            /// Leave the stage empty for the identity placeholder `_`
+        }
+        else if (nopt < 5 && std::any_of(det_funcs.begin(), det_funcs.end(), name_filter))
+        {
+            std::vector<std::reference_wrapper<const CHFunction>> candidates;
+
+            std::copy_if(det_funcs.begin(), det_funcs.end(), std::back_inserter(candidates), name_filter);
+            stage->set_func_name(rg.pickRandomly(candidates).get().fname);
+        }
+        else if (nopt < 8 && std::any_of(det_funcs.begin(), det_funcs.end(), call_filter))
+        {
+            std::vector<std::reference_wrapper<const CHFunction>> candidates;
+
+            std::copy_if(det_funcs.begin(), det_funcs.end(), std::back_inserter(candidates), call_filter);
+            const CHFunction & func = rg.pickRandomly(candidates).get();
+            PlaceholderCall * call = stage->mutable_call();
+            const bool positional = rg.nextBool();
+            DB::Strings args;
+
+            for (uint32_t j = 1; j <= arity; j++)
+            {
+                args.emplace_back(positional ? ("_" + std::to_string(j)) : "_");
+            }
+            if (positional)
+            {
+                std::shuffle(args.begin(), args.end(), rg.generator);
+            }
+            /// A constant argument next to the placeholders, required when the function takes one more
+            if (func.max_args > arity && (func.min_args > arity || rg.nextBool()))
+            {
+                args.insert(args.begin() + rg.randomInt<uint32_t>(0, arity), std::to_string(rg.randomInt<int32_t>(-10, 10)));
+            }
+            call->set_func(func.fname);
+            for (const auto & arg : args)
+            {
+                call->add_args(arg);
+            }
+        }
+        else
+        {
+            generateLambdaCall(rg, arity, stage->mutable_lambda());
+        }
     }
 }
 
@@ -1049,7 +1134,11 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             const auto arity_filter = [lambda_arity](const CHFunction & f)
             { return f.lambda_kind == LambdaKind::None && f.min_args <= lambda_arity && lambda_arity <= f.max_args; };
 
-            if (rg.nextBool())
+            if (rg.nextSmallNumber() < 3)
+            {
+                generateFuncComposition(rg, lambda_arity, func_call->add_args()->mutable_composition());
+            }
+            else if (rg.nextBool())
             {
                 const auto & source = this->allow_not_deterministic && !nondet_funcs.empty() && rg.nextSmallNumber() < 4
                     ? this->nondet_funcs
@@ -1531,17 +1620,61 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
             sfc->mutable_func()->set_catalog_func(dfunc);
             sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + d.getFullName(true) + "'");
-            flatTableColumnPath(
-                flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
-                d.cols,
-                [](const SQLColumn &) { return true; });
-            sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(this->table_entries).columnPathRef("'"));
-            this->table_entries.clear();
+            /// `dictHas` and the hierarchy functions take a key, not an attribute name
+            static const std::unordered_set<String> key_only_funcs
+                = {"dictGetChildren", "dictGetDescendants", "dictGetHierarchy", "dictGetRoot", "dictHas", "dictIsIn"};
+            /// These also take a tuple of attribute names and return a tuple
+            static const std::unordered_set<String> multi_attribute_funcs = {"dictGet", "dictGetAll", "dictGetOrDefault", "dictGetOrNull"};
+            size_t nattributes = 1;
+            if (!key_only_funcs.contains(dfunc))
+            {
+                flatTableColumnPath(
+                    flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
+                    d.cols,
+                    [](const SQLColumn &) { return true; });
+                if (multi_attribute_funcs.contains(dfunc) && this->table_entries.size() > 1 && rg.nextSmallNumber() < 4)
+                {
+                    String names = "(";
+
+                    nattributes = rg.randomInt<size_t>(2, std::min<size_t>(this->table_entries.size(), 4));
+                    std::shuffle(this->table_entries.begin(), this->table_entries.end(), rg.generator);
+                    for (size_t i = 0; i < nattributes; i++)
+                    {
+                        names += (i == 0 ? "" : ", ") + this->table_entries[i].columnPathRef("'");
+                    }
+                    sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(names + ")");
+                }
+                else
+                {
+                    sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(
+                        rg.pickRandomly(this->table_entries).columnPathRef("'"));
+                }
+                this->table_entries.clear();
+            }
             this->depth++;
             /// May break total width
             for (uint32_t i = 0; i < dictFuncs.at(dfunc); i++)
             {
-                this->generateExpression(rg, sfc->add_args()->mutable_expr());
+                if (dfunc == "dictGetOrDefault" && i == 1 && nattributes > 1)
+                {
+                    /// One default per attribute
+                    SQLFuncCall * defaults = sfc->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+
+                    defaults->mutable_func()->set_catalog_func("tuple");
+                    for (size_t j = 0; j < nattributes; j++)
+                    {
+                        this->generateExpression(rg, defaults->add_args()->mutable_expr());
+                    }
+                }
+                else
+                {
+                    this->generateExpression(rg, sfc->add_args()->mutable_expr());
+                }
+            }
+            if (dfunc == "dictGetAll" && rg.nextBool())
+            {
+                /// Optional limit of each returned array
+                sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::to_string(rg.randomInt<uint32_t>(0, 10)));
             }
             this->depth--;
         }

@@ -30,6 +30,15 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
+    VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
+    {
+        if (!arguments.empty() && isVariant(arguments.back()))
+            return {arguments.size() - 1};
+        return {};
+    }
+
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)

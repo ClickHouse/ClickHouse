@@ -1,0 +1,717 @@
+delta/all_types WHERE `id` < 10	ok
+delta/all_types WHERE `id` = 7	ok
+delta/all_types WHERE `id` >= 25	ok
+delta/all_types `arr`	ok
+delta/all_types `arr`.size0	ok
+delta/all_types `b`	ok
+delta/all_types `bin`	ok
+delta/all_types `by`	ok
+delta/all_types `d`	ok
+delta/all_types `dec38`	ok
+delta/all_types `dec`	ok
+delta/all_types `dt`	ok
+delta/all_types `f`	ok
+delta/all_types `i`	ok
+delta/all_types `id`	ok
+delta/all_types `mp`	ok
+delta/all_types `nested`	ok
+delta/all_types `nested`.`a`	ok
+delta/all_types `nested`.`m`	ok
+delta/all_types `nested`.size0	ok
+delta/all_types `s`	ok
+delta/all_types `sh`	ok
+delta/all_types `st`	ok
+delta/all_types `st`.`x`	ok
+delta/all_types `st`.`y`	ok
+delta/all_types `ts_ntz`	ok
+delta/all_types `ts`	ok
+delta/all_types content	35	ok
+delta/all_types content version 0 CREATE TABLE	0	ok
+delta/all_types content version 1 WRITE	20	ok
+delta/all_types count()	ok
+delta/all_types count() version 0 CREATE TABLE	ok
+delta/all_types count() version 1 WRITE	ok
+delta/all_types types	Nullable(Int64), Nullable(Int32), Nullable(Int16), Nullable(Int8), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6)), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32)), Array(Tuple(a Nullable(Int32), m Map(String, Array(Nullable(Int32)))))
+delta/change_data_feed_column_mapping WHERE `id` < 10	ok
+delta/change_data_feed_column_mapping WHERE `id` = 7	ok
+delta/change_data_feed_column_mapping WHERE `id` >= 25	ok
+delta/change_data_feed_column_mapping WHERE `p` = 2	ok
+delta/change_data_feed_column_mapping `id`	ok
+delta/change_data_feed_column_mapping `p`	ok
+delta/change_data_feed_column_mapping `s`	ok
+delta/change_data_feed_column_mapping change data feed	11	ok
+delta/change_data_feed_column_mapping content	7	ok
+delta/change_data_feed_column_mapping content version 0 CREATE TABLE	0	ok
+delta/change_data_feed_column_mapping content version 1 WRITE	8	ok
+delta/change_data_feed_column_mapping content version 2 UPDATE	8	ok
+delta/change_data_feed_column_mapping count()	ok
+delta/change_data_feed_column_mapping count() version 0 CREATE TABLE	ok
+delta/change_data_feed_column_mapping count() version 1 WRITE	ok
+delta/change_data_feed_column_mapping count() version 2 UPDATE	ok
+delta/change_data_feed_column_mapping types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/change_data_feed_deletion_vectors WHERE `id` < 10	ok
+delta/change_data_feed_deletion_vectors WHERE `id` = 7	ok
+delta/change_data_feed_deletion_vectors WHERE `id` >= 25	ok
+delta/change_data_feed_deletion_vectors WHERE `p` = 2	ok
+delta/change_data_feed_deletion_vectors `id`	ok
+delta/change_data_feed_deletion_vectors `p`	ok
+delta/change_data_feed_deletion_vectors `s`	ok
+delta/change_data_feed_deletion_vectors change data feed	18	ok
+delta/change_data_feed_deletion_vectors content	10	ok
+delta/change_data_feed_deletion_vectors content version 0 CREATE TABLE	0	ok
+delta/change_data_feed_deletion_vectors content version 1 WRITE	10	ok
+delta/change_data_feed_deletion_vectors content version 2 UPDATE	10	ok
+delta/change_data_feed_deletion_vectors content version 3 DELETE	8	ok
+delta/change_data_feed_deletion_vectors count()	ok
+delta/change_data_feed_deletion_vectors count() version 0 CREATE TABLE	ok
+delta/change_data_feed_deletion_vectors count() version 1 WRITE	ok
+delta/change_data_feed_deletion_vectors count() version 2 UPDATE	ok
+delta/change_data_feed_deletion_vectors count() version 3 DELETE	ok
+delta/change_data_feed_deletion_vectors types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/column_mapping_id WHERE `id` < 10	ok
+delta/column_mapping_id WHERE `id` = 7	ok
+delta/column_mapping_id WHERE `id` >= 25	ok
+delta/column_mapping_id `arr`	ok
+delta/column_mapping_id `arr`.`c`	ok
+delta/column_mapping_id `arr`.size0	ok
+delta/column_mapping_id `id`	ok
+delta/column_mapping_id `mp`	ok
+delta/column_mapping_id `s2`	ok
+delta/column_mapping_id `s`	ok
+delta/column_mapping_id `st`	ok
+delta/column_mapping_id `st`.`a2`	ok
+delta/column_mapping_id content	8	ok
+delta/column_mapping_id content version 0 CREATE TABLE	0	ok
+delta/column_mapping_id content version 1 WRITE	5	ok
+delta/column_mapping_id content version 2 RENAME COLUMN	5	ok
+delta/column_mapping_id content version 3 RENAME COLUMN	5	ok
+delta/column_mapping_id content version 4 DROP COLUMNS	5	ok
+delta/column_mapping_id content version 5 ADD COLUMNS	5	ok
+delta/column_mapping_id count()	ok
+delta/column_mapping_id count() version 0 CREATE TABLE	ok
+delta/column_mapping_id count() version 1 WRITE	ok
+delta/column_mapping_id count() version 2 RENAME COLUMN	ok
+delta/column_mapping_id count() version 3 RENAME COLUMN	ok
+delta/column_mapping_id count() version 4 DROP COLUMNS	ok
+delta/column_mapping_id count() version 5 ADD COLUMNS	ok
+delta/column_mapping_id types	Nullable(Int64), Nullable(String), Tuple(a2 Nullable(Int32)), Array(Tuple(c Nullable(Int32))), Map(String, Tuple(e Nullable(Int32))), Nullable(Int8)
+delta/deletion_vectors WHERE `id` < 10	ok
+delta/deletion_vectors WHERE `id` = 7	ok
+delta/deletion_vectors WHERE `id` >= 25	ok
+delta/deletion_vectors WHERE `p` = 2	ok
+delta/deletion_vectors `id`	ok
+delta/deletion_vectors `p`	ok
+delta/deletion_vectors `s`	ok
+delta/deletion_vectors content	112	ok
+delta/deletion_vectors content version 0 CREATE TABLE	0	ok
+delta/deletion_vectors content version 1 WRITE	100	ok
+delta/deletion_vectors content version 2 DELETE	90	ok
+delta/deletion_vectors content version 3 DELETE	81	ok
+delta/deletion_vectors content version 4 WRITE	131	ok
+delta/deletion_vectors content version 5 DELETE	112	ok
+delta/deletion_vectors count()	ok
+delta/deletion_vectors count() version 0 CREATE TABLE	ok
+delta/deletion_vectors count() version 1 WRITE	ok
+delta/deletion_vectors count() version 2 DELETE	ok
+delta/deletion_vectors count() version 3 DELETE	ok
+delta/deletion_vectors count() version 4 WRITE	ok
+delta/deletion_vectors count() version 5 DELETE	ok
+delta/deletion_vectors types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/deletion_vectors_partitioned_column_mapping WHERE `id` < 10	ok
+delta/deletion_vectors_partitioned_column_mapping WHERE `id` = 7	ok
+delta/deletion_vectors_partitioned_column_mapping WHERE `id` >= 25	ok
+delta/deletion_vectors_partitioned_column_mapping WHERE `p` = 2	ok
+delta/deletion_vectors_partitioned_column_mapping `id`	ok
+delta/deletion_vectors_partitioned_column_mapping `p`	ok
+delta/deletion_vectors_partitioned_column_mapping `s_renamed`	ok
+delta/deletion_vectors_partitioned_column_mapping content	33	ok
+delta/deletion_vectors_partitioned_column_mapping content version 0 CREATE TABLE	0	ok
+delta/deletion_vectors_partitioned_column_mapping content version 1 WRITE	40	ok
+delta/deletion_vectors_partitioned_column_mapping content version 2 DELETE	26	ok
+delta/deletion_vectors_partitioned_column_mapping content version 3 RENAME COLUMN	26	ok
+delta/deletion_vectors_partitioned_column_mapping content version 4 DELETE	23	ok
+delta/deletion_vectors_partitioned_column_mapping count()	ok
+delta/deletion_vectors_partitioned_column_mapping count() version 0 CREATE TABLE	ok
+delta/deletion_vectors_partitioned_column_mapping count() version 1 WRITE	ok
+delta/deletion_vectors_partitioned_column_mapping count() version 2 DELETE	ok
+delta/deletion_vectors_partitioned_column_mapping count() version 3 RENAME COLUMN	ok
+delta/deletion_vectors_partitioned_column_mapping count() version 4 DELETE	ok
+delta/deletion_vectors_partitioned_column_mapping types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/delta332_all_types WHERE `id` < 10	ok
+delta/delta332_all_types WHERE `id` = 7	ok
+delta/delta332_all_types WHERE `id` >= 25	ok
+delta/delta332_all_types `arr`	ok
+delta/delta332_all_types `arr`.size0	ok
+delta/delta332_all_types `b`	ok
+delta/delta332_all_types `bin`	ok
+delta/delta332_all_types `by`	ok
+delta/delta332_all_types `d`	ok
+delta/delta332_all_types `dec38`	ok
+delta/delta332_all_types `dec`	ok
+delta/delta332_all_types `dt`	ok
+delta/delta332_all_types `f`	ok
+delta/delta332_all_types `i`	ok
+delta/delta332_all_types `id`	ok
+delta/delta332_all_types `mp`	ok
+delta/delta332_all_types `nested`	ok
+delta/delta332_all_types `nested`.`a`	ok
+delta/delta332_all_types `nested`.`m`	ok
+delta/delta332_all_types `nested`.size0	ok
+delta/delta332_all_types `s`	ok
+delta/delta332_all_types `sh`	ok
+delta/delta332_all_types `st`	ok
+delta/delta332_all_types `st`.`x`	ok
+delta/delta332_all_types `st`.`y`	ok
+delta/delta332_all_types `ts_ntz`	ok
+delta/delta332_all_types `ts`	ok
+delta/delta332_all_types content	35	ok
+delta/delta332_all_types content version 0 CREATE TABLE	0	ok
+delta/delta332_all_types content version 1 WRITE	20	ok
+delta/delta332_all_types count()	ok
+delta/delta332_all_types count() version 0 CREATE TABLE	ok
+delta/delta332_all_types count() version 1 WRITE	ok
+delta/delta332_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Int16), Nullable(Int8), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6)), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32)), Array(Tuple(a Nullable(Int32), m Map(String, Array(Nullable(Int32)))))
+delta/delta332_change_data_feed_deletion_vectors WHERE `id` < 10	ok
+delta/delta332_change_data_feed_deletion_vectors WHERE `id` = 7	ok
+delta/delta332_change_data_feed_deletion_vectors WHERE `id` >= 25	ok
+delta/delta332_change_data_feed_deletion_vectors WHERE `p` = 2	ok
+delta/delta332_change_data_feed_deletion_vectors `id`	ok
+delta/delta332_change_data_feed_deletion_vectors `p`	ok
+delta/delta332_change_data_feed_deletion_vectors `s`	ok
+delta/delta332_change_data_feed_deletion_vectors change data feed	18	ok
+delta/delta332_change_data_feed_deletion_vectors content	10	ok
+delta/delta332_change_data_feed_deletion_vectors content version 0 CREATE TABLE	0	ok
+delta/delta332_change_data_feed_deletion_vectors content version 1 WRITE	10	ok
+delta/delta332_change_data_feed_deletion_vectors content version 2 UPDATE	10	ok
+delta/delta332_change_data_feed_deletion_vectors content version 3 DELETE	8	ok
+delta/delta332_change_data_feed_deletion_vectors count()	ok
+delta/delta332_change_data_feed_deletion_vectors count() version 0 CREATE TABLE	ok
+delta/delta332_change_data_feed_deletion_vectors count() version 1 WRITE	ok
+delta/delta332_change_data_feed_deletion_vectors count() version 2 UPDATE	ok
+delta/delta332_change_data_feed_deletion_vectors count() version 3 DELETE	ok
+delta/delta332_change_data_feed_deletion_vectors types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/delta332_column_mapping_id WHERE `id` < 10	ok
+delta/delta332_column_mapping_id WHERE `id` = 7	ok
+delta/delta332_column_mapping_id WHERE `id` >= 25	ok
+delta/delta332_column_mapping_id `arr`	ok
+delta/delta332_column_mapping_id `arr`.`c`	ok
+delta/delta332_column_mapping_id `arr`.size0	ok
+delta/delta332_column_mapping_id `id`	ok
+delta/delta332_column_mapping_id `mp`	ok
+delta/delta332_column_mapping_id `s2`	ok
+delta/delta332_column_mapping_id `s`	ok
+delta/delta332_column_mapping_id `st`	ok
+delta/delta332_column_mapping_id `st`.`a2`	ok
+delta/delta332_column_mapping_id content	8	ok
+delta/delta332_column_mapping_id content version 0 CREATE TABLE	0	ok
+delta/delta332_column_mapping_id content version 1 WRITE	5	ok
+delta/delta332_column_mapping_id content version 2 RENAME COLUMN	5	ok
+delta/delta332_column_mapping_id content version 3 RENAME COLUMN	5	ok
+delta/delta332_column_mapping_id content version 4 DROP COLUMNS	5	ok
+delta/delta332_column_mapping_id content version 5 ADD COLUMNS	5	ok
+delta/delta332_column_mapping_id count()	ok
+delta/delta332_column_mapping_id count() version 0 CREATE TABLE	ok
+delta/delta332_column_mapping_id count() version 1 WRITE	ok
+delta/delta332_column_mapping_id count() version 2 RENAME COLUMN	ok
+delta/delta332_column_mapping_id count() version 3 RENAME COLUMN	ok
+delta/delta332_column_mapping_id count() version 4 DROP COLUMNS	ok
+delta/delta332_column_mapping_id count() version 5 ADD COLUMNS	ok
+delta/delta332_column_mapping_id types	Nullable(Int64), Nullable(String), Tuple(a2 Nullable(Int32)), Array(Tuple(c Nullable(Int32))), Map(String, Tuple(e Nullable(Int32))), Nullable(Int8)
+delta/delta332_deletion_vectors WHERE `id` < 10	ok
+delta/delta332_deletion_vectors WHERE `id` = 7	ok
+delta/delta332_deletion_vectors WHERE `id` >= 25	ok
+delta/delta332_deletion_vectors WHERE `p` = 2	ok
+delta/delta332_deletion_vectors `id`	ok
+delta/delta332_deletion_vectors `p`	ok
+delta/delta332_deletion_vectors `s`	ok
+delta/delta332_deletion_vectors content	112	ok
+delta/delta332_deletion_vectors content version 0 CREATE TABLE	0	ok
+delta/delta332_deletion_vectors content version 1 WRITE	100	ok
+delta/delta332_deletion_vectors content version 2 DELETE	90	ok
+delta/delta332_deletion_vectors content version 3 DELETE	81	ok
+delta/delta332_deletion_vectors content version 4 WRITE	131	ok
+delta/delta332_deletion_vectors content version 5 DELETE	112	ok
+delta/delta332_deletion_vectors count()	ok
+delta/delta332_deletion_vectors count() version 0 CREATE TABLE	ok
+delta/delta332_deletion_vectors count() version 1 WRITE	ok
+delta/delta332_deletion_vectors count() version 2 DELETE	ok
+delta/delta332_deletion_vectors count() version 3 DELETE	ok
+delta/delta332_deletion_vectors count() version 4 WRITE	ok
+delta/delta332_deletion_vectors count() version 5 DELETE	ok
+delta/delta332_deletion_vectors types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/delta332_multi_part_checkpoint WHERE `id` < 10	ok
+delta/delta332_multi_part_checkpoint WHERE `id` = 7	ok
+delta/delta332_multi_part_checkpoint WHERE `id` >= 25	ok
+delta/delta332_multi_part_checkpoint WHERE `p` = 2	ok
+delta/delta332_multi_part_checkpoint `id`	ok
+delta/delta332_multi_part_checkpoint `p`	ok
+delta/delta332_multi_part_checkpoint `s`	ok
+delta/delta332_multi_part_checkpoint content	35	ok
+delta/delta332_multi_part_checkpoint content version 0 CREATE TABLE	0	ok
+delta/delta332_multi_part_checkpoint content version 1 WRITE	10	ok
+delta/delta332_multi_part_checkpoint content version 2 WRITE	20	ok
+delta/delta332_multi_part_checkpoint content version 3 WRITE	30	ok
+delta/delta332_multi_part_checkpoint content version 4 WRITE	40	ok
+delta/delta332_multi_part_checkpoint content version 5 WRITE	50	ok
+delta/delta332_multi_part_checkpoint count()	ok
+delta/delta332_multi_part_checkpoint count() version 0 CREATE TABLE	ok
+delta/delta332_multi_part_checkpoint count() version 1 WRITE	ok
+delta/delta332_multi_part_checkpoint count() version 2 WRITE	ok
+delta/delta332_multi_part_checkpoint count() version 3 WRITE	ok
+delta/delta332_multi_part_checkpoint count() version 4 WRITE	ok
+delta/delta332_multi_part_checkpoint count() version 5 WRITE	ok
+delta/delta332_multi_part_checkpoint types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/delta332_partitioned WHERE `id` < 10	ok
+delta/delta332_partitioned WHERE `id` = 7	ok
+delta/delta332_partitioned WHERE `id` >= 25	ok
+delta/delta332_partitioned `id`	ok
+delta/delta332_partitioned `p_bool`	ok
+delta/delta332_partitioned `p_date`	ok
+delta/delta332_partitioned `p_dec`	ok
+delta/delta332_partitioned `p_int`	ok
+delta/delta332_partitioned `p_str`	ok
+delta/delta332_partitioned `p_ts_ntz`	ok
+delta/delta332_partitioned `s`	ok
+delta/delta332_partitioned content	30	ok
+delta/delta332_partitioned content version 0 CREATE TABLE	0	ok
+delta/delta332_partitioned count()	ok
+delta/delta332_partitioned count() version 0 CREATE TABLE	ok
+delta/delta332_partitioned types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(String), Nullable(Date32), Nullable(DateTime64(6)), Nullable(Bool), Nullable(Decimal(9, 3))
+delta/delta332_schema_evolution WHERE `id` < 10	ok
+delta/delta332_schema_evolution WHERE `id` = 7	ok
+delta/delta332_schema_evolution WHERE `id` >= 25	ok
+delta/delta332_schema_evolution `id`	ok
+delta/delta332_schema_evolution `n`	ok
+delta/delta332_schema_evolution `s`	ok
+delta/delta332_schema_evolution `st`	ok
+delta/delta332_schema_evolution `st`.`x`	ok
+delta/delta332_schema_evolution `st`.`y`	ok
+delta/delta332_schema_evolution content	3	ok
+delta/delta332_schema_evolution content version 0 CREATE TABLE	0	ok
+delta/delta332_schema_evolution content version 1 WRITE	5	ok
+delta/delta332_schema_evolution content version 2 ADD COLUMNS	5	ok
+delta/delta332_schema_evolution content version 3 WRITE	10	ok
+delta/delta332_schema_evolution content version 4 ADD COLUMNS	10	ok
+delta/delta332_schema_evolution content version 5 CHANGE COLUMN	10	ok
+delta/delta332_schema_evolution content version 6 WRITE	12	ok
+delta/delta332_schema_evolution count()	ok
+delta/delta332_schema_evolution count() version 0 CREATE TABLE	ok
+delta/delta332_schema_evolution count() version 1 WRITE	ok
+delta/delta332_schema_evolution count() version 2 ADD COLUMNS	ok
+delta/delta332_schema_evolution count() version 3 WRITE	ok
+delta/delta332_schema_evolution count() version 4 ADD COLUMNS	ok
+delta/delta332_schema_evolution count() version 5 CHANGE COLUMN	ok
+delta/delta332_schema_evolution count() version 6 WRITE	ok
+delta/delta332_schema_evolution types	Nullable(Int32), Nullable(Int64), Nullable(String), Tuple(x Nullable(Int32), y Nullable(String))
+delta/delta332_v2_checkpoint_parquet WHERE `id` < 10	ok
+delta/delta332_v2_checkpoint_parquet WHERE `id` = 7	ok
+delta/delta332_v2_checkpoint_parquet WHERE `id` >= 25	ok
+delta/delta332_v2_checkpoint_parquet WHERE `p` = 2	ok
+delta/delta332_v2_checkpoint_parquet `id`	ok
+delta/delta332_v2_checkpoint_parquet `p`	ok
+delta/delta332_v2_checkpoint_parquet `s`	ok
+delta/delta332_v2_checkpoint_parquet content	49	ok
+delta/delta332_v2_checkpoint_parquet content version 0 CREATE TABLE	0	ok
+delta/delta332_v2_checkpoint_parquet content version 1 WRITE	10	ok
+delta/delta332_v2_checkpoint_parquet content version 2 WRITE	20	ok
+delta/delta332_v2_checkpoint_parquet content version 3 WRITE	30	ok
+delta/delta332_v2_checkpoint_parquet content version 4 WRITE	40	ok
+delta/delta332_v2_checkpoint_parquet content version 5 WRITE	50	ok
+delta/delta332_v2_checkpoint_parquet count()	ok
+delta/delta332_v2_checkpoint_parquet count() version 0 CREATE TABLE	ok
+delta/delta332_v2_checkpoint_parquet count() version 1 WRITE	ok
+delta/delta332_v2_checkpoint_parquet count() version 2 WRITE	ok
+delta/delta332_v2_checkpoint_parquet count() version 3 WRITE	ok
+delta/delta332_v2_checkpoint_parquet count() version 4 WRITE	ok
+delta/delta332_v2_checkpoint_parquet count() version 5 WRITE	ok
+delta/delta332_v2_checkpoint_parquet types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/iceberg_compat_v2 WHERE `id` < 10	ok
+delta/iceberg_compat_v2 WHERE `id` = 7	ok
+delta/iceberg_compat_v2 WHERE `id` >= 25	ok
+delta/iceberg_compat_v2 `arr`	ok
+delta/iceberg_compat_v2 `arr`.`x`	ok
+delta/iceberg_compat_v2 `arr`.size0	ok
+delta/iceberg_compat_v2 `id`	ok
+delta/iceberg_compat_v2 `mp`	ok
+delta/iceberg_compat_v2 `s`	ok
+delta/iceberg_compat_v2 content	3	ok
+delta/iceberg_compat_v2 content version 0 CREATE TABLE	0	ok
+delta/iceberg_compat_v2 content version 1 WRITE	2	ok
+delta/iceberg_compat_v2 count()	ok
+delta/iceberg_compat_v2 count() version 0 CREATE TABLE	ok
+delta/iceberg_compat_v2 count() version 1 WRITE	ok
+delta/iceberg_compat_v2 types	Nullable(Int64), Nullable(String), Map(String, Nullable(Int32)), Array(Tuple(x Nullable(Int32)))
+delta/liquid_clustering WHERE `id` < 10	ok
+delta/liquid_clustering WHERE `id` = 7	ok
+delta/liquid_clustering WHERE `id` >= 25	ok
+delta/liquid_clustering WHERE `p` = 2	ok
+delta/liquid_clustering `id`	ok
+delta/liquid_clustering `p`	ok
+delta/liquid_clustering `s`	ok
+delta/liquid_clustering content	35	ok
+delta/liquid_clustering content version 0 CREATE TABLE	0	ok
+delta/liquid_clustering content version 1 WRITE	10	ok
+delta/liquid_clustering content version 2 WRITE	20	ok
+delta/liquid_clustering content version 3 WRITE	30	ok
+delta/liquid_clustering content version 4 OPTIMIZE	30	ok
+delta/liquid_clustering content version 5 CLUSTER BY	30	ok
+delta/liquid_clustering count()	ok
+delta/liquid_clustering count() version 0 CREATE TABLE	ok
+delta/liquid_clustering count() version 1 WRITE	ok
+delta/liquid_clustering count() version 2 WRITE	ok
+delta/liquid_clustering count() version 3 WRITE	ok
+delta/liquid_clustering count() version 4 OPTIMIZE	ok
+delta/liquid_clustering count() version 5 CLUSTER BY	ok
+delta/liquid_clustering types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/merge WHERE `id` < 10	ok
+delta/merge WHERE `id` = 7	ok
+delta/merge WHERE `id` >= 25	ok
+delta/merge WHERE `p` = 2	ok
+delta/merge `id`	ok
+delta/merge `p`	ok
+delta/merge `s`	ok
+delta/merge content	35	ok
+delta/merge content version 0 CREATE TABLE	0	ok
+delta/merge content version 1 WRITE	30	ok
+delta/merge count()	ok
+delta/merge count() version 0 CREATE TABLE	ok
+delta/merge count() version 1 WRITE	ok
+delta/merge types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/multi_part_checkpoint WHERE `id` < 10	ok
+delta/multi_part_checkpoint WHERE `id` = 7	ok
+delta/multi_part_checkpoint WHERE `id` >= 25	ok
+delta/multi_part_checkpoint WHERE `p` = 2	ok
+delta/multi_part_checkpoint `id`	ok
+delta/multi_part_checkpoint `p`	ok
+delta/multi_part_checkpoint `s`	ok
+delta/multi_part_checkpoint content	35	ok
+delta/multi_part_checkpoint content version 0 CREATE TABLE	0	ok
+delta/multi_part_checkpoint content version 1 WRITE	10	ok
+delta/multi_part_checkpoint content version 2 WRITE	20	ok
+delta/multi_part_checkpoint content version 3 WRITE	30	ok
+delta/multi_part_checkpoint content version 4 WRITE	40	ok
+delta/multi_part_checkpoint content version 5 WRITE	50	ok
+delta/multi_part_checkpoint count()	ok
+delta/multi_part_checkpoint count() version 0 CREATE TABLE	ok
+delta/multi_part_checkpoint count() version 1 WRITE	ok
+delta/multi_part_checkpoint count() version 2 WRITE	ok
+delta/multi_part_checkpoint count() version 3 WRITE	ok
+delta/multi_part_checkpoint count() version 4 WRITE	ok
+delta/multi_part_checkpoint count() version 5 WRITE	ok
+delta/multi_part_checkpoint types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/partitioned WHERE `id` < 10	ok
+delta/partitioned WHERE `id` = 7	ok
+delta/partitioned WHERE `id` >= 25	ok
+delta/partitioned `id`	ok
+delta/partitioned `p_bool`	ok
+delta/partitioned `p_date`	ok
+delta/partitioned `p_dec`	ok
+delta/partitioned `p_int`	ok
+delta/partitioned `p_str`	ok
+delta/partitioned `p_ts_ntz`	ok
+delta/partitioned `s`	ok
+delta/partitioned content	30	ok
+delta/partitioned content version 0 CREATE TABLE	0	ok
+delta/partitioned count()	ok
+delta/partitioned count() version 0 CREATE TABLE	ok
+delta/partitioned types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(String), Nullable(Date32), Nullable(DateTime64(6)), Nullable(Bool), Nullable(Decimal(9, 3))
+delta/restore WHERE `id` < 10	ok
+delta/restore WHERE `id` = 7	ok
+delta/restore WHERE `id` >= 25	ok
+delta/restore WHERE `p` = 2	ok
+delta/restore `id`	ok
+delta/restore `p`	ok
+delta/restore `s`	ok
+delta/restore content	12	ok
+delta/restore content version 0 CREATE TABLE	0	ok
+delta/restore content version 1 WRITE	10	ok
+delta/restore content version 2 DELETE	5	ok
+delta/restore content version 3 WRITE	10	ok
+delta/restore content version 4 RESTORE	10	ok
+delta/restore count()	ok
+delta/restore count() version 0 CREATE TABLE	ok
+delta/restore count() version 1 WRITE	ok
+delta/restore count() version 2 DELETE	ok
+delta/restore count() version 3 WRITE	ok
+delta/restore count() version 4 RESTORE	ok
+delta/restore types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/row_tracking_in_commit_timestamps WHERE `id` < 10	ok
+delta/row_tracking_in_commit_timestamps WHERE `id` = 7	ok
+delta/row_tracking_in_commit_timestamps WHERE `id` >= 25	ok
+delta/row_tracking_in_commit_timestamps WHERE `p` = 2	ok
+delta/row_tracking_in_commit_timestamps `id`	ok
+delta/row_tracking_in_commit_timestamps `p`	ok
+delta/row_tracking_in_commit_timestamps `s`	ok
+delta/row_tracking_in_commit_timestamps content	20	ok
+delta/row_tracking_in_commit_timestamps content version 0 CREATE TABLE	0	ok
+delta/row_tracking_in_commit_timestamps content version 1 WRITE	10	ok
+delta/row_tracking_in_commit_timestamps content version 2 WRITE	20	ok
+delta/row_tracking_in_commit_timestamps content version 3 UPDATE	20	ok
+delta/row_tracking_in_commit_timestamps count()	ok
+delta/row_tracking_in_commit_timestamps count() version 0 CREATE TABLE	ok
+delta/row_tracking_in_commit_timestamps count() version 1 WRITE	ok
+delta/row_tracking_in_commit_timestamps count() version 2 WRITE	ok
+delta/row_tracking_in_commit_timestamps count() version 3 UPDATE	ok
+delta/row_tracking_in_commit_timestamps types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/rs_all_types WHERE `id` < 10	ok
+delta/rs_all_types WHERE `id` = 7	ok
+delta/rs_all_types WHERE `id` >= 25	ok
+delta/rs_all_types `arr`	ok
+delta/rs_all_types `arr`.size0	ok
+delta/rs_all_types `b`	ok
+delta/rs_all_types `bin`	ok
+delta/rs_all_types `by`	ok
+delta/rs_all_types `d`	ok
+delta/rs_all_types `dec`	ok
+delta/rs_all_types `dt`	ok
+delta/rs_all_types `f`	ok
+delta/rs_all_types `i`	ok
+delta/rs_all_types `id`	ok
+delta/rs_all_types `mp`	ok
+delta/rs_all_types `s`	ok
+delta/rs_all_types `sh`	ok
+delta/rs_all_types `st`	ok
+delta/rs_all_types `st`.`x`	ok
+delta/rs_all_types `st`.`y`	ok
+delta/rs_all_types `ts_ntz`	ok
+delta/rs_all_types `ts`	ok
+delta/rs_all_types content	35	ok
+delta/rs_all_types content version 0 WRITE	20	ok
+delta/rs_all_types count()	ok
+delta/rs_all_types count() version 0 WRITE	ok
+delta/rs_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Int16), Nullable(Int8), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6)), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+delta/rs_append_overwrite WHERE `id` < 10	ok
+delta/rs_append_overwrite WHERE `id` = 7	ok
+delta/rs_append_overwrite WHERE `id` >= 25	ok
+delta/rs_append_overwrite WHERE `p` = 2	ok
+delta/rs_append_overwrite `id`	ok
+delta/rs_append_overwrite `p`	ok
+delta/rs_append_overwrite `s`	ok
+delta/rs_append_overwrite content	8	ok
+delta/rs_append_overwrite content version 0 WRITE	10	ok
+delta/rs_append_overwrite content version 1 WRITE	20	ok
+delta/rs_append_overwrite content version 2 WRITE	5	ok
+delta/rs_append_overwrite count()	ok
+delta/rs_append_overwrite count() version 0 WRITE	ok
+delta/rs_append_overwrite count() version 1 WRITE	ok
+delta/rs_append_overwrite count() version 2 WRITE	ok
+delta/rs_append_overwrite types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/rs_checkpoint_optimize WHERE `id` < 10	ok
+delta/rs_checkpoint_optimize WHERE `id` = 7	ok
+delta/rs_checkpoint_optimize WHERE `id` >= 25	ok
+delta/rs_checkpoint_optimize WHERE `p` = 2	ok
+delta/rs_checkpoint_optimize `id`	ok
+delta/rs_checkpoint_optimize `p`	ok
+delta/rs_checkpoint_optimize `s`	ok
+delta/rs_checkpoint_optimize content	57	ok
+delta/rs_checkpoint_optimize content version 0 WRITE	10	ok
+delta/rs_checkpoint_optimize content version 1 WRITE	20	ok
+delta/rs_checkpoint_optimize content version 2 WRITE	30	ok
+delta/rs_checkpoint_optimize content version 3 WRITE	40	ok
+delta/rs_checkpoint_optimize content version 4 WRITE	50	ok
+delta/rs_checkpoint_optimize content version 5 WRITE	60	ok
+delta/rs_checkpoint_optimize content version 6 OPTIMIZE	60	ok
+delta/rs_checkpoint_optimize content version 7 DELETE	55	ok
+delta/rs_checkpoint_optimize count()	ok
+delta/rs_checkpoint_optimize count() version 0 WRITE	ok
+delta/rs_checkpoint_optimize count() version 1 WRITE	ok
+delta/rs_checkpoint_optimize count() version 2 WRITE	ok
+delta/rs_checkpoint_optimize count() version 3 WRITE	ok
+delta/rs_checkpoint_optimize count() version 4 WRITE	ok
+delta/rs_checkpoint_optimize count() version 5 WRITE	ok
+delta/rs_checkpoint_optimize count() version 6 OPTIMIZE	ok
+delta/rs_checkpoint_optimize count() version 7 DELETE	ok
+delta/rs_checkpoint_optimize types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/rs_delete_update_merge WHERE `id` < 10	ok
+delta/rs_delete_update_merge WHERE `id` = 7	ok
+delta/rs_delete_update_merge WHERE `id` >= 25	ok
+delta/rs_delete_update_merge WHERE `p` = 2	ok
+delta/rs_delete_update_merge `id`	ok
+delta/rs_delete_update_merge `p`	ok
+delta/rs_delete_update_merge `s`	ok
+delta/rs_delete_update_merge content	31	ok
+delta/rs_delete_update_merge content version 0 WRITE	30	ok
+delta/rs_delete_update_merge content version 1 DELETE	20	ok
+delta/rs_delete_update_merge content version 2 UPDATE	20	ok
+delta/rs_delete_update_merge count()	ok
+delta/rs_delete_update_merge count() version 0 WRITE	ok
+delta/rs_delete_update_merge count() version 1 DELETE	ok
+delta/rs_delete_update_merge count() version 2 UPDATE	ok
+delta/rs_delete_update_merge types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/rs_partitioned WHERE `id` < 10	ok
+delta/rs_partitioned WHERE `id` = 7	ok
+delta/rs_partitioned WHERE `id` >= 25	ok
+delta/rs_partitioned WHERE `p` = 2	ok
+delta/rs_partitioned `id`	ok
+delta/rs_partitioned `p2`	ok
+delta/rs_partitioned `p`	ok
+delta/rs_partitioned `s`	ok
+delta/rs_partitioned content	22	ok
+delta/rs_partitioned content version 0 WRITE	24	ok
+delta/rs_partitioned content version 1 DELETE	18	ok
+delta/rs_partitioned count()	ok
+delta/rs_partitioned count() version 0 WRITE	ok
+delta/rs_partitioned count() version 1 DELETE	ok
+delta/rs_partitioned types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(String)
+delta/rs_schema_merge WHERE `id` < 10	ok
+delta/rs_schema_merge WHERE `id` = 7	ok
+delta/rs_schema_merge WHERE `id` >= 25	ok
+delta/rs_schema_merge WHERE `p` = 2	ok
+delta/rs_schema_merge `extra`	ok
+delta/rs_schema_merge `id`	ok
+delta/rs_schema_merge `p`	ok
+delta/rs_schema_merge `s`	ok
+delta/rs_schema_merge content	12	ok
+delta/rs_schema_merge content version 0 WRITE	5	ok
+delta/rs_schema_merge content version 1 WRITE	10	ok
+delta/rs_schema_merge count()	ok
+delta/rs_schema_merge count() version 0 WRITE	ok
+delta/rs_schema_merge count() version 1 WRITE	ok
+delta/rs_schema_merge types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(String)
+delta/schema_evolution WHERE `id` < 10	ok
+delta/schema_evolution WHERE `id` = 7	ok
+delta/schema_evolution WHERE `id` >= 25	ok
+delta/schema_evolution `id`	ok
+delta/schema_evolution `n`	ok
+delta/schema_evolution `s`	ok
+delta/schema_evolution `st`	ok
+delta/schema_evolution `st`.`x`	ok
+delta/schema_evolution `st`.`y`	ok
+delta/schema_evolution content	3	ok
+delta/schema_evolution content version 0 CREATE TABLE	0	ok
+delta/schema_evolution content version 1 WRITE	5	ok
+delta/schema_evolution content version 2 ADD COLUMNS	5	ok
+delta/schema_evolution content version 3 WRITE	10	ok
+delta/schema_evolution content version 4 ADD COLUMNS	10	ok
+delta/schema_evolution content version 5 CHANGE COLUMN	10	ok
+delta/schema_evolution content version 6 WRITE	12	ok
+delta/schema_evolution count()	ok
+delta/schema_evolution count() version 0 CREATE TABLE	ok
+delta/schema_evolution count() version 1 WRITE	ok
+delta/schema_evolution count() version 2 ADD COLUMNS	ok
+delta/schema_evolution count() version 3 WRITE	ok
+delta/schema_evolution count() version 4 ADD COLUMNS	ok
+delta/schema_evolution count() version 5 CHANGE COLUMN	ok
+delta/schema_evolution count() version 6 WRITE	ok
+delta/schema_evolution types	Nullable(Int32), Nullable(Int64), Nullable(String), Tuple(x Nullable(Int32), y Nullable(String))
+delta/type_widening WHERE `id` < 10	ok
+delta/type_widening WHERE `id` = 7	ok
+delta/type_widening WHERE `id` >= 25	ok
+delta/type_widening `by`	ok
+delta/type_widening `dec`	ok
+delta/type_widening `dt`	ok
+delta/type_widening `f`	ok
+delta/type_widening `i`	ok
+delta/type_widening `id`	ok
+delta/type_widening `sh`	ok
+delta/type_widening content	4	ok
+delta/type_widening content version 0 CREATE TABLE	0	ok
+delta/type_widening content version 1 WRITE	3	ok
+delta/type_widening content version 2 CHANGE COLUMN	3	ok
+delta/type_widening content version 3 CHANGE COLUMN	3	ok
+delta/type_widening content version 4 CHANGE COLUMN	3	ok
+delta/type_widening content version 5 CHANGE COLUMN	3	ok
+delta/type_widening content version 6 CHANGE COLUMN	3	ok
+delta/type_widening content version 7 CHANGE COLUMN	3	ok
+delta/type_widening count()	ok
+delta/type_widening count() version 0 CREATE TABLE	ok
+delta/type_widening count() version 1 WRITE	ok
+delta/type_widening count() version 2 CHANGE COLUMN	ok
+delta/type_widening count() version 3 CHANGE COLUMN	ok
+delta/type_widening count() version 4 CHANGE COLUMN	ok
+delta/type_widening count() version 5 CHANGE COLUMN	ok
+delta/type_widening count() version 6 CHANGE COLUMN	ok
+delta/type_widening count() version 7 CHANGE COLUMN	ok
+delta/type_widening types	Nullable(Int32), Nullable(Int16), Nullable(Int32), Nullable(Int64), Nullable(Float64), Nullable(Decimal(12, 4)), Nullable(DateTime64(6))
+delta/type_widening_nested WHERE `id` < 10	ok
+delta/type_widening_nested WHERE `id` = 7	ok
+delta/type_widening_nested WHERE `id` >= 25	ok
+delta/type_widening_nested WHERE `p` = 2	ok
+delta/type_widening_nested `arr`	ok
+delta/type_widening_nested `arr`.size0	UNKNOWN_IDENTIFIER
+delta/type_widening_nested `id`	ok
+delta/type_widening_nested `mp`	ok
+delta/type_widening_nested `p`	ok
+delta/type_widening_nested `st`	ok
+delta/type_widening_nested `st`.`a`	UNKNOWN_IDENTIFIER
+delta/type_widening_nested `st`.`b`	UNKNOWN_IDENTIFIER
+delta/type_widening_nested content	2	ok
+delta/type_widening_nested content version 0 CREATE TABLE	0	ok
+delta/type_widening_nested content version 1 WRITE	1	ok
+delta/type_widening_nested content version 2 CHANGE COLUMN	1	ok
+delta/type_widening_nested content version 3 CHANGE COLUMN	1	ok
+delta/type_widening_nested content version 4 CHANGE COLUMN	1	ok
+delta/type_widening_nested content version 5 CHANGE COLUMN	1	ok
+delta/type_widening_nested content version 6 CHANGE COLUMN	1	ok
+delta/type_widening_nested content version 7 CHANGE COLUMN	1	ok
+delta/type_widening_nested count()	ok
+delta/type_widening_nested count() version 0 CREATE TABLE	ok
+delta/type_widening_nested count() version 1 WRITE	ok
+delta/type_widening_nested count() version 2 CHANGE COLUMN	ok
+delta/type_widening_nested count() version 3 CHANGE COLUMN	ok
+delta/type_widening_nested count() version 4 CHANGE COLUMN	ok
+delta/type_widening_nested count() version 5 CHANGE COLUMN	ok
+delta/type_widening_nested count() version 6 CHANGE COLUMN	ok
+delta/type_widening_nested count() version 7 CHANGE COLUMN	ok
+delta/type_widening_nested types	Nullable(Int32), Tuple(a Nullable(Int32), b Nullable(Float64)), Array(Nullable(Int64)), Map(Int64, Nullable(Decimal(10, 3))), Nullable(Int32)
+delta/v2_checkpoint_json WHERE `id` < 10	ok
+delta/v2_checkpoint_json WHERE `id` = 7	ok
+delta/v2_checkpoint_json WHERE `id` >= 25	ok
+delta/v2_checkpoint_json WHERE `p` = 2	ok
+delta/v2_checkpoint_json `id`	ok
+delta/v2_checkpoint_json `p`	ok
+delta/v2_checkpoint_json `s`	ok
+delta/v2_checkpoint_json content	49	ok
+delta/v2_checkpoint_json content version 0 CREATE TABLE	0	ok
+delta/v2_checkpoint_json content version 1 WRITE	10	ok
+delta/v2_checkpoint_json content version 2 WRITE	20	ok
+delta/v2_checkpoint_json content version 3 WRITE	30	ok
+delta/v2_checkpoint_json content version 4 WRITE	40	ok
+delta/v2_checkpoint_json content version 5 WRITE	50	ok
+delta/v2_checkpoint_json count()	ok
+delta/v2_checkpoint_json count() version 0 CREATE TABLE	ok
+delta/v2_checkpoint_json count() version 1 WRITE	ok
+delta/v2_checkpoint_json count() version 2 WRITE	ok
+delta/v2_checkpoint_json count() version 3 WRITE	ok
+delta/v2_checkpoint_json count() version 4 WRITE	ok
+delta/v2_checkpoint_json count() version 5 WRITE	ok
+delta/v2_checkpoint_json types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/v2_checkpoint_parquet WHERE `id` < 10	ok
+delta/v2_checkpoint_parquet WHERE `id` = 7	ok
+delta/v2_checkpoint_parquet WHERE `id` >= 25	ok
+delta/v2_checkpoint_parquet WHERE `p` = 2	ok
+delta/v2_checkpoint_parquet `id`	ok
+delta/v2_checkpoint_parquet `p`	ok
+delta/v2_checkpoint_parquet `s`	ok
+delta/v2_checkpoint_parquet content	49	ok
+delta/v2_checkpoint_parquet content version 0 CREATE TABLE	0	ok
+delta/v2_checkpoint_parquet content version 1 WRITE	10	ok
+delta/v2_checkpoint_parquet content version 2 WRITE	20	ok
+delta/v2_checkpoint_parquet content version 3 WRITE	30	ok
+delta/v2_checkpoint_parquet content version 4 WRITE	40	ok
+delta/v2_checkpoint_parquet content version 5 WRITE	50	ok
+delta/v2_checkpoint_parquet count()	ok
+delta/v2_checkpoint_parquet count() version 0 CREATE TABLE	ok
+delta/v2_checkpoint_parquet count() version 1 WRITE	ok
+delta/v2_checkpoint_parquet count() version 2 WRITE	ok
+delta/v2_checkpoint_parquet count() version 3 WRITE	ok
+delta/v2_checkpoint_parquet count() version 4 WRITE	ok
+delta/v2_checkpoint_parquet count() version 5 WRITE	ok
+delta/v2_checkpoint_parquet types	Nullable(Int64), Nullable(String), Nullable(Int32)
+delta/variant known issue the VARIANT type is not supported	NOT_IMPLEMENTED
+delta/writer_features WHERE `id` < 10	ok
+delta/writer_features WHERE `id` = 7	ok
+delta/writer_features WHERE `id` >= 25	ok
+delta/writer_features `d`	ok
+delta/writer_features `id`	ok
+delta/writer_features `s_len`	ok
+delta/writer_features `s`	ok
+delta/writer_features content	4	ok
+delta/writer_features content version 0 CREATE TABLE	0	ok
+delta/writer_features content version 1 ADD CONSTRAINT	0	ok
+delta/writer_features content version 2 WRITE	3	ok
+delta/writer_features count()	ok
+delta/writer_features count() version 0 CREATE TABLE	ok
+delta/writer_features count() version 1 ADD CONSTRAINT	ok
+delta/writer_features count() version 2 WRITE	ok
+delta/writer_features types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(String)

@@ -653,7 +653,11 @@ ExpireSnapshotsResult expireSnapshots(
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
         auto log = getLogger("IcebergExpireSnapshots");
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
@@ -667,17 +671,17 @@ ExpireSnapshotsResult expireSnapshots(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        filename_generator.setVersion(last_version + 1);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(
+        auto metadata = deepCopy(getMetadataJSONObject(
             metadata_path,
             object_storage,
             persistent_table_components.metadata_cache,
             context,
             log,
             compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.table_uuid));
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");

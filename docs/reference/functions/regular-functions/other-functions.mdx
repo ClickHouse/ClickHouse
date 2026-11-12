@@ -4294,7 +4294,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -6407,11 +6407,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
-- `uniqThetaSketch` — uniqThetaSketch object. [`Tuple`](/reference/data-types/tuple) or [`Array`](/reference/data-types/array) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`String`](/reference/data-types/string) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `uniqThetaSketch` — uniqThetaSketch object. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction)
 
 **Returned value**
 
-A new uniqThetaSketch containing the intersect result. [`UInt64`](/reference/data-types/int-uint)
+A new uniqThetaSketch containing the intersect result. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction)
 
 **Examples**
 
@@ -6444,11 +6444,11 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
-- `uniqThetaSketch` — uniqThetaSketch object. [`Tuple`](/reference/data-types/tuple) or [`Array`](/reference/data-types/array) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`String`](/reference/data-types/string) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `uniqThetaSketch` — uniqThetaSketch object. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction)
 
 **Returned value**
 
-Returns a new uniqThetaSketch containing the a_not_b result. [`UInt64`](/reference/data-types/int-uint)
+Returns a new uniqThetaSketch containing the a_not_b result. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction)
 
 **Examples**
 
@@ -6481,11 +6481,11 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
-- `uniqThetaSketch` — uniqThetaSketch object. [`Tuple`](/reference/data-types/tuple) or [`Array`](/reference/data-types/array) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`String`](/reference/data-types/string) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `uniqThetaSketch` — uniqThetaSketch object. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction)
 
 **Returned value**
 
-Returns a new uniqThetaSketch containing the union result. [`UInt64`](/reference/data-types/int-uint)
+Returns a new uniqThetaSketch containing the union result. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction)
 
 **Examples**
 

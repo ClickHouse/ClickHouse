@@ -1,3 +1,8 @@
 [libfuzzer]
 timeout = 20
 use_value_profile = 1
+
+[asan]
+# Every distinct allocation and free stack is kept for the whole run, and this target keeps producing new ones;
+# packing them keeps a 5 hour run under the default RSS limit.
+compress_stack_depot = 2

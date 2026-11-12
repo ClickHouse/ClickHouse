@@ -39,6 +39,8 @@ private:
 
     void nextImpl() override;
 
+    void finalizeImpl() override;
+
     /// Flush all pending data and write zstd footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
@@ -52,6 +54,7 @@ private:
     ZSTD_outBuffer output{};
 
     size_t total_out = 0;
+    bool frame_started = false;
     bool compress_empty = true;
 };
 

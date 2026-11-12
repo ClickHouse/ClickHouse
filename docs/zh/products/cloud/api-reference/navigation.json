@@ -10,6 +10,8 @@
           "PATCH /v1/organizations/{organizationId}",
           "products/cloud/api-reference/organization/organization-quotas-get-list",
           "products/cloud/api-reference/organization/organization-quota-get",
+          "products/cloud/api-reference/organization/organization-public-previews-get-list",
+          "products/cloud/api-reference/organization/organization-public-preview-patch",
           "GET /v1/organizations/{organizationId}/activities",
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
@@ -20,14 +22,18 @@
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-customer-authorized-access-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-customer-authorized-access-update"
         ]
       },
       {
         "group": "通知",
         "pages": [
           "products/cloud/api-reference/notifications/notification-get-list",
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "products/cloud/api-reference/notifications/notification-types-get-list",
+          "products/cloud/api-reference/notifications/member-notification-settings-get-list",
+          "products/cloud/api-reference/notifications/member-notification-settings-update"
         ]
       },
       {
@@ -108,6 +114,11 @@
           "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+          "products/cloud/api-reference/service/jwt-provider-get-list",
+          "products/cloud/api-reference/service/jwt-provider-create",
+          "products/cloud/api-reference/service/jwt-provider-get",
+          "products/cloud/api-reference/service/jwt-provider-update",
+          "products/cloud/api-reference/service/jwt-provider-delete",
           "products/cloud/api-reference/service/service-clickhouse-settings-list-get",
           "products/cloud/api-reference/service/service-clickhouse-settings-update",
           "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
@@ -225,6 +236,7 @@
       "products/cloud/api-reference/clickstack/click-stack-delete-alert",
       "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-validate-webhook",
       "products/cloud/api-reference/clickstack/click-stack-update-webhook",
       "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
       "products/cloud/api-reference/clickstack/click-stack-list-roles",

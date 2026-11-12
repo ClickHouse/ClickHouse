@@ -23,7 +23,6 @@ namespace
 const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
-constexpr auto LOCKS_REFRESH_POLLS = 15;
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
@@ -75,9 +74,11 @@ const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::c
     return kafka_consumer.currentHeaderList();
 }
 
-KeeperHandlingConsumer::OffsetGuard::OffsetGuard(KeeperHandlingConsumer & consumer_, const int64_t new_offset_)
+KeeperHandlingConsumer::OffsetGuard::OffsetGuard(
+    KeeperHandlingConsumer & consumer_, const int64_t new_offset_, const bool replays_existing_intent_)
     : consumer(&consumer_)
     , new_offset(new_offset_)
+    , replays_existing_intent(replays_existing_intent_)
 {
 }
 
@@ -85,6 +86,7 @@ KeeperHandlingConsumer::OffsetGuard::OffsetGuard(OffsetGuard && other) noexcept
     : needs_rollback(other.needs_rollback)
     , consumer(other.consumer)
     , new_offset(other.new_offset)
+    , replays_existing_intent(other.replays_existing_intent)
 {
     if (&other != this)
     {
@@ -104,6 +106,17 @@ void KeeperHandlingConsumer::OffsetGuard::commit()
 {
     chassert(needs_rollback && consumer);
     consumer->saveCommittedOffset(new_offset);
+    needs_rollback = false;
+}
+
+void KeeperHandlingConsumer::OffsetGuard::rollbackBeforeInsert()
+{
+    chassert(needs_rollback && consumer);
+    /// A replayed intent must survive the rollback: the insert of an earlier attempt may have
+    /// committed the rows of the batch, so deduplication still needs the exact replay.
+    if (!replays_existing_intent)
+        consumer->discardIntentSizeNoThrow();
+    consumer->rollbackToCommittedOffsetsNoThrow();
     needs_rollback = false;
 }
 
@@ -152,7 +165,7 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
     poll_count = 0;
 }
 
-std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll()
+std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(UInt64 locks_refresh_polls)
 {
     chassert(isInUse());
     LOG_TRACE(log, "Polling consumer {} for events", idx);
@@ -160,8 +173,16 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     kafka_consumer->pollEvents();
 
     /// If the consumer has some permanent locks and the lock mustn't be refreshed yet, the consumer should be able to poll.
-    if (!assigned_topic_partitions.empty() && poll_count <= LOCKS_REFRESH_POLLS)
+    if (!assigned_topic_partitions.empty() && poll_count <= locks_refresh_polls)
         return std::nullopt;
+
+    if (!assigned_topic_partitions.empty())
+        LOG_DEBUG(
+            log,
+            "Consumer {} refreshing its Keeper locks after {} polls (stream_kafka_locks_refresh_polls = {})",
+            idx,
+            poll_count,
+            locks_refresh_polls);
 
     assigned_topic_partitions.clear();
     // Clear temporary locks to give a chance to lock them as permanent locks and to make it possible to gather available topic partitions only once.
@@ -268,9 +289,27 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
     auto lock_nodes = keeper->getChildren(keeper_path / "topic_partition_locks");
     std::unordered_set<String> replicas_with_lock;
 
+    Strings lock_paths;
+    lock_paths.reserve(lock_nodes.size());
     for (const auto & lock_name : lock_nodes)
+        lock_paths.push_back(keeper_path / "topic_partition_locks" / lock_name);
+
+    /// Locks are released and re-acquired as replicas rebalance. A lock listed by
+    /// getChildren() may already be gone by the time we read it; such a lock is held
+    /// by no one, so skip it instead of failing the whole polling round. Batched tryGet
+    /// also replaces N sequential synchronous gets with a single round-trip.
+    auto lock_responses = keeper->tryGet(lock_paths);
+
+    for (size_t i = 0; i < lock_nodes.size(); ++i)
     {
-        replicas_with_lock.insert(keeper->get(keeper_path / "topic_partition_locks" / lock_name));
+        const auto & lock_response = lock_responses[i];
+        if (lock_response.error == Coordination::Error::ZNONODE)
+            continue;
+        if (lock_response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(lock_response.error, lock_paths[i]);
+        replicas_with_lock.insert(lock_response.data);
+
+        const auto & lock_name = lock_nodes[i];
         auto base = lock_name.substr(0, lock_name.size() - 5); // drop ".lock"
         auto sep = base.rfind('_');
         if (sep == String::npos)
@@ -586,7 +625,10 @@ void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition
     }
 
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    writeTopicPartitionInfoToKeeper(partition_prefix / intent_file_name, toString(intent));
+    Coordination::Requests ops;
+    keeper->checkExistsAndGetCreateAncestorsOps(partition_prefix / intent_file_name, ops);
+    addSetOrCreateRequest(ops, partition_prefix / intent_file_name, toString(intent));
+    executeMultiInKeeper(std::move(ops));
 }
 
 void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
@@ -600,7 +642,19 @@ void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
 
     auto & topic_partition = assigned_topic_partitions[topic_partition_index_to_consume_from];
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    writeTopicPartitionInfoToKeeper(partition_prefix / commit_file_name, toString(new_offset));
+
+    /// Commit the offset and remove the intent atomically. An interruption between the two would
+    /// leave an advanced offset together with the intent of the already committed batch, and the
+    /// next owner of the topic-partition would try to replay a batch that does not start at the
+    /// committed offset. With fewer new messages than the stale intent, every replay would come up
+    /// short and be discarded, blocking the partition until enough new messages arrive.
+    Coordination::Requests ops;
+    keeper->checkExistsAndGetCreateAncestorsOps(partition_prefix / commit_file_name, ops);
+    addSetOrCreateRequest(ops, partition_prefix / commit_file_name, toString(new_offset));
+    if (keeper->exists(partition_prefix / intent_file_name))
+        ops.emplace_back(zkutil::makeRemoveRequest(partition_prefix / intent_file_name, -1));
+    executeMultiInKeeper(std::move(ops));
+
     last_commit_timestamp = timeInSeconds(std::chrono::system_clock::now());
     ++num_commits;
     {
@@ -609,22 +663,50 @@ void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
         lock_info.committed_offset = new_offset;
         lock_info.intent_size.reset();
     }
-    // This is best effort, if it fails we will override it in the next round
-    keeper->tryRemove(partition_prefix / intent_file_name, -1);
     LOG_TEST(
         log, "Saved offset {} for topic-partition [{}:{}]", new_offset, topic_partition.topic, topic_partition.partition_id);
     kafka_consumer->commit(TopicPartitionOffset{{topic_partition}, new_offset});
 }
 
-void KeeperHandlingConsumer::writeTopicPartitionInfoToKeeper(const std::filesystem::path & keeper_path_to_data, const String & data)
+void KeeperHandlingConsumer::discardIntentSizeNoThrow() noexcept
 {
-    Coordination::Requests ops;
-    keeper->checkExistsAndGetCreateAncestorsOps(keeper_path_to_data, ops);
-    if (keeper->exists(keeper_path_to_data))
-        ops.emplace_back(zkutil::makeSetRequest(keeper_path_to_data, data, -1));
-    else
-        ops.emplace_back(zkutil::makeCreateRequest(keeper_path_to_data, data, zkutil::CreateMode::Persistent));
+    /// Callable while an exception or a cancellation is propagating, so it must not throw. The
+    /// removal is best effort: a leftover intent describes messages that were never inserted, so
+    /// replaying it just inserts them, it cannot cause duplicates.
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    try
+    {
+        if (topic_partition_index_to_consume_from >= assigned_topic_partitions.size())
+            return;
 
+        auto & topic_partition = assigned_topic_partitions[topic_partition_index_to_consume_from];
+        {
+            std::lock_guard lock(topic_partition_locks_mutex);
+            getTopicPartitionLockLocked(topic_partition).intent_size.reset();
+        }
+        keeper->tryRemove(getTopicPartitionPath(topic_partition) / intent_file_name, -1);
+        LOG_TEST(
+            log,
+            "Discarded the intent for topic-partition [{}:{}], because the batch was abandoned before the insert started",
+            topic_partition.topic,
+            topic_partition.partition_id);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to discard the intent of an abandoned batch");
+    }
+}
+
+void KeeperHandlingConsumer::addSetOrCreateRequest(Coordination::Requests & ops, const std::filesystem::path & path, const String & data)
+{
+    if (keeper->exists(path))
+        ops.emplace_back(zkutil::makeSetRequest(path, data, -1));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(path, data, zkutil::CreateMode::Persistent));
+}
+
+void KeeperHandlingConsumer::executeMultiInKeeper(Coordination::Requests ops)
+{
     Coordination::Responses responses;
     const auto code = keeper->tryMulti(ops, responses);
     if (code != Coordination::Error::ZOK)
@@ -650,7 +732,7 @@ void KeeperHandlingConsumer::stopUsing()
 
 CppKafkaConsumerPtr KeeperHandlingConsumer::moveConsumer() const
 {
-    chassert(!isInUse() && "KeeperHandlingConsumer cannot destroy consumer when it is in use!");
+    chassert(!isInUse() && "KeeperHandlingConsumer cannot destroy consumer when it is in use");
     return kafka_consumer->moveConsumer();
 }
 
@@ -677,6 +759,15 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             return std::make_pair(lock_info.committed_offset, lock_info.intent_size);
         });
 
+    if (intent_size.has_value())
+        LOG_TRACE(
+            log,
+            "Replaying the previous batch of {} messages for topic-partition [{}:{}] to produce a block identical to the failed "
+            "insert for deduplication",
+            *intent_size,
+            topic_partition.topic,
+            topic_partition.partition_id);
+
     MessageInfo message_info(*kafka_consumer);
     ReadBufferPtr buf;
     uint64_t consumed_messages = 0;
@@ -685,7 +776,11 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
     {
         while (true)
         {
-            buf = kafka_consumer->consume(topic_partition, intent_size);
+            /// When replaying an intent, never consume past it: a batch with different messages would have a different
+            /// hash, and deduplication could not filter out the messages inserted by the previous (failed) attempt.
+            const auto messages_left_in_intent
+                = intent_size.has_value() ? std::optional<uint64_t>(*intent_size - consumed_messages) : std::nullopt;
+            buf = kafka_consumer->consume(topic_partition, messages_left_in_intent);
             last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
             /// The batch is incomplete: `consume` dropped the messages it had pulled, but the Kafka
@@ -708,14 +803,38 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
                 ++consumed_messages;
                 last_read_offset = message_info.currentOffset();
             }
+            /// Each `consume` call returns at most one message and pulls at most `messages_left_in_intent` messages
+            /// into the consumer, so a replay cannot run past the intent.
+            chassert(!intent_size.has_value() || consumed_messages <= *intent_size);
             /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
-            if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
+            const bool sink_requests_stop = message_sink(
+                buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled(), intent_size.has_value());
+            const bool intent_is_fulfilled = intent_size.has_value() && consumed_messages >= *intent_size;
+            if (sink_requests_stop || intent_is_fulfilled)
             {
                 if (consumed_messages == 0)
                     return std::nullopt;
 
+                /// The batch ended short of the intent: the flush timer expired or the polls stalled before all the
+                /// intended messages arrived. Inserting a smaller batch would produce a different block hash, and
+                /// deduplication could not protect against duplicates. Drop the batch and let a later attempt replay
+                /// the intent from the committed offset.
+                if (intent_size.has_value() && consumed_messages < *intent_size)
+                {
+                    LOG_WARNING(
+                        log,
+                        "Replayed only {} messages out of the intended {} for topic-partition [{}:{}]. Discarding the batch, "
+                        "because deduplication cannot handle a block that differs from the failed insert",
+                        consumed_messages,
+                        *intent_size,
+                        topic_partition.topic,
+                        topic_partition.partition_id);
+                    rollbackToCommittedOffsets();
+                    return std::nullopt;
+                }
+
                 saveIntentSize(topic_partition, committed_offset, consumed_messages);
-                return OffsetGuard(*this, last_read_offset + 1);
+                return OffsetGuard(*this, last_read_offset + 1, /* replays_existing_intent = */ intent_size.has_value());
             }
         }
     }

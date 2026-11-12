@@ -51,6 +51,7 @@ class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
+class OneTimePasswordUsageTracker;
 struct Settings;
 
 
@@ -343,6 +344,7 @@ private:
     std::unique_ptr<QuotaCache> quota_cache;
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
+    std::unique_ptr<OneTimePasswordUsageTracker> one_time_password_usage_tracker;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
     std::unique_ptr<PasswordComplexityRules> password_rules;
