@@ -73,15 +73,17 @@ SYSTEM FLUSH LOGS query_log;
 SELECT abr_interval FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05304, query 2 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 
 -- Test 3: the share of an attempt also covers the work after reading. The fine tier reads its rows at once, but its
--- ~200 groups then sleep for about 2 seconds in HAVING, more than its 1.5-second share, so it is retried on the coarse tier.
+-- ~200 groups then sleep for about 6 seconds in HAVING, more than its 5-second share, so it is retried on the coarse tier.
+-- The groups come in blocks of about 10 rows, so the attempt is stopped soon after its share is used up, which leaves
+-- the coarse tier most of the remaining 5 seconds.
 SELECT /* test 05304, query 3 */ max(_sample_interval) FROM
 (
     SELECT _sample_interval, value % 200 AS k FROM abr
     WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 2000 second
     GROUP BY _sample_interval, k
-    HAVING sleepEachRow(0.01) + count() > 0
+    HAVING sleepEachRow(0.03) + count() > 0
 )
-SETTINGS max_execution_time = 3, max_threads = 1, send_logs_level = 'error';
+SETTINGS max_execution_time = 10, max_threads = 1, max_block_size = 10, send_logs_level = 'error';
 
 SYSTEM FLUSH LOGS query_log;
 
