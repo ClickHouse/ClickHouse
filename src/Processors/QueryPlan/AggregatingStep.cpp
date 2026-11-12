@@ -465,11 +465,13 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
 
-    /// The staged streams of most threads of a prior run kept repeating the missed keys (see
-    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again. The verdict
-    /// lives in the hash-table statistics; a run without it takes the ordinary path with the statistics-driven
-    /// initialization, exactly as if the feature were off. A run that may not thaw does not ask: the verdict is the
-    /// thaw's, and a top-K run that shares the statistics of the query without its `LIMIT` gains by its frozen tables.
+    /// The verdict of a prior run found the staged streams repeat-dominated (see
+    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again.
+    /// The verdict lives in the hash-table statistics; a run without it takes the ordinary path with the
+    /// statistics-driven initialization, exactly as if the feature were off. A run that may not thaw does not
+    /// ask: the verdict is the thaw's. A run with the top-K pruning asks for the verdict of its own runs,
+    /// because it keeps its statistics apart from those of the query without its `LIMIT` (see
+    /// `setAggregationHashTableCacheKeys`).
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);

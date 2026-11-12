@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Formats/FormatSettings.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>

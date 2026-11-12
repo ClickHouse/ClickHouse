@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <cstring> // memcpy
 #include <limits>

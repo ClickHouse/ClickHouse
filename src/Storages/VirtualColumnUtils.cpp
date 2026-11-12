@@ -3,9 +3,11 @@
 #include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/NamesAndTypes.h>
 
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
@@ -648,13 +650,8 @@ bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_c
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    while (!nodes.empty())
+    return allReachableNodes({node}, [&](const ActionsDAG::Node * cur)
     {
-        const auto * cur = nodes.top();
-        nodes.pop();
-
         if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
@@ -669,11 +666,8 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
                 return false;
         }
 
-        for (const auto * child : cur->children)
-            nodes.push(child);
-    }
-
-    return true;
+        return true;
+    });
 }
 
 /// Both walks below have to look at more than the `FUNCTION` nodes of this DAG. Constant folding turns a
@@ -683,47 +677,39 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
 
 bool isDeterministic(const ActionsDAG::Node * node)
 {
-    for (const auto * child : node->children)
+    return allReachableNodes({node}, [](const ActionsDAG::Node * cur)
     {
-        if (!isDeterministic(child))
+        /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
+        if (!cur->isDeterministic())
             return false;
-    }
 
-    /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
-    if (!node->isDeterministic())
-        return false;
-
-    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
+        return allNodeFunctions(*cur, [](const IFunctionBase & function) { return function.isDeterministic(); });
+    });
 }
 
 bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
 {
-    for (const auto * child : node->children)
+    /// The children of a `__topKFilter` call are checked like any other node.
+    return allReachableNodes({node}, [](const ActionsDAG::Node * cur)
     {
-        if (!isDeterministicAllowingTopKFilter(child))
+        if (cur->type == ActionsDAG::ActionType::FUNCTION && cur->function_base->getName() == "__topKFilter")
+            return true;
+
+        /// Same checks as `isDeterministic`, including the walk into a constant-folded lambda carrier: only a
+        /// top-level `__topKFilter` call is allowed, never a non-deterministic function hidden in a lambda body.
+        if (!cur->isDeterministic())
             return false;
-    }
 
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter")
-        return true;
-
-    /// Same checks as `isDeterministic`, including the walk into a constant-folded lambda carrier: only a
-    /// top-level `__topKFilter` call is allowed, never a non-deterministic function hidden in a lambda body.
-    if (!node->isDeterministic())
-        return false;
-
-    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
+        return allNodeFunctions(*cur, [](const IFunctionBase & function) { return function.isDeterministic(); });
+    });
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 {
-    for (const auto * child : node->children)
+    return allReachableNodes({node}, [](const ActionsDAG::Node * cur)
     {
-        if (!isDeterministicInScopeOfQuery(child))
-            return false;
-    }
-
-    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+        return allNodeFunctions(*cur, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+    });
 }
 
 /// `splitFilterNodeForAllowedInputs` owns no DAG: it collects new nodes in `additional_nodes`.
@@ -1061,6 +1047,28 @@ std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_
     }
 
     return {std::move(physical_names), std::move(virtual_names)};
+}
+
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, ContextPtr context)
+{
+    return getVirtualsForFileLikeStorage(storage_columns, std::move(context), std::nullopt);
+}
+
+ColumnPtr getFilterByPathAndFileIndexes(
+    const std::vector<String> & paths,
+    const ExpressionActionsPtr & actions,
+    const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
+    const ContextPtr & context)
+{
+    return getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, std::nullopt);
+}
+
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context)
+{
+    addRequestedFileLikeStorageVirtualsToChunk(chunk, requested_virtual_columns, std::move(virtual_values), std::move(context), std::nullopt);
 }
 
 }

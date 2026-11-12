@@ -29,6 +29,7 @@ from ci.jobs.scripts.buildx import (
     with_timeout,
 )
 from ci.jobs.scripts.create_release import (
+    PackageDownloader,
     ReleaseContextManager,
     ReleaseInfo,
     ReleaseProgress,
@@ -329,15 +330,21 @@ def main():
             workdir=REPO_PATH,
         )
 
+    def _prepare_release_info():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
+            release_info.prepare(
+                commit_ref=args.ref,
+                release_type="patch",
+                dry_run=args.dry_run,
+                skip_repo=args.skip_repo,
+                skip_docker=args.skip_docker,
+            )
+
     step(
         name="Prepare Release Info",
-        command=[
-            f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(args.ref)} --release-type patch"
-            f"{' --skip-repo' if args.skip_repo else ''}"
-            f"{' --skip-docker' if args.skip_docker else ''}"
-            f" {dry_run_flag}".strip()
-        ],
+        command=_prepare_release_info,
         workdir=REPO_PATH,
     )
 
@@ -358,15 +365,35 @@ def main():
         ) as release_info:
             release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
+    def _download_packages():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
+        ) as release_info:
+            PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            ).run()
+
+    def _create_gh_release():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.CREATE_GH_RELEASE
+        ) as release_info:
+            p = PackageDownloader(
+                release=release_info.release_branch,
+                commit_sha=release_info.commit_sha,
+                version=release_info.version,
+            )
+            release_info.create_gh_release(
+                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
+            )
+
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
     if not args.skip_repo:
         step(
             name="Download All Release Artifacts",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_download_packages,
             workdir=REPO_PATH,
         )
 
@@ -511,10 +538,7 @@ def main():
 
         step(
             name="Create GH Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_create_gh_release,
             workdir=REPO_PATH,
         )
 

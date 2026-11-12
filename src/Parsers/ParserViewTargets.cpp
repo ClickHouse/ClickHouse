@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -36,6 +37,8 @@ namespace
                     return false;
                 }
                 auto inner_uuid = parseFromString<UUID>(ast->as<ASTLiteral>()->value.safeGet<String>());
+                if (inner_uuid == UUIDHelpers::Nil)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} INNER UUID cannot use a Nil UUID", toStringView(keyword));
                 if (!res)
                     res = make_intrusive<ASTViewTargets>();
                 res->setInnerUUID(kind, inner_uuid);

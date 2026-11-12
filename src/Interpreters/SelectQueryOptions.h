@@ -70,6 +70,11 @@ struct SelectQueryOptions
     /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
     bool is_local_plan_for_distributed_query = false;
 
+    /// IN and scalar subqueries read the view source instead of the source table. Set by `InterpreterSelectQueryAnalyzer`
+    /// when it is given the view source as storage, and passed on to the replan of the query for a `Merge` child or for
+    /// the blocks of a `Buffer`.
+    bool view_source_in_subqueries = false;
+
     size_t max_step_description_length = 0;
 
     bool force_materialize_cte = false;

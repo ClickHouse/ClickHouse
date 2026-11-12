@@ -1,0 +1,225 @@
+---
+slug: /clickstack/observability/integration-examples/temporal
+title: 'Monitoring Temporal Cloud metrics with ClickHouse Observability'
+sidebarTitle: 'Temporal Cloud metrics'
+description: 'Monitoring Temporal Cloud metrics with ClickHouse Observability setup and configuration for ClickHouse Observability and self-managed deployments.'
+doc_type: 'guide'
+keywords: ['Temporal', 'metrics', 'OTEL', 'ClickHouse Observability']
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/components/Image.jsx";
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+
+Temporal offers an abstraction for building simple, sophisticated, resilient applications.
+
+<Info>
+**TL;DR**
+
+Monitor Temporal Cloud metrics in ClickHouse Observability using the OTel Prometheus receiver. Includes a pre-built dashboard.
+</Info>
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- Existing Temporal Cloud account
+- Docker on a host with HTTPS access to Temporal Cloud and your OTLP endpoint
+
+### Connection details {#connection-details}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/metrics` suffix; the exporter appends the signal path.
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
+
+The endpoint must be reachable from the collector container. For a destination collector running on this computer, use `http://host.docker.internal:4318`. The Docker commands below include the host mapping.
+
+## Integration with existing Temporal Cloud {#existing-temporal}
+
+<Steps>
+<Step title="Create Temporal Cloud key" id="create-temporal-cloud-key">
+
+Create a Temporal Cloud service account with the **Metrics Read-Only** role and generate an API key, following the [Authentication guide](https://docs.temporal.io/cloud/metrics/openmetrics/api-reference#authentication). An Account Owner or Global Admin must create the service account and key.
+
+<Warning>
+**Key file**
+
+Store the Temporal API key in a file `temporal.key` in the same directory as the config file created below. Store only the key, without a `Bearer` prefix or surrounding spaces. This is separate from your ClickHouse Observability API key. Ensure the collector can read the mounted file.
+</Warning>
+</Step>
+<Step title="Configure the OTel collector" id="custom-otel">
+
+Run a standalone OpenTelemetry Collector with the Prometheus receiver to scrape Temporal Cloud and forward metrics to your service.
+
+Create a file named `temporal-metrics.yaml` with the following configuration:
+```yaml title="temporal-metrics.yaml"
+receivers:
+  prometheus/temporal:
+    config:
+      scrape_configs:
+      - job_name: 'temporal-cloud'
+        scrape_interval: 60s
+        scrape_timeout: 30s
+        honor_timestamps: true
+        scheme: https
+        authorization:
+          type: Bearer
+          credentials_file: /etc/otelcol-contrib/temporal.key
+        static_configs:
+          - targets: ['metrics.temporal.io']
+        metrics_path: '/v1/metrics'
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+  resource:
+    attributes:
+      - key: service.name
+        value: "temporal"
+        action: upsert
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+service:
+  pipelines:
+    metrics/temporal:
+      receivers: [prometheus/temporal]
+      processors:
+        - memory_limiter
+        - resource
+        - batch
+      exporters:
+        - otlp_http/observability
+```
+
+This configuration:
+
+- Connects to Temporal Cloud at `metrics.temporal.io`
+- Collects metrics every 60 seconds
+- Collects [key performance metrics](https://docs.temporal.io/cloud/metrics/openmetrics/metrics-reference)
+- **Sets the required `service.name` resource attribute** per [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/resource/#service)
+- Sends metrics to your OTLP endpoint via a dedicated pipeline
+
+For multiple Temporal Cloud accounts, customize `service.name` to distinguish them (for example, `temporal-prod` and `temporal-dev`).
+</Step>
+<Step title="Run the collector" id="run-collector">
+
+From the directory containing `temporal-metrics.yaml` and `temporal.key`, set the [connection variables](#connection-details) and run:
+
+```bash
+docker run --rm --name temporal-metrics-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/temporal-metrics.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v "$(pwd)/temporal.key:/etc/otelcol-contrib/temporal.key:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+Leave the terminal open and check for scrape or export errors. Allow a few minutes for Temporal Cloud metrics to appear. Stop the collector with **Ctrl+C** when finished testing.
+
+</Step>
+<Step title="Verify metrics in ClickHouse Observability" id="verifying-metrics">
+
+Once configured, log into ClickHouse Observability and verify metrics are flowing:
+
+1. Open **Chart Explorer** and select your **Metrics** source
+2. Filter for `ServiceName:temporal`, select **Last 15 minutes**, and search for metrics starting with `temporal` (e.g., `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
+3. You should see metric data points appearing at your configured collection interval
+
+<Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Temporal Metrics" size="md"/>
+</Step>
+</Steps>
+
+## Dashboards and visualization {#dashboards}
+
+To help you get started monitoring Temporal Cloud with ClickHouse Observability, we provide some example visualizations for Temporal Metrics.
+
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json" download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download" />
+<Step title="Import the pre-built dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `temporal-metrics-dashboard.json`.
+3. Map the charts to your **Metrics** source and click **Finish Import**.
+
+<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+
+</Step>
+<Step title="View the dashboard" id="created-dashboard">
+
+The dashboard will be created with all visualizations pre-configured:
+
+<Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Temporal Metrics dashboard"/>
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### Collector fails to start {#collector-fails-to-start}
+
+Check the terminal output for configuration errors. Confirm both mounted files exist and the collector can read `temporal.key`. Ensure the OTLP connection variables are set in the terminal where Docker runs.
+
+### No metrics appearing {#no-metrics}
+
+Check collector logs:
+
+```bash
+docker logs temporal-metrics-collector
+```
+
+Look for scrape, authentication, or export errors. Confirm the host can reach `https://metrics.temporal.io/v1/metrics` and your OTLP endpoint. In **Chart Explorer**, check the **Metrics** source, `ServiceName:temporal` filter, and time range. Temporal metrics can take a few minutes to become available and depend on activity in your account.
+
+### Authentication errors {#auth-errors}
+
+For Temporal scrape errors, confirm `temporal.key` contains a valid API key for a service account with the **Metrics Read-Only** role. For OTLP export errors, check your ClickHouse Observability endpoint and authorization value. These are separate credentials.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for critical metrics (workflow failure rates, task backlog growth, schedule-to-start latency)
+- Create additional dashboards for specific use cases (namespace-level monitoring, workflow type performance)
+- Monitor multiple Temporal Cloud accounts by duplicating the receiver configuration with different endpoints and service names
+
+## Going to production {#going-to-production}
+
+This guide runs a separate OpenTelemetry Collector and forwards metrics to your service's OTLP endpoint. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for deployment guidance.

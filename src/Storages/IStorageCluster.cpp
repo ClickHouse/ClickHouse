@@ -138,7 +138,12 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 
     pushed_down_filter.clear();
     const auto * select = query_to_send->as<ASTSelectQuery>();
-    if (storage->isObjectStorage() && filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
+    /// Only then is the header the select list: otherwise it holds the aggregation keys and states,
+    /// the arguments of the window functions, or the columns read.
+    const bool header_is_select_list = processed_stage == QueryProcessingStage::WithMergeableState
+        && !query_info.need_aggregate && !query_info.has_window;
+    if (storage->isObjectStorage() && header_is_select_list && filter_actions_dag && !filter_actions_dag->getOutputs().empty()
+        && select && select->select())
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
         const auto & select_expressions = select->select()->children;
@@ -149,7 +154,7 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
             {
                 ColumnWithTypeAndName replica_column(nullptr, header_columns[i].type, identifier->shortName());
                 replica_columns.emplace(header_columns[i].name, replica_column);
-                replica_columns.emplace(select_expressions[i]->getAliasOrColumnName(), replica_column);
+                replica_columns.emplace(identifier->shortName(), replica_column);
             }
         }
 

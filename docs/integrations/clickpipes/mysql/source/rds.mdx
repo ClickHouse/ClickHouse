@@ -113,13 +113,13 @@ Connect to your RDS MySQL instance as an admin user and execute the following co
 1. Create a dedicated user for ClickPipes:
 
     ```sql
-    CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+    CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
     ```
 
-2. Grant schema permissions. The following example shows permissions for the `mysql` database. Repeat these commands for each database and host you want to replicate:
+2. Grant schema permissions. The following example shows permissions for the `clickpipes` database. Repeat these commands for each database and host you want to replicate:
 
     ```sql
-    GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
     ```
 
 3. Grant replication permissions to the user:
@@ -127,6 +127,12 @@ Connect to your RDS MySQL instance as an admin user and execute the following co
     ```sql
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+    ```
+
+4. Allow ClickPipes to read the binlog retention setting:
+
+    ```sql
+    GRANT SELECT ON `mysql`.`rds_configuration` TO 'clickpipes_user'@'%';
     ```
 
 ### Using IAM authentication (optional) {#iam-authentication}

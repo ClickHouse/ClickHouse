@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -8,7 +9,6 @@
 #include <IO/DistributedCacheSettings.h>
 #endif
 #include <IO/ReadMethod.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>

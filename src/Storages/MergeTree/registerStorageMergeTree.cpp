@@ -966,7 +966,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -974,6 +974,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (is_fresh_definition)
             args.getLocalContext()->checkMergeTreeSettingsConstraints(
                 initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
+        if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
+            args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -1312,6 +1316,8 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
@@ -2615,7 +2621,8 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
   - for any column: the number of rows equal to the type's default value (`0` for integers and floats, `''` for `String`, `[]` for `Array`, `NULL` for `Nullable`, etc.), which lets the optimizer estimate `col = <default>` predicates and `IS NULL` filters;
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for integer and `Decimal` columns that are not `Nullable` or `LowCardinality`: the exact sum of values, from which `sum`, `avg` and `sumCount` without `GROUP BY` and filters are answered (see the `use_statistics_for_sum_avg_aggregation` setting).
 
     A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
@@ -4438,6 +4445,8 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
+    /// A replicated/shared MergeTree is not a lightweight session object and must not be a temporary table.
+    features.supports_temporary = false;
 
     factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(

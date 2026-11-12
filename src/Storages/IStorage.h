@@ -274,8 +274,9 @@ public:
     /// The default implementation falls back to the parameterless version.
     virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
-    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
-    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
+    /// and covers only the data visible to the user of `query_context`.
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.

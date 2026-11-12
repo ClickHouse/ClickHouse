@@ -89,7 +89,7 @@ echo '--- T1: n IS NULL'
 echo 'Expect ~9000: the NULL counts of the manifests, 9000 of the 10000 rows.'
 labels t v 't.n IS NULL' ${ON}
 echo '--- T1: k BETWEEN 1000 AND 8999, every file overlaps'
-echo 'Expect ~7999: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.'
+echo 'Expect ~8000: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.'
 labels t v 't.k BETWEEN 1000 AND 8999' ${ON}
 echo "--- T1: s = 'rare'"
 echo 'Expect ~100: a string has no counted NDV, so equality takes the default 1% of 10000 (true 200).'

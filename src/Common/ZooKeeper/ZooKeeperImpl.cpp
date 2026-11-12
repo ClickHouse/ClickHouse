@@ -533,6 +533,10 @@ ZooKeeper::ZooKeeper(
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
 
+    /// From now on, one thread writes to the socket and another one reads from it.
+    if (socket.secure())
+        out->setWaitBeforeSend();
+
     /// Initialize progress tracker to "now" so the receive loop does not
     /// immediately trigger a timeout before any responses arrive.
     last_received_timestamp_us.store(

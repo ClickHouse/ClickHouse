@@ -11,6 +11,7 @@ namespace DB
 /** Aligned piece of memory.
   * It can only be allocated and destroyed.
   * MemoryTracker is not used. AlignedBuffer is intended for small pieces of memory.
+  * It occupies whole cache lines, so a state one thread updates per row never shares a line with another allocation.
   */
 class AlignedBuffer : private boost::noncopyable
 {

@@ -392,7 +392,11 @@ def random_partition_field(rng, model, caps, existing):
         for name, t in (
             model.non_id_columns() if not caps.partition_on_id else model.columns
         ):
-            if t.kind in TRANSFORM_KINDS[transform] and t.kind in caps.partition_kinds:
+            if (
+                t.kind in TRANSFORM_KINDS[transform]
+                and t.kind in caps.partition_kinds
+                and (transform, t.kind) not in caps.excluded_partition_shapes
+            ):
                 # One partition field per source column: several are "redundant" for PyIceberg.
                 if not any(p.column == name for p in existing):
                     options.append((transform, name))

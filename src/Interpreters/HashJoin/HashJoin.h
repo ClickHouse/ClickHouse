@@ -354,13 +354,16 @@ public:
         M(range8_key64)                \
         M(range16_key64)               \
         M(range17_key64)               \
-        M(range18_key64)
+        M(range18_key64)               \
+        M(two_level_key_packed_string) \
+        M(key_packed_string)
 
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
     /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
     /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
+    /// The packed `String` maps are absent too, because a key of 16 bytes or more is stored as its hash.
     /// Only the serial types are listed: a `JoinSource` reads a `StorageJoin` map, and `StorageJoin`
     /// always builds with the serial layout.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -388,7 +391,8 @@ public:
         M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
-        M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
+        M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)           \
+        M(two_level_key_packed_string __VA_OPT__(,) __VA_ARGS__)
 
     /// The packed fixed-width maps, `keys32` to `keys256`, hold the keys of a clause if all of them are fixed-width
     /// and take at most this many bytes together.
@@ -509,6 +513,9 @@ public:
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
+        /// A single `String` key as a `PackedStringJoinKey`, see `enable_packed_string_keys_in_hash_join`.
+        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
+        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
 
         void create(Type which)
         {
@@ -909,8 +916,6 @@ private:
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     void freezeMapsForProbing();
-
-    bool isRowStoreSupported() const;
 
     /// Layout is from the sample block, before any fill thread.
     void initRowStore(const Block & block);

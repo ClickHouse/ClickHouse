@@ -125,7 +125,7 @@ public:
     }
 
 private:
-    const FormatSettings::DateTimeOverflowBehavior overflow_behavior;
+    const FormatSettingsEnums::DateTimeOverflowBehavior overflow_behavior;
 
     static Int128 nanosecondsAt(const IColumn & column, const IDataType & type, size_t row)
     {
@@ -159,13 +159,13 @@ private:
 
             if (value < min || value > max)
             {
-                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
                     throw Exception(
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "The result of {} is out of bounds of type DateTime64({})",
                         getName(),
                         datetime64->getScale());
-                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
                     value = std::clamp<Int128>(value, min, max);
             }
 

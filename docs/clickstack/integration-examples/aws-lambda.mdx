@@ -201,9 +201,9 @@ Check the Lambda logs for any errors:
 aws logs tail /aws/lambda/my-function --follow
 ```
 </Step>
-<Step title="Verify logs in HyperDX" id="verify-logs">
+<Step title="Verify logs in ClickStack UI" id="verify-logs">
 
-Once configured, log into HyperDX (ClickStack's UI) and verify that logs are flowing:
+Once configured, log into ClickStack UI (ClickStack's UI) and verify that logs are flowing:
 
 <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda Log View"/>
 
@@ -238,7 +238,7 @@ By default, AWS Lambda sends all logs to CloudWatch Logs, which can be expensive
 
 Invoke your function again and verify that:
 1. No new CloudWatch log streams are created
-2. Logs continue to appear in ClickStack/HyperDX
+2. Logs continue to appear in ClickStack/ClickStack UI
 
 ```bash
 # This should show no new log streams after the policy change
@@ -299,11 +299,11 @@ AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
 AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
 ```
 </Step>
-<Step title="Verify traces in HyperDX" id="verify-traces">
+<Step title="Verify traces in ClickStack UI" id="verify-traces">
 
 After invoking your function:
 
-1. Navigate to the **Traces** view in HyperDX
+1. Navigate to the **Traces** view in ClickStack UI
 2. You should see traces with spans from your Lambda function
 3. Traces will be correlated with logs via `trace_id` and `span_id` attributes
 </Step>

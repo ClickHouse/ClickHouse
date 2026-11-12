@@ -53,6 +53,7 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> column_sizes;
     std::vector<std::pair<Int32, Int64>> value_counts;
     std::vector<std::pair<Int32, Int64>> null_value_counts;
+    std::vector<std::pair<Int32, Int64>> nan_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
 };

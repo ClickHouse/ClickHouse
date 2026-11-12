@@ -6,7 +6,6 @@
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <base/FnTraits.h>
 

@@ -29,56 +29,51 @@ Over 50 configurations are available, ranging from 1 vCPU / 8 GB RAM / 59 GB NVM
 
 ### Tier-based pricing {#tier-based-pricing}
 
-Pricing, features, and resource limits vary by organization tier — [Basic, Scale, or Enterprise](/products/cloud/features/cloud-tiers), however, every tier includes the core capabilities of the service, including production-grade Postgres on local NVMe storage, native CDC to ClickHouse, and the `pg_clickhouse` extension.
+Pricing, features, and resource limits vary by organization tier — [Basic, Scale, or Enterprise](/products/cloud/features/cloud-tiers), however, every tier includes the core capabilities of the service, including production-grade Postgres on local NVMe storage, [native CDC to ClickHouse](/products/managed-postgres/clickpipes), and the [`pg_clickhouse` extension](/products/managed-postgres/extensions).
 
-The table below summarizes the features, capabilities, and limits included in each tier. To compare pricing across tiers, refer to the [pricing calculator](https://clickhouse.com/pricing?service=postgres#pricing-calculator).
+The comparison below summarizes the features, capabilities, and limits included in each tier. To compare pricing across tiers, refer to the [pricing calculator](https://clickhouse.com/pricing?service=postgres#pricing-calculator).
 
-<div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0'}}>
-  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
-    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Basic</h4>
-    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>Great for testing out new ideas or starter projects. Limited storage and memory.</p>
-    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+<div className="ch-tier-cards">
+  <div className="ch-tier-card">
+    <div className="ch-tier-card-title">Basic</div>
+    <p className="ch-tier-card-description">Great for testing out new ideas or starter projects. Limited storage and memory.</p>
+    <ul className="ch-tier-card-list">
       <li><a href="/products/managed-postgres/scaling">Up to 8 GB RAM for compute</a></li>
       <li><a href="/products/managed-postgres/scaling">Up to 118 GB local NVMe storage</a></li>
-      <li><a href="/products/managed-postgres/backup-and-restore">Backups with retention of 1 day</a></li>
+      <li><a href="/products/managed-postgres/scaling">Storage autoscale</a></li>
+      <li><a href="/products/managed-postgres/backup-and-restore">Backups with retention of 7 days</a></li>
       <li><a href="/products/managed-postgres/backup-and-restore">PITR and Branches</a></li>
       <li>Includes <a href="/products/managed-postgres/high-availability">High Availability</a></li>
-      <li><a href="/products/managed-postgres/monitoring/query-insights">Query Insights</a> with 1 day retention</li>
+      <li><a href="/products/managed-postgres/monitoring/query-insights">Query Insights</a></li>
       <li><a href="/products/managed-postgres/extensions">90+ Postgres extensions</a></li>
-      <li><a href="/products/managed-postgres/clickpipes">Native CDC to ClickHouse</a></li>
-      <li><a href="/products/managed-postgres/extensions"><code>pg_clickhouse</code> extension</a></li>
       <li><a href="/products/managed-postgres/migrations/clickpipes">Fully managed data-migration</a></li>
       <li>Expert support with 1 business day response time</li>
       <li><a href="/products/cloud/guides/security/cloud-access-management/manage-my-account">Single sign-on authentication (SSO)</a> using Google or Microsoft Social login</li>
       <li><a href="/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">Multi-factor authentication</a></li>
     </ul>
   </div>
-  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
-    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Scale</h4>
-    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>For working with production environments, data at scale, or professional use cases.</p>
-    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Everything in Basic, plus</p>
-    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+  <div className="ch-tier-card">
+    <div className="ch-tier-card-title">Scale</div>
+    <p className="ch-tier-card-description">For working with production environments, data at scale, or professional use cases.</p>
+    <p className="ch-tier-card-lead">Everything in Basic, plus</p>
+    <ul className="ch-tier-card-list">
       <li><a href="/products/managed-postgres/scaling">Up to 60 TB storage</a></li>
       <li><a href="/products/managed-postgres/scaling">Up to 96 vCPUs and 768 GB RAM</a></li>
-      <li><a href="/products/managed-postgres/scaling">Storage autoscale</a></li>
       <li><a href="/products/managed-postgres/read-replicas">Read replicas</a></li>
       <li><a href="/products/managed-postgres/upgrades#scheduled-upgrades">Scheduled upgrades</a></li>
       <li><a href="/products/managed-postgres/security">Private networking</a></li>
-      <li><a href="/products/managed-postgres/backup-and-restore">Backups with retention of 7 days</a></li>
-      <li><a href="/products/managed-postgres/monitoring/query-insights">Query Insights</a> with 7 day retention</li>
       <li>Expert support with 1 hour response time 24x7 for Severity 1 issues</li>
     </ul>
   </div>
-  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
-    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Enterprise</h4>
-    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>For working with production environments, very large data at scale, or enterprise use cases.</p>
-    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Everything in Scale, plus</p>
-    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+  <div className="ch-tier-card">
+    <div className="ch-tier-card-title">Enterprise</div>
+    <p className="ch-tier-card-description">For working with production environments, very large data at scale, or enterprise use cases.</p>
+    <p className="ch-tier-card-lead">Everything in Scale, plus</p>
+    <ul className="ch-tier-card-list">
       <li>Enterprise support with 30 min response time for Severity 1 issues</li>
       <li>Private regions</li>
       <li>Named Lead Support Engineer</li>
       <li><a href="/products/managed-postgres/extensions">Custom extensions</a> (*pending approval)</li>
-      <li><a href="/products/managed-postgres/migrations/clickpipes">Consultative migrations guides</a></li>
       <li><a href="/products/managed-postgres/upgrades#days-of-the-week">Day-of-week selection for scheduled upgrades</a></li>
     </ul>
   </div>
@@ -86,21 +81,20 @@ The table below summarizes the features, capabilities, and limits included in ea
 
 ### Instance types {#instance-types}
 
-Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics. Not all instance types are available in every region. The instance families listed below apply to AWS. GCP is in Private Preview, and its instance types are shared with you during onboarding.
+Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics. Not all instance types are available in every region. GCP is in Private Preview.
 
-- **Memory Optimized:** Designed for memory-intensive workloads with a memory-to-CPU ratio of 1:8. Supports x86-based `r8id` and `r6id` families, and ARM64 (AWS Graviton-based) `r8gd` and `r6gd` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
-- **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. Supports ARM64 (AWS Graviton-based) `i8g` and `i8ge` families, and x86-based `i7i` and `i7ie` families, with configurations offering up to 60 TB of local NVMe storage. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
-- **CPU Optimized:** Designed for compute-intensive workloads with a memory-to-CPU ratio of 1:4. Supports x86-based `m8id` and `m6id` families, and ARM64 (AWS Graviton-based) `m8gd` and `m6gd` families. Best suited for high-concurrency transactional workloads and CPU-bound queries.
+- **Memory Optimized:** Designed for memory-intensive workloads with a memory-to-CPU ratio of 1:8. On AWS, supports x86-based `r8id` and `r6id` families, and ARM64 (AWS Graviton-based) `r8gd` and `r6gd` families. On GCP, supports x86-based `n2` and `n2d` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
+- **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. On AWS, supports ARM64 (AWS Graviton-based) `i8g` and `i8ge` families, and x86-based `i7i` and `i7ie` families, with configurations offering up to 60 TB of local NVMe storage. On GCP, supports the x86-based `z3` family. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
+- **CPU Optimized:** Designed for compute-intensive workloads with a memory-to-CPU ratio of 1:4. On AWS, supports x86-based `m8id` and `m6id` families, and ARM64 (AWS Graviton-based) `m8gd` and `m6gd` families. On GCP, supports x86-based `n2` and `n2d` families. Best suited for high-concurrency transactional workloads and CPU-bound queries.
 
 ## Pricing calculator {#pricing-calculator}
 
 Use the [pricing calculator](https://clickhouse.com/pricing?service=postgres#pricing-calculator) to estimate deployment costs across different workload profiles and configurations. You can customize:
 
 - Organization tier (Basic, Scale, Enterprise)
-- Region
-- Configuration type (Memory, Storage, or CPU Optimized)
+- Cloud provider and region
+- Configuration type (Memory, Storage, or CPU Optimized) with vCPU, memory, and storage sizing
 - CPU architecture (ARM or x86)
-- vCPU, memory, and storage sizing
 - Standby / High Availability (HA) configurations
 
 This allows you to compare pricing across more than 50 supported configuration permutations and find the best fit for your workload.
@@ -111,7 +105,6 @@ This allows you to compare pricing across more than 50 supported configuration p
 
 On AWS, Managed Postgres is generally available and billed as follows from **November 9, 2026**:
 
-- **Compute:** billed at list price. The 50% beta discount ends on November 9, 2026.
 - **Backups:** backup storage equal to your provisioned disk is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in `us-east-1`. See [Backup and restore](/products/managed-postgres/backup-and-restore).
 - **Data transfer:** billed at [ClickHouse Cloud data transfer rates](/products/cloud/reference/billing/network-data-transfer). Network costs are expected to be low when your application and Managed Postgres are in the same region, and when Managed Postgres and ClickHouse are in the same region if you use ClickPipes.
 - **ClickPipes and WalShadow:** free for replicating data from Managed Postgres to ClickHouse.

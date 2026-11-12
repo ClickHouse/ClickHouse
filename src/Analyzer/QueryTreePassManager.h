@@ -58,6 +58,7 @@ void addQueryTreePasses(
     QueryTreePassManager & manager,
     bool only_analyze = false,
     bool positional_arguments_already_resolved = false,
-    StoragePtr replaced_storage = nullptr);
+    StoragePtr replaced_storage = nullptr,
+    bool view_source_in_subqueries = false);
 
 }

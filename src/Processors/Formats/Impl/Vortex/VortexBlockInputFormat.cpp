@@ -959,7 +959,7 @@ in `INSERT` and `SELECT` queries.
 | `I64`, `U64`                        | [Int64/UInt64](/reference/data-types/int-uint)                | `I64`, `U64`                |
 | `F32`                               | [Float32](/reference/data-types/float)                        | `F32`                       |
 | `F64`                               | [Float64](/reference/data-types/float)                        | `F64`                       |
-| `Utf8`, `Binary`                    | [String](/reference/data-types/string)                        | `Binary`                    |
+| `Utf8`, `Binary`                    | [String](/reference/data-types/string)                        | `Utf8` (`Binary` with `output_format_vortex_string_as_string = 0`) |
 | `Binary`                            | [FixedString](/reference/data-types/fixedstring)              | `Binary`                    |
 | `Decimal`                           | [Decimal](/reference/data-types/decimal)                      | `Decimal`                   |
 | `vortex.date`                       | [Date32](/reference/data-types/date32)                        | `vortex.date`               |
@@ -972,9 +972,11 @@ in `INSERT` and `SELECT` queries.
 Other types are not supported. In particular, [Map](/reference/data-types/map),
 [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint), [IPv6](/reference/data-types/ipv6)
 and [Interval](/reference/data-types/special-data-types/interval) columns cannot be written to Vortex files.
-[String](/reference/data-types/string) columns are written as `Binary` because ClickHouse strings are
-arbitrary byte sequences, while Vortex requires `Utf8` values to be valid UTF-8. Vortex has no
-fixed-size binary type, so [FixedString](/reference/data-types/fixedstring) is also written as `Binary`;
+[String](/reference/data-types/string) columns are written as `Utf8`, which Vortex compresses better
+than `Binary`. Vortex requires `Utf8` values to be valid UTF-8 while ClickHouse strings are arbitrary
+byte sequences, so writing a value that is not valid UTF-8 throws an exception; with
+`output_format_vortex_string_as_string = 0` strings are written as `Binary` instead. Vortex has no
+fixed-size binary type, so [FixedString](/reference/data-types/fixedstring) is always written as `Binary`;
 schema inference reads it back as [String](/reference/data-types/string).
 [LowCardinality](/reference/data-types/lowcardinality) columns are written as their underlying type
 (Vortex chooses dictionary and other encodings adaptively by itself).
@@ -1017,6 +1019,7 @@ SELECT * FROM numbers(3) INTO OUTFILE 'numbers.vortex' FORMAT Vortex;
 |------------------------------------------|----------------------------------------------------------------------|---------|
 | `input_format_vortex_filter_push_down`   | Push translatable parts of the `WHERE` condition down into the scan, so that a selective query reads and decodes less data. Only the translated part of the condition is enforced inside the scan: a condition that is only partly translatable is widened to one that keeps at least every matching row, so rows that do not match can still be read and decoded, and ClickHouse reapplies the full filter afterwards. Pushdown currently supports top-level integer, floating-point, string/binary, `Bool`, `Date`, `Date32` and `DateTime64` columns. | `1` |
 | `input_format_vortex_preserve_order`     | Return the rows in file order. By default the row splits of a file are decoded in parallel and returned as soon as they are ready, so the row order is not guaranteed; with the setting a slow split holds back the ones after it. | `0` |
+| `output_format_vortex_string_as_string`  | Write [String](/reference/data-types/string) columns as `Utf8` instead of `Binary`. A value that is not valid UTF-8 throws an exception; disable the setting to write such data as `Binary`. | `1` |
 | `max_parsing_threads`                    | The number of threads that decode Vortex files (shared by the files read in parallel by one query). `1` disables the thread pool: the file is then read inside `read`, on the thread of the query pipeline. | number of cores |
 | `max_download_threads`                   | The number of threads that read the file. `0` makes the reads share the decoding threads. | `4` |
 

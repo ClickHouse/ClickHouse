@@ -577,6 +577,59 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     return select_query_info;
 }
 
+NameSet getColumnsSelectableByTrivialQuery(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const ColumnsDescription & columns,
+    const ContextPtr & query_context)
+{
+    auto access = query_context->getAccess();
+    /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
+    /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so such a subcolumn is
+    /// readable even without a grant on its column, and it is enough for a trivial query too.
+    /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
+    const auto access_rights = access->getAccessRightsWithImplicit();
+    const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
+
+    /// Through an `Alias` the exact subcolumn grant can also be on a table of its chain, while the alias grants
+    /// its column or the whole table, so candidates are collected from every table of the chain.
+    std::vector<std::pair<String, String>> tables_to_probe{{storage_id.database_name, storage_id.table_name}};
+    if (alias)
+    {
+        auto chain = alias->getTargetChain();
+        tables_to_probe.insert(tables_to_probe.end(), chain.begin(), chain.end());
+    }
+
+    Names candidates;
+    NameSet seen;
+    for (const auto & column : columns)
+    {
+        if (seen.insert(column.name).second)
+            candidates.push_back(column.name);
+        for (const auto & [database, table] : tables_to_probe)
+            for (auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
+                     *access_rights, AccessType::SELECT, database, table, column.name))
+                if (seen.insert(subcolumn).second)
+                    candidates.push_back(std::move(subcolumn));
+    }
+
+    /// A candidate must be readable on the table itself, checked like a query that reads it, and an `Alias` also requires
+    /// it to be readable on every table of its chain, decided separately on each hop like `StorageAlias::read` does.
+    NameSet selectable;
+    for (const auto & name : candidates)
+        if (access->isGranted(
+                AccessType::SELECT,
+                storage_id.database_name,
+                storage_id.table_name,
+                columns.getColumnNamesForSelectAccessCheck({name}, query_context, storage_id).front()))
+            selectable.insert(name);
+
+    if (alias && !selectable.empty())
+        selectable = alias->filterColumnsSelectableThroughChain(query_context, columns, Names(selectable.begin(), selectable.end()));
+
+    return selectable;
+}
+
 NameSet checkAccessRights(
     const StoragePtr & storage,
     const StorageID & storage_id,
@@ -593,28 +646,11 @@ NameSet checkAccessRights(
 
     if (column_names.empty())
     {
-        NameSet accessible_columns;
         /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
           * one table column is accessible.
           */
-        auto access = query_context->getAccess();
-        const auto * alias = storage->as<StorageAlias>();
-        NameSet chain_granted;
-        if (alias)
-        {
-            Names all_columns;
-            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
-            for (const auto & column : storage_snapshot->metadata->getColumns())
-                all_columns.push_back(column.name);
-            chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
-        }
-        for (const auto & column : storage_snapshot->metadata->getColumns())
-        {
-            /// An `Alias` also requires access to the selected column of its target table.
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || chain_granted.contains(column.name)))
-                accessible_columns.insert(column.name);
-        }
+        auto accessible_columns = getColumnsSelectableByTrivialQuery(
+            storage, storage_id, storage_snapshot->metadata->getColumns(), query_context);
 
         if (accessible_columns.empty())
         {
@@ -630,7 +666,16 @@ NameSet checkAccessRights(
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    {
+        /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) resolves to
+        /// the subcolumn name at the analyzer stage. Column-level grants, however, are stored
+        /// and checked against top-level storage column names only. Map each subcolumn name to
+        /// its parent storage column so that `GRANT SELECT(t)` implicitly covers `t.a`, `t.b`, etc.
+        query_context->checkAccess(
+            AccessType::SELECT,
+            storage_id,
+            storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, query_context, storage_id));
+    }
 
     return {};
 }
@@ -698,6 +743,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights)
 {
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
@@ -733,14 +779,16 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
-    QueryAnalysisPass query_analysis_pass(table_expression);
+    /// The filter reads the source table only in its subqueries, which read the view source iff `view_source_in_subqueries`.
+    auto view_source = getViewSourceIfRead(query_context, view_source_in_subqueries);
+    QueryAnalysisPass query_analysis_pass(table_expression, /*only_analyze_=*/ false, view_source, view_source_in_subqueries);
     query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
 
     /// The inner query of an ordinary view reads the table itself, not the inserted block.
-    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+    if (view_source)
         replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
 
     return filter_query_tree;
@@ -753,7 +801,8 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         bool check_access_rights)
 {
     const auto & query_context = planner_context->getQueryContext();
-    auto filter_query_tree = buildFilterQueryTree(std::move(filter_expression), table_expression, query_context, check_access_rights);
+    auto filter_query_tree = buildFilterQueryTree(
+        std::move(filter_expression), table_expression, query_context, planner_context->isViewSourceInSubqueries(), check_access_rights);
 
     return buildFilterInfo(
         std::move(filter_query_tree),

@@ -1,4 +1,5 @@
 #include <Common/StringUtils.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>

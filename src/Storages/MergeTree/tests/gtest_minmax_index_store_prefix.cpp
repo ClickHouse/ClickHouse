@@ -1,4 +1,5 @@
 #include <Core/Field.h>
+#include <Formats/FormatSettings.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
