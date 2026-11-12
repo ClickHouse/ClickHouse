@@ -1,10 +1,10 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- A derived distributed plan force-adjusts the settings it does not support. Turning the
--- workers num back to zero must undo those adjustments: a session that briefly asked for
--- Workers must not keep degraded settings for its later ordinary queries. The assertions
--- compare snapshots instead of fixed values, so they hold under randomized harness settings.
+-- A derived distributed plan force-adjusts the settings it does not support, but only on the
+-- query that derives it: a session whose distributed_plan_workers_num asked for one query's plan
+-- must not carry degraded settings into its later ordinary queries. The assertions compare
+-- snapshots instead of fixed values, so they hold under randomized harness settings.
 
 SET compile_expressions = 1;
 
@@ -30,9 +30,8 @@ FROM settings_after a
 JOIN settings_before b USING (name)
 WHERE (a.value != b.value OR a.changed != b.changed) AND name != 'distributed_plan_workers_num';
 
-SELECT 'a value set explicitly during the window survives the restore';
--- Pinned explicitly: the harness randomizes this setting, and a window only remembers a setting
--- it actually overrides.
+SELECT 'a value set explicitly in the session is not touched by a query that derives the plan';
+-- Pinned explicitly: the harness randomizes this setting.
 SET use_skip_indexes_on_data_read = 1;
 SET distributed_plan_workers_num = 3;
 SET use_skip_indexes_on_data_read = 0;

@@ -2,7 +2,10 @@
 # Tags: no-old-analyzer
 # no-old-analyzer: make_distributed_plan requires the analyzer.
 
-# A per-query override of distributed_plan_workers_num must restore the settings the session's own derived plan force-adjusted, for that query only.
+# make_distributed_plan is derived per query, not once for the session: a query that overrides
+# distributed_plan_workers_num back to 0 must see its other settings (compile_expressions here) at
+# their plain session values, while a later query that still inherits the session's own
+# distributed_plan_workers_num derives the plan and adjusts them again, for that query only.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
