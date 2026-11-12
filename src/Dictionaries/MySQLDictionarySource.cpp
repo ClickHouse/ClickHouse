@@ -119,17 +119,6 @@ static void checkNoSocket(const Poco::Util::AbstractConfiguration & config, cons
             "`socket` cannot be specified in a dictionary created with a DDL query. "
             "It is only accepted in a dictionary defined in a server configuration file");
 }
-
-/// The client library reads a host with `;` or `=` as connection options that override the configured ones (`protocol`,
-/// `socket`, `local-infile`, SSL file paths), and a host with `,` as a list of `host:port`, which the filter does not check.
-static void checkHostAndPort(const ContextPtr & context, const std::string & host, const std::string & port)
-{
-    if (host.find_first_of(";=,") != std::string::npos)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "`host` of a dictionary created with a DDL query cannot contain `;`, `=` or `,`");
-    context->getRemoteHostFilter().checkHostAndPort(host, port);
-}
 #endif
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory);
@@ -187,7 +176,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             }
 
             for (auto & address : addresses)
-                checkHostAndPort(global_context, address.first, toString(address.second));
+                global_context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
 
             dictionary_configuration.emplace(MySQLDictionarySource::Configuration{
                 .db = named_collection->getAnyOrDefault<String>({"database", "db"}, ""),
@@ -215,8 +204,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
                     StorageMySQL::getSSLParams(*named_collection),
-                    mysql_settings,
-                    /* force_tcp = */ true));
+                    mysql_settings));
         }
         else
         {
@@ -247,8 +235,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                             checkNoLocalInfile(config, replica_prefix, settings_config_prefix);
                             /// Resolve the port the same way mysqlxx::Pool does, so the checked port
                             /// always matches the port the connection actually dials.
-                            checkHostAndPort(
-                                global_context,
+                            global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port",
                                     config.getInt(settings_config_prefix + ".port", 3306))));
@@ -258,20 +245,14 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 else
                 {
                     checkNoLocalInfile(config, settings_config_prefix);
-                    checkHostAndPort(
-                        global_context,
+                    global_context->getRemoteHostFilter().checkHostAndPort(
                         config.getString(settings_config_prefix + ".host"),
                         toString(config.getInt(settings_config_prefix + ".port", 3306)));
                 }
             }
 
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(
-                config,
-                settings_config_prefix,
-                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-                /* force_tcp = */ created_from_ddl));
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(
+                mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
         }
 
         if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())

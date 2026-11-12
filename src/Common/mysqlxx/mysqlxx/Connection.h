@@ -106,8 +106,7 @@ public:
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
         bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
         bool enable_compression = false,
-        const char * ssl_key_passphrase = "",
-        bool force_tcp = false);
+        const char * ssl_key_passphrase = "");
 
     void connect(const std::string & config_name)
     {

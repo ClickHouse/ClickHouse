@@ -36,8 +36,7 @@ mysqlxx::PoolWithFailover createMySQLPoolWithFailover(
     const std::string & username,
     const std::string & password,
     const mysqlxx::SSLParams & ssl_params,
-    const MySQLSettings & mysql_settings,
-    bool force_tcp)
+    const MySQLSettings & mysql_settings)
 {
     if (!mysql_settings[MySQLSetting::connection_pool_size])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");
@@ -51,8 +50,7 @@ mysqlxx::PoolWithFailover createMySQLPoolWithFailover(
         mysql_settings[MySQLSetting::connect_timeout],
         mysql_settings[MySQLSetting::read_write_timeout],
         false,
-        mysql_settings[MySQLSetting::enable_compression],
-        force_tcp);
+        mysql_settings[MySQLSetting::enable_compression]);
 }
 
 }
