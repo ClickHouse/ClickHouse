@@ -38,48 +38,39 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
 {
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-    /// Locate the loaded object that contains this address and convert the runtime address to the
-    /// address expected by the DWARF lookup. Callers may pass either absolute runtime addresses or
-    /// file offsets; if the address does not fall within any object, fall back to the current object
-    /// and treat the address as an already-converted lookup address.
+    /// Callers pass runtime addresses only. Locate the loaded object that contains the address and
+    /// convert it to the address expected by the DWARF lookup.
     const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
-    uintptr_t lookup_addr = addr;
-    if (object)
-    {
-#if defined(OS_DARWIN)
-        /// On macOS, subtract the ASLR slide to get the linked (pre-ASLR) address (see StackTrace.cpp).
-        lookup_addr = addr - object->slide;
-#else
-        /// On ELF, subtract the load address to get the file offset within the object.
-        lookup_addr = addr - reinterpret_cast<uintptr_t>(object->address_begin);
-#endif
-    }
-    else
-        object = symbol_index.thisObject();
-
-    if (object)
-    {
-#if defined(OS_DARWIN)
-        /// File/line info comes from a dSYM bundle located next to the binary, if present.
-        if (!object->dsym)
-            return {};
-        auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
-#else
-        auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-#endif
-
-        Dwarf::LocationInfo location;
-        VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-        std::string_view result;
-        if (dwarf_it->second.findAddress(lookup_addr, location, Dwarf::LocationInfoMode::FAST, frames))
-        {
-            setResult(result, location);
-            return result;
-        }
-        /// The result holds source locations only; an unresolved frame stays empty rather than
-        /// borrowing the object path (that would violate the file:line:col column contract).
+    if (!object)
         return {};
+
+#if defined(OS_DARWIN)
+    /// On macOS, subtract the ASLR slide to get the linked (pre-ASLR) address (see StackTrace.cpp).
+    uintptr_t lookup_addr = addr - object->slide;
+#else
+    /// On ELF, subtract the load address to get the file offset within the object.
+    uintptr_t lookup_addr = addr - reinterpret_cast<uintptr_t>(object->address_begin);
+#endif
+
+#if defined(OS_DARWIN)
+    /// File/line info comes from a dSYM bundle located next to the binary, if present.
+    if (!object->dsym)
+        return {};
+    auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
+#else
+    auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+#endif
+
+    Dwarf::LocationInfo location;
+    VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+    std::string_view result;
+    if (dwarf_it->second.findAddress(lookup_addr, location, Dwarf::LocationInfoMode::FAST, frames))
+    {
+        setResult(result, location);
+        return result;
     }
+    /// The result holds source locations only; an unresolved frame stays empty rather than
+    /// borrowing the object path (that would violate the file:line:col column contract).
     return {};
 }
 
