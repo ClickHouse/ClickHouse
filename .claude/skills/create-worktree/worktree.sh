@@ -348,8 +348,15 @@ WORKER='
         then
             if [ "$os" = Darwin ] && [ -f "$main/$path/.git" ]
             then
+                # Clone the files of the main checkout into a temporary sibling directory, give it the .git file of
+                # this worktree, and move it into place only then: an interrupted clone must not leave the .git file
+                # of the main checkout at the destination. A leftover temporary directory has only clones: replace it.
+                stage=$dst.worktree-sh-tmp
+                rm -rf "$stage" || exit 1
+                cp -Rcp "$main/$path" "$stage" || { echo "FAILED: $path: clone of the main checkout files" >&2; exit 1; }
+                printf "gitdir: %s\n" "$store" > "$stage/.git" || exit 1
                 if [ -d "$dst" ]; then rmdir "$dst" || exit 1; fi
-                cp -Rcp "$main/$path" "$dst" || { echo "FAILED: $path: clone of the main checkout files" >&2; exit 1; }
+                mv "$stage" "$dst" || exit 1
             else
                 mkdir -p "$dst" || exit 1
             fi
