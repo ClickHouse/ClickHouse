@@ -51,8 +51,9 @@ mongo --query 'db.mongo_dyn_fold.aggregate([{"$match" : {"id" : 1}}, {"$project"
 echo '-- $rename to a narrower type in a temporary table'
 # The rename is rejected, and both fields keep their values. Only the name of the error and the
 # selected row are kept: a debug build prints the stack trace of the error, whose frames also
-# start with a number.
-${CLICKHOUSE_CLIENT} --mutations_sync 2 --ignore-error --query "
+# start with a number. With parallel replicas, reading a temporary table logs a warning that the
+# other replicas do not have it, so only errors are sent to the client.
+${CLICKHOUSE_CLIENT} --send_logs_level=error --mutations_sync 2 --ignore-error --query "
     CREATE TEMPORARY TABLE mongo_tmp_rename (id Int32, source Int64, target Int32) ENGINE = MergeTree ORDER BY id;
     INSERT INTO mongo_tmp_rename VALUES (1, 2147483648, 7);
     SET enable_mongo_dialect = 1;
@@ -62,7 +63,7 @@ ${CLICKHOUSE_CLIENT} --mutations_sync 2 --ignore-error --query "
     SELECT source, target FROM mongo_tmp_rename;
 " 2>&1 | grep -oE '\([A-Z_]+\)$|^[0-9]+'$'\t''[0-9]+$' | uniq
 # A rename to a wider type works.
-${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "
+${CLICKHOUSE_CLIENT} --send_logs_level=error --mutations_sync 2 --query "
     CREATE TEMPORARY TABLE mongo_tmp_rename (id Int32, source Int32, target Int64) ENGINE = MergeTree ORDER BY id;
     INSERT INTO mongo_tmp_rename VALUES (1, 5, 7);
     SET enable_mongo_dialect = 1;
