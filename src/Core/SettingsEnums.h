@@ -3,6 +3,7 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/SeccompFilter.h>
+#include <Core/FileCachePolicy.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -514,14 +515,6 @@ enum class DatabaseDataLakeSnapshotLoadingMode : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeSnapshotLoadingMode)
-
-enum class FileCachePolicy : uint8_t
-{
-    LRU,
-    SLRU,
-    SLRU_OVERCOMMIT,
-    LRU_OVERCOMMIT,
-};
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
 
