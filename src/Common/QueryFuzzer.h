@@ -370,6 +370,7 @@ private:
     void fuzzClusterFunctionArguments(ASTFunction & fn);
     void fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_settings);
     String fuzzStructure(const String & structure);
+    String fuzzHivePath(String path);
     void addQueueSettings(SettingsChanges & changes, bool on_s3);
     void addMemorySettings(SettingsChanges & changes);
     void fuzzExistingEngineParameters(ASTStorage & storage);

@@ -1088,6 +1088,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_memory_bound_merging_of_aggregation_results", trueOrFalseSettingNoOracle},
     {"enable_multiple_prewhere_read_steps", trueOrFalseSetting},
     {"enable_named_columns_in_function_tuple", trueOrFalseSettingNoOracle},
+    /// Needed by `use_hive_partitioning` on the `S3Queue` and `AzureQueue` engines
+    {"enable_object_storage_queue_hive_partitioning", trueOrFalseSettingNoOracle},
     {"enable_parallel_blocks_marshalling", trueOrFalseSettingNoOracle},
     {"enable_parsing_to_custom_serialization", trueOrFalseSetting},
     {"enable_positional_arguments_for_projections", trueOrFalseSettingNoOracle},

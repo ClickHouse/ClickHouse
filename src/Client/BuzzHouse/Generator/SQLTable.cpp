@@ -1185,7 +1185,9 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     }
 }
 
-String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, const bool escape)
+/// The structure of the table for a table function reading or writing `path`. For a hive path, the
+/// `key=value` partition keys are sometimes declared too, with random types that may not fit the values in it.
+String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, const String & path, const bool escape)
 {
     String buf;
     bool first = true;
@@ -1213,6 +1215,26 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
         first = false;
     }
     this->remote_entries.clear();
+    if (const size_t hive_pos = path.find("_hive/"); hive_pos != String::npos)
+    {
+        for (size_t start = hive_pos + 6, end = 0; start < path.size(); start = end + 1)
+        {
+            end = path.find('/', start);
+            if (end == String::npos)
+                end = path.size();
+            const size_t eq = path.find('=', start);
+            if (eq < end && rg.nextSmallNumber() < 4)
+            {
+                uint32_t col_counter = 0;
+                const uint64_t type_mask_backup = this->next_type_mask;
+
+                this->next_type_mask = fc.type_mask & ~allow_nested;
+                const auto tp = randomNextType(rg, this->next_type_mask, col_counter, nullptr);
+                this->next_type_mask = type_mask_backup;
+                buf += ", `" + path.substr(start, eq - start) + "` " + tp->typeName(escape, false);
+            }
+        }
+    }
     return buf;
 }
 

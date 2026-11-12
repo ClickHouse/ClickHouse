@@ -285,6 +285,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     {
         Expr * structure = nullptr;
         const std::optional<String> & cluster = t.getCluster();
+        /// The path of a `file` or `url` call, whose hive partition keys may go in the structure
+        String path;
 
         if (t.isOnS3() || t.isOnAzure() || t.isOnLocal())
         {
@@ -365,7 +367,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ffunc->set_fname(FileFunc_FName::FileFunc_FName_file);
             }
-            ffunc->set_path(t.getTablePath(rg, this->allow_not_deterministic));
+            path = t.getTablePath(rg, this->allow_not_deterministic);
+            ffunc->set_path(path);
             if (t.file_format.has_value())
             {
                 ffunc->set_format(t.file_format.value());
@@ -389,7 +392,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            ufunc->set_uurl(t.getTablePath(rg, this->allow_not_deterministic));
+            path = t.getTablePath(rg, this->allow_not_deterministic);
+            ufunc->set_uurl(path);
             if (t.file_format.has_value())
             {
                 ufunc->set_format(t.file_format.value());
@@ -478,7 +482,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         if (structure)
         {
-            structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
+            structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, path, false));
         }
         if (ofunc)
         {

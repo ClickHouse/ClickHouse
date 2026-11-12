@@ -459,30 +459,6 @@ static String fieldToNumericString(const Field & f)
 
 void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 {
-    /// Data lake time travel, which a query on any other table ignores: Delta Lake versions are small sequential
-    /// numbers, and an Iceberg timestamp a few seconds back usually falls between the snapshots of a test
-    if (fuzz_rand() % 50 == 0)
-    {
-        switch (fuzz_rand() % 3)
-        {
-            case 0:
-                settings_changes.setSetting("delta_lake_snapshot_version", Int64(fuzz_rand() % 5));
-                break;
-            case 1: {
-                /// The change data feed between two versions
-                const Int64 start = fuzz_rand() % 4;
-                settings_changes.setSetting("delta_lake_snapshot_start_version", start);
-                settings_changes.setSetting("delta_lake_snapshot_end_version", start + Int64(fuzz_rand() % 4));
-                break;
-            }
-            default: {
-                const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-                settings_changes.setSetting("iceberg_timestamp_ms", Int64(now_ms - Int64(fuzz_rand() % 30) * 1000));
-                break;
-            }
-        }
-    }
 #if USE_BUZZHOUSE
     if (!BuzzHouse::performanceSettings.empty() && fuzz_rand() % 5 == 0)
     {
@@ -4200,6 +4176,9 @@ void QueryFuzzer::fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_se
                 = !is_identifier && (key.empty() ? (lower == "wildcard" || lower == "hive") : key == "partition_strategy");
             /// A positional structure has a space between a column name and its type, a path or a URL usually not
             const bool maybe_structure = !is_identifier && (key.empty() ? current.contains(' ') && !current.contains('/') : key == "structure");
+            const bool maybe_path = !is_identifier && !maybe_structure
+                && (key.empty() ? current.contains('/')
+                                : (key == "path" || key == "url" || key == "filename" || key == "blob_path" || key == "uri"));
 
             if (fuzz_rand() % 2 != 0)
                 continue;
@@ -4215,6 +4194,8 @@ void QueryFuzzer::fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_se
                 if (String structure = fuzzStructure(current); !structure.empty())
                     *value = make_intrusive<ASTLiteral>(std::move(structure));
             }
+            else if (maybe_path)
+                *value = make_intrusive<ASTLiteral>(fuzzHivePath(current));
         }
     }
 
@@ -4257,6 +4238,42 @@ String QueryFuzzer::fuzzStructure(const String & structure)
         return {};
     fuzzColumnDeclaration(*column);
     return columns->formatWithSecretsOneLine();
+}
+
+/// Turn a file path or URL into a hive-style one: add a `key=value` level before the file name, change the
+/// value of an existing level, or read every file below the directory with a glob. The scheme and
+/// authority of a URL are kept.
+String QueryFuzzer::fuzzHivePath(String path)
+{
+    const size_t scheme = path.find("://");
+    const size_t first_slash = scheme == String::npos ? 0 : path.find('/', scheme + 3);
+    const size_t last_slash = path.rfind('/');
+    if (first_slash == String::npos || last_slash == String::npos || last_slash < first_slash)
+        return path;
+
+    const String value = fieldToNumericString(getRandomField(fuzz_rand() % 11));
+    switch (fuzz_rand() % 3)
+    {
+        case 0:
+        {
+            /// Change the value of an existing `key=value` level
+            const size_t eq = path.find('=', first_slash);
+            if (eq != String::npos && eq < last_slash)
+            {
+                const size_t end = path.find('/', eq);
+                path.replace(eq + 1, end - eq - 1, value);
+                break;
+            }
+            [[fallthrough]];
+        }
+        case 1:
+            path.insert(last_slash + 1, "k" + std::to_string(fuzz_rand() % 3) + "=" + value + "/");
+            break;
+        default:
+            path.replace(last_slash + 1, String::npos, fuzz_rand() % 2 == 0 ? "**" : "*");
+            break;
+    }
+    return path;
 }
 
 /// The settings of a new `S3Queue` or `AzureQueue` engine, also drawn for an existing one

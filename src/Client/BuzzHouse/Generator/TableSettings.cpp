@@ -1731,6 +1731,32 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
            {"min_insert_block_size_bytes_for_materialized_views", CHSetting(bytesRange, {}, false)},
            {"min_insert_block_size_rows_for_materialized_views", CHSetting(rowsRange, {}, false)},
            {"parallel_inserts", trueOrFalseSetting},
+           /// `partitioning_mode = 'regex'` needs both, the component naming one capture group of the regex
+           {"partition_component",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings choices = {"'p'", "'a'", "'b'", "'missing'", "''"};
+                    return rg.pickRandomly(choices);
+                },
+                {},
+                false)},
+           {"partition_regex",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings choices
+                        = {"'(?P<p>[^_.]+).*'",
+                           "'(?P<p>[0-9]+).*'",
+                           "'(?P<p>.+)'",
+                           "'(?P<a>[^_]+)_(?P<b>.*)'",
+                           "'(?P<p>[a-z]+)(?P<a>[0-9]*)'",
+                           "'no_groups'",
+                           "'(?P<p>'"};
+                    return rg.pickRandomly(choices);
+                },
+                {},
+                false)},
            {"partitioning_mode",
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)

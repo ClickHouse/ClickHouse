@@ -677,7 +677,7 @@ private:
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
-    String getTableStructure(RandomGenerator & rg, const SQLTable & t, bool escape);
+    String getTableStructure(RandomGenerator & rg, const SQLTable & t, const String & path, bool escape);
     void setTableFunction(RandomGenerator & rg, TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
     String getNextTestingAddress(RandomGenerator & rg, bool secure) const;
     String getNextRandomServerAddresses(RandomGenerator & rg, bool secure);
@@ -817,6 +817,8 @@ private:
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!this->allow_not_deterministic || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_storage_class_name + toadd_structure;
+        /// Picked first, so the structure can declare the partition keys of a hive path
+        const String path = b.getTablePath(rg, this->allow_not_deterministic);
 
         for (uint32_t i = 0; i < total_to_add; i++)
         {
@@ -846,7 +848,7 @@ private:
                       next->set_key(
                           b.isOnS3() ? (b.getLakeCatalog() == LakeCatalog::None ? "filename" : "url")
                                      : (b.isOnAzure() ? "blob_path" : "path"));
-                      next->set_value(b.getTablePath(rg, this->allow_not_deterministic));
+                      next->set_value(path);
                       added_path++;
                   }},
                  {add_format,
@@ -925,7 +927,7 @@ private:
                       }
                       else
                       {
-                          next->set_value(getTableStructure(rg, b, false));
+                          next->set_value(getTableStructure(rg, b, path, false));
                       }
                       added_structure++;
                   }}});

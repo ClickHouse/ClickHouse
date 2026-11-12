@@ -921,6 +921,85 @@ String SQLBase::getTablePath() const
 
 String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_deterministic) const
 {
+    if (allow_not_deterministic && (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 16)
+    {
+        /// A hive-style path `{table path}_hive/k0=v/k1=v/...`, with stable keys per level so writes and reads meet,
+        /// and extreme or random values, duplicated keys, column-like keys and levels that are not `key=value`.
+        /// Reads end with a glob or a file name, writes with a file name, both keeping the table path extension.
+        static const DB::Strings odd_keys = {"", "k=", "a b", "k%3D", "K0", "c0", "c1", "_path", "_file"};
+        String base = getTablePath();
+        String ext;
+        std::vector<String> keys;
+
+        for (const auto & placeholder : {PARTITION_STR, SCHEMA_HASH_STR})
+        {
+            for (size_t pos = base.find(placeholder); pos != String::npos; pos = base.find(placeholder))
+                base.erase(pos, placeholder.length());
+        }
+        std::erase(base, '*');
+        if (const size_t dot = base.rfind('.'); dot != String::npos && dot > base.rfind('/'))
+        {
+            ext = base.substr(dot);
+            base.erase(dot);
+        }
+        while (!base.empty() && base.back() == '/')
+            base.pop_back();
+
+        String res = base + "_hive";
+        const uint32_t nlevels = rg.randomInt<uint32_t>(0, 3);
+        for (uint32_t i = 0; i < nlevels; i++)
+        {
+            const uint32_t next = rg.nextMediumNumber();
+            String key = "k" + std::to_string(i);
+            String value;
+
+            if (next < 6 && !keys.empty())
+            {
+                /// Duplicated key, usually with another value, which the server rejects
+                key = rg.pickRandomly(keys);
+            }
+            else if (next < 16)
+            {
+                key = rg.pickRandomly(odd_keys);
+            }
+            if (rg.nextBool())
+            {
+                /// One of the extreme values, string ones print as quoted SQL literals
+                Expr expr;
+                std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+
+                expr.mutable_lit_val()->mutable_special_val()->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+                SQLExprToString(value, expr);
+                if (value.size() >= 2 && value.front() == '\'' && value.back() == '\'')
+                    value = value.substr(1, value.size() - 2);
+            }
+            else
+            {
+                value = rg.nextString("", true, rg.nextStrlen());
+            }
+            res += "/" + key + "=" + value;
+            keys.emplace_back(key);
+        }
+        if (rg.nextMediumNumber() < 6)
+        {
+            /// A level that is not `key=value`
+            res += "/plain";
+        }
+        if (rg.nextMediumNumber() < 31)
+        {
+            static const DB::Strings globs = {"/**", "/**", "/*", "/*/*", "/f*", "/{f0,f1}", "/f0"};
+            const String & glob = rg.pickRandomly(globs);
+
+            res += glob;
+            if (!glob.ends_with('*'))
+                res += ext;
+        }
+        else
+        {
+            res += "/f" + std::to_string(rg.randomInt<uint32_t>(0, 2)) + ext;
+        }
+        return res;
+    }
     if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
