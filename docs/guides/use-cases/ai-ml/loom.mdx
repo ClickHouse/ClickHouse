@@ -14,7 +14,7 @@ This guide installs [ClickHouse Loom](https://github.com/ClickHouse/loom), an op
 - Docker with Compose 2.20 or later, on Linux `amd64` or `arm64` (Docker Desktop on Apple Silicon works), and port 7777 free.
 - A ClickHouse for Loom. The Loom stack can run its own ClickHouse container. To use a ClickHouse Cloud service or a self-managed server instead:
   - version 26.4 or later (on Cloud, the service's oldest replica counts);
-  - a Keeper: Cloud has one, and a self-managed server adds Loom's `keeper.xml` or a `<zookeeper>` section;
+  - a Keeper: Cloud has one, and a self-managed server adds Loom's `keeper.xml` to its `config.d/`, or a `<zookeeper>` section naming your Keeper;
   - a user with everything on `loom.*` and `loom_telemetry.*` (`GRANT ALL`, or `GRANT CURRENT GRANTS` on Cloud), `SELECT` on the system tables Loom reads, and `READ ON REMOTE`.
 
   See [ClickHouse requirements](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#clickhouse-requirements).
@@ -58,7 +58,7 @@ For Kubernetes with ClickHouse Cloud and ClickHouse Managed Postgres, follow [Cl
 </Tab>
 <Tab title="Self-managed ClickHouse" id="self-managed-clickhouse">
 
-Pass your server's URL; the installer works as in the Cloud tab. A server on the Docker host itself is `host.docker.internal`, because `localhost` inside the Loom container is the container. On Linux Docker Engine that name is the bridge gateway, so the server must listen on it (`listen_host`), not only on loopback:
+Pass your server's URL; the installer works as in the Cloud tab. `http://` defaults to port 8123. A server on the Docker host itself is `host.docker.internal`, because `localhost` inside the Loom container is the container.:
 
 ```bash
 curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
@@ -79,6 +79,8 @@ curl -sX POST http://localhost:7777/v1/memory.set -H 'Content-Type: application/
 curl -sX POST http://localhost:7777/v1/memory.get -H 'Content-Type: application/json' \
   -d '{"org":"dev","namespace":"local","agent":"quickstart","memory_key":"deploy_window"}'
 ```
+
+The `memory.get` response has `found: true` and the `value` as written.
 </Step>
 <Step title="Connect a coding agent" id="connect-a-coding-agent">
 
@@ -121,9 +123,9 @@ Merge this entry into `~/.cursor/mcp.json`, then restart Cursor:
 | Action | Expected result |
 |---|---|
 | `curl -s http://localhost:7777/v1/health` | `status` is `ok` |
-| Open `http://localhost:7777/` | The Loom dashboard, on the Memories page |
-| The `memory.get` call above | The value saved with `memory.set` |
-| `SELECT count() FROM loom.memory` in ClickHouse (for the bundled one: `docker compose --project-directory ~/.loom exec clickhouse clickhouse-client`) | At least one row |
+| Open `http://localhost:7777/` | The Loom dashboard, with the saved memory |
+| The `memory.get` call above | `found` is `true`, with the value saved by `memory.set` |
+| On the bundled ClickHouse: `docker compose --project-directory "$HOME/.loom" exec clickhouse clickhouse-client --user loom --password loomdev --query "SELECT memory_key, value FROM loom.memory FINAL WHERE org = 'dev' AND namespace = 'local'"` | The `deploy_window` row |
 
 ## Best practices {#best-practices}
 
@@ -138,11 +140,11 @@ The released stack embeds with a local CPU model and uses a stand-in LLM, so ext
 ## Troubleshooting {#troubleshooting}
 
 <Accordion title="The installer stops at the ClickHouse check">
-Loom needs ClickHouse 26.4 or later, a Keeper, and the grants listed in [Before you begin](#before-you-begin). On a self-managed server without a Keeper, add one, or run the installer with `--bundled` to use the stack's own ClickHouse.
+Loom needs ClickHouse 26.4 or later, a Keeper, and the grants listed in [Before you begin](#before-you-begin). On a self-managed server without a Keeper, add one, or run the installer with `--bundled` to use the stack's own ClickHouse. `docker compose --project-directory "$HOME/.loom" run --rm loom loom ch-setup --print-sql` prints the SQL for an admin without connecting.
 </Accordion>
 
-<Accordion title="Something else fails">
-[Troubleshooting](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/troubleshooting.md) gives each problem's symptom, the check, and the fix.
+<Accordion title="Loom doesn't become healthy">
+Read the logs with `docker compose --project-directory "$HOME/.loom" logs --tail 100 loom clickhouse`. [Troubleshooting](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/troubleshooting.md) gives each problem's symptom, the check that confirms it, and the fix.
 </Accordion>
 
 ## Frequently asked questions {#faq}
@@ -158,4 +160,5 @@ Yes. A new deployment can choose Postgres at its first boot as the authority for
 ## Next steps {#next-steps}
 
 - [Loom quickstart](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
+- [Connect a coding agent](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
 - [Use ClickHouse with MCP](/guides/use-cases/ai-ml/MCP/index)
