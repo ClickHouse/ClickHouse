@@ -1,8 +1,13 @@
 -- Tags: zookeeper, no-replicated-database
 -- no-replicated-database: this test explicitly issues plain ON CLUSTER DDL on a regular database.
 
--- With entry format 2 the DDL worker pins version 0 on an unversioned state type name, which must not be refused there.
 SET distributed_ddl_output_mode = 'throw';
+SET allow_suspicious_aggregate_function_version_0 = 0;
+
+-- The initiator checks the definition before enqueueing it, because a DDL worker does not.
+CREATE TABLE t_refused ON CLUSTER test_shard_localhost (s AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))) ENGINE = Memory FORMAT Null; -- { serverError BAD_ARGUMENTS }
+
+-- With entry format 2 the DDL worker pins version 0 on an unversioned state type name, which must not be refused there.
 SET distributed_ddl_entry_format_version = 2;
 
 CREATE TABLE t ON CLUSTER test_shard_localhost (s AggregateFunction(sumMap, Array(UInt8), Array(UInt8))) ENGINE = Memory FORMAT Null;
