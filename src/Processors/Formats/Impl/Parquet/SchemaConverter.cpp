@@ -36,7 +36,6 @@ namespace DB::ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Parquet
@@ -176,20 +175,11 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
-        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
-        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
-        /// id means the file does not belong to this table, or its schema was resolved to a wrong
-        /// one, which is reported rather than silently ignored.
-        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
-                "assigned that field id: the highest field id it ever assigned is {}",
-                element.name,
-                element.field_id,
-                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
-
+        /// A reader projects by field id, so a file column whose id is not in the read schema is
+        /// not selected (https://iceberg.apache.org/spec/#column-projection). This covers a column
+        /// dropped from the table, since `DROP COLUMN` is metadata-only and data files keep the
+        /// column, and a private column of the writer, e.g. `_CHANGE_TIMESTAMP` (2147483345) that
+        /// BigQuery writes into the files of its managed Iceberg tables but keeps out of the schema.
         out_not_in_schema = true;
         return element.name;
     }
@@ -2137,6 +2127,19 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
             auto converter = std::make_shared<Int96Converter>();
             converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            /// Decode at the requested precision; the rounding must match the cast to the requested type that follows.
+            const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr;
+            if (dt64_hint && dt64_hint->getScale() < 9)
+            {
+                converter->scale = dt64_hint->getScale();
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(converter->scale, "UTC");
+            }
+            else if (type_hint && WhichDataType(type_hint->getTypeId()).isDate32())
+            {
+                converter->scale = 0;
+                converter->round_down = true;
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(0, "UTC");
+            }
             out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
