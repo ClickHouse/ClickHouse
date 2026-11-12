@@ -21,6 +21,12 @@
 
 #include <sys/mman.h>
 
+#include <atomic>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <vector>
+
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
 #include <llvm/IR/IRBuilder.h>
@@ -89,14 +95,50 @@ void ColumnNullable::materializeNullMapSlow()
 namespace
 {
 
+constexpr size_t zeros_pad_left = PADDING_FOR_SIMD;
+
+#if defined(OS_WASM)
+
+/// On WebAssembly, an anonymous mapping is allocated and zeroed in the linear memory, which is limited
+/// (see `MAXIMUM_MEMORY` in `cmake/target.cmake`), so a large virtual zero mapping is impossible.
+/// Instead, allocate a zero buffer of the requested size, growing it geometrically. The previous buffers are never freed,
+/// because the readers may still hold pointers to them, so the total memory is bounded by twice the largest request.
+/// Padded on both sides like `PaddedPODArray`.
+constexpr size_t zeros_size = std::numeric_limits<size_t>::max() / 4;
+
+const UInt8 * getZeros(size_t size)
+{
+    static std::mutex mutex;
+    static std::vector<std::unique_ptr<UInt8[]>> buffers;
+    static std::atomic<const UInt8 *> current_zeros = nullptr;
+    static std::atomic<size_t> current_size = 0;
+
+    if (size <= current_size.load(std::memory_order_acquire))
+        return current_zeros.load(std::memory_order_acquire);
+
+    std::lock_guard lock(mutex);
+    size_t old_size = current_size.load(std::memory_order_relaxed);
+    if (size <= old_size)
+        return current_zeros.load(std::memory_order_relaxed);
+
+    size_t new_size = std::max<size_t>({size, old_size * 2, 4096});
+    buffers.emplace_back(new UInt8[zeros_pad_left + new_size + PADDING_FOR_SIMD]());
+    const UInt8 * zeros = buffers.back().get() + zeros_pad_left;
+    /// Publish the pointer before the size, so that a reader that sees the new size also sees the new pointer.
+    current_zeros.store(zeros, std::memory_order_release);
+    current_size.store(new_size, std::memory_order_release);
+    return zeros;
+}
+
+#else
+
 /// A read-only anonymous mapping, so it does not take memory: its pages are mapped to the zero page on reading.
 /// Being read-only, it is not accounted as committed memory. It is large enough for any column that fits in memory.
 /// Padded on both sides like `PaddedPODArray`, because the readers may read past the end of the null map
 /// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`). Never unmapped.
 constexpr size_t zeros_size = 1ULL << 36;
-constexpr size_t zeros_pad_left = PADDING_FOR_SIMD;
 
-const UInt8 * getZeros()
+const UInt8 * getZeros(size_t /*size*/)
 {
     static const UInt8 * const zeros = []
     {
@@ -108,6 +150,8 @@ const UInt8 * getZeros()
     return zeros;
 }
 
+#endif
+
 }
 
 const UInt8 * ColumnNullable::getNullMapRawDataOrZeros() const
@@ -116,7 +160,7 @@ const UInt8 * ColumnNullable::getNullMapRawDataOrZeros() const
         return map->data();
     if (size() > zeros_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many rows in a Nullable column without a null map: {}", size());
-    return getZeros();
+    return getZeros(size());
 }
 
 ColumnPtr ColumnNullable::convertToFullIfWrapped() const
