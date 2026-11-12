@@ -203,6 +203,9 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    /// See `SelectQueryOptions::view_source_in_subqueries`.
+    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -216,6 +219,8 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     bool is_ast_level_optimization_allowed;
+
+    bool view_source_in_subqueries = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
