@@ -9983,8 +9983,14 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
     auto query_context_ptr = getQueryContext();
     std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
     if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+    {
+        auto provider = query_context_ptr->getStatelessWorkersProvider(
             query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+        /// Taken one time, so that the planning and the allocation of the query see the same workers.
+        if (auto query_snapshot = provider->tryGetQuerySnapshot())
+            provider = std::move(query_snapshot);
+        query_context_ptr->stateless_worker_provider = std::move(provider);
+    }
     return query_context_ptr->stateless_worker_provider;
 }
 

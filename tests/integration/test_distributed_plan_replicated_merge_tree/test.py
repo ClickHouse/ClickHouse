@@ -26,7 +26,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 pytestmark = pytest.mark.timeout(300)
 
@@ -868,8 +868,15 @@ def test_stopped_replica_is_not_a_worker(started_cluster):
             "1",
         )
 
-        # A task sent to the stopped replica would fail the query.
-        assert INITIATOR.query(f"{query} SETTINGS {settings}") == expected
+        # A task sent to the stopped replica would fail the query. The initiator can use the
+        # liveness that it read before for a short time, so retry.
+        assert_eq_with_retry(
+            INITIATOR,
+            f"{query} SETTINGS {settings}",
+            expected,
+            retry_count=10,
+            ignore_error=True,
+        )
 
         # The replica gets tasks again when it is active again.
         node3.start_clickhouse()
@@ -878,13 +885,18 @@ def test_stopped_replica_is_not_a_worker(started_cluster):
             "SELECT count() FROM system.clusters WHERE cluster = 'workers_db' AND is_active = 0",
             "0",
         )
-        query_id = f"workers_after_restart_{uuid.uuid4().hex}"
-        assert INITIATOR.query(f"{query} SETTINGS {settings}", query_id=query_id) == expected
-        node3.query("SYSTEM FLUSH LOGS query_log")
-        tasks_on_restarted_replica = node3.query(
-            f"SELECT count() FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-        assert int(tasks_on_restarted_replica) > 0
+
+        def count_tasks_on_restarted_replica():
+            query_id = f"workers_after_restart_{uuid.uuid4().hex}"
+            assert INITIATOR.query(f"{query} SETTINGS {settings}", query_id=query_id) == expected
+            node3.query("SYSTEM FLUSH LOGS query_log")
+            return int(
+                node3.query(
+                    f"SELECT count() FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+            )
+
+        wait_condition(count_tasks_on_restarted_replica, lambda count: count > 0, max_attempts=10, delay=0.5)
     finally:
         node3.start_clickhouse()
         for node in NODES:
