@@ -1651,14 +1651,11 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    auto add_column_index_conditions = [&](
-        const KeyCondition & condition, decltype(column_conditions) & owner, bool from_join_runtime_filter)
+    /// `column_index_conditions` points into `conditions`, which must live as long as the reader.
+    auto add_column_index_conditions = [&](const decltype(column_conditions) & conditions, bool from_join_runtime_filter)
     {
-        const size_t prev_size = owner.size();
-        condition.extractSingleColumnConditions(owner, nullptr);
-        for (size_t i = prev_size; i < owner.size(); ++i)
+        for (const auto & [idx_in_output_block, key_condition] : conditions)
         {
-            const auto & [idx_in_output_block, key_condition] = owner[i];
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             /// No file-readable column for this key-condition column: it has no page-index
             /// stats, so it cannot prune. Skip it (page-level pruning is disabled for it).
@@ -1674,7 +1671,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     };
 
     if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
-        add_column_index_conditions(*format_filter_info->key_condition, column_conditions, /*from_join_runtime_filter=*/ false);
+    {
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
+        add_column_index_conditions(column_conditions, /*from_join_runtime_filter=*/ false);
+    }
 
     /// Page-level pruning for spatial bbox columns: extract per-column conditions from each
     /// spatial KeyCondition (covering.bbox) and wire them to the bbox primitive columns.
@@ -1707,7 +1707,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
     /// Added last: `applyColumnIndex` counts a page as pruned by the runtime filter only if no other condition ruled it out.
     if (options.format.parquet.page_filter_push_down && join_runtime_filter_key_condition)
-        add_column_index_conditions(*join_runtime_filter_key_condition, join_runtime_filter_column_conditions, /*from_join_runtime_filter=*/ true);
+    {
+        join_runtime_filter_key_condition->extractSingleColumnConditions(join_runtime_filter_column_conditions, nullptr);
+        add_column_index_conditions(join_runtime_filter_column_conditions, /*from_join_runtime_filter=*/ true);
+    }
 
     initColumnsCache();
     initializePrefetches();

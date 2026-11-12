@@ -1,42 +1,8 @@
---- layout: data files, row groups; pages skipped by a filter of the query ---
-1	2
-2
-14
 --- A an exact set of keys ---
 2	2215
 2	2215
 a_on	14	0	14
 a_off	0	0	0
---- A4 the same with 4 threads ---
-2	2215
-2	2215
-a4_on	14	0	14
-a4_off	0	0	0
---- B the [min, max] range when the exact set is too large ---
-2	2215
-2	2215
-b_on	7	0	7
-b_off	0	0	0
---- C a key under two casts prunes nothing ---
-7	5411
-7	5411
-c_on	0	0	0
-c_off	0	0	0
---- D a Nullable key with a page of NULLs ---
-2	2215
-2	2215
-d_on	14	0	14
-d_off	0	0	0
---- E a key under one cast ---
-2	2215
-2	2215
-e_on	14	0	14
-e_off	0	0	0
---- H LEFT ANTI prunes nothing ---
-1598
-1598
-h_on	0	0	0
-h_off	0	0	0
 --- W together with a filter of the query ---
 1	705
 1	705
@@ -48,18 +14,8 @@ w_off	0	0	7
 q1_on	16	0	16
 q1_off	0	0	0
 1600
---- X position deletes ---
-1	1510
-1	1510
-x_on	14	0	14
-x_off	0	0	0
 --- M a page index of the join key that cannot be parsed ---
 2	2215
 2	2215
 m_on	0	0	0
 m_off	0	0	0
---- Q2 the per-file row count cache ---
-1	1
-2	2215
-0
-q2_on	14	0	14

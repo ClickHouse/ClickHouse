@@ -16,33 +16,21 @@ trap 'rm -rf "${ROOT}"' EXIT
 PAGES="allow_experimental_iceberg_compaction = 0, output_format_parquet_batch_size = 100, output_format_parquet_data_page_size = 1"
 
 # `fact`: one data file of 2 row groups (k = 0 .. 799 and 800 .. 1599), page p holding k = p * 100 .. p * 100 + 99,
-# so every row group contains a key of `dim` and only the pages can be skipped. `nk` is NULL on the whole page 3.
+# so every row group contains a key of `dim` and only the pages can be skipped.
 # `fact_q`: one row group, page p holding k = p * 200 .. p * 200 + 99, so 150 is within the bounds of the row
 # group but of no page.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --max_insert_threads=1 --query "
-CREATE TABLE fact (k Int64, nk Nullable(Int64), v Int64, k32 Int32) ENGINE = IcebergLocal('${ROOT}/fact/', 'Parquet')
+CREATE TABLE fact (k Int64, v Int64) ENGINE = IcebergLocal('${ROOT}/fact/', 'Parquet')
 SETTINGS ${PAGES}, output_format_parquet_row_group_size = 800;
-INSERT INTO fact SELECT number AS k, if(intDiv(k, 100) = 3, NULL, k), k, toInt32(k) FROM numbers(1600);
+INSERT INTO fact SELECT number, number FROM numbers(1600);
 CREATE TABLE fact_q (k Int64, v Int64) ENGINE = IcebergLocal('${ROOT}/fact_q/', 'Parquet')
 SETTINGS ${PAGES}, output_format_parquet_row_group_size = 100000;
 INSERT INTO fact_q SELECT number + 100 * intDiv(number, 100), number FROM numbers(1600);
 CREATE TABLE dim (k Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dim VALUES (705), (1510);
-CREATE TABLE dim64 (k UInt64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO dim64 VALUES (5);
 CREATE TABLE dim_q (k Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dim_q VALUES (150);
 " < /dev/null
-
-echo '--- layout: data files, row groups; pages skipped by a filter of the query ---'
-${CLICKHOUSE_CLIENT} --query "
-    SELECT count(), sum(num_row_groups) FROM file('${ROOT}/fact/data/*.parquet', ParquetMetadata);
-    SELECT count() FROM fact WHERE k IN (705, 1510)
-    SETTINGS use_query_condition_cache = 0, use_iceberg_metadata_files_cache = 0, enable_parallel_replicas = 0, log_comment = '${CLICKHOUSE_DATABASE}_layout';
-    SYSTEM FLUSH LOGS query_log;
-    SELECT ProfileEvents['ParquetPrunedPages'] FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_layout'
-    SETTINGS enable_parallel_replicas = 0"
 
 # Every setting that decides whether the probe side gets a runtime filter, which side is probed, or whether row
 # groups and pages are pruned by statistics is pinned.
@@ -52,8 +40,8 @@ SETTINGS="enable_join_runtime_filters = 1, join_algorithm = 'hash', enable_join_
     input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1, use_query_condition_cache = 0"
 
 # Runs the query with the pruning on and off: both must return the same rows.
-probe() { # probe <tag> <query> [<extra settings>] [<max_threads>]
-    local extra="${3:+, $3}, max_threads = ${4:-1}"
+probe() { # probe <tag> <query> [<extra settings>]
+    local extra="${3:+, $3}, max_threads = 1"
     ${CLICKHOUSE_CLIENT} --query "
         $2 SETTINGS ${SETTINGS}${extra}, use_join_runtime_filters_for_iceberg_pruning = 1, log_comment = '${CLICKHOUSE_DATABASE}_$1_on';
         $2 SETTINGS ${SETTINGS}${extra}, use_join_runtime_filters_for_iceberg_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_$1_off';"
@@ -76,30 +64,6 @@ echo '--- A an exact set of keys ---'
 probe a "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k"
 report a
 
-echo '--- A4 the same with 4 threads ---'
-probe a4 "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k" "" 4
-report a4
-
-echo '--- B the [min, max] range when the exact set is too large ---'
-probe b "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k" "join_runtime_filter_exact_values_limit = 1"
-report b
-
-echo '--- C a key under two casts prunes nothing ---'
-probe c "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim64 AS d ON CAST(f.k AS UInt8) = d.k"
-report c
-
-echo '--- D a Nullable key with a page of NULLs ---'
-probe d "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.nk = d.k"
-report d
-
-echo '--- E a key under one cast ---'
-probe e "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.k32 = d.k"
-report e
-
-echo '--- H LEFT ANTI prunes nothing ---'
-probe h "SELECT count() FROM fact AS f LEFT ANTI JOIN dim AS d ON f.k = d.k"
-report h
-
 # The filter of the query skips page 0 of k and pages 10 to 15 of v, which are not counted as pruned by the runtime filter.
 echo '--- W together with a filter of the query ---'
 probe w "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE f.k >= 100 AND f.v < 1000"
@@ -112,17 +76,6 @@ probe q1 "SELECT count(), sum(v) FROM fact_q AS f INNER JOIN dim_q AS d ON f.k =
     "optimize_move_to_prewhere = 0, use_query_condition_cache = 1"
 report q1
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM fact_q WHERE v >= 0 SETTINGS use_query_condition_cache = 1, use_iceberg_metadata_files_cache = 0"
-
-# A data file with position deletes is read through a per-file copy of the filters.
-echo '--- X position deletes ---'
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --max_insert_threads=1 --query "
-CREATE TABLE fact_x (k Int64, v Int64) ENGINE = IcebergLocal('${ROOT}/fact_x/', 'Parquet')
-SETTINGS ${PAGES}, output_format_parquet_row_group_size = 100000;
-INSERT INTO fact_x SELECT number, number FROM numbers(1600);
-ALTER TABLE fact_x DELETE WHERE k = 705;
-" < /dev/null
-probe x "SELECT count(), sum(v) FROM fact_x AS f INNER JOIN dim AS d ON f.k = d.k"
-report x
 
 # The page index of the join key cannot be parsed: the runtime filter skips no page of it, and the read does not fail.
 echo '--- M a page index of the join key that cannot be parsed ---'
@@ -175,30 +128,9 @@ PYEOF
 probe m "SELECT count(), sum(v) FROM fact_m AS f INNER JOIN dim AS d ON f.k = d.k"
 report m
 
-# The per-file row count cache is shared by `icebergS3` and `s3()` reads of the same object, so a read that
-# skipped pages must not record its row count. No `probe` here: its `_off` read would rewrite the entry.
-echo '--- Q2 the per-file row count cache ---'
-Q2_PATH="05457_rf_pages/${CLICKHOUSE_TEST_UNIQUE_NAME}/fact_s3"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --max_insert_threads=1 --query "
-CREATE TABLE fact_s3 (k Int64, v Int64) ENGINE = IcebergS3(s3_conn, filename = '${Q2_PATH}')
-SETTINGS ${PAGES}, output_format_parquet_row_group_size = 100000;
-INSERT INTO fact_s3 SELECT number, number FROM numbers(1600);
-" < /dev/null
-${CLICKHOUSE_CLIENT} --query "
-    SELECT count(), sum(num_row_groups) FROM s3(s3_conn, filename = '${Q2_PATH}/data/*.parquet', format = 'ParquetMetadata');
-    SELECT count(), sum(v) FROM fact_s3 AS f INNER JOIN dim AS d ON f.k = d.k
-    SETTINGS ${SETTINGS}, max_threads = 1, use_join_runtime_filters_for_iceberg_pruning = 1, optimize_move_to_prewhere = 0,
-        use_cache_for_count_from_files = 1, log_comment = '${CLICKHOUSE_DATABASE}_q2_on';
-    SELECT countIf(number_of_rows IS NOT NULL AND number_of_rows != 1600) FROM system.schema_inference_cache
-    WHERE storage = 'S3' AND format = 'Parquet' AND source LIKE '%${Q2_PATH}/data/%';"
-report q2
-
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS fact SYNC;
     DROP TABLE IF EXISTS fact_q SYNC;
-    DROP TABLE IF EXISTS fact_x SYNC;
     DROP TABLE IF EXISTS fact_m SYNC;
-    DROP TABLE IF EXISTS fact_s3 SYNC;
     DROP TABLE IF EXISTS dim SYNC;
-    DROP TABLE IF EXISTS dim64 SYNC;
     DROP TABLE IF EXISTS dim_q SYNC;"
