@@ -12,6 +12,8 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <memory>
+
 namespace DB
 {
 struct ServerSettings;
@@ -19,6 +21,8 @@ struct ServerSettings;
 
 namespace DB::GPU
 {
+
+class GPUKernelCache;
 
 
 inline void clearDeviceError()
@@ -54,6 +58,10 @@ struct GPUDeviceSettings
     /// Freed pinned host memory that `PinnedMemoryPool` keeps instead of returning it to the system.
     size_t pinned_memory_pool_release_threshold = 0;
 
+    /// The limits of `GPUKernelCache`, in bytes of the PTX and in kernels.
+    size_t kernel_cache_max_size_in_bytes = 0;
+    size_t kernel_cache_max_count = 0;
+
     static GPUDeviceSettings fromServerSettings(const ServerSettings & server_settings);
 };
 
@@ -74,12 +82,18 @@ public:
 
     PinnedMemoryPool & pinnedPool() { return PinnedMemoryPool::instance(); }
 
+    /// The kernels compiled for expressions, which are unloaded with the device, see `GPUExpressionCompiler`.
+    GPUKernelCache & kernelCache() { return *kernel_cache; }
+
 private:
     /// Its pool is taken first, which checks that there is a device; the streams are set once they are made.
     GPUResources gpu_resources;
 
     StreamPtr upload_stream;
     StreamPtr decompression_stream;
+
+    /// Destroyed before the streams and the pool, after the destructor waits for the device.
+    std::unique_ptr<GPUKernelCache> kernel_cache;
 };
 
 }

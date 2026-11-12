@@ -95,7 +95,7 @@ private:
     };
 
     mutable std::mutex mutex;
-    /// Index of last used disk, for load_balancing=round_robin
+    /// The next turn of load_balancing=round_robin: turn `t` goes to the disk `disks[t % disks.size()]`
     mutable std::atomic<size_t> last_used = 0;
     /// Disks with their unreserved space, in no particular order, for load_balancing=least_used
     mutable std::vector<DiskWithSize> disks_with_size TSA_GUARDED_BY(mutex);

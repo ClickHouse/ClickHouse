@@ -5,6 +5,7 @@
 #include <Core/SettingsObsoleteMacros.h>
 #include <Core/SettingsFields.h>
 #include <Core/Defines.h>
+#include <Formats/FormatSettings.h>
 
 // clang-format off
 #if defined(__CLION_IDE__)

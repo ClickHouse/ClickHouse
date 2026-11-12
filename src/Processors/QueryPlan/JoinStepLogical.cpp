@@ -1993,7 +1993,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
     LogicalJoinInfo && logical_join_info,
-    bool disjunctions_optimization_applied)
+    bool disjunctions_optimization_applied,
+    const std::unordered_map<String, ColumnStats> & right_relation_column_stats)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
@@ -2349,6 +2350,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
+                if (prepared_join_storage.storage_key_value)
+                {
+                    /// The whole action is merged into the right-side DAG below, so the DAG gets only its inputs.
+                    std::stack<const ActionsDAG::Node *> stack;
+                    stack.push(action);
+                    while (!stack.empty())
+                    {
+                        const auto * node = stack.top();
+                        stack.pop();
+                        if (node->type == ActionsDAG::ActionType::INPUT)
+                            used_expressions.emplace_back(node, expression_actions);
+                        for (const auto * child : node->children)
+                            stack.push(child);
+                    }
+                    continue;
+                }
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
                 /// toNullable(x) -> x (Input)
@@ -2520,6 +2537,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
+    const bool right_has_strings = std::any_of(right_sample_block->begin(), right_sample_block->end(), [](const auto & column)
+    {
+        return isString(removeNullable(removeLowCardinality(column.type)));
+    });
+    if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
+    {
+        auto right_column_stats = right_relation_column_stats.empty()
+            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
+            : right_relation_column_stats;
+        QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
+        for (const auto & [name, stats] : right_column_stats)
+            table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
+    }
+
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
@@ -2644,7 +2675,8 @@ void JoinStepLogical::buildPhysicalJoin(
         /// physical step the guard is read off. That read is inert today - `JoinStep` is built without
         /// `use_join_disjunctions_push_down`, so the push-down cannot run on it either way - but the
         /// field is what decides it if that ever changes, and a default `false` would decide it wrong.
-        join_step->isDisjunctionsOptimizationApplied()
+        join_step->isDisjunctionsOptimizationApplied(),
+        join_step->right_relation.column_stats
     );
 
     new_node.cost_estimation = node.cost_estimation;
@@ -2963,6 +2995,10 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
+        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate.
+        if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
+            && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
+            optimizer_flags |= 8;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3039,6 +3075,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
+        if (optimizer_flags & 8)
+            step->join_settings.enable_packed_string_keys_in_hash_join = false;
     }
     return step;
 }
