@@ -182,7 +182,7 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
         producers,
         layout,
         std::move(spill_scope),
-        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
+        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>() : nullptr);
 }
 
 bool Aggregator::advanceAdaptiveProducer(
@@ -273,7 +273,10 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     {
         const auto & layout = adaptive.session->layout;
         adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(
-            layout.numPartitions(), adaptive_staging_block_buckets * layout.partitionsPerBucket(), layout.firstChunkBytes());
+            layout.numPartitions(),
+            adaptive_staging_block_buckets * layout.partitionsPerBucket(),
+            layout.firstChunkBytes(),
+            layout.maxChunkBytes());
     }
     if (params.adaptiveTopKPrunes() && !adaptive.count_bins.isAllocated())
         adaptive.count_bins.allocate();
@@ -347,12 +350,27 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         shared.top_k_pruning->addMergeCountedTable(local_variants);
 }
 
-void Aggregator::prepareAdaptiveTopKPruning(
+void Aggregator::prepareAdaptiveTopK(
     AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
     auto & pruning = shared.top_k_pruning;
     if (pruning && (external_merge || collects_statistics || !pruning->prepare(producers)))
         pruning.reset();
+
+    if (!params.bucket_top_k || external_merge)
+        return;
+
+    /// Settling skips units unread, whose groups the statistics need. A throw-mode group limit allows it,
+    /// as it allows the pruning: the merge checks the limit against the groups it builds (see
+    /// `checkMergedGroupLimit`). Settling also drops the groups tied with the output ones, which `LIMIT`
+    /// allows only because the order is by the rank alone and not `WITH TIES` (see
+    /// `tryPushBucketTopKIntoAggregation`). A descending order never settles, because a rank has no largest
+    /// possible value.
+    std::optional<UInt64> best_possible_rank;
+    if (params.bucket_top_k_ascending && !collects_statistics)
+        best_possible_rank = bucket_top_k_min_rank;
+    shared.top_k_threshold
+        = std::make_unique<AdaptiveTopKThreshold>(params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank);
 }
 
 UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
