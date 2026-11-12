@@ -176,6 +176,23 @@ static CustomDiskMatches getOrCreateCustomDisk(
             matches.emplace_back(i, std::move(name));
         }
     }
+
+    /// The disk of another form is used only together with a registration of it that is alive. If its last registration is
+    /// being destroyed, the disk is about to be unregistered, and a new registration would take over `nested_registrations`,
+    /// which are the registrations of the disks the first form names, not the ones that disk wraps: those would be released
+    /// under it. Such a form is skipped, as if the disk was already gone. The disk and its registration are taken together,
+    /// so that the registration cannot be destroyed in between.
+    DiskPtr reused_disk;
+    CustomDiskRegistrationPtr reused_registration;
+    while (!matches.empty() && matches.front().first != 0)
+    {
+        std::tie(reused_disk, reused_registration)
+            = context->tryGetRegisteredCustomDisk(matches.front().second, hashes[matches.front().first]);
+        if (reused_disk)
+            break;
+        matches.erase(matches.begin());
+    }
+
     if (matches.empty())
         matches.emplace_back(0, get_disk_name(hashes[0]));
 
@@ -216,26 +233,33 @@ static CustomDiskMatches getOrCreateCustomDisk(
     /// The registrations in `nested_registrations` that are not taken over are destroyed when this function
     /// returns, without any lock held. They are the registrations of the disks the first form names: if another
     /// form is chosen, its disk exists already, and its registration owns the registrations of its own nested disks.
-    auto [disk, registration] = context->getOrCreateCustomDisk(disk_name, disk_settings_hash, [&](const DisksMap & disks_map) -> DiskPtr {
-        /// A wrapper (`encrypted`, `cache`) names a disk another session may have created with the opt-in. It is looked up
-        /// in the map the wrapper is created from, so that it cannot be registered in between.
-        const auto wrapped = disks_map.find(wrapped_disk_name);
-        const bool wraps_server_credentials = wrapped != disks_map.end() && wrapped->second->customDiskUsesServerCredentials();
-        if (wraps_server_credentials && restricted)
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "A dynamic disk created from user SQL may not wrap the disk `{}`, which uses the server's own credentials."
+    auto get_or_create_disk = [&]() -> std::pair<DiskPtr, CustomDiskRegistrationPtr>
+    {
+        if (reused_disk)
+            return {reused_disk, reused_registration};
+        chassert(chosen == 0);
+        return context->getOrCreateCustomDisk(disk_name, disk_settings_hash, [&](const DisksMap & disks_map) -> DiskPtr {
+            /// A wrapper (`encrypted`, `cache`) names a disk another session may have created with the opt-in. It is looked up
+            /// in the map the wrapper is created from, so that it cannot be registered in between.
+            const auto wrapped = disks_map.find(wrapped_disk_name);
+            const bool wraps_server_credentials = wrapped != disks_map.end() && wrapped->second->customDiskUsesServerCredentials();
+            if (wraps_server_credentials && restricted)
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "A dynamic disk created from user SQL may not wrap the disk `{}`, which uses the server's own credentials."
 #if !CLICKHOUSE_CLOUD
-                " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
+                    " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
-                , wrapped->first);
+                    , wrapped->first);
 
-        auto result = DiskFactory::instance().create(
-            disk_name, *config, /* config_path */"", context, disks_map, /* attach */existing_definition, /* custom_disk */true);
-        /// Mark that disk can be used without storage policy.
-        result->markDiskAsCustom(disk_settings_hash, uses_server_credentials || wraps_server_credentials);
-        return result;
-    }, nested_registrations, wrapped_disk_name, find_overlapping_disks);
+            auto result = DiskFactory::instance().create(
+                disk_name, *config, /* config_path */"", context, disks_map, /* attach */existing_definition, /* custom_disk */true);
+            /// Mark that disk can be used without storage policy.
+            result->markDiskAsCustom(disk_settings_hash, uses_server_credentials || wraps_server_credentials);
+            return result;
+        }, nested_registrations, wrapped_disk_name, find_overlapping_disks);
+    };
+    auto [disk, registration] = get_or_create_disk();
 
     if (attach && registration)
         context->rememberCustomDiskLoadedFromExistingMetadata(disk_settings_hash);

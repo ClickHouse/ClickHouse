@@ -98,6 +98,16 @@ CustomDiskRegistrationPtr CustomDiskRegistry::tryGet(const String & name) const
     return registration;
 }
 
+CustomDiskRegistrationPtr CustomDiskRegistry::tryGetAlive(const String & name) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it = registrations.find(name);
+    if (it == registrations.end())
+        return nullptr;
+    return it->second.lock();
+}
+
 bool CustomDiskRegistry::canRelease(const String & name) const
 {
     std::lock_guard lock(mutex);

@@ -38,6 +38,8 @@ public:
     /// The registration of the disk `name`, or nullptr if there is none. Throws if the last registration
     /// of the disk is being destroyed: the disk is about to be unregistered, so it must not get a new user.
     CustomDiskRegistrationPtr tryGet(const String & name) const;
+    /// The registration of the disk `name`, or nullptr if there is none or if the last one is being destroyed.
+    CustomDiskRegistrationPtr tryGetAlive(const String & name) const;
     /// Whether the last registration of the disk `name` is being destroyed. It is not if the disk
     /// has been registered again in the meantime, and then the disk has to stay.
     bool canRelease(const String & name) const;

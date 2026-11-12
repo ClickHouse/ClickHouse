@@ -2076,6 +2076,10 @@ public:
     /// Throws if there is no such disk. The disk and the registration are looked up together, so a custom
     /// disk cannot appear between the lookup of the registration and the lookup of the disk.
     std::pair<DiskPtr, CustomDiskRegistrationPtr> getDiskWithCustomDiskRegistration(const String & name) const;
+    /// The custom disk `name` created from the definition `settings_hash`, together with a registration for it.
+    /// Both are nullptr if there is no such disk, or if its last registration is being destroyed: then the disk is
+    /// about to be unregistered, and a new registration for it would not own the registrations of its nested disks.
+    std::pair<DiskPtr, CustomDiskRegistrationPtr> tryGetRegisteredCustomDisk(const String & name, UInt128 settings_hash) const;
     /// A registration for the custom disk of the storage policy `policy_name`, or nullptr if it has none.
     /// Throws if there is no such policy, or if its disk is being unregistered. The policy and the
     /// registration are looked up together, so the policy cannot appear or disappear in between.
