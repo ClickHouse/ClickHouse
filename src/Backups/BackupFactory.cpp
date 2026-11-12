@@ -1,10 +1,8 @@
-#include <Access/ContextAccess.h>
 #include <Backups/BackupFactory.h>
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/Context.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Common/Exception.h>
-
-#include <Poco/URI.h>
 
 #include <fmt/format.h>
 
@@ -25,24 +23,6 @@ namespace
     void appendIdentityComponent(String & identity, std::string_view component)
     {
         fmt::format_to(std::back_inserter(identity), ":{}:{}", component.size(), component);
-    }
-
-    /// Must normalize identically to `ITableFunction::getFunctionURINormalized`, or the same regex
-    /// grant matches a table function and not a backup. An empty result requires a whole-source grant.
-    String normalizeAccessURI(const String & uri)
-    {
-        if (uri.empty())
-            return uri;
-        try
-        {
-            Poco::URI parsed(uri);
-            parsed.normalize();
-            return parsed.toString();
-        }
-        catch (const Poco::Exception &)
-        {
-            return "";
-        }
     }
 }
 
@@ -82,8 +62,7 @@ void BackupFactory::checkSourceAccess(const BackupInfo & backup_info, ContextPtr
         return;
 
     if (auto target = it->second.source_access(backup_info, context, open_mode))
-        context->getAccess()->checkAccessWithFilter(
-            target->flags, AccessTypeObjects::toStringSource(target->source), normalizeAccessURI(target->uri));
+        ITableFunction::checkSourceAccessForURI(context, target->flags, target->source, target->uri);
 }
 
 BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const

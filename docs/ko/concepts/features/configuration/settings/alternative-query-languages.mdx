@@ -7,6 +7,7 @@ keywords: ['대체 쿼리 언어', '쿼리 방언', 'MySQL 방언', 'PostgreSQL 
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 표준 SQL 외에도 ClickHouse는 데이터를 쿼리할 수 있는 다양한 대체 쿼리 언어를 지원합니다.
@@ -54,12 +55,12 @@ aggregate {
 
 ## Kusto 쿼리 언어(KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 KQL을 활성화하려면:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- 이 SET 문은 ClickHouse 버전 25.1 이상에서만 필요합니다
+SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
 SET dialect = 'kusto'
 ```
 
@@ -109,7 +110,7 @@ _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 Trino 방언을 활성화하려면 다음과 같이 하십시오:
 

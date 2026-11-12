@@ -2,7 +2,7 @@
 -- for `totimespan()` being a cast that takes an arbitrary expression, and for `make_timespan`
 -- validating its clock fields instead of rolling an overflow into the next one.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- a bare number in timespan()/time() counts days --';

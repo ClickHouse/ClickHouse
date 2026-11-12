@@ -1,0 +1,652 @@
+---
+slug: /clickstack/observability/example-datasets/kubernetes
+title: 'Monitoring Kubernetes'
+description: 'Collect Kubernetes logs and metrics with ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'logs', 'observability', 'container monitoring']
+sidebarTitle: 'Monitoring Kubernetes'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/components/Image.jsx";
+import DemoArchitecture from '/snippets/_demo.mdx';
+
+Collect logs and metrics from your Kubernetes cluster and send them to **ClickHouse Observability**. Use existing workloads or deploy the optional demo application below. The demo architecture and application deployment are the same for fully managed and self-managed deployments.
+
+## Prerequisites {#prerequisites}
+
+- A running **Kubernetes cluster** with capacity for the collectors and, if used, the demo application.
+- A ClickHouse Observability service. See the [fully managed getting started guide](/clickstack/observability/getting-started) or the [self-managed getting started guide](/clickstack/self-configured/getting-started/managed).
+- **[Helm](https://helm.sh/)** v3+.
+- **`kubectl`**, configured to interact with your cluster, with permission to create namespaces, Secrets, ConfigMaps, and cluster roles.
+- Network access from your collectors to the endpoint for your chosen deployment.
+
+## Demo application {#demo-application}
+
+If you already have workloads to monitor, skip the demo deployment and continue to [Configure collection](#configure-collection).
+
+The ClickStack fork of the [OpenTelemetry Demo](https://github.com/ClickHouse/opentelemetry-demo) provides an e-commerce application with instrumented microservices and generated traffic.
+
+<DemoArchitecture/>
+
+### Deploy the demo {#deploy-the-demo}
+
+Download and deploy the demo manifest:
+
+```shell
+curl -fSL -o opentelemetry-demo.yaml \
+  https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/d658416d6b36381126eba4416877b6518c320921/kubernetes/opentelemetry-demo.yaml
+
+kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
+kubectl get pods --namespace otel-demo
+```
+
+Wait for the application pods to become ready. The manifest creates the `otel-demo` namespace and includes supporting services.
+
+The commands use a pinned demo revision. After deploying the application, follow your deployment tab below to install the collectors and connect the demo telemetry. The collectors gather Kubernetes logs and infrastructure metrics, while the instrumented demo services send application telemetry through OTLP.
+
+## Configure collection {#configure-collection}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Deploy OpenTelemetry Collectors in your Kubernetes cluster to collect logs and metrics and forward them to your managed telemetry endpoint. ClickHouse Observability manages data ingestion, storage, and the UI, so you do not need to deploy ClickHouse, ClickStack UI, or MongoDB in your cluster.
+
+<Steps>
+<Step title="Copy your connection details" id="copy-connection-details">
+
+Open your ClickHouse Observability service and go to **Team Settings → Data → Managed Telemetry**. Under **OpenTelemetry Collector**, select the **URL** tab and copy the OTLP HTTP endpoint and API key. Select **Reveal key** to view the full values.
+
+Use these connection details to configure the Kubernetes collectors in the following steps.
+
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the OTLP endpoint and API key connection details" size="lg"/>
+</Step>
+<Step title="Store your connection details" id="create-api-key-kubernetes-secret">
+
+Store the managed telemetry API key in a Kubernetes Secret and the OTLP HTTP endpoint in a ConfigMap. Create both in the namespace where you will install the collectors. The examples below use a dedicated `otel-collectors` namespace.
+
+```shell
+kubectl create namespace otel-collectors
+
+kubectl create secret generic hyperdx-secret \
+  --namespace otel-collectors \
+  --from-literal=HYPERDX_API_KEY='<api-key>'
+
+kubectl create configmap otel-config-vars \
+  --namespace otel-collectors \
+  --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT='<managed-otlp-http-endpoint>'
+```
+
+If the namespace already exists, skip the first command. Replace the placeholders with the values from **Managed Telemetry**, keeping the endpoint's HTTPS scheme and port.
+</Step>
+<Step title="Add the OpenTelemetry Helm repo" id="add-otel-helm-repo">
+
+Use the official OpenTelemetry Helm chart to deploy collectors that send logs and metrics to your managed telemetry endpoint.
+
+Add the chart repository and refresh its index:
+
+```shell
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo update open-telemetry
+```
+</Step>
+<Step title="Deploy Kubernetes collector components" id="deploy-kubernetes-collector-components">
+
+To collect logs and metrics from both the cluster itself and each node, we'll need to deploy two separate OpenTelemetry collectors, each with its own Helm values file. The two files provided - `k8s_deployment.yaml` and `k8s_daemonset.yaml`  - work together to collect comprehensive telemetry data from your Kubernetes cluster.
+
+- `k8s_deployment.yaml` deploys a **single OpenTelemetry Collector instance** responsible for collecting **cluster-wide events and metadata**. It gathers Kubernetes events, cluster metrics, and enriches telemetry data with pod labels and annotations. This collector runs as a standalone deployment with a single replica to avoid duplicate data.
+
+- `k8s_daemonset.yaml` deploys a **DaemonSet-based collector** that runs on every node in your cluster. It collects **node-level and pod-level metrics**, as well as container logs, using components like `kubeletstats`, `hostmetrics`, and Kubernetes attribute processors. These collectors enrich logs with metadata and send them to your managed telemetry endpoint using the OTLP HTTP exporter.
+
+Both collectors export directly to ClickHouse Observability. On a single-node cluster, this creates two collector pods. The Deployment also receives OTLP application logs, metrics, and traces from the demo.
+
+The commands below download each Helm values file before installing its collector. Expand the configuration below each command to inspect its contents. These examples use Helm chart `0.175.0` with Collector `0.161.0`.
+
+First, install the collector as a Deployment:
+
+```shell
+curl -fSL -o k8s_deployment.yaml \
+  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_deployment.yaml
+
+helm install --namespace otel-collectors k8s-otel-deployment open-telemetry/opentelemetry-collector \
+  --version 0.175.0 -f k8s_deployment.yaml
+```
+
+<Accordion title="k8s_deployment.yaml">
+```yaml
+# k8s_deployment.yaml
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.161.0
+
+# We only want one of these collectors - any more and we'd produce duplicate data
+replicaCount: 1
+
+presets:
+  kubernetesAttributes:
+    enabled: true
+    # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+    # The label's exact name will be the key.
+    extractAllPodLabels: true
+    # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+    # The annotation's exact name will be the key.
+    extractAllPodAnnotations: true
+  # Configures the collector to collect Kubernetes events.
+  # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+  kubernetesEvents:
+    enabled: true
+  # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
+  # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+  clusterMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: HYPERDX_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: HYPERDX_API_KEY
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  exporters:
+    otlp_http:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "Bearer ${env:HYPERDX_API_KEY}"
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlp_http
+      metrics:
+        exporters:
+          - otlp_http
+      traces:
+        exporters:
+          - otlp_http
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+```
+</Accordion>
+
+Next, deploy the collector as a DaemonSet for node and pod-level metrics and logs:
+
+```shell
+curl -fSL -o k8s_daemonset.yaml \
+  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_daemonset.yaml
+
+helm install --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+  --version 0.175.0 -f k8s_daemonset.yaml
+```
+
+<Accordion title="k8s_daemonset.yaml">
+```yaml
+# k8s_daemonset.yaml
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.161.0
+
+# Required to use the kubeletstats cpu/memory utilization metrics
+clusterRole:
+  create: true
+  rules:
+    - apiGroups:
+        - ''
+      resources:
+        - nodes/proxy
+      verbs:
+        - get
+
+presets:
+  logsCollection:
+    enabled: true
+  hostMetrics:
+    enabled: true
+  # Configures the Kubernetes Processor to add Kubernetes metadata.
+  # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+  kubernetesAttributes:
+    enabled: true
+    # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+    # The label's exact name will be the key.
+    extractAllPodLabels: true
+    # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+    # The annotation's exact name will be the key.
+    extractAllPodAnnotations: true
+  # Configures the collector to collect node, pod, and container metrics from the kubelet API.
+  # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+  kubeletMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: HYPERDX_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: HYPERDX_API_KEY
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  receivers:
+    kubeletstats:
+      insecure_skip_verify: true
+  exporters:
+    otlp_http:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "Bearer ${env:HYPERDX_API_KEY}"
+
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlp_http
+      metrics:
+        exporters:
+          - otlp_http
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+```
+</Accordion>
+
+The DaemonSet example sets `insecure_skip_verify: true` for the local kubelet connection because local clusters can use certificates that do not cover the node address. For production, configure a trusted kubelet certificate and enable certificate verification. This setting does not affect TLS verification for the managed telemetry endpoint.
+
+Check that the collectors are ready:
+
+```shell
+kubectl get pods --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector
+kubectl logs --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector --prefix --tail=50
+```
+
+Look for authentication, export, or scrape errors in the logs. A running pod alone does not confirm that telemetry has been delivered.
+</Step>
+<Step title="Connect the demo application" id="connect-demo-fully-managed">
+
+If you deployed the demo, point its exporters at the in-cluster collector. The collector adds the managed endpoint's authentication header when forwarding telemetry.
+
+```shell
+kubectl set env deployment --namespace otel-demo \
+  -l app.kubernetes.io/part-of=opentelemetry-demo \
+  OTEL_COLLECTOR_NAME=k8s-otel-deployment-opentelemetry-collector.otel-collectors.svc.cluster.local
+
+kubectl rollout status deployment --namespace otel-demo \
+  -l app.kubernetes.io/part-of=opentelemetry-demo --timeout=10m
+```
+
+The managed API key belongs in the `otel-collectors` namespace, as configured above. The demo sends to the in-cluster receiver, so it does not need that key.
+
+</Step>
+</Steps>
+</Tab>
+<Tab title="Self-managed">
+
+ClickHouse and the observability UI run in ClickHouse Cloud. This setup deploys a collector and its supporting components in your Kubernetes cluster.
+
+The following commands use the `otel-demo` namespace. If you skipped the demo deployment, create it first:
+
+```shell
+kubectl create namespace otel-demo
+```
+
+<Steps>
+<Step title="Add the ClickStack Helm chart repository" id="add-helm-clickstack-self-configured">
+
+To deploy the collector and its supporting components, we use the [official Helm chart](/clickstack/deployment/helm).
+
+This requires us to add the HyperDX Helm repository:
+
+```shell
+helm repo add hyperdx https://hyperdxio.github.io/helm-charts
+helm repo update
+```
+</Step>
+<Step title="Deploy the collector and supporting components" id="deploy-clickstack-self-configured">
+
+With the Helm chart installed, deploy the collector and its supporting components to your cluster, using ClickHouse Cloud for the database.
+<br/>
+
+Deploy the chart and [disable the included ClickHouse](/clickstack/deployment/helm#using-clickhouse-cloud).
+
+<Note>
+The chart currently always deploys both ClickStack UI and MongoDB. While these components offer an alternative access path, they're not integrated with ClickHouse Cloud authentication. These components are intended for administrators in this deployment model, [providing access to the secure ingestion key](#retrieve-ingestion-api-key-self-configured) needed to ingest through the deployed OTel collector, but shouldn't be exposed to end users.
+</Note>
+
+```shell
+# specify ClickHouse Cloud credentials
+export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # full https url
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+helm install my-hyperdx hyperdx/hdx-oss-v2 --version 0.8.4 --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} --set clickhouse.config.users.otelUserName=${CLICKHOUSE_USER} --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD} --set global.storageClassName="standard-rwo" -n otel-demo
+```
+
+To verify the deployment status, run the following command and confirm all components are in the `Running` state. ClickHouse runs in ClickHouse Cloud and will not appear in the pod list:
+
+```shell
+kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
+
+NAME                                                    READY   STATUS    RESTARTS   AGE
+my-hyperdx-hdx-oss-v2-app-78876d79bb-565tb              1/1     Running   0          14m
+my-hyperdx-hdx-oss-v2-mongodb-984845f96-czb6m           1/1     Running   0          14m
+my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0          14m
+```
+</Step>
+<Step title="Access the ClickStack UI" id="access-the-hyperdx-ui-self-configured">
+
+<Note>
+Even when using ClickHouse Observability — Self-managed, the local ClickStack UI instance deployed in the Kubernetes cluster is still required. It provides an ingestion key managed by the OpAMP server bundled with ClickStack UI, which secures ingestion through the deployed OTel collector - a capability not currently available in ClickHouse Observability — Self-managed.
+</Note>
+
+For security, the service uses `ClusterIP` and isn't exposed externally by default.
+
+To access the ClickStack UI, port forward from 3000 to the local port 8080.
+
+```shell
+kubectl port-forward \
+ deployment/my-hyperdx-hdx-oss-v2-app \
+  8080:3000 \
+ -n otel-demo
+```
+
+Navigate [http://localhost:8080](http://localhost:8080) to access the ClickStack UI.
+
+Create a user, providing a username and password that meets the complexity requirements.
+
+
+</Step>
+<Step title="Retrieve ingestion API key" id="retrieve-ingestion-api-key-self-configured">
+
+Ingestion to the OTel collector deployed by the ClickStack collector is secured with an ingestion key.
+
+Navigate to [`Team Settings`](http://localhost:8080/team) and copy the `Ingestion API Key` from the `API Keys` section. This API key ensures data ingestion through the OpenTelemetry collector is secure.
+
+
+</Step>
+<Step title="Create API Key Kubernetes Secret" id="create-api-key-kubernetes-secret-self-configured">
+
+Create a new Kubernetes secret with the Ingestion API Key and a config map containing the location of the OTel collector deployed with the ClickStack helm chart. Later components will use this to allow ingest into the collector deployed with the ClickStack Helm chart:
+
+```shell
+# create secret with the ingestion API key
+kubectl create secret generic hyperdx-secret \
+--from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+-n otel-demo
+
+# create a ConfigMap pointing to the ClickStack OTel collector deployed above
+kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+```
+
+If you deployed the demo, update its collector service name to match this Helm deployment. Updating the environment also restarts the application pods so they pick up the ingestion key:
+
+```shell
+kubectl set env deployment --namespace otel-demo \
+  -l app.kubernetes.io/part-of=opentelemetry-demo \
+  OTEL_COLLECTOR_NAME=my-hyperdx-hdx-oss-v2-otel-collector
+
+kubectl rollout status deployment --namespace otel-demo \
+  -l app.kubernetes.io/part-of=opentelemetry-demo --timeout=10m
+```
+
+The demo application exporters use this service name to reach the collector. For your own applications, configure their OTLP endpoint and receiver authentication separately.
+
+
+</Step>
+<Step title="Add the OpenTelemetry Helm repo" id="add-otel-helm-repo-self-configured">
+
+To collect Kubernetes metrics, we will deploy a standard OTel collector, configuring this to send data securely to our ClickStack collector using the above ingestion API key.
+
+This requires us to install the OpenTelemetry Helm repo:
+
+```shell
+# Add Otel Helm repo
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+```
+</Step>
+<Step title="Deploy Kubernetes collector components" id="deploy-kubernetes-collector-components-self-configured">
+
+To collect logs and metrics from both the cluster itself and each node, we'll need to deploy two separate OpenTelemetry collectors, each with its own manifest. The two manifests provided - `k8s_deployment.yaml` and `k8s_daemonset.yaml`  - work together to collect comprehensive telemetry data from your Kubernetes cluster.
+
+- `k8s_deployment.yaml` deploys a **single OpenTelemetry Collector instance** responsible for collecting **cluster-wide events and metadata**. It gathers Kubernetes events, cluster metrics, and enriches telemetry data with pod labels and annotations. This collector runs as a standalone deployment with a single replica to avoid duplicate data.
+
+- `k8s_daemonset.yaml` deploys a **DaemonSet-based collector** that runs on every node in your cluster. It collects **node-level and pod-level metrics**, as well as container logs, using components like `kubeletstats`, `hostmetrics`, and Kubernetes attribute processors. These collectors enrich logs with metadata and send them to ClickStack using the OTLP exporter.
+
+Together, these manifests enable full-stack observability across the cluster, from infrastructure to application-level telemetry, and send the enriched data to your service for centralized analysis.
+
+First, install the collector as a deployment:
+
+```shell
+# download manifest file
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
+# install the helm chart
+helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
+```
+
+<Accordion title="k8s_deployment.yaml">
+```yaml
+# k8s_deployment.yaml
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.123.0
+
+# We only want one of these collectors - any more and we'd produce duplicate data
+replicaCount: 1
+
+presets:
+  kubernetesAttributes:
+    enabled: true
+    # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+    # The label's exact name will be the key.
+    extractAllPodLabels: true
+    # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+    # The annotation's exact name will be the key.
+    extractAllPodAnnotations: true
+  # Configures the collector to collect Kubernetes events.
+  # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+  kubernetesEvents:
+    enabled: true
+  # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
+  # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusteRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+  clusterMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: HYPERDX_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: HYPERDX_API_KEY
+        optional: true
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  exporters:
+    otlphttp:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "${env:HYPERDX_API_KEY}"
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlphttp
+      metrics:
+        exporters:
+          - otlphttp
+```
+</Accordion>
+
+Next, deploy the collector as a DaemonSet for node and pod-level metrics and logs:
+
+```shell
+# download manifest file
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
+# install the helm chart
+helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
+```
+
+<Accordion title="k8s_daemonset.yaml">
+```yaml
+# k8s_daemonset.yaml
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.123.0
+
+# Required to use the kubeletstats cpu/memory utilization metrics
+clusterRole:
+  create: true
+  rules:
+    - apiGroups:
+        - ''
+      resources:
+        - nodes/proxy
+      verbs:
+        - get
+
+presets:
+  logsCollection:
+    enabled: true
+  hostMetrics:
+    enabled: true
+  # Configures the Kubernetes Processor to add Kubernetes metadata.
+  # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+  kubernetesAttributes:
+    enabled: true
+    # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+    # The label's exact name will be the key.
+    extractAllPodLabels: true
+    # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+    # The annotation's exact name will be the key.
+    extractAllPodAnnotations: true
+  # Configures the collector to collect node, pod, and container metrics from the API server on a kubelet..
+  # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+  kubeletMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: HYPERDX_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: HYPERDX_API_KEY
+        optional: true
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  receivers:
+    # Configures additional kubelet metrics
+    kubeletstats:
+      collection_interval: 20s
+      auth_type: 'serviceAccount'
+      endpoint: '${env:K8S_NODE_NAME}:10250'
+      insecure_skip_verify: true
+      metrics:
+        k8s.pod.cpu_limit_utilization:
+          enabled: true
+        k8s.pod.cpu_request_utilization:
+          enabled: true
+        k8s.pod.memory_limit_utilization:
+          enabled: true
+        k8s.pod.memory_request_utilization:
+          enabled: true
+        k8s.pod.uptime:
+          enabled: true
+        k8s.node.uptime:
+          enabled: true
+        k8s.container.cpu_limit_utilization:
+          enabled: true
+        k8s.container.cpu_request_utilization:
+          enabled: true
+        k8s.container.memory_limit_utilization:
+          enabled: true
+        k8s.container.memory_request_utilization:
+          enabled: true
+        container.uptime:
+          enabled: true
+
+  exporters:
+    otlphttp:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "${env:HYPERDX_API_KEY}"
+
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlphttp
+      metrics:
+        exporters:
+          - otlphttp
+```
+</Accordion>
+</Step>
+</Steps>
+</Tab>
+</Tabs>
+
+## Explore Kubernetes data {#explore-kubernetes-data}
+
+Open your ClickHouse Observability service. In [Search](/clickstack/observability/features/search), select the **Logs** source and a time range that includes when the collectors were running. Look for a log message from one of your workloads and inspect its Kubernetes resource attributes, such as `k8s.namespace.name` and `k8s.pod.name`.
+
+The example below shows logs from a local Kubernetes cluster, including a `sample-logs` workload emitting `Kubernetes documentation test` messages. Your service names and log messages will depend on your workloads.
+
+<Image img="/images/clickstack/getting-started/observability-kubernetes-logs.png" alt="Search showing sample workload and Kubernetes system logs arriving from a local cluster" size="lg"/>
+
+In **Chart Explorer**, select **Time Series** and the **Metrics** source. Choose **Average** of `k8s.pod.memory.usage`, group by `ResourceAttributes['k8s.pod.name']`, and leave **Delta** unchecked. Select a time range that includes when the collectors were running, then select **Run** to compare memory usage across pods. If the chart has gaps, choose a time granularity at least as large as the collection interval.
+
+<Image img="/images/clickstack/getting-started/observability-kubernetes-metrics.png" alt="Chart Explorer showing average Kubernetes pod memory usage grouped by pod name" size="lg"/>
+
+To explore the prebuilt Kubernetes dashboard, open **Dashboards** in the sidebar and select **Kubernetes** under **Preset Dashboards**. Select the **Logs** and **Metrics** sources and a time range that includes when the collectors were running.
+
+Use the **Pods**, **Nodes**, and **Namespaces** tabs to explore your cluster. You can narrow the view using the pod, deployment, node, namespace, and cluster filters.
+
+<Image img="/images/clickstack/getting-started/observability-kubernetes-dashboard.png" alt="Kubernetes dashboard showing pod CPU and memory usage, pod status, and Kubernetes warning events" size="lg"/>

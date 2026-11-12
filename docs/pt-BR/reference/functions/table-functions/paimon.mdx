@@ -46,6 +46,12 @@ A mesclagem durante a leitura não foi implementada. Por isso, **não é possív
 sem processamento adicional, incluindo versões de linhas substituídas por upserts posteriores. Assim, a tentativa de ler uma tabela cujo schema
 declara `primary-key` lança uma exceção.
 
+Os vetores de exclusão não são aplicados. Por isso, **não é possível ler snapshots com vetores de exclusão**: o resultado ainda
+conteria as linhas removidas por instruções `DELETE` e `UPDATE` posteriores. Assim, a tentativa de ler um snapshot cujo manifesto de índice lista
+vetores de exclusão lança uma exceção, mesmo depois de desabilitar `deletion-vectors.enabled`.
+Uma compactação completa no Paimon (`compact_strategy => 'full'`) aplica os vetores de exclusão, e os snapshots criados depois
+dela voltam a poder ser lidos.
+
 ## Definindo uma coleção nomeada {#defining-a-named-collection}
 
 Aqui está um exemplo de configuração de uma coleção nomeada para armazenar a URL e as credenciais:

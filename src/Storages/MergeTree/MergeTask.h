@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -23,6 +24,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeCheckpoint.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -152,10 +154,7 @@ public:
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
 
-    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
-    {
-        return global_ctx->promise.get_future();
-    }
+    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(global_ctx->result_part, nullptr); }
 
     MergeTreeData::MutableDataPartPtr getUnfinishedPart()
     {
@@ -184,6 +183,8 @@ public:
     }
 
     bool execute();
+
+    void setMergeCheckpoint(MergeCheckpointPtr checkpoint) { global_ctx->checkpoint = std::move(checkpoint); }
 
     void cancel() noexcept;
 
@@ -247,6 +248,8 @@ private:
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
+        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
+        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
@@ -290,7 +293,8 @@ private:
 
         std::map<String, UInt64> projections_merge_time;
 
-        std::promise<MergeTreeData::MutableDataPartPtr> promise{};
+        /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
+        MergeTreeData::MutableDataPartPtr result_part;
 
         WrittenOffsetSubstreams written_offset_substreams{};
         /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
@@ -298,6 +302,10 @@ private:
         StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
+
+        MergeCheckpointPtr checkpoint;
+        MergeCheckpointIdentity checkpoint_identity;
+        std::optional<size_t> resumed_columns;
 
         MergeTreeTransactionPtr txn;
         String suffix;
@@ -309,6 +317,9 @@ private:
 
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
+
+        /// Text indexes are rebuilt for the resulting part instead of being merged.
+        bool rebuild_text_indexes{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -351,7 +362,7 @@ private:
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> is_cancelled{};
+        std::function<bool()> merge_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
@@ -398,6 +409,16 @@ private:
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
+        bool canCheckpointVerticalMerge() const;
+
+        struct SavedCheckpointLoadResult
+        {
+            MergeCheckpointState state;
+            MergedBlockOutputStream::FinishedColumns finished_columns;
+        };
+        /// Read and check the saved checkpoint, or discard it and throw.
+        SavedCheckpointLoadResult readSavedCheckpoint() const;
+
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -456,6 +477,7 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
+        Stopwatch since_checkpoint;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -492,6 +514,7 @@ private:
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
+        void saveCheckpoint() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
@@ -622,6 +645,7 @@ private:
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
@@ -629,11 +653,22 @@ private:
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
+/// Rolls back the uncommitted transaction of `storage`, removing the blobs it has uploaded; logs a failure.
+void tryUndoTransaction(IDataPartStorage & storage) noexcept;
+
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
-    return task->getFuture().get();
+    try
+    {
+        while (task->execute()) {}
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
+    return task->takeResultPart();
 }
 
 }

@@ -39,7 +39,7 @@ SYSTEM FLUSH LOGS query_log, text_log;
 SELECT '-- local_probe pruned in its own stage';
 SELECT count() >= 1
 FROM system.text_log
-WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
+WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday() AND event_time >= now() - 600
   AND message LIKE 'Stats for%'
   AND toUInt64OrZero(extract(message, 'rows checked (\\d+)')) >= 100
   AND toUInt64OrZero(extract(message, 'rows passed (\\d+)'))
