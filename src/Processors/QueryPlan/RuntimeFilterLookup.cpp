@@ -778,12 +778,14 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 
 void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_)
 {
-    if (!dense_bitset_allowed || !DenseBitsetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
-    {
+    if (dense_bitset_allowed && DenseBitsetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        switchToDenseBitset(filter_);
+    else
         switchToApproximateFilter(filter_);
-        return;
-    }
+}
 
+void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_)
+{
     DenseBitsetRuntimeFilter bitset_filter(filter_column_target_type);
     bitset_filter.insert(std::get<ExactFilter>(filter_).getValuesColumn());
     filter_.emplace<DenseBitsetRuntimeFilter>(std::move(bitset_filter));

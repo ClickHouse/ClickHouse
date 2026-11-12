@@ -311,6 +311,7 @@ private:
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter);
     void switchFromExactFilter(Filter & filter);
+    void switchToDenseBitset(Filter & filter);
     ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
 
     /// Disables approximate filter if it is likely to have bad selectivity.

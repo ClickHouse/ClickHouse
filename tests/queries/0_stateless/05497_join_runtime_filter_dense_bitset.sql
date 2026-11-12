@@ -11,11 +11,12 @@ INSERT INTO t_build SELECT toInt16(number * 3 - 32768) FROM numbers(20000);
 
 SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k SETTINGS log_comment = '05497_int16';
 SELECT count() FROM t_probe AS p INNER JOIN (SELECT toInt32(k) AS k FROM t_build) AS b ON toInt32(p.k) = b.k SETTINGS log_comment = '05497_int32';
+SELECT count() FROM t_probe AS p INNER JOIN (SELECT toUInt8(number * 3) AS k FROM numbers(80)) AS b ON toUInt8(p.k) = b.k SETTINGS join_runtime_filter_exact_values_limit = 50, log_comment = '05497_uint8';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['RuntimeFilterDenseBitsetsBuilt'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05497_int16', '05497_int32')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05497_int16', '05497_int32', '05497_uint8')
 ORDER BY log_comment;
 
 DROP TABLE t_probe;
