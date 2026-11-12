@@ -1,5 +1,6 @@
 -- Tags: distributed, no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
+-- Random settings limits: prefer_localhost_replica=(0, 0)
 
 -- A Merge child that references an outer subquery set cannot ship it to a distributed-plan worker
 -- task, so ReadFromMerge::createChildrenPlans clears make_distributed_plan on that child's own copy
@@ -14,6 +15,10 @@ CREATE TABLE t_secondary_local (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE t_secondary_dist AS t_secondary_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), 't_secondary_local');
 INSERT INTO t_secondary_local SELECT number FROM numbers(10);
 
+-- A disabled localhost short-circuit, so the shard genuinely dispatches over the native protocol
+-- (SelectStreamFactory) instead of just reading the local table in-process: only the real dispatch
+-- re-enters executeQuery as a secondary query.
+SET prefer_localhost_replica = 0;
 SET distributed_plan_execute_locally = 1, distributed_plan_workers_num = 3;
 
 SELECT count() FROM merge(currentDatabase(), '^t_secondary_dist$') WHERE x IN (SELECT number FROM numbers(5));
