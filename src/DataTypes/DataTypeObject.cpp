@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -69,6 +71,27 @@ namespace ErrorCodes
 String DataTypeObject::getCombinedSubcolumnName(const String & key)
 {
     return String(1, COMBINED_SUBCOLUMN_PREFIX) + backQuote(key);
+}
+
+std::optional<String> DataTypeObject::tryGetPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
+{
+    if (subcolumn_name.size() < 2 || subcolumn_name[0] != prefix || subcolumn_name[1] != '`')
+        return std::nullopt;
+
+    ReadBufferFromMemory buf(subcolumn_name.substr(1));
+    String path;
+    /// Try to read back-quoted first path element.
+    if (!tryReadBackQuotedString(path, buf))
+        return std::nullopt;
+
+    /// Add remaining path elements if any.
+    return path + String(buf.position(), buf.available());
+}
+
+bool DataTypeObject::canParseObjectValue(const DataTypePtr & type)
+{
+    auto id = removeNullable(removeLowCardinality(type))->getTypeId();
+    return id == TypeIndex::Object || id == TypeIndex::Map || id == TypeIndex::Tuple;
 }
 
 DataTypeObject::DataTypeObject(
@@ -482,25 +505,6 @@ PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_nam
     }
 
     return {String(subcolumn_name.substr(0, pos)), std::move(type_hint), std::move(remaining)};
-}
-
-/// Prefixed subcolumn in JSON path always looks like "<prefix>`some`.path.path"
-/// (e.g. "^`some`.path" for sub-object, "@`some`.path" for combined).
-/// We back-quote the first path element after the prefix so we can distinguish
-/// prefixed subcolumns from regular path elements like "^path" or "$path".
-std::optional<String> tryGetPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
-{
-    if (subcolumn_name.size() < 2 || subcolumn_name[0] != prefix || subcolumn_name[1] != '`')
-        return std::nullopt;
-
-    ReadBufferFromMemory buf(subcolumn_name.substr(1));
-    String path;
-    /// Try to read back-quoted first path element.
-    if (!tryReadBackQuotedString(path, buf))
-        return std::nullopt;
-
-    /// Add remaining path elements if any.
-    return path + String(buf.position(), buf.available());
 }
 
 /// Extracts the literal (Dynamic) column for the given path from a ColumnObject.

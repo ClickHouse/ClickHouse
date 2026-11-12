@@ -68,6 +68,13 @@ IColumn::Versions & addDataVersionForColumn(Block & block, const String & column
     return getColumnUInt64Data(block, data_version_name);
 }
 
+void removeDataVersionForColumn(Block & block, const String & column_name)
+{
+    String data_version_name = PartDataVersionColumn::name + "_" + column_name;
+    if (block.has(data_version_name))
+        block.erase(data_version_name);
+}
+
 /// Builds patch sources for a column from all patch blocks.
 /// @p converted_columns_storage keeps cast results alive while the returned sources reference them.
 static VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const Blocks & patch_blocks, const ColumnWithTypeAndName & result_column, Columns & columns_holder)

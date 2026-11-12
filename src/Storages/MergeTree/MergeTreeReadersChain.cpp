@@ -48,10 +48,23 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
         if (!range_reader.getReader()->producesFilterOnly())
             columns_cache_readers.push_back(range_reader.getReader());
     }
+    /// Including the columns read by earlier steps, which reach `evaluateMissingDefaults` even when an action projects them out.
     previous_steps_columns.resize(range_readers.size());
     for (size_t i = 1; i < range_readers.size(); ++i)
+    {
+        previous_steps_columns[i] = previous_steps_columns[i - 1];
         for (const auto & column : range_readers[i - 1].getSampleBlock())
             previous_steps_columns[i].insert(column.name);
+        for (const auto & column : range_readers[i - 1].getReader()->getColumns())
+            previous_steps_columns[i].insert(column.name);
+    }
+
+    next_steps_sources_of_subcolumns.resize(range_readers.size());
+    for (size_t i = range_readers.size(); i > 1; --i)
+    {
+        next_steps_sources_of_subcolumns[i - 2] = next_steps_sources_of_subcolumns[i - 1];
+        next_steps_sources_of_subcolumns[i - 2].merge(range_readers[i - 1].getReader()->getSourcesOfSubcolumns());
+    }
 
     for (size_t i = range_readers.size(); i > 1; --i)
     {
@@ -560,6 +573,10 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             result.columns_for_patches);
     };
 
+    /// A column an earlier step has read too (see `getReadTaskColumns`) is read again from the part, so every patch applies again.
+    for (const auto & column : result_header)
+        removeDataVersionForColumn(result.patch_versions_block, column.name);
+
     apply_patches(ColumnForPatch::Order::BeforeConversions);
 
     /// Apply alter conversions for columns read by this step.
@@ -637,6 +654,16 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
 
     apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
+
+    /// The subcolumns extracted from these sources by `evaluateMissingDefaults` predate the patches.
+    NameSet patched_after_defaults;
+    for (const auto & columns_for_patch : columns_for_patches)
+        for (const auto & column_for_patch : columns_for_patch)
+            if (column_for_patch.order == ColumnForPatch::Order::AfterEvaluatingDefaults)
+                patched_after_defaults.insert(column_for_patch.column_name);
+
+    if (!patched_after_defaults.empty())
+        merge_tree_reader->extractSubcolumnsOfPatchedSources(read_columns, patched_after_defaults);
 }
 
 void MergeTreeReadersChain::evaluateMissingDefaults(
@@ -872,6 +899,10 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
             if (!patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name_in_patch))
                 continue;
 
+            /// A patch does not provide every column it has (see `addPatchPartsColumns`) and updates only those it reads.
+            if (!patch_reader->getReader()->getColumns().contains(column.name))
+                continue;
+
             /// Add requested column name, not the column name in patch, for correct applying patches.
             /// This column name is translated to the column name in patch in MergeTree reader.
             /// If columns is not created at this stage, it will be filled with defaults at the latest stage of reading.
@@ -930,6 +961,31 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         columns_for_patches,
         suitable_orders,
         result.columns_for_patches);
+
+    /// A step may have moved a column to `additional_columns`, from which the next steps extract subcolumns.
+    Block sources;
+    for (const auto & column : result.additional_columns)
+    {
+        if (next_steps_sources_of_subcolumns[reader_index].contains(column.name))
+            sources.insert(column);
+    }
+
+    if (sources.empty())
+        return;
+
+    auto source_columns = sources.getColumns();
+    applyPatches(
+        sources,
+        source_columns,
+        result.patch_versions_block,
+        min_version,
+        max_version,
+        getColumnsForPatches(sources, source_columns),
+        suitable_orders,
+        result.columns_for_patches);
+
+    for (size_t i = 0; i < source_columns.size(); ++i)
+        result.additional_columns.getByName(sources.getByPosition(i).name).column = std::move(source_columns[i]);
 }
 
 void MergeTreeReadersChain::applyPatches(

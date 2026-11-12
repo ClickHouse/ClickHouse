@@ -60,7 +60,8 @@ void fillMissingColumns(
     StorageSnapshotPtr storage_snapshot,
     const NameSet & missing_columns = {},
     bool share_nested_offsets = true,
-    const NameSet & additional_available_columns = {});
+    const NameSet & additional_available_columns = {},
+    const NameSet & deferred_columns = {});
 
 /// Whether `fillMissingColumns` may leave `column` unfilled for `evaluateMissingDefaults`.
 bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column);
