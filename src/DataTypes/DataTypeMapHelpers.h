@@ -29,8 +29,7 @@ void extractKeyValueFromMap(
 ///
 /// Dots are legal in column names, so `a.b.key_x` may name something other than key `x` of a Map `a.b`:
 /// a column `a.b.key_x`, an element of a Tuple `a`, or a path of a JSON `a`. A predicate reads that
-/// claimant, not the map, so the shape is refused unless the name resolves to the same storage column
-/// as the Map.
+/// claimant, not the map, so the shape is refused unless the name resolves to a key of the Map itself.
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     const String & column_name, const ColumnsDescription & columns);
 

@@ -11,8 +11,12 @@
 #include <Columns/LowCardinalityValueIndex.h>
 #include <Core/CompareHelper.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/ColumnsDescription.h>
 #include <base/memcmpSmall.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -581,19 +585,34 @@ std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     if (pos == String::npos)
         return std::nullopt;
 
-    /// A column or a static subcolumn claims the name, also a subcolumn of an `EPHEMERAL` column, which the analyzer
-    /// binds. A genuine Map key subcolumn is dynamic.
-    if (columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_name))
-        return std::nullopt;
-
     auto map_column_name = column_name.substr(0, pos);
 
-    /// A dynamic subcolumn of a shorter column, such as a JSON path, claims the name before the Map does: name
-    /// resolution tries the shortest prefix first. Accept the name only if it is read from the Map's storage column.
+    /// Subcolumn names are flat, so the name may belong to a column, a Tuple element or a JSON path, of another
+    /// column or of the Map's own one: inside ``Tuple(`j.m` Map(..), j JSON(m Map(..)))`` the element answers
+    /// `c.j.m` and the JSON path answers `c.j.m.key_k`. Resolve the name as the reader does (also through `EPHEMERAL`
+    /// columns, which the analyzer binds) and accept it only if its substreams step from the Map's into a key.
     const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
     auto read_column = columns.tryGetColumn(options, column_name);
     auto map_column = columns.tryGetColumn(options, map_column_name);
-    if (!read_column || !map_column || read_column->getNameInStorage() != map_column->getNameInStorage())
+    if (!read_column || !map_column || !read_column->isSubcolumn() || read_column->getNameInStorage() != map_column->getNameInStorage())
+        return std::nullopt;
+
+    auto read_info = read_column->getTypeInStorage()->tryGetSubcolumnInfo(read_column->getSubcolumnName());
+    if (!read_info)
+        return std::nullopt;
+
+    ISerialization::SubstreamPath map_path;
+    if (map_column->isSubcolumn())
+    {
+        auto map_info = map_column->getTypeInStorage()->tryGetSubcolumnInfo(map_column->getSubcolumnName());
+        if (!map_info)
+            return std::nullopt;
+        map_path = map_info->substreams_path;
+    }
+
+    const auto & read_path = read_info->substreams_path;
+    if (read_path.size() != map_path.size() + 1 || read_path.back().type != ISerialization::Substream::MapKeyValue
+        || !std::equal(map_path.begin(), map_path.end(), read_path.begin(), ISerialization::isSameSubstream))
         return std::nullopt;
 
     auto serialized_key = column_name.substr(pos + map_key_marker.size());
