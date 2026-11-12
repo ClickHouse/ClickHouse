@@ -587,117 +587,7 @@ static bool writeConsolidatedManifestFile(
             "Iceberg metadata does not contain a schema entry matching current-schema-id {}",
             current_schema_id);
 
-    auto partitions_specs = metadata_object->getArray(f_partition_specs);
-
-    /// After partition evolution each manifest must be rewritten under the spec its source files used, and after schema evolution
-    /// (e.g. widening `decimal(P, S)`) its partition values must be encoded under the schema its source files were written with;
-    /// resolve and cache spec info per (spec-id, schema-id).
-    struct ResolvedPartitionSpec
-    {
-        Poco::JSON::Object::Ptr spec;
-        std::vector<String> partition_columns;
-        DataTypes partition_types;
-    };
-    std::map<std::pair<Int32, Int32>, ResolvedPartitionSpec> resolved_specs;
-    auto resolve_partition_spec = [&](Int32 spec_id, Int32 files_schema_id) -> const ResolvedPartitionSpec &
-    {
-        if (auto it = resolved_specs.find({spec_id, files_schema_id}); it != resolved_specs.end())
-            return it->second;
-
-        Poco::JSON::Object::Ptr spec;
-        for (UInt32 i = 0; i < partitions_specs->size(); ++i)
-        {
-            auto candidate = partitions_specs->getObject(i);
-            if (candidate->getValue<Int64>(Iceberg::f_spec_id) == spec_id)
-            {
-                spec = candidate;
-                break;
-            }
-        }
-        if (!spec)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg metadata does not contain a partition spec entry matching spec-id {}",
-                spec_id);
-
-        ResolvedPartitionSpec resolved;
-        resolved.spec = spec;
-        auto spec_fields = spec->getArray(f_fields);
-
-        /// Partition field names and the schema source-ids they transform.
-        std::vector<Int32> source_ids;
-        for (UInt32 i = 0; i < spec_fields->size(); ++i)
-        {
-            auto spec_field = spec_fields->getObject(i);
-            resolved.partition_columns.push_back(spec_field->getValue<String>(f_name));
-            source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
-        }
-
-        /// Derive partition value types from a schema that defines every source column the spec references, preferring the schema
-        /// the source files were written with, then the current one, then any historical one; register all schemas first so they can be queried by id.
-        for (UInt32 i = 0; i < schemas->size(); ++i)
-            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
-
-        auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
-        {
-            auto fields_characteristics
-                = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
-            /// A short result means this schema does not define every partition source column.
-            if (fields_characteristics.size() != source_ids.size())
-                return std::nullopt;
-            Block block;
-            for (const auto & name_and_type : fields_characteristics)
-                block.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
-            return block;
-        };
-
-        Int32 schema_id_for_spec = files_schema_id;
-        std::optional<Block> spec_sample_block = build_sample_block(schema_id_for_spec);
-        if (!spec_sample_block && files_schema_id != static_cast<Int32>(current_schema_id))
-        {
-            schema_id_for_spec = static_cast<Int32>(current_schema_id);
-            spec_sample_block = build_sample_block(schema_id_for_spec);
-        }
-        if (!spec_sample_block)
-        {
-            for (UInt32 i = 0; i < schemas->size(); ++i)
-            {
-                Int32 candidate_id = schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id);
-                if (candidate_id == files_schema_id || candidate_id == static_cast<Int32>(current_schema_id))
-                    continue;
-                spec_sample_block = build_sample_block(candidate_id);
-                if (spec_sample_block)
-                {
-                    schema_id_for_spec = candidate_id;
-                    break;
-                }
-            }
-        }
-        if (!spec_sample_block)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "No Iceberg schema defines all source columns referenced by partition spec {}",
-                spec_id);
-
-        auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
-        auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
-        resolved.partition_types
-            = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
-
-        return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
-    };
-
-    /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
-    auto get_schema_object_by_id = [&](Int32 schema_id) -> Poco::JSON::Object::Ptr
-    {
-        for (UInt32 i = 0; i < schemas->size(); ++i)
-            if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id)
-                return schemas->getObject(i);
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg metadata does not contain a schema entry matching schema-id {}",
-            schema_id);
-    };
+    PartitionSpecResolver spec_resolver(metadata_object, persistent_table_components.schema_processor, context);
 
     /// Live data files grouped by (partition spec-id, schema-id), since a manifest carries a single spec and one `schema` header.
     /// Its entries may belong to any number of partitions, each entry carrying its own partition tuple; unless
@@ -905,7 +795,7 @@ static bool writeConsolidatedManifestFile(
             existing_entry_counts.push_back(consolidated_counts);
 
             /// Rewrite this manifest under the partition spec and the schema its source files used, not the default and the current ones.
-            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id, pd.schema_id);
+            const auto & resolved_spec = spec_resolver.resolve(pd.partition_spec_id, pd.schema_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
             /// Each partition tuple must match the resolved spec; a mismatch (corrupt or inconsistently-evolved
@@ -946,7 +836,7 @@ static bool writeConsolidatedManifestFile(
                 /* per_file_statistics */ pd.file_statistics,
                 /* data_file_sort_order_ids */ pd.file_sort_order_ids,
                 /* per_file_entry_lineage */ pd.file_entry_lineage,
-                /* schema_to_serialize */ get_schema_object_by_id(pd.schema_id));
+                /* schema_to_serialize */ spec_resolver.getSchema(pd.schema_id));
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();
