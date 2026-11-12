@@ -4,7 +4,9 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/thread_local_rng.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -12,6 +14,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
+}
+
+namespace
+{
+    /// `requested_workers` of zero means "unset": plan for, and allocate, every host. A nonzero count
+    /// above `available_workers` cannot be served from a fixed snapshot, so it throws rather than
+    /// silently capping to it.
+    size_t resolveWorkerCount(size_t requested_workers, size_t available_workers)
+    {
+        if (requested_workers == 0)
+            return available_workers;
+
+        if (requested_workers > available_workers)
+            throw Exception(ErrorCodes::SW_SERVER_NO_WORKERS_AVAILABLE,
+                "Requested {} stateless workers, but the static stateless worker cluster has only {} host(s)",
+                requested_workers, available_workers);
+
+        return requested_workers;
+    }
 }
 
 std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorkerAddresses(
@@ -66,11 +88,25 @@ StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(
 }
 
 StatelessWorkerAllocationPtr StaticStatelessWorkersProvider::allocate(
-    size_t /*desired_workers*/, uint64_t /*provisioning_timeout_ms*/)
+    size_t desired_workers, uint64_t /*provisioning_timeout_ms*/)
 {
+    const size_t worker_count = resolveWorkerCount(desired_workers, addresses.size());
+
     /// No provider and no worker IDs: nothing to return when the allocation is destroyed.
-    return StatelessWorkerAllocationPtr(
-        new StatelessWorkerAllocation(nullptr, {}, addresses));
+    if (worker_count == addresses.size())
+        return StatelessWorkerAllocationPtr(new StatelessWorkerAllocation(nullptr, {}, addresses));
+
+    /// Spread load across queries rather than always picking the same leading hosts.
+    std::vector<StatelessWorkerAddress> selected = addresses;
+    std::shuffle(selected.begin(), selected.end(), thread_local_rng);
+    selected.resize(worker_count);
+
+    return StatelessWorkerAllocationPtr(new StatelessWorkerAllocation(nullptr, {}, std::move(selected)));
+}
+
+size_t StaticStatelessWorkersProvider::getPlanningNodeCount(size_t requested_workers) const
+{
+    return resolveWorkerCount(requested_workers, addresses.size());
 }
 
 void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & factory)

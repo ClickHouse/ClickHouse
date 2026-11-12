@@ -11,7 +11,9 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
+#include <functional>
 #include <map>
+#include <set>
 #include <string>
 
 namespace ProfileEvents
@@ -25,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
 }
 
 namespace
@@ -50,11 +53,25 @@ void applyStatelessWorkerConfig(const std::string & inner_xml)
     getContext().context->setClustersConfig(loaded.configuration);
 }
 
+/// Asserts that `f` throws `Exception` with code `SW_SERVER_NO_WORKERS_AVAILABLE`.
+void expectNoWorkersAvailable(const std::function<void()> & f)
+{
+    try
+    {
+        f();
+        FAIL() << "expected SW_SERVER_NO_WORKERS_AVAILABLE";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SW_SERVER_NO_WORKERS_AVAILABLE);
+    }
 }
 
-/// A static cluster's `<host>` form serves exactly its configured host, carries no auth token,
-/// and ignores the requested worker count.
-TEST(StaticStatelessWorkersProvider, HostFormServesConfiguredHostAuthlessIgnoringCount)
+}
+
+/// A static cluster's `<host>` form serves exactly its configured host, carries no auth token, and
+/// an unset worker count (zero) allocates every host.
+TEST(StaticStatelessWorkersProvider, HostFormServesConfiguredHostAuthlessWhenWorkersNumUnset)
 {
     applyStatelessWorkerConfig(R"(
     <stateless_worker_client>
@@ -74,9 +91,66 @@ TEST(StaticStatelessWorkersProvider, HostFormServesConfiguredHostAuthlessIgnorin
     /// A static allocation has no worker_ids; the provided count must still reflect its addresses.
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::StatelessWorkerProvided] - provided_before, 1u);
 
-    auto many = provider.allocate(5, PROVISIONING_TIMEOUT_MS);
-    ASSERT_EQ(many->getAddresses().size(), 1u);
-    EXPECT_EQ(many->getAddresses()[0].host, "stat-host");
+    EXPECT_EQ(provider.getPlanningNodeCount(0), 1u);
+}
+
+/// Requesting more workers than the static snapshot has throws, naming both numbers, instead of
+/// silently capping to the snapshot.
+TEST(StaticStatelessWorkersProvider, RequestingMoreWorkersThanHostsThrows)
+{
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters>
+            <stat><host>stat-host</host></stat>
+        </clusters>
+    </stateless_worker_client>
+)");
+    StaticStatelessWorkersProvider provider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.stat");
+
+    expectNoWorkersAvailable([&] { provider.getPlanningNodeCount(5); });
+    expectNoWorkersAvailable([&] { provider.allocate(5, PROVISIONING_TIMEOUT_MS); });
+}
+
+/// An explicit worker count below the snapshot size plans for, and allocates, exactly that many
+/// distinct hosts drawn from the snapshot; at the snapshot size it plans for, and allocates, all of
+/// them; planning and allocation agree for the same requested count.
+TEST(StaticStatelessWorkersProvider, ExplicitWorkersNumWithinHostsPlansAndAllocatesThatMany)
+{
+    applyStatelessWorkerConfig(R"(
+    <remote_servers>
+        <sw_three>
+            <shard>
+                <replica><host>h1</host><port>9000</port></replica>
+                <replica><host>h2</host><port>9000</port></replica>
+                <replica><host>h3</host><port>9000</port></replica>
+            </shard>
+        </sw_three>
+    </remote_servers>
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters>
+            <three><cluster>sw_three</cluster></three>
+        </clusters>
+    </stateless_worker_client>
+)");
+    StaticStatelessWorkersProvider provider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.three");
+    const std::set<std::string> known_hosts{"h1", "h2", "h3"};
+
+    EXPECT_EQ(provider.getPlanningNodeCount(2), 2u);
+    auto two = provider.allocate(2, PROVISIONING_TIMEOUT_MS);
+    const auto & two_addresses = two->getAddresses();
+    ASSERT_EQ(two_addresses.size(), 2u);
+    EXPECT_NE(two_addresses[0].host, two_addresses[1].host);
+    EXPECT_TRUE(known_hosts.contains(two_addresses[0].host));
+    EXPECT_TRUE(known_hosts.contains(two_addresses[1].host));
+
+    EXPECT_EQ(provider.getPlanningNodeCount(3), 3u);
+    auto three = provider.allocate(3, PROVISIONING_TIMEOUT_MS);
+    ASSERT_EQ(three->getAddresses().size(), 3u);
+
+    expectNoWorkersAvailable([&] { provider.getPlanningNodeCount(4); });
+    expectNoWorkersAvailable([&] { provider.allocate(4, PROVISIONING_TIMEOUT_MS); });
 }
 
 /// A cluster that names no worker source cannot provide workers.
@@ -444,7 +518,7 @@ TEST(Context, ReusesOneStatelessWorkersProviderPerQuery)
 
     auto p1 = query_ctx->getStatelessWorkersProvider();
     ASSERT_TRUE(p1);
-    EXPECT_EQ(p1->getPlanningNodeCount(5), 1u); /// static → its one configured host, not the requested 5
+    EXPECT_EQ(p1->getPlanningNodeCount(0), 1u); /// static → its one configured host
     /// Resolved once: a second call returns the very same instance.
     EXPECT_EQ(query_ctx->getStatelessWorkersProvider().get(), p1.get());
 
