@@ -440,7 +440,8 @@ public:
         AdaptiveAggregationProducer * adaptive) const;
 
     /// Creates the shared state of an adaptive aggregation over `producers` streams: their partition layout, the scope
-    /// of the spill streams when the aggregation may spill, and the top-K pruning when the aggregation feeds one.
+    /// of the spill streams when the aggregation may spill, and the count bins of the top-K pruning when the
+    /// aggregation feeds a descending top-K.
     AdaptiveAggregationSessionPtr createAdaptiveSession(size_t producers) const;
 
     /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the session with
@@ -467,13 +468,16 @@ public:
     /// frees them, while their spills have not ended at the finish barrier. Returns the released bytes.
     size_t spillHandedOverStagedRecords(AdaptiveAggregationSession & shared) const;
 
-    /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, whether the merge
-    /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows, in the
-    /// count bins or in a table that the merge counts. A producer without the adaptive context (another aggregator of a
-    /// mixed projection pipeline) handed over neither, and an external merge reads back rows that nothing counted. A
-    /// merge that collects the runtime dataflow statistics needs every group converted. In all these cases the pruning
-    /// is dropped.
-    void prepareAdaptiveTopKPruning(
+    /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, how the
+    /// merge uses the top-K it feeds. The count bins of the pruning need every source's rows, in the bins or
+    /// in a table that the merge counts. A producer without the adaptive context (another aggregator of a
+    /// mixed projection pipeline) handed over neither, and an external merge reads back rows that nothing
+    /// counted. A merge that collects the runtime dataflow statistics needs every group converted. In all
+    /// these cases the pruning is dropped; otherwise the buckets are ordered for it by their bin bounds. The
+    /// threshold that the merge threads share (see `AdaptiveTopKThreshold`) needs only exact ranks of the
+    /// converted units, so it is created for every merge but an external one, which outputs partial states.
+    /// It settles an ascending top-K unless the merge collects the statistics, which need every group.
+    void prepareAdaptiveTopK(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time, as a step of `task`.
@@ -489,7 +493,8 @@ public:
     /// before the next, so the merge holds the unit's groups instead of all its spilled records; a count-first unit,
     /// which passes over its records twice, reads the spill streams back twice. `merged_group_count` receives
     /// the number of groups that the merge builds over all the bucket's units, before any top-K truncation.
-    /// The groups that the top-K pruning skips, with their unit or with their count bin, add none.
+    /// The groups that the top-K pruning skips, with their unit or with their count bin, add none, and so do
+    /// the units that a settled ascending top-K skips.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -517,8 +522,9 @@ public:
     /// producers' checks miss what this catches: the baseline producers check their tables one by one, so
     /// they cannot see the merged cardinality, and the adaptive producers cannot see the staged keys at all.
     /// The total covers only the groups that the merge builds: a merge that prunes by the top-K (the
-    /// threshold merge, the adaptive top-K pruning) skips the groups that cannot rank, and a merge that
-    /// stops early, as under a `LIMIT` without `ORDER BY`, never reaches its later buckets.
+    /// threshold merge, the adaptive top-K pruning, the settled adaptive merge of an ascending top-K) skips
+    /// the groups that the top does not need, and a merge that stops early, as under a `LIMIT` without
+    /// `ORDER BY`, never reaches its later buckets.
     /// The dropping modes keep the merge untouched: their contract is decided at the producers, and stopping
     /// the merge here would drop already-aggregated groups.
     void checkMergedGroupLimit(std::atomic<size_t> & merged_groups, size_t bucket_groups) const;
@@ -775,7 +781,9 @@ private:
 
     /// How a group's rank by the aggregate of `Params::bucket_top_k` is read: the inline count of an aggregation by a
     /// lone `count`, the state of a `count` among other aggregates, which is the count itself, or the result of
-    /// `uniqExact` or `uniqExactIf`, which `finalizeBucketTopKRank` reads from its state.
+    /// `uniqExact`, `uniqExactIf` or `count` of a `Nullable` argument, which `finalizeBucketTopKRank` reads
+    /// from its state. The two count readings are those of `AggregateFunctionCount`: `count()` or `count` of
+    /// a non-`Nullable` argument.
     enum class BucketTopKRank : UInt8
     {
         InlineCount,
@@ -785,6 +793,10 @@ private:
 
     /// Set when `Params::bucket_top_k` is.
     BucketTopKRank bucket_top_k_rank = BucketTopKRank::InlineCount;
+
+    /// The smallest rank that a group can have by the aggregate of `Params::bucket_top_k`, where an ascending
+    /// top-K settles (see `AdaptiveTopKThreshold`). Set when `Params::bucket_top_k` is.
+    UInt64 bucket_top_k_min_rank = 0;
 
     LoggerPtr log = getLogger("Aggregator");
 
@@ -1142,9 +1154,9 @@ private:
     /// every spilled block `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when
     /// null), and puts the hashes of its best groups by the count into `task.best_hashes`. The counting table and
     /// `top_k` copy the string-like keys of spilled records they keep into `arena`. With a descending order `top_k`
-    /// keeps the best groups up to date while they are counted, and `pruning`, if any, drops those below its
-    /// threshold; an ascending order selects them by a pass over the counted groups. Adds the records the bins
-    /// skipped to `pruned_records`. Returns the unit's group count.
+    /// keeps the best groups up to date while they are counted, and an ascending order selects them by a pass
+    /// over the counted groups. Either drops the groups ranked worse than `threshold`. Adds the records the
+    /// bins skipped to `pruned_records`. Returns the unit's group count.
     template <
         typename Method,
         typename Table,
@@ -1157,7 +1169,7 @@ private:
         const Cells & cells,
         const bool * alive_bins,
         TopK * top_k,
-        const AdaptiveTopKPruning * pruning,
+        const AdaptiveTopKThreshold & threshold,
         const ForEachInMemoryPartition & for_each_in_memory_partition,
         const ForEachSpilledBlock & for_each_spilled_block,
         Arena * arena,
@@ -1495,6 +1507,10 @@ private:
     /// when the Top-K conversion truncates the chunk.
     /// `keep_table_buffer` leaves the converted table empty but with its buffer, for a caller that fills it again
     /// (the adaptive merge's units), where an ordinary conversion releases the buffer at once.
+    /// `top_k_threshold` serves the Top-K conversion: a floor for a descending order, a ceiling for an
+    /// ascending one. The caller guarantees that a cell ranked worse than the threshold has `bucket_top_k`
+    /// groups ahead of it in the output of the aggregation's other conversions, so it cannot reach the top,
+    /// and the conversion drops it. The worst rank of the order trivially qualifies: no cell is ranked worse.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
@@ -1504,7 +1520,8 @@ private:
         Int32 bucket,
         UntruncatedAggregationKeys * untruncated_keys,
         size_t * merged_group_count,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        std::optional<UInt64> top_k_threshold = std::nullopt) const;
 
     /// The dispatch over the two-level variants of the conversion above, with its parameters.
     AggregatedChunk convertOneBucketToChunk(
@@ -1513,22 +1530,36 @@ private:
         bool final,
         Int32 bucket,
         UntruncatedAggregationKeys * untruncated_keys = nullptr,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        std::optional<UInt64> top_k_threshold = std::nullopt) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by their rank count and destroys the rest, so the sorter
-    /// upstream receives at most 256 * n candidate rows instead of every group.
+    /// upstream receives at most 256 * n candidate rows instead of every group. It also drops the cells
+    /// ranked worse than `top_k_threshold` (see `convertOneBucketToChunk`).
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
+        Method & method,
+        Arena * arena,
+        Arenas & pools_for_output,
+        Int32 bucket,
+        UntruncatedAggregationKeys * untruncated_keys,
+        bool keep_table_buffer,
+        std::optional<UInt64> top_k_threshold) const;
 
     /// `bucket_top_k` ranks groups by an aggregate, so it is never set for a set method, which has no aggregate
     /// functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
+        Method & method,
+        Arena * arena,
+        Arenas & pools_for_output,
+        Int32 bucket,
+        UntruncatedAggregationKeys * untruncated_keys,
+        bool keep_table_buffer,
+        std::optional<UInt64> top_k_threshold) const;
 
     /// The bucket-local Top-K conversion for a count rank, read as the inline count or as the count state, or for a
     /// rank finalized from a `uniqExact` or `uniqExactIf` state (see `bucket_top_k_rank`). The two count readings
@@ -1537,12 +1568,23 @@ private:
     template <bool finalized_rank, typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopKImpl(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
+        Method & method,
+        Arena * arena,
+        Arenas & pools_for_output,
+        Int32 bucket,
+        UntruncatedAggregationKeys * untruncated_keys,
+        bool keep_table_buffer,
+        std::optional<UInt64> top_k_threshold) const;
 
     /// The rank count of the group with state `place` when `Params::bucket_top_k` ranks by `uniqExact` or
     /// `uniqExactIf`: the aggregate's result, finalized into `scratch`, a `ColumnUInt64` emptied first.
     /// `insertResultInto` leaves the state valid for the merge and the conversion that follow.
     UInt64 finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scratch, Arena * arena) const;
+
+    /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
+    /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
+    /// plan optimization admits.
+    std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
 
     /// `merged_group_count`, when non-null, receives the number of groups merged for the bucket:
     /// every group of the bucket (see `convertOneBucketToChunk`), or, with the top-K threshold
