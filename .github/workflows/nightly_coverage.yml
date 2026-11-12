@@ -5,6 +5,33 @@ on:
   schedule:
     - cron: 13 2 * * *
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Coverage suite to collect
+        type: choice
+        options: ['all', 'performance']
+        default: all
+      performance_shards:
+        description: Performance shards for suite=performance, either all or comma-separated numbers (e.g. 4,13)
+        required: false
+        default: all
+      performance_resume_from:
+        description: Reuse completed whole tests from this workflow commit SHA on the same branch
+        required: false
+        default: ''
+      performance_max_hours:
+        description: Performance collection job budget including export reserve
+        type: choice
+        options: ['6', '12']
+        default: 12
+      performance_binary_url:
+        description: Immutable coverage binary artifact URL required for recovery
+        required: false
+        default: ''
+      performance_binary_sha256:
+        description: SHA256 of the unpacked pinned binary required for recovery
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}
@@ -34,7 +61,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -69,7 +98,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -104,7 +135,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -141,7 +174,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -179,7 +214,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -217,7 +254,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -255,7 +294,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -293,7 +334,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -331,7 +374,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -369,7 +414,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -407,7 +454,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -445,7 +494,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -483,7 +534,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -521,7 +574,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -559,7 +614,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -597,7 +654,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -635,7 +694,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -673,7 +734,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -711,7 +774,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -749,7 +814,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -763,6 +830,662 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 8/8)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_1_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMS8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 1/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 1/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_2_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMi8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 2/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 2/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_3_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMy8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 3/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 3/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_4_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNC8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 4/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 4/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_5_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNS8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 5/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 5/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_6_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNi8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 6/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 6/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_7_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNy8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 7/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 7/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_8_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgOC8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 8/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 8/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_9_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgOS8xNik=') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 9/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 9/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_10_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTAvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 10/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 10/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_11_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTEvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 11/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 11/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_12_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTIvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 12/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 12/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_13_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTMvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 13/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 13/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_14_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTQvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 14/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 14/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_15_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTUvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 15/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 15/16)' --workflow "NightlyCoverage" --ci --timestamp
+
+  performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_16_16:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTYvMTYp') }}
+    name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 16/16)"
+    timeout-minutes: 725
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 16/16)' --workflow "NightlyCoverage" --ci --timestamp
 
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
@@ -779,6 +1502,22 @@ jobs:
     - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8
     - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8
     - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_10_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_11_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_12_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_13_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_14_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_15_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_16_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_1_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_2_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_3_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_4_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_5_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_6_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_7_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_8_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_9_16
     - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8
     - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8
     - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8
@@ -803,7 +1542,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF

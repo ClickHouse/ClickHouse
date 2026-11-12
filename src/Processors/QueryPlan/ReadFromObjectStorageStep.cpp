@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
@@ -13,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
@@ -21,7 +23,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Common/CurrentMetrics.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -32,6 +41,13 @@
 #include <IO/S3/Client.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageObjectStorageThreads;
+    extern const Metric StorageObjectStorageThreadsActive;
+    extern const Metric StorageObjectStorageThreadsScheduled;
+}
 
 
 namespace DB
@@ -44,6 +60,11 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsBool use_join_runtime_filters_for_iceberg_pruning;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
 }
 
 namespace DataLakeStorageSetting
@@ -84,7 +105,10 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 
 QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 {
-    return std::make_unique<ReadFromObjectStorageStep>(*this);
+    auto copy = std::make_unique<ReadFromObjectStorageStep>(*this);
+    copy->iterator_wrapper.reset();
+    copy->read_in_order_files.clear();
+    return copy;
 }
 
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -150,9 +174,135 @@ std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCrea
     return data_lake_read_estimate;
 }
 
+/// Zero means "always preliminary-merge", so it must never reach the group-count division.
+/// The cap and the grouping have to read the same value or the cap admits a file count the
+/// grouping cannot divide.
+static size_t effectiveTwoLevelMergeThreshold(const Settings & settings)
+{
+    return std::max<size_t>(1, settings[Setting::read_in_order_two_level_merge_threshold]);
+}
+
+/// One source per file, as ReadFromMergeTree uses one source per part: a source reads its files
+/// serially, so a multi-file source emits a concatenation rather than a sorted run.
+Pipe ReadFromObjectStorageStep::buildInOrderPipe(
+    const ContextPtr & local_context,
+    const FormatFilterInfoPtr & format_filter_info,
+    const std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey> & top_k_query_condition_cache_key)
+{
+    const auto & settings = local_context->getSettingsRef();
+    const size_t num_files = read_in_order_files.size();
+
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_files);
+
+    /// Shared by every source of this read. Unlimited queue: scheduling must not be refused.
+    auto shared_reader_pool = std::make_shared<ThreadPool>(
+        CurrentMetrics::StorageObjectStorageThreads,
+        CurrentMetrics::StorageObjectStorageThreadsActive,
+        CurrentMetrics::StorageObjectStorageThreadsScheduled,
+        /*max_threads=*/ std::max<size_t>(1, num_streams),
+        /*max_free_threads=*/ std::max<size_t>(1, num_streams),
+        /*queue_size=*/ 0);
+
+    Pipes pipes;
+    pipes.reserve(num_files);
+    for (const auto & object_info : read_in_order_files)
+    {
+        auto file_iterator = std::make_shared<SingleObjectIterator>(object_info, iterator_wrapper);
+        file_iterator->setEmitProfileEvents(iterator_wrapper->emit_profile_events);
+
+        pipes.emplace_back(std::make_shared<StorageObjectStorageSource>(
+            storage_id,
+            getName(),
+            object_storage,
+            configuration,
+            storage_snapshot,
+            info,
+            format_settings,
+            local_context,
+            max_block_size,
+            std::move(file_iterator),
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count,
+            /*lazy_row_index_registry_=*/ nullptr,
+            top_k_query_condition_cache_key,
+            shared_reader_pool));
+    }
+
+    const size_t threshold = effectiveTwoLevelMergeThreshold(settings);
+    if (num_files <= threshold || num_files <= 2)
+        return Pipe::unitePipes(std::move(pipes));
+
+    /// An expression sorting key is absent from source_header, so materialize it, merge on it,
+    /// then convert back to source_header.
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    auto key_ast = sorting_key.expression_list_ast->clone();
+    auto syntax_result = TreeRewriter(local_context).analyze(key_ast, info.source_header.getNamesAndTypesList());
+    auto key_dag = ExpressionAnalyzer(key_ast, syntax_result, local_context).getActionsDAG(false);
+    auto key_expr = std::make_shared<ExpressionActions>(std::move(key_dag));
+
+    const auto & reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+    SortDescription sort_description;
+    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+    sort_description.reserve(sorting_key.column_names.size());
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        sort_description.emplace_back(sorting_key.column_names[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
+
+    /// Never collapse to one port: the sorting step installs no merge above a single port, so a
+    /// single group would leave the concatenation unmerged.
+    const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
+    std::vector<Pipes> grouped(num_groups);
+    for (size_t i = 0; i < num_files; ++i)
+        grouped[i % num_groups].emplace_back(std::move(pipes[i]));
+
+    Pipes merged;
+    merged.reserve(num_groups);
+    for (auto & group_pipes : grouped)
+    {
+        if (group_pipes.empty())
+            continue;
+
+        auto group = Pipe::unitePipes(std::move(group_pipes));
+        group.addSimpleTransform([&](const SharedHeader & header)
+                                 { return std::make_shared<ExpressionTransform>(header, key_expr); });
+        if (group.numOutputPorts() > 1)
+            group.addTransform(std::make_shared<MergingSortedTransform>(
+                group.getSharedHeader(),
+                group.numOutputPorts(),
+                sort_description,
+                max_block_size,
+                /*max_block_size_bytes=*/ 0,
+                /*max_dynamic_subcolumns=*/ std::nullopt,
+                SortingQueueStrategy::Batch,
+                /*limit=*/ 0,
+                /*always_read_till_end=*/ false,
+                /*out_row_sources_buf=*/ nullptr));
+        /// Drop the temporary sorting-key columns. An identity DAG cannot do it: unmatched header
+        /// columns are re-emitted (ActionsDAG::updateHeader), so the key would survive, and out of
+        /// position. Converting actions output exactly the requested columns, in order.
+        if (!blocksHaveEqualStructure(group.getHeader(), info.source_header))
+        {
+            auto converting = std::make_shared<ExpressionActions>(ActionsDAG::makeConvertingActions(
+                group.getHeader().getColumnsWithTypeAndName(),
+                info.source_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context));
+            group.addSimpleTransform([&](const SharedHeader & header)
+                                     { return std::make_shared<ExpressionTransform>(header, converting); });
+        }
+        merged.emplace_back(std::move(group));
+    }
+
+    return Pipe::unitePipes(std::move(merged));
+}
+
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator();
+    if (read_in_order && read_in_order_files.empty())
+        while (auto object_info = iterator_wrapper->next(0))
+            read_in_order_files.push_back(object_info);
 
     Pipes pipes;
     auto context = getContext();
@@ -203,10 +353,30 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         top_k_query_condition_cache_key->format_filter_info_tracking_best_values = std::move(format_filter_info_tracking_best_values);
     }
 
+    const auto & settings = context->getSettingsRef();
+    if (join_runtime_filter_predicate && configuration->isIcebergConfiguration()
+        && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
+    {
+        format_filter_info->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
+            top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filter_predicate = join_runtime_filter_predicate;
+    }
+
     auto file_iterator = iterator_wrapper;
     if (top_k_query_condition_cache_key && !top_k_query_condition_cache_key->condition_hash)
         file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(
             file_iterator, top_k_query_condition_cache_key, context->getProcessListElement());
+
+    if (read_in_order && !read_in_order_files.empty())
+    {
+        auto in_order_pipe = buildInOrderPipe(context, format_filter_info, top_k_query_condition_cache_key);
+        /// Deliberately no pipe.resize here: it redistributes chunks across ports and would
+        /// destroy the per-port ordering established above.
+        for (const auto & processor : in_order_pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(in_order_pipe));
+        return;
+    }
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -252,6 +422,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
+    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+}
+
 void ReadFromObjectStorageStep::createIterator()
 {
     if (iterator_wrapper)
@@ -264,12 +440,23 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     /// The TopK query condition cache key is made from the same table state the files are read from.
-    iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+    if (!iterator_metadata)
+        iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
+    if (!join_runtime_filters_for_file_pruning.empty())
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto lookup = query_context->getRuntimeFilterLookup())
+            {
+                join_runtime_filter_predicate
+                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, std::move(lookup), context);
+                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filter_predicate);
+            }
 }
 
 std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
@@ -500,6 +687,12 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     if (need_only_count)
         return false;
 
+    /// Reading in order (granted earlier in this optimization pass) rebuilds the pipeline as one
+    /// sorted run per file, without the row-index registry the lazy branch needs, so the two
+    /// rewrites do not compose; the in-order read was promised first, decline the lazy rewrite.
+    if (read_in_order)
+        return false;
+
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
     /// Only the Parquet and Vortex readers support both. The format of a data lake configuration is
@@ -597,9 +790,99 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     return lazy_step;
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder() const
+/// Only Parquet can keep a file's row groups in order (`preserve_order`).
+static bool formatCanDeliverSortedRun(const String & format)
 {
-    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return boost::iequals(format, "Parquet");
+}
+
+bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    /// Called by several optimizations, and listing the files consumes the iterator.
+    if (read_in_order_attempted)
+        return read_in_order && direction == 1;
+    read_in_order_attempted = true;
+
+    /// The in-order pipe has no row-index registry, see `canUseLazyMaterialization`.
+    if (lazy_row_index_registry)
+        return false;
+
+    if (!configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext()))
+        return false;
+
+    /// Files are only read forwards.
+    if (direction != 1)
+        return false;
+
+    /// Buckets are assigned after planning, and the file list is not serialized.
+    if (optimization_settings.make_distributed_plan || distributed_processing)
+        return false;
+
+    auto context = getContext();
+    const auto & settings = context->getSettingsRef();
+
+    if (!sortingKeyIsComputableFromSourceHeader())
+        return false;
+
+    /// Listing evaluates the filter, and a `GLOBAL IN` set is only built with the pipeline.
+    if (filter_actions_dag && QueryPlanOptimizations::dagContainsNonReadySet(*filter_actions_dag))
+        return false;
+
+    createIterator();
+
+    /// Stop at cap + 1. Every path below, rejections included, must still read all files.
+    const size_t max_files = effectiveTwoLevelMergeThreshold(settings) * std::max<size_t>(1, num_streams);
+
+    ObjectInfos files;
+    bool over_cap = false;
+    while (auto object_info = iterator_wrapper->next(0))
+    {
+        files.push_back(object_info);
+        if (files.size() > max_files)
+        {
+            over_cap = true;
+            break;
+        }
+    }
+
+    iterator_wrapper = std::make_shared<ObjectIteratorWithPeekedObjects>(files, iterator_wrapper);
+
+    if (over_cap)
+        return false;
+
+    /// Data lake files carry their own format.
+    for (const auto & object_info : files)
+    {
+        if (object_info->isArchive())
+            return false;
+        if (!formatCanDeliverSortedRun(object_info->getFileFormat().value_or(configuration->format)))
+            return false;
+    }
+
+    /// Otherwise row groups arrive in completion order.
+    if (!format_settings)
+        format_settings.emplace(getFormatSettings(context));
+    format_settings->parquet.preserve_order = true;
+
+    read_in_order = true;
+    read_in_order_files = std::move(files);
+    return true;
+}
+
+bool ReadFromObjectStorageStep::sortingKeyIsComputableFromSourceHeader() const
+{
+    const auto & metadata = storage_snapshot->metadata;
+    if (!metadata->hasSortingKey())
+        return false;
+
+    /// The key expression is analyzed once against every storage column, and this header is a
+    /// projection of those same columns, so the expression is computable here exactly when the
+    /// query still reads every column the key consumes.
+    for (const auto & column_name : metadata->getColumnsRequiredForSortingKey())
+        if (!info.source_header.has(column_name))
+            return false;
+
+    return true;
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

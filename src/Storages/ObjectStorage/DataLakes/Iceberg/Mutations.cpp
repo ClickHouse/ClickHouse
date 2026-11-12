@@ -39,6 +39,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <limits>
 #include <unordered_set>
 
@@ -162,6 +163,33 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     DataFileStatisticsByPartitionKey update_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
+
+    /// No snapshot references these files until the caller commits them, so remove them if writing fails.
+    bool written = false;
+    SCOPE_EXIT({
+        if (written)
+            return;
+        for (auto * writers : {&delete_data_writers, &update_data_writers})
+            for (auto & [_, writer] : *writers)
+                if (writer)
+                    writer->cancel();
+        for (auto * buffers : {&delete_data_write_buffers, &update_data_write_buffers})
+            for (auto & [_, buffer] : *buffers)
+                if (buffer)
+                    buffer->cancel();
+        for (const auto * files : {&delete_data_result, &update_data_result})
+            for (const auto & [_, file] : *files)
+            {
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(file.path)));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("IcebergMutations", "Cannot remove a file of a failed mutation");
+                }
+            }
+    });
 
     if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
     {
@@ -364,12 +392,13 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         }
     }
 
+    std::optional<WriteDataFilesResult> result;
     if (commands[0].type == MutationCommand::DELETE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, {}};
+        result = WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, {}};
     else if (commands[0].type == MutationCommand::UPDATE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
-    else
-        return {};
+        result = WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
+    written = true;
+    return result;
 }
 
 static bool writeMetadataFiles(
@@ -719,8 +748,12 @@ void mutate(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
-        filename_generator.setVersion(last_version + 1);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
@@ -848,8 +881,12 @@ void alter(
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method);
 
-        FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
-        filename_generator.setVersion(last_version + 1);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.path_resolver.getTableLocation(),
+            /* use_uuid_in_metadata */ catalog != nullptr,
+            CompressionMethod::None,
+            write_format);
+        filename_generator.setBaseMetadataFile(last_version, metadata_path);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));

@@ -166,6 +166,9 @@
 #include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
+#if USE_SILK
+#    include <glibc-rseq/rseq.h>
+#endif
 #include <Common/config_version.h>
 
 #if defined(OS_LINUX)
@@ -1455,6 +1458,18 @@ try
 #if USE_SILK
     if (server_settings[ServerSetting::enable_silk_runtime])
     {
+        /// Silk reads the current CPU from the rseq area that the C library registers for every thread, and its
+        /// per-CPU structures use rseq critical sections. Without a registered area it reads a CPU number that is
+        /// out of range and aborts in its worker threads. `rseq_init` in librseq does not detect this: it only
+        /// checks that the C library exports the rseq symbols, not that the registration succeeded.
+        if (rseq_cpu_id() < 0)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The server setting `enable_silk_runtime` is set, but the Linux 'restartable sequences' (rseq) feature, "
+                "which the silk fiber runtime requires, is not enabled for this process. The kernel may not support it "
+                "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
+                "did not register the rseq area");
+
         Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
     }
 #endif
@@ -1508,6 +1523,8 @@ try
         if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
+            /// Closing a cooperative connection needs the scheduler, so stored connections go first.
+            HTTPConnectionPools::instance().dropCache();
             Silk::destroyFiberScheduler();
         }
 #endif
@@ -3071,6 +3088,9 @@ try
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_GPU
+                global_context->updateGPUKernelCacheConfiguration(new_server_settings);
+#endif
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
