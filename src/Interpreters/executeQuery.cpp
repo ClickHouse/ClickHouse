@@ -1981,7 +1981,10 @@ void wrapNestedConstructionSettings(
 /// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS filter = 'x')`. When that is the case,
 /// every arm that carries one is wrapped as a derived table with its own
 /// `SELECT` / `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET`, so each arm is shaped independently instead
-/// of the caps collapsing into a single one on the whole union. This runs before the query's own
+/// of the caps collapsing into a single one on the whole union. A parenthesized arm with a `SETTINGS`
+/// clause stays wrapped into its own `ASTSelectWithUnionQuery` (see `ParserUnionQueryElement`), so its
+/// settings are already arm-local and handled as nested ones; this pass sees the arms written without
+/// parentheses, e.g. `SELECT … SETTINGS limit = 1 UNION ALL SELECT …`. This runs before the query's own
 /// `SETTINGS` clause is applied to the context, so the per-arm values are removed from the AST and
 /// never leak into the context as (spurious) query-level settings.
 ///
@@ -2080,8 +2083,8 @@ static void wrapPerArmConstructionSettingsImpl(
         return;
 
     /// Once per-arm mode is on, the LAST arm's own `SETTINGS` is ambiguous: for an unparenthesized union
-    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, which is indistinguishable
-    /// in the AST from a parenthesized arm-local `SETTINGS`. Treating it as arm-local would silently
+    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, while the `SETTINGS` of
+    /// the non-last arms written the same way are arm-local. Treating it as arm-local would silently
     /// re-scope a whole-union cap — e.g. `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = 3` would cap
     /// each arm (1 + 3) instead of the whole union (3). Reject the mixed form rather than guess. Per-arm
     /// settings on a union whose last arm has no settings, or nesting each arm's settings in a subquery
@@ -3205,6 +3208,9 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Before the workload classifier is acquired in insert: metadata queries are exempt from workload scheduling.
+            if (out_ast && isMetadataQuery(*out_ast))
+                context->setMetadataQuery();
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());

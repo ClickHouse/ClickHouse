@@ -4,8 +4,8 @@
   // ── Desktop tab navigation ────────────────────────────────────────────────
   var TAB_URLS = {
     'Home':         '/',
-    'Database':     '/get-started/about/intro',
-    'Solutions':    '/products/cloud/getting-started/cloud-get-started',
+    'Databases':    '/get-started/about/intro',
+    'Products':     '/products/cloud/getting-started/cloud-get-started',
     'Integrations': '/integrations/home',
   };
 
@@ -71,8 +71,42 @@
     });
   }
 
+  // The shared ClickStack tree contains managed and OSS documentation, so
+  // Mintlify's tree ownership alone cannot identify the active product link.
+  function syncClickStackActiveItem() {
+    var prefix = BASE + (currentLocale() ? '/' + currentLocale() : '');
+    var path = window.location.pathname.slice(prefix.length).replace(/\/$/, '');
+    if (path !== '/clickstack' && path.indexOf('/clickstack/') !== 0) return;
+
+    var managed = path === '/clickstack/observability'
+      || path.indexOf('/clickstack/observability/') === 0
+      || path.indexOf('/clickstack/self-configured/') === 0;
+    document.querySelectorAll('a.nav-dropdown-item, a.mobile-nav-tabs-item').forEach(function (a) {
+      var href = new URL(a.href, window.location.origin).pathname.replace(/\/$/, '');
+      var isManaged = href === prefix + '/clickstack/observability';
+      var isOSS = href === prefix + '/clickstack';
+      if (!isManaged && !isOSS) return;
+      if (managed === isManaged) {
+        if (a.getAttribute('aria-current') !== 'location') a.setAttribute('aria-current', 'location');
+      } else {
+        a.removeAttribute('aria-current');
+      }
+    });
+  }
+
   // ── Mobile section header styling ─────────────────────────────────────────
-  var SECTION_HEADERS = ['ClickHouse', 'Open source'];
+  var SECTION_HEADERS = [
+    'ClickHouse',
+    'Deployments', 'Applications', 'Open source',
+    'عمليات النشر', 'التطبيقات', 'مفتوح المصدر',
+    'Implementaciones', 'Aplicaciones', 'Código abierto',
+    'Déploiements', 'Applications', 'Open source',
+    'デプロイメント', 'アプリケーション', 'オープンソース',
+    '배포', '애플리케이션', '오픈 소스',
+    'Implantações', 'Aplicações', 'Código aberto',
+    'Развертывания', 'Приложения', 'С открытым исходным кодом',
+    '部署', '应用', '开源'
+  ];
 
   function styleDropdownHeaders() {
     document.querySelectorAll('a.mobile-nav-tabs-item').forEach(function (a) {
@@ -81,14 +115,14 @@
       if (SECTION_HEADERS.indexOf(text) === -1) return;
 
       a.dataset.headerStyled = '1';
+      a.setAttribute('aria-disabled', 'true');
+      a.setAttribute('tabindex', '-1');
       a.style.fontWeight = '700';
-      a.style.fontSize = '0.75rem';
-      a.style.letterSpacing = '0.05em';
-      a.style.textTransform = 'uppercase';
-      a.style.opacity = '0.5';
+      a.style.fontSize = '0.875rem';
+      a.style.letterSpacing = 'normal';
+      a.style.textTransform = 'none';
       a.style.pointerEvents = 'none';
       a.style.cursor = 'default';
-      a.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
       a.style.paddingBottom = '8px';
       a.style.marginBottom = '2px';
 
@@ -243,6 +277,7 @@
     setupHomepageNavbar();
     patchTabButtons();
     styleDropdownHeaders();
+    syncClickStackActiveItem();
     markNavbarReady();
 
     // Debounce the observer so rapid React re-renders don't thrash the main
@@ -258,6 +293,7 @@
         updateLogoTheme();
         patchTabButtons();
         styleDropdownHeaders();
+        syncClickStackActiveItem();
         markNavbarReady();
       });
     });
@@ -266,6 +302,7 @@
     window.addEventListener('resize', patchTabButtons);
     window.addEventListener('mintlify:navigate', function () {
       renderedPath = window.location.pathname;
+      syncClickStackActiveItem();
       applyHomepageClass();
       setupHomepageNavbar();
       markNavbarReady();

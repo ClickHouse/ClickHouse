@@ -364,9 +364,6 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
-                const auto & metadata_object = initial_plan.initial_metadata_object;
-                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
-                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -522,6 +519,7 @@ static DataFileEntryLineage getEntryLineageForRewrite(const ParsedManifestFileEn
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
+    const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
@@ -816,10 +814,10 @@ static bool writeConsolidatedManifestFile(
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
         path_resolver.getTableLocation(),
-        false,
+        /* use_uuid_in_metadata */ catalog != nullptr,
         compression_method,
         write_format);
-    generator.setVersion(metadata_version + 1);
+    generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
@@ -1458,7 +1456,7 @@ static bool writeMetadataFiles(
 
 static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
-    auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    auto metadata_files = listFilesNonRecursive(*object_storage, table_path, "metadata", "");
     std::erase_if(metadata_files, [](const String & file)
     {
         return file.ends_with("metadata/version-hint.text");
@@ -1544,6 +1542,7 @@ void compactIcebergManifests(
 
         if (writeConsolidatedManifestFile(
                 metadata_version,
+                metadata_file_path,
                 metadata_object,
                 persistent_table_components,
                 object_storage_,

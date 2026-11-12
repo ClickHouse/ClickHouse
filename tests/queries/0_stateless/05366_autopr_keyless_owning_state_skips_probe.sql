@@ -20,7 +20,7 @@ SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_grou
 SELECT uniqExact(v) FROM t_keyless_owning_state FORMAT Null SETTINGS log_comment = 'keyless_owning_1';
 SELECT uniqExact(v) FROM t_keyless_owning_state FORMAT Null SETTINGS log_comment = 'keyless_owning_2';
 -- The controls still build it: a state without memory of its own, and an aggregation with keys.
-SELECT sum(v) FROM t_keyless_owning_state FORMAT Null SETTINGS log_comment = 'keyless_trivial';
+SELECT sum(v) FROM t_keyless_owning_state FORMAT Null SETTINGS use_statistics_for_sum_avg_aggregation = 0, log_comment = 'keyless_trivial';
 SELECT id % 10, uniqExact(v) FROM t_keyless_owning_state GROUP BY 1 FORMAT Null SETTINGS log_comment = 'keyed_owning';
 
 SYSTEM FLUSH LOGS query_log;

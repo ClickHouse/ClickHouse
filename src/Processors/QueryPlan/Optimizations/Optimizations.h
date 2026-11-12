@@ -439,6 +439,7 @@ UseProjectionsResult optimizeUseNormalProjections(
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void removeSetsOfAlwaysFalseScope(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
 /// Must be called after the second optimization pass so that is_planned flags

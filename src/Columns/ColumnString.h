@@ -129,6 +129,8 @@ public:
 
     bool hasOnlyTypeDefaults() const override;
 
+    ColumnPtr createWithOffsets(const Offsets & positions, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
+
     void insert(const Field & x) override
     {
         const String & s = x.safeGet<String>();
