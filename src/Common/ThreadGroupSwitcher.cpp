@@ -4,6 +4,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -31,76 +32,111 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
 {
     try
     {
-        if (!thread_group)
-            return;
-
-        prev_thread = current_thread;
-        prev_thread_group = CurrentThread::getGroup();
-        if (prev_thread_group)
+        if (thread_group)
         {
-            if (prev_thread_group == thread_group)
+            prev_thread = current_thread;
+            prev_thread_group = CurrentThread::getGroup();
+            if (prev_thread_group)
             {
-                thread_group = nullptr;
-                prev_thread_group = nullptr;
-                return;
+                if (prev_thread_group == thread_group)
+                {
+                    thread_group = nullptr;
+                    prev_thread_group = nullptr;
+                }
+                else if (!allow_existing_group)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
+                else
+                    CurrentThread::detachFromGroupIfNotDetached();
             }
-            else if (!allow_existing_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
-            else
+
+            if (!prev_thread)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
+        }
+
+        if (thread_name != ThreadName::UNKNOWN)
+        {
+            try
             {
-                /// Borrowing a thread that owns a group: remember its name (even UNKNOWN) before the
-                /// setThreadName below renames it, so we can restore it with the group.
-                prev_thread_name = getThreadName();
-                should_restore_prev_thread_name = true;
-                CurrentThread::detachFromGroupIfNotDetached();
+                prev_thread_name = saveThreadName();
+                if (prev_thread_name)
+                    setThreadName(thread_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
 
-        if (!prev_thread)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
-
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-        CurrentThread::attachToGroup(thread_group);
-        setThreadName(thread_name);
-
-        /// Simulate a failure after the attach succeeded (e.g. setThreadName throwing),
-        /// to verify the catch block detaches from the target group and restores the
-        /// previous one instead of leaving the thread attached to the failed target.
-        fiu_do_on(FailPoints::thread_group_switcher_post_attach_failure,
+        /// If thread group matches previous, it was reseted to nullptr above
+        if (thread_group)
         {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
-        });
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            CurrentThread::attachToGroup(thread_group);
+
+            /// Simulate a failure after the attach succeeded, to verify the catch block
+            /// detaches from the target group and restores the previous one instead of
+            /// leaving the thread attached to the failed target.
+            fiu_do_on(FailPoints::thread_group_switcher_post_attach_failure,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
+            });
+
+            /// A pool worker attaching for a job keeps the new name past the scope (see the header).
+            /// This is required for a ThreadPool which needs thread name that was in the job for opentelemetry spans.
+            if (!prev_thread_group)
+                prev_thread_name.reset();
+        }
     }
     catch (...)
     {
         /// Unexpected. For caller's convenience avoid throwing exceptions.
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         try
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-            /// The attach may have succeeded before a later step (e.g. setThreadName) threw,
-            /// leaving the thread on the target group. Detach it first.
+            /// The attach may have succeeded before a later step threw, leaving the thread
+            /// on the target group. Detach it first.
             if (CurrentThread::getGroup() == thread_group)
                 CurrentThread::detachFromGroupIfNotDetached();
-            /// Restore the borrowed group and name here: the destructor early-returns on this path
+            /// Restore the borrowed group here: the destructor skips the group part on this path
             /// (both groups are nulled below).
             if (prev_thread_group && !CurrentThread::getGroup())
                 CurrentThread::attachToGroup(prev_thread_group);
-            if (should_restore_prev_thread_name)
-                setThreadName(prev_thread_name);
         }
         catch (...)
         {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         thread_group = nullptr;
         prev_thread_group = nullptr;
+
+        /// The switch did not happen, so the scope body must not run under its name either.
+        restorePrevThreadName();
     }
+}
+
+void ThreadGroupSwitcher::restorePrevThreadName() noexcept
+{
+    if (!prev_thread_name)
+        return;
+
+    try
+    {
+        restoreThreadName(*prev_thread_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    prev_thread_name.reset();
 }
 
 ThreadGroupSwitcher::~ThreadGroupSwitcher()
 {
+    /// Else the thread keeps a name it got for a scope that is over: misattributed logs, traces,
+    /// /proc names and jemalloc thread profiles.
+    SCOPE_EXIT(restorePrevThreadName());
+
     if (!thread_group)
         return;
 
@@ -120,15 +156,11 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
-            /// Restore the borrowed thread's original name, else it keeps the async-pool name and
-            /// misattributes later logs, traces, /proc names and jemalloc thread profiles.
-            if (should_restore_prev_thread_name)
-                setThreadName(prev_thread_name);
         }
     }
     catch (...)
     {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
