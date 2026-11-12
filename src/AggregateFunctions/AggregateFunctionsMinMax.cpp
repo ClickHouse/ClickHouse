@@ -180,7 +180,7 @@ public:
     }
 
     /// Floating point is excluded: a repeated `NaN` replaces another `NaN` kept as the result.
-    bool ignoresRepeatedValues() const override { return !WhichDataType(removeLowCardinality(this->result_type)).isFloat(); }
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return !WhichDataType(removeLowCardinality(this->result_type)).isFloat(); }
 
 #if USE_EMBEDDED_COMPILER
     [[nodiscard]] bool isCompilable() const override

@@ -451,7 +451,7 @@ struct StatisticsGeometry
 
 private:
     /// The bound is neither empty (no coordinates seen) nor invalid (NaN).
-    bool hasBound(size_t i) const
+    [[nodiscard]] bool hasBound(size_t i) const
     {
         return !std::isinf(min[i] - max[i]) && !std::isnan(min[i]) && !std::isnan(max[i]);
     }
@@ -1348,7 +1348,7 @@ public:
         }
     }
 
-    size_t estimatedDataEncodedSize() const { return buf.size(); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return buf.size(); }
 
     /// Appends the encoded values to `out` and starts a new page.
     void flush(PODArray<char> & out)
@@ -1383,13 +1383,13 @@ public:
             indexes[pos + i] = getOrInsert(values[i]);
     }
 
-    size_t numEntries() const { return dictionary.size(); }
+    [[nodiscard]] size_t numEntries() const { return dictionary.size(); }
 
     /// The size of the PLAIN-encoded dictionary, which `writeDictionary` writes.
-    size_t dictionaryEncodedSize() const { return dictionary_encoded_size; }
+    [[nodiscard]] size_t dictionaryEncodedSize() const { return dictionary_encoded_size; }
 
     /// An upper bound of the size of what `flush` writes.
-    size_t estimatedDataEncodedSize() const { return 1 + maxRLESize(bitWidth(), indexes.size()); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return 1 + maxRLESize(bitWidth(), indexes.size()); }
 
     /// Appends the encoded indexes to `out` and starts a new page: the bit width as a byte, and the
     /// RLE / bit-packed hybrid encoding of the indexes.
@@ -1441,7 +1441,7 @@ private:
     using DictionaryValue = std::conditional_t<is_byte_array, std::string_view, T>;
 
     /// Ceiling of log2 of the number of entries, but at least 1 for a single entry.
-    size_t bitWidth() const
+    [[nodiscard]] size_t bitWidth() const
     {
         size_t num_entries = dictionary.size();
         if (num_entries <= 1)

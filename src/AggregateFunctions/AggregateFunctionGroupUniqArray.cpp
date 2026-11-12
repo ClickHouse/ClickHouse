@@ -314,7 +314,7 @@ public:
     {
         return true;
     }
-    bool ignoresRepeatedValues() const override { return true; }
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
