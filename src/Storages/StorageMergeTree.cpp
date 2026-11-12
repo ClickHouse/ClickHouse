@@ -1979,7 +1979,7 @@ void StorageMergeTree::loadMutations()
             names.push_back(it->name());
         for (const auto & name : names)
         {
-            const String path = fs::path(relative_data_path) / name;
+            const String path = pathToGenericString(fs::path(relative_data_path) / name);
             if (startsWith(name, "mutation_"))
             {
                 FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_load_mutations_pause_before_read);
