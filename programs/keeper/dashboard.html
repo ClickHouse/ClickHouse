@@ -1961,23 +1961,16 @@
     /// `ask_confirmation=false` (stateless); the dashboard mirrors keeper-client.
     let pending_command_confirm = null;
 
-    function keeperCommandName(command) {
-        const trimmed = command.trimStart();
-        const space = trimmed.search(/\s/);
-        return (space === -1 ? trimmed : trimmed.slice(0, space));
-    }
-
-    function needsCommandConfirmation(command) {
-        const name = keeperCommandName(command);
-        return name === "rmr" || name === "delete_stale_backups";
-    }
-
-    function commandConfirmationPrompt(command) {
-        if (keeperCommandName(command) === "delete_stale_backups")
-            return "You are going to delete all inactive backups in /clickhouse/backups.";
-        const rest = command.trimStart().slice(keeperCommandName(command).length).trim();
-        const pathArg = rest.split(/\s+/)[0] || "";
-        return "You are going to recursively delete path " + pathArg;
+    async function fetchDestructiveConfirmationPreview(command) {
+        const url = new URL(window.location);
+        url.pathname = "/api/v1/commands";
+        url.search = "?" + new URLSearchParams({
+            confirm_preview: "1",
+            command: command,
+            cwd: cli_cwd,
+        }).toString();
+        const response = await fetch(url.toString());
+        return await response.json();
     }
 
     function setPendingCommandConfirm(command) {
@@ -2191,11 +2184,26 @@
         if (!already_confirmed)
             appendToOutput(`➜ ${cli_cwd} ${command}\n`);
 
-        if (!already_confirmed && needsCommandConfirmation(command)) {
-            appendToOutput(commandConfirmationPrompt(command) + " Continue?\n");
-            setPendingCommandConfirm(command);
-            scrollCommandOutputToBottom();
-            return;
+        if (!already_confirmed) {
+            try {
+                const preview = await fetchDestructiveConfirmationPreview(command);
+                if (preview.rejection_reason) {
+                    appendToOutput(preview.rejection_reason + "\n");
+                    scrollCommandOutputToBottom();
+                    return;
+                }
+                const prompts = Array.isArray(preview.prompts) ? preview.prompts : [];
+                if (prompts.length > 0) {
+                    appendToOutput(prompts[0] + " Continue?\n");
+                    setPendingCommandConfirm(command);
+                    scrollCommandOutputToBottom();
+                    return;
+                }
+            } catch (err) {
+                appendToOutput(`Unexpected error: ${err.message || err}\n`);
+                scrollCommandOutputToBottom();
+                return;
+            }
         }
 
         setPendingCommandConfirm(null);

@@ -413,6 +413,103 @@ def test_http_commands_complete(started_cluster):
     )
     assert all(c.startswith(quoted_last_word) for c in quoted_body["completions"])
 
+    special_name = f"{prefix}_my node (1)"
+    created_special = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"command": f"create '/{dirname}/{special_name}' s", "cwd": "/"},
+    )
+    assert created_special.status_code == 200
+    special_complete = f"get /{dirname}/my\\ no"
+    special_resp = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"complete": special_complete, "cwd": "/"},
+    )
+    assert special_resp.status_code == 200
+    special_body = special_resp.json()
+    assert special_body["completions"] == []
+
+    with keeper_utils.KeeperClient.from_cluster(
+        cluster, keeper_ip=leader.ip_address, port=9181
+    ) as client:
+        client.rmr(dirname)
+
+
+def test_http_commands_confirm_preview(started_cluster):
+    leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    prefix = str(uuid.uuid4())
+    dirname = f"{prefix}_confirm"
+    space_node = f"{prefix}_space node"
+
+    response = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={"command": f"create '/{dirname}/{space_node}' x", "cwd": "/"},
+    )
+    assert response.status_code == 200
+
+    preview = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={
+            "confirm_preview": "1",
+            "command": f"rmr '/{dirname}/{space_node}'",
+            "cwd": "/",
+        },
+    )
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["prompts"] == [
+        f"You are going to recursively delete path /{dirname}/{space_node}"
+    ]
+
+    multi = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={
+            "confirm_preview": "1",
+            "command": f"rmr '/{dirname}/{space_node}'; rmr '/{dirname}/{space_node}'",
+            "cwd": "/",
+        },
+    )
+    assert multi.status_code == 200
+    multi_body = multi.json()
+    assert multi_body.get("rejection_reason")
+    assert multi_body.get("prompts", []) == []
+
+    chained = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={
+            "confirm_preview": "1",
+            "command": f"ls /{dirname}; rmr '/{dirname}/{space_node}'",
+            "cwd": "/",
+        },
+    )
+    assert chained.status_code == 200
+    assert chained.json().get("rejection_reason")
+    assert chained.json().get("prompts", []) == []
+
+    leading = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(
+            host=leader.ip_address, port=9182
+        ),
+        params={
+            "confirm_preview": "1",
+            "command": f"; rmr '/{dirname}/{space_node}'",
+            "cwd": "/",
+        },
+    )
+    assert leading.status_code == 200
+    assert leading.json()["prompts"]
+
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
     ) as client:

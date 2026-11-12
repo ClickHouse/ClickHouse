@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <future>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +44,13 @@ struct KeeperCompletionResult
     size_t replace_start = 0;
 };
 
+/// Parsed destructive-operation prompts for dashboard confirmation (no execution).
+struct KeeperDestructiveConfirmationPreview
+{
+    std::vector<String> prompts;
+    std::optional<String> rejection_reason;
+};
+
 class KeeperClientBase
 {
 public:
@@ -66,6 +74,9 @@ public:
     /// clickhouse-keeper-client and the Keeper HTTP dashboard.
     /// Requires `zookeeper` for path-argument completion.
     KeeperCompletionResult completeQueryPrefix(const String & prefix) const;
+
+    /// Mirror `RMRCommand` / `DeleteStaleBackups` confirmation text on parsed statements.
+    KeeperDestructiveConfirmationPreview previewDestructiveConfirmations(const String & text) const;
 
     zkutil::ZooKeeperPtr zookeeper;
     std::filesystem::path cwd = "/";

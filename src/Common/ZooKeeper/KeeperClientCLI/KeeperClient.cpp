@@ -434,6 +434,9 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
 
         /// The completion text is the suffix starting from where replxx's
         /// last_word begins, so that prefix matching works.
+        if (!full_completion.starts_with(full_arg))
+            continue;
+
         if (last_word_offset > full_completion.size())
             continue;
 
@@ -445,6 +448,80 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
 
     std::sort(result.completions.begin(), result.completions.end());
     return result;
+}
+
+KeeperDestructiveConfirmationPreview KeeperClientBase::previewDestructiveConfirmations(const String & text) const
+{
+    KeeperDestructiveConfirmationPreview preview;
+
+    const char * begin = text.data();
+    const char * end = begin + text.size();
+
+    Tokens tokens(begin, end, 0, false);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    size_t statement_count = 0;
+    size_t destructive_count = 0;
+
+    while (!pos->isEnd())
+    {
+        while (!pos->isEnd() && (pos->type == TokenType::Whitespace || pos->type == TokenType::Semicolon))
+            ++pos;
+
+        if (pos->isEnd())
+            break;
+
+        ++statement_count;
+
+        KeeperParser parser;
+        ASTPtr res;
+        Expected expected;
+        if (!parser.parse(pos, res, expected) || !res)
+        {
+            preview.rejection_reason = "Syntax error";
+            preview.prompts.clear();
+            return preview;
+        }
+
+        while (!pos->isEnd() && pos->type == TokenType::Whitespace)
+            ++pos;
+
+        if (!pos->isEnd() && pos->type != TokenType::Semicolon)
+        {
+            preview.rejection_reason = "Syntax error: unexpected trailing input";
+            preview.prompts.clear();
+            return preview;
+        }
+
+        const auto * query = res->as<ASTKeeperQuery>();
+        const String & command_name = query->command;
+        if (command_name == "rmr")
+        {
+            ++destructive_count;
+            if (!query->args.empty())
+            {
+                const String path = getAbsolutePath(query->args[0].safeGet<String>()).string();
+                preview.prompts.push_back("You are going to recursively delete path " + path);
+            }
+        }
+        else if (command_name == "delete_stale_backups")
+        {
+            ++destructive_count;
+            preview.prompts.push_back("You are going to delete all inactive backups in /clickhouse/backups.");
+        }
+    }
+
+    if (destructive_count == 0)
+        return preview;
+
+    if (destructive_count > 1 || statement_count > 1)
+    {
+        preview.rejection_reason
+            = "Destructive commands must be entered alone; split multi-statement input into separate commands.";
+        preview.prompts.clear();
+    }
+
+    return preview;
 }
 
 String KeeperClientBase::executeFourLetterCommand(const String & /* command */)
