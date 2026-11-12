@@ -76,7 +76,8 @@ def test_conversion_keeps_queue_keeper_path():
     node.exec_in_container(
         ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
-    node.start_clickhouse()
+    # On a database disk the conversion of each database fails one start and resumes on the next one.
+    node.start_clickhouse(start_wait_sec=180)
 
     # A refused closing rename would leave a `.tmp_convert.conv_*` database behind.
     assert (
