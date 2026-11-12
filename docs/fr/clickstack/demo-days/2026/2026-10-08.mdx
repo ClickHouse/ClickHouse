@@ -1,0 +1,110 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-08
+title: 'Demo days - 2026-10-08'
+sidebarTitle: '2026-10-08'
+description: 'Journées de démonstration ClickStack du 2026-10-08'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Mode série des cartes de chaleur, cartes de chaleur PromQL et granularité explicite {#heatmap-series-mode-promql-heatmaps-and-explicit-granularity}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Jusqu’à présent, les cartes de chaleur n’affichaient que des distributions numériques : l’axe des ordonnées représentait une valeur répartie en compartiments, comme la durée des spans, et la couleur indiquait le nombre d’événements dans chaque compartiment. Nous avons ajouté un mode série, dans lequel l’axe des ordonnées affiche la valeur du group-by et la couleur indique l’agrégat choisi pour chaque intervalle temporel. Son fonctionnement est très proche de celui d’un graphique en courbes multisérie, la valeur étant représentée par la couleur plutôt que par la hauteur. Le constructeur et la requête générée suivent la même logique que pour les graphiques temporels.
+
+Dans la démonstration, nous regroupons les données par nom de service sur les dernières 24 heures. La carte de chaleur du nombre d’erreurs met clairement en évidence l’incident simulé de l’environnement de démonstration, avec deux cellules nettement plus élevées. À côté, le même graphique basé sur un agrégat ne portant pas sur les erreurs reste uniforme. Si le group-by renvoie plus de 50 séries, un avertissement s’affiche et seules les 50 premières sont tracées, selon la même logique de limite client-side que pour les graphiques temporels. Le mode série est également disponible via l’API externe des tableaux de bord et via MCP.
+
+Pour les sources PromQL, trois modes de carte de chaleur sont disponibles. Le mode série fonctionne comme décrit ci-dessus, à l’aide d’une requête de plage prenant en charge les macros, les variables et les modèles de légende. Dans la démonstration, nous l’utilisons pour afficher la latence p95 par endpoint.
+
+Le mode histogramme utilise des métriques que Prometheus a déjà réparties en compartiments. Les limites des compartiments proviennent des labels `le`, et les valeurs cumulatives sont converties en valeurs propres à chaque compartiment. Utilisez `sum by (le) (...)` pour combiner les séries partageant les mêmes limites de compartiments.
+
+Le mode distribution est destiné aux données qui ne sont pas des histogrammes, mais dont vous souhaitez tout de même obtenir une distribution numérique. À chaque horodatage, les échantillons renvoyés sont répartis client-side en compartiments linéaires ou à espacement logarithmique, selon le choix effectué dans les paramètres du graphique. La couleur indique le nombre d’échantillons dans chaque compartiment. Dans la démonstration, nous affichons l’évolution du taux d’utilisation de 14 cœurs CPU, à l’aide de `sum by (system_cpu_logical_number) (system_cpu_utilization{system_cpu_state!="idle"})`. Les PR concernant les histogrammes et la distribution sont toujours ouvertes.
+
+Nous avons également corrigé la sélection de la granularité. Auparavant, les cartes de chaleur ignoraient toute sélection explicite et utilisaient systématiquement auto, qui vise 245 intervalles temporels. Elles respectent désormais votre sélection, ce qui vous permet d’aligner leur granularité sur celle des autres graphiques d’un tableau de bord. Par ailleurs, auto respecte la granularité minimale d’une source de métriques.
+
+Les champs de saisie des expressions de comptage et de valeur ont été déplacés des paramètres d’affichage vers l’éditeur de graphiques, aussi bien dans les tableaux de bord que dans l’explorateur de graphiques. Les cartes de chaleur prennent également en charge le formatage des nombres.
+
+Enfin, la mise en surbrillance au survol est désormais centrée sur la cellule au lieu d’être décalée vers le bas et la droite. Elle sélectionne la cellule la plus proche dont les limites se trouvent dans la marge du curseur, sans exiger que son centre s’y trouve. L’état de survol est également mis à jour lorsque les données sont actualisées alors que le curseur se trouve toujours sur le graphique.
+
+**PR associées :** [#3273](https://github.com/hyperdxio/hyperdx/pull/3273) Amélioration de l’alignement et de la fiabilité de l’état de survol des cartes de chaleur, [#3277](https://github.com/hyperdxio/hyperdx/pull/3277) Déplacement des champs de saisie des cartes de chaleur vers le formulaire de l’éditeur, [#3291](https://github.com/hyperdxio/hyperdx/pull/3291) Prise en charge du mode série pour les cartes de chaleur du constructeur, [#3298](https://github.com/hyperdxio/hyperdx/pull/3298) Prise en charge des cartes de chaleur en mode série dans l’API et MCP, [#3305](https://github.com/hyperdxio/hyperdx/pull/3305) Respect de la granularité explicite sur les cartes de chaleur, [#3313](https://github.com/hyperdxio/hyperdx/pull/3313) Prise en charge des cartes de chaleur PromQL (mode série), [#3326](https://github.com/hyperdxio/hyperdx/pull/3326) Ajout de cartes de chaleur de distribution calculées à partir des valeurs PromQL (ouverte), [#3332](https://github.com/hyperdxio/hyperdx/pull/3332) Prise en charge des cartes de chaleur sur les histogrammes Prometheus (ouverte)
+
+## Variables de tableau de bord à sélection unique {#single-select-dashboard-variables}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=208" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Jusqu&#39;à présent, toutes les variables de tableau de bord étaient à sélection multiple. Vous pouvez désormais configurer une variable en sélection unique : choisir une autre valeur remplace alors la valeur actuelle. Si l&#39;URL contient plusieurs valeurs pour une variable à sélection unique, seule la première est prise en compte.
+
+C&#39;est particulièrement utile avec PromQL. Les variables à sélection multiple sont développées en une alternance d&#39;expression régulière, qui fonctionne avec `=~` mais pas avec `=` : il n&#39;existait donc pas de moyen satisfaisant d&#39;utiliser une variable avec l&#39;opérateur d&#39;égalité.
+
+Nous avons également ajouté un format de variable `promql`, qui remplace `regex` comme format par défaut pour les références de variables dans les expressions PromQL lorsqu&#39;aucun format n&#39;est précisé. Son comportement est identique, à ceci près que les valeurs à sélection unique ne sont pas échappées pour les expressions régulières. Vous pouvez ainsi utiliser `field="$var"` avec une variable à sélection unique. Les valeurs à sélection multiple, elles, restent échappées et doivent être utilisées avec `field=~"$var"`.
+
+**PR associées :** [#3295](https://github.com/hyperdxio/hyperdx/pull/3295) Support single-select dashboard filters, [#3297](https://github.com/hyperdxio/hyperdx/pull/3297) Add promql var format for flexible escaping
+
+## Graphiques en courbes empilées {#stacked-line-charts}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=271" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Nous avons ajouté `stacked_line` aux côtés de `stacked_bar` comme type de graphique de série temporelle. Vous pouvez transformer un graphique en courbes en graphique en courbes empilées dans l&#39;Explorateur de graphiques ou sur un tableau de bord. Les séries sont alors empilées les unes sur les autres et la surface sous chacune d&#39;elles est remplie, ce qui permet de visualiser à la fois le total et la contribution de chaque série.
+
+Dans la CLI, ces graphiques sont générés sous forme de graphiques à barres empilées. Les deux représentations montrent sensiblement la même chose, et l&#39;empilement comme le remplissage se lisent plus facilement sous forme de barres dans un terminal.
+
+**PR associées :** [#3290](https://github.com/hyperdxio/hyperdx/pull/3290) Prise en charge des graphiques en courbes empilées
+
+## Attribuer les requêtes ClickHouse à la surface qui les a émises {#attributing-clickhouse-queries-to-the-surface-that-issued-them}
+
+*Démonstration par [@tommyzli](https://github.com/tommyzli)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=526" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Chaque requête SQL envoyée par ClickStack à ClickHouse inclut désormais un `log_comment` au format JSON et un `query_id` de la forme `hdx-<surface>-<uuid>`. Vous pouvez ainsi remonter d&#39;une ligne de `system.query_log` jusqu&#39;à la tuile de tableau de bord, la recherche enregistrée, l&#39;alerte ou l&#39;outil MCP qui l&#39;a émise. Une évolution ultérieure étend ce même étiquetage aux requêtes PromQL, qui étaient jusque-là envoyées sans étiquette.
+
+Dans la démonstration, l&#39;interrogation du journal des requêtes depuis la page Recherche a fait apparaître toutes les requêtes étiquetées comme provenant de Recherche, y compris les requêtes `EXPLAIN` et celles du graphique à barres de l&#39;histogramme. À l&#39;ouverture du tableau de bord ClickHouse intégré, les requêtes du tableau de bord apparaissaient avec une étiquette `clickhouse` identifiant le tableau de bord préconfiguré. Pour un tableau de bord créé par l&#39;utilisateur, chaque requête comportait l&#39;ID du tableau de bord ainsi que l&#39;ID de la tuile du graphique qui l&#39;avait émise.
+
+Si ClickStack partage votre cluster ClickHouse avec d&#39;autres charges de travail, il devient plus simple d&#39;identifier ses requêtes, de savoir de quelle partie de l&#39;application elles proviennent et de suivre leur coût par surface. En interne, nous pouvons nous en servir pour relier les journaux de requêtes aux configurations de tableaux de bord lors de l&#39;analyse de l&#39;utilisation. C&#39;est également un pas vers l&#39;optimisation automatique des requêtes, puisqu&#39;il est désormais possible de rattacher une requête lente à la tuile qui l&#39;a produite.
+
+**PR associées :** [#3155](https://github.com/hyperdxio/hyperdx/pull/3155) Attribution des requêtes ClickHouse à la surface qui les a émises, [#3300](https://github.com/hyperdxio/hyperdx/pull/3300) Attribution des requêtes PromQL
+
+## Champs de saisie de nom intégrés pour nommer les objets {#inline-name-inputs-for-naming-objects}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=296" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Auparavant, le nommage fonctionnait différemment selon l’endroit de l’application où vous vous trouviez. Les tableaux de bord et les recherches enregistrées proposaient un titre modifiable par clic, avec un crayon au survol ou un double-clic pour passer en édition, puis un bouton **Save Name**. Ailleurs, on trouvait un champ de texte avec bordure. Faute de motif documenté, chaque nouvel écran avait tendance à introduire le sien. Nous disposons désormais d’un composant partagé, `InlineNameInput`, qui constitue la méthode standard pour nommer les objets.
+
+Il se présente comme un simple titre jusqu’au survol, qui fait apparaître une légère bordure. Un clic permet de le modifier directement. `Enter` ou un clic à l’extérieur enregistre la modification, tandis que `Escape` ou un nom laissé vide l’annule. Il n’y a ni crayon ni bouton d’enregistrement distinct. Une fois l’enregistrement effectué, la valeur enregistrée s’affiche. Si le renommage échoue ou est écrasé par un enregistrement concurrent du tableau de bord, le nom affiché est lui aussi rétabli, afin de ne pas laisser à l’écran un nom non enregistré.
+
+Les noms longs sont tronqués, et le composant existe en tailles `xs`, `sm` et `md`. Les titres de page utilisent `md`, soit 18 px, contre environ 22 px auparavant. Ils sont toujours rendus à l’intérieur d’un élément de titre afin que les lecteurs d’écran puissent les repérer.
+
+Les pages de tableau de bord et de recherche enregistrée l’utilisent désormais, et l’ancien composant `EditablePageName` a été supprimé. Il existe également une variante `InlineNameInputControlled`, qui enregistre en même temps que le formulaire parent ; elle est destinée aux brouillons dans l’éditeur de tuiles en pleine page, mais n’est pas encore utilisée dans l’application. L’éditeur de graphiques conserve pour l’instant son champ **Chart Name** existant, car sa disposition doit être ajustée avant de pouvoir accueillir la version intégrée.
+
+Le motif est documenté dans `agent_docs/naming_objects.md`, dans la compétence d’agent `naming-objects`, ainsi que dans les sections Guidelines et Components de Storybook. L’objectif est qu’un agent de programmation travaillant dans le dépôt puisse facilement trouver et réutiliser ce composant lorsqu’il ajoute un nouvel endroit où nommer quelque chose.
+
+**PR associées :** [#3278](https://github.com/hyperdxio/hyperdx/pull/3278) Ajout d’InlineNameInput comme méthode unique pour nommer les objets
+
+## Regrouper les recherches enregistrées sous Recherche {#nesting-saved-searches-under-search}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=389" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Il s&#39;agit d&#39;un travail exploratoire, sans engagement de mise en production.**
+
+Les recherches enregistrées disposent actuellement de leur propre page de liste et de leur propre entrée dans la barre latérale, distinctes de Recherche. Vous enregistrez une recherche à un endroit, puis devez aller ailleurs pour la retrouver et la gérer. Un client qui souhaitait dupliquer une recherche depuis la liste devait d&#39;abord l&#39;ouvrir, puis la dupliquer depuis cette page. Une liste distincte se justifie pour les tableaux de bord, mais paraît moins naturelle pour les recherches enregistrées.
+
+Ce brouillon intègre les recherches enregistrées à Recherche. L&#39;entrée de premier niveau **Recherches enregistrées** disparaît de la barre latérale, et les recherches favorites apparaissent sous Recherche, comme c&#39;est déjà le cas pour les tableaux de bord. Un bouton **Recherches enregistrées** dans la barre d&#39;outils ouvre un panneau coulissant à droite, qui propose une recherche, des onglets **All** et **Favorites**, un filtrage par étiquette, ainsi que des actions de renommage, de duplication et de suppression sur chaque ligne. Il s&#39;ouvre à droite pour ne pas masquer la navigation de l&#39;application. Les liens `/search/list` existants ouvrent également ce panneau.
+
+Lorsque vous sélectionnez une recherche enregistrée, le bouton affiche son nom. Un badge à côté indique **Unsaved**, **Saved** ou **Edited**, ce dernier apparaissant dès que vous exécutez une requête modifiée. La comparaison s&#39;appuie sur la configuration de recherche contenue dans l&#39;URL et considère les valeurs vides et manquantes comme équivalentes : le simple chargement d&#39;une recherche enregistrée ne la marque donc pas comme modifiée.
+
+L&#39;en-tête propre aux recherches enregistrées est supprimé, y compris le fil d&#39;Ariane, le titre et la ligne de création/mise à jour. Le favori, les étiquettes, Terraform et le menu d&#39;actions sont déplacés dans la barre d&#39;outils, tandis que les informations de création/mise à jour s&#39;affichent dans une infobulle sur le bouton. La disposition reste ainsi cohérente entre recherches enregistrées et non enregistrées. Le renommage par double-clic sur le titre disparaît avec l&#39;en-tête, mais vous pouvez toujours renommer une recherche depuis le menu de ligne du panneau coulissant ou depuis la boîte de dialogue modale **Update**. La nécessité même d&#39;une boîte de dialogue modale pour les mises à jour reste à trancher. Idéalement, la mise à jour serait une action unique, sans proposer en plus un renommage.
+
+Il s&#39;agit encore d&#39;un brouillon, et nous serions ravis d&#39;avoir vos retours sur son comportement. Quatre tests de bout en bout de la suite du panneau coulissant échouent encore et doivent être corrigés avant que la fonctionnalité ne quitte le statut de brouillon.
+
+**PR associées :** [#3213](https://github.com/hyperdxio/hyperdx/pull/3213) Regroupement des recherches enregistrées sous Recherche dans un panneau coulissant (ouverte). (brouillon). Il s&#39;agit d&#39;une exploration plutôt que d&#39;une fonctionnalité livrée.

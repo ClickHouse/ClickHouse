@@ -53,6 +53,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -319,12 +321,25 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
 CatalogTables GlueCatalog::getTables() const
 {
     auto databases = getDatabases("");
-    CatalogTables result;
-    for (const auto & database : databases)
+
+    /// Glue has no call that lists the tables of every database, so this issues one `GetTables` request per
+    /// database. Issuing them one after another makes `SHOW TABLES` take seconds to minutes in an account
+    /// with hundreds of databases, so they run in parallel, like the per-namespace listing of `RestCatalog`.
+    /// Every database writes to its own slot, which keeps the result in the order of `GetDatabases`.
+    std::vector<CatalogTables> tables_by_database(databases.size());
     {
-        auto tables_in_database = getTablesForDatabase(database);
-        result.insert(result.end(), tables_in_database.begin(), tables_in_database.end());
+        auto & pool = getContext()->getIcebergCatalogThreadpool();
+        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_GLUE_CATALOG);
+        /// Reserve tracking capacity, so `enqueueAndKeepTrack` cannot schedule a job and then fail to track it.
+        runner.reserve(databases.size());
+        for (size_t i = 0; i < databases.size(); ++i)
+            runner.enqueueAndKeepTrack([this, &databases, &tables_by_database, i] { tables_by_database[i] = getTablesForDatabase(databases[i]); });
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
+
+    CatalogTables result;
+    for (auto & tables_in_database : tables_by_database)
+        std::move(tables_in_database.begin(), tables_in_database.end(), std::back_inserter(result));
     return result;
 }
 
@@ -554,7 +569,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;
 
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
+    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : encodeLocationForURI(s3_location);
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
