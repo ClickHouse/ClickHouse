@@ -95,11 +95,11 @@ Click **Complete Setup**.
 When first created, ClickPipes performs an initial load of **all existing files** in the specified path before switching to continuous polling. If your bucket contains a large backlog of Cloudflare logs, this initial load may take some time.
 </Note>
 </Step>
-<Step title="Configure HyperDX data source" id="configure-source">
+<Step title="Configure ClickStack UI data source" id="configure-source">
 
-ClickPipes ingests Cloudflare logs into a flat table with Cloudflare's native field names. To view these logs in HyperDX, configure a custom data source that maps Cloudflare columns to HyperDX's log view.
+ClickPipes ingests Cloudflare logs into a flat table with Cloudflare's native field names. To view these logs in ClickStack UI, configure a custom data source that maps Cloudflare columns to ClickStack UI's log view.
 
-1. Open HyperDX → **Team Settings** → **Sources**
+1. Open ClickStack UI → **Team Settings** → **Sources**
 
 <Image img="/images/clickstack/cloudflare/add-source.webp" alt="Add source"/>
 
@@ -126,9 +126,9 @@ ClickPipes ingests Cloudflare logs into a flat table with Cloudflare's native fi
 
 <Image img="/images/clickstack/cloudflare/save-source.webp" alt="Save source"/>
 
-This maps Cloudflare's native columns directly to HyperDX's log viewer without any data transformation or duplication. The **Body** displays a request summary like `GET /api/v1/users 200`, and all Cloudflare fields are available as searchable attributes.
+This maps Cloudflare's native columns directly to ClickStack UI's log viewer without any data transformation or duplication. The **Body** displays a request summary like `GET /api/v1/users 200`, and all Cloudflare fields are available as searchable attributes.
 </Step>
-<Step title="Verify data in HyperDX" id="verify-hyperdx">
+<Step title="Verify data in ClickStack UI" id="verify-hyperdx">
 
 Navigate to the **Search** view and select the **Cloudflare Logs** source. Set the time range to cover your data. You should see log entries with:
 
@@ -161,9 +161,9 @@ For users who want to test the integration before configuring their production C
 
 The dataset includes 5,000 HTTP request log entries spanning 24 hours with realistic patterns including traffic from multiple countries, cache hits and misses, API and static asset requests, error responses, and security events.
 </Step>
-<Step title="Configure HyperDX data source" id="configure-demo-source">
+<Step title="Configure ClickStack UI data source" id="configure-demo-source">
 
-Follow the [data source configuration steps](#configure-source) to create a HyperDX source pointing to the `cloudflare_http_logs` table. If you already configured the source in the production integration section, this step is not needed.
+Follow the [data source configuration steps](#configure-source) to create a ClickStack UI source pointing to the `cloudflare_http_logs` table. If you already configured the source in the production integration section, this step is not needed.
 </Step>
 <Step title="Verify demo data" id="verify-demo">
 
@@ -172,7 +172,7 @@ SELECT count() FROM cloudflare_http_logs;
 -- Should return 5000
 ```
 
-Navigate to the **Search** view in HyperDX, select the **Cloudflare Logs** source, and set the time range to **2026-02-23 00:00:00 - 2026-02-26 00:00:00**.
+Navigate to the **Search** view in ClickStack UI, select the **Cloudflare Logs** source, and set the time range to **2026-02-23 00:00:00 - 2026-02-26 00:00:00**.
 
 You should see log entries with request summaries, searchable Cloudflare attributes, and severity levels based on HTTP status codes.
 
@@ -183,7 +183,7 @@ You should see log entries with request summaries, searchable Cloudflare attribu
 <Info>
 **Timezone Display**
 
-HyperDX displays timestamps in your browser's local timezone. The demo data spans **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 </Step>
 </Steps>
@@ -197,7 +197,7 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 </Step>
 <Step title="Import dashboard" id="import-dashboard">
 
-1. HyperDX → **Dashboards** → **Import Dashboard**
+1. ClickStack UI → **Dashboards** → **Import Dashboard**
 
 <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="Import dashboard"/>
 
@@ -227,13 +227,13 @@ SELECT count() FROM cloudflare_http_logs;
 
 If the table exists but is empty, check ClickPipes for errors: ClickHouse Cloud Console → **Data Sources** → Your ClickPipe → **Logs**. For authentication issues with private buckets, see the [S3 ClickPipes access control documentation](/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
 
-### Logs not appearing in HyperDX {#no-hyperdx}
+### Logs not appearing in ClickStack UI {#no-hyperdx}
 
-If data is in ClickHouse but not visible in HyperDX, check the data source configuration:
+If data is in ClickHouse but not visible in ClickStack UI, check the data source configuration:
 
-- Verify a source exists for `cloudflare_http_logs` under HyperDX → **Team Settings** → **Sources**
+- Verify a source exists for `cloudflare_http_logs` under ClickStack UI → **Team Settings** → **Sources**
 - Ensure the **Timestamp Column** is set to `toDateTime(EdgeStartTimestamp / 1000000000)` — Cloudflare timestamps are in nanoseconds and need to be converted
-- Verify your time range in HyperDX covers the data. For the demo dataset, use **2026-02-23 00:00:00 - 2026-02-26 00:00:00**
+- Verify your time range in ClickStack UI covers the data. For the demo dataset, use **2026-02-23 00:00:00 - 2026-02-26 00:00:00**
 
 ## Next steps {#next-steps}
 
