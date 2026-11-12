@@ -191,10 +191,11 @@ void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & fa
         {
             return std::make_shared<StaticStatelessWorkersProvider>(config, config_prefix);
         },
-        /// Sign the resolved workers, not the literal `cluster` name, whose `remote_servers` entry can change.
+        /// Sign the resolved workers, because the `remote_servers` entry of `cluster` can change. Sign the
+        /// `cluster` name too, because the provider reads the liveness of the cluster with this name.
         .config_signature = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> String
         {
-            String signature;
+            String signature = config.getString(config_prefix + ".cluster", "") + "|";
             for (const auto & address : StaticStatelessWorkersProvider::resolveWorkerAddresses(config, config_prefix))
                 signature += address.host + ":" + std::to_string(address.stateless_worker_port)
                     + ":" + std::to_string(address.streaming_exchange_port) + "|";
