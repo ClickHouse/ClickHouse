@@ -20,17 +20,16 @@ done
 
 # A stored definition with bad arguments still loads. It is emulated in a clickhouse-local data directory:
 # the stored definition of a valid table is rewritten, and the next start loads it.
-data_dir="${CLICKHOUSE_TMP}/data"
-$CLICKHOUSE_LOCAL --path="$data_dir" -q "CREATE DATABASE test_01249"
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/01249_data" -q "CREATE DATABASE test_01249"
 for arguments in '0., 1.' '-0.1' '1.01'; do
-    $CLICKHOUSE_LOCAL --path="$data_dir" -q "CREATE TABLE test_01249.bloom_filter_idx_good($columns, INDEX bloom_filter_a i32 TYPE bloom_filter(0.025) GRANULARITY 1) $storage"
-    $CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/test_01249/bloom_filter_idx_good.sql" --param_copy="$data_dir.sql" --param_arguments="$arguments" -q "
+    $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/01249_data" -q "CREATE TABLE test_01249.bloom_filter_idx_good($columns, INDEX bloom_filter_a i32 TYPE bloom_filter(0.025) GRANULARITY 1) $storage"
+    $CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/01249_data/metadata/test_01249/bloom_filter_idx_good.sql" --param_copy="${CLICKHOUSE_TMP:?}/01249_data.sql" --param_arguments="$arguments" -q "
         SET engine_file_truncate_on_insert = 1;
         INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
             SELECT replaceOne(raw_blob, 'bloom_filter(0.025)', 'bloom_filter(' || {arguments:String} || ')') FROM file({metadata:String}, 'RawBLOB');
         INSERT INTO FUNCTION file({metadata:String}, 'RawBLOB') SELECT * FROM file({copy:String}, 'RawBLOB')"
-    $CLICKHOUSE_LOCAL --path="$data_dir" -q "SHOW CREATE TABLE test_01249.bloom_filter_idx_good; DROP TABLE test_01249.bloom_filter_idx_good SYNC"
+    $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/01249_data" -q "SHOW CREATE TABLE test_01249.bloom_filter_idx_good; DROP TABLE test_01249.bloom_filter_idx_good SYNC"
 done
-rm -rf "$data_dir" "$data_dir.sql"
+rm -rf "${CLICKHOUSE_TMP:?}/01249_data" "${CLICKHOUSE_TMP:?}/01249_data.sql"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01249"

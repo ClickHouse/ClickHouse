@@ -14,15 +14,14 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE ${
 
 # Emulates a table stored before the check existed in a clickhouse-local data directory: a well-typed
 # index is created, its stored definition is rewritten to the ill-typed one, and the next start loads it.
-data_dir="${CLICKHOUSE_TMP}/data"
 local_query()
 {
-    $CLICKHOUSE_LOCAL --path="$data_dir" "$@"
+    $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05081_data" "$@"
 }
 attach_stored_ill_typed()
 {
     local_query -q "CREATE TABLE $1 (c0 String, c1 Int8, INDEX i0 c0 = toString(c1) TYPE set(0)) ENGINE = MergeTree ORDER BY c1"
-    $CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/default/$1.sql" --param_copy="$data_dir.sql" -q "
+    $CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/05081_data/metadata/default/$1.sql" --param_copy="${CLICKHOUSE_TMP:?}/05081_data.sql" -q "
         SET engine_file_truncate_on_insert = 1;
         INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
             SELECT replaceOne(raw_blob, 'c0 = toString(c1)', 'c0 = c1') FROM file({metadata:String}, 'RawBLOB');
@@ -67,5 +66,5 @@ local_query -q "ALTER TABLE g3 RENAME COLUMN c0 TO c2" && echo ok
 local_query -q "SELECT expr FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'g3' AND name = 'i0'"
 local_query -q "ALTER TABLE g3 DROP INDEX i0" && echo ok
 
-rm -rf "$data_dir" "$data_dir.sql"
+rm -rf "${CLICKHOUSE_TMP:?}/05081_data" "${CLICKHOUSE_TMP:?}/05081_data.sql"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${ORD} SYNC"

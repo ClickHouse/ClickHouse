@@ -45,14 +45,13 @@ $CLICKHOUSE_CLIENT --query "
 
 # A table stored with a hypothesis index still loads. The table is stored in a clickhouse-local data
 # directory, its stored definition is rewritten to carry one, and the next start loads it.
-data_dir="${CLICKHOUSE_TMP}/data"
-local_query() { $CLICKHOUSE_LOCAL --path="$data_dir" "$@"; }
+local_query() { $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/04500_data" "$@"; }
 local_query --query "
     SET allow_suspicious_low_cardinality_types = 1;
     CREATE TABLE t_attach (c0 LowCardinality(UInt128), INDEX i0 90 % c0 TYPE minmax, c1 Bool)
     ENGINE = MergeTree() PRIMARY KEY tuple();
 "
-$CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/default/t_attach.sql" --param_copy="$data_dir.sql" --query "
+$CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/04500_data/metadata/default/t_attach.sql" --param_copy="${CLICKHOUSE_TMP:?}/04500_data.sql" --query "
     SET engine_file_truncate_on_insert = 1;
     INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
         SELECT replaceOne(raw_blob, 'TYPE minmax', 'TYPE hypothesis') FROM file({metadata:String}, 'RawBLOB');
@@ -93,4 +92,4 @@ local_query --query "
     SELECT count() FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 't_attach' AND type = 'hypothesis';
 "
-rm -rf "$data_dir" "$data_dir.sql"
+rm -rf "${CLICKHOUSE_TMP:?}/04500_data" "${CLICKHOUSE_TMP:?}/04500_data.sql"

@@ -10,10 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-data_dir="${CLICKHOUSE_TMP}/data"
 function local_query()
 {
-    $CLICKHOUSE_LOCAL --path="$data_dir" "$@"
+    $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05427_data" "$@"
 }
 
 function list_indices()
@@ -28,7 +27,7 @@ function list_indices()
 function create_stored_with_reserved_names()
 {
     local_query --query "CREATE TABLE $1 $2"
-    $CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/default/$1.sql" --param_copy="$data_dir.sql" --query "
+    $CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/05427_data/metadata/default/$1.sql" --param_copy="${CLICKHOUSE_TMP:?}/05427_data.sql" --query "
         SET engine_file_truncate_on_insert = 1;
         INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
             SELECT replaceAll(raw_blob, 'INDEX held_', 'INDEX auto_minmax_index_') FROM file({metadata:String}, 'RawBLOB');
@@ -85,4 +84,4 @@ local_query --query "CHECK TABLE t_held_alter SETTINGS check_query_single_value_
 local_query --query "DETACH TABLE t_held_alter; ATTACH TABLE t_held_alter"
 echo "-- after reload"
 list_indices t_held_alter
-rm -rf "$data_dir" "$data_dir.sql"
+rm -rf "${CLICKHOUSE_TMP:?}/05427_data" "${CLICKHOUSE_TMP:?}/05427_data.sql"

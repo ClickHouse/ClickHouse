@@ -22,16 +22,16 @@ ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE filelog_bad_path_attach ${UUID_CLAUSE
 
 # The table is stored in a clickhouse-local data directory with a valid relative path, its stored
 # definition is rewritten to the outside path, and the next start loads it. Error lines on stderr are expected.
-cd "${CLICKHOUSE_TMP}"
+cd "${CLICKHOUSE_TMP:?}"
 echo '1,1' > "${CLICKHOUSE_TMP}/filelog.csv"
-$CLICKHOUSE_LOCAL --path=data -q "CREATE TABLE filelog_bad_path_attach (k UInt8, v UInt8) ENGINE = FileLog('filelog.csv', 'CSV')"
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/04202_data" -q "CREATE TABLE filelog_bad_path_attach (k UInt8, v UInt8) ENGINE = FileLog('filelog.csv', 'CSV')"
 $CLICKHOUSE_LOCAL -q "
     SET engine_file_truncate_on_insert = 1;
-    INSERT INTO FUNCTION file('data.sql', 'RawBLOB')
-        SELECT replaceOne(raw_blob, '\'filelog.csv\'', '\'/tmp/nonexistent_4202_pr62421.csv\'') FROM file('data/metadata/default/filelog_bad_path_attach.sql', 'RawBLOB');
-    INSERT INTO FUNCTION file('data/metadata/default/filelog_bad_path_attach.sql', 'RawBLOB') SELECT * FROM file('data.sql', 'RawBLOB')"
+    INSERT INTO FUNCTION file('${CLICKHOUSE_TMP:?}/04202_data.sql', 'RawBLOB')
+        SELECT replaceOne(raw_blob, '\'filelog.csv\'', '\'/tmp/nonexistent_4202_pr62421.csv\'') FROM file('${CLICKHOUSE_TMP:?}/04202_data/metadata/default/filelog_bad_path_attach.sql', 'RawBLOB');
+    INSERT INTO FUNCTION file('${CLICKHOUSE_TMP:?}/04202_data/metadata/default/filelog_bad_path_attach.sql', 'RawBLOB') SELECT * FROM file('${CLICKHOUSE_TMP:?}/04202_data.sql', 'RawBLOB')"
 
-$CLICKHOUSE_LOCAL --path=data -q "
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/04202_data" -q "
     SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach';
     SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_bad_path_attach';" 2>/dev/null
-rm -rf data data.sql filelog.csv
+rm -rf "${CLICKHOUSE_TMP:?}/04202_data" "${CLICKHOUSE_TMP:?}/04202_data.sql" "${CLICKHOUSE_TMP:?}/filelog.csv"

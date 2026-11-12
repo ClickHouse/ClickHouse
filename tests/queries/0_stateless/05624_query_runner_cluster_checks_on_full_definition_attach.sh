@@ -29,6 +29,8 @@ ${CLIENT_AS_USER} -q "ATTACH TABLE runner_a $(uuid_clause) (query String) ENGINE
 ${CLIENT_AS_USER} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_c ON CLUSTER test_shard_localhost (query String) ENGINE = ${ENGINE}; -- { serverError ACCESS_DENIED }"
 ${CLIENT_AS_USER} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.runner_a $(uuid_clause) ON CLUSTER test_shard_localhost (query String) ENGINE = ${ENGINE}; -- { serverError ACCESS_DENIED }"
 ${CLIENT_AS_USER} -q "CREATE TABLE runner_r (query String) ENGINE = ${REPEATED}; -- { serverError ACCESS_DENIED }"
+${CLIENT_AS_USER} -q "CREATE TABLE runner_local (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', cluster = '', mode = 'synchronous'"
+${CLIENT_AS_USER} -q "DROP TABLE runner_local"
 ${CLIENT_AS_USER} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_r ON CLUSTER test_shard_localhost (query String) ENGINE = ${REPEATED}; -- { serverError ACCESS_DENIED }"
 ${CLIENT_AS_USER} -q "CREATE TABLE runner_copy AS runner_src; -- { serverError ACCESS_DENIED }"
 ${CLIENT_AS_USER} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_copy ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.runner_src; -- { serverError ACCESS_DENIED }"

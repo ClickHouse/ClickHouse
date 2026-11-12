@@ -896,14 +896,11 @@ static void validateColumns(const ColumnsDescription & columns)
 }
 
 /// The cluster mode runs the inserted queries on the hosts of a cluster, like the `remote` table function does.
-/// Every occurrence counts: a repeated setting takes its last value.
+/// A repeated setting takes its last value, as when the settings are loaded.
 static AccessRightsElements getQueryRunnerCreateAccess(const SettingsChanges & changes)
 {
-    const bool sets_cluster = std::ranges::any_of(changes, [](const SettingChange & change)
-    {
-        return change.name == "cluster" && !(change.value.getType() == Field::Types::String && change.value.safeGet<String>().empty());
-    });
-    if (!sets_cluster)
+    auto last = std::ranges::find_if(changes.rbegin(), changes.rend(), [](const SettingChange & change) { return change.name == "cluster"; });
+    if (last == changes.rend() || (last->value.getType() == Field::Types::String && last->value.safeGet<String>().empty()))
         return {};
     return {AccessRightsElement(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::REMOTE))};
 }

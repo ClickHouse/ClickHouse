@@ -4478,7 +4478,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         if (definer_name != current_user_name)
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
-        if (mode == LoadingStrictnessLevel::CREATE)
+        if (isFreshDefinition(mode))
         {
             auto & access_control = context_->getAccessControl();
             const auto user = access_control.read<User>(definer_name);

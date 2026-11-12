@@ -20,13 +20,12 @@ $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_future_version UU
 echo '--- a table with a future version can be attached, even if its definition uses a setting unknown to this server ---'
 # The table is stored in a clickhouse-local data directory, its stored definition is rewritten to a future
 # version, and the next start loads it.
-data_dir="${CLICKHOUSE_TMP}/data"
 local_query()
 {
-    $CLICKHOUSE_LOCAL --path="$data_dir" "$@"
+    $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/04613_data" "$@"
 }
 local_query --allow_experimental_time_series_table=1 -q "CREATE TABLE ts_future_version (metric_name String) ENGINE = TimeSeries"
-$CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/default/ts_future_version.sql" --param_copy="$data_dir.sql" -q "
+$CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/04613_data/metadata/default/ts_future_version.sql" --param_copy="${CLICKHOUSE_TMP:?}/04613_data.sql" -q "
     SET engine_file_truncate_on_insert = 1;
     INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
         SELECT replaceRegexpOne(raw_blob, '\nSETTINGS version = [0-9]+,', '\nSETTINGS version = 999, future_setting = 1,') FROM file({metadata:String}, 'RawBLOB');
@@ -51,4 +50,4 @@ echo '--- the error is instructive ---'
 local_query -q "SELECT * FROM prometheusQuery(ts_future_version, 'up', 1000)" 2>&1 \
     | grep -o "newer than the latest version" | head -1
 
-rm -rf "$data_dir" "$data_dir.sql"
+rm -rf "${CLICKHOUSE_TMP:?}/04613_data" "${CLICKHOUSE_TMP:?}/04613_data.sql"

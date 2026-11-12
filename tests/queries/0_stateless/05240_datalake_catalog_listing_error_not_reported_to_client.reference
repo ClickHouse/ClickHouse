@@ -1,9 +1,9 @@
 is forbidden
 0
-client got logs: 0
-site level: Debug
-entries above information: 0
+client got logs (iceberg_history): 0
+site level (iceberg_history): <Debug>
+entries above information (iceberg_history): 0
 0
-client got logs (files): 0
-site level (files): Debug
-entries above information (files): 0
+client got logs (iceberg_files): 0
+site level (iceberg_files): <Debug>
+entries above information (iceberg_files): 0

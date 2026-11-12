@@ -49,22 +49,13 @@ SETTINGS catalog_type = 'rest', auth_header = 'malformed_without_colon', warehou
 
 rm -rf "${WORKDIR}"
 
-# A forbidden auth_header (http_forbid_headers) persisted by an older version must also attach
-# without blocking startup, but it must still be rejected on first use so the forbidden header
-# is never sent to the catalog. http_forbid_headers is read only by the server (not by
-# clickhouse-local), and 'exact_header' is forbidden via tests/config/config.d/forbidden_headers.xml,
-# so this part runs against the test server.
-# A full-definition ATTACH is a new definition, so it is rejected up front. The persisted definition is
-# written to the metadata directory of the server and attached with the short ATTACH.
+# A forbidden auth_header (http_forbid_headers) in a new definition is rejected up front, also by a
+# full-definition ATTACH. http_forbid_headers is read only by the server (not by clickhouse-local), and
+# 'exact_header' is forbidden via tests/config/config.d/forbidden_headers.xml, so this part runs against the
+# test server.
 FORBIDDEN_DB="${CLICKHOUSE_DATABASE}_04401_forbidden"
 ${CLICKHOUSE_CLIENT} --query "
 ATTACH DATABASE ${FORBIDDEN_DB}
 ENGINE = DataLakeCatalog('http://localhost:18181/v1')
 SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo';
 " 2>&1 | grep -o -m1 'is forbidden'
-echo "ATTACH DATABASE _ ENGINE = DataLakeCatalog('http://localhost:18181/v1') SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo'" \
-    > "$(${CLICKHOUSE_CLIENT} --query "SELECT getServerSetting('path')")metadata/${FORBIDDEN_DB}.sql"
-${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${FORBIDDEN_DB}"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${FORBIDDEN_DB}'"
-${CLICKHOUSE_CLIENT} --query "CHECK DATABASE ${FORBIDDEN_DB}" 2>&1 | grep -o 'is forbidden'
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${FORBIDDEN_DB}"

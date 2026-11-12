@@ -15,11 +15,10 @@ $CLICKHOUSE_CLIENT -q "DROP DATABASE ${DB}"
 
 # Emulates a stored table definition that CREATE would reject in a clickhouse-local data directory: a
 # table is created, the columns of its stored definition are replaced with `$2`, and the next start loads it.
-data_dir="${CLICKHOUSE_TMP}/data"
 stored()
 {
-    $CLICKHOUSE_LOCAL --path="$data_dir" -q "CREATE TABLE $1 (x UInt8) ENGINE = Memory"
-    $CLICKHOUSE_LOCAL --param_metadata="$data_dir/metadata/default/$1.sql" --param_copy="$data_dir.sql" --param_columns="$2" -q "
+    $CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05546_data" -q "CREATE TABLE $1 (x UInt8) ENGINE = Memory"
+    $CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/05546_data/metadata/default/$1.sql" --param_copy="${CLICKHOUSE_TMP:?}/05546_data.sql" --param_columns="$2" -q "
         SET engine_file_truncate_on_insert = 1;
         INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
             SELECT replaceOne(raw_blob, '\`x\` UInt8', {columns:String}) FROM file({metadata:String}, 'RawBLOB');
@@ -34,7 +33,7 @@ stored t_probe 'x UInt8, a UInt8 ALIAS t_probe.x, t_probe UInt8 ALIAS a, `n.a` U
 stored t_dead 'x Int32, a Int32 ALIAS if(0, b, 1), b Int32 ALIAS arraySum(arrayMap(z -> z + a, [2])), c Int32 ALIAS if(0, d, 1), d Int32 ALIAS q + ((x + c) AS q)'
 
 # A stored definition is not validated again, so the cycle is found when the column is read.
-$CLICKHOUSE_LOCAL --path="$data_dir" -m -q "
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05546_data" -m -q "
 SELECT c0 FROM t_direct; -- { serverError CYCLIC_ALIASES }
 
 SELECT c0 FROM t_self; -- { serverError CYCLIC_ALIASES }
@@ -63,4 +62,4 @@ INSERT INTO t_dead (x) VALUES (7);
 SELECT a, b FROM t_dead;
 SELECT c, d FROM t_dead;
 "
-rm -rf "$data_dir" "$data_dir.sql"
+rm -rf "${CLICKHOUSE_TMP:?}/05546_data" "${CLICKHOUSE_TMP:?}/05546_data.sql"

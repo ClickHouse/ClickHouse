@@ -12,16 +12,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DB="${CLICKHOUSE_DATABASE}_unreachable_catalog"
-QUERY_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_listing"
-STDERR_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.stderr"
-QUERY_ID_FILES="${CLICKHOUSE_TEST_UNIQUE_NAME}_files"
-STDERR_FILE_FILES="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_files.stderr"
-
-cleanup() {
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}" 2>/dev/null
-    rm -f "${STDERR_FILE}" "${STDERR_FILE_FILES}" 2>/dev/null
-}
-trap cleanup EXIT
 
 # `exact_header` is forbidden by tests/config/config.d/forbidden_headers.xml. A new definition is rejected,
 # also by a full-definition ATTACH.
@@ -30,43 +20,28 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo'
 " 2>&1 | grep -o -m1 'is forbidden'
 
-# A stored definition is not validated again, so the rejection happens when the catalog is first built,
-# inside the table listing. The stored definition is written and attached with the short ATTACH.
-echo "ATTACH DATABASE _ ENGINE = DataLakeCatalog('http://localhost:18181/v1') SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo'" \
-    > "$(${CLICKHOUSE_CLIENT} --query "SELECT getServerSetting('path')")metadata/${DB}.sql"
-${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${DB}"
+# A stored definition is not validated again, so a catalog that cannot be built fails inside the table
+# listing. The database is stored in a clickhouse-local data directory with a malformed `auth_header`,
+# which the catalog rejects when it is first built; the start loads it like server startup does.
+rm -rf "${CLICKHOUSE_TMP:?}/05240_data"
+mkdir -p "${CLICKHOUSE_TMP:?}/05240_data/metadata"
+cat > "${CLICKHOUSE_TMP:?}/05240_data/metadata/baddb.sql" <<'EOF'
+ATTACH DATABASE baddb
+ENGINE = DataLakeCatalog('http://localhost:18181/v1')
+SETTINGS catalog_type = 'rest', auth_header = 'malformed_without_colon', warehouse = 'demo'
+EOF
 
-${CLICKHOUSE_CLIENT} --send_logs_level=warning --show_data_lake_catalogs_in_system_tables=0 \
-    --query_id "${QUERY_ID}" \
-    --query "SELECT count() FROM system.iceberg_history WHERE database = '${DB}'" 2> "${STDERR_FILE}"
+# `system.iceberg_history` reaches the lightweight iterator, while `system.iceberg_files` reaches the general
+# one (`getTablesIterator`), which is also what `SELECT ... FROM system.tables` uses when it needs storage objects.
+for table in iceberg_history iceberg_files; do
+    ${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP:?}/05240_data" --send_logs_level=warning --show_data_lake_catalogs_in_system_tables=0 \
+        --query "SELECT count() FROM system.${table} WHERE database = 'baddb'" 2> "${CLICKHOUSE_TMP:?}/05240_listing.stderr"
+    if [ -s "${CLICKHOUSE_TMP:?}/05240_listing.stderr" ]; then echo "client got logs (${table}): 1"; else echo "client got logs (${table}): 0"; fi
 
-if [ -s "${STDERR_FILE}" ]; then echo "client got logs: 1"; else echo "client got logs: 0"; fi
-
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-echo "site level: $(${CLICKHOUSE_CLIENT} --query "
-    SELECT level FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND logger_name = 'DatabaseDataLake(${DB})'
-    ORDER BY event_time_microseconds
-    LIMIT 1")"
-echo "entries above information: $(${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
-
-# The same property on the other listing entry point: `system.iceberg_history` reaches the lightweight
-# iterator, while `system.iceberg_files` reaches the general one (`getTablesIterator`), which is also what
-# `SELECT ... FROM system.tables` uses when it needs storage objects.
-${CLICKHOUSE_CLIENT} --send_logs_level=warning --show_data_lake_catalogs_in_system_tables=0 \
-    --query_id "${QUERY_ID_FILES}" \
-    --query "SELECT count() FROM system.iceberg_files WHERE database = '${DB}'" 2> "${STDERR_FILE_FILES}"
-
-if [ -s "${STDERR_FILE_FILES}" ]; then echo "client got logs (files): 1"; else echo "client got logs (files): 0"; fi
-
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-echo "site level (files): $(${CLICKHOUSE_CLIENT} --query "
-    SELECT level FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID_FILES}' AND logger_name = 'DatabaseDataLake(${DB})'
-    ORDER BY event_time_microseconds
-    LIMIT 1")"
-echo "entries above information (files): $(${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID_FILES}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
+    # The listing failure is still logged, below error level.
+    ${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP:?}/05240_data" --send_logs_level=trace --show_data_lake_catalogs_in_system_tables=0 \
+        --query "SELECT count() FROM system.${table} WHERE database = 'baddb' FORMAT Null" 2> "${CLICKHOUSE_TMP:?}/05240_listing.stderr"
+    echo "site level (${table}): $(grep -o -m1 '<[A-Za-z]*> DatabaseDataLake(baddb): Cannot list the tables' "${CLICKHOUSE_TMP:?}/05240_listing.stderr" | grep -o '^<[A-Za-z]*>')"
+    echo "entries above information (${table}): $(grep -c -E '<(Fatal|Critical|Error|Warning)>' "${CLICKHOUSE_TMP:?}/05240_listing.stderr")"
+done
+rm -rf "${CLICKHOUSE_TMP:?}/05240_data" "${CLICKHOUSE_TMP:?}/05240_listing.stderr"
