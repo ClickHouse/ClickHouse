@@ -5,9 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The aggregation method of a `GROUP BY` over fixed-width keys and one `String` key. The width of the fixed-width
-# part picks `keys32_packed_string`, `keys64_packed_string` or `keys128_packed_string`. Keys outside the limits of these
-# methods, the setting off and a `compatibility` before 26.11 keep the serialized method. Each query is tagged with
-# a `log_comment`, which the trace log prints before the aggregation method of the query.
+# part picks `keys32_packed_string`, `keys64_packed_string` or `keys128_packed_string`, also for `LowCardinality` keys.
+# Keys outside the limits of these methods, a `LowCardinality(Nullable(String))` key, the setting off and a
+# `compatibility` before 26.11 keep the serialized method. Each query is tagged with a `log_comment`, which the trace log
+# prints before the aggregation method of the query.
 
 # The query of case `$1`: a `GROUP BY` of the columns `$2` and a `count()`, with the extra settings `$3`.
 function query()
@@ -29,6 +30,8 @@ $(query u128_u64_string "toUInt128(number % 7) AS a, toUInt64(number % 5) AS b, 
 $(query u32_two_strings "toUInt32(number % 7) AS a, $string, toString(intDiv(number, 5)) AS t")
 $(query u32_nullable_string "toUInt32(number % 7) AS a, toNullable(toString(intDiv(number, 3))) AS s")
 $(query u32_low_cardinality_string "toUInt32(number % 7) AS a, toLowCardinality(toString(intDiv(number, 3))) AS s")
+$(query low_cardinality_u32_string "toLowCardinality(toUInt32(number % 7)) AS a, $string")
+$(query u32_low_cardinality_nullable_string "toUInt32(number % 7) AS a, toLowCardinality(toNullable(toString(intDiv(number, 3)))) AS s")
 $(query u32_string_setting_off "toUInt32(number % 7) AS a, $string" "enable_fixed_and_packed_string_keys_in_aggregation = 0")
 $(query u32_string_compatibility "toUInt32(number % 7) AS a, $string" "compatibility = '26.10'")
 "

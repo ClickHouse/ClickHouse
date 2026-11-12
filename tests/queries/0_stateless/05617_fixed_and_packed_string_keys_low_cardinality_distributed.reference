@@ -1,0 +1,6 @@
+groups	133333
+String and LowCardinality(String) shards	133333	400000
+String and LowCardinality(String) shards, LowCardinality(String) Distributed	133333	400000
+String shards, LowCardinality(String) Distributed	133333	400000
+String and LowCardinality(String) shards, adaptive aggregator enabled	133333	400000
+String and LowCardinality(String) shards, adaptive aggregator disabled	133333	400000

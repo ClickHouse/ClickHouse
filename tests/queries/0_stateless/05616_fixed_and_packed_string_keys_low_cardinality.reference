@@ -1,0 +1,18 @@
+keys32, dictionary of each block	1
+keys64, dictionary of each block	1
+keys32, one dictionary per part	1
+keys128, several dictionaries per part	1
+keys32, LowCardinality fixed-width key	1
+keys32, two levels	1
+keys64, external aggregation	1
+keys32, partitioned single-level merge	1
+keys64, aggregation in order	1
+keys64, aggregation in order, LowCardinality fixed-width key	1
+keys32, ORDER BY keys LIMIT	1
+keys32, distributed two levels	1
+keys32, LowCardinality fixed-width key, distributed two levels	1
+keys32, adaptive aggregator enabled	1
+two levels	05616_keys32_two_level	1
+two levels	05616_keys64_external	1
+written to disk	05616_keys64_external	1
+top-K heap	05616_keys32_top_k_heap	1

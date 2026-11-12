@@ -19,7 +19,11 @@ Aggregation method: prealloc_serialized
 comment: u32_nullable_string
 Aggregation method: nullable_prealloc_serialized
 comment: u32_low_cardinality_string
-Aggregation method: prealloc_serialized
+Aggregation method: keys32_packed_string
+comment: low_cardinality_u32_string
+Aggregation method: keys32_packed_string
+comment: u32_low_cardinality_nullable_string
+Aggregation method: nullable_prealloc_serialized
 comment: u32_string_setting_off
 Aggregation method: prealloc_serialized
 comment: u32_string_compatibility
