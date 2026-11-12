@@ -741,8 +741,6 @@ size_t TableSnapshot::getVersionUnlocked() const
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
 {
-    /// Check the credentials of the accessing session even when the stats are cached.
-    initOrUpdateSnapshot();
     if (snapshot_stats.has_value())
         return snapshot_stats.value();
 
@@ -1049,8 +1047,6 @@ DB::ObjectIterator TableSnapshot::iterate(
 
 void TableSnapshot::initOrUpdateSchemaIfChanged() const
 {
-    /// Check the credentials of the accessing session even when the schema is cached.
-    initOrUpdateSnapshot();
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();

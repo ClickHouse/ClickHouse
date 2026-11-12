@@ -283,6 +283,12 @@ void ConnectionParams::checkSessionMayUseServerIdentity(bool restrict_server_cre
         throwServerCredentialsRestricted();
 }
 
+void ConnectionParams::checkSessionMayUseServerIdentityIgnoringSharedFlag(bool restrict_server_credentials) const
+{
+    if (restrict_server_credentials && follows_session_restriction && usesServerManagedCredentials())
+        throwServerCredentialsRestricted();
+}
+
 AuthMethod ConnectionParams::getPermittedAuthMethod() const
 {
     if (checkOrDropServerManagedCredentials())

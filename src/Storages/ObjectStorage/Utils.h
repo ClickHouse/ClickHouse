@@ -33,6 +33,10 @@ void validateSupportedColumns(
 /// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
 void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
 
+/// Like `checkSessionMayUseServerIdentity`, but ignores the restriction flag in the shared connection parameters, which
+/// concurrent sessions overwrite. For delta-kernel, which builds its credentials from those parameters.
+void checkSessionMayUseServerIdentityIgnoringSharedFlag(const IObjectStorage & object_storage, const ContextPtr & context);
+
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 

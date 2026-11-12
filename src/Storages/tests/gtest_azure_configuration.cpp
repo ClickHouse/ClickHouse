@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 
 #define ASSERT_THROW_ERROR_CODE(statement, expected_exception, expected_code, expected_msg)     \
     ASSERT_THROW(                                                                               \
@@ -37,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -377,6 +379,29 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatKeepsKeyValueArgumentsAndEx
     const auto * credentials = engine_args[7]->as<ASTFunction>();
     ASSERT_TRUE(credentials);
     EXPECT_EQ(credentials->name, "extra_credentials");
+}
+
+/// delta-kernel builds its credentials from the shared connection parameters, whose `forbid_implicit_credentials`
+/// a concurrent opted-in session may have cleared, so the check must refuse a restricted session regardless.
+TEST(StorageAzureConfiguration, ServerIdentityCheckIgnoresSharedFlag)
+{
+    AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(Azure::Identity::WorkloadIdentityCredentialOptions{});
+    params.follows_session_restriction = true;
+    params.forbid_implicit_credentials = false;
+
+    ASSERT_THROW_ERROR_CODE(
+        params.checkSessionMayUseServerIdentityIgnoringSharedFlag(/*restrict_server_credentials=*/ true),
+        Exception,
+        ErrorCodes::ACCESS_DENIED,
+        "server's own identity");
+    ASSERT_NO_THROW(params.checkSessionMayUseServerIdentityIgnoringSharedFlag(/*restrict_server_credentials=*/ false));
+
+    /// A disk, or a table on a disk, takes its configuration from the server and is not checked.
+    params.follows_session_restriction = false;
+    ASSERT_NO_THROW(params.checkSessionMayUseServerIdentityIgnoringSharedFlag(/*restrict_server_credentials=*/ true));
 }
 
 }
