@@ -2497,6 +2497,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
     const uint32_t alter_table = 25 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t alter_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t alter_policy = 2 * static_cast<uint32_t>(!in_parallel && !policies.empty());
+    const uint32_t alter_dictionary = 2 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     std::optional<String> cluster;
     const uint32_t nalters = rg.randomInt<uint32_t>(1, fc.max_number_alters);
 
@@ -2598,6 +2599,23 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
                       generateSettingValues(rg, dsettings, ati->mutable_table_modify_setting());
                   else
                       ati->set_comment(nextComment(rg));
+              }
+          }},
+         {alter_dictionary,
+          [&]
+          {
+              /// `MODIFY COMMENT` is the only ALTER a dictionary accepts
+              const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries));
+
+              cluster = d.getCluster();
+              at->set_sobject(SQLObject::DICTIONARY);
+              d.setName(at->mutable_object()->mutable_est(), false);
+              for (uint32_t i = 0; i < nalters; i++)
+              {
+                  AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
+
+                  ati->set_paren(rg.nextSmallNumber() < 9);
+                  ati->set_comment(nextComment(rg));
               }
           }},
          {alter_policy,

@@ -36,6 +36,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTDictionaryLayout;
+class ASTFunctionWithKeyValueArguments;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTRefreshStrategy;
@@ -371,6 +373,9 @@ private:
     void fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_settings);
     String fuzzStructure(const String & structure);
     String fuzzHivePath(String path);
+    String fuzzQueryText(const String & text, bool is_expression);
+    void fuzzDictionaryLayout(ASTDictionaryLayout & layout);
+    void fuzzDictionarySource(ASTFunctionWithKeyValueArguments & source);
     void addQueueSettings(SettingsChanges & changes, bool on_s3);
     void addMemorySettings(SettingsChanges & changes);
     void fuzzExistingEngineParameters(ASTStorage & storage);

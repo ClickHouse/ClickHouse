@@ -3273,6 +3273,24 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                   t.setName(dsd->mutable_est(), false);
                   dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
                   clickhouse_dsd = dsd;
+                  if (!t.cols.empty() && rg.nextSmallNumber() < 3)
+                  {
+                      /// `WHERE` filters the source table on every load
+                      this->levels[this->current_level] = QueryLevel(this->current_level);
+                      addTableRelation(rg, false, "", t);
+                      generateWherePredicate(rg, dsd->mutable_where());
+                      this->levels.clear();
+                  }
+                  if (t.hasClickHousePeer() && fc.clickhouse_server.has_value() && rg.nextSmallNumber() < 4)
+                  {
+                      /// Load the table's copy from the peer server
+                      const ServerCredentials & sc = fc.clickhouse_server.value();
+
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
               }
           }},
          {dict_system_table,
@@ -3432,6 +3450,32 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
 
     /// Add Primary Key
+    if (clickhouse_dsd && rg.nextSmallNumber() < 4)
+    {
+        /// `QUERY` replaces the source table, its result columns are matched by position
+        clickhouse_dsd->clear_est();
+        clickhouse_dsd->clear_where();
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        /// Sometimes a different number of columns, to exercise the mismatch
+        const uint32_t query_ncols = rg.nextSmallNumber() < 9 ? dictionary_ncols : rg.randomInt<uint32_t>(1, fc.max_columns + 1);
+
+        generateSelect(rg, true, false, query_ncols, std::numeric_limits<uint32_t>::max(), std::nullopt, clickhouse_dsd->mutable_query());
+        this->levels.clear();
+    }
+    if (clickhouse_dsd && !clickhouse_dsd->has_host() && rg.nextSmallNumber() < 3)
+    {
+        /// A connection to this server, the plain TCP port counts as local and skips the connection pool
+        const bool secure = rg.nextSmallNumber() < 7;
+
+        clickhouse_dsd->set_host(fc.host);
+        clickhouse_dsd->set_port(std::to_string(secure ? fc.secure_port : fc.port));
+        clickhouse_dsd->set_user("default");
+        clickhouse_dsd->set_password("");
+        if (secure || rg.nextSmallNumber() < 3)
+        {
+            clickhouse_dsd->set_secure(secure);
+        }
+    }
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
     if (clickhouse_dsd)
     {

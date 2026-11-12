@@ -119,6 +119,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -2389,10 +2391,23 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// move with the layout or the swap is rejected whichever way it goes.
         if (create.dictionary->layout && fuzz_rand() % 5 == 0)
         {
-            static const Strings simple_layouts = {"flat", "hashed", "sparse_hashed", "direct"};
-            auto & layout_type = create.dictionary->layout->layout_type;
+            static const Strings simple_layouts = {"flat", "hashed", "sparse_hashed", "hashed_array", "cache", "direct"};
+            auto & layout = *create.dictionary->layout;
+            auto & layout_type = layout.layout_type;
             layout_type = simple_layouts[fuzz_rand() % simple_layouts.size()];
 
+            if (layout_type == "cache")
+            {
+                /// `cache` requires `SIZE_IN_CELLS`
+                auto params = make_intrusive<ASTExpressionList>();
+                auto pair = make_intrusive<ASTPair>();
+
+                pair->first = "size_in_cells";
+                pair->set(pair->second, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 100000)));
+                params->children.push_back(pair);
+                layout.setOrReplace(layout.parameters, params);
+                layout.has_brackets = true;
+            }
             if (layout_type == "direct")
             {
                 create.dictionary->reset(create.dictionary->lifetime);
@@ -2422,6 +2437,12 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// Fuzz RANGE bounds for range_hashed dictionaries: swap min/max attribute names
         if (create.dictionary->range && fuzz_rand() % 10 == 0)
             std::swap(create.dictionary->range->min_attr_name, create.dictionary->range->max_attr_name);
+
+        if (create.dictionary->layout && create.dictionary->layout->parameters && fuzz_rand() % 5 == 0)
+            fuzzDictionaryLayout(*create.dictionary->layout);
+
+        if (create.dictionary->source && fuzz_rand() % 5 == 0)
+            fuzzDictionarySource(*create.dictionary->source);
 
     }
 
@@ -4207,6 +4228,89 @@ void QueryFuzzer::fuzzStorageArguments(ASTFunction & fn, ASTSetQuery * engine_se
             if (change.value.getType() == Field::Types::String && endsWith(change.name, "format")
                 && lower_formats.contains(Poco::toLower(change.value.safeGet<String>())) && fuzz_rand() % 2 == 0)
                 change.value = random_format();
+        }
+    }
+}
+
+/// Parse a `SELECT` or an expression kept in a string literal, fuzz it and format it back.
+/// Returns an empty string when the text does not parse.
+String QueryFuzzer::fuzzQueryText(const String & text, const bool is_expression)
+{
+    ParserSelectWithUnionQuery select_parser;
+    ParserExpression expression_parser;
+    IParser & parser = is_expression ? static_cast<IParser &>(expression_parser) : static_cast<IParser &>(select_parser);
+    const char * begin = text.data();
+    String error;
+    ASTPtr ast = tryParseQuery(
+        parser,
+        begin,
+        text.data() + text.size(),
+        error,
+        false,
+        "dictionary source",
+        false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+        true);
+    if (!ast)
+        return {};
+    fuzz(ast);
+    return ast->formatWithSecretsOneLine();
+}
+
+/// Layout parameters such as `SIZE_IN_CELLS`, `SHARDS` or `INITIAL_ARRAY_SIZE`, from degenerate to large.
+/// Capped at 1M so a `cache` doesn't allocate too many cells.
+void QueryFuzzer::fuzzDictionaryLayout(ASTDictionaryLayout & layout)
+{
+    static const UInt64 values[] = {0, 1, 2, 3, 16, 128, 1024, 65536, 1000000};
+
+    for (auto & child : layout.parameters->children)
+    {
+        auto * pair = child->as<ASTPair>();
+        auto * lit = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
+
+        if (lit && lit->value.getType() == Field::Types::UInt64 && fuzz_rand() % 3 == 0)
+            lit->value = values[fuzz_rand() % std::size(values)];
+    }
+}
+
+/// Swap the source to `NULL()`, drop the `WHERE` of a ClickHouse source, or fuzz its `QUERY`, `WHERE` and `INVALIDATE_QUERY` texts
+void QueryFuzzer::fuzzDictionarySource(ASTFunctionWithKeyValueArguments & source)
+{
+    auto * elements = source.elements ? source.elements->as<ASTExpressionList>() : nullptr;
+
+    if (!elements)
+        return;
+    if (fuzz_rand() % 20 == 0)
+    {
+        source.name = "null";
+        elements->children.clear();
+        return;
+    }
+    if (Poco::toLower(source.name) != "clickhouse")
+        return;
+    for (size_t i = 0; i < elements->children.size(); ++i)
+    {
+        auto * pair = elements->children[i]->as<ASTPair>();
+        auto * lit = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
+
+        if (!lit || lit->value.getType() != Field::Types::String)
+            continue;
+
+        const String key = Poco::toLower(pair->first);
+        if (key == "where" && fuzz_rand() % 4 == 0)
+        {
+            /// Without `WHERE` the whole table is loaded
+            elements->children.erase(elements->children.begin() + i);
+            break;
+        }
+        if (key == "query" || key == "where" || key == "invalidate_query")
+        {
+            const String fuzzed = fuzzQueryText(lit->value.safeGet<String>(), key == "where");
+
+            if (!fuzzed.empty())
+                lit->value = fuzzed;
         }
     }
 }

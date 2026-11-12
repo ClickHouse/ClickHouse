@@ -4327,6 +4327,33 @@ CONV_FN(DictionarySourceDetails, dsd)
         FlatExprSchemaTableToString(ret, dsd.est(), separator);
         has_something = true;
     }
+    if (dsd.has_query())
+    {
+        String query;
+
+        SelectToString(query, dsd.query());
+        ret += has_something ? " " : "";
+        ret += "QUERY ";
+        appendSQLStringLiteral(ret, query);
+        has_something = true;
+    }
+    if (dsd.has_where())
+    {
+        String where;
+
+        ExprToString(where, dsd.where());
+        ret += has_something ? " " : "";
+        ret += "WHERE ";
+        appendSQLStringLiteral(ret, where);
+        has_something = true;
+    }
+    if (dsd.has_secure())
+    {
+        ret += has_something ? " " : "";
+        ret += "SECURE ";
+        ret += dsd.secure() ? "1" : "0";
+        has_something = true;
+    }
     if (dsd.has_host())
     {
         if (has_something)
@@ -5135,7 +5162,9 @@ CONV_FN(Alter, alter)
     {
         ret += "TEMPORARY ";
     }
-    ret += alter.sobject() == SQLObject::VIEW ? "TABLE" : SQLObjectToString(alter.sobject());
+    /// Views and dictionaries are altered with `ALTER TABLE`, there is no `ALTER DICTIONARY`
+    ret += (alter.sobject() == SQLObject::VIEW || alter.sobject() == SQLObject::DICTIONARY) ? "TABLE"
+                                                                                             : SQLObjectToString(alter.sobject());
     ret += " ";
     SQLObjectNameToString(ret, alter.object());
     if (alter.has_cluster())

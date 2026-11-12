@@ -2194,6 +2194,9 @@ message DictionarySourceDetails {
     optional string url = 12;
     optional string path = 13;
     optional string format = 14;
+    optional Select query = 15;
+    optional Expr where = 16;
+    optional bool secure = 17;
 }
 
 message DictionarySource {
