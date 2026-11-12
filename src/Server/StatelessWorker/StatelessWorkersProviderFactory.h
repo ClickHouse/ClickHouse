@@ -23,13 +23,18 @@ namespace DB
 class StatelessWorkersProviderFactory : private boost::noncopyable
 {
 public:
-    struct ProviderKind
+    /// The result of one read of the state of a worker cluster.
+    struct ResolvedProvider
     {
-        /// Builds and starts the provider for the cluster at `config_prefix`.
-        std::function<StatelessWorkersProviderPtr(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)> create;
-        /// A digest of the configuration `create` reads, so a config reload rebuilds the provider only on change.
-        std::function<String(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)> config_signature;
+        /// Identifies the state that was read. A built provider is reused while it does not change.
+        String signature;
+        /// Builds and starts the provider from the state that was read. It can refer to the
+        /// configuration of the read, so it runs before the caller releases that configuration.
+        std::function<StatelessWorkersProviderPtr()> build;
     };
+
+    /// Reads the state of the cluster at `config_prefix`.
+    using ProviderKind = std::function<ResolvedProvider(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)>;
 
     static StatelessWorkersProviderFactory & instance();
 

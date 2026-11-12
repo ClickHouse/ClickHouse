@@ -2,12 +2,14 @@
 
 #include <map>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 #include <boost/core/noncopyable.hpp>
 #include <base/types.h>
 #include <Common/logger_useful.h>
 #include <Server/StatelessWorker/IStatelessWorkersProvider.h>
+#include <Server/StatelessWorker/StatelessWorkersProviderFactory.h>
 
 namespace Poco
 {
@@ -61,19 +63,18 @@ private:
     struct ProviderEntry
     {
         StatelessWorkersProviderPtr provider;
-        String config_signature;
+        /// Identifies the state that `provider` was built from.
+        String signature;
     };
 
     LoggerPtr log;
     std::mutex mutex;
     std::map<String, ProviderEntry> providers TSA_GUARDED_BY(mutex);
 
-    /// Build the provider for `cluster_name` from the current server configuration.
-    StatelessWorkersProviderPtr buildProvider(const Poco::Util::AbstractConfiguration & config, const String & cluster_name) TSA_REQUIRES(mutex);
-
-    /// A digest of the configuration `cluster_name` is built from; empty when it is no longer configured.
-    /// A reload rebuilds only a cluster whose digest changed.
-    static String computeConfigSignatureForCluster(const Poco::Util::AbstractConfiguration & config, const String & cluster_name);
+    /// Reads the state of `cluster_name` one time; empty when the cluster is no longer configured.
+    /// The read can be slow, so it runs without the lock.
+    static std::optional<StatelessWorkersProviderFactory::ResolvedProvider> resolveCluster(
+        const Poco::Util::AbstractConfiguration & config, const String & cluster_name);
 };
 
 using StatelessWorkersProviderRegistryPtr = std::shared_ptr<StatelessWorkersProviderRegistry>;

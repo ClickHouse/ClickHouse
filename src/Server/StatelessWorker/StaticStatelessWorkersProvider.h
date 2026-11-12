@@ -26,6 +26,7 @@ class StaticStatelessWorkersProvider final : public IStatelessWorkersProvider
 public:
     /// `config_prefix` is the cluster's configuration path. Throws on a broken configuration.
     StaticStatelessWorkersProvider(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    explicit StaticStatelessWorkersProvider(std::vector<StatelessWorkerAddress> addresses_);
     ~StaticStatelessWorkersProvider() override = default;
 
     /// Returns a per-query allocation over the workers snapshotted at construction.

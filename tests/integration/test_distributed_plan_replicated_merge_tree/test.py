@@ -844,7 +844,7 @@ def test_read_in_order_stops_early(started_cluster):
 def test_stopped_replica_is_not_a_worker(started_cluster):
     """The cluster of a `Replicated` database knows which of its replicas are active. When it is the
     worker cluster, a replica that is stopped but still registered must not get tasks: the query runs
-    on the other replicas."""
+    on the other replicas. After its restart the replica gets tasks again."""
     for node in NODES:
         node.query(
             "CREATE DATABASE workers_db "
@@ -870,6 +870,21 @@ def test_stopped_replica_is_not_a_worker(started_cluster):
 
         # A task sent to the stopped replica would fail the query.
         assert INITIATOR.query(f"{query} SETTINGS {settings}") == expected
+
+        # The replica gets tasks again when it is active again.
+        node3.start_clickhouse()
+        assert_eq_with_retry(
+            INITIATOR,
+            "SELECT count() FROM system.clusters WHERE cluster = 'workers_db' AND is_active = 0",
+            "0",
+        )
+        query_id = f"workers_after_restart_{uuid.uuid4().hex}"
+        assert INITIATOR.query(f"{query} SETTINGS {settings}", query_id=query_id) == expected
+        node3.query("SYSTEM FLUSH LOGS query_log")
+        tasks_on_restarted_replica = node3.query(
+            f"SELECT count() FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert int(tasks_on_restarted_replica) > 0
     finally:
         node3.start_clickhouse()
         for node in NODES:

@@ -78,7 +78,12 @@ std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorke
 
 StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-    : addresses(resolveWorkerAddresses(config, config_prefix))
+    : StaticStatelessWorkersProvider(resolveWorkerAddresses(config, config_prefix))
+{
+}
+
+StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(std::vector<StatelessWorkerAddress> addresses_)
+    : addresses(std::move(addresses_))
 {
 }
 
@@ -92,20 +97,17 @@ StatelessWorkerAllocationPtr StaticStatelessWorkersProvider::allocate(
 
 void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & factory)
 {
-    StatelessWorkersProviderFactory::ProviderKind kind{
-        .create = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> StatelessWorkersProviderPtr
-        {
-            return std::make_shared<StaticStatelessWorkersProvider>(config, config_prefix);
-        },
+    auto kind = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> StatelessWorkersProviderFactory::ResolvedProvider
+    {
+        auto addresses = StaticStatelessWorkersProvider::resolveWorkerAddresses(config, config_prefix);
+
         /// Sign the resolved workers, not the literal `cluster` name, whose `remote_servers` entry can change.
-        .config_signature = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> String
-        {
-            String signature;
-            for (const auto & address : StaticStatelessWorkersProvider::resolveWorkerAddresses(config, config_prefix))
-                signature += address.host + ":" + std::to_string(address.stateless_worker_port)
-                    + ":" + std::to_string(address.streaming_exchange_port) + "|";
-            return signature;
-        },
+        String signature;
+        for (const auto & address : addresses)
+            signature += address.host + ":" + std::to_string(address.stateless_worker_port)
+                + ":" + std::to_string(address.streaming_exchange_port) + "|";
+
+        return {std::move(signature), [addresses] { return std::make_shared<StaticStatelessWorkersProvider>(addresses); }};
     };
     factory.registerProviderKind("cluster", kind);
     factory.registerProviderKind("host", kind);

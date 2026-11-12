@@ -100,10 +100,10 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
     /// The default cluster is cached under one key whether it was selected by an empty value or by name.
     const String canonical = canonicalizeClusterName(config, cluster_name);
 
-    /// Sign before building, so a reload published in between can only cause a rebuild, never keep a
-    /// stale provider under a newer signature. Signing reads only the configuration, so it runs outside
-    /// the lock and concurrent queries do not serialize on it.
-    String signature = computeConfigSignatureForCluster(config, canonical);
+    /// The provider is built from the same state that its signature identifies.
+    auto resolved = resolveCluster(config, canonical);
+    if (!resolved)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker cluster '{}' is not configured", canonical);
 
     std::lock_guard lock(mutex);
     if (auto it = providers.find(canonical); it != providers.end())
@@ -111,13 +111,14 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
         /// The server publishes a new configuration before it reloads the registry; a cached provider
         /// built from the previous one is replaced here, so a query started after the change never
         /// resolves to it. Queries already holding it drain on it.
-        if (it->second.config_signature == signature)
+        if (it->second.signature == resolved->signature)
             return it->second.provider;
         providers.erase(it);
     }
 
-    auto provider = buildProvider(config, canonical);
-    providers.emplace(canonical, ProviderEntry{provider, std::move(signature)});
+    LOG_DEBUG(log, "Building stateless worker provider for cluster '{}'", canonical);
+    auto provider = resolved->build();
+    providers.emplace(canonical, ProviderEntry{provider, std::move(resolved->signature)});
     return provider;
 }
 
@@ -158,19 +159,8 @@ std::vector<std::pair<String, StatelessWorkersProviderPtr>> StatelessWorkersProv
     return result;
 }
 
-StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
+std::optional<StatelessWorkersProviderFactory::ResolvedProvider> StatelessWorkersProviderRegistry::resolveCluster(
     const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
-{
-    const String config_prefix = clusterConfigPrefix(cluster_name);
-    const Strings sources = getWorkerSources(config, config_prefix);
-    if (sources.size() != 1)
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Stateless worker cluster '{}' must configure exactly one worker source, got {}", cluster_name, sources.size());
-    LOG_DEBUG(log, "Building stateless worker provider for cluster '{}' from `{}`", cluster_name, sources.front());
-    return StatelessWorkersProviderFactory::instance().get(sources.front()).create(config, config_prefix);
-}
-
-String StatelessWorkersProviderRegistry::computeConfigSignatureForCluster(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
 {
     if (!config.getBool("stateless_worker_client.enabled", false))
         return {};
@@ -187,33 +177,44 @@ String StatelessWorkersProviderRegistry::computeConfigSignatureForCluster(const 
     const Strings sources = getWorkerSources(config, config_prefix);
     if (sources.size() != 1)
         return {};
-    return sources.front() + "|" + StatelessWorkersProviderFactory::instance().get(sources.front()).config_signature(config, config_prefix);
+    auto resolved = StatelessWorkersProviderFactory::instance().get(sources.front())(config, config_prefix);
+    resolved.signature = sources.front() + "|" + resolved.signature;
+    return resolved;
 }
 
 void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(mutex);
-    for (auto it = providers.begin(); it != providers.end();)
+    std::map<String, ProviderEntry> built;
+    {
+        std::lock_guard lock(mutex);
+        built = providers;
+    }
+
+    for (const auto & [cluster_name, entry] : built)
     {
         try
         {
-            if (computeConfigSignatureForCluster(config, it->first) == it->second.config_signature)
+            auto resolved = resolveCluster(config, cluster_name);
+            if (resolved && resolved->signature == entry.signature)
             {
                 /// Unchanged: refresh in place (e.g. re-read a token file).
-                it->second.provider->reloadConfig(config, clusterConfigPrefix(it->first));
-                ++it;
+                entry.provider->reloadConfig(config, clusterConfigPrefix(cluster_name));
                 continue;
             }
             /// Removed or reconfigured: queries holding the provider drain on it, and the cluster is
             /// rebuilt on its next use.
             /// A retired provider is not refreshed any more, so queries draining on it may eventually fail.
-            LOG_INFO(log, "Retiring stateless worker provider for cluster '{}' after a configuration change", it->first);
+            LOG_INFO(log, "Retiring stateless worker provider for cluster '{}' after a configuration change", cluster_name);
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("Retiring stateless worker provider for cluster '{}': cannot apply its new configuration", it->first));
+            tryLogCurrentException(log, fmt::format("Retiring stateless worker provider for cluster '{}': cannot apply its new configuration", cluster_name));
         }
-        it = providers.erase(it);
+
+        /// A lookup can replace the provider in the meantime; that provider is for the new configuration.
+        std::lock_guard lock(mutex);
+        if (auto it = providers.find(cluster_name); it != providers.end() && it->second.provider == entry.provider)
+            providers.erase(it);
     }
 }
 
