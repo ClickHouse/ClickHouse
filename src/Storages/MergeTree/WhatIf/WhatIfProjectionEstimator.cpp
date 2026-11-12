@@ -114,7 +114,8 @@ struct ProjectionPartData
     std::unique_ptr<ProjectionPartData> materialized;
     /// some stored column has values of different sizes
     bool variable_width = false;
-    /// the writer counts more bytes for a block than its rows give, as the indexes and the dictionary of `LowCardinality`
+    /// the writer counts more bytes for a block than its rows give, as the indexes and the dictionary of `LowCardinality` or an aggregate
+    /// state inside another column
     bool block_over_rows = false;
     /// a merge sizes the granules by what the part does not record: the memory it builds some states in, or the bytes of the parts it merges
     bool merge_history_unknown = false;
@@ -148,9 +149,11 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
     {
         if (!elem.column)
             continue;
-        auto check_low_cardinality = [&](const IColumn & column) { out.block_over_rows |= column.lowCardinality(); };
-        check_low_cardinality(*elem.column);
-        elem.column->forEachSubcolumnRecursively(check_low_cardinality);
+        /// `byteSizeAt` of a column that contains them counts a state as `sizeOfData`, the writer counts it as serialized
+        auto check_nested = [&](const IColumn & column)
+        { out.block_over_rows |= column.lowCardinality() || typeid_cast<const ColumnAggregateFunction *>(&column); };
+        out.block_over_rows |= elem.column->lowCardinality();
+        elem.column->forEachSubcolumnRecursively(check_nested);
         /// the writer sizes a state as it serializes it, see `ColumnAggregateFunction::serializedSizeEstimate`
         if (const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
         {
