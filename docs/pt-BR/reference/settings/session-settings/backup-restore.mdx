@@ -13,63 +13,49 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="backup_restore_batch_size_for_keeper_multi">
-  ## backup_restore_batch_size_for_keeper_multi
-</div>
+## backup_restore_batch_size_for_keeper_multi {#backup_restore_batch_size_for_keeper_multi}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Tamanho máximo do lote para uma requisição múltipla ao [Zoo]Keeper durante backup ou restauração
 
-<div id="backup_restore_batch_size_for_keeper_multiread">
-  ## backup_restore_batch_size_for_keeper_multiread
-</div>
+## backup_restore_batch_size_for_keeper_multiread {#backup_restore_batch_size_for_keeper_multiread}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Tamanho máximo do lote para a solicitação multiread ao [Zoo]Keeper durante o backup ou a restauração
 
-<div id="backup_restore_failure_after_host_disconnected_for_seconds">
-  ## backup_restore_failure_after_host_disconnected_for_seconds
-</div>
+## backup_restore_failure_after_host_disconnected_for_seconds {#backup_restore_failure_after_host_disconnected_for_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "3600"},{"label": "Nova configuração."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "3600"},{"label": "Nova configuração."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "3600"},{"label": "Mantém o valor padrão independentemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "3600"},{"label": "Nova configuração."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "3600"},{"label": "Nova configuração."}]}]} />
 
 Se um host, durante uma operação BACKUP ON CLUSTER ou RESTORE ON CLUSTER, não recriar seu nó efêmero &#39;alive&#39; no ZooKeeper dentro desse período, todo o backup ou restauração será considerado falho.
 Esse valor deve ser maior do que qualquer tempo razoável para um host se reconectar ao ZooKeeper após uma falha.
 Zero significa ilimitado.
 
-<div id="backup_restore_finish_timeout_after_error_sec">
-  ## backup_restore_finish_timeout_after_error_sec
-</div>
+## backup_restore_finish_timeout_after_error_sec {#backup_restore_finish_timeout_after_error_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="180" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "180"},{"label": "Nova configuração."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "180"},{"label": "Nova configuração."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "180"},{"label": "Mantém o padrão independentemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "180"},{"label": "Nova configuração."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "180"},{"label": "Nova configuração."}]}]} />
 
 Por quanto tempo o nó iniciador deve esperar que os outros hosts reajam ao nó &#39;error&#39; e interrompam o trabalho na operação atual BACKUP ON CLUSTER ou RESTORE ON CLUSTER.
 
-<div id="backup_restore_keeper_fault_injection_probability">
-  ## backup_restore_keeper_fault_injection_probability
-</div>
+## backup_restore_keeper_fault_injection_probability {#backup_restore_keeper_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
 Probabilidade aproximada de falha de uma solicitação ao Keeper durante o backup ou a restauração. O valor válido está no intervalo [0.0f, 1.0f]
 
-<div id="backup_restore_keeper_fault_injection_seed">
-  ## backup_restore_keeper_fault_injection_seed
-</div>
+## backup_restore_keeper_fault_injection_seed {#backup_restore_keeper_fault_injection_seed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - semente aleatória; caso contrário, o valor da configuração
 
-<div id="backup_restore_keeper_max_retries">
-  ## backup_restore_keeper_max_retries
-</div>
+## backup_restore_keeper_max_retries {#backup_restore_keeper_max_retries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -78,37 +64,29 @@ Probabilidade aproximada de falha de uma solicitação ao Keeper durante o backu
 Número máximo de tentativas para operações do [Zoo]Keeper durante uma operação de BACKUP ou RESTORE.
 Deve ser alto o suficiente para que toda a operação não falhe por causa de uma falha temporária do [Zoo]Keeper.
 
-<div id="backup_restore_keeper_max_retries_while_handling_error">
-  ## backup_restore_keeper_max_retries_while_handling_error
-</div>
+## backup_restore_keeper_max_retries_while_handling_error {#backup_restore_keeper_max_retries_while_handling_error}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "Nova configuração."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "Nova configuração."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "Mantém o valor padrão independentemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "Nova configuração."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "Nova configuração."}]}]} />
 
-Número máximo de tentativas para operações do [Zoo]Keeper ao tratar um erro em uma operação BACKUP ON CLUSTER ou RESTORE ON CLUSTER.
+Número máximo de retentativas para operações do [Zoo]Keeper ao tratar um erro em uma operação BACKUP ON CLUSTER ou RESTORE ON CLUSTER.
 
-<div id="backup_restore_keeper_max_retries_while_initializing">
-  ## backup_restore_keeper_max_retries_while_initializing
-</div>
+## backup_restore_keeper_max_retries_while_initializing {#backup_restore_keeper_max_retries_while_initializing}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "Nova configuração."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "Nova configuração."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "Mantém o valor padrão independentemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "Nova configuração."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "Nova configuração."}]}]} />
 
-Número máximo de tentativas para operações do [Zoo]Keeper durante a inicialização de uma operação BACKUP ON CLUSTER ou RESTORE ON CLUSTER.
+Número máximo de retentativas para operações do [Zoo]Keeper durante a inicialização de uma operação BACKUP ON CLUSTER ou RESTORE ON CLUSTER.
 
-<div id="backup_restore_keeper_retry_initial_backoff_ms">
-  ## backup_restore_keeper_retry_initial_backoff_ms
-</div>
+## backup_restore_keeper_retry_initial_backoff_ms {#backup_restore_keeper_retry_initial_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Tempo de espera do backoff inicial para operações do [Zoo]Keeper durante backup ou restauração
 
-<div id="backup_restore_keeper_retry_max_backoff_ms">
-  ## backup_restore_keeper_retry_max_backoff_ms
-</div>
+## backup_restore_keeper_retry_max_backoff_ms {#backup_restore_keeper_retry_max_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -116,17 +94,13 @@ Tempo máximo de backoff para operações do [Zoo]Keeper durante o backup ou a r
 
 Valor padrão no Cloud: `60000`.
 
-<div id="backup_restore_keeper_value_max_size">
-  ## backup_restore_keeper_value_max_size
-</div>
+## backup_restore_keeper_value_max_size {#backup_restore_keeper_value_max_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 Tamanho máximo dos dados em um nó do [Zoo]Keeper durante o backup
 
-<div id="backup_restore_s3_retry_attempts">
-  ## backup_restore_s3_retry_attempts
-</div>
+## backup_restore_s3_retry_attempts {#backup_restore_s3_retry_attempts}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -134,9 +108,7 @@ Tamanho máximo dos dados em um nó do [Zoo]Keeper durante o backup
 
 Configuração do Aws::Client::RetryStrategy. O Aws::Client realiza novas tentativas automaticamente; 0 significa nenhuma nova tentativa. Isso se aplica apenas a backup/restauração.
 
-<div id="backup_restore_s3_retry_initial_backoff_ms">
-  ## backup_restore_s3_retry_initial_backoff_ms
-</div>
+## backup_restore_s3_retry_initial_backoff_ms {#backup_restore_s3_retry_initial_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -144,9 +116,7 @@ Configuração do Aws::Client::RetryStrategy. O Aws::Client realiza novas tentat
 
 Atraso de backoff inicial, em milissegundos, antes da primeira nova tentativa durante o backup e a restauração. Cada nova tentativa subsequente aumenta o atraso exponencialmente, até o máximo especificado por `backup_restore_s3_retry_max_backoff_ms`
 
-<div id="backup_restore_s3_retry_jitter_factor">
-  ## backup_restore_s3_retry_jitter_factor
-</div>
+## backup_restore_s3_retry_jitter_factor {#backup_restore_s3_retry_jitter_factor}
 
 <SettingsInfoBlock type="Float" default_value="0.1" />
 
@@ -154,9 +124,7 @@ Atraso de backoff inicial, em milissegundos, antes da primeira nova tentativa du
 
 Fator de jitter aplicado ao atraso de backoff de nova tentativa em Aws::Client::RetryStrategy durante operações de backup e restauração. O atraso de backoff calculado é multiplicado por um fator aleatório no intervalo [1.0, 1.0 + jitter], até o máximo de `backup_restore_s3_retry_max_backoff_ms`. Deve estar no intervalo [0.0, 1.0]
 
-<div id="backup_restore_s3_retry_max_backoff_ms">
-  ## backup_restore_s3_retry_max_backoff_ms
-</div>
+## backup_restore_s3_retry_max_backoff_ms {#backup_restore_s3_retry_max_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 

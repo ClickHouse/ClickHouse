@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="encryption_header_cache_policy">
-  ## encryption_header_cache_policy
-</div>
+## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique du cache des en-têtes de chiffrement.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique d&#39;éviction du cache des en-têtes de chiffrement. Valeurs possibles : `LRU`, `SLRU`, `SIEVE`.
 
-<div id="encryption_header_cache_size">
-  ## encryption_header_cache_size
-</div>
+## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Oui" />
 
@@ -30,9 +26,7 @@ Taille maximale du cache des en-têtes de chiffrement lus depuis des fichiers ch
   Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
 </Note>
 
-<div id="encryption_header_cache_size_ratio">
-  ## encryption_header_cache_size_ratio
-</div>
+## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Non" />La taille de la file protégée (dans le cas d’une politique SLRU) du cache des en-têtes de chiffrement, par rapport à la taille totale du cache.
 
