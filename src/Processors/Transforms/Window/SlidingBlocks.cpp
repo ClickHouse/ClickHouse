@@ -3,14 +3,13 @@
 namespace DB
 {
 
-SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
+void SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
     int64_t rows_count = chunk.getNumRows();
     Columns input_columns = chunk.detachColumns();
 
-    SlidingBlock & block = blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), rows_count, next_block_number++, end_position, end_position + rows_count, std::move(index));
+    blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), rows_count, next_block_number++, end_position, end_position + rows_count, std::move(index));
     end_position += rows_count;
-    return block;
 }
 
 void SlidingBlocks::pop()
@@ -19,16 +18,16 @@ void SlidingBlocks::pop()
     ++first_block_number;
 }
 
-const SlidingBlock & SlidingBlocks::front() const
-{
-    return blocks.front();
-}
-
 const SlidingBlock & SlidingBlocks::blockAt(int64_t block_number) const
 {
     chassert(block_number >= first_block_number);
     chassert(block_number < next_block_number);
     return blocks[block_number - first_block_number];
+}
+
+const SlidingBlock & SlidingBlocks::front() const
+{
+    return blocks.front();
 }
 
 RowNumber SlidingBlocks::begin() const
@@ -57,14 +56,6 @@ RowNumber SlidingBlocks::prev(RowNumber row) const
         return {row.block, row.row - 1};
 }
 
-int64_t SlidingBlocks::positionOf(RowNumber row) const
-{
-    if (row == end())
-        return end_position;
-
-    return blockAt(row.block).begin_position + row.row;
-}
-
 RowNumber SlidingBlocks::move(RowNumber row, int64_t offset) const
 {
     /// The target row counted from the start of the row's block
@@ -83,6 +74,14 @@ RowNumber SlidingBlocks::move(RowNumber row, int64_t offset) const
 
     chassert(row.block < end().block || target == 0);
     return RowNumber{row.block, target};
+}
+
+int64_t SlidingBlocks::positionOf(RowNumber row) const
+{
+    if (row == end())
+        return end_position;
+
+    return blockAt(row.block).begin_position + row.row;
 }
 
 }

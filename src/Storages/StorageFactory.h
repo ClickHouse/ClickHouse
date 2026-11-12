@@ -104,6 +104,11 @@ public:
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
         GetCreateAccessFn * get_create_access_fn = nullptr;
+
+        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
+        bool stores_data_on_disk = false;
+        /// Whether the engine may back a temporary table (opt-in).
+        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -149,6 +154,8 @@ public:
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
         .get_create_access_fn = nullptr,
+        .stores_data_on_disk = false,
+        .supports_temporary = false,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
@@ -183,6 +190,9 @@ public:
     std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
+    /// Throws if storage cannot be temporary
+    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
