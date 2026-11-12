@@ -135,6 +135,14 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (read_from_mergetree_step->getRowLevelFilter())
         additional_filters_present = true;
 
+    /// `SAMPLE` restricts the set of rows as well: Bernoulli sampling (a table without a `SAMPLE BY` key) drops rows
+    /// inside the reader, and a sampling key adds a filter on the sampling expression. Both run after the vector index
+    /// shortlisted its candidates, so they can discard every shortlisted row. Treat sampling as an additional filter:
+    /// with `vector_search_filter_strategy = 'prefilter'` the exact search below is used, and otherwise the index
+    /// fetches more candidates to compensate.
+    if (read_from_mergetree_step->isQueryWithSampling())
+        additional_filters_present = true;
+
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
         return no_layers_updated; /// user explicitly wanted exact (brute-force) vector search
 
