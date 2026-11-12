@@ -26,5 +26,11 @@ SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real WHERE intDiv(b, 10) = 4 AND a < 378)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
+-- a wide part sizes its granules without the merge blocks, so the estimate does not depend on them
+ALTER TABLE t_est MODIFY SETTING merge_max_block_size = 1200;
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE intDiv(b, 10) = 4 AND a < 378)
+WHERE match(line, '^(With |marks:|marks_span:|verdict:)');
+
 DROP TABLE t_est;
 DROP TABLE t_real;

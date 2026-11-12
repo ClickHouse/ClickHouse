@@ -731,11 +731,11 @@ String buildProjectionPart(
         add(out, key_columns, std::move(merged), merged_part);
     }
     finish(out, key_columns);
-    /// a part does not record the parts it merged
+    /// a part does not record the parts it merged, their bytes can give a compact part only if the fewest bytes give one
     if (!stored_bytes_known)
     {
         out.merge_history_unknown |= constant_granularity;
-        out.both_formats = read_step->getMergeTreeData().canUsePolymorphicParts();
+        out.both_formats = merge_tree.choosePartFormat(0, 0, part->info.level, &projection).part_type != MergeTreeDataPartType::Wide;
     }
     if (out.materialized && out.materialized->rows == out.rows && out.materialized->row_bytes == out.row_bytes
         && out.materialized->format_bytes == out.format_bytes)
