@@ -130,6 +130,9 @@ void checkNoRowPolicyForSetOperands(
     AddDefaultDatabaseVisitor visitor(context, default_database);
     visitor.visit(ast);
 
+    /// Read table names as the mutation will when it is executed.
+    const auto stored_definition_context = Context::createCopyForStoredDefinition(context);
+
     const auto check = [&](const ASTPtr & node, const auto & self) -> void
     {
         if (const auto * function = node->as<ASTFunction>();
@@ -140,7 +143,7 @@ void checkNoRowPolicyForSetOperands(
             if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
             {
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    Identifier(table_identifier->name_parts), context);
+                    Identifier(table_identifier->name_parts), stored_definition_context);
                 if (!resolved.resolved_identifier && throw_if_unresolved)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
@@ -298,6 +301,9 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled,
     std::function<void()> on_exception)
 {
+    /// Read table names in the commands as written, like `MutationsInterpreter` does.
+    context = Context::createCopyForStoredDefinition(context);
+
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
     static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
@@ -661,6 +667,8 @@ MutationsInterpreter::MutationsInterpreter(
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
+    /// Mutation commands are stored SQL: read table names in them as written.
+    new_context->setAllowCompoundTableIdentifierQualification(false);
 
     context = std::move(new_context);
 }
