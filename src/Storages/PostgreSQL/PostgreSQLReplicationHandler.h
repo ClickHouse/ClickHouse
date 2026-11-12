@@ -64,7 +64,8 @@ public:
     const std::set<String> & getTablesSkippedOnAttach() const { return tables_skipped_on_attach; }
 
     /// The file where the database engine persists the snapshot positions of the tables that take a snapshot while the
-    /// shared replication slot is behind it (see `snapshot_positions_path`). Must be called before startSynchronization.
+    /// shared replication slot is behind it, and the single-table engine whether its snapshot is being loaded (see
+    /// `snapshot_positions_path`). Must be called before startSynchronization.
     void setSnapshotPositionsFile(DiskPtr disk, const String & path);
 
     /// Called by `ATTACH TABLE` before the nested table is created. The snapshot of the table is marked incomplete, so that
@@ -77,6 +78,9 @@ public:
 
     /// Removes the entry written by markSnapshotIncomplete, if the nested table could not be created.
     void removeSnapshotPosition(const String & table_name) const;
+
+    /// Removes the file set by setSnapshotPositionsFile, when the object is dropped.
+    void clearSnapshotPositions() const;
 
     /// The file where the database engine persists the tables whose `DETACH TABLE ... PERMANENTLY` has started (see
     /// `detaching_tables_path`). Must be called before startSynchronization.
@@ -209,6 +213,11 @@ private:
     SnapshotPositions loadSnapshotPositions() const;
     void saveSnapshotPositions(const SnapshotPositions & positions) const;
     void markSnapshotCompleted(const String & table_name) const;
+    /// The single-table engine persists only whether the snapshot of its table is being loaded: the entry is written
+    /// before the snapshot starts and removed once it completes. A nested table left by an interrupted snapshot (the
+    /// server was terminated while loading it) holds only a part of the rows, so it is dropped and loaded again.
+    void markSingleTableSnapshotIncomplete() const;
+    bool hasIncompleteSingleTableSnapshot() const;
 
     /// See `detaching_tables_path`.
     std::set<String> loadDetachingTables() const;
@@ -313,8 +322,9 @@ private:
     /// it is not lost if the server restarts before the shared replication slot passes it. The entry is written before
     /// the snapshot is loaded and marked completed after it, so that a nested table left by an interrupted snapshot is
     /// loaded again on attach rather than resumed. A completed entry is removed on attach once the shared replication
-    /// slot has passed it. Not set for the single-table engine: its replication slot is moved to the snapshot position
-    /// instead, because it does not stream changes of other tables.
+    /// slot has passed it. The single-table engine does not need the position: its replication slot is moved to the
+    /// snapshot position instead, because it does not stream changes of other tables. It only records there that its
+    /// snapshot is being loaded (see markSingleTableSnapshotIncomplete).
     DiskPtr snapshot_positions_disk;
     String snapshot_positions_path;
 

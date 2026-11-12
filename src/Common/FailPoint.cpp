@@ -515,6 +515,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(materialized_postgresql_pause_before_attach_table_snapshot) \
     PAUSEABLE_ONCE(materialized_postgresql_pause_after_attach_table_nested_created) \
     PAUSEABLE_ONCE(materialized_postgresql_pause_before_detach_table_drop) \
+    PAUSEABLE_ONCE(materialized_postgresql_pause_before_snapshot_copy) \
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(spilling_hash_join_throw_after_maps_release) \

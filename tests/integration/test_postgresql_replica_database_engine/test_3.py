@@ -3727,7 +3727,7 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
     # An existing publication with the generated name is reused. With `publish = 'insert'` every update and delete
     # after the snapshot would be silently omitted, and the publication cannot be fixed by ClickHouse without losing
     # the changes after the creation of the replication slot: the attach is refused until the operator fixes it.
-    publication = f"postgres_database_public_{table}_ch_publication"
+    publication = f"postgres_database_{table}_ch_publication"
     cursor.execute(
         f"CREATE PUBLICATION \"{publication}\" FOR TABLE ONLY {table} WITH (publish = 'insert')"
     )
@@ -3745,9 +3745,10 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
         """
     )
 
+    # The diagnostic names this replication slot and publication: the same diagnostic of another test must not match.
     assert_logs_contain_with_retry(
         instance,
-        "does not publish all operation types",
+        f"replication slot {slot_name}: publication .{publication}. does not publish all operation types",
         retry_count=60,
         sleep_time=1,
     )
@@ -3766,6 +3767,66 @@ def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
     instance.query(f"DROP TABLE {table} SYNC")
     drop_replication_slot(replication_connection, slot_name)
     replication_connection.close()
+    cursor.execute(f"DROP PUBLICATION IF EXISTS \"{publication}\"")
+
+
+def test_fresh_attach_table_snapshot_interrupted_by_server_termination(started_cluster):
+    # The server is terminated after a fresh full-definition `ATTACH TABLE` with a user-managed replication slot created
+    # its nested table, but before the initial snapshot was copied into it. The next startup must not resume the
+    # replication slot over the incomplete nested table: the rows committed before the slot was created are not in its
+    # stream, so they would be lost. The nested table is loaded again instead.
+    table = "fresh_attach_interrupted_table"
+    table_uuid = "00000000-0000-0000-0000-000000125964"
+    slot_name = "fresh_attach_interrupted_slot"
+    failpoint = "materialized_postgresql_pause_before_snapshot_copy"
+    pg_manager.create_postgres_table(table)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 49) AS i")
+
+    replication_connection = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        replication=True,
+        auto_commit=True,
+    )
+    snapshot = create_replication_slot(replication_connection, slot_name=slot_name)
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE default.{table} UUID '{table_uuid}' (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_replication_slot = '{slot_name}',
+                 materialized_postgresql_snapshot = '{snapshot}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+    instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    instance.stop_clickhouse(kill=True)
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        f"The snapshot of table postgres_database.{table} did not complete in a previous run",
+        retry_count=60,
+        sleep_time=1,
+    )
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 60 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(60, 69) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 70 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    drop_replication_slot(replication_connection, slot_name)
+    replication_connection.close()
+    cursor.execute(f"DROP PUBLICATION IF EXISTS \"postgres_database_{table}_ch_publication\"")
 
 
 def test_attach_bootstraps_listed_table_whose_first_snapshot_failed(started_cluster):

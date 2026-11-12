@@ -32,6 +32,8 @@
 
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
+#include <filesystem>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/Context.h>
 
@@ -106,6 +108,14 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             is_fresh_definition,
             *replication_settings,
             /* is_materialized_postgresql_database */false);
+
+    /// Records whether the initial snapshot of this table is being loaded, so that a nested table left by an interrupted
+    /// snapshot is not resumed. A dot-prefixed file is not taken for table metadata, and is removed with the metadata
+    /// directory by `DROP DATABASE`.
+    auto database = DatabaseCatalog::instance().getDatabase(table_id_.database_name);
+    replication_handler->setSnapshotPositionsFile(
+        database->getDisk(),
+        (std::filesystem::path(database->getMetadataPath()) / (".materialized_postgresql_snapshot_" + toString(table_id_.uuid))).string());
 
     replication_handler->addStorage(remote_table_name, this);
     replication_handler->startup(/* delayed */is_attach);
@@ -283,6 +293,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
         return;
 
     replication_handler->shutdownFinal();
+    replication_handler->clearSnapshotPositions();
     replication_handler.reset();
 
     auto nested_table = tryGetNested() != nullptr;

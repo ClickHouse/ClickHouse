@@ -84,6 +84,7 @@ namespace FailPoints
 {
     extern const char materialized_postgresql_fail_after_snapshot_on_attach[];
     extern const char materialized_postgresql_pause_before_attach_table_snapshot[];
+    extern const char materialized_postgresql_pause_before_snapshot_copy[];
 }
 
 class TemporaryReplicationSlot
@@ -528,6 +529,35 @@ void PostgreSQLReplicationHandler::markSnapshotCompleted(const String & table_na
 }
 
 
+void PostgreSQLReplicationHandler::markSingleTableSnapshotIncomplete() const
+{
+    chassert(!is_materialized_postgresql_database);
+    SnapshotPositions positions;
+    for (const auto & [table_name, storage] : materialized_storages)
+        positions[table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = false};
+    saveSnapshotPositions(positions);
+}
+
+
+bool PostgreSQLReplicationHandler::hasIncompleteSingleTableSnapshot() const
+{
+    if (is_materialized_postgresql_database)
+        return false;
+    for (const auto & [table_name, position] : loadSnapshotPositions())
+    {
+        if (!position.completed && materialized_storages.contains(table_name))
+            return true;
+    }
+    return false;
+}
+
+
+void PostgreSQLReplicationHandler::clearSnapshotPositions() const
+{
+    saveSnapshotPositions({});
+}
+
+
 void PostgreSQLReplicationHandler::markSnapshotIncomplete(const String & table_name) const
 {
     assertInitialized();
@@ -942,7 +972,10 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
     /// The database engine holds data from a previous run if it has nested tables. The single-table engine is kept
     /// in the metadata only after its initial synchronization succeeded, so a replay of its stored definition implies
     /// that it holds data. A full-definition `ATTACH TABLE` introduces a new object, unless its nested table exists.
-    const bool has_previously_replicated_data = hasNestedStorage() || (!is_materialized_postgresql_database && !is_fresh_definition);
+    /// A single-table engine whose initial snapshot did not complete before the replication slot was created (its partially
+    /// loaded nested table, if any, is dropped in startSynchronization) has nothing that could become stale either.
+    const bool has_previously_replicated_data = hasNestedStorage()
+        || (!is_materialized_postgresql_database && !is_fresh_definition && !(hasIncompleteSingleTableSnapshot() && !slot_exists));
 
     if (!has_previously_replicated_data)
     {
@@ -1130,6 +1163,21 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     adoptLegacyReplicationIdentityIfNeeded(tx);
     if (is_attach && is_materialized_postgresql_database)
         finishInterruptedDetaches(tx);
+    /// The single-table engine was terminated while its nested table was being loaded from a snapshot (see
+    /// `markSingleTableSnapshotIncomplete`): the nested table holds only a part of the rows and must not be resumed.
+    if (is_attach && !is_materialized_postgresql_database && hasIncompleteSingleTableSnapshot())
+    {
+        for (const auto & [table_name, storage] : materialized_storages)
+        {
+            auto * materialized_storage = storage->as<StorageMaterializedPostgreSQL>();
+            if (materialized_storage->tryGetNested())
+            {
+                LOG_INFO(log, "The snapshot of table {}.{} did not complete in a previous run, its nested table will be "
+                         "dropped and loaded again", postgres_database, table_name);
+                dropNestedTable(materialized_storage);
+            }
+        }
+    }
     const bool bootstrap_after_never_synchronized_run = is_attach && checkReplicationStateOnAttach(tx);
     createPublicationIfNeeded(tx);
 
@@ -1161,6 +1209,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// All tables are loaded from the snapshot of the new replication slot.
         saveSnapshotPositions({});
 
+        /// The single-table engine records that its snapshot is being loaded before anything is created, so that a nested
+        /// table left by an interrupted snapshot (the server was terminated) is not resumed by the next attach.
+        if (!is_materialized_postgresql_database)
+            markSingleTableSnapshotIncomplete();
+
         if (user_managed_slot)
         {
             if (user_provided_snapshot.empty())
@@ -1184,21 +1237,51 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
-        for (const auto & [table_name, storage] : materialized_storages)
+        /// A partially loaded nested table of the single-table engine must not stay: a retried startup would take it
+        /// for replicated data. If dropping it fails, the snapshot stays marked incomplete, and the next attach drops it.
+        auto drop_partially_loaded_single_table = [&](StorageMaterializedPostgreSQL * materialized_storage)
         {
+            if (is_materialized_postgresql_database)
+                return;
+
             try
             {
-                nested_storages.emplace(table_name, loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>()));
+                dropNestedTable(materialized_storage);
+                /// The object is not created if its `CREATE TABLE` fails, so nothing is left to mark.
+                if (!is_attach)
+                    saveSnapshotPositions({});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to drop the nested table of a table whose snapshot failed");
+            }
+        };
+
+        for (const auto & [table_name, storage] : materialized_storages)
+        {
+            auto * materialized_storage = storage->as<StorageMaterializedPostgreSQL>();
+            try
+            {
+                nested_storages.emplace(table_name, loadFromSnapshot(*tmp_connection, snapshot_name, table_name, materialized_storage));
+                if (!is_materialized_postgresql_database)
+                    saveSnapshotPositions({});
             }
             catch (Exception & e)
             {
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(log);
+                drop_partially_loaded_single_table(materialized_storage);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
                 if (throw_on_error && !is_materialized_postgresql_database)
                     throw;
+            }
+            catch (...)
+            {
+                /// Not only `DB::Exception`: a lost connection during the snapshot throws `pqxx::failure`.
+                drop_partially_loaded_single_table(materialized_storage);
+                throw;
             }
         }
     };
@@ -1375,6 +1458,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             else
             {
+                /// The single-table engine has no snapshot position to persist, but a nested table left by an interrupted
+                /// snapshot must not be resumed by the next attach.
+                markSingleTableSnapshotIncomplete();
+
                 /// The replication slot of the single-table engine streams only this table, so nothing needs
                 /// the changes before the snapshot position.
                 tx.exec(fmt::format(
@@ -1389,7 +1476,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 try
                 {
                     auto storage_info = loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage);
-                    markSnapshotCompleted(table_name);
+                    if (is_materialized_postgresql_database)
+                        markSnapshotCompleted(table_name);
+                    else
+                        saveSnapshotPositions({});
                     tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), temporary_start_lsn));
                 }
                 catch (...)
@@ -1531,6 +1621,8 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     auto table_override = tryGetTableOverride(current_database_name, table_name);
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
+
+    FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_snapshot_copy);
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
@@ -1847,6 +1939,17 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 {
     try
     {
+        /// Removing table from replication must succeed even if table does not exist in PostgreSQL:
+        /// a dropped table is removed from the publication by PostgreSQL.
+        pqxx::result exists{ntx.exec(fmt::format(
+            "SELECT to_regclass({}) IS NOT NULL", quoteStringPostgreSQL(doubleQuoteWithSchema(table_name))))};
+        if (!exists[0][0].as<bool>())
+        {
+            LOG_WARNING(log, "Did not remove table {} from publication, because table does not exist in PostgreSQL (publication: {})",
+                        doubleQuoteWithSchema(table_name), publication_name);
+            return;
+        }
+
         /// `ALTER PUBLICATION ... DROP TABLE ONLY` fails for a table without an explicit publication entry,
         /// for example a leaf partition published only through its published partitioned parent.
         if (!fetchExplicitPublicationMembers(ntx).contains(resolveSchemaAndTableName(ntx, table_name)))
