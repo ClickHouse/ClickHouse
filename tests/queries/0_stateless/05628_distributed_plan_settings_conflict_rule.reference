@@ -2,8 +2,7 @@ neither wants nor refuses: the plan stays off
 false
 wants only, via the workers num: the plan turns on
 true
-wants only, via the worker cluster: the plan turns on
-true
+wants only, via the worker cluster: the plan turns on and resolves the cluster
 refuses only, via an explicit off: the plan stays off, no error
 false
 refuses only, via a zero workers num: the plan stays off, no error
