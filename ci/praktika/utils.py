@@ -812,7 +812,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
+                    f"cd {parent} && tar -cf - {name} | zstd -c -T0 > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -830,7 +830,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f {quote(path_out)} && zstd -c -T0 {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )

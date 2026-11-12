@@ -18,6 +18,7 @@
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
@@ -44,10 +45,11 @@ constexpr size_t adaptive_append_prefetch_distance = 8;
 /// The staged records of this many consecutive buckets share allocation blocks, so their memory is released as the
 /// merge tasks advance through the bucket order, while the grouping holds when the pruning reorders the buckets.
 constexpr size_t adaptive_staging_block_buckets = 16;
-/// Partition-count combining starts with a bounded trial of nonconsecutive misses in each block.
-constexpr size_t adaptive_count_combining_sample_records = 1024;
-/// Combining continues only if at least one lookup in this many reuses a missed key's count descriptor.
-constexpr size_t adaptive_count_combining_min_hit_rate_inverse = 8;
+/// Combining the misses of a partition starts with a bounded trial of nonconsecutive misses in each block (see
+/// `Aggregator::collectCombinedMisses`).
+constexpr size_t adaptive_miss_combining_sample_records = 1024;
+/// Combining continues only if at least one lookup in this many reuses a missed key's descriptor.
+constexpr size_t adaptive_miss_combining_min_hit_rate_inverse = 8;
 /// Fixed-width arguments are gathered column by column into bounded batches of staged records, so
 /// width and nullability are dispatched once per field while the destination rows remain in cache.
 constexpr size_t adaptive_argument_staging_batch_rows = 1024;
@@ -177,8 +179,14 @@ struct AdaptiveAggregationSession
 
     /// Set when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or `uniqExactIf` (see
     /// `AdaptiveTopKPruning`). The producers hand their count bins, or their tables if they never froze, over to it,
-    /// and after the finish barrier `Aggregator::prepareAdaptiveTopKPruning` keeps it only for a merge that can prune.
+    /// and after the finish barrier `Aggregator::prepareAdaptiveTopK` keeps it only for a merge that can
+    /// prune. It is kept only together with `top_k_threshold`, whose value it prunes by.
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
+
+    /// The threshold of a top-K that the merge threads share (see `AdaptiveTopKThreshold`). It has no role
+    /// while the producers run: `Aggregator::prepareAdaptiveTopK` creates it after the finish barrier for
+    /// every merge of a top-K but the external one, whose units output partial states.
+    std::unique_ptr<AdaptiveTopKThreshold> top_k_threshold;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
     /// `Aggregator::finishAdaptiveProducer`). While other producers still run, the memory scheduler may write them to

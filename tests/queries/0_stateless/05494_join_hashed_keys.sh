@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
+# no-msan: its ~190 joins take minutes under MSan and seconds in release; ASan, UBSan and TSan still run it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
