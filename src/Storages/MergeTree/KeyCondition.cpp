@@ -3775,6 +3775,11 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    /// A bound where `isNull()` holds stands in for NULL or for an infinity, and is left untransformed below,
+    /// so no transformed value would remain to compare against an atom in the function's result domain.
+    if (single_point && (key_range.left.isNull() || key_range.right.isNull()))
+        return {};
+
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
