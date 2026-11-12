@@ -1539,12 +1539,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
 namespace
 {
-    void checkTemporaryTableEngineName(const String & name)
-    {
-        if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
-    }
-
     void setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine)
     {
         if (engine == DefaultTableEngine::None)
@@ -1745,7 +1739,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (!create.storage->engine)
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_temporary_table_engine].value);
 
-        checkTemporaryTableEngineName(create.storage->engine->name);
+        StorageFactory::instance().checkTemporaryTableEngine(create.storage->engine->name, getContext());
         return;
     }
 
