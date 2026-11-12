@@ -535,9 +535,13 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
     LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
+
+    ObjectStorageQueueTableMetadata new_table_metadata(table_metadata);
+    new_table_metadata.buckets = value;
+
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         zookeeper_path,
-        value,
+        new_table_metadata.getBucketsNum(),
         /* prev_value */table_metadata.buckets,
         zookeeper_name);
     table_metadata.buckets = value;
