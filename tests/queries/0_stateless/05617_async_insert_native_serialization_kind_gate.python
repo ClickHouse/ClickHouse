@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Regression test for a post-auth type confusion in asynchronous inserts over the native TCP protocol.
+# Regression test for post-auth type confusion in asynchronous inserts over the native TCP protocol.
 #
-# The serialization kind of every column of a block is chosen by the peer that sends the block.
-# A client that selects `Sparse` or `Replicated` for a column of `INSERT ... FORMAT Native` puts a
-# `ColumnSparse` / `ColumnReplicated` into a block that keeps the declared type of the column. With
-# `async_insert = 1` such a block was queued as is, and the flush copied it into a full column with
-# `insertRangeFrom`, whose `assert_cast` (a plain `static_cast` in release builds) reinterpreted it.
+# The sender chooses each column's serialization kind. For `INSERT ... FORMAT Native`, choosing
+# `Sparse` or `Replicated` puts a `ColumnSparse` / `ColumnReplicated` in the block but keeps the
+# column's declared type. With `async_insert = 1`, the block was queued unchanged. The flush used
+# `insertRangeFrom` to copy it into a full column. Its `assert_cast` reinterpreted the column.
+# `assert_cast` is a plain `static_cast` in release builds.
 #
-# No sender of such a block needs another kind than the default one, so the server must accept
-# only that one, at any nesting depth, in every block a peer sends: the data of an `INSERT`,
-# external tables and scalars. The scenarios below send well-formed blocks, so nothing but the
-# kind can reject them: all expect INCORRECT_DATA (code 117) and a server that stays alive, and
-# an ordinary block is still inserted.
+# Senders of these blocks need only the default kind. The server must accept only that kind at
+# every nesting depth in all peer blocks: `INSERT` data, external tables and scalars. These
+# scenarios send well-formed blocks, so only the kind can cause rejection. All expect
+# `INCORRECT_DATA` (code 117) and a server that stays alive. An ordinary block is still inserted.
 #
-# The client speaks the raw native protocol pinned to revision 54482
-# (DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION), so the set of exchanged,
-# revision-gated fields is fixed and does not drift.
+# The client uses the raw native protocol pinned to revision 54482
+# (`DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION`). This keeps the exchanged revision-gated
+# fields fixed.
 
 import os
 import socket
