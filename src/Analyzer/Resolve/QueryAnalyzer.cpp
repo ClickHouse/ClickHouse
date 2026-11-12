@@ -5594,6 +5594,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
+    /// The query argument of a table function is a part of the calling query, not a stored definition.
+    if (!execution_context->isCompoundTableIdentifierQualificationAllowed())
+    {
+        auto unrestricted_context = Context::createCopy(execution_context);
+        unrestricted_context->setAllowCompoundTableIdentifierQualification(true);
+        execution_context = unrestricted_context;
+    }
+
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
