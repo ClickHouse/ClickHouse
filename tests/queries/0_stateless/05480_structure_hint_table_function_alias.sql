@@ -52,4 +52,11 @@ TRUNCATE TABLE t_structure_hint_alias;
 INSERT INTO t_structure_hint_alias SELECT f.id, id FROM file(currentDatabase() || '_structure_hint_alias_ambiguous.jsonl') AS f;
 SELECT * FROM t_structure_hint_alias ORDER BY ALL;
 
+INSERT INTO FUNCTION file(currentDatabase() || '_structure_hint_alias_nested.jsonl', 'JSONEachRow', '`f.t.a` UInt32, t Tuple(a UInt32)') SELECT 7, tuple(1) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT f.t.a, f.`t.a` FROM file(currentDatabase() || '_structure_hint_alias_nested.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT f.t.a, f.`t.a` FROM file(currentDatabase() || '_structure_hint_alias_nested.jsonl') AS f SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
 DROP TABLE t_structure_hint_alias;
