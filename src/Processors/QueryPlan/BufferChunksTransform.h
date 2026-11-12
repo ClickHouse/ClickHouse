@@ -15,7 +15,7 @@ namespace DB
 {
 class Block;
 
-/// Shared by the `BufferChunksTransform`s in front of one read-in-order merge with a limit.
+/// Shared by the `BufferChunksTransform`s in front of one read-in-order merge of a sort with a limit.
 /// Inputs of such a merge usually do not overlap: when the first row of one input sorts before the first row of
 /// another, all its rows sort before all rows of the other.
 class ReadInOrderReadAheadTracker
@@ -24,7 +24,10 @@ public:
     /// A paused input keeps its reader open, so only merges with at most this many inputs use a tracker.
     static constexpr size_t max_inputs = 128;
 
-    ReadInOrderReadAheadTracker(size_t num_inputs, const Block & header, const SortDescription & description_);
+    ReadInOrderReadAheadTracker(size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_);
+
+    /// The limit of the sort. The merge itself has no limit when the sort is finished after it.
+    size_t getLimit() const { return limit; }
 
     /// Called once per input, with its first chunk that has rows.
     void setFirstRow(size_t input, const Chunk & chunk);
@@ -51,6 +54,7 @@ private:
     int compareFirstRows(size_t lhs, size_t rhs) const;
 
     const SortDescription description;
+    const size_t limit;
     VectorWithMemoryTracking<size_t> sort_column_positions;
     VectorWithMemoryTracking<InputState> inputs; /// Sized in the constructor, never resized.
     /// `input + 1` for the inputs that called `setFirstRow`, in that order; 0 in a slot not written yet.

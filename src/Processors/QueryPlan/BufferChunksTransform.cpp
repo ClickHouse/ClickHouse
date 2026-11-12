@@ -9,8 +9,10 @@
 namespace DB
 {
 
-ReadInOrderReadAheadTracker::ReadInOrderReadAheadTracker(size_t num_inputs, const Block & header, const SortDescription & description_)
+ReadInOrderReadAheadTracker::ReadInOrderReadAheadTracker(
+    size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_)
     : description(description_)
+    , limit(limit_)
     , inputs(num_inputs)
 {
     sort_column_positions.reserve(description.size());
@@ -167,7 +169,7 @@ IProcessor::Status BufferChunksTransform::prepare()
     /// Pausing is safe only while the output port is not ready: the merge taking our chunk
     /// or asking for data reschedules us.
     if (read_ahead_tracker && first_row_published && !output.canPush() && chunks_taken_by_merge <= 1
-        && read_ahead_tracker->rowsProducedBefore(input_index, inputs_before) + num_processed_rows >= limit)
+        && read_ahead_tracker->rowsProducedBefore(input_index, inputs_before) + num_processed_rows >= read_ahead_tracker->getLimit())
     {
         input.setNotNeeded();
         return Status::PortFull;

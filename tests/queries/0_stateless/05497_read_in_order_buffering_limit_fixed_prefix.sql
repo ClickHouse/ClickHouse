@@ -64,6 +64,14 @@ ORDER BY x DESC LIMIT 100 FORMAT Null SETTINGS max_threads = 1, log_comment = '0
 SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow(0.0005) = 0) AND v = 1
 ORDER BY x LIMIT 100 FORMAT Null SETTINGS max_threads = 1, log_comment = '05497_t2';
 
+-- T6: as T1, with a sort column after the key, so the merge has no LIMIT and the sort after it has.
+SELECT 'finish', sum(x), count() FROM
+(
+    SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1
+    ORDER BY x DESC, v LIMIT 100
+)
+SETTINGS max_threads = 1, log_comment = '05497_t6';
+
 -- T5: 17 copies of the 8 parts of tab_desc make 136 inputs. With more than 128 inputs nothing pauses, so every input
 -- reads to its own LIMIT.
 SELECT 'many', sum(x), count() FROM
@@ -100,7 +108,7 @@ FROM
 (
     SELECT log_comment, argMax(query_id, event_time_microseconds) AS query_id, if(log_comment = '05497_t5', 4, 100) AS lim
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment IN ('05497_t1', '05497_t2', '05497_t5') AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND log_comment IN ('05497_t1', '05497_t2', '05497_t5', '05497_t6') AND type = 'QueryFinish'
         AND event_date >= today() - 1
     GROUP BY log_comment
 ) AS q
