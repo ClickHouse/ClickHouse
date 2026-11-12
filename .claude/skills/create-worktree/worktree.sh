@@ -180,8 +180,10 @@ copy_store()
         cp -Rc "$1" "$stage"
     else
         cp -al "$1" "$stage"
-        find "$stage" -type f -links +1 ! -path '*/objects/*' -exec sh -c '
-            for f do cp -p "$f" "$f.unshare" && mv -f "$f.unshare" "$f" || exit 1; done' sh {} +
+        # Keep only the object files of this git data shared. `find` from inside it, and prune exactly ./objects:
+        # `-path` tests the whole path, so a pattern like */objects/* also matches an `objects` directory above it.
+        (cd "$stage" && find . -path ./objects -prune -o -type f -links +1 -exec sh -c '
+            for f do cp -p "$f" "$f.unshare" && mv -f "$f.unshare" "$f" || exit 1; done' sh {} +)
     fi
     : > "$stage/$INCOMPLETE"
     mv "$stage" "$2"
@@ -306,7 +308,12 @@ refresh_main_worktree()
         return 0
     fi
     old_list=$(gitlinks "$MAIN")
-    git -C "$MAIN" merge -q --no-progress --ff-only "$upstream"
+    # Without --no-overwrite-ignore, git replaces an ignored local file when the new commit tracks its path.
+    if ! git -C "$MAIN" merge -q --no-progress --ff-only --no-overwrite-ignore "$upstream"
+    then
+        note "main checkout: the fast-forward to $upstream was refused (see above); its files stay as they are"
+        return 0
+    fi
     note "main checkout: master ${old_head:0:12} -> $(git -C "$MAIN" rev-parse --short=12 HEAD) ($upstream)"
 
     list=$(gitlinks "$MAIN")
@@ -317,7 +324,8 @@ refresh_main_worktree()
         [ "$old_sha" != "$sha" ] || continue  # the pin did not move
         cur=$(git -C "$MAIN/$path" rev-parse HEAD)
         [ "$cur" != "$sha" ] || continue
-        # Move only a submodule that nobody works on: detached at the previous pin, without changes in tracked files.
+        # Move only a submodule that nobody works on: detached at the previous pin, without changes in tracked
+        # files. An ignored local file that the new pin tracks also keeps it where it is (--no-overwrite-ignore).
         if git -C "$MAIN/$path" symbolic-ref -q HEAD > /dev/null || [ "$cur" != "$old_sha" ] ||
             ! git -C "$MAIN/$path" diff --quiet HEAD --
         then
@@ -325,7 +333,7 @@ refresh_main_worktree()
             continue
         fi
         refresh_main_stores "$(printf '%s\t%s\t%s\t%s' "$sha" "$path" "$name" "$url")"
-        if git -C "$MAIN/$path" -c advice.detachedHead=false checkout -q --detach "$sha"
+        if git -C "$MAIN/$path" -c advice.detachedHead=false checkout -q --no-overwrite-ignore --detach "$sha"
         then
             moved=$((moved + 1))
         else
@@ -396,10 +404,11 @@ WORKER='
         top=$(git -C "$dst" rev-parse --show-toplevel) || exit 1
         [ "$top" = "$dst" ] || { echo "FAILED: $path: its git data points at $top" >&2; exit 1; }
         [ "$(git -C "$dst" rev-parse HEAD)" != "$sha" ] || exit 0
-        # No -f: if local changes are in the way, fail and leave the decision to the user.
+        # No -f, and --no-overwrite-ignore: if local changes or ignored local files are in the way, fail and leave the
+        # decision to the user.
         # shellcheck disable=SC2086
-        git -C "$dst" $opts checkout -q --detach "$sha" ||
-            { echo "FAILED: $path: checkout of $sha; are local changes in the way?" >&2; exit 1; }
+        git -C "$dst" $opts checkout -q --no-overwrite-ignore --detach "$sha" ||
+            { echo "FAILED: $path: checkout of $sha; are local changes or ignored files in the way?" >&2; exit 1; }
     fi
 '
 
