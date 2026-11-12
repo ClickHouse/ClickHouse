@@ -18,6 +18,7 @@ SET optimize_move_to_prewhere = 0;
 SET query_plan_max_limit_for_top_k_optimization = 0;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
+SET query_plan_merge_filters = 1;
 
 SELECT '-- disabled: Sorting remains above ArrayJoin';
 EXPLAIN PLAN description = 0
