@@ -1,8 +1,8 @@
 ---
-description: 'Reference guides for connecting ClickHouse to data lake catalogs including AWS Glue, Unity, REST, Lakekeeper, Nessie, OneLake, and SeaweedFS.'
+description: 'Reference guides for connecting ClickHouse to data lake catalogs including AWS Glue, Amazon S3 Tables, Unity, REST, Lakekeeper, Nessie, OneLake, and SeaweedFS.'
 slug: /use-cases/data-lake/reference
 title: 'Catalog guides'
-keywords: ['data lake', 'lakehouse', 'catalog', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake', 'seaweedfs']
+keywords: ['data lake', 'lakehouse', 'catalog', 'glue', 's3 tables', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake', 'seaweedfs']
 doc_type: 'landing-page'
 ---
 
@@ -11,6 +11,7 @@ ClickHouse integrates with a range of data lake catalogs through the [`DataLakeC
 | Catalog | Description |
 |---------|-------------|
 | [AWS Glue](/guides/use-cases/data-warehousing/glue-catalog) | Query Iceberg tables registered in the AWS Glue Data Catalog from data stored in S3. |
+| [Amazon S3 Tables](/guides/use-cases/data-warehousing/s3-tables-catalog) | Read and write Iceberg tables in S3 table buckets through the S3 Tables Iceberg REST endpoint. |
 | [Databricks Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog) | Connect to Databricks Unity Catalog for Delta Lake and Iceberg tables. |
 | [Iceberg REST Catalog](/guides/use-cases/data-warehousing/rest-catalog) | Use any catalog implementing the Iceberg REST specification, such as Tabular. |
 | [Lakekeeper](/guides/use-cases/data-warehousing/lakekeeper-catalog) | Connect to the Lakekeeper Catalog for Iceberg tables. |

@@ -38,6 +38,11 @@ The Iceberg REST Catalog can be used with Iceberg tables. You can use it with th
 Snowflake Horizon Catalog exposes the Iceberg REST API for Snowflake-managed Iceberg tables.
 Use `DataLakeCatalog` with `catalog_type = 'horizon'`. See the [Horizon catalog guide](/guides/use-cases/data-warehousing/horizon-catalog).
 
+## Amazon S3 Tables {#amazon-s3-tables}
+
+Amazon S3 Tables exposes an Iceberg REST endpoint for the Iceberg tables in a table bucket.
+Use `DataLakeCatalog` with `catalog_type = 's3tables'`. See the [S3 Tables catalog guide](/guides/use-cases/data-warehousing/s3-tables-catalog).
+
 ## Unity Catalog {#unity-catalog}
 
 Unity Catalog can be used with both Delta Lake and Iceberg tables. You can use it with the `iceberg` or `deltaLake` table engines, or with the [DataLakeCatalog](/reference/engines/database-engines/datalake) database engine.
