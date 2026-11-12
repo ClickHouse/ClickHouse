@@ -10839,7 +10839,7 @@ Minimum estimated size of a build-side `String` column, the estimated number of 
     /* AI function settings */ \
     DECLARE(Bool, allow_ai_functions, true, R"(
 Allow the use of AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). If disabled, a query that uses them throws an exception.
-)", BETA, \
+)", 0, \
         {"26.11", true, true, "New setting"}) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
