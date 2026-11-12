@@ -3037,8 +3037,8 @@ static BlockIO executeQueryImpl(
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
 
-            /// Per query, like `log_queries_probability` above; secondary queries carry the
-            /// initiator's already-resolved settings.
+            /// Not on a bare `SET`, which only changes the session and must be able to clear a conflict;
+            /// not on secondary queries, which carry the initiator's already-resolved settings.
             if (!out_ast->as<ASTSetQuery>() && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
                 applyDistributedPlanSettings(context);
 

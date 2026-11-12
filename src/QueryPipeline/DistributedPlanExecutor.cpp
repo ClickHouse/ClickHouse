@@ -1446,8 +1446,7 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
 
 void applyDistributedPlanSettings(ContextMutablePtr context)
 {
-    const ContextMutablePtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
-    const auto & settings = query_context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     const auto & make_plan = settings[Setting::make_distributed_plan];
     const auto & workers_num = settings[Setting::distributed_plan_workers_num];
@@ -1478,19 +1477,26 @@ void applyDistributedPlanSettings(ContextMutablePtr context)
             "`distributed_plan_workers_num = DEFAULT`, or set the conflicting setting back to `DEFAULT`.",
             fmt::join(wants, ", "));
 
+    /// `execute_locally` runs the plan in-process, which cannot resolve to a named cluster of
+    /// remote workers; "on" is enough to conflict, explicit or not, since it is never implied.
+    if (settings[Setting::distributed_plan_execute_locally] && worker_cluster.changed && !worker_cluster.value.empty())
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "`distributed_plan_worker_cluster = '{}'` cannot be used with `distributed_plan_execute_locally = 1`, "
+            "which runs the plan in-process. Set one of them back to `DEFAULT`.",
+            worker_cluster.value);
+
     if (make_plan.changed)
         return;
 
     /// `allowsValue`, not `checkSettingsConstraints`: the server is deriving this value, not a
     /// user changing a setting, so the readonly-mode and feature-tier checks do not apply.
-    if (!query_context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValue(
-            "make_distributed_plan", Field(true)))
+    if (!context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValue("make_distributed_plan", Field(true)))
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "A settings constraint forbids enabling `make_distributed_plan`, but {} requests a distributed query "
             "plan. Set the conflicting setting back to `DEFAULT`.",
             fmt::join(wants, ", "));
 
-    query_context->applySettingsChanges({SettingChange("make_distributed_plan", Field(true))});
+    context->applySettingsChanges({SettingChange("make_distributed_plan", Field(true))});
 }
 
 TaskToHostMap::~TaskToHostMap() = default;
