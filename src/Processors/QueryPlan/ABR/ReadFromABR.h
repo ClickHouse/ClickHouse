@@ -11,7 +11,7 @@ namespace DB
 {
 
 /// Query plan step that executes the ABR query on a source table and retries
-/// on the next coarser table if a fallback error (TOO_MANY_ROWS, TIMEOUT_EXCEEDED)
+/// on the next coarser table if a fallback error (TOO_MANY_ROWS, TOO_MANY_BYTES, TIMEOUT_EXCEEDED)
 /// is thrown. Results are buffered (memory → disk cascade) before being emitted so
 /// that a failed attempt's partial output is never visible to the client.
 class ReadFromABR : public ISourceStep

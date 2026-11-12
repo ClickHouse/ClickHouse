@@ -82,6 +82,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
     extern const int QUERY_NOT_ALLOWED;
     extern const int NO_AVAILABLE_DATA;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -433,7 +434,9 @@ StorageABR::Attempt StorageABR::buildAttempt(
 
 bool StorageABR::isFallbackError(int error)
 {
-    return error == ErrorCodes::TOO_MANY_ROWS || error == ErrorCodes::TIMEOUT_EXCEEDED;
+    /// The errors of the limits that are split between the attempts: `max_rows_to_read`, `max_bytes_to_read` (and their `_leaf`
+    /// variants), and `max_execution_time` (and `max_execution_time_leaf`).
+    return error == ErrorCodes::TOO_MANY_ROWS || error == ErrorCodes::TOO_MANY_BYTES || error == ErrorCodes::TIMEOUT_EXCEEDED;
 }
 
 String StorageABR::getSourceTableName(const String & prefix, UInt64 interval)
@@ -1191,7 +1194,8 @@ void registerStorageABR(StorageFactory & factory)
             .description = R"DOCS_MD(
 The `ABR` (Adaptive Bit Rate) engine is a read-only proxy that routes queries to the best of several `MergeTree`-family tables
 that store the same data at different sampling granularities. It picks the finest-grained source table whose retention covers
-the query's time range, and on `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` it transparently retries the query on the next coarser table.
+the query's time range, and on `TOO_MANY_ROWS`, `TOO_MANY_BYTES` or `TIMEOUT_EXCEEDED` it transparently retries the query on the next
+coarser table.
 
 <Info>
 This is an experimental feature that may change in backwards-incompatible ways in future releases. Enable the creation of `ABR`
@@ -1234,8 +1238,8 @@ created again under the same name is used from the next query on.
    whose retention columns don't satisfy the query, and computes the earliest surviving timestamp.
 3. The first table whose earliest surviving timestamp is not later than the query's lower bound is selected. If none qualify,
    `ABR` falls back to the table with the broadest coverage at day precision, breaking ties toward the finest interval.
-4. The query is executed on the selected table. If it raises `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED`, `ABR` retries it on the next
-   coarser table. The output of an attempt is buffered (in memory, then on disk) so that the partial output of a failed attempt is
+4. The query is executed on the selected table. If it raises `TOO_MANY_ROWS`, `TOO_MANY_BYTES` or `TIMEOUT_EXCEEDED`, `ABR` retries
+   it on the next coarser table. The output of an attempt is buffered (in memory, then on disk) so that the partial output of a failed attempt is
    never visible to the client.
 
 The settings `abr_memory_buffer_size`, `abr_first_table_suffix` and `abr_last_table_suffix` tune this behavior.

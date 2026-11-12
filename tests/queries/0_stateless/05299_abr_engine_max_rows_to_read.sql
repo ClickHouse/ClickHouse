@@ -93,6 +93,16 @@ SYSTEM FLUSH LOGS query_log;
 SELECT abr_interval, mapApply((k, v) -> (k, errorCodeToName(v)), abr_exception_codes) AS exception_codes FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05299, query 4 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 DROP SETTINGS PROFILE profile_05299;
 
+-- Test 4: an attempt that exceeds its share of max_bytes_to_read is retried too. The query reads `ts` (4 bytes) and `value`
+-- (8 bytes) of at least the 951 matching rows of row_limits_1, so at least 11412 bytes, more than its share of 8000 bytes,
+-- although it fits the limit of the whole query. row_limits_10 has 500 rows, so it reads at most 6000 bytes.
+SELECT /* test 05299, query 5 */ count(), max(value) AS source_table FROM abr
+WHERE ts >= toDateTime('2025-11-11 12:00:00') - INTERVAL 950 HOUR
+SETTINGS max_bytes_to_read = 16000, send_logs_level = 'error';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT abr_interval, mapApply((k, v) -> (k, errorCodeToName(v)), abr_exception_codes) AS exception_codes FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05299, query 5 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS row_limits_1;
 DROP TABLE IF EXISTS row_limits_10;

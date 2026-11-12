@@ -22,8 +22,8 @@ namespace DB
 ///
 /// Given table_prefix='logs' and sample_intervals=[1,10,100], ABR discovers
 /// tables logs_1, logs_10, logs_100 and picks the finest-grained one whose
-/// retention covers the query's time range. On TOO_MANY_ROWS or TIMEOUT_EXCEEDED
-/// the query is retried on the next coarser table.
+/// retention covers the query's time range. On TOO_MANY_ROWS, TOO_MANY_BYTES or
+/// TIMEOUT_EXCEEDED the query is retried on the next coarser table.
 ///
 ///   CREATE TABLE t ENGINE = ABR('logs', [1,10,100], ('ts','region'))
 ///

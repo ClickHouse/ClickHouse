@@ -3779,7 +3779,7 @@ Size in bytes of the in-memory buffer used by the `ABR` table engine to material
 replayed to the client. When the buffer is exhausted, additional output spills to temporary data on disk.
 
 Buffering is required because `ABR` may retry a query on a coarser source table after a fallback error
-(`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`); rows produced by a failed attempt must never reach the client.
+(`TOO_MANY_ROWS`, `TOO_MANY_BYTES`, `TIMEOUT_EXCEEDED`); rows produced by a failed attempt must never reach the client.
 
 Set to `0` to skip the in-memory buffer entirely and always spill to disk.
 )", 0, \
@@ -3800,7 +3800,7 @@ interval are excluded from selection.
 This setting overrides retention-based selection: if no table within `[abr_first_table_suffix, abr_last_table_suffix]` has enough
 retention for the query's time range, the query falls back to the table at `abr_last_table_suffix` rather than to a coarser one.
 
-The retries after `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` do not go beyond this table either, and the limits of the query are split
+The retries after `TOO_MANY_ROWS`, `TOO_MANY_BYTES` or `TIMEOUT_EXCEEDED` do not go beyond this table either, and the limits of the query are split
 only between the tables up to it.
 
 `0` means no maximum: the coarsest available table is eligible.

@@ -55,6 +55,32 @@ WHERE type = 'QueryFinish'
             AND log_comment = '05356_distributed_retry'
             AND event_date >= yesterday());
 
+-- An attempt that exceeds its share of `max_bytes_to_read_leaf`, which only applies on the shard, is retried too. Each
+-- attempt may read 3000 bytes. The attempt on interval 1 reads `ts` (4 bytes) and `value` (8 bytes) of at least the 451
+-- matching rows, so at least 5412 bytes, and fails with `TOO_MANY_BYTES`. The attempt on interval 10 reads less than
+-- 1000 bytes from the parts of December and January.
+SELECT count(), max(value) FROM dist_abr
+WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 450 HOUR
+SETTINGS
+    max_bytes_to_read_leaf = 6000,
+    prefer_localhost_replica = 0,
+    send_logs_level = 'error',
+    log_comment = '05356_distributed_retry_bytes_leaf';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT abr_interval, length(abr_exception_codes), errorCodeToName(abr_exception_codes[1])
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND NOT is_initial_query
+    AND event_date >= yesterday()
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND type = 'QueryFinish'
+            AND is_initial_query
+            AND log_comment = '05356_distributed_retry_bytes_leaf'
+            AND event_date >= yesterday());
+
 DROP TABLE dist_abr;
 DROP TABLE abr;
 DROP TABLE retry_limits_1;
