@@ -65,6 +65,9 @@ protected:
 
     bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
 
+    /// Throws if the query was cancelled or its time limit was exceeded; a whole-block `consume` must poll it from its row loop.
+    void checkIfCancelled(size_t row_number);
+
     void updateSerializationsIfNeeded(const Columns & columns);
 
     size_t num_columns;

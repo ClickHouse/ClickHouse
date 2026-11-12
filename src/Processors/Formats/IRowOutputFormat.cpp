@@ -3,12 +3,28 @@
 #include <Processors/Port.h>
 #include <DataTypes/IDataType.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char row_output_format_cancel_mid_loop[];
+}
+
+namespace
+{
+
+/// Cancellation poll period, same as in `IRowInputFormat`: the executor checks only between `work` calls, so `consume` must poll itself.
+constexpr size_t CANCELLATION_CHECK_PERIOD_ROWS = 8192;
+
 }
 
 IRowOutputFormat::IRowOutputFormat(SharedHeader header, WriteBuffer & out_)
@@ -27,12 +43,29 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
+        checkIfCancelled(row);
+
         if (haveWrittenData())
             writeRowBetweenDelimiter();
 
         write(columns, row);
         first_row = false;
     }
+}
+
+void IRowOutputFormat::checkIfCancelled(size_t row_number)
+{
+    if (row_number == 0 || row_number % CANCELLATION_CHECK_PERIOD_ROWS != 0)
+        return;
+
+    fiu_do_on(FailPoints::row_output_format_cancel_mid_loop, {
+        /// Cancel in place, the way `KILL QUERY` does, instead of parking a pipeline worker: `work` must only use CPU, never wait.
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_context->killCurrentQuery();
+    });
+
+    /// `QueryStatus`, not `IProcessor::isCancelled`: a `PartialResult` stop also raises the latter but must still return its result.
+    CurrentThread::checkIfNotCancelled();
 }
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)

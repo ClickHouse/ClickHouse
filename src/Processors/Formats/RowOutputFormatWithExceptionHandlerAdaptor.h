@@ -37,6 +37,8 @@ public:
 
         for (size_t row = 0; row < num_rows; ++row)
         {
+            this->checkIfCancelled(row);
+
             /// It's important to set a checkpoint before writing row-between delimiter
             peekable_out->setCheckpoint();
 
