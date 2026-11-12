@@ -6,7 +6,6 @@
 #include <base/defines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/IThrottler.h>
-#include <Common/FiberLocal.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
@@ -30,8 +29,6 @@ class InternalTextLogsQueue;
 
 class ThreadStatus;
 class ThreadGroup;
-class ResourceSchedulingContext;
-class MemoryPressureMonitor;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
@@ -45,7 +42,7 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
  * - https://en.cppreference.com/w/cpp/language/constinit
  * - https://github.com/ClickHouse/ClickHouse/pull/40078
  */
-extern constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
+extern thread_local constinit ThreadStatus * current_thread;
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
@@ -65,6 +62,7 @@ public:
     static ThreadGroupPtr getGroup();
 
     /// MemoryTracker for user that owns current thread if any
+    static MemoryTracker * getUserMemoryTracker();
 
     /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
     static void flushUntrackedMemory();
@@ -73,22 +71,6 @@ public:
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
-
-    /// Hides the log records of the current thread from the client while alive: detaches the
-    /// internal text logs queue (`send_logs_level`) of the current thread and of its thread group,
-    /// and restores it on exit, so a thread attaching to the group within the scope stays detached
-    /// too. The records still reach the server-side logs. For sections whose diagnostics may carry
-    /// data the client's user has no right to see.
-    struct HideLogsFromClientScope : private boost::noncopyable
-    {
-        HideLogsFromClientScope();
-        ~HideLogsFromClientScope();
-
-    private:
-        std::shared_ptr<InternalTextLogsQueue> logs_queue_to_restore;
-        LogsLevel client_logs_level_to_restore = LogsLevel::none;
-        bool restore = false;
-    };
 
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
@@ -101,9 +83,6 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
-
-    /// The current query's memory-pressure monitor when in a thread group, else the global monitor.
-    static MemoryPressureMonitor & getMemoryPressureMonitor();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);

@@ -1,6 +1,5 @@
 #include <Interpreters/BlobStorageLog.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -32,19 +31,16 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
             {"MultiPartUploadComplete", static_cast<Int8>(EventType::MultiPartUploadComplete)},
             {"MultiPartUploadAbort", static_cast<Int8>(EventType::MultiPartUploadAbort)},
             {"Read", static_cast<Int8>(EventType::Read)},
-            {"Copy", static_cast<Int8>(EventType::Copy)},
         });
 
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the event."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
 
-        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read', 'Copy'"},
+        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read'"},
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
@@ -54,17 +50,8 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},
         {"remote_path", std::make_shared<DataTypeString>(), "Path to the remote resource."},
         {"local_path", std::make_shared<DataTypeString>(), "Path to the metadata file on the local system, which references the remote resource."},
-        {"source_bucket", std::make_shared<DataTypeString>(), "Name of the bucket the object was copied from, for the 'Copy' event. Empty for other events."},
-        {"source_remote_path", std::make_shared<DataTypeString>(), "Path to the object the data was copied from, for the 'Copy' event. Empty for other events."},
-        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the operation."},
+        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
         {"elapsed_microseconds", std::make_shared<DataTypeUInt64>(), "Elapsed time for the operation, in microseconds."},
-
-        {"connection_id", std::make_shared<DataTypeUInt64>(), "Identifier of the HTTP connection that carried the operation, unique within the server process. Group by this to follow one connection: the OS recycles ports and socket inodes as soon as a socket closes, so those cannot tell consecutive connections apart. 0 if no single HTTP request can be attributed to this row: the operation used no HTTP connection; it used more than one - a retried write is logged as a single row whose elapsed time covers all of its attempts, and no single connection describes it; or it shared one request with other rows - a batched delete writes one `Delete` row per object and attributes the connection to the first of them only. All `connection_*` columns are meaningful only when `connection_id` is not 0; otherwise they are all 0."},
-        {"connection_local_port", std::make_shared<DataTypeUInt16>(), "Local TCP port of that connection. Unique only among sockets open at the same moment; use it to join against a packet capture or a /proc/net/tcp row taken at the time."},
-        {"connection_socket_inode", std::make_shared<DataTypeUInt64>(), "Socket inode of that connection, as reported by fstat. Same caveat as the port: unique only while the socket is open. 0 if the OS exposes no inode for sockets, as on macOS."},
-        {"connection_requests", std::make_shared<DataTypeUInt32>(), "Number of requests the connection had already sent before this one. 0 means this was its first request, provided `connection_id` is not 0."},
-        {"connection_age_microseconds", std::make_shared<DataTypeUInt64>(), "Time since the connection's TCP socket was established. Reset by every reconnect, so it measures the life of the socket rather than of the session object."},
-        {"connection_idle_microseconds", std::make_shared<DataTypeUInt64>(), "Time the connection sat idle in the pool before being handed out for this operation. 0 on a connection's first request, and also when `connection_id` is 0."},
 
         {"error_code", std::make_shared<DataTypeInt32>(), "Error code of the operation. 0 if there was no error."},
         {"error", std::make_shared<DataTypeString>(), "Error message associated with the event, if any."},
@@ -77,8 +64,6 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
 
     auto event_time_seconds = timeInSeconds(event_time);
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[i++]->insert(event_time_seconds);
     columns[i++]->insert(Decimal64(timeInMicroseconds(event_time)));
@@ -90,16 +75,8 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bucket);
     columns[i++]->insert(remote_path);
     columns[i++]->insert(local_path);
-    columns[i++]->insert(source_bucket);
-    columns[i++]->insert(source_remote_path);
     columns[i++]->insert(data_size);
     columns[i++]->insert(elapsed_microseconds);
-    columns[i++]->insert(connection_id);
-    columns[i++]->insert(connection_local_port);
-    columns[i++]->insert(connection_socket_inode);
-    columns[i++]->insert(connection_requests);
-    columns[i++]->insert(connection_age_microseconds);
-    columns[i++]->insert(connection_idle_microseconds);
     columns[i++]->insert(error_code);
     columns[i++]->insert(error_message);
 }

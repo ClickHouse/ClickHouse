@@ -7,8 +7,6 @@
 #include <Common/EventRateMeter.h>
 #include <Common/Stopwatch.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -57,35 +55,12 @@ public:
         return static_cast<ITimeSharedNode &>(*parent);
     }
 
-    /// Helper for introspection metrics. `still_active` is whether the node is still active after dequeueing.
-    void incrementDequeued(ResourceCost cost, bool still_active)
+    /// Helper for introspection metrics
+    void incrementDequeued(ResourceCost cost)
     {
-        chassert(event_queue.isInSchedulerOrStopped());
-        dequeued_requests.store(dequeued_requests.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-        dequeued_cost.store(dequeued_cost.load(std::memory_order_relaxed) + cost, std::memory_order_relaxed);
-        pending_throughput_cost += cost;
-        ++pending_throughput_requests;
-        if (!still_active)
-            flushThroughputOnDeactivation();
-        else if (pending_throughput_requests >= throughput_batch_requests)
-            flushThroughput(clock_gettime_ns());
-    }
-
-    /// Helper for introspection metrics. Should be called when the node becomes inactive without dequeueing a request.
-    void flushThroughputOnDeactivation()
-    {
-        if (pending_throughput_requests > 0)
-            flushThroughput(clock_gettime_ns());
-        throughput_batch_requests = 1; /// The dequeue rate after reactivation is unknown
-    }
-
-    /// Average dequeued_cost per second
-    /// WARNING: Should only be called from the scheduler thread, so that locking is not required
-    double getThroughput()
-    {
-        UInt64 now_ns = clock_gettime_ns();
-        flushThroughput(now_ns);
-        return throughput.rate(static_cast<double>(now_ns) / 1e9);
+        dequeued_requests++;
+        dequeued_cost += cost;
+        throughput.add(static_cast<double>(clock_gettime_ns())/1e9, static_cast<double>(cost));
     }
 
     /// Arbitrary data accessed/stored by parent (node-specific)
@@ -103,29 +78,9 @@ public:
     std::atomic<ResourceCost> rejected_cost{0};
     std::atomic<UInt64> busy_periods{0};
 
-private:
-    /// Adds the pending batch to `throughput` and chooses the size of the next batch
-    void flushThroughput(UInt64 now_ns)
-    {
-        static constexpr UInt64 max_throughput_batch_requests = 64;
-        static constexpr UInt64 throughput_batch_duration_ns = 10'000'000;
-        if (pending_throughput_requests == 0)
-            return;
-        throughput.add(static_cast<double>(now_ns) / 1e9, static_cast<double>(pending_throughput_cost));
-        UInt64 elapsed_ns = now_ns - last_throughput_flush_ns;
-        throughput_batch_requests = elapsed_ns == 0 ? max_throughput_batch_requests
-            : std::clamp<UInt64>(pending_throughput_requests * throughput_batch_duration_ns / elapsed_ns, 1, max_throughput_batch_requests);
-        last_throughput_flush_ns = now_ns;
-        pending_throughput_cost = 0;
-        pending_throughput_requests = 0;
-    }
-
+    /// Average dequeued_cost per second
     /// WARNING: Should only be accessed from the scheduler thread, so that locking is not required
     EventRateMeter throughput{static_cast<double>(clock_gettime_ns())/1e9, 2, 1};
-    ResourceCost pending_throughput_cost = 0;
-    UInt64 pending_throughput_requests = 0;
-    UInt64 throughput_batch_requests = 1;
-    UInt64 last_throughput_flush_ns = 0;
 };
 
 using TimeSharedNodePtr = std::shared_ptr<ITimeSharedNode>;

@@ -55,7 +55,6 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
     assertInitialized();
     const auto & settings = context->getSettingsRef();
     auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
-    hdfs_settings->read_only = read_only;
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
@@ -146,9 +145,9 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
 }
 
 static void addStructureAndFormatToArgsIfNeededHDFS(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, bool is_replayed_definition)
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -234,7 +233,7 @@ void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & colle
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure, is_replayed_definition);
+    addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure);
 }
 }
 

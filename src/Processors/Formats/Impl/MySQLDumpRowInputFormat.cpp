@@ -214,13 +214,8 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_node->name = type_name_upper + " UNSIGNED";
             }
 
-            /// A dump writes `SET` values as strings of comma-separated members, e.g. 'a,b'. `SET` is also a ClickHouse
-            /// alias of `UInt64`, so name the type explicitly, as the `mysql` table engine reads it.
             if (type_name_upper == "SET")
-            {
-                data_type_node->name = "String";
                 data_type_node->resetArguments();
-            }
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -597,9 +592,9 @@ ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/e
 It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
-<Note>
+:::note
 This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 

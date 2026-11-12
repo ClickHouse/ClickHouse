@@ -150,15 +150,8 @@ public:
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
     std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
 
-    /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
-    bool containsAny(const std::vector<std::string> & block_ids);
-
-    /// Remove all covered parts from in memory table and add DROP records to the disk.
-    /// With `sync_to_disk`, every record written so far is fsynced before returning, even if there was nothing to remove:
-    /// the covered records may have been evicted from the window by newer records, and the eviction is durable only if they are.
-    /// A failure to sync is propagated. After such a failure, every later call with `sync_to_disk` throws,
-    /// because the removal may not be durable.
-    void dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk = false);
+    /// Remove all covered parts from in memory table and add DROP records to the disk
+    void dropPart(const MergeTreePartInfo & drop_part_info);
 
     /// Load history from disk. Ignores broken logs.
     void load();
@@ -199,14 +192,6 @@ private:
 
     bool stopped{false};
 
-    /// A durable removal (`dropPart` with `sync_to_disk`) did not complete: its records are already removed from memory,
-    /// but they may be lost on disk, and syncing the log again does not prove otherwise. Further durable removals fail.
-    bool durable_drop_failed{false};
-
-    /// Some records written by this process may be lost on disk: a log failed to be flushed or synced, and its writer
-    /// was canceled. Durable removals fail then, because they rely on all the records written so far being durable.
-    bool records_may_be_lost{false};
-
     /// Start new log
     void rotate();
 
@@ -215,14 +200,6 @@ private:
 
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
-
-    /// The same after writing records, when a failure must not be reported as a failure of the operation
-    void rotateAndDropIfNeededAfterWrite();
-
-    /// Make sure `current_writer` can accept records, opening or replacing it if it cannot.
-    /// The writer is opened lazily on the first written record: finalizing an appending writer
-    /// that has written nothing leaves a phantom blob in the log file's metadata on object storages.
-    void prepareToWrite();
 
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);

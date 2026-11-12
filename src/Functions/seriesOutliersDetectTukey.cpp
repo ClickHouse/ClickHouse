@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences)
@@ -36,9 +37,24 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Array, [const Float, const Float, const NativeNumber]) -> Array(Float64)";
+        if (arguments.size() != 1 && arguments.size() != 4)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} needs either 1 or 4 arguments; passed {}.",
+                getName(),
+                arguments.size());
+
+        FunctionArgumentDescriptors mandatory_args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
+        FunctionArgumentDescriptors optional_args{
+            {"min_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
+            {"max_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
+            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"}};
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
@@ -193,9 +209,9 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
         "Basic outlier detection",
         "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0",
         R"(
-┌─print_0────────────────────────────┐
-│ [0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└────────────────────────────────────┘
+┌───────────print_0─────────────────┐
+│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└───────────────────────────────────┘
         )"
     },
     {

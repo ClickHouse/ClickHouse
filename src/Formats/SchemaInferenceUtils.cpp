@@ -1723,27 +1723,6 @@ bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time
     return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
 }
 
-bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64)
-{
-    /// Run the invalid-datetime fast check once, then try DateTime and DateTime64 in turn.
-    if (fastCheckForInvalidDateTimeOrDateTime64(field))
-        return false;
-
-    if (!settings.try_infer_datetimes_only_datetime64 && tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone))
-    {
-        is_datetime64 = false;
-        return true;
-    }
-
-    if (tryInferDateTime64(field, date_time64, settings, time_zone, utc_time_zone))
-    {
-        is_datetime64 = true;
-        return true;
-    }
-
-    return false;
-}
-
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings)
 {
     return tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
@@ -1806,12 +1785,8 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
-            /// An alternative of a Variant cannot be Nullable, because the Variant holds the NULLs
-            /// itself. The recursion adjusts the nested types of a compound alternative, but for a Tuple
-            /// it also wraps the tuple itself when `schema_inference_allow_nullable_tuple_type` is set,
-            /// so that wrapper is removed here.
             if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
-                nested_types.push_back(removeNullable(adjustNullableRecursively(nested_type, make_nullable, settings)));
+                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
             else
                 nested_types.push_back(nested_type);
         }

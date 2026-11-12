@@ -16,7 +16,6 @@ struct QueryPlanSerializationSettingsImpl;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, Double) \
-    M(CLASS_NAME, HashJoinLayout) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, OverflowMode) \

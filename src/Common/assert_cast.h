@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/defines.h>
 #include <exception>
 #include <typeinfo>
 

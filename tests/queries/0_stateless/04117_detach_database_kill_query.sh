@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-parallel, no-random-settings
+# Tag no-parallel: creates and detaches a database
 # Tag no-random-settings: relies on predictable per-row execution timing of `sleepEachRow`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

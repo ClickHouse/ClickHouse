@@ -1,16 +1,11 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Interpreters/PasteJoin.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -21,9 +16,8 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <fmt/format.h>
-#include <unordered_set>
 
 namespace DB
 {
@@ -35,19 +29,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// The algorithm to report in `system.query_log.used_join_algorithms`.
-std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
-{
-    if (!use_sharding)
-        return join.getAlgorithm();
-
-    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
-    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
-        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
-
-    return join.getAlgorithm();
-}
 
 std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
 {
@@ -93,13 +74,13 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     return description;
 }
 
-VectorWithMemoryTracking<size_t> getPermutationForBlock(
+std::vector<size_t> getPermutationForBlock(
     const Block & block,
     const Block & lhs_block,
     const Block & rhs_block,
     const NameSet & name_filter)
 {
-    VectorWithMemoryTracking<size_t> permutation;
+    std::vector<size_t> permutation;
     permutation.reserve(block.columns());
     BlockNameMap name_map = getNamesToIndexesMap(block);
 
@@ -135,6 +116,7 @@ JoinStep::JoinStep(
     size_t min_block_size_bytes_,
     size_t max_streams_,
     NameSet required_output_,
+    bool keep_left_read_in_order_,
     bool use_new_analyzer_,
     bool use_join_disjunctions_push_down_)
     : join(std::move(join_))
@@ -143,10 +125,13 @@ JoinStep::JoinStep(
     , min_block_size_bytes(min_block_size_bytes_)
     , max_streams(max_streams_)
     , required_output(std::move(required_output_))
+    , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
     , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
     , disjunctions_optimization_applied(false)
 {
+    if (keep_left_read_in_order)
+        join->keepLeftPipelineInOrder();
     updateInputHeaders({left_header_, right_header_});
 }
 
@@ -167,9 +152,6 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
-
-    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
-
     if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
@@ -190,8 +172,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 min_block_size_bytes,
                 max_streams,
                 this,
-                left_pipeline_order != LeftPipelineOrder::None,
-                seal_gate,
+                keep_left_read_in_order,
                 &processors);
         }
     }
@@ -236,15 +217,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
-        const auto & table_join = join->getTableJoin();
-        const size_t max_rows = table_join.maxJoinedBlockRows();
-        const size_t max_bytes = table_join.maxJoinedBlockBytes();
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            {
-                return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(
-                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes));
-            });
+            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
@@ -262,58 +237,6 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     }
 
     return joined_pipeline;
-}
-
-namespace
-{
-
-std::unordered_set<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
-{
-    std::unordered_set<const IJoin *> joins;
-    for (const auto * processor : step_processors)
-        if (const auto * joining = typeid_cast<const JoiningTransform *>(processor))
-            joins.insert(joining->getJoin().get());
-    return joins;
-}
-
-StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJoin *> & shard_joins)
-{
-    JoinAnalysisCounters counters;
-    MatchedRowsAccumulator matched_left;
-    MatchedRowsAccumulator matched_right;
-    UInt64 unique_keys = 0;
-    UInt64 memory = 0;
-
-    for (const auto * shard_join : shard_joins)
-    {
-        const auto * hash_join = typeid_cast<const HashJoin *>(shard_join);
-        if (!hash_join)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected join type {} in a pipeline sharded by primary key ranges", shard_join->getName());
-
-        const auto * stats = hash_join->getMatchStats();
-        const UInt64 right_rows = hash_join->getRightTableRowCount();
-        counters.left_rows += stats->getInputLeft();
-        counters.right_rows += right_rows;
-        matched_left.add(stats->getMatchedLeft());
-        matched_right.add(stats->getMatchedRight(right_rows));
-
-        unique_keys += hash_join->getTotalRowCount();
-        memory += hash_join->getPeakBuildBytes();
-    }
-
-    counters.matched_left = matched_left.get();
-    counters.matched_right = matched_right.get();
-
-    StepAnalysisReport report = buildMatchedRowsReport(counters);
-
-    MetricList hash_table_metrics;
-    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, unique_keys);
-    hash_table_metrics.emplace_back(MetricKey::Memory, memory);
-    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
-
-    return report;
-}
-
 }
 
 JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
@@ -345,23 +268,10 @@ StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) c
     /// so every join it reaches must have been told to collect statistics
     chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
 
-    /// Case of Y-shaped join
-    if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
-        return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
-
-    if (typeid_cast<const PasteJoin *>(join.get()))
+    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
         return join->getAnalysisReport();
 
-    /// Case for sharded join
-    auto executed_joins = collectExecutedJoins(step_processors);
-    const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join.get());
-    if (executed_by_shard_clones)
-        return buildShardedHashJoinReport(executed_joins);
-
-    chassert(executed_joins.size() == 1);
-
-    /// Case for one join, stored in the JoinStep directly
-    return join->getAnalysisReport();
+    return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -371,30 +281,13 @@ bool JoinStep::allowPushDownToRight() const
 
 void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
 {
-    /// The order requirement must not be ignored silently: a join that cannot honor it would
-    /// produce a misordered stream the plan believes is sorted. The read-in-order-through-join
-    /// optimization checks `canPreserveLeftBlockOrder` before it commits, so reaching this throw
-    /// means a bug in the caller.
-    if (!join->canPreserveLeftBlockOrder())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "The query plan requires the left block order from a join that cannot preserve it ({})",
-            join->getName());
-
-    join->keepLeftPipelineInOrder();
-
     if (disable_squashing)
     {
         min_block_size_rows = 0;
         min_block_size_bytes = 0;
     }
-    left_pipeline_order = LeftPipelineOrder::KeepOrder;
-}
-
-void JoinStep::keepLeftPipelineLayout()
-{
-    if (left_pipeline_order == LeftPipelineOrder::None)
-        left_pipeline_order = LeftPipelineOrder::KeepLayout;
+    keep_left_read_in_order = true;
+    join->keepLeftPipelineInOrder();
 }
 
 std::vector<size_t> JoinStep::getStepGroups() const
@@ -444,8 +337,8 @@ void JoinStep::describeActions(FormatSettings & settings) const
         }
         settings.out << '\n';
 
-        if (!settings.inside_explain_analyze)
-            describeJoinEstimation(estimation, settings.out, prefix);
+        if (result_rows_estimation)
+            settings.out << prefix << "Result rows: " << toString(*result_rows_estimation) << '\n';
 
         if (locality != JoinLocality::Unspecified)
             settings.out << prefix << "Locality: " << toString(locality) << '\n';
@@ -474,8 +367,8 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << "]\n";
     }
 
-    if (settings.pretty && !settings.inside_explain_analyze)
-        QueryPlanFormat::formatJoinInputColumns(settings.out, *this, prefix);
+    if (settings.pretty)
+        QueryPlanFormat::formatJoinOutputColumns(settings.out, *this, prefix);
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -503,29 +396,19 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 {
-    if (left_pipeline_order == LeftPipelineOrder::KeepOrder)
-    {
-        if (!join_->canPreserveLeftBlockOrder())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "The query plan requires the left block order from a join that cannot preserve it ({})",
-                join_->getName());
-
-        join_->keepLeftPipelineInOrder();
-    }
-
     join_algorithm_header.reset();
     swap_streams = swap_streams_;
     join = std::move(join_);
+    if (keep_left_read_in_order)
+        join->keepLeftPipelineInOrder();
     updateOutputHeader();
 }
 
 void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
 {
     join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
-    estimation = logical_join_info.estimation;
+    result_rows_estimation = logical_join_info.result_rows_estimation;
     locality = logical_join_info.locality;
-    cluster_id = logical_join_info.cluster_id;
 }
 
 void JoinStep::updateOutputHeader()
@@ -581,8 +464,6 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    QueryExecutionCounters::addExecutedJoin(*join);
-
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())
     {
@@ -591,13 +472,12 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
-    auto match_counter = std::make_shared<RightRowsMatchCounter>();
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, output_header, join, max_block_size, on_totals, default_totals, counter, match_counter);
+        return std::make_shared<JoiningTransform>(header, output_header, join, max_block_size, on_totals, default_totals, counter);
     });
 }
 
