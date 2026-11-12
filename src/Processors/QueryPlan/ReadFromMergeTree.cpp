@@ -158,6 +158,9 @@ NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 /// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
+    /// an alias may be named like a key column while computing something else, e.g. `Time AS Path` in a subquery
+    if (node->type == ActionsDAG::ActionType::ALIAS)
+        return isNodeOverSortingKey(node->children.front(), sorting_key_set);
     if (sorting_key_set.contains(node->result_name))
         return true;
     if (node->type == ActionsDAG::ActionType::COLUMN)
