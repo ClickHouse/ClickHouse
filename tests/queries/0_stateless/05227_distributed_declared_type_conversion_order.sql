@@ -31,6 +31,9 @@ DROP TABLE IF EXISTS t_enum;
 DROP TABLE IF EXISTS dist_enum_u8;
 DROP TABLE IF EXISTS t_enum_neg;
 DROP TABLE IF EXISTS dist_enum_neg_u16;
+DROP TABLE IF EXISTS t_u8;
+DROP TABLE IF EXISTS dist_u8_nullable_bool;
+DROP TABLE IF EXISTS dist_u8_array_bool;
 
 CREATE TABLE t_str (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_str SELECT toString(number % 21) FROM numbers(100);
@@ -187,7 +190,18 @@ SELECT DISTINCT v FROM dist_enum_neg_u16 ORDER BY v DESC; -- { serverError INCOM
 -- maps every non-zero value to `true`, collapsing distinct enum values.
 CREATE TABLE dist_enum_bool (v Bool) ENGINE = Distributed('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), t_enum);
 SELECT DISTINCT v FROM dist_enum_bool ORDER BY v; -- { serverError INCOMPATIBLE_COLUMNS }
+-- `Bool` equals `UInt8` by `IDataType::equals`, so once `Nullable` or `Array` is unwrapped the
+-- pair looked like no conversion at all, while the cast still collapses distinct values.
+CREATE TABLE t_u8 (v UInt8, a Array(UInt8)) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_u8 VALUES (1, [1]), (2, [2]);
+CREATE TABLE dist_u8_nullable_bool (v Nullable(Bool)) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_u8);
+SELECT DISTINCT v FROM dist_u8_nullable_bool SETTINGS distributed_group_by_no_merge = 1; -- { serverError INCOMPATIBLE_COLUMNS }
+CREATE TABLE dist_u8_array_bool (a Array(Nullable(Bool))) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_u8);
+SELECT DISTINCT a FROM dist_u8_array_bool SETTINGS distributed_group_by_no_merge = 1; -- { serverError INCOMPATIBLE_COLUMNS }
 
+DROP TABLE dist_u8_array_bool;
+DROP TABLE dist_u8_nullable_bool;
+DROP TABLE t_u8;
 DROP TABLE dist_enum_bool;
 DROP TABLE dist_enum_neg_u16;
 DROP TABLE t_enum_neg;

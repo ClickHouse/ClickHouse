@@ -283,7 +283,9 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
 {
-    if (from.equals(to))
+    /// `Bool` is a `UInt8` with a custom name, so `equals` does not tell them apart, but casting to
+    /// `Bool` maps every non-zero value to `true`.
+    if (from.equals(to) && (to.getName() != "Bool" || from.getName() == "Bool"))
         return true;
 
     const WhichDataType which_from(from);
