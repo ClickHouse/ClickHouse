@@ -42,6 +42,9 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Poco/String.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -305,9 +308,7 @@ struct SampledValueEvidence
     VectorWithMemoryTracking<SampledValueStep> path;
 };
 
-}
-
-String getInsertDataSchemaMismatchDescription(
+String getInsertDataSchemaMismatchDescriptionImpl(
     std::string_view data,
     const String & format_name,
     const Block & expected_header,
@@ -1952,6 +1953,51 @@ String getInsertDataSchemaMismatchDescription(
         "Inferred structure of the input data (in format `{}`):\n{}"
         "Expected structure:\n{}",
         format_name, format_structure(inferred), format_structure(expected));
+}
+
+}
+
+String getInsertDataSchemaMismatchDescription(
+    std::string_view data,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context,
+    std::optional<size_t> rows_reached_by_parser,
+    bool data_is_truncated)
+{
+    if (data.empty())
+        return {};
+
+    /// The diagnostic decodes the sample again (the probe and inference reads of the schema reader and
+    /// the replay of the sample), and some readers decode more of it than the failed insert did. For
+    /// example, `NativeSchemaReader` decodes every column of the first block, so a column the insert
+    /// never reached may declare a huge string size in a few bytes of input, and the column is resized
+    /// to the declared size before the missing payload is detected. The checks on the captured bytes do
+    /// not bound such allocations, so run the whole diagnostic under a memory tracker with a hard limit
+    /// proportional to the sample: the tracker rejects an allocation over the limit before it is made,
+    /// and the explanation is then omitted.
+    std::unique_ptr<MemoryTracker> diagnostic_memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
+    if (diagnostic_memory_tracker)
+    {
+        diagnostic_memory_tracker->setDriftExpected();
+        diagnostic_memory_tracker->setHardLimit(static_cast<Int64>(std::max<size_t>(data.size() * 16, 64_MiB)));
+        diagnostic_memory_tracker->setDescription("(for insert schema mismatch diagnostic)");
+    }
+
+    try
+    {
+        std::optional<MemoryTrackerSwitcher> switcher;
+        if (diagnostic_memory_tracker)
+            switcher.emplace(diagnostic_memory_tracker.get());
+
+        return getInsertDataSchemaMismatchDescriptionImpl(data, format_name, expected_header, context, rows_reached_by_parser, data_is_truncated);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// This is a best-effort diagnostic attached to another exception: an error here, such as
+        /// exceeding the memory limit above, must not replace the original error, so it is Ok to ignore it.
+        return {};
+    }
 }
 
 namespace
