@@ -31,5 +31,26 @@ function race()
         SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tgt';"
 }
 
+# A concurrent ALTER of the target that drops values must not turn `ADD ENUM VALUES` through an Alias into a mutation.
+function race_replace()
+{
+    $CLICKHOUSE_CLIENT -q "
+        DROP TABLE IF EXISTS al2; DROP TABLE IF EXISTS al; DROP TABLE IF EXISTS tgt;
+        CREATE TABLE tgt (x UInt64, e Enum16('v0' = 0)) ENGINE = MergeTree ORDER BY x;
+        CREATE TABLE al ENGINE = Alias('tgt');"
+    local through_alias="" direct=""
+    for i in {1..20}; do
+        through_alias+="ALTER TABLE al MODIFY COLUMN e ADD ENUM VALUES ('a$i' = $((1000 + i)));"
+        direct+="ALTER TABLE tgt MODIFY COLUMN e Enum16('v0' = 0, 'd$i' = $i);"
+    done
+    $CLICKHOUSE_CLIENT --enable_shared_storage_snapshot_in_query 1 -q "$through_alias" &
+    $CLICKHOUSE_CLIENT -q "$direct" &
+    wait
+    $CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM system.mutations
+        WHERE database = currentDatabase() AND table = 'tgt' AND command LIKE '%ADD ENUM VALUES%';"
+}
+
 race al
 race al2
+race_replace
