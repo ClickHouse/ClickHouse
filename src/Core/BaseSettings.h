@@ -5,6 +5,7 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
+#include <IO/VarInt.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -325,7 +326,9 @@ public:
     /// Read settings from a buffer
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
 
-    /// Write only changed settings in binary format
+    /// Write only changed settings in binary format.
+    /// Used for serialization of object storage settings (`S3Settings`, `DataLakeStorageSettings`),
+    /// including by code outside of this repository, so do not remove it as unused.
     void writeChangedBinary(WriteBuffer & out) const;
 
     /// Read settings in binary format

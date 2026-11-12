@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="query_condition_cache_policy">
-  ## query_condition_cache_policy
-</div>
+## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de la caché de condiciones de consulta.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché de condiciones de consulta. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="query_condition_cache_size">
-  ## query_condition_cache_size
-</div>
+## query_condition_cache_size {#query_condition_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ Tamaño máximo de la caché de condiciones de consulta.
   Este ajuste puede modificarse en tiempo de ejecución y surtirá efecto de inmediato.
 </Note>
 
-<div id="query_condition_cache_size_ratio">
-  ## query_condition_cache_size_ratio
-</div>
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />El tamaño de la cola protegida (en el caso de la política SLRU) de la caché de condiciones de consulta, en relación con el tamaño total de la caché.
 

@@ -60,7 +60,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 namespace
 {
 
-void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
+void traverseComplexType(Poco::JSON::Object::Ptr type, ColumnNameToFieldId & result, const String & current_path)
 {
     auto type_str = type->getValue<String>(Iceberg::f_type);
     if (type_str == "map")
@@ -844,7 +844,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser, const String & timezone_for_timestamptz)
 {
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
@@ -868,11 +868,11 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
-        return std::make_shared<DataTypeDateTime64>(6, "UTC");
+        return std::make_shared<DataTypeDateTime64>(6, timezone_for_timestamptz);
     if (type_name == f_timestamp_ns)
         return std::make_shared<DataTypeDateTime64>(9);
     if (type_name == f_timestamptz_ns)
-        return std::make_shared<DataTypeDateTime64>(9, "UTC");
+        return std::make_shared<DataTypeDateTime64>(9, timezone_for_timestamptz);
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
     if (type_name == f_variant)
@@ -983,7 +983,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name, allow_geo_parser, timezone_for_timestamptz);
         if (required && data_type->onlyNull())
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -1177,7 +1177,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            if (!type->isNullable() && !field->isObject(f_type))
+            if (required && !field->isObject(f_type))
             {
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -1299,9 +1299,9 @@ bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
     return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
 }
 
-std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
+ColumnNameToFieldId IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
 {
-    std::unordered_map<String, Int64> result;
+    ColumnNameToFieldId result;
     for (UInt32 i = 0; i < schema->size(); ++i)
     {
         auto current_object = schema->getObject(i);
@@ -1371,22 +1371,12 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
     return result;
 }
 
-void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
-{
-    Int64 current = last_column_id.load();
-    while (last_column_id_ > current && !last_column_id.compare_exchange_weak(current, last_column_id_))
-        ;
-}
-
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
     if (!schema)
         return nullptr;
-    auto column_mapper = createColumnMapper(schema);
-    if (Int64 known_last_column_id = last_column_id.load(); known_last_column_id >= 0)
-        column_mapper->setLastAssignedFieldId(known_last_column_id);
-    return column_mapper;
+    return createColumnMapper(schema);
 }
 
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
