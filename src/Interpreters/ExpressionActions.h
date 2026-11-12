@@ -376,8 +376,11 @@ private:
 
     /// The bookkeeping is mutable: leasing an instance does not change the expression itself, and the
     /// pool is reachable only through const references on the execution paths.
+    /// `free_instances` always has capacity for every instance created by the pool, so returning an
+    /// instance never allocates: `Lease` returns it from a `noexcept` destructor.
     mutable std::mutex mutex;
     mutable std::vector<ExpressionActionsPtr> free_instances;
+    mutable size_t num_instances = 0;
 };
 
 using ExpressionActionsPoolPtr = std::shared_ptr<ExpressionActionsPool>;

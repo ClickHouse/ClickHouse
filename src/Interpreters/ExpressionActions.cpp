@@ -1416,12 +1416,23 @@ ExpressionActionsPool::Lease ExpressionActionsPool::acquire() const
     }
 
     /// All the instances are busy: this execution runs concurrently with them, so it needs its own one.
-    return Lease(this, prototype->clone());
+    auto instance = prototype->clone();
+
+    {
+        std::lock_guard lock(mutex);
+        /// Reserve the slot the instance will be returned to while an exception can still propagate,
+        /// so that `release` never allocates.
+        free_instances.reserve(num_instances + 1);
+        ++num_instances;
+    }
+
+    return Lease(this, std::move(instance));
 }
 
 void ExpressionActionsPool::release(ExpressionActionsPtr instance) const
 {
     std::lock_guard lock(mutex);
+    chassert(free_instances.size() < free_instances.capacity());
     free_instances.push_back(std::move(instance));
 }
 
