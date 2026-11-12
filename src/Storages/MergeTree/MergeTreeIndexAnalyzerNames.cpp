@@ -171,6 +171,18 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     auto dummy_metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     StorageInMemoryMetadata metadata = *dummy_metadata;
     register_key(metadata);
+    /// In a filter, a plain use of a column elsewhere in the query does not stop the rewrites of
+    /// `transformers_optimize_in_filter_with_full_column` (e.g. `m['k']` to `m.key_k`). But
+    /// `FunctionToSubcolumnsPass` does not rewrite any function of a key column that has a use not
+    /// safe with indexes. So make the columns that the query does not rewrite key columns (the
+    /// partition key of the dummy table is not used otherwise), and add such a use of them below.
+    if (in_filter && !columns_without_subcolumns.empty())
+    {
+        auto key_ast = makeASTFunction("tuple");
+        for (const auto & column : columns_without_subcolumns)
+            key_ast->arguments->children.push_back(make_intrusive<ASTIdentifier>(column));
+        metadata.partition_key = KeyDescription::getKeyFromAST(key_ast, metadata.getColumns(), VirtualColumnsDescription{}, context);
+    }
     storage->setInMemoryMetadata(metadata);
 
     auto table_expression = std::make_shared<TableNode>(storage, context);
@@ -182,14 +194,24 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     /// the query uses the whole column elsewhere. Add such a use of every column the query does not
     /// rewrite; these extra outputs are removed from the result.
     /// In a filter, the key expressions are the arguments of `ignore`, which is not constant folded
-    /// and accepts any number of arguments of any types.
+    /// and accepts any number of arguments of any types. The columns that the query does not rewrite
+    /// are key columns there (see above), and their use in the projection is not safe with indexes:
+    /// every function of a key column but `arrayElement` of a `Map` is not (see
+    /// `transformers_safe_with_indexes`), so `mapKeys` is used for a `Map`, and the plain column for
+    /// the other types, whose functions in the key are not safe with indexes by themselves.
     ASTPtr projection_ast;
     if (in_filter)
     {
-        if (!columns_without_subcolumns.empty())
-            return std::nullopt;
         projection_ast = make_intrusive<ASTExpressionList>();
         projection_ast->children.push_back(make_intrusive<ASTLiteral>(UInt64(1)));
+        for (const auto & column : columns_without_subcolumns)
+        {
+            auto source_column = source_columns.tryGetByName(column);
+            if (source_column && isMap(source_column->type))
+                projection_ast->children.push_back(makeASTFunction("mapKeys", make_intrusive<ASTIdentifier>(column)));
+            else
+                projection_ast->children.push_back(make_intrusive<ASTIdentifier>(column));
+        }
         auto filter_ast = makeASTFunction("ignore");
         filter_ast->arguments->children = expression_list_ast->clone()->children;
         query_node->getWhere() = buildQueryTree(filter_ast, context);
@@ -249,9 +271,11 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     correlated_subtrees.assertEmpty("in an index or key expression");
 
     auto & outputs = dag.getOutputs();
-    if (outputs.size() != expression_list_ast->children.size() + columns_without_subcolumns.size())
+    /// In a filter, the extra uses are in the projection, not among the key expressions.
+    const size_t extra_outputs = in_filter ? 0 : columns_without_subcolumns.size();
+    if (outputs.size() != expression_list_ast->children.size() + extra_outputs)
         return std::nullopt;
-    if (!columns_without_subcolumns.empty())
+    if (extra_outputs)
     {
         outputs.resize(expression_list_ast->children.size());
         dag.removeUnusedActions(/*allow_remove_inputs=*/ true, /*allow_constant_folding=*/ false);
@@ -795,53 +819,56 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     if (predicate && context->getSettingsRef()[Setting::optimize_functions_to_subcolumns])
         predicate_names = getPredicateNames(predicate);
 
+    /// Compute the alternative form in the given context of the key expressions in the dummy query,
+    /// suppressing the subcolumn rewrites of the source columns that the query does not apply one by
+    /// one. Returns nullptr if there is no such form.
+    auto compute_in_context = [&](bool in_filter) -> AlternativeKeyExpressionPtr
+    {
+        NameSet columns_without_subcolumns;
+        auto alternative_key = getAlternativeExpressionImpl(
+            expression_list_ast, expression, column_names, {}, in_filter, register_key, key_kind, description_for_log, context);
+
+        /// Every iteration adds at least one source column, so this terminates.
+        while (alternative_key)
+        {
+            auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(
+                *alternative_key, expression, table_columns, predicate_names ? &*predicate_names : nullptr, context);
+            if (!excluded)
+                return nullptr;
+            if (excluded->empty())
+                break;
+
+            size_t previous_size = columns_without_subcolumns.size();
+            columns_without_subcolumns.insert(excluded->begin(), excluded->end());
+            /// The rewrite of a column that is already excluded cannot be suppressed further.
+            if (columns_without_subcolumns.size() == previous_size)
+                return nullptr;
+
+            Names sorted_columns(columns_without_subcolumns.begin(), columns_without_subcolumns.end());
+            std::sort(sorted_columns.begin(), sorted_columns.end());
+            alternative_key = getAlternativeExpressionImpl(
+                expression_list_ast, expression, column_names, sorted_columns, in_filter, register_key, key_kind,
+                description_for_log, context);
+        }
+
+        if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
+            return nullptr;
+        return alternative_key;
+    };
+
     /// First, the key expressions as a part of a filter, as the filter of the query is: this form has
-    /// the rewrites that are applied only in a filter. It is used if the filter has every subcolumn
-    /// rewrite of this form, see `getSourceColumnsOfSubcolumnsNotInQuery`.
+    /// the rewrites that are applied only in a filter (e.g. `m['k']` to `m.key_k` while `toString(m)`
+    /// keeps the whole column), together with the suppression of the rewrites of other columns
+    /// (e.g. of `n` used by `mapKeys(n)` in the projection of the query).
     if (predicate_names)
     {
-        auto filter_key = getAlternativeExpressionImpl(
-            expression_list_ast, expression, column_names, {}, /*in_filter=*/ true, register_key, key_kind, description_for_log, context);
-        if (filter_key)
-        {
-            auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(*filter_key, expression, table_columns, &*predicate_names, context);
-            if (excluded && excluded->empty() && !collidesWithOtherTableColumn(*filter_key, expression, table_columns))
-                return filter_key;
-        }
+        if (auto filter_key = compute_in_context(/*in_filter=*/ true))
+            return filter_key;
     }
 
-    /// Otherwise, the key expressions as the projection of a query, where the subcolumn rewrites of
-    /// the source columns that the query does not apply can be suppressed one by one.
-    NameSet columns_without_subcolumns;
-    auto alternative_key = getAlternativeExpressionImpl(
-        expression_list_ast, expression, column_names, {}, /*in_filter=*/ false, register_key, key_kind, description_for_log, context);
-
-    /// Every iteration adds at least one source column, so this terminates.
-    while (alternative_key)
-    {
-        auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(
-            *alternative_key, expression, table_columns, predicate_names ? &*predicate_names : nullptr, context);
-        if (!excluded)
-            return nullptr;
-        if (excluded->empty())
-            break;
-
-        size_t previous_size = columns_without_subcolumns.size();
-        columns_without_subcolumns.insert(excluded->begin(), excluded->end());
-        /// The rewrite of a column that is already excluded cannot be suppressed further.
-        if (columns_without_subcolumns.size() == previous_size)
-            return nullptr;
-
-        Names sorted_columns(columns_without_subcolumns.begin(), columns_without_subcolumns.end());
-        std::sort(sorted_columns.begin(), sorted_columns.end());
-        alternative_key = getAlternativeExpressionImpl(
-            expression_list_ast, expression, column_names, sorted_columns, /*in_filter=*/ false, register_key, key_kind,
-            description_for_log, context);
-    }
-
-    if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
-        return nullptr;
-    return alternative_key;
+    /// Otherwise, the key expressions as the projection of a query (e.g. the filter does not read the
+    /// subcolumns because the query reads the table with `FINAL`, or there is no filter to compare with).
+    return compute_in_context(/*in_filter=*/ false);
 }
 
 }
