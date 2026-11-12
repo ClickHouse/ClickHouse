@@ -19,7 +19,9 @@ endif()
 #
 # The crates define hundreds of thousands of global Rust symbols (268K for Vortex alone, 19 MiB of names; the parser
 # combinator of PRQL produces enormous ones). None of them is callable from C++: the entry points are C functions and
-# the C++ code of `cxx`, so the script localizes and drops the Rust symbols and keeps everything else.
+# the C++ code of `cxx`, so the script localizes and drops the Rust symbols and keeps everything else, except the C
+# libraries that `-sys` crates bundle (zstd, LZ4, ...) and `compiler_builtins`: in the one object of the partial link,
+# they would be duplicates of the copies ClickHouse links.
 #
 # Note: `clickhouse-stripped` drops the debug info but keeps `.symtab` and `.strtab`.
 #
@@ -37,7 +39,7 @@ if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DAR
         clickhouse_postprocess_rust_lib(_ch_rust_workspace
             STEP strip_rust_symbols
             SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-            ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
+            ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" "${NM_PATH}"
             COMMENT "Stripping internal symbols from the Rust library"
         )
     endif ()
