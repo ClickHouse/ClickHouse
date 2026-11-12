@@ -22,11 +22,9 @@ Pub/Sub ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
   ## 前置条件
 </div>
 
-你应已熟悉 [ClickPipes 简介](/zh/integrations/clickpipes/home)，并可访问包含要摄取的 topic 的 GCP 项目，同时已创建具备相应 Pub/Sub 权限的服务账号。有关 ClickPipes 所需的具体权限，请参阅 [Pub/Sub IAM 权限指南](/zh/integrations/clickpipes/pubsub/auth)。
+你应已熟悉 [ClickPipes 简介](/zh/integrations/clickpipes/home)，并可访问包含要摄取的 topic 的 GCP 项目，同时能够为 ClickPipes 所使用的服务账号授予相应的 Pub/Sub 权限。有关身份验证选项以及所需的具体权限，请参阅 [Pub/Sub IAM 权限指南](/zh/integrations/clickpipes/pubsub/auth)。
 
-<div id="creating-your-first-clickpipe">
-  ## 创建你的第一个 ClickPipe
-</div>
+## 创建你的第一个 ClickPipe {#creating-your-first-clickpipe}
 
 1. 进入你的 ClickHouse Cloud 服务的 SQL 控制台。
 
@@ -70,7 +68,7 @@ Pub/Sub ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 **权限：** ClickPipes 会创建一个专用用户，用于向目标表写入数据。你可以为该内部用户选择角色，既可以使用自定义角色，也可以使用预定义角色之一：
 
 * `Full access`：拥有对集群的完全访问权限。如果你在目标表中使用了 materialized view 或 字典，这可能会很有用。
-  * `Only destination table`：仅拥有对目标表的 `INSERT` 权限。
+* `Only destination table`：仅拥有对目标表的 `INSERT` 权限。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="权限" border />
 
@@ -249,10 +247,10 @@ ClickPipes 采用跨可用区分布的架构来提供高可用性；为此，至
 
 ClickPipes for Pub/Sub 提供**至少一次**投递保障。只有在对应的行已插入 ClickHouse (或格式错误的记录已写入错误表) 之后，Pub/Sub 消息才会被确认；所有消息在处理后都会被确认——包括被路由到错误表的错误记录——以防止无限次重复投递。如果某个副本在插入完成后、但在 ack 到达 Pub/Sub 之前崩溃，该消息会在 ack deadline 到期后再次投递并被再次插入，因此下游消费者必须能够容忍重复数据。如果你需要精确一次语义，请在下游使用 `_message_id` 虚拟列进行去重 (每个 Pub/Sub 消息 ID 在一个 topic 内都是唯一的) 。
 
-<div id="authentication">
-  ## 身份验证
-</div>
+## 身份验证 {#authentication}
 
-ClickPipes for Pub/Sub 使用服务账号 JSON 密钥向 GCP 进行身份验证。创建管道时，您需要上传该密钥文件；ClickPipes 会在静态存储时对其加密，并在运行时使用它来消费消息并管理托管订阅的生命周期。
+ClickPipes UI 使用服务账号 JSON 密钥。创建管道时，您需要上传该密钥文件；ClickPipes 会在静态存储时对其加密，并在运行时使用它来消费消息并管理托管订阅的生命周期。
+
+GCP Workload Identity 目前也已提供 Beta 版。有关设置说明，请参阅 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)。
 
 有关所需 IAM 权限的完整列表以及推荐的自定义角色定义，请参阅 [Pub/Sub IAM 权限指南](/zh/integrations/clickpipes/pubsub/auth)。

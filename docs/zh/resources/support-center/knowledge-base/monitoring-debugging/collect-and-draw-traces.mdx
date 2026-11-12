@@ -27,32 +27,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
-        <!--
-            The default table creation code is insufficient, this <engine> spec
-            is a workaround. There is no 'event_time' for this log, but two times,
-            start and finish. It is sorted by finish time, to avoid inserting
-            data too far away in the past (probably we can sometimes insert a span
-            that is seconds earlier than the last span in the table, due to a race
-            between several spans inserted in parallel). This gives the spans a
-            global order that we can use to e.g. retry insertion into some external
-            system.
-        -->
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
-        <database>system</database>
-        <table>opentelemetry_span_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <order_by>event_date, finish_time_us</order_by> -->
+        <!-- <database>system</database> -->
+        <!-- <table>opentelemetry_span_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </opentelemetry_span_log>
     ```
 
-    请确保该项未被注释掉，否则在接下来的步骤中，你将无法看到 `system.opentelemetry_span_log`。
+    请确保 `<opentelemetry_span_log>` 元素本身未被注释掉，否则在接下来的步骤中，你将无法看到 `system.opentelemetry_span_log`。其中的各项设置之所以被注释掉，是因为它们与默认值相同。
     如果你的 ClickHouse server 没有使用默认配置文件，也可能会出现这种情况。
 
     检查你的服务器日志中是否有类似以下内容：
