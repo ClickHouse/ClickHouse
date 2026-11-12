@@ -7,6 +7,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -24,6 +26,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -118,6 +121,56 @@ static bool isUnlimitedQuery(const IAST * ast)
     }
 
     return false;
+}
+
+bool isMetadataQuery(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Move: /// MOVE of access entities
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::System:
+            return true;
+        case IAST::QueryKind::Create: /// Also ATTACH
+        {
+            /// A `SELECT` (also of a view) is analyzed and a table function is read to infer the structure.
+            const auto * create = ast.as<ASTCreateQuery>();
+            return !create || (!create->select && !create->as_table_function);
+        }
+        case IAST::QueryKind::Alter:
+        {
+            const auto * alter = ast.as<ASTAlterQuery>();
+            if (!alter || !alter->command_list)
+                return true;
+            for (const auto & child : alter->command_list->children)
+            {
+                const auto * command = child->as<ASTAlterCommand>();
+                if (!command)
+                    continue;
+                switch (command->type)
+                {
+                    /// Copy parts in the query.
+                    case ASTAlterCommand::MOVE_PARTITION:
+                    case ASTAlterCommand::REPLACE_PARTITION: /// Also ATTACH PARTITION ... FROM
+                    case ASTAlterCommand::FETCH_PARTITION:
+                    case ASTAlterCommand::ATTACH_PARTITION:
+                    case ASTAlterCommand::FREEZE_PARTITION:
+                    case ASTAlterCommand::FREEZE_ALL:
+                    case ASTAlterCommand::EXECUTE_COMMAND:
+                        return false;
+                    default:
+                        break;
+                }
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 
 ProcessList::EntryPtr ProcessList::insert(
@@ -566,7 +619,8 @@ QueryStatus::QueryStatus(
     , query_slot(std::move(query_slot_))
     , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
-    , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
+    , total_watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
+    , execution_watch(CLOCK_MONOTONIC)
     , priority_handle(std::move(priority_handle_))
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
@@ -733,7 +787,7 @@ bool QueryStatus::checkTimeLimit()
 
 bool QueryStatus::checkTimeLimit(OverflowMode mode)
 {
-    auto elapsed_ns = watch.elapsed();
+    auto elapsed_ns = execution_watch.elapsed();
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
     return limits.checkTimeLimit(elapsed_ns, mode);
@@ -766,7 +820,7 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+    return limits.checkTimeLimit(execution_watch.elapsedNanoseconds(), OverflowMode::BREAK);
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
@@ -969,18 +1023,11 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 
 void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
 {
-    std::vector<QueryStatusPtr> cancelled_processes;
-
-    SCOPE_EXIT({
-        LockAndBlocker lock(mutex);
-        for (auto & cancelled_process : cancelled_processes)
-            cancelled_process->is_cancelling = false;
-        cancelled_cv.notify_all();
-    });
+    std::vector<QueryStatusPtr> processes_to_cancel;
 
     {
         LockAndBlocker lock(mutex);
-        cancelled_processes.reserve(processes.size());
+        processes_to_cancel.reserve(processes.size());
         for (auto & process : processes)
         {
             if (except_ddl_backups_and_restores
@@ -988,14 +1035,34 @@ void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
                 && process->is_ddl_or_on_cluster_internal)
                 continue;
 
-            cancelled_processes.push_back(process);
-            process->is_cancelling = true;
+            processes_to_cancel.push_back(process);
         }
     }
 
-    for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    /// Mark, cancel and unmark the queries one at a time, as `killQuery` does, instead of marking all of them first.
+    /// Cancelling a query can wait for other queries of the list to finish: e.g. a distributed query plan joins
+    /// the threads of its local tasks, each of which has its own process list entry. The destructor of an entry
+    /// waits while the entry is marked, so with all of them marked the cancellation never finished.
+    for (auto & process : processes_to_cancel)
+    {
+        {
+            LockAndBlocker lock(mutex);
+            /// The query could have finished since the list was taken, and then there is nothing to cancel.
+            if (std::find(processes.begin(), processes.end(), process) == processes.end())
+                continue;
+            process->is_cancelling = true;
+        }
 
+        SCOPE_EXIT({
+            DENY_ALLOCATIONS_IN_SCOPE;
+
+            Lock lock(mutex);
+            process->is_cancelling = false;
+            cancelled_cv.notify_all();
+        });
+
+        process->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    }
 }
 
 bool QueryStatus::updateProgressIn(const Progress & value)
@@ -1096,7 +1163,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.normalized_query_hash = normalized_query_hash;
     res.query_kind        = query_kind;
     res.client_info       = client_info;
-    res.elapsed_microseconds = watch.elapsedMicroseconds();
+    res.elapsed_microseconds = total_watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.is_internal       = is_internal;

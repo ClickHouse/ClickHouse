@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationLowCardinality.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

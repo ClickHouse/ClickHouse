@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -8,6 +9,7 @@ import grpc
 import pytest
 
 from helpers.cluster import SANITIZER_SIGN, ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -39,6 +41,27 @@ with open(f"/proc/{tid}/status") as f:
 syscall_tgkill = {"x86_64": 234, "aarch64": 131}[platform.machine()]
 if ctypes.CDLL(None, use_errno=True).syscall(syscall_tgkill, tgid, tid, signal.SIGTSTP) != 0:
     sys.exit(f"tgkill failed: errno {ctypes.get_errno()}")
+"""
+
+# Takes the first result and no more. Its gRPC library keeps reading the socket, so the call stalls on HTTP/2 flow
+# control, not on TCP, where gRPC aborts the connection after `TCP_USER_TIMEOUT` (20 s). `results` stays referenced:
+# gRPC cancels the call of a collected response iterator.
+STALLED_CLIENT = """
+import sys, time
+import grpc
+sys.path.append(sys.argv[1])
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc
+channel = grpc.insecure_channel(sys.argv[2])
+grpc.channel_ready_future(channel).result(timeout=30)
+stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+query_info = clickhouse_grpc_pb2.QueryInfo(
+    query="SELECT number, repeat('x', 1000) FROM numbers(1000000000) SETTINGS max_block_size = 1000",
+    query_id=sys.argv[3],
+    output_format="TabSeparated",
+)
+results = stub.ExecuteQueryWithStreamOutput(query_info)
+next(results)
+time.sleep(3600)
 """
 
 
@@ -195,3 +218,76 @@ def test_fatal_error_during_insert():
     check_fatal_error(query_id, client_thread, results, errors)
 
     node.query("DROP TABLE fatal_insert")
+
+
+def test_fatal_error_when_client_does_not_read():
+    query_id = f"grpc_fatal_error_stalled_client_{uuid.uuid4().hex}"
+    client = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            STALLED_CLIENT,
+            pb2_dir,
+            f"{cluster.get_instance_ip('node')}:{GRPC_PORT}",
+            query_id,
+        ]
+    )
+    try:
+        # The query stops reading rows once the call thread waits for a write that the client does not read.
+        rows = ""
+        for _ in range(120):
+            previous_rows = rows
+            rows = node.query(
+                f"SELECT read_rows FROM system.processes WHERE query_id = '{query_id}'"
+            ).strip()
+            if rows and rows == previous_rows:
+                break
+            time.sleep(1)
+        assert rows and rows == previous_rows, "the query does not stall"
+
+        tid = node.query(
+            f"SELECT thread_id FROM system.stack_trace WHERE query_id = '{query_id}' "
+            "AND thread_name = 'gRPCServerCall'"
+        ).strip()
+        assert tid
+        assert client.poll() is None, "the client exited"
+        node.exec_in_container(["python3", "-c", TGKILL, tid], user="root")
+
+        # The signal listener has taken SIGTSTP, so it can get SIGHUP only after the fatal error callback returns.
+        node.wait_for_log_line(rf"\(query_id: {query_id}\)", timeout=120)
+
+        # SIGHUP reopens the log, and `rotateOnOpen` replaces the file.
+        def log_file_inode():
+            return node.exec_in_container(
+                [
+                    "stat",
+                    "-c",
+                    "%i",
+                    "/var/log/clickhouse-server/clickhouse-server.log",
+                ],
+                nothrow=True,
+            )
+
+        inode = log_file_inode()
+        node.rotate_logs()
+        wait_condition(
+            log_file_inode,
+            lambda new_inode: new_inode != inode,
+            max_attempts=240,
+            delay=0.5,
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+            "0",
+            retry_count=240,
+            sleep_time=0.5,
+        )
+        assert node.query("SELECT 1") == "1\n"
+        assert not node.contains_in_log(
+            SANITIZER_SIGN, from_host=True, filename="stderr.log"
+        )
+    finally:
+        client.kill()
+        client.wait()

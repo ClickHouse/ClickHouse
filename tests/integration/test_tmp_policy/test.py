@@ -77,6 +77,42 @@ def test_multiple_local_disk_distinct():
     )
 
 
+def test_multiple_local_disk_full_disk():
+    # With `disk1` nearly full, every spill of the external sort reserves its bytes on `disk2`. The threshold
+    # of the external sort is split among the 16 sorting threads: 32 KiB each, less than a block, so every
+    # thread spills every block it sorts. The threads reserve at the same time, and a reservation must try
+    # every disk of the volume even when the other threads reserve between its attempts.
+    filler = "/test_tmp_policy_disk1/filler"
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"fallocate -l $(( $(df --output=avail -B1 /test_tmp_policy_disk1 | tail -1) - 8192 )) {filler}",
+        ]
+    )
+    try:
+        query_id = str(uuid.uuid4())
+        settings = {
+            "max_threads": 16,
+            "max_threads_min_free_memory_per_thread": 0,
+            "max_block_size": 8192,
+            "max_bytes_ratio_before_external_sort": 0,
+            "max_bytes_before_external_sort": 1 << 19,
+        }
+        node_local.query(
+            "SELECT number FROM numbers_mt(2000000) ORDER BY number DESC FORMAT Null",
+            settings=settings,
+            query_id=query_id,
+        )
+        node_local.query("SYSTEM FLUSH LOGS query_log")
+        assert node_local.query(
+            "SELECT ProfileEvents['ExternalSortWritePart'] > 100 "
+            f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ) == "1\n"
+    finally:
+        node_local.exec_in_container(["rm", "-f", filler])
+
+
 def test_remote_disk():
     query = "SELECT count(ignore(*)) FROM (SELECT * FROM system.numbers LIMIT 1e7) GROUP BY number"
     settings = {
