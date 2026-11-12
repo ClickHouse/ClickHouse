@@ -133,8 +133,6 @@ Any other HyperDX environment variable can be read from a secret the same way.
 
 The ClickHouse and MongoDB passwords must stay in `hyperdx.secrets` while the bundled components are enabled. The chart uses them to set up the bundled ClickHouse and MongoDB users, and the OTel collector reads them from the chart's secret.
 
-If ClickHouse, MongoDB and the OTel collector are all external (`clickhouse.enabled`, `mongodb.enabled` and `otel-collector.enabled` set to `false`), you can set `hyperdx.secrets: null` to skip the chart's secret entirely. In that case, also set `hyperdx.config.MONGO_URI` yourself, and load connections with `hyperdx.deployment.useExistingConfigSecret`, because inline `defaultConnections` are not rendered without the chart's secret.
-
 <Note>
 `hyperdx.deployment.useExistingConfigSecret` only loads the default connections and sources (`connections.json` and `sources.json`) from a secret. It does not read the API key or passwords. See [External ClickHouse](/clickstack/deployment/helm-deployment-options#external-clickhouse-secret).
 </Note>
