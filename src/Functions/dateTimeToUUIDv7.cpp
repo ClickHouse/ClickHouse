@@ -85,6 +85,7 @@ public:
     }
 };
 
+}
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
@@ -133,6 +134,5 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation);
 
-}
 }
 }
