@@ -1,3 +1,4 @@
+@RUST_BUILD_DIR_CONFIG@
 [profile.release]
 debug = false
 strip = true
