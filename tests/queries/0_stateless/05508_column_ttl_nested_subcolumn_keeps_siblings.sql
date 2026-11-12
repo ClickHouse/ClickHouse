@@ -15,7 +15,8 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 INSERT INTO t_nested_ttl_wide VALUES (1, '2020-01-01 00:00:00', ['a', 'b'], ['x', 'y']);
-ALTER TABLE t_nested_ttl_wide MODIFY COLUMN `n.a` Array(Nullable(String)) TTL ts + INTERVAL 1 DAY, MATERIALIZE TTL SETTINGS mutations_sync = 2;
+ALTER TABLE t_nested_ttl_wide MODIFY COLUMN `n.a` Array(Nullable(String)) TTL ts + INTERVAL 1 DAY;
+ALTER TABLE t_nested_ttl_wide MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'wide', id, `n.a`, `n.b` FROM t_nested_ttl_wide;
 
 -- Only some rows of the part are expired.
@@ -34,7 +35,8 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000;
 
 INSERT INTO t_nested_ttl_compact VALUES (1, '2020-01-01 00:00:00', ['a', 'b'], ['x', 'y']);
-ALTER TABLE t_nested_ttl_compact MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVAL 1 DAY, MATERIALIZE TTL SETTINGS mutations_sync = 2;
+ALTER TABLE t_nested_ttl_compact MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVAL 1 DAY;
+ALTER TABLE t_nested_ttl_compact MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'compact', id, `n.a`, `n.b` FROM t_nested_ttl_compact;
 
 -- The default of an `Enum` element is its first value, not zero.
@@ -58,7 +60,8 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 INSERT INTO t_nested_ttl_dependent (id, ts, `n.a`, `n.c`) VALUES (1, '2020-01-01 00:00:00', ['a', 'b'], ['x', 'y']);
-ALTER TABLE t_nested_ttl_dependent MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVAL 1 DAY, MATERIALIZE TTL SETTINGS mutations_sync = 2;
+ALTER TABLE t_nested_ttl_dependent MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVAL 1 DAY;
+ALTER TABLE t_nested_ttl_dependent MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'dependent', `n.a`, `n.b`, `n.c`, m FROM t_nested_ttl_dependent;
 OPTIMIZE TABLE t_nested_ttl_dependent FINAL SETTINGS optimize_skip_merged_partitions = 0;
 SELECT 'dependent', `n.a`, `n.b`, `n.c`, m FROM t_nested_ttl_dependent;
