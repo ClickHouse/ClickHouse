@@ -709,6 +709,48 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 }
 
 
+namespace
+{
+
+/// Checks the `SETTINGS` clause of a definition that a user gives against the constraints of the user: its values, which are
+/// settings of the engine, not query settings that `applySettingsFromQuery` checks, as a `SET` would check them, and the value
+/// that a setting reset with `name = DEFAULT` gets, the default of the engine instead of the value of the session, unless the
+/// named collection sets it.
+void checkSettingsOfDefinition(const ASTStorage & engine_define, const NamedCollection * named_collection, const ContextPtr & context)
+{
+    const auto * settings = engine_define.settings;
+    if (!settings)
+        return;
+
+    const auto & query_settings = context->getSettingsRef();
+    const auto constraints = context->getSettingsConstraintsAndCurrentProfiles();
+    query_settings.checkShorthandChanges(settings->changes);
+    /// The overload for constant changes, because the other one removes a change equal to the current setting, which the
+    /// definition keeps.
+    constraints->constraints.check(query_settings, std::as_const(settings->changes), SettingSource::QUERY);
+
+    const PostgreSQLSettings engine_defaults;
+    for (const auto & name : settings->default_settings)
+    {
+        if (PostgreSQLSettings::hasBuiltin(name) && !(named_collection && named_collection->has(name)))
+            constraints->constraints.check(query_settings, SettingChange{name, engine_defaults.get(name)}, SettingSource::QUERY);
+    }
+}
+
+/// The checks of a definition that need the user, before `CREATE DATABASE ... ON CLUSTER` is dispatched: the override of a key
+/// of the named collection by the `SETTINGS` clause (`NOT OVERRIDABLE`, `SHOW NAMED COLLECTIONS SECRETS`), and the constraints.
+void checkDefinition(const ASTStorage & engine_define, const ContextPtr & context)
+{
+    if (!engine_define.settings || !engine_define.engine || !engine_define.engine->arguments)
+        return;
+    const auto named_collection = tryGetNamedCollectionWithOverrides(
+        engine_define.engine->arguments->children, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
+        /*dependent_table_id=*/ nullptr, engine_define.settings);
+    checkSettingsOfDefinition(engine_define, named_collection.get(), context);
+}
+
+}
+
 void registerDatabasePostgreSQL(DatabaseFactory & factory);
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
@@ -801,37 +843,17 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
-        /// The settings of the clause are settings of the engine, not query settings that `applySettingsFromQuery` checks, so
-        /// a definition the user gives is held to the user's constraints on them here, as a `SET` would be. Not a definition
-        /// the server stored itself.
+        /// A definition the user gives is held to the user's constraints, not one the server stored itself.
         const bool is_stored_definition = is_internal_metadata_replay || isLoadingFromExistingMetadata(args.mode)
             || args.create_query.attach_short_syntax;
-        const bool check_constraints = engine_define->settings && !is_stored_definition;
-        const auto & query_settings = args.context->getSettingsRef();
-        const auto constraints = args.context->getSettingsConstraintsAndCurrentProfiles();
-        if (check_constraints)
-        {
-            query_settings.checkShorthandChanges(engine_define->settings->changes);
-            constraints->constraints.check(query_settings, engine_define->settings->changes, SettingSource::QUERY);
-        }
+        if (!is_stored_definition)
+            checkSettingsOfDefinition(*engine_define, named_collection.get(), args.context);
         postgresql_settings.loadFromQuery(*engine_define);
 
         /// Only a definition that is written now stores the values: not one read from the metadata file, and not on `RESTORE`,
         /// which rejects a database whose definition differs from the one in the backup.
         const bool is_new_definition = !is_stored_definition && !args.is_restore_from_backup;
         postgresql_settings.loadFromQueryContext(*args.context, engine_define->settings, is_new_definition ? engine_define : nullptr);
-
-        /// A setting the clause resets with `name = DEFAULT` gets the default of the engine instead of the session's value, so
-        /// that value is held to the constraints too. Not one a named collection sets: the database takes it from there.
-        if (check_constraints)
-        {
-            for (const auto & name : engine_define->settings->default_settings)
-            {
-                if (PostgreSQLSettings::hasBuiltin(name) && !(named_collection && named_collection->has(name)))
-                    constraints->constraints.check(
-                        query_settings, SettingChange{name, postgresql_settings.get(name)}, SettingSource::QUERY);
-            }
-        }
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -860,6 +882,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
         .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
+        .check_definition_fn = checkDefinition,
     }, Documentation{
         .description = R"DOCS_MD(
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.

@@ -39,6 +39,7 @@ public:
     /// Used to tell whether a setting from the `SETTINGS` clause of `CREATE DATABASE` belongs to the
     /// engine or to the query, before the start of the query interpretation.
     using HasBuiltinSettingFn = bool(std::string_view);
+    using CheckDefinitionFn = void(const ASTStorage & engine_define, const ContextPtr & context);
 
     struct Arguments
     {
@@ -83,6 +84,11 @@ public:
 
         /// Must be provided whenever `supports_settings` is set; `registerDatabase` enforces it.
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+
+        /// Checks a definition that a user gives with the access and the settings constraints of the user, if the engine needs
+        /// that. Called before `CREATE DATABASE ... ON CLUSTER` is dispatched, because its workers run without the user by
+        /// default; the creator checks a definition of a local query itself.
+        CheckDefinitionFn * check_definition_fn = nullptr;
     };
 
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
@@ -106,6 +112,7 @@ public:
         .is_external = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
+        .check_definition_fn = nullptr,
     }, Documentation documentation = {});
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
