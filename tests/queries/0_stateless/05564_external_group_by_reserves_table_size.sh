@@ -4,10 +4,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-threshold=134217728
+# The set of `NOT IN` keeps the query over the threshold, so every block is spilled while a table holds at most 1000 keys.
+# The key is `UInt64`: a `UInt16` key is aggregated in a fixed hash map, which is never spilled.
+threshold=33554432
 log="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
 $CLICKHOUSE_LOCAL --send_logs_level=trace --query "
-    SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(10000000) GROUP BY k)
+    SELECT count(), sum(c) FROM (
+        SELECT number % toUInt64(1000) AS k, count() AS c FROM numbers_mt(10000000)
+        WHERE number NOT IN (SELECT number + 10000000 FROM numbers(5000000))
+        GROUP BY k)
     SETTINGS
         max_threads = 16,
         max_threads_min_free_memory_per_thread = 0,
@@ -17,7 +22,9 @@ $CLICKHOUSE_LOCAL --send_logs_level=trace --query "
         group_by_two_level_threshold = 1,
         group_by_two_level_threshold_bytes = 1,
         max_bytes_before_external_group_by = ${threshold},
-        max_bytes_ratio_before_external_group_by = 0
+        max_bytes_ratio_before_external_group_by = 0,
+        max_bytes_before_external_set = 0,
+        max_bytes_ratio_before_external_set = 0
 " 2> "$log"
 
 grep -oE "Reserved [0-9.]+ [KMGT]?i?B on local disk" "$log" | $CLICKHOUSE_LOCAL --structure 'line String' --input-format LineAsString --query "

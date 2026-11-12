@@ -153,6 +153,7 @@ add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
+add_headers_and_sources(clickhouse_common_io Common/Silk)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/SpaceShared)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/TimeShared)
 add_headers_and_sources(clickhouse_common_io IO)
@@ -713,7 +714,7 @@ if (TARGET ch_contrib::libfiu)
 endif()
 
 if (TARGET ch_contrib::silk_fibers)
-    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::silk_fibers)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::silk_fibers)
 endif()
 
 if (TARGET ch_contrib::cpuid)
@@ -848,6 +849,10 @@ endif ()
 
 if (TARGET ch_contrib::capnp)
     target_link_libraries(dbms PRIVATE ch_contrib::capnp)
+endif ()
+
+if (TARGET ch_contrib::parquet_format)
+    target_link_libraries(dbms PRIVATE ch_contrib::parquet_format)
 endif ()
 
 if (TARGET ch_contrib::parquet)
@@ -1136,6 +1141,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::hdfs)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::hdfs)
+    endif()
+
+    if (TARGET ch_contrib::parquet_format)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet_format)
     endif()
 
     if (TARGET ch_contrib::parquet)

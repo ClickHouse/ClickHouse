@@ -594,6 +594,9 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
+    M(RowsSkippedByPrewhereReaders, "Number of rows rejected by PREWHERE: rows whose PREWHERE condition evaluated to false. This is a logical filter count and does not imply the main reader avoided reading these rows.", ValueType::Number) \
+    M(GranulesReadByPrewhereReaders, "Number of granules read by the prewhere readers (the granules on which PREWHERE was evaluated). Each granule is counted once even when it is split across several read blocks.", ValueType::Number) \
+    M(GranulesSkippedByPrewhereReaders, "Number of granules fully rejected by PREWHERE: every row of the granule was filtered out. A granule with at least one surviving row is not counted. Each granule is counted once even when it is split across several read blocks. This is a logical filter count and does not imply the main reader read nothing from the granule.", ValueType::Number) \
     M(StringValueFilterValuesChecked, "Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
     M(StringValueFilterValuesReplaced, "Number of non-matching string values replaced with empty strings during a scan by a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
     M(StringValueFilterBytesSkipped, "Number of bytes of non-matching string values that were not copied into a column during a scan due to a filter extracted from a substring search condition in PREWHERE.", ValueType::Bytes) \
@@ -1141,8 +1144,8 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationSpilledBytes, "How many bytes of staged records the adaptive aggregation wrote to disk under memory pressure, before compression.", ValueType::Bytes) \
     M(AdaptiveAggregationFrozenTableSpills, "How many times a thread of the adaptive aggregation wrote its frozen local table to disk, because the query crossed the external aggregation threshold while the table's aggregate states kept growing, or the memory scheduler asked for a spill.", ValueType::Number) \
     M(AdaptiveAggregationMergeUnits, "How many merge units, runs of the partitions of a two-level bucket merged in one table, the adaptive aggregation merged and converted.", ValueType::Number) \
-    M(AdaptiveAggregationPrunedUnits, "How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.", ValueType::Number) \
-    M(AdaptiveAggregationPrunedRecords, "How many staged records the adaptive aggregation's merge skipped, because their group could not reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.", ValueType::Number) \
+    M(AdaptiveAggregationPrunedUnits, "How many merge units the adaptive aggregation skipped without draining them, because the top-K by `count`, `uniqExact` or `uniqExactIf` needed none of their groups: their count bins were bounded below the threshold of a descending top-K, or an ascending top-K had already found enough groups with the smallest possible rank.", ValueType::Number) \
+    M(AdaptiveAggregationPrunedRecords, "How many staged records the adaptive aggregation's merge skipped, because the top-K by `count`, `uniqExact` or `uniqExactIf` needed none of their groups.", ValueType::Number) \
     M(AdaptiveAggregationCountFirstUnits, "How many merge units of the adaptive aggregation counted their groups first and built the other aggregate states only for the best groups by the count, because the aggregation feeds `ORDER BY count() LIMIT n` and its final conversion keeps only those.", ValueType::Number) \
     M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose arena slot the adaptive aggregation's merge released right after the bucket's last unit was converted. The slot holds the merged states of one unit at a time, so the states of every earlier unit are released after its own conversion.", ValueType::Number) \
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
@@ -1154,7 +1157,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
     M(AggregationSharedKeptKeysRebuilds, "Number of aggregation streams that rebuilt their hash table to the shared set of kept keys after the trivial GROUP BY LIMIT cutoff was reached (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
-    M(AggregationSharedKeptKeysSpillReseeds, "Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).", ValueType::Number) \
+    M(AggregationSharedKeptKeysSpillReseeds, "Number of times a hash table that stopped admitting new keys under `group_by_overflow_mode = any` was re-seeded with the keys it kept after being flushed to a temporary file by external aggregation, so that their remaining rows keep being aggregated. Covers both the shared set of the trivial GROUP BY LIMIT cutoff (see the `optimize_trivial_group_by_limit_query` setting) and the per-stream set of a plain `max_rows_to_group_by` cap.", ValueType::Number) \
     M(AggregationTopKRowsSkipped, "How many rows were skipped during aggregation because their grouping key could not enter the top-K result (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysPruned, "How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.", ValueType::Number) \
@@ -1721,6 +1724,14 @@ The server successfully detected this situation and will download merged part fr
     M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed", ValueType::Number) \
     M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk", ValueType::Microseconds) \
     \
+    M(AmberConnectionsCreated, "Number of created connections for Amber", ValueType::Number) \
+    M(AmberConnectionsReused, "Number of reused connections for Amber", ValueType::Number) \
+    M(AmberConnectionsReset, "Number of reset connections for Amber", ValueType::Number) \
+    M(AmberConnectionsPreserved, "Number of preserved connections for Amber", ValueType::Number) \
+    M(AmberConnectionsExpired, "Number of expired connections for Amber", ValueType::Number) \
+    M(AmberConnectionsErrors, "Number of cases when creation of a connection for Amber is failed", ValueType::Number) \
+    M(AmberConnectionsElapsedMicroseconds, "Total time spend on creating connections for Amber", ValueType::Microseconds) \
+    \
     M(HTTPConnectionsCreated, "Number of created client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsReused, "Number of reused client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsReset, "Number of reset client HTTP connections", ValueType::Number) \
@@ -1823,6 +1834,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data before reading them (by min/max statistics and row group selection). Row groups pruned later by bloom filters and dictionaries are counted in `ParquetBloomFilterPrunedRowGroups` and `ParquetDictionaryFilterPrunedRowGroups`.", ValueType::Number) \
+    M(ParquetRuntimeFilterPrunedRowGroups, "Number of Parquet row groups skipped because their column statistics cannot contain a key of a JOIN runtime filter", ValueType::Number) \
     M(ParquetBloomFilterPrunedRowGroups, "The total number of parquet row groups pruned by bloom filters.", ValueType::Number) \
     M(ParquetDictionaryFilterPrunedRowGroups, "The total number of parquet row groups pruned by dictionary filters (with a bloom filter fallback for columns whose dictionary does not fit the pruning memory budget).", ValueType::Number) \
     M(ParquetFooterReadMicroseconds, "Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).", ValueType::Microseconds) \
@@ -2017,6 +2029,7 @@ The server successfully detected this situation and will download merged part fr
     M(StatelessWorkerDiscoveryWorkersHeartbeatExpired, "Number of stateless workers reclaimed by the stateless worker discovery service because they stopped sending heartbeats.", ValueType::Number) \
     M(StatelessWorkerDiscoveryHeartbeatsRejected, "Number of heartbeats the stateless worker discovery service rejected because the worker had already been evicted.", ValueType::Number) \
     M(StatelessWorkerDiscoveryKeeperTransactionRetries, "Number of write transactions the stateless worker discovery service retried because its coordination store (Keeper) state was modified concurrently.", ValueType::Number) \
+    M(AmberFailedPromotions, "Number of times this node took the amber master lock but could not fence and recover the volume, so it gave the lock up.", ValueType::Number) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

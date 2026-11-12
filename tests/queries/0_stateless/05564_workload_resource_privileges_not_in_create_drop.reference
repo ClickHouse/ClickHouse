@@ -1,0 +1,18 @@
+--- CREATE and DROP do not include the workload and resource privileges ---
+CREATE TABLE: 1
+DROP TABLE: 1
+CREATE WORKLOAD: 0
+CREATE RESOURCE: 0
+DROP WORKLOAD: 0
+DROP RESOURCE: 0
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+1
+--- the privileges granted explicitly ---
+GRANT CREATE WORKLOAD, CREATE RESOURCE, CREATE, DROP WORKLOAD, DROP RESOURCE, DROP ON *.* TO u
+create resource ok
+create workload ok
+drop workload ok
+drop resource ok
