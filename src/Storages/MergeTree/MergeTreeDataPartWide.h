@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/StreamWithSizeHint.h>
 
 #include <functional>
+#include <map>
+#include <mutex>
 
 namespace DB
 {
@@ -67,7 +69,12 @@ private:
 
     std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
 
-    ColumnSize calculateColumnReadSize(const NameAndTypePair & column) const override;
+    /// The sum of the per-column read sizes.
+    ColumnSize calculateTotalColumnsReadSize() const override;
+
+    /// The read size of one column, cached per column.
+    ColumnSize getColumnReadSize(const NameAndTypePair & column) const;
+    ColumnSize calculateColumnReadSize(const NameAndTypePair & column) const;
 
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
@@ -80,6 +87,9 @@ private:
 
     /// The streams a read of the columns touches, by requested name, listed by one reader after it has read the prefixes.
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
+
+    mutable std::mutex columns_read_sizes_mutex;
+    mutable std::map<String, ColumnSize> columns_read_sizes TSA_GUARDED_BY(columns_read_sizes_mutex);
 };
 
 }

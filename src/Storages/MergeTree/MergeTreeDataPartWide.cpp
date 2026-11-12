@@ -285,6 +285,29 @@ std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const Nam
     return sizes;
 }
 
+ColumnSize MergeTreeDataPartWide::calculateTotalColumnsReadSize() const
+{
+    ColumnSize size;
+    for (const auto & column : getColumns())
+        size.add(getColumnReadSize(column));
+    return size;
+}
+
+ColumnSize MergeTreeDataPartWide::getColumnReadSize(const NameAndTypePair & column) const
+{
+    {
+        std::lock_guard lock(columns_read_sizes_mutex);
+        if (auto it = columns_read_sizes.find(column.name); it != columns_read_sizes.end())
+            return it->second;
+    }
+
+    /// Calculated outside the lock, since it may read the part's prefixes.
+    auto size = calculateColumnReadSize(column);
+
+    std::lock_guard lock(columns_read_sizes_mutex);
+    return columns_read_sizes.emplace(column.name, size).first->second;
+}
+
 ColumnSize MergeTreeDataPartWide::calculateColumnReadSize(const NameAndTypePair & column) const
 {
     /// Only a column with dynamic subcolumns (`JSON`/`Dynamic`) can keep a second on-disk representation of its data

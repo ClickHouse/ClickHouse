@@ -44,7 +44,21 @@ SELECT count(), min(part_type = 'Wide') FROM system.parts WHERE database = curre
 SELECT 2 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut' AND active)
     <= 3 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut_ins' AND active);
 
+-- Compact sources merged into a Wide part: a Compact part has no per-column sizes, so the merge must size
+-- its granularity by the Compact parts' total size rather than by nothing, which would make one huge granule.
+DROP TABLE IF EXISTS t_json_gran_cw;
+CREATE TABLE t_json_gran_cw AS t_json_gran_ins SETTINGS min_level_for_wide_part = 1;
+INSERT INTO t_json_gran_cw SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(5000);
+INSERT INTO t_json_gran_cw SELECT number + 5000, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(5000);
+SELECT count(), min(part_type = 'Compact') FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_cw' AND active;
+OPTIMIZE TABLE t_json_gran_cw FINAL;
+
+SELECT count(), min(part_type = 'Wide') FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_cw' AND active;
+SELECT 2 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_cw' AND active)
+    >= (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_ins' AND active);
+
 DROP TABLE t_json_gran_ins;
 DROP TABLE t_json_gran_mrg;
 DROP TABLE t_json_gran_mut_ins;
 DROP TABLE t_json_gran_mut;
+DROP TABLE t_json_gran_cw;
