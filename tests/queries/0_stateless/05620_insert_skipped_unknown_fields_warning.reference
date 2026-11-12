@@ -19,6 +19,7 @@ u_after 1
 u_parallel 1
 u_serial 1
 u_aggstate 1
+u_input 1
 u_async 1
 u_async_optout 0
 u_async_fmt 1
@@ -50,4 +51,5 @@ batch 2 1
 12	b_default
 13	b_default
 14	b_default
+15	
 1	5

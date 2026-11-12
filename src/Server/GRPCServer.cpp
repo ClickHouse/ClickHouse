@@ -40,6 +40,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
@@ -1361,6 +1362,7 @@ namespace
             settings[Setting::max_insert_block_size_bytes],
             settings[Setting::min_insert_block_size_rows],
             settings[Setting::min_insert_block_size_bytes]);
+        warnAboutSkippedUnknownFields(*source, query_context, input_format, query_context->getCurrentQueryId());
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);

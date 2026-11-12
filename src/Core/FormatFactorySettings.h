@@ -98,7 +98,7 @@ Possible values:
 )", 0, \
         {"22.6", false, true, "Optimize reading subset of columns for some input formats"}) \
     DECLARE(Bool, input_format_warn_on_skipped_unknown_fields, true, R"(
-Write a warning to the server log for each field of the data of an `INSERT` that is skipped because it has no matching column ([input_format_skip_unknown_fields](#input_format_skip_unknown_fields)), at most 10 fields per query. Applies to the data the server parses: the body of an HTTP request, inline data parsed by the server, `input()`, asynchronous inserts and the blocks a client sends over the native protocol.
+Write a warning to the server log for each field of the data of an `INSERT` that is skipped because it has no matching column ([input_format_skip_unknown_fields](#input_format_skip_unknown_fields)), at most 10 fields per query. Applies to the data the server parses: the body of an HTTP request, inline data parsed by the server, `input()`, asynchronous inserts, the input data of a gRPC query and the blocks a client sends over the native protocol.
 
 Possible values:
 

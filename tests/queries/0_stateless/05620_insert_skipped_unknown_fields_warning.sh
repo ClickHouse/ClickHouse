@@ -33,17 +33,18 @@ $CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_parallel_${DB} FROM numbers(10
 $CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_serial_${DB} FROM numbers(100000) FORMAT JSONEachRow" \
     | insert t_null JSONEachRow "input_format_parallel_parsing=0"
 printf '{"k":1,"s":5,"u_aggstate_%s":1}' "$DB" | insert t_agg JSONEachRow "aggregate_function_input_format=value"
+printf '{"a":15,"u_input_%s":1}' "$DB" | insert "t+SELECT+*+FROM+input()" JSONEachRow
 
 ASYNC="async_insert=1&wait_for_async_insert=1"
 printf '{"a":8,"u_async_%s":1}' "$DB" | insert t JSONEachRow "$ASYNC&query_id=${DB}_async"
 printf '{"a":9,"u_async_optout_%s":1}' "$DB" | insert t JSONEachRow "$ASYNC&input_format_warn_on_skipped_unknown_fields=0"
 printf '{"a":10,"u_async_fmt_%s":1}' "$DB" | insert t TSV "$ASYNC&input_format=JSONEachRow"
-# Two inserts of the same query and field, likely flushed together: each one gets its own warning.
+# Two inserts of the same query and field, queued and then flushed together: each one gets its own warning.
 for i in 1 2; do
     printf '{"a":%d,"u_batch_%s":1}' "$((10 + i))" "$DB" \
-        | insert t JSONEachRow "$ASYNC&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=1000&query_id=${DB}_batch$i" &
+        | insert t JSONEachRow "async_insert=1&wait_for_async_insert=0&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=10000000&query_id=${DB}_batch$i"
 done
-wait
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE t"
 
 $CLICKHOUSE_CLIENT -q "SELECT '{\"a\":13,' || arrayStringConcat(arrayMap(i -> concat('\"u_cap', leftPad(toString(i), 2, '0'), '_${DB}\":1'), range(1, 13)), ',') || '}' FORMAT TSVRaw" \
     | insert t JSONEachRow "query_id=${DB}_cap"
@@ -66,7 +67,7 @@ for _ in {1..30}; do
 done
 
 for f in u_Native u2_Native u_JSONEachRow u2_JSONEachRow u_TSKV u2_TSKV u_BSONEachRow u2_BSONEachRow u_JSONColumns u2_JSONColumns \
-    u_CSVWithNames u2_CSVWithNames u_JSONCompact u2_JSONCompact u_form u_mysqldump u_optout u_after u_parallel u_serial u_aggstate \
+    u_CSVWithNames u2_CSVWithNames u_JSONCompact u2_JSONCompact u_form u_mysqldump u_optout u_after u_parallel u_serial u_aggstate u_input \
     u_async u_async_optout u_async_fmt u_read u_insert_select; do
     echo "$f $(warnings "position(message, 'Field \`${f}_${DB}\` ') > 0")"
 done
