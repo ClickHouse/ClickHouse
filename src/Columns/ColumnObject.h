@@ -20,6 +20,15 @@ class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnO
 public:
     struct Statistics
     {
+        /// Statistics for typed paths, in memory only: the number of rows and default values in the first
+        /// block of a part. They select the sparse typed paths of the part before its streams are created.
+        struct TypedPathSerializationStatistics
+        {
+            size_t num_rows = 0;
+            size_t num_defaults = 0;
+        };
+        UnorderedMapWithMemoryTracking<String, TypedPathSerializationStatistics> typed_path_serialization_statistics;
+
         /// Statistics for dynamic paths: (path) -> (total number of not-null values).
         UnorderedMapWithMemoryTracking<String, size_t> dynamic_paths_statistics;
         /// Statistics for paths in shared data: (path) -> (total number of not-null values).
