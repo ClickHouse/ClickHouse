@@ -133,11 +133,11 @@ namespace
             makeASTFunction("empty", values->clone()),
             makeASTFunction(
                 "arrayExists",
-                lambda("v", makeASTFunction("or", makeASTFunction("empty", col("v")), makeASTFunction("match", col("v"), lit("[\\x00-\\x1f\\x7f]")))),
+                lambda("v", makeASTFunction("or", makeASTFunction("empty", col("v")), makeASTFunction("match", col("v"), lit(R"([\x00-\x1f\x7f])")))),
                 values->clone()));
 
         /// Escapes the regexp metacharacters, then the backslashes and the quotes of the PromQL string.
-        ASTPtr escaped = makeASTFunction("replaceRegexpAll", col("v"), lit("([!-/:-@\\[-^`{-~])"), lit("\\\\\\1"));
+        ASTPtr escaped = makeASTFunction("replaceRegexpAll", col("v"), lit(R"(([!-/:-@\[-^`{-~]))"), lit(R"(\\\1)"));
         escaped = makeASTFunction("replaceAll", std::move(escaped), lit("\\"), lit("\\\\"));
         escaped = makeASTFunction("replaceAll", std::move(escaped), lit("\""), lit("\\\""));
         return makeASTFunction(
@@ -302,10 +302,6 @@ SQLQueryPiece applyFunctionInfo(
     /// timeSeriesSelector() needs a matcher not matching "", and every series has a name.
     if (std::ranges::all_of(info_selector.matchers, matchesEmptyString))
         info_selector.matchers.push_back(Matcher{kMetricName, ".+", MatcherType::RE});
-    /// The placeholders are replaced with the values of the identifying labels of `v`, so that the other info series aren't read.
-    for (const char * label : {"instance", "job"})
-        info_selector.matchers.push_back(Matcher{label, String("@@") + label + "@@", MatcherType::RE});
-
     auto base = toVectorGrid(std::move(arguments[0]), context);
     if (base.store_method == StoreMethod::EMPTY || context.node_range_getter.get(function_node).empty())
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
@@ -371,11 +367,15 @@ SQLQueryPiece applyFunctionInfo(
         builder.from_table = samples;
         builder.where = enrichable();
         builder.group_by = {col("join_group")};
-        base_groups = addSubquery(builder.getSelectQuery(), SQLSubqueryType::TABLE, context);
+        base_groups = addSubquery(builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE, context);
     }
 
-    /// The selector of the info series, with the values of the identifying labels of `v` put in the placeholders.
-    ASTPtr selector_argument = lit(info_selector.toString(*context.promql_tree));
+    /// The selector of the info series is the user's matchers followed by the identifying labels of `v`, so that the other info series
+    /// aren't read. The user's text is only concatenated, never searched.
+    const String info_selector_text = info_selector.toString(*context.promql_tree);
+    chassert(info_selector_text.ends_with('}'));
+    ASTs selector_parts;
+    selector_parts.push_back(lit(info_selector_text.substr(0, info_selector_text.size() - 1)));
     for (const char * label : {"instance", "job"})
     {
         String alternatives = addSubquery(
@@ -388,8 +388,12 @@ SQLQueryPiece applyFunctionInfo(
             }(),
             SQLSubqueryType::SCALAR,
             context);
-        selector_argument = makeASTFunction("replaceOne", std::move(selector_argument), lit(String("@@") + label + "@@"), col(alternatives));
+        selector_parts.push_back(lit(String(",") + label + "=~\""));
+        selector_parts.push_back(col(alternatives));
+        selector_parts.push_back(lit("\""));
     }
+    selector_parts.push_back(lit("}"));
+    ASTPtr selector_argument = makeFunction("concat", std::move(selector_parts));
 
     const bool wide_ticks = needsWideTicks(context.node_range_getter.get(function_node), context);
     const bool first_step_only = std::ranges::all_of(function_node->getArguments(), isStepInvariant);
@@ -397,7 +401,7 @@ SQLQueryPiece applyFunctionInfo(
     {
         return fromSelectorSampleTimestamps(
             function_node,
-            info_selector.toString(*context.promql_tree),
+            info_selector_text,
             getInfoTimeBounds(function_node, context),
             makeASTFunction("in", makeASTFunction("timeSeriesRemoveAllTagsExcept", col(ColumnNames::Group), identifyingLabels()), col(base_groups)),
             selector_argument->clone(),
