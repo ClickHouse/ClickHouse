@@ -4366,8 +4366,9 @@ void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) co
 
 void InterpreterCreateQuery::checkDictionaryEngineAccess(ASTCreateQuery & create) const
 {
-    /// Internal queries (initiated by the server itself) always have access to everything.
-    if (internal)
+    /// Internal queries (initiated by the server itself) always have access to everything. A replay of `ON CLUSTER` or of a
+    /// `Replicated` database was checked before it was enqueued, while it still ran as the user, and runs without the user.
+    if (internal || getContext()->isDDLOrOnClusterInternal())
         return;
 
     /// An unqualified dictionary name is resolved against the current database of the query that creates the storage

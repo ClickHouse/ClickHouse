@@ -70,7 +70,7 @@ function unload()
 # Runs a query as the user, with the given extra URL parameters.
 function as_user()
 {
-    echo "$1" | sed -e "s/${cluster_db}/cluster_db/g" -e "s/${unqualified}/d_unqualified/g" -e "s/${CLICKHOUSE_DATABASE}/db/g"
+    echo "$1" | sed -e "s/${username}/user/g" -e "s/${cluster_db}/cluster_db/g" -e "s/${unqualified}/d_unqualified/g" -e "s/${CLICKHOUSE_DATABASE}/db/g"
     local output
     output=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${username}&distributed_ddl_output_mode=none${2:-}" --data-binary "$1" 2>&1)
     if grep -q ACCESS_DENIED <<< "${output}"
@@ -112,6 +112,13 @@ unload
 as_user "CREATE TABLE ${cluster_db}.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)" "&distributed_ddl_entry_format_version=2"
 status
 query "EXISTS TABLE ${cluster_db}.w_view"
+# A dictionary name that depends on the context evaluates to an allowed dictionary for the user, but would evaluate to `d`
+# in the global context, so the query of `view` must not be analyzed with it when the storage is created.
+unload
+as_user "CREATE TABLE w_context (value String) AS view(SELECT dictGet(if(currentUser() = '${username}', '${CLICKHOUSE_DATABASE}.${unqualified}', '${CLICKHOUSE_DATABASE}.d'), 'value', toUInt64(1)) AS value)"
+query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_context TO ${username}"
+as_user "SELECT * FROM w_context"
+status
 
 echo "--- unqualified name, resolved by ON CLUSTER in the default database of the server"
 query "SYSTEM UNLOAD DICTIONARY default.${unqualified}"

@@ -29,6 +29,11 @@ CREATE TABLE cluster_db.w_view ON CLUSTER test_shard_localhost (value String) AS
 ACCESS_DENIED
 NOT_LOADED
 0
+CREATE TABLE w_context (value String) AS view(SELECT dictGet(if(currentUser() = 'user', 'db.d_unqualified', 'db.d'), 'value', toUInt64(1)) AS value)
+
+SELECT * FROM w_context
+a
+NOT_LOADED
 --- unqualified name, resolved by ON CLUSTER in the default database of the server
 CREATE TABLE cluster_db.w_unqualified ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary('d_unqualified')
 ACCESS_DENIED
