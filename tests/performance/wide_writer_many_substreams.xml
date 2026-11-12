@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!-- The Wide part writer has a fixed cost per granule for every stream of a column: taking the marks and
          completing the compressed blocks. Columns with many substreams and cheap values, such as a `Tuple` of numbers
          and arrays like a native histogram, make that cost visible. `index_granularity` is small so the per-granule
