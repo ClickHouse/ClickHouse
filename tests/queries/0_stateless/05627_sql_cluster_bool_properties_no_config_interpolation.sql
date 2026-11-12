@@ -73,9 +73,10 @@ SELECT countIf(create_query LIKE '%${%')
 FROM system.clusters
 WHERE cluster = 'test_sql_cluster_05627';
 
+DROP CLUSTER test_sql_cluster_05627;
+
 CREATE CLUSTER test_sql_cluster_05627 (
     SHARD (host = '127.0.0.1', port = 9000, secure = 9440)
 ); -- { serverError BAD_ARGUMENTS }
 
-DROP CLUSTER test_sql_cluster_05627;
 SELECT count() FROM system.clusters WHERE cluster = 'test_sql_cluster_05627';
