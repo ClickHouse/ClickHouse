@@ -2219,6 +2219,9 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
+        if (catalog && !catalog->supportsMetadataUpdates())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Catalog does not support Iceberg inserts");
+
         return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
     }
     else

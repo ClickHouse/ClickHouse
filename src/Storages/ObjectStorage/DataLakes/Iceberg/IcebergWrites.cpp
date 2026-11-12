@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_COMMIT_REJECTED;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
@@ -1349,8 +1350,8 @@ IcebergStorageSink::IcebergStorageSink(
 IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
-    /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    /// Cancellation skips `onException`, so clean up here when the commit outcome permits it.
+    if (cleanup_on_abort)
         removeDataFilesAndManifests();
 }
 
@@ -1493,7 +1494,6 @@ void IcebergStorageSink::finalizeBuffers()
         if (initializeMetadata())
         {
             successed_write = true;
-            committed = true;
             break;
         }
         ++i;
@@ -1585,13 +1585,14 @@ bool IcebergStorageSink::initializeMetadata()
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
-    auto cleanup = [&] (bool retry_because_of_metadata_conflict)
+    auto prepareRetryAfterMetadataConflict = [&]
     {
         auto best_effort_remove = [&](const String & path)
         {
             try
             {
                 object_storage->removeObjectIfExists(StoredObject(path));
+                std::erase(manifest_entries_in_storage, path);
             }
             catch (...)
             {
@@ -1600,12 +1601,8 @@ bool IcebergStorageSink::initializeMetadata()
         };
 
         /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
-        if (!retry_because_of_metadata_conflict)
-            removeDataFilesAndManifests();
-
         best_effort_remove(storage_manifest_list_name);
 
-        if (retry_because_of_metadata_conflict)
         {
             /// When retrying after a metadata conflict, we must read the actual latest
             /// metadata version, not the explicitly specified one. If a table was created
@@ -1764,35 +1761,28 @@ bool IcebergStorageSink::initializeMetadata()
                 write_manifest();
         }
         {
+            manifest_entries_in_storage.push_back(storage_manifest_list_name);
             auto buffer_manifest_list = object_storage->writeObject(
                 StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
-            try
-            {
-                generateManifestList(
-                    persistent_table_components.path_resolver,
-                    metadata, object_storage, context,
-                    manifest_entries,
-                    new_snapshot,
-                    manifest_entry_sizes,
-                    *buffer_manifest_list,
-                    Iceberg::FileContentType::DATA,
-                    /* use_previous_snapshots = */ true,
-                    /* per_entry_content_types = */ {},
-                    /* entry_counts = */ {},
-                    /* carry_forward_manifest_paths = */ {},
-                    /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
-                    std::vector<Int64>(manifest_entries.size(), partition_spec_id),
-                    entry_partition_summaries,
-                    manifest_entry_row_counts,
-                    manifest_entry_file_counts);
-                buffer_manifest_list->finalize();
-            }
-            catch (...)
-            {
-                cleanup(false);
-                throw;
-            }
+            generateManifestList(
+                persistent_table_components.path_resolver,
+                metadata, object_storage, context,
+                manifest_entries,
+                new_snapshot,
+                manifest_entry_sizes,
+                *buffer_manifest_list,
+                Iceberg::FileContentType::DATA,
+                /* use_previous_snapshots = */ true,
+                /* per_entry_content_types = */ {},
+                /* entry_counts = */ {},
+                /* carry_forward_manifest_paths = */ {},
+                /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
+                std::vector<Int64>(manifest_entries.size(), partition_spec_id),
+                entry_partition_summaries,
+                manifest_entry_row_counts,
+                manifest_entry_file_counts);
+            buffer_manifest_list->finalize();
         }
 
         {
@@ -1818,7 +1808,7 @@ bool IcebergStorageSink::initializeMetadata()
                         (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
                 {
                     LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
-                    cleanup(true);
+                    prepareRetryAfterMetadataConflict();
                     return false;
                 }
                 LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
@@ -1829,12 +1819,25 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                /// Once the request starts, preserve files unless the catalog confirms rejection.
+                cleanup_on_abort = false;
+                try
                 {
-                    cleanup(true);
-                    return false;
+                    if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                    {
+                        cleanup_on_abort = true;
+                        prepareRetryAfterMetadataConflict();
+                        return false;
+                    }
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::ICEBERG_COMMIT_REJECTED)
+                        cleanup_on_abort = true;
+                    throw;
                 }
             }
+            cleanup_on_abort = false;
         }
 
         /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
@@ -1842,8 +1845,8 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        if (cleanup_on_abort)
+            removeDataFilesAndManifests();
         throw;
     }
     return true;

@@ -61,6 +61,8 @@
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_COMMIT_REJECTED;
+    extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
@@ -1899,7 +1901,7 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-String RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+String RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result, bool allow_retries) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1927,10 +1929,14 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
 
+    auto read_settings = context->getReadSettings();
+    if (!allow_retries)
+        read_settings.http_settings.max_tries = 1;
+
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(read_settings)
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
@@ -1959,7 +1965,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
-        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true, /* allow_retries */ true);
         return;
     }
     catch (const DB::HTTPException & e)
@@ -1977,7 +1983,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ true);
     }
     catch (const DB::HTTPException & e)
     {
@@ -2083,7 +2089,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ true);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2125,7 +2131,7 @@ void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, co
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2194,7 +2200,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        /// Replaying an applied commit after losing its response may return HTTP 409, which would
+        /// be mistaken for a rejected commit and allow deletion of files the catalog references.
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2204,15 +2212,37 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
-        /// TODO: 500, 502 and 504 mean the commit state is unknown. The client should keep the written files
-        /// until it re-reads the table, instead of treating this as a failure and cleaning them up.
         LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
+        const auto status = ex.getHTTPStatus();
+        if (status == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST
+            || status == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED
+            || status == Poco::Net::HTTPResponse::HTTP_FORBIDDEN
+            || status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND
+            || status == Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
+                "Iceberg catalog rejected commit for table {}.{}: {}",
+                namespace_name,
+                table_name,
+                ex.displayText());
+        }
         throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Iceberg catalog commit failed for table {}.{}: {}",
+            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+            "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
             namespace_name,
             table_name,
             ex.displayText());
+    }
+    catch (...)
+    {
+        // non-HTTP exceptions, such as a connection reset or timeout
+        throw DB::Exception(
+            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+            "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
+            namespace_name,
+            table_name,
+            DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
     return true;
 }
@@ -2303,7 +2333,7 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     String response;
     try
     {
-        response = sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        response = sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ true);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2385,7 +2415,7 @@ bool RestCatalog::updateSchema(
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, /* allow_retries */ true);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2405,7 +2435,7 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, /* ignore_result */ true, /* allow_retries */ true);
         LOG_INFO(log, "Dropped table {}.{} from the catalog (purgeRequested={})", namespace_name, table_name, delete_data);
     }
     catch (const DB::HTTPException & ex)

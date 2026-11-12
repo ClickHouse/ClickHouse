@@ -77,6 +77,8 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
+    bool supportsMetadataUpdates() const override { return true; }
+
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
     bool updateSchema(

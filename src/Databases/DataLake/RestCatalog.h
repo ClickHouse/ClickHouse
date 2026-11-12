@@ -79,6 +79,8 @@ public:
 
     void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const override;
 
+    bool supportsMetadataUpdates() const override { return true; }
+
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
     bool updateSchema(
@@ -246,7 +248,8 @@ protected:
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,
-        bool ignore_result) const;
+        bool ignore_result,
+        bool allow_retries) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
