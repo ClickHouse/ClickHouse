@@ -14,21 +14,13 @@ add_library(ch_rust::pco ALIAS _ch_rust_pco)
 # export a large number of internal symbols). Same guards as prql/polyglot.
 if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
     AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
-    find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+    ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     if (_LLD_FOR_STRIP)
-        set(_pco_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_pco.a")
-        add_custom_target(strip_pco_symbols
-            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                "${_pco_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                pco_compress pco_decompress
-            DEPENDS cargo-build__ch_rust_pco
+        clickhouse_postprocess_rust_lib(_ch_rust_pco
+            STEP strip_rust_symbols
+            SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+            ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" pco_compress pco_decompress
             COMMENT "Stripping internal symbols from pco library"
-            VERBATIM
         )
-        add_dependencies(_ch_rust_pco strip_pco_symbols)
-        # Ensure localize runs before strip (they both modify the same .a)
-        if (TARGET localize_rust_c__ch_rust_pco)
-            add_dependencies(strip_pco_symbols localize_rust_c__ch_rust_pco)
-        endif()
     endif ()
 endif ()

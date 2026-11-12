@@ -22,6 +22,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -118,6 +119,10 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     /// query takes their values from the path, so the reader would compare other values than the
     /// ones the threshold is made from.
     if (info.formatReadsHivePartitionColumns())
+        return false;
+
+    /// A column of `format_header` with the name of a column read under another name is another column.
+    if (info.columns_read_under_other_names.contains(sort_column.name))
         return false;
 
     /// The output header is broader than what the format reads: Hive partition columns (from the
@@ -252,6 +257,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
+    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+}
+
 void ReadFromObjectStorageStep::createIterator()
 {
     if (iterator_wrapper)
@@ -270,6 +281,12 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
+    if (!join_runtime_filters_for_file_pruning.empty())
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto lookup = query_context->getRuntimeFilterLookup())
+                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
 }
 
 std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
