@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
@@ -18,6 +19,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Core/Settings.h>
@@ -26,6 +28,8 @@
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
+
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -40,6 +44,55 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+
+/// Whether `name` occurs as a whole word (a maximal run of the characters of a bare identifier) in `text`.
+bool containsWord(std::string_view text, std::string_view name)
+{
+    size_t pos = 0;
+    while ((pos = text.find(name, pos)) != std::string_view::npos)
+    {
+        const bool starts_word = pos == 0 || !isWordCharASCII(text[pos - 1]);
+        const bool ends_word = pos + name.size() == text.size() || !isWordCharASCII(text[pos + name.size()]);
+        if (starts_word && ends_word)
+            return true;
+        ++pos;
+    }
+    return false;
+}
+
+/// The argument of the lambda `APPLY(x -> f(x))` that replaces `APPLY f` must not capture a free identifier of the
+/// body of `f`, as `x` in `y -> y + x`. `expansion` is the expansion of `f` called with a literal argument, so the
+/// identifiers in it are exactly the ones the argument of the lambda would meet. A word of its text that is not an
+/// identifier (as in a string literal) only makes the chosen name longer.
+String makeFreshLambdaArgument(const IAST & expansion, const auto & reserved_names)
+{
+    const String text = expansion.formatWithSecretsOneLine();
+    String lambda_argument = "x";
+    while (containsWord(text, lambda_argument) || reserved_names.contains(lambda_argument))
+        lambda_argument += "_";
+    return lambda_argument;
+}
+
+/// The names of the parameters of `ast` if it is a lambda, as `a` and `b` for `lambda(tuple(a, b), a + b)`.
+VectorWithMemoryTracking<String> getLambdaParameterNames(const IAST & ast)
+{
+    VectorWithMemoryTracking<String> names;
+    const auto * function = ast.as<ASTFunction>();
+    if (!function || function->name != "lambda" || !function->arguments || function->arguments->children.empty())
+        return names;
+    const auto * parameters = function->arguments->children[0]->as<ASTFunction>();
+    if (!parameters || !parameters->arguments)
+        return names;
+    for (const auto & parameter : parameters->arguments->children)
+        if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+            names.push_back(parameter_identifier->name());
+    return names;
+}
+
 }
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
@@ -103,7 +156,9 @@ void UserDefinedSQLFunctionVisitor::visitImpl(
                 const auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer->func_name);
                 if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
                 {
-                    static constexpr auto lambda_argument = "x";
+                    ASTPtr probe = makeASTFunction(apply_transformer->func_name, make_intrusive<ASTLiteral>(Field()));
+                    visitImpl(probe, context_, lambda_names, /*inside_apply=*/true);
+                    const String lambda_argument = makeFreshLambdaArgument(*probe, lambda_names);
                     expanded_lambda = makeASTFunction("lambda",
                         makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
                         makeASTFunction(apply_transformer->func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
@@ -345,10 +400,26 @@ void UserDefinedSQLFunctionVisitor::expandFunctionBody(
                 continue;
             }
 
+            /// The parameters of a nested lambda, as `x` in `x -> arrayMap(x -> x + 1, [x])`, shadow the parameters
+            /// of the UDF of the same name: only the free identifiers of the lambda are substituted.
+            if (const auto lambda_parameters = getLambdaParameterNames(*child); !lambda_parameters.empty())
+            {
+                ArgumentSubstitutions lambda_substitutions = substitutions;
+                bool shadows = false;
+                for (const auto & parameter : lambda_parameters)
+                    shadows |= lambda_substitutions.erase(parameter) > 0;
+                if (shadows)
+                {
+                    expandFunctionBody(
+                        child, lambda_substitutions, udf_in_replace_process, context_,
+                        query_lambda_names, shadowed_names, apply_shadowed_names);
+                    continue;
+                }
+            }
+
             ast_nodes_to_update.push(child);
         }
     }
-
 }
 
 void UserDefinedSQLFunctionVisitor::expandApplyTransformerInFunctionBody(
@@ -391,10 +462,10 @@ void UserDefinedSQLFunctionVisitor::expandApplyTransformerInFunctionBody(
         const auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer.func_name);
         if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
         {
-            /// The argument must not be the name of a parameter of the enclosing UDF: it would be substituted then.
-            lambda_argument = "x";
-            while (substitutions.contains(lambda_argument))
-                lambda_argument += "_";
+            /// The argument must not be the name of a parameter of the enclosing UDF either: it would be substituted then.
+            const ASTPtr probe = expand(
+                makeASTFunction(apply_transformer.func_name, make_intrusive<ASTLiteral>(Field())), {});
+            lambda_argument = makeFreshLambdaArgument(*probe, substitutions);
             lambda = makeASTFunction("lambda",
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
                 makeASTFunction(apply_transformer.func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
