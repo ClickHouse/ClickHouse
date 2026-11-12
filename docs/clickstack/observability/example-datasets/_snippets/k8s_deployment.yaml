@@ -1,0 +1,67 @@
+# k8s_deployment.yaml
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.161.0
+
+# We only want one of these collectors - any more and we'd produce duplicate data
+replicaCount: 1
+
+presets:
+  kubernetesAttributes:
+    enabled: true
+    # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+    # The label's exact name will be the key.
+    extractAllPodLabels: true
+    # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+    # The annotation's exact name will be the key.
+    extractAllPodAnnotations: true
+  # Configures the collector to collect Kubernetes events.
+  # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+  kubernetesEvents:
+    enabled: true
+  # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
+  # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+  # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+  clusterMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: HYPERDX_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: HYPERDX_API_KEY
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  exporters:
+    otlp_http:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "Bearer ${env:HYPERDX_API_KEY}"
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlp_http
+      metrics:
+        exporters:
+          - otlp_http
+      traces:
+        exporters:
+          - otlp_http
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi

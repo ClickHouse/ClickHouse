@@ -582,11 +582,6 @@ size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
     return pimpl->sizeForStreams(requested);
 }
 
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    setCredentialsFromURL(credentials, request_uri);
-}
-
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
@@ -735,7 +730,7 @@ StorageURLSource::StorageURLSource(
             if (!matching_marks)
                 break;
 
-            std::vector<size_t> matching_row_groups;
+            RowGroupIndices matching_row_groups;
             for (size_t i = 0; i < matching_marks->size(); ++i)
                 if ((*matching_marks)[i])
                     matching_row_groups.push_back(i);
@@ -1258,7 +1253,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 
@@ -1365,12 +1361,18 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return std::nullopt;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
@@ -2294,8 +2296,7 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    if (http_method.empty())
-        http_method = Poco::Net::HTTPRequest::HTTP_POST;
+    const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -2324,7 +2325,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            http_method);
+            write_method);
     }
 
     return std::make_shared<StorageURLSink>(
@@ -2336,7 +2337,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
         getHTTPTimeouts(context),
         compression_method,
         headers,
-        http_method);
+        write_method);
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
@@ -2944,7 +2945,7 @@ AzureURLParts parseAzureURL(const String & url)
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
@@ -3218,7 +3219,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
     }
 
     StoragePtr nested;
@@ -3340,6 +3341,11 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             engine_name, configuration.url);
 
     const String engine_name_str = engine_name;
+
+    /// The query named `URL`, which passed the temporary-table check; the engine built here must pass it too.
+    if (args.query.isTemporary())
+        StorageFactory::instance().checkTemporaryTableEngine(engine_name_str, context);
+
     StorageFactory::Arguments delegate_factory_args
     {
         .engine_name = engine_name_str,
@@ -3581,6 +3587,7 @@ void registerStorageURL(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
+            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(

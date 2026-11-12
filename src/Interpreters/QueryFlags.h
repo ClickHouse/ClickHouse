@@ -28,6 +28,9 @@ struct QueryFlags
     /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
     /// succeeded on the initiator. So the query is checked as it would be on a local database.
     bool run_as_submitting_user = false;
+    /// If true, `QueryResultDetails::result_column_origins` is filled for `SELECT` queries, so that a protocol
+    /// can report which table column each result column comes from (e.g. the MySQL protocol does).
+    bool collect_result_column_origins = false;
 };
 
 }
