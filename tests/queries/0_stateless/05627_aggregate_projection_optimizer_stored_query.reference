@@ -1,28 +1,50 @@
-2	2	1	1	1	1	1
-3	3	2	1	2	2	1
-4	4	3	1	3	3	1
-2	2
-3	3
-4	4
+0	0	12	3	0	4	3
+1	3	9	3	1	3	2
+0	0	12
+1	3	9
 ('x',1)	1
 ('x',NULL)	2
-('y',1)	3
+('y',1)	7
+('y',NULL)	5
+('z',2)	6
 x	1	1
 x	\N	2
-y	1	3
-0	3
+y	1	7
+y	\N	5
+z	2	6
+0	18
 1	3
 2	1
 3	2
 4	3
+5	4
+6	5
+7	6
+301	1
+302	2
+303	3
+304	4
+305	5
+306	6
+[]	9
+[2]	10
+[3,4]	2
+[]	9
+[2]	1
+[4,5]	2
+[5]	4
+[6]	5
 1	1
 2	2
 3	3
-p_alias	plus(a, 1)
-p_alias	sum(plus(a, 1))
+4	4
+5	5
+6	6
+p_alias	modulo(a, 2)
+p_alias	sum(modulo(a, 2))
 p_alias	sum(a)
 p_alias	count() IGNORE NULLS
-p_alias	any(a) RESPECT NULLS
+p_alias	any(modulo(a, 2)) RESPECT NULLS
 p_alias	sum(NULL)
 p_alias	quantile(0.5)(a)
 p_alias	uniqExact(b)
@@ -30,6 +52,7 @@ p_expressions	in(a, (1, 2))
 p_expressions	plus(a, 1)
 p_expressions	plus(toIntervalSecond(300), toDateTime(a))
 p_expressions	arrayMap(lambda(tuple(x), plus(x, 1)), n.k)
+p_expressions	arrayMap(lambda(tuple(x), plus(x, a)), n.k)
 p_expressions	CAST(a, \'String\')
 p_expressions	sum(a)
 p_keys	b
@@ -37,3 +60,11 @@ p_keys	c
 p_keys	sum(a)
 p_tuple	tuple(b, c)
 p_tuple	sum(a)
+3	20
+4	30
+10	3
+30	3
+1	2
+2	1
+0	100
+1	11
