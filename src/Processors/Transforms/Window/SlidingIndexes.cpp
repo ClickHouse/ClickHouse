@@ -42,12 +42,13 @@ VectorWithMemoryTracking<bool> markPartitionStarts(const Columns & columns, size
 VectorWithMemoryTracking<int64_t> assignPeerGroupIndexes(
     const Columns & columns,
     size_t rows_count,
-    const VectorWithMemoryTracking<size_t> & order_by_indices,
+    const WindowTransformParams & params,
     const VectorWithMemoryTracking<bool> & partition_starts,
     const std::optional<Columns> & previous_order_key,
     int64_t last_peer_group_index)
 {
     VectorWithMemoryTracking<int64_t> peer_group_indexes(rows_count);
+    const VectorWithMemoryTracking<size_t> & order_by_indices = params.order_by_indices;
     if (order_by_indices.empty())
         return peer_group_indexes;
 
@@ -103,7 +104,7 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
     /// Peer group indexes
     if (params.needs_peer_group_indexes)
     {
-        index.peer_group_indexes = assignPeerGroupIndexes(materialized_columns, rows_count, params.order_by_indices, index.partition_starts, last_order_key, last_peer_group_index);
+        index.peer_group_indexes = assignPeerGroupIndexes(materialized_columns, rows_count, params, index.partition_starts, last_order_key, last_peer_group_index);
         last_order_key = cutLastKey(materialized_columns, rows_count, params.order_by_indices);
         last_peer_group_index = index.peer_group_indexes.back();
     }
