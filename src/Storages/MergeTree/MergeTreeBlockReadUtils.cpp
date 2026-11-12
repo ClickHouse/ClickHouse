@@ -19,6 +19,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -121,16 +122,17 @@ bool injectRequiredColumnsRecursively(
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.
             if (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(
-                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
+                || (column_in_part->type->tryGetSubcolumnType(
+                        column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part))
+                    && !isSubcolumnReadFromConvertedColumn(storage_snapshot, *column_in_storage, column_in_part->type)))
             {
                 add_column(column_name);
                 return true;
             }
 
-            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
-            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
-            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            /// Parent is present, but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or converting the parent replaces its NULLs with the DEFAULT.
+            /// Read the parent so it can be converted and the subcolumn extracted from it.
             add_column(column_in_storage->getNameInStorage());
             return true;
         }
@@ -171,6 +173,17 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    if (!conversionReplacesNullsWithDefault(column_type_in_part, subcolumn.getTypeInStorage()))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+        && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -404,6 +417,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
@@ -416,6 +430,23 @@ void addPatchPartsColumns(
     NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
+    const NameSet all_columns_to_read_set(all_columns_to_read.begin(), all_columns_to_read.end());
+    const auto part_alter_conversions = data_part_info_for_reader.getAlterConversions();
+
+    /// The part extracts such a subcolumn from its column after the patches are applied to that column.
+    auto is_extracted_from_patched_column = [&](const NameAndTypePair & column)
+    {
+        if (!column.isSubcolumn() || !all_columns_to_read_set.contains(column.getNameInStorage()))
+            return false;
+
+        auto column_name_in_part = column.getNameInStorage();
+        if (part_alter_conversions && part_alter_conversions->isColumnRenamed(column_name_in_part))
+            column_name_in_part = part_alter_conversions->getColumnOldName(column_name_in_part);
+
+        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+        return column_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, column_in_part->type);
+    };
+
     for (size_t i = 0; i < patch_parts.size(); ++i)
     {
         NameSet patch_columns_to_read_set;
@@ -426,6 +457,9 @@ void addPatchPartsColumns(
         for (const auto & column_name : all_columns_to_read)
         {
             auto column_in_storage = storage_snapshot->getColumn(options, column_name);
+            if (is_extracted_from_patched_column(column_in_storage))
+                continue;
+
             auto column_name_in_patch = column_in_storage.getNameInStorage();
 
             if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_patch))
