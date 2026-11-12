@@ -66,6 +66,8 @@ public:
 
     String getName() const override { return name; }
 
+    void updateHash(SipHash & hash) const override { params.updateHash(hash); }
+
     bool isVariadic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 2; }
