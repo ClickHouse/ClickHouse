@@ -30,9 +30,11 @@ SELECT 'an explicit make_distributed_plan = 0 conflicts with a non-zero workers 
 SET make_distributed_plan = 0;
 SET distributed_plan_workers_num = 5;
 SELECT getSetting('make_distributed_plan'); -- { serverError INVALID_SETTING_VALUE }
+-- Cleared right away: any further plain query, including the next label, would itself be
+-- rejected by the same conflict while it is still held at the session level.
+SET make_distributed_plan = DEFAULT;
 
 SELECT 'DEFAULT clears an explicit off, so the workers num derives it again';
-SET make_distributed_plan = DEFAULT;
 SELECT getSetting('make_distributed_plan');
 
 SELECT 'the derivation and its adjustments show up in query_log for that query only';
