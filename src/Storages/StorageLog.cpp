@@ -19,6 +19,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -772,7 +773,8 @@ StorageLog::StorageLog(
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
+    /// It also sizes the file write buffer, so it is limited like the compressed block (see `CompressedWriteBuffer`).
+    , max_compress_block_size(std::min<size_t>(context_->getSettingsRef()[Setting::max_compress_block_size], DBMS_MAX_DECOMPRESSED_SIZE))
 {
     checkSupportedDataTypes(columns_, getName());
     StorageInMemoryMetadata storage_metadata;
