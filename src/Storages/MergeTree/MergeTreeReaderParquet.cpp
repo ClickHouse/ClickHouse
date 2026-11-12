@@ -71,6 +71,27 @@ struct MergeTreeReaderParquet::State
     /// group: the decoders only move forward, so a chunk cannot be decoded whole after some of its rows were.
     bool partial_chunks = false;
 
+    /// The reader initializes only the row groups of the mark ranges of this reader (in the order of the file),
+    /// so the position of a row group in `reader.row_groups` differs from its number (the mark).
+    /// The position of each row group of the file in `reader.row_groups`, or `NOT_READ`.
+    static constexpr size_t NOT_READ = std::numeric_limits<size_t>::max();
+    std::vector<size_t> row_group_positions;
+
+    Parquet::Reader::RowGroup * findRowGroup(size_t idx)
+    {
+        if (idx >= row_group_positions.size() || row_group_positions[idx] == NOT_READ)
+            return nullptr;
+        return &reader.row_groups[row_group_positions[idx]];
+    }
+
+    Parquet::Reader::RowGroup & getRowGroup(size_t idx)
+    {
+        auto * res = findRowGroup(idx);
+        if (!res)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Row group {} of a Parquet part is not in the mark ranges of the reader", idx);
+        return *res;
+    }
+
     /// A row group not read to the end has written only some chunks of its columns to the columns cache, which
     /// cannot serve any read without the rest (see `Parquet::Reader::initColumnsCache`), so they are taken back out
     /// when the state is discarded: at the end of reading (e.g. with `LIMIT`), for the next task, or to go back.
@@ -422,18 +443,19 @@ void MergeTreeReaderParquet::initState()
 
     reader.init(options, sample_block, std::make_shared<FormatFilterInfo>());
 
-    /// All row groups are initialized (they correspond to the marks one to one), but only the ones
-    /// of the mark ranges of this reader are looked up in the columns cache.
-    std::unordered_set<UInt64> row_groups_to_read;
+    /// Only the row groups of the mark ranges of this reader are initialized and looked up in the columns cache.
+    /// The mark ranges can include the final mark, which has no row group.
+    const size_t num_row_groups_in_file = reader.file_metadata().row_groups.size();
+    UnorderedSetWithMemoryTracking<UInt64> row_groups_to_read;
     for (const auto & range : all_mark_ranges)
-        for (size_t mark = range.begin; mark < range.end; ++mark)
+        for (size_t mark = range.begin; mark < std::min(range.end, num_row_groups_in_file); ++mark)
             row_groups_to_read.insert(mark);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
     if (cache_hit)
         metadata_cache->addColumnChunks(*cache_key, cache_cell, reader.getColumnChunks());
 
-    /// All row groups are read (there are no filters), so they correspond to the marks one to one.
+    /// The row groups of the file correspond to the marks one to one.
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
     size_t num_row_groups = reader.file_metadata().row_groups.size();
     if (num_row_groups != index_granularity.getMarksCountWithoutFinal())
@@ -450,14 +472,29 @@ void MergeTreeReaderParquet::initState()
                 i, data_file_name, rows_in_row_group, index_granularity.getMarkRows(i));
     }
 
-    if (reader.row_groups.size() != num_row_groups)
+    /// There are no filters, so exactly the requested row groups are initialized.
+    if (reader.row_groups.size() != row_groups_to_read.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Parquet reader has {} row groups, but the file has {} row groups", reader.row_groups.size(), num_row_groups);
+            "Parquet reader has {} row groups, but {} row groups were requested", reader.row_groups.size(), row_groups_to_read.size());
+
+    state->row_group_positions.assign(num_row_groups, State::NOT_READ);
+    for (size_t i = 0; i < reader.row_groups.size(); ++i)
+    {
+        size_t row_group_idx = reader.row_groups[i].row_group_idx;
+        if (row_group_idx >= num_row_groups || !row_groups_to_read.contains(row_group_idx))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Parquet reader initialized row group {}, which was not requested", row_group_idx);
+        state->row_group_positions[row_group_idx] = i;
+    }
 }
 
 void MergeTreeReaderParquet::finishRowGroup(size_t row_group)
 {
-    if (columns_in_file.empty() || row_group >= state->reader.row_groups.size())
+    if (columns_in_file.empty())
+        return;
+
+    auto * row_group_state = state->findRowGroup(row_group);
+    if (!row_group_state)
         return;
 
     state->chunk_columns.clear();
@@ -465,11 +502,11 @@ void MergeTreeReaderParquet::finishRowGroup(size_t row_group)
 
     /// The row group can be left before it is read to the end, e.g. by a forward seek to the next mark range.
     /// Its columns are not written in full then, and the chunks written so far are of no use.
-    state->reader.withdrawColumnsCacheWrites(state->reader.row_groups[row_group]);
+    state->reader.withdrawColumnsCacheWrites(*row_group_state);
 
     /// Release the memory of the column chunks, they are not needed anymore.
     Parquet::MemoryUsageDiff diff(Parquet::ReadStage::ColumnData);
-    for (auto & column : state->reader.row_groups[row_group].columns)
+    for (auto & column : row_group_state->columns)
     {
         column.dictionary.reset();
         for (auto & page : column.data_pages)
@@ -512,7 +549,7 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     if (columns_in_file.empty())
         return;
 
-    auto & row_group_state = state->reader.row_groups.at(row_group);
+    auto & row_group_state = state->getRowGroup(row_group);
     const bool uses_columns_cache = !row_group_state.cached_columns.empty() || !row_group_state.columns_cache_writes.empty();
     if (!uses_columns_cache)
     {
@@ -565,7 +602,7 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
 Columns MergeTreeReaderParquet::decodeRows(size_t row_group, size_t start_row, size_t num_rows)
 {
     auto & reader = state->reader;
-    auto & row_group_state = reader.row_groups.at(row_group);
+    auto & row_group_state = state->getRowGroup(row_group);
 
     /// The column chunks are read when the first rows of the row group are read.
     if (!state->row_group_started)
@@ -582,7 +619,7 @@ Columns MergeTreeReaderParquet::decodeRows(size_t row_group, size_t start_row, s
     subgroup.filter.rows_total = num_rows;
     subgroup.filter.rows_pass = num_rows;
     subgroup.columns.resize(reader.primitive_columns.size());
-    subgroup.output = std::vector<Parquet::Reader::OutputColumnState>(reader.extended_sample_block.columns());
+    subgroup.output = VectorWithMemoryTracking<Parquet::Reader::OutputColumnState>(reader.extended_sample_block.columns());
     for (size_t idx = 0; idx < subgroup.output.size(); ++idx)
     {
         const auto & output_idx = reader.sample_block_to_output_columns_idx.at(idx);
@@ -607,7 +644,7 @@ Columns MergeTreeReaderParquet::decodeRows(size_t row_group, size_t start_row, s
             if (column.served_from_cache)
                 continue;
 
-            std::vector<Parquet::PrefetchHandle *> prefetches;
+            VectorWithMemoryTracking<Parquet::PrefetchHandle *> prefetches;
             if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
                 prefetches.push_back(&column.dictionary_page_prefetch);
             if (column.data_pages.empty() && column.data_pages_prefetch)
@@ -764,7 +801,7 @@ try
 
         /// The whole row group is read, so its columns can be written to the columns cache.
         if (state->row == rows_in_row_group && !columns_in_file.empty())
-            state->reader.flushColumnsCacheWrites(state->reader.row_groups.at(state->row_group));
+            state->reader.flushColumnsCacheWrites(state->getRowGroup(state->row_group));
     }
 
     return read_rows;
