@@ -178,6 +178,10 @@ SELECT d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x)))))))
 FROM values('d Decimal(18,0), x Float64', (1,1))
 SETTINGS max_expanded_ast_elements = 1000;
 
+SELECT toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x))))))))))))))))
+FROM values('d Decimal(18,0), x Float64', (1,1))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1, max_expanded_ast_elements = 1000;
+
 -- Generated helpers bind to built-ins rather than scoped lambdas.
 WITH (v -> v) AS trunc
 SELECT d IN (materialize(x)), d NOT IN (materialize(x))
@@ -186,11 +190,18 @@ FROM values('d Decimal(18,1), x Int64', (1.5,1));
 -- Exercise the bounded comparison over a non-trivial vector.
 SELECT count()
 FROM numbers(1000000)
-WHERE toDecimal64(number, 0) IN (materialize(toFloat64(number)));
+WHERE toDecimal64(number, 0) IN (materialize(toFloat64(number)))
+SETTINGS allow_lossy_numeric_supertype = 1;
 
--- Exact membership and ordinary equality must keep separate function identities in either order.
+-- Exact membership and ordinary equality use the same comparison setting in either order.
 SELECT d = materialize(x), d IN (materialize(x)), d NOT IN (materialize(x))
-FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.));
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
+SETTINGS allow_lossy_numeric_supertype = 1;
 
 SELECT d IN (materialize(x)), d = materialize(x), d NOT IN (materialize(x))
-FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.));
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
+SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT d = x, d != x, isNotDistinctFrom(d, x), isDistinctFrom(d, x)
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
+SETTINGS allow_lossy_numeric_supertype = 1;

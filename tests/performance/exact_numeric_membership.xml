@@ -1,0 +1,11 @@
+<test>
+    <settings>
+        <allow_lossy_numeric_supertype>1</allow_lossy_numeric_supertype>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(d IN (materialize(x))) FROM (SELECT toDecimal64(number % 100, 2) AS d, toFloat64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(ifNull(d = materialize(x), 0)) FROM (SELECT toDecimal64(number % 100, 2) AS d, toFloat64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(d IN (materialize(x))) FROM (SELECT toDecimal64(number % 100, 2) AS d, toInt64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+    <query>SELECT sum(ifNull(d = materialize(x), 0)) FROM (SELECT toDecimal64(number % 100, 2) AS d, toInt64(number % 100) AS x FROM numbers(10000000)) FORMAT Null</query>
+</test>

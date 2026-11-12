@@ -7,7 +7,6 @@ namespace DB
 {
 
 struct NameEquals          { static constexpr auto name = "equals"; };
-struct NameExactNumericEquals { static constexpr auto name = "__exactNumericEquals"; };
 struct NameNotEquals       { static constexpr auto name = "notEquals"; };
 struct NameLess            { static constexpr auto name = "less"; };
 struct NameGreater         { static constexpr auto name = "greater"; };

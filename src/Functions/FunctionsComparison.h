@@ -198,7 +198,8 @@ template <typename DecimalType, typename FloatType>
 ColumnPtr executeExactDecimalFloatEqualityImpl(
     const ColumnWithTypeAndName & decimal_argument,
     const ColumnWithTypeAndName & float_argument,
-    size_t input_rows_count)
+    size_t input_rows_count,
+    bool negate)
 {
     bool decimal_is_const = false;
     bool float_is_const = false;
@@ -208,7 +209,8 @@ ColumnPtr executeExactDecimalFloatEqualityImpl(
         return nullptr;
 
     const UInt32 scale = getDecimalScale(*decimal_argument.type);
-    const Int256 scale_multiplier = DecimalUtils::scaleMultiplier<Int256>(scale);
+    using DecimalNative = typename DecimalType::NativeType;
+    const DecimalNative scale_multiplier = DecimalUtils::scaleMultiplier<DecimalNative>(scale);
     const auto & decimal_data = decimal_column->getData();
     const auto & float_data = float_column->getData();
 
@@ -223,7 +225,7 @@ ColumnPtr executeExactDecimalFloatEqualityImpl(
         if (std::isfinite(float64_value)
             && std::trunc(float64_value) == float64_value)
         {
-            const Int256 decimal_raw_value = decimal_value.value;
+            const DecimalNative decimal_raw_value = decimal_value.value;
             result_data[row] = decimal_raw_value % scale_multiplier == 0
                 && accurate::equalsOp(decimal_raw_value / scale_multiplier, float64_value);
         }
@@ -234,6 +236,8 @@ ColumnPtr executeExactDecimalFloatEqualityImpl(
             /// rounding them can create false membership matches near precision boundaries.
             result_data[row] = DecimalUtils::convertTo<Float64>(decimal_value, scale) == float64_value;
         }
+        if (negate)
+            result_data[row] = !result_data[row];
     }
 
     return result;
@@ -242,7 +246,8 @@ ColumnPtr executeExactDecimalFloatEqualityImpl(
 inline ColumnPtr executeExactDecimalFloatEquality(
     const ColumnWithTypeAndName & left_argument,
     const ColumnWithTypeAndName & right_argument,
-    size_t input_rows_count)
+    size_t input_rows_count,
+    bool negate)
 {
     ColumnPtr result;
     auto call = [&](const auto & types)
@@ -251,9 +256,9 @@ inline ColumnPtr executeExactDecimalFloatEquality(
         using LeftType = typename Types::LeftType;
         using RightType = typename Types::RightType;
         if constexpr (is_decimal<LeftType>)
-            result = executeExactDecimalFloatEqualityImpl<LeftType, RightType>(left_argument, right_argument, input_rows_count);
+            result = executeExactDecimalFloatEqualityImpl<LeftType, RightType>(left_argument, right_argument, input_rows_count, negate);
         else
-            result = executeExactDecimalFloatEqualityImpl<RightType, LeftType>(right_argument, left_argument, input_rows_count);
+            result = executeExactDecimalFloatEqualityImpl<RightType, LeftType>(right_argument, left_argument, input_rows_count, negate);
         return result != nullptr;
     };
 
@@ -272,7 +277,8 @@ template <typename DecimalType, typename IntegerType>
 ColumnPtr executeExactDecimalIntegerEqualityImpl(
     const ColumnWithTypeAndName & decimal_argument,
     const ColumnWithTypeAndName & integer_argument,
-    size_t input_rows_count)
+    size_t input_rows_count,
+    bool negate)
 {
     bool decimal_is_const = false;
     bool integer_is_const = false;
@@ -281,7 +287,8 @@ ColumnPtr executeExactDecimalIntegerEqualityImpl(
     if (!decimal_column || !integer_column)
         return nullptr;
 
-    const Int256 scale_multiplier = DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(*decimal_argument.type));
+    using DecimalNative = typename DecimalType::NativeType;
+    const DecimalNative scale_multiplier = DecimalUtils::scaleMultiplier<DecimalNative>(getDecimalScale(*decimal_argument.type));
     const auto & decimal_data = decimal_column->getData();
     const auto & integer_data = integer_column->getData();
 
@@ -289,12 +296,14 @@ ColumnPtr executeExactDecimalIntegerEqualityImpl(
     auto & result_data = result->getData();
     for (size_t row = 0; row < input_rows_count; ++row)
     {
-        const Int256 decimal_raw_value = decimal_data[decimal_is_const ? 0 : row].value;
+        const DecimalNative decimal_raw_value = decimal_data[decimal_is_const ? 0 : row].value;
         const auto integer_value = integer_data[integer_is_const ? 0 : row];
-        Int256 converted_integer;
+        DecimalNative converted_integer;
         result_data[row] = accurate::convertNumeric(integer_value, converted_integer)
             && decimal_raw_value % scale_multiplier == 0
             && decimal_raw_value / scale_multiplier == converted_integer;
+        if (negate)
+            result_data[row] = !result_data[row];
     }
 
     return result;
@@ -303,7 +312,8 @@ ColumnPtr executeExactDecimalIntegerEqualityImpl(
 inline ColumnPtr executeExactDecimalIntegerEquality(
     const ColumnWithTypeAndName & left_argument,
     const ColumnWithTypeAndName & right_argument,
-    size_t input_rows_count)
+    size_t input_rows_count,
+    bool negate)
 {
     ColumnPtr result;
     auto call = [&](const auto & types)
@@ -312,9 +322,9 @@ inline ColumnPtr executeExactDecimalIntegerEquality(
         using LeftType = typename Types::LeftType;
         using RightType = typename Types::RightType;
         if constexpr (is_decimal<LeftType>)
-            result = executeExactDecimalIntegerEqualityImpl<LeftType, RightType>(left_argument, right_argument, input_rows_count);
+            result = executeExactDecimalIntegerEqualityImpl<LeftType, RightType>(left_argument, right_argument, input_rows_count, negate);
         else
-            result = executeExactDecimalIntegerEqualityImpl<RightType, LeftType>(right_argument, left_argument, input_rows_count);
+            result = executeExactDecimalIntegerEqualityImpl<RightType, LeftType>(right_argument, left_argument, input_rows_count, negate);
         return result != nullptr;
     };
 
@@ -1127,8 +1137,7 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
-    /// Used by row-dependent numeric `IN` rewrites. Integer values and integral floating-point
-    /// values are compared exactly with `Decimal` values without overflow or `Float64` rounding.
+    /// Compare `Decimal` with numeric operands exactly when lossy numeric supertypes are enabled.
     bool exact_decimal_numeric_equality = false;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
@@ -1150,13 +1159,7 @@ class FunctionComparison final : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        ComparisonParams params = context ? ComparisonParams(context) : ComparisonParams();
-        if constexpr (std::is_same_v<Name, NameExactNumericEquals>)
-            params.exact_decimal_numeric_equality = true;
-        return std::make_shared<FunctionComparison>(std::move(params));
-    }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -2118,7 +2121,7 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameExactNumericEquals::name || name == NameNotEquals::name))
+        if ((name == NameEquals::name || name == NameNotEquals::name))
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
@@ -2179,7 +2182,7 @@ public:
 
                     /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
                     /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
-                    const bool is_equality = (name == NameEquals::name || name == NameExactNumericEquals::name || name == NameNotEquals::name);
+                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
                     const bool element_result_ok
                         = WhichDataType(element_result_type.get()).isUInt8()
                         || (is_equality && element_result_type->isNullable()
@@ -2406,18 +2409,19 @@ public:
                     getName(),
                     left_type->getName(),
                     right_type->getName());
-            /// Row-dependent heterogeneous numeric `IN` lists need exact equality without
-            /// narrowing integers into the Decimal's native width or rounding through `Float64`.
-            if constexpr (std::is_same_v<Name, NameEquals> || std::is_same_v<Name, NameExactNumericEquals>)
+            /// With lossy numeric supertypes enabled, compare `Decimal` to numeric operands
+            /// without narrowing integers or rounding integral floats through `Float64`.
+            if constexpr (std::is_same_v<Name, NameEquals> || std::is_same_v<Name, NameNotEquals>)
             {
                 if (params.exact_decimal_numeric_equality)
                 {
+                    constexpr bool negate = std::is_same_v<Name, NameNotEquals>;
                     if (left_is_float || right_is_float)
                         return executeExactDecimalFloatEquality(
-                            col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+                            col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count, negate);
                     if (left_is_num || right_is_num)
                         return executeExactDecimalIntegerEquality(
-                            col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+                            col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count, negate);
                 }
             }
 

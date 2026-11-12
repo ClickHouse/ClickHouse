@@ -50,7 +50,6 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsComparison.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
@@ -1324,19 +1323,6 @@ static QueryTreeNodePtr buildResolvedFunction(
     return function;
 }
 
-/// Builds one bounded equality node for a heterogeneous numeric pair. The resolver is attached
-/// directly so query-scope aliases cannot replace the internal comparison implementation.
-static QueryTreeNodePtr buildNumericEquality(
-    const QueryTreeNodePtr & left_argument,
-    const QueryTreeNodePtr & right_argument,
-    const ContextPtr & context)
-{
-    auto equality = std::make_shared<FunctionNode>(NameExactNumericEquals::name);
-    equality->getArguments().getNodes() = {left_argument, right_argument};
-    equality->resolveAsFunction(FunctionFactory::instance().get(NameExactNumericEquals::name, context));
-    return equality;
-}
-
 static QueryTreeNodePtr buildNumericScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
@@ -1344,21 +1330,16 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     bool compare_nulls,
     const ContextPtr & context)
 {
-    auto equality = buildNumericEquality(left_argument, right_argument, context);
-    auto default_false = std::make_shared<ConstantNode>(Field{0u});
-    auto equality_or_false = buildResolvedFunction(
-        "ifNull", {std::move(equality), std::move(default_false)}, context);
-
-    QueryTreeNodePtr result = equality_or_false;
     if (compare_nulls)
-    {
-        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
-        auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
-        auto both_are_null = buildResolvedFunction(
-            "and", {std::move(left_is_null), std::move(right_is_null)}, context);
-        result = buildResolvedFunction("or", {std::move(both_are_null), std::move(result)}, context);
-    }
-    else if (isNullableOrLowCardinalityNullable(left_argument->getResultType()))
+        return buildResolvedFunction(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom", {left_argument, right_argument}, context);
+
+    QueryTreeNodePtr result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
+    const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
+    if (left_nullable || right_nullable)
+        result = buildResolvedFunction("ifNull", {std::move(result), std::make_shared<ConstantNode>(Field{0u})}, context);
+
+    if (left_nullable)
     {
         auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
         auto null_value = std::make_shared<ConstantNode>(
@@ -3051,7 +3032,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const auto & right_type = non_const_set_candidate->getResultType();
                     const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
                         && isNumber(removeNullable(removeLowCardinality(right_type)));
-                    if (is_number_comparison)
+                    if (is_number_comparison && scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype])
                     {
                         node = buildNumericScalarInComparison(
                             fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
