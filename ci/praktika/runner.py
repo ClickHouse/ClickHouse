@@ -338,7 +338,7 @@ class Runner:
     def _pre_run(self, workflow, job, local_job_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state before job start:\n{dirty}")
         else:
@@ -842,15 +842,34 @@ class Runner:
                     uid = os.getuid()
                     gid = os.getgid()
                     chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                    Shell.run(chown_cmd)
+                    if Shell.run(chown_cmd) != 0:
+                        # The docker daemon can go away together with the job container.
+                        Shell.run(f"sudo -n chown -R {uid}:{gid} {Settings.TEMP_DIR}")
 
-                self._finalize_job_result(
+                result = self._finalize_job_result(
                     job,
                     process,
                     exit_code,
                     host_metrics,
                     workflow.enable_exit_code_result,
                 )
+                if (
+                    result.is_ok()
+                    and result.is_completed_by_job()
+                    and not process.timeout_exceeded
+                    and self._is_docker_daemon_death(
+                        exit_code, process.get_latest_log(max_lines=20)
+                    )
+                ):
+                    # `complete_job` exits 0 on an OK verdict; the CLI lost that exit code with the daemon.
+                    print(
+                        "NOTE: docker daemon went away after the job completed - keep its result"
+                    )
+                    result.set_label(
+                        "docker_daemon_death",
+                        hint=f"Docker daemon went away after the job completed, exit code [{exit_code}]",
+                    ).dump()
+                    exit_code = 0
         finally:
             # Idempotent no-op if stop() already ran; still joins the sampling thread if TeePopen raised.
             host_metrics_collector.stop()
@@ -1316,7 +1335,7 @@ class Runner:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
 
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state after job:\n{dirty}")
         else:

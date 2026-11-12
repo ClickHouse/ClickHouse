@@ -322,7 +322,6 @@ def main():
                 info_extractor=Result.cpp_build_info_extractor,
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
         Shell.check("sccache --show-stats", verbose=True)
         res = results[-1].is_ok()
 

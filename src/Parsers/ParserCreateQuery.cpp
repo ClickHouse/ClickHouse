@@ -2837,6 +2837,7 @@ SELECT * FROM base.t1;
     documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -3137,7 +3138,7 @@ When the data type is not known, as for marks, the first alternative that is app
 
 ## Adaptive Codec Selection {#adaptive-codec-selection}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), the codec that compresses a block smallest is chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it. The choice is made on one block in every [`adaptive_codec_selection_period`](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) blocks and reused for the blocks in between.
 

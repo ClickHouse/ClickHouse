@@ -22,6 +22,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -141,15 +142,12 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     data_lake_read_estimate.reset();
 }
 
-std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromDataLakeMetadata() const
+std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCreateDataLakeReadEstimate() const
 {
     /// The initiator assigns the files of this replica, so its own metadata may describe other files.
-    if (distributed_processing)
-        return std::nullopt;
-
-    if (!data_lake_read_estimate)
-        data_lake_read_estimate
-            = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext());
+    if (!data_lake_read_estimate && !distributed_processing)
+        if (auto estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext()))
+            data_lake_read_estimate = std::make_shared<const DataLakeReadEstimate>(std::move(*estimate));
     return data_lake_read_estimate;
 }
 
@@ -255,6 +253,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
+    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+}
+
 void ReadFromObjectStorageStep::createIterator()
 {
     if (iterator_wrapper)
@@ -273,6 +277,12 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
+    if (!join_runtime_filters_for_file_pruning.empty())
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto lookup = query_context->getRuntimeFilterLookup())
+                iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
 }
 
 std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const

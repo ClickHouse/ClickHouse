@@ -2704,7 +2704,8 @@ The candidates are the table's default codec (see the `default_compression_codec
 The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.11", false, false, "Adaptive codec selection was moved to Beta."}, \
         {"26.8", false, false, "New setting."}) \
     DECLARE(NonZeroUInt64, adaptive_codec_selection_period, 8, R"(
 Pricing a block means compressing it with every candidate codec and keeping the smallest output. With `enable_adaptive_codec_selection`, a column stream is split into windows of this many blocks. One block per window is the sample, it is priced and the other blocks reuse its winner.
@@ -2714,7 +2715,7 @@ A priced block is never larger than the default codec would make it, a block reu
 The profile events `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` and `AdaptiveCodecBlocksReused` count the blocks of each kind per merge or mutation in `system.part_log`.
 `AdaptiveCodecBytesDefault` and `AdaptiveCodecBytesWritten` sum the default codec's size and the written size of the sample blocks, so their ratio is the saving of adaptive selection, exact with period `1`.
 Streams whose only candidates are the default codec and `NONE` are not counted.
-)", EXPERIMENTAL, \
+)", BETA, \
         {"26.11", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
@@ -3005,7 +3006,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -3025,14 +3026,15 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (storage_def.settings)
     {
         try
         {
             auto changes = storage_def.settings->changes;
-            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 
             if (checkMergeTreeDiskSettings(changes, context, is_loading_from_existing_metadata) && has("storage_policy"))
                 resetToDefault("storage_policy");
@@ -3486,9 +3488,10 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
