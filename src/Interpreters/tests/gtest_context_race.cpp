@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <thread>
