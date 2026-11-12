@@ -659,6 +659,17 @@ struct ChecksumRecordingInjection : InjectionModel
     std::vector<String> complete_part_sha256_checksums;
 };
 
+struct CompleteMPURecordingInjection : InjectionModel
+{
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
+    {
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        return std::nullopt;
+    }
+
+    std::vector<std::string> seen_if_none_match;
+};
+
 /// Fails the first `fail_times` CompleteMultipartUpload calls with the un-typed MinIO `InvalidPart`
 /// eventual-consistency error, then lets the real mock store handle the rest. The AWS SDK cannot map
 /// <Code>InvalidPart</Code> to a typed model error, so it produces UNKNOWN as the error type and keeps
@@ -1476,6 +1487,59 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
     ASSERT_FALSE(injection->put_object_request_checksum_required);
     ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+}
+
+TEST_F(WBS3Test, GCSMultipartConditionalCreateIsRefused)
+{
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try
+        {
+            auto buffer = getWriteBuffer("gcs_mpu_conditional_create", conditionalCreateWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_THAT(e.what(), testing::HasSubstr("must be a single PUT"));
+            throw;
+        }
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+}
+
+TEST_F(WBS3Test, GCSMultipartBestEffortCreateIsUnconditional)
+{
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    auto injection = std::make_shared<MockS3::CompleteMPURecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto write_settings = conditionalCreateWriteSettings();
+    write_settings.object_storage_write_if_none_match_best_effort = true;
+
+    auto buffer = getWriteBuffer("gcs_mpu_best_effort_create", write_settings);
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.multiUploadComplete, 1u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["gcs_mpu_best_effort_create"], "A");
+    ASSERT_EQ(injection->seen_if_none_match.size(), 1u);
+    EXPECT_TRUE(injection->seen_if_none_match[0].empty());
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)

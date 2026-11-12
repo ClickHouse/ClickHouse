@@ -152,10 +152,7 @@ public:
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
 
-    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
-    {
-        return global_ctx->promise.get_future();
-    }
+    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(global_ctx->result_part, nullptr); }
 
     MergeTreeData::MutableDataPartPtr getUnfinishedPart()
     {
@@ -291,7 +288,8 @@ private:
 
         std::map<String, UInt64> projections_merge_time;
 
-        std::promise<MergeTreeData::MutableDataPartPtr> promise{};
+        /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
+        MergeTreeData::MutableDataPartPtr result_part;
 
         WrittenOffsetSubstreams written_offset_substreams{};
         /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
@@ -310,6 +308,9 @@ private:
 
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
+
+        /// Text indexes are rebuilt for the resulting part instead of being merged.
+        bool rebuild_text_indexes{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -630,6 +631,9 @@ private:
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
+/// Rolls back the uncommitted transaction of `storage`, removing the blobs it has uploaded; logs a failure.
+void tryUndoTransaction(IDataPartStorage & storage) noexcept;
+
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
@@ -642,7 +646,7 @@ private:
         task->cancel();
         throw;
     }
-    return task->getFuture().get();
+    return task->takeResultPart();
 }
 
 }
