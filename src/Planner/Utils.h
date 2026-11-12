@@ -26,6 +26,8 @@
 namespace DB
 {
 
+class ColumnsDescription;
+
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
 
@@ -95,6 +97,16 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 /// Names of `table_expression` columns referenced from `node`, with ALIAS columns under their own name:
 /// their expressions are not entered, because a grant on the alias name is sufficient to use it.
 NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression);
+
+/// Names of the columns and subcolumns of a table that the current user can read with `SELECT`, for a trivial query like
+/// `SELECT count() FROM table`, which is allowed if at least one of them is readable. Besides the columns, it includes
+/// subcolumns with a grant on their exact name, on the table itself or on a table of its `Alias` chain (`storage` may be
+/// null). Each name is checked like a query that reads it, on the table and on every hop of the `Alias` chain.
+NameSet getColumnsSelectableByTrivialQuery(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const ColumnsDescription & columns,
+    const ContextPtr & query_context);
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
