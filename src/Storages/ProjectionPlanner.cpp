@@ -145,13 +145,12 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
     {
-        auto key_name = calculateActionNodeName(key_node, *planner_context, node_to_name, /*use_column_identifier_as_action_node_name=*/false);
+        auto key_name = calculateActionNodeName(key_node, *planner_context, node_to_name);
         if (unique_aggregation_keys.emplace(key_name).second)
             aggregation_keys.push_back(std::move(key_name));
     }
 
-    aggregates = extractAggregateDescriptions(
-        collectAggregateFunctionNodes(query_tree), *planner_context, node_to_name, /*use_column_identifier_as_action_node_name=*/false);
+    aggregates = extractAggregateDescriptions(collectAggregateFunctionNodes(query_tree), *planner_context, node_to_name);
 }
 
 ActionsDAG ProjectionPlanner::buildBeforeAggregationActions() const

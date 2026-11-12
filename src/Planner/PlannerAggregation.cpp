@@ -11,14 +11,13 @@ namespace DB
 AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
 {
     QueryTreeNodeToName node_to_name;
-    return extractAggregateDescriptions(aggregate_function_nodes, planner_context, node_to_name, /*use_column_identifier_as_action_node_name=*/true);
+    return extractAggregateDescriptions(aggregate_function_nodes, planner_context, node_to_name);
 }
 
 AggregateDescriptions extractAggregateDescriptions(
     const QueryTreeNodes & aggregate_function_nodes,
     const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name)
+    QueryTreeNodeToName & node_to_name)
 {
     NameSet unique_aggregate_action_node_names;
     AggregateDescriptions aggregate_descriptions;
@@ -26,7 +25,7 @@ AggregateDescriptions extractAggregateDescriptions(
     for (const auto & aggregate_function_node : aggregate_function_nodes)
     {
         const auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
-        String node_name = calculateActionNodeName(aggregate_function_node, planner_context, node_to_name, use_column_identifier_as_action_node_name);
+        String node_name = calculateActionNodeName(aggregate_function_node, planner_context, node_to_name);
         auto [_, inserted] = unique_aggregate_action_node_names.emplace(node_name);
         if (!inserted)
             continue;
@@ -48,7 +47,7 @@ AggregateDescriptions extractAggregateDescriptions(
 
         for (const auto & argument_node : arguments_nodes)
         {
-            String argument_node_name = calculateActionNodeName(argument_node, planner_context, node_to_name, use_column_identifier_as_action_node_name);
+            String argument_node_name = calculateActionNodeName(argument_node, planner_context, node_to_name);
             aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
         }
 

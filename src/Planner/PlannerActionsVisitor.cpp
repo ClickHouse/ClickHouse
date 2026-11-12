@@ -983,7 +983,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & constant_node = node->as<ConstantNode &>();
     const auto & constant_type = constant_node.getResultType();
 
-    /// The helper names a constant by the same rules, and by the name map if the node is in it.
     auto constant_node_name = !override_column_name.empty() ? override_column_name : action_node_name_helper.calculateActionNodeName(node);
 
     actions_stack[0].addConstantIfNecessary(
@@ -1447,13 +1446,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 }
 
 }
-
-PlannerActionsVisitor::PlannerActionsVisitor(
-    const PlannerContextPtr & planner_context_,
-    const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_)
-    : PlannerActionsVisitor(planner_context_, correlated_columns_set_, use_column_identifier_as_action_node_name_, QueryTreeNodeToName{})
-{}
 
 PlannerActionsVisitor::PlannerActionsVisitor(
     const PlannerContextPtr & planner_context_,

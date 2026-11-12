@@ -14,11 +14,10 @@ namespace DB
 /// Extract aggregate descriptions from aggregate function nodes
 AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context);
 
-/// The same, naming the nodes found in `node_to_name` by the map (see `calculateActionNodeName`).
+/// the same, but a node in node_to_name takes its name from the map
 AggregateDescriptions extractAggregateDescriptions(
     const QueryTreeNodes & aggregate_function_nodes,
     const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name);
+    QueryTreeNodeToName & node_to_name);
 
 }
