@@ -37,6 +37,26 @@ WHERE with the parent column
 7	{"a":7}
 8	{"a":8}
 9	{"a":9}
+UPDATE of the parent column
+0	2
+1	1
+2	2
+7	5
+0	2
+1	1
+2	2
+7	5
+UPDATE of the parent column (Tuple)
+1	1
+2	2
+3	1
+4	1
+8	5
+1	1
+2	2
+3	1
+4	1
+8	5
 Projection parts
 t_dynamic	p	2
 t_json	p	3

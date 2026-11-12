@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS t_tuple;
 DROP TABLE IF EXISTS t_nullable;
 DROP TABLE IF EXISTS t_dynamic;
 DROP TABLE IF EXISTS t_where;
+DROP TABLE IF EXISTS t_update;
+DROP TABLE IF EXISTS t_update_tuple;
 
 SELECT 'JSON typed path';
 CREATE TABLE t_json (id UInt64, j JSON(a UInt64)) ENGINE = MergeTree ORDER BY id;
@@ -52,6 +54,24 @@ CREATE TABLE t_where (id UInt64, j JSON(a UInt64)) ENGINE = MergeTree ORDER BY i
 ALTER TABLE t_where ADD PROJECTION p (SELECT id, j WHERE j.a > 6 ORDER BY id);
 INSERT INTO t_where SELECT number, '{"a":' || toString(number) || '}' FROM numbers(10);
 SELECT id, j FROM t_where WHERE j.a > 6 ORDER BY id SETTINGS optimize_use_projections = 0;
+
+SELECT 'UPDATE of the parent column';
+CREATE TABLE t_update (id UInt64, j JSON(a UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_update SELECT number, '{"a":' || toString(number % 3) || '}' FROM numbers(10);
+ALTER TABLE t_update ADD PROJECTION p (SELECT j.a::UInt64 AS k, count() GROUP BY k);
+ALTER TABLE t_update MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_update UPDATE j = '{"a":7}' WHERE id < 5 SETTINGS mutations_sync = 2;
+SELECT j.a::UInt64 AS k, count() FROM t_update GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT j.a::UInt64 AS k, count() FROM t_update GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 0;
+DROP TABLE t_update;
+
+SELECT 'UPDATE of the parent column (Tuple)';
+CREATE TABLE t_update_tuple (id UInt64, t Tuple(a UInt32, b String), PROJECTION p (SELECT t.a + 1 AS k, count() GROUP BY k)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_update_tuple SELECT number, tuple(number % 4, 'x') FROM numbers(10);
+ALTER TABLE t_update_tuple UPDATE t = tuple(7, 'y') WHERE id < 5 SETTINGS mutations_sync = 2;
+SELECT t.a + 1 AS k, count() FROM t_update_tuple GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT t.a + 1 AS k, count() FROM t_update_tuple GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 0;
+DROP TABLE t_update_tuple;
 
 SELECT 'Projection parts';
 SELECT table, name, rows FROM system.projection_parts WHERE database = currentDatabase() AND active ORDER BY table, name;
