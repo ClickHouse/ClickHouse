@@ -288,6 +288,9 @@ public:
     /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
     virtual bool writesInitialMetadata() const { return false; }
 
+    /// Whether `updateMetadata` is implemented. Check before staging files for a catalog commit.
+    virtual bool supportsMetadataUpdates() const { return false; }
+
     /// Updates metadata in catalog.
     /// Returns `true` on success and `false` only on a confirmed conflict that permits cleanup and retry.
     /// Throws `ICEBERG_COMMIT_REJECTED` on a definite rejection that permits cleanup, or `ICEBERG_COMMIT_STATE_UNKNOWN`

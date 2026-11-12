@@ -4,9 +4,11 @@ import time
 import os
 import uuid
 import socket
+import pyarrow as pa
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
+from helpers.s3_tools import list_s3_objects, remove_directory
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType, LongType
@@ -68,6 +70,51 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def test_insert_rejected_before_staging_files(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_hive_catalog(started_cluster)
+    namespace = f"insert_rejected_{uuid.uuid4().hex}"
+    database = namespace
+    identifier = f"{namespace}.events"
+    table_name = f"{database}.`{identifier}`"
+    prefix = f"data/{namespace}/events/"
+    bucket = "warehouse-hms"
+
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=LongType(), required=False)
+        ),
+        location=f"s3a://{bucket}/{prefix.rstrip('/')}",
+    )
+    try:
+        table.append(pa.table({"id": pa.array([1], type=pa.int64())}))
+        node.query(
+            f"CREATE DATABASE {database} "
+            f"ENGINE = DataLakeCatalog('thrift://hive:9083', '{minio_access_key}', '{minio_secret_key}') "
+            "SETTINGS catalog_type = 'hive', warehouse = 'warehouse_test', "
+            "storage_endpoint = 'http://minio1:9001'"
+        )
+        assert node.query(f"SELECT id FROM {table_name}") == "1\n"
+        baseline_files = set(list_s3_objects(started_cluster.minio_client, bucket, prefix))
+        assert baseline_files
+
+        error = node.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (2)",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+        assert "NOT_IMPLEMENTED" in error
+        assert "Catalog does not support Iceberg inserts" in error
+        assert set(list_s3_objects(started_cluster.minio_client, bucket, prefix)) == baseline_files
+        assert node.query(f"SELECT id FROM {table_name}") == "1\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database}")
+        catalog.drop_table(identifier)
+        catalog.drop_namespace(namespace)
+        remove_directory(started_cluster.minio_client, bucket, prefix.rstrip("/"))
 
 
 def test_ttransport_exception_restart_service(started_cluster):
