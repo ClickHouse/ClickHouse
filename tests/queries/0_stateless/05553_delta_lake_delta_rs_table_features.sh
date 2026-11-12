@@ -5,7 +5,7 @@
 
 # Delta table features on tables adopted from the delta-rs test suite (see data_delta_lake/delta_rs/README.md):
 # deletion vectors with checkpoints, in-commit timestamps, liquid clustering with row tracking,
-# out-of-range INT96 timestamps, an unknown reader feature and the Variant type.
+# INT96 timestamps beyond the nanosecond range, an unknown reader feature and the Variant type.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,9 +35,9 @@ DESCRIBE deltaLakeLocal('$DATA/table_with_edge_timestamps');
 SELECT NORMAL_DATE, SOME_VALUE FROM deltaLakeLocal('$DATA/table_with_edge_timestamps') ORDER BY SOME_VALUE;
 "
 
-# BIG_DATE holds 9999-12-31 and 9999-12-30 as INT96, outside the range of `DateTime64`, which ends in 2299.
-echo "-- table_with_edge_timestamps: INT96 timestamps beyond the DateTime64 range"
-$CLICKHOUSE_LOCAL -q "SELECT BIG_DATE FROM deltaLakeLocal('$DATA/table_with_edge_timestamps')" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
+# BIG_DATE holds 9999-12-31 and 9999-12-30 as INT96, outside the Int64 nanosecond range.
+echo "-- table_with_edge_timestamps: INT96 timestamps beyond the nanosecond range read into DateTime64(6)"
+$CLICKHOUSE_LOCAL --session_timezone UTC -q "SELECT BIG_DATE FROM deltaLakeLocal('$DATA/table_with_edge_timestamps') ORDER BY SOME_VALUE"
 
 # The protocol lists a reader feature `blahabl` that no reader knows, so the table must be refused.
 echo "-- simple_table_features: unknown reader feature"
