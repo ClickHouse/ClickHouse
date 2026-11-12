@@ -58,12 +58,12 @@ SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 -- Baselines planned for a single node.
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_mid AS m, t_order_small AS s, t_order_big AS b
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
     log_comment = '05261_single_node_big_last';
 
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_big AS b, t_order_mid AS m, t_order_small AS s
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
     log_comment = '05261_single_node_big_first';
 
 SET enable_parallel_replicas = 1;
@@ -77,35 +77,37 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 -- only collects them and the ones after it are what can act on them.
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_mid AS m, t_order_small AS s, t_order_big AS b
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS log_comment = '05261_warmup_big_last';
+SETTINGS log_comment = '05261_warmup_big_last';
 
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_mid AS m, t_order_small AS s, t_order_big AS b
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS log_comment = '05261_replicas_big_last';
+SETTINGS log_comment = '05261_replicas_big_last';
 
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_mid AS m, t_order_small AS s, t_order_big AS b
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS log_comment = '05261_replicas_big_last';
+SETTINGS log_comment = '05261_replicas_big_last';
 
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_big AS b, t_order_mid AS m, t_order_small AS s
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS log_comment = '05261_warmup_big_first';
+SETTINGS log_comment = '05261_warmup_big_first';
 
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_big AS b, t_order_mid AS m, t_order_small AS s
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS log_comment = '05261_replicas_big_first';
+SETTINGS log_comment = '05261_replicas_big_first';
 
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_big AS b, t_order_mid AS m, t_order_small AS s
 WHERE m.key = b.key AND s.s = b.s AND b.key < 20000
-FORMAT Null SETTINGS log_comment = '05261_replicas_big_first';
+SETTINGS log_comment = '05261_replicas_big_first';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Both runs after the warmup must use replicas: a run that quietly stayed single-node is the regression
--- this test is for, and the marks comparison alone would hold for it too.
+-- Every run above prints its result, so the reference holds them equal to the single-node one: a read
+-- handed another read's analysis reads the wrong rows. Both runs after the warmup must use replicas: a
+-- run that quietly stayed single-node is the regression this test is for, and the other checks would
+-- hold for it too.
 SELECT
     shape,
     count() = 2 AND min(used > 0) AS replicas_were_used_on_every_run,
