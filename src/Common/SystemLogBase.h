@@ -140,6 +140,13 @@ public:
 
     void shutdown();
 
+    /// If a previous owner shut this queue down, puts it back into its constructed state so that
+    /// it can serve a new one; otherwise does nothing. Only meaningful for queues that outlive
+    /// their SystemLog, i.e. TextLog's process-wide static one. Note that `settings` is fixed at
+    /// construction and is NOT re-applied: a second owner in the same process keeps the first
+    /// one's flush interval and size limits.
+    void restart();
+
     // producer method: fill the element in place under a memory-tracker blocker, then enqueue it (moved).
     template <typename FillElement>
     requires std::is_invocable_r_v<void, FillElement, LogElement &>
@@ -257,6 +264,9 @@ public:
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
+    static const char * getDefaultTTL() { return ""; }
+    /// Additional engine SETTINGS added to the default table definition (when no custom engine is configured).
+    static const char * getDefaultEngineSettings() { return ""; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
     static consteval size_t getDefaultReservedSize() { return 8192; }
     static consteval size_t getDefaultFlushIntervalMilliseconds() { return 7500; }

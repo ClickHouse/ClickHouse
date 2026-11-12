@@ -49,16 +49,15 @@ public:
         return 1;
     }
 
+    /// Resolved against the executing node's own binary, like `buildId`.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"address_of_binary_instruction", &isUInt64, nullptr, "UInt64"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeString>();
+        return "(UInt64) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -82,7 +81,12 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
-                result_column->insertData(symbol->name, strlen(symbol->name));
+            {
+                if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
+                    result_column->insertData(symbol_name.data(), symbol_name.size());
+                else
+                    result_column->insertDefault();
+            }
             else
                 result_column->insertDefault();
         }
@@ -96,19 +100,23 @@ public:
 REGISTER_FUNCTION(AddressToSymbol)
 {
     FunctionDocumentation::Description description = R"(
-Converts virtual memory address inside the ClickHouse server process to a symbol from ClickHouse's object files.
+Converts an address of an instruction inside the main ClickHouse executable to a symbol from ClickHouse's object files.
+
+The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, and `system.crash_log`, and the `last_error_trace` column of `system.error_log`.
+Runtime (virtual memory) addresses are not accepted, so that the function cannot be used to learn the memory layout of the server process.
+Frames outside the main executable are stored as `0`, and the function returns an empty result for them.
     )";
     FunctionDocumentation::Syntax syntax = "addressToSymbol(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {
-        {"address_of_binary_instruction", "Address of instruction in a running process.", {"UInt64"}}
+        {"address_of_binary_instruction", "Offset of an instruction inside the main ClickHouse executable, as stored in the `trace` column of `system.trace_log` and similar tables.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the symbol from ClickHouse object files or an empty string, if the address is not valid.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the symbol from ClickHouse object files or an empty string, if the address is not valid or is `0`.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Selecting the first string from the `trace_log` system table",
         R"(
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -120,19 +128,19 @@ revision:      54429
 timer_type:    Real
 thread_number: 48
 query_id:      724028bf-f550-45aa-910d-2af6212b94ac
-trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
+trace:         [0,0,0,0,631010292,205306916,447260096,447257472,447067860,447068840,443102728,443098700,442466608,442461536,442451604,442504896,442512004,442579276,290968008,555786732,291036904,205189920,0,0]
         )"
     },
     {
         "Getting a symbol for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(447257472::UInt64) AS symbol FORMAT Vertical;
         )",
         R"(
 Row 1:
 ──────
-addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
+symbol: _ZN2DB16LazyOutputFormat8getChunkEm
         )"
     },
     {
@@ -147,30 +155,34 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
         )",
         R"(
 Row 1:
 ──────
-trace_symbols: _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
-_ZNK2DB10Aggregator21executeWithoutKeyImplERPcmPNS0_28AggregateFunctionInstructionEPNS_5ArenaE
-_ZN2DB10Aggregator14executeOnBlockESt6vectorIN3COWINS_7IColumnEE13immutable_ptrIS3_EESaIS6_EEmRNS_22AggregatedDataVariantsERS1_IPKS3_SaISC_EERS1_ISE_SaISE_EERb
-_ZN2DB10Aggregator14executeOnBlockERKNS_5BlockERNS_22AggregatedDataVariantsERSt6vectorIPKNS_7IColumnESaIS9_EERS6_ISB_SaISB_EERb
-_ZN2DB10Aggregator7executeERKSt10shared_ptrINS_17IBlockInputStreamEERNS_22AggregatedDataVariantsE
-_ZN2DB27AggregatingBlockInputStream8readImplEv
-_ZN2DB17IBlockInputStream4readEv
-_ZN2DB26ExpressionBlockInputStream8readImplEv
-_ZN2DB17IBlockInputStream4readEv
-_ZN2DB26ExpressionBlockInputStream8readImplEv
-_ZN2DB17IBlockInputStream4readEv
-_ZN2DB28AsynchronousBlockInputStream9calculateEv
-_ZNSt17_Function_handlerIFvvEZN2DB28AsynchronousBlockInputStream4nextEvEUlvE_E9_M_invokeERKSt9_Any_data
-_ZN14ThreadPoolImplI20ThreadFromGlobalPoolE6workerESt14_List_iteratorIS0_E
-_ZZN20ThreadFromGlobalPoolC4IZN14ThreadPoolImplIS_E12scheduleImplIvEET_St8functionIFvvEEiSt8optionalImEEUlvE1_JEEEOS4_DpOT0_ENKUlvE_clEv
-_ZN14ThreadPoolImplISt6threadE6workerESt14_List_iteratorIS0_E
-execute_native_thread_routine
-start_thread
-clone
+trace_symbols:
+
+
+_ZNSt3__118condition_variable15__do_timed_waitERNS_11unique_lockINS_5mutexEEENS_6chrono10time_pointINS5_12system_clockENS5_8durationIxNS_5ratioILl1ELl1000000000EEEEEEE
+_ZNSt3__118condition_variable10wait_untilB9nqe220101INS_6chrono12steady_clockENS2_8durationIxNS_5ratioILl1ELl1000000000EEEEEEENS_9cv_statusERNS_11unique_lockINS_5mutexEEERKNS2_10time_pointIT_T0_EE
+_ZN22ConcurrentBoundedQueueIN2DB5ChunkEE7popImplILb1EEEbRS1_NSt3__18optionalImEE
+_ZN2DB16LazyOutputFormat8getChunkEm
+_ZN2DB28PullingAsyncPipelineExecutor4pullERNS_5ChunkEm
+_ZN2DB28PullingAsyncPipelineExecutor4pullERNS_5BlockEm
+_ZN2DB15LocalConnection8pollImplEv
+_ZN2DB15LocalConnection4pollEm
+_ZN2DB10ClientBase13receiveResultEN5boost13intrusive_ptrINS_4IASTEEEib
+_ZN2DB10ClientBase20processOrdinaryQueryENSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEN5boost13intrusive_ptrINS_4IASTEEE
+_ZN2DB10ClientBase24processParsedSingleQueryENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEEN5boost13intrusive_ptrINS_4IASTEEERbm
+_ZN2DB10ClientBase17executeMultiQueryERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN2DB10ClientBase16processQueryTextERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN2DB10ClientBase17runNonInteractiveEv
+_ZN2DB11LocalServer4mainERKNSt3__16vectorINS1_12basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS6_IS8_EEEE
+_ZN4Poco4Util11Application3runEv
+_Z24mainEntryClickHouseLocaliPPc
+main
+
+
         )"
     }
     };

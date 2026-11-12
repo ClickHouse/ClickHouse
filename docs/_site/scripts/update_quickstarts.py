@@ -14,6 +14,10 @@ module rather than inline in home.mdx because the translation pipeline
 translates snippet modules but not `export const` literals inside pages
 (same layout as KBExplorer's kb-data.jsx).
 
+Every quickstart page is omitted from its locale's sidebar, so the script also
+normalizes the non-translatable `searchable: true` frontmatter flag across the
+English and localized page trees.
+
 Usage:
     python scripts/update_quickstarts.py
 """
@@ -23,28 +27,192 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
+LOCALES = ('ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh')
+QUICKSTART_NAVIGATION_LABELS_PATH = (
+    Path(__file__).resolve().parents[1] / 'quickstart-navigation-labels.json'
+)
+
+CLOUD_SETUP_CARD = {
+    'id': 'create-your-first-service-on-cloud',
+    'title': 'ClickHouse Cloud quick start',
+    'description': (
+        'Quick start guide for ClickHouse Cloud'
+    ),
+    'useCases': ['All'],
+    'products': ['Cloud'],
+}
+
+CLOUD_SETUP_CARD_TRANSLATIONS = {
+    'ar': {
+        'title': 'البدء السريع مع ClickHouse Cloud',
+        'description': 'دليل البدء السريع لـ ClickHouse Cloud',
+    },
+    'es': {
+        'title': 'Inicio rápido de ClickHouse Cloud',
+        'description': 'Guía de inicio rápido para ClickHouse Cloud',
+    },
+    'fr': {
+        'title': 'Démarrage rapide de ClickHouse Cloud',
+        'description': 'Guide de démarrage rapide pour ClickHouse Cloud',
+    },
+    'ja': {
+        'title': 'ClickHouse Cloud クイックスタート',
+        'description': 'ClickHouse Cloud のクイックスタートガイド',
+    },
+    'ko': {
+        'title': 'ClickHouse Cloud 빠른 시작',
+        'description': 'ClickHouse Cloud 빠른 시작 가이드',
+    },
+    'pt-BR': {
+        'title': 'Início rápido do ClickHouse Cloud',
+        'description': 'Guia de início rápido do ClickHouse Cloud',
+    },
+    'ru': {
+        'title': 'Быстрый старт с ClickHouse Cloud',
+        'description': 'Руководство по быстрому старту с ClickHouse Cloud',
+    },
+    'zh': {
+        'title': 'ClickHouse Cloud 快速入门',
+        'description': 'ClickHouse Cloud 快速入门指南',
+    },
+}
+
+
+def load_quickstart_navigation_labels() -> Dict[str, List[str]]:
+    """Read the locale-owned labels for the Quickstarts navigation section."""
+    labels = json.loads(QUICKSTART_NAVIGATION_LABELS_PATH.read_text(encoding='utf-8'))
+    if set(labels) != set(LOCALES):
+        raise ValueError(
+            "quickstart navigation labels must cover exactly: "
+            + ', '.join(LOCALES)
+        )
+    for locale, group_labels in labels.items():
+        if not isinstance(group_labels, list) or len(group_labels) != 5:
+            raise ValueError(
+                f"quickstart navigation labels for {locale} must contain five labels"
+            )
+        if not all(isinstance(label, str) and label for label in group_labels):
+            raise ValueError(
+                f"quickstart navigation labels for {locale} must be non-empty strings"
+            )
+    return labels
+
+
+def navigation_groups(node: Any):
+    """Yield every navigation object that owns a named page group."""
+    if isinstance(node, dict):
+        if 'group' in node and 'pages' in node:
+            yield node
+        for value in node.values():
+            yield from navigation_groups(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from navigation_groups(value)
+
+
+def update_quickstart_navigation(
+    project_root: Path, locale: str, labels: List[str]
+) -> Optional[str]:
+    """Return a locale navigation file with canonical Quickstarts labels."""
+    path = project_root / locale / 'get-started' / 'navigation.json'
+    source = path.read_text(encoding='utf-8')
+    navigation = json.loads(source)
+    home = f'{locale}/get-started/quickstarts/home'
+    matches = [
+        group
+        for group in navigation_groups(navigation)
+        if home in group.get('pages', [])
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f'{path.relative_to(project_root)}: expected exactly one Quickstarts '
+            'group containing the explorer home page'
+        )
+
+    quickstarts_group = matches[0]
+    nested_groups = [
+        page
+        for page in quickstarts_group['pages']
+        if isinstance(page, dict) and 'group' in page
+    ]
+    if len(nested_groups) != len(labels) - 1:
+        raise ValueError(
+            f'{path.relative_to(project_root)}: expected {len(labels) - 1} '
+            'nested Quickstarts groups'
+        )
+
+    quickstarts_group['group'] = labels[0]
+    for nested_group, label in zip(nested_groups, labels[1:]):
+        nested_group['group'] = label
+
+    updated = json.dumps(navigation, ensure_ascii=False, indent=2)
+    if source.endswith('\n'):
+        updated += '\n'
+    return updated if updated != source else None
+
+
+def add_cloud_setup_card(quickstarts: List[Dict[str, Any]],
+                         locale: Optional[str] = None) -> None:
+    """Add the Cloud setup card without keeping a duplicate quickstart page."""
+    prefix = f'/{locale}' if locale else ''
+    href = f'{prefix}/get-started/setup/cloud'
+
+    for quickstart in quickstarts:
+        if quickstart['id'] == CLOUD_SETUP_CARD['id']:
+            raise ValueError(
+                f"Remove the legacy {CLOUD_SETUP_CARD['id']}.mdx page; its "
+                "explorer card is generated from update_quickstarts.py"
+            )
+
+    translated = CLOUD_SETUP_CARD_TRANSLATIONS.get(locale, {})
+    card = {**CLOUD_SETUP_CARD, **translated}
+    quickstarts.append({**card, 'href': href})
+    quickstarts.sort(key=lambda quickstart: quickstart['id'])
+
+
 def unquote_scalar(value: str) -> str:
     """Unquote a single YAML scalar, honoring the escaping the docs frontmatter
     actually uses.
 
     Inside a single-quoted scalar a doubled '' is the one literal apostrophe
-    YAML allows ('l''immobilier' -> l'immobilier); inside a double-quoted scalar
-    a backslash escapes the next character. The previous code stripped the outer
-    quotes and emitted the rest verbatim, so escaped apostrophes leaked into the
-    generated card data. A real YAML parser would be ideal, but PyYAML is not
-    available in the docs CI image, so unescape the two quoting styles by hand.
+    YAML allows ('l''immobilier' -> l'immobilier). For double-quoted scalars,
+    support the quote and backslash escapes used by the existing frontmatter and
+    reject every other escape rather than diverging from Mintlify's YAML parser.
+    A real YAML parser would be ideal, but PyYAML is not available in the docs CI
+    image, so handle this deliberately limited subset by hand.
     """
     value = value.strip()
-    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
-        return value[1:-1].replace("''", "'")
-    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
-        # Unescape \" and \\ left-to-right (re.sub matches non-overlapping).
-        return re.sub(r'\\(["\\])', r'\1', value[1:-1])
+    if value.startswith(("'", '"')):
+        if len(value) < 2 or value[-1] != value[0]:
+            raise ValueError(
+                "multiline or unterminated quoted YAML scalars are not "
+                "supported; keep the value on one physical line"
+            )
+        if value[0] == "'":
+            return value[1:-1].replace("''", "'")
+        inner = value[1:-1]
+        decoded = []
+        index = 0
+        while index < len(inner):
+            if inner[index] != '\\':
+                decoded.append(inner[index])
+                index += 1
+                continue
+            if index + 1 >= len(inner) or inner[index + 1] not in ('"', '\\'):
+                escape = inner[index:index + 2]
+                raise ValueError(
+                    f"unsupported YAML escape {escape!r}; only escaped quotes "
+                    "and backslashes are supported"
+                )
+            decoded.append(inner[index + 1])
+            index += 2
+        return ''.join(decoded)
     return value
+
 
 def parse_frontmatter(content: str) -> Dict[str, Any]:
     """
-    Parse YAML frontmatter from MDX file content.
+    Parse the supported single-line subset of YAML frontmatter.
 
     Args:
         content: The full content of the MDX file
@@ -60,28 +228,52 @@ def parse_frontmatter(content: str) -> Dict[str, Any]:
     frontmatter_text = match.group(1)
     frontmatter = {}
 
-    # Parse simple YAML key-value pairs and arrays
-    for line in frontmatter_text.split('\n'):
-        line = line.strip()
+    # Parse only the single-line scalar and inline-array forms this generator
+    # understands. Reject other valid YAML forms instead of silently reducing
+    # them to a different value than Mintlify's YAML parser renders.
+    for line_number, raw_line in enumerate(frontmatter_text.split('\n'), 1):
+        line = raw_line.strip()
         if not line or line.startswith('#'):
             continue
 
-        # Handle key: value pairs
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip()
-            value = value.strip()
+        if raw_line[0].isspace():
+            raise ValueError(
+                f"unsupported indented YAML value on frontmatter line "
+                f"{line_number}; use a single-line scalar or inline array"
+            )
 
-            # Handle arrays like [item1, item2]. Brackets are unquoted, so this
-            # is checked before unquoting the scalar form below.
-            if value.startswith('[') and value.endswith(']'):
-                # Parse array
-                array_content = value[1:-1]
-                items = [unquote_scalar(item)
-                        for item in array_content.split(',')]
-                frontmatter[key] = [item for item in items if item]
-            else:
-                frontmatter[key] = unquote_scalar(value)
+        if ':' not in line:
+            raise ValueError(
+                f"unsupported YAML syntax on frontmatter line {line_number}: "
+                f"{line!r}"
+            )
+
+        # Handle key: value pairs
+        key, value = line.split(':', 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise ValueError(
+                f"empty or nested YAML value for {key!r} on frontmatter "
+                f"line {line_number}; use a single-line scalar or inline array"
+            )
+        if key in frontmatter:
+            raise ValueError(f"duplicate frontmatter field {key!r}")
+        if value.startswith(('|', '>')):
+            raise ValueError(
+                f"block YAML scalar for {key!r} is not supported; keep the "
+                "value on one physical line"
+            )
+
+        # Handle arrays like [item1, item2]. Brackets are unquoted, so this
+        # is checked before unquoting the scalar form below.
+        if value.startswith('[') and value.endswith(']'):
+            array_content = value[1:-1]
+            items = [unquote_scalar(item)
+                    for item in array_content.split(',')]
+            frontmatter[key] = [item for item in items if item]
+        else:
+            frontmatter[key] = unquote_scalar(value)
 
     return frontmatter
 
@@ -208,22 +400,54 @@ def generate_badges(use_cases: List[str], products: List[str]) -> str:
 
     return f'{first_line}\n<div className="mt-2 flex flex-wrap gap-2">\n{second_line}\n</div>'
 
-def update_quickstart_badges(file_path: Path, use_cases: List[str], products: List[str]) -> Optional[str]:
+def update_quickstart_page(file_path: Path, use_cases: List[str], products: List[str],
+                           update_badges: bool) -> Optional[str]:
     """
-    Refresh the autogenerated badges section of a quick-start MDX file.
+    Normalize required frontmatter and optionally refresh the badge section.
 
     Returns the updated page content, or None when the badge block is already
-    up to date. Nothing is written here: the caller stages the content and
-    flushes it only after the whole scan has succeeded, so a failure on a
-    later page cannot leave the tree half-regenerated.
+    up to date and `searchable: true` is already present. Nothing is written
+    here: the caller stages the content and flushes it only after the whole
+    scan has succeeded, so a failure on a later page cannot leave the tree
+    half-regenerated.
 
     Args:
         file_path: Path to the quick-start MDX file
         use_cases: List of use case tags
         products: List of product tags
+        update_badges: Whether to refresh the English badge block
     """
     with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+        original = f.read()
+
+    frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', original, re.DOTALL)
+    if not frontmatter_match:
+        raise ValueError("no frontmatter block; cannot set `searchable: true`")
+
+    frontmatter = frontmatter_match.group(1)
+    searchable_lines = re.findall(r'^searchable:\s*.*$', frontmatter, re.MULTILINE)
+    if len(searchable_lines) > 1:
+        raise ValueError("multiple `searchable` frontmatter fields")
+
+    if searchable_lines:
+        frontmatter = re.sub(
+            r'^searchable:\s*.*$', 'searchable: true', frontmatter,
+            count=1, flags=re.MULTILINE)
+    else:
+        frontmatter, replacements = re.subn(
+            r'(^sidebarTitle:.*$)', r'\1\nsearchable: true', frontmatter,
+            count=1, flags=re.MULTILINE)
+        if not replacements:
+            frontmatter = f'searchable: true\n{frontmatter}'
+
+    content = (
+        original[:frontmatter_match.start(1)]
+        + frontmatter
+        + original[frontmatter_match.end(1):]
+    )
+
+    if not update_badges:
+        return content if content != original else None
 
     # Generate badges
     badges = generate_badges(use_cases, products)
@@ -243,7 +467,7 @@ def update_quickstart_badges(file_path: Path, use_cases: List[str], products: Li
     # Replace the content between markers
     replacement = f'{{/* AUTOGENERATED_START */}}\n{badges}\n{{/* AUTOGENERATED_END */}}'
     updated = re.sub(pattern, replacement, content, flags=re.DOTALL)
-    return updated if updated != content else None
+    return updated if updated != original else None
 
 def render_data_module(quickstarts: List[Dict[str, Any]]) -> str:
     """Render the quickstarts-data.jsx module body.
@@ -304,10 +528,10 @@ def build_quickstarts(quickstarts_dir: Path, project_root: Path,
                 )
             seen_ids[data['id']] = file_path
 
-            if update_badges:
-                updated = update_quickstart_badges(file_path, data['useCases'], data['products'])
-                if updated is not None:
-                    staged[file_path] = updated
+            updated = update_quickstart_page(
+                file_path, data['useCases'], data['products'], update_badges)
+            if updated is not None:
+                staged[file_path] = updated
 
             quickstarts.append(data)
             print(f"  ✓ {file_path.name}: {data['title']}")
@@ -330,6 +554,7 @@ def main():
     # only after all trees have scanned cleanly, so a failure anywhere leaves
     # the tree untouched instead of half-regenerated.
     staged = {}
+    navigation_labels = load_quickstart_navigation_labels()
 
     # English tree: extract data and refresh the in-page badge blocks.
     print(f"Scanning for quick-start files in {quickstarts_dir}...")
@@ -338,6 +563,7 @@ def main():
     if not quickstarts:
         print("No valid quick-start data extracted")
         return 1
+    add_cloud_setup_card(quickstarts)
 
     output_path = (project_root / 'snippets' / 'components' / 'QuickStartsGrid'
                    / 'quickstarts-data.jsx')
@@ -347,9 +573,9 @@ def main():
     # Locale trees: same extraction against the translated pages, so titles and
     # descriptions come out localized and hrefs come out locale-prefixed
     # (extract_quickstart_data derives the href from the path relative to the
-    # project root). Badges are left to the translation pipeline.
-    locales = ['ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh']
-    for locale in locales:
+    # project root). Badges are left to the translation pipeline, while the
+    # non-translatable searchable flag is normalized here.
+    for locale in LOCALES:
         locale_dir = project_root / locale / 'get-started' / 'quickstarts'
         if not locale_dir.exists():
             print(f"  - {locale}: no quickstarts directory, skipped")
@@ -361,6 +587,7 @@ def main():
         if not locale_quickstarts:
             print(f"  - {locale}: no valid quick-start data, skipped")
             continue
+        add_cloud_setup_card(locale_quickstarts, locale)
         # Keep useCases/products canonical English: the grid filters match data
         # values against its option lists by string equality, and the
         # translation pipeline translates frontmatter tag values inconsistently.
@@ -386,6 +613,18 @@ def main():
                          / 'QuickStartsGrid' / 'quickstarts-data.jsx')
         staged[locale_output] = render_data_module(locale_quickstarts)
         print(f"✓ Staged {len(locale_quickstarts)} quick-start(s) for {locale_output}")
+
+    # Navigation labels are controlled UI terminology, not translated prose.
+    # Normalize every locale even when its quickstart pages are unavailable, so
+    # an incomplete locale cannot silently retain labels written by GT.
+    for locale in LOCALES:
+        updated_navigation = update_quickstart_navigation(
+            project_root, locale, navigation_labels[locale]
+        )
+        if updated_navigation is not None:
+            navigation_path = project_root / locale / 'get-started' / 'navigation.json'
+            staged[navigation_path] = updated_navigation
+            print(f"✓ Staged canonical Quickstarts labels for {navigation_path}")
 
     if failures:
         print(f"\n✗ {failures} page(s) failed; nothing was written — "

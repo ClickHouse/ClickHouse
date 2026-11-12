@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -24,6 +25,10 @@ namespace DB
  * When the limit on number of dynamic types is exceeded, all values
  * with new types are inserted into special shared variant with type String
  * that contains values and their types in binary format.
+ *
+ * Values nest into each other through variants like Array(Dynamic) to a depth that comes
+ * from the data, not from the declared type, so methods that recurse into the Variant
+ * column call checkStackSize.
  */
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
@@ -116,12 +121,14 @@ public:
 
     MutableColumnPtr cloneEmpty() const override
     {
+        checkStackSize();
         /// Keep current dynamic structure
         return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
+        checkStackSize();
         return Base::create(variant_column->cloneResized(size), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
@@ -149,6 +156,11 @@ public:
     std::string_view getDataAt(size_t n) const override
     {
         return variant_column_ptr->getDataAt(n);
+    }
+
+    bool supportsGetDataAt() const override
+    {
+        return variant_column_ptr->supportsGetDataAt();
     }
 
     void insertData(const char * pos, size_t length) override
@@ -181,12 +193,12 @@ public:
 
     void popBack(size_t n) override
     {
+        checkStackSize();
         variant_column_ptr->popBack(n);
     }
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -197,52 +209,68 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
-    /// to be equal for logically equal values stored with different variant layouts (typed variant
-    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
-    {
-        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
-    }
+    /// Unlike `updateHashWithValueRange`, this is split-invariant (a value hashes the same in a typed
+    /// or the shared variant), so it is safe to scatter join/aggregation keys by.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+
+    /// Leaf hashes of `count` values of `values`, a column of values in the Dynamic binary form
+    /// (`[binary encoded type][value]`), written to `hash_out[0 .. count)`. Value `i` of the batch is
+    /// `values[first + i]`, or `values[value_indices[i]]` for the scattered overload. Each hash is the
+    /// one the value would have when stored in a typed variant, which is what makes the shared variant
+    /// invisible to the scatter hash. Reused by `ColumnObject` for `shared_data`.
+    ///
+    /// The batch is grouped by type and deserialized one column per type rather than one per value:
+    /// this runs over whole blocks on the scatter path, so a per-value temporary column would put an
+    /// allocation on every row.
+    static void hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out);
+    static void hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out);
 
     void updateHashFast(SipHash & hash) const override
     {
+        checkStackSize();
         variant_column_ptr->updateHashFast(hash);
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
     {
+        checkStackSize();
         variant_column_ptr->filter(filt);
         statistics.reset();
     }
 
     void expand(const Filter & mask, bool inverted) override
     {
+        checkStackSize();
         variant_column_ptr->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
     {
+        checkStackSize();
         VectorWithMemoryTracking<MutableColumnPtr> scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
@@ -266,6 +294,7 @@ public:
 
     bool hasEqualValues() const override
     {
+        checkStackSize();
         return variant_column_ptr->hasEqualValues();
     }
 
@@ -296,31 +325,37 @@ public:
 
     void shrinkToFit() override
     {
+        checkStackSize();
         variant_column_ptr->shrinkToFit();
     }
 
     void ensureOwnership() override
     {
+        checkStackSize();
         variant_column_ptr->ensureOwnership();
     }
 
     size_t byteSize() const override
     {
+        checkStackSize();
         return variant_column_ptr->byteSize();
     }
 
     size_t byteSizeAt(size_t n) const override
     {
+        checkStackSize();
         return variant_column_ptr->byteSizeAt(n);
     }
 
     size_t allocatedBytes() const override
     {
+        checkStackSize();
         return variant_column_ptr->allocatedBytes();
     }
 
     void protect() override
     {
+        checkStackSize();
         variant_column_ptr->protect();
     }
 
@@ -332,14 +367,21 @@ public:
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
+        /// Callers like IColumn::mutate recurse into the subcolumns through this method.
+        checkStackSize();
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        checkStackSize();
+        callback(variant_column);
+    }
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
+        checkStackSize();
         callback(*variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
         variant_column->forEachMutableSubcolumnRecursively(callback);
@@ -347,6 +389,7 @@ public:
 
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
+        checkStackSize();
         callback(*variant_column);
         variant_column->forEachSubcolumnRecursively(callback);
     }
@@ -370,6 +413,11 @@ public:
         return variant_column_ptr->getNumberOfDefaultRows();
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return variant_column_ptr->hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         variant_column_ptr->getIndicesOfNonDefaultRows(indices, from, limit);
@@ -377,11 +425,13 @@ public:
 
     void finalize() override
     {
+        checkStackSize();
         variant_column_ptr->finalize();
     }
 
     bool isFinalized() const override
     {
+        checkStackSize();
         return variant_column_ptr->isFinalized();
     }
 

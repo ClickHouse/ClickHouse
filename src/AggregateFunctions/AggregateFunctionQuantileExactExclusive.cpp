@@ -50,7 +50,7 @@ void registerAggregateFunctionsQuantileExactExclusive(AggregateFunctionFactory &
 void registerAggregateFunctionsQuantileExactExclusive(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Similar to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -94,7 +94,7 @@ SELECT quantileExactExclusive(0.1)(number), quantileExactExclusive(0.9)(number) 
         )",
         R"(
 ┌─quantileExactExclusive(0.1)(number)─┬─quantileExactExclusive(0.9)(number)─┐
-│                                 0.4 │                                 8.6 │
+│                 0.10000000000000009 │                                 8.9 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
         )"
     }
@@ -103,7 +103,7 @@ SELECT quantileExactExclusive(0.1)(number), quantileExactExclusive(0.9)(number) 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantileExactExclusive>, documentation});
+    factory.registerFunction(NameQuantileExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantileExactExclusive>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the exclusive method.
@@ -135,7 +135,7 @@ SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(number) 
         )",
         R"(
 ┌─quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(number)─┐
-│ [249.25,499.5,749.75,899.9,949.95,989.99,998.999]                        │
+│ [249.25,499.5,749.75,899.9,949.9499999999999,989.99,998.999]             │
 └──────────────────────────────────────────────────────────────────────────┘
         )"
     }

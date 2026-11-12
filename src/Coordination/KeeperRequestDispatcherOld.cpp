@@ -9,10 +9,11 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -357,7 +358,7 @@ void KeeperRequestDispatcherOld::requestThread()
                 ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                 LOG_WARNING(
                     log,
-                    "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
+                    "Processing requests refused because of max_memory_usage_soft_limit {}, the total tracked memory is {}, RSS is {}, request type "
                     "is {}",
                     ReadableSize(mem_soft_limit),
                     ReadableSize(total_memory_tracker.get()),
@@ -712,9 +713,16 @@ bool KeeperRequestDispatcherOld::putRequest(const Coordination::ZooKeeperRequest
 
     request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
-    if (!requests_queue->tryPush(std::move(request_info), keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+    const auto operation_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+    if (!requests_queue->tryPush(std::move(request_info), operation_timeout))
     {
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot push request to queue within operation timeout ({} ms). "
+            "The request queue may be full or keeper is overloaded: "
+            "consider increasing operation_timeout_ms in keeper_server.coordination_settings "
+            "or checking keeper load",
+            operation_timeout);
     }
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
@@ -761,7 +769,6 @@ void KeeperRequestDispatcherOld::shutdown()
                     .session_id = session,
                     .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                     .request = std::move(request),
-                    .digest = std::nullopt
                 };
 
                 close_requests.push_back(std::move(request_info));
@@ -785,7 +792,7 @@ void KeeperRequestDispatcherOld::shutdown()
                                         nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
 
             auto session_shutdown_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
-            if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
+            if (sessions_closing_done.wait_for(saturatedWaitMilliseconds(session_shutdown_timeout)) != std::future_status::ready)
                 LOG_WARNING(
                     log,
                     "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",

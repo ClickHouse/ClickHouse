@@ -87,7 +87,7 @@ public:
         const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_);
 
     /// MergingSorted
@@ -113,13 +113,21 @@ public:
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
+    Names getPartitionByColumnNames() const;
 
     size_t getScatterPartitions() const { return scatter_partitions; }
+
+    /// Do not reshuffle the input by the hash of the partition columns before sorting: the input streams
+    /// already carry disjoint sets of the partition key values, so sorting each stream independently is
+    /// enough to keep every partition contiguous and sorted.
+    void skipScatterByPartition() { skip_scatter_by_partition = true; }
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
     bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
+
+    bool hasLimitByHint() const { return !limit_by_columns.empty(); }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
@@ -144,13 +152,15 @@ public:
         scatter_partitions = partitions;
     }
 
+    /// Sorts the main streams, or only the totals stream if `sort_totals` is set.
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         bool skip_partial_sort = false,
-        TopKThresholdTrackerPtr threshold_tracker = nullptr);
+        TopKThresholdTrackerPtr threshold_tracker = nullptr,
+        bool sort_totals = false);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
@@ -166,10 +176,13 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    bool hasCorrelatedExpressions() const override { return false; }
+
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
+    bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
-    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
@@ -189,7 +202,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker, bool sort_totals);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -216,6 +229,7 @@ private:
     /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the
     /// pipeline's thread count), so both sides of a hash-sharded merge join get the same shard count.
     size_t scatter_partitions = 0;
+    bool skip_scatter_by_partition = false;
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
@@ -238,6 +252,7 @@ private:
     /// See `pushLimitByIntoSort`. Empty means no hint.
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
+    bool limit_by_always_read_till_end = false;
 
     Processors scatter_stage;
     Processors sorting_stage;

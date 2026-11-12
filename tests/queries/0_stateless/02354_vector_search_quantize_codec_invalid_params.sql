@@ -5,7 +5,7 @@
 -- The bit-packed methods (rabitq, turboquant) require `dimensions` to be a multiple of 8; `int8` accepts any positive
 -- dimension. The `prefix` method takes Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16').
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_bad;
 

@@ -119,6 +119,7 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 
     bool isReadOnly() const override { return disk->isReadOnly(); }
+    bool isRemote() const override { return disk->isRemote(); }
 
     void startup() override;
 
@@ -126,6 +127,9 @@ public:
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
     int64_t getDeadBlobsQueueEstimate() override;
+
+    /// The storage has a single location, so there is never anything to replicate.
+    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction

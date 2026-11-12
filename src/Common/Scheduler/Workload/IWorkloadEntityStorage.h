@@ -15,6 +15,8 @@ namespace DB
 
 class IAST;
 struct Settings;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 enum class WorkloadEntityType : uint8_t
 {
@@ -83,6 +85,8 @@ public:
     using OnChangedHandler = std::function<void(const std::vector<Event> &)>;
 
     /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
+    /// Destroying the returned guard stops further calls and, if `handler` is already running, waits for it to return.
+    /// Destroy it before any state `handler` reads.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
 
     /// Returns the name of resource used for CPU scheduling of the master query threads
@@ -96,6 +100,12 @@ public:
 
     /// Returns the name of resource used for memory reservation
     virtual String getMemoryReservationResourceName() = 0;
+
+    /// Makes backup entries to back up all the workload entities of the specified type.
+    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const = 0;
+
+    /// Restores workload entities of the specified type from a backup.
+    virtual void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) = 0;
 };
 
 }

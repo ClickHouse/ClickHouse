@@ -15,7 +15,7 @@ database (CIDB) that records which lines each test covered in recent nightly run
 ```
 NightlyCoverage CI job (nightly at 02:13 UTC)
   └─ Build amd_per_test_coverage binary
-       (WITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON -finstrument-functions-after-inlining)
+       (-DWITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON)
   └─ Run stateless tests including --long (clickhouse-test --collect-per-test-coverage)
        ├─ SYSTEM SET COVERAGE TEST 'test_name'  (before each test)
        └─ SYSTEM SET COVERAGE TEST ''           (flush + reset counters)
@@ -48,7 +48,7 @@ test_name LowCardinality(String), min_depth UInt8, branch_flag UInt8
 from ci.praktika.cidb import CIDB
 from ci.praktika.settings import Settings
 
-cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+cidb = CIDB(url=CIDB.get_read_url(Info()), user="play", passwd="")
 result = cidb.query("SELECT count() FROM checks_coverage_lines WHERE ...", log_level="")
 ```
 
@@ -255,7 +255,7 @@ Found 275 relevant tests
 
 Defined in `ci/workflows/nightly_coverage.py`. Runs nightly at 02:13 UTC on master.
 Uses `coverage_build_jobs[1]` = `Build (amd_llvm_coverage_per_test)` which builds
-with `WITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON -finstrument-functions-after-inlining`.
+with `-DWITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON`.
 
 **Long tests are included** (removed `--no-long` from per-test coverage runs in
 `ci/jobs/functional_tests.py`), so tests like `00900_long_parquet` and
@@ -317,7 +317,7 @@ LIMIT {INDIRECT_LIMIT}
 PYTHONPATH=./ci:. python3 - << 'EOF'
 from ci.praktika.cidb import CIDB
 from ci.praktika.settings import Settings
-cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+cidb = CIDB(url=CIDB.get_read_url(Info()), user="play", passwd="")
 
 # Check freshness and coverage of long tests
 print(cidb.query("""

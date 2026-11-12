@@ -16,6 +16,10 @@
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
+#include <optional>
+#include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
+
 
 namespace DB
 {
@@ -116,7 +120,15 @@ namespace
         return parsed_any;
     }
 
-    bool parseQuotaType(IParserBase::Pos & pos, Expected & expected, QuotaType & quota_type)
+    /// A resource a quota limit is defined over: either one of the predefined counters
+    /// (`QuotaType`) or an arbitrary profile event referenced by its name.
+    struct LimitTarget
+    {
+        std::optional<QuotaType> quota_type;
+        String profile_event_name;
+    };
+
+    bool parseLimitTarget(IParserBase::Pos & pos, Expected & expected, bool attach_mode, LimitTarget & target)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -124,7 +136,7 @@ namespace
             {
                 if (ParserKeyword::createDeprecated(QuotaTypeInfo::get(qt).keyword).ignore(pos, expected))
                 {
-                    quota_type = qt;
+                    target.quota_type = qt;
                     return true;
                 }
             }
@@ -138,10 +150,30 @@ namespace
             {
                 if (QuotaTypeInfo::get(qt).name == name)
                 {
-                    quota_type = qt;
+                    target.quota_type = qt;
                     return true;
                 }
             }
+
+            /// Not a predefined resource type - the name may refer to a profile event.
+            /// In attach mode any name is accepted: the quota may have been written by a version
+            /// with a different set of profile events, and it must load anyway (the unknown
+            /// limits are preserved but have no effect).
+            if (attach_mode || ProfileEvents::tryGetByName(name))
+            {
+                target.profile_event_name = std::move(name);
+                return true;
+            }
+
+            /// The name resolves to nothing. If it is followed by `=`, the user certainly meant
+            /// a quota limit here, so report the problem instead of leaving a generic syntax
+            /// error. Otherwise the name may belong to an outer clause (e.g. `FOR` starting the
+            /// next interval after a comma), so just backtrack.
+            if (pos->type == TokenType::Equals)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Quota limit cannot be set for {}. Expected one of the predefined resource types "
+                                "(e.g. 'queries', 'errors', 'read_rows') or the name of a profile event "
+                                "(see the `system.events` table)", backQuote(name));
 
             return false;
         });
@@ -156,14 +188,22 @@ namespace
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
-    bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
+    bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, const LimitTarget & target, QuotaValue & max_value)
     {
         ASTPtr ast;
         if (!ParserNumber{}.parse(pos, ast, expected) && !ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
 
         const Field & max_field = ast->as<ASTLiteral &>().value;
-        const auto & type_info = QuotaTypeInfo::get(quota_type);
+
+        /// Profile events are always plain counters.
+        if (!target.quota_type)
+        {
+            max_value = fieldToNumber<QuotaValue>(max_field);
+            return true;
+        }
+
+        const auto & type_info = QuotaTypeInfo::get(*target.quota_type);
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
@@ -171,17 +211,17 @@ namespace
         return true;
     }
 
-    bool parseLimits(IParserBase::Pos & pos, Expected & expected, std::vector<std::pair<QuotaType, QuotaValue>> & limits)
+    bool parseLimits(IParserBase::Pos & pos, Expected & expected, bool attach_mode, std::vector<std::pair<LimitTarget, QuotaValue>> & limits)
     {
-        std::vector<std::pair<QuotaType, QuotaValue>> res_limits;
+        std::vector<std::pair<LimitTarget, QuotaValue>> res_limits;
         bool max_prefix_encountered = false;
 
         auto parse_limit = [&]
         {
             max_prefix_encountered |= ParserKeyword{Keyword::MAX}.ignore(pos, expected);
 
-            QuotaType quota_type = {};
-            if (!parseQuotaType(pos, expected, quota_type))
+            LimitTarget target;
+            if (!parseLimitTarget(pos, expected, attach_mode, target))
                 return false;
 
             if (max_prefix_encountered)
@@ -195,10 +235,10 @@ namespace
             }
 
             QuotaValue max_value = 0;
-            if (!parseMaxValue(pos, expected, quota_type, max_value))
+            if (!parseMaxValue(pos, expected, target, max_value))
                 return false;
 
-            res_limits.emplace_back(quota_type, max_value);
+            res_limits.emplace_back(std::move(target), max_value);
             return true;
         };
 
@@ -209,7 +249,7 @@ namespace
         return true;
     }
 
-    bool parseIntervalsWithLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
+    bool parseIntervalsWithLimits(IParserBase::Pos & pos, Expected & expected, bool attach_mode, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
     {
         std::vector<ASTCreateQuotaQuery::Limits> res_all_limits;
 
@@ -240,7 +280,7 @@ namespace
             if (!std::isfinite(total_seconds) || total_seconds >= int64_max_as_double || total_seconds < -int64_max_as_double)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota interval duration is out of range");
             limits.duration = std::chrono::seconds(static_cast<Int64>(total_seconds));
-            std::vector<std::pair<QuotaType, QuotaValue>> new_limits;
+            std::vector<std::pair<LimitTarget, QuotaValue>> new_limits;
 
             if (ParserKeyword{Keyword::NO_LIMITS}.ignore(pos, expected))
             {
@@ -249,10 +289,15 @@ namespace
             else if (ParserKeyword{Keyword::TRACKING_ONLY}.ignore(pos, expected))
             {
             }
-            else if (parseLimits(pos, expected, new_limits))
+            else if (parseLimits(pos, expected, attach_mode, new_limits))
             {
-                for (const auto & [quota_type, max_value] : new_limits)
-                    limits.max[static_cast<size_t>(quota_type)] = max_value;
+                for (const auto & [target, max_value] : new_limits)
+                {
+                    if (target.quota_type)
+                        limits.max[static_cast<size_t>(*target.quota_type)] = max_value;
+                    else
+                        limits.profile_events_max[target.profile_event_name] = max_value;
+                }
             }
             else
                 return false;
@@ -360,7 +405,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 continue;
         }
 
-        if (parseIntervalsWithLimits(pos, expected, all_limits))
+        if (parseIntervalsWithLimits(pos, expected, attach_mode, all_limits))
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
@@ -406,4 +451,174 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     return true;
 }
+
+std::map<String, Documentation> ParserCreateQuotaQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    /// `parseQuotaType` accepts every `QuotaType`, and the documentation below has to list all of them:
+    /// it feeds `system.statements`, `system.documentation` and the generated reference pages, so a
+    /// missing resource tells the user that a valid one is unsupported. Generate the lists from the enum
+    /// metadata, so that adding a resource cannot leave them behind.
+    String resources;       /// `queries | query_selects | ...`, for the syntax blocks.
+    String resources_list;  /// `` `queries`, `query_selects`, ... ``, for the prose.
+    for (auto quota_type : collections::range(QuotaType::MAX))
+    {
+        const String & name = QuotaTypeInfo::get(quota_type).name;
+        if (!resources.empty())
+        {
+            resources += " | ";
+            resources_list += ", ";
+        }
+        resources += name;
+        resources_list += "`" + name + "`";
+    }
+
+    auto substitute = [&](String text)
+    {
+        replaceAll(text, "%RESOURCES%", resources);
+        replaceAll(text, "%RESOURCES_LIST%", resources_list);
+        return text;
+    };
+
+    documentation["CREATE QUOTA"] =
+    {
+        .description = substitute(R"DOCS_MD(
+Creates a [quota](/concepts/features/security/access-rights#quotas-management) that can be assigned to a user or a role.
+
+Syntax:
+
+```sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES% | profile_event_name} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](/reference/system-tables/quotas) table.
+
+`IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](/reference/system-tables/quotas) table.
+
+Parameters %RESOURCES_LIST% correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+
+In addition to the predefined resource types above, a limit can be set on any profile event (see the [system.events](/reference/system-tables/events) table) by its name, for example `MAX S3GetObject = 1000`. Profile events are accounted once per query, at the moment the query finishes (successfully or with an error): a query that crosses the limit is still allowed to finish, and the subsequent queries are rejected until the interval ends. The current consumption is reported in the `profile_events` column of the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+
+`ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
+
+`CREATE QUOTA` requires the [CREATE QUOTA](/reference/statements/grant#access-management) privilege. `OR REPLACE` throws away an existing quota of the same name, including which roles it applies to, so it additionally requires the [DROP QUOTA](/reference/statements/grant#access-management) privilege. The `DROP QUOTA` privilege is required whether or not the quota already exists, so the statement cannot be used to find out which quotas exist.
+
+**Examples**
+
+Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
+
+```sql
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+For the default user limit the maximum execution time with half a second in 30 minutes, and limit the maximum number of queries with 321 and the maximum number of errors with 10 in 5 quarters:
+
+```sql
+CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+Create a quota where each distinct normalized query pattern gets its own bucket, limited to 100 executions per hour:
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+Limit any single normalized query pattern to at most 50 executions per hour (regardless of the quota key type):
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
+```
+
+Limit the number of `S3GetObject` requests and the number of failed queries per day using profile events:
+
+```sql
+CREATE QUOTA qE FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery = 50 TO default;
+```
+
+Further examples, using the xml configuration (not supported in ClickHouse Cloud), can be found in the [Quotas guide](/concepts/features/configuration/server-config/quotas).
+
+## Related Content {#related-content}
+
+- Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
+)DOCS_MD"),
+        .syntax = substitute(R"(
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES% | profile_event_name} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)"),
+        .parent = "CREATE",
+        .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
+    };
+
+    documentation["ALTER QUOTA"] =
+    {
+        .description = substitute(R"DOCS_MD(
+Changes quotas.
+
+Syntax:
+
+```sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES% | profile_event_name} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](/reference/system-tables/quotas) table.
+
+`IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](/reference/system-tables/quotas) table.
+
+Parameters %RESOURCES_LIST% correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+
+A limit can also be set on any profile event (see the [system.events](/reference/system-tables/events) table) by its name, for example `MAX S3GetObject = 1000`.
+
+`ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
+
+**Examples**
+
+Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
+
+```sql
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+For the default user limit the maximum execution time with half a second in 30 minutes, and limit the maximum number of queries with 321 and the maximum number of errors with 10 in 5 quarters:
+
+```sql
+ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+)DOCS_MD"),
+        .syntax = substitute(R"(
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES% | profile_event_name} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)"),
+        .parent = "ALTER",
+        .related = {"CREATE QUOTA", "ALTER", "SHOW"},
+    };
+
+    return documentation;
+}
+
 }

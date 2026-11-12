@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -20,18 +22,20 @@ struct SchemaConverter
     using OutputColumnInfo = Reader::OutputColumnInfo;
     using LevelInfo = Reader::LevelInfo;
 
+    /// Its column chunks are parsed only where needed, see getGeoTypeFromGeospatialStatistics.
+    const FileFooter & file_footer;
     const parq::FileMetaData & file_metadata;
     const ReadOptions & options;
     const Block * sample_block;
     const ColumnMapper * column_mapper = nullptr;
-    std::vector<String> external_columns;
+    VectorWithMemoryTracking<String> external_columns;
 
-    std::vector<PrimitiveColumnInfo> primitive_columns;
-    std::vector<OutputColumnInfo> output_columns;
+    VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<OutputColumnInfo> output_columns;
 
     size_t schema_idx = 1;
     size_t primitive_column_idx = 0;
-    std::vector<LevelInfo> levels;
+    VectorWithMemoryTracking<LevelInfo> levels;
     /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
     /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
     size_t recursion_depth = 0;
@@ -42,15 +46,15 @@ struct SchemaConverter
     size_t nullable_tuple_group_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
     /// failed parse caught by the caller (which leaves an empty map) does not cause
     /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
     /// parse according to its own settings.
-    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
-                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
+    SchemaConverter(const FileFooter &, const ReadOptions &, const Block *,
+                    std::optional<UnorderedMapWithMemoryTracking<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
@@ -144,17 +148,25 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
+    bool processSubtreeDynamic(TraversalNode & node);
 
     void processPrimitiveColumn(
-        const parq::SchemaElement & element, DataTypePtr type_hint,
+        const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
+        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const;
+
+    /// For a column with the `GEOMETRY` or `GEOGRAPHY` logical type: if `GeospatialStatistics` of
+    /// all its column chunks list the same single 2D geometry type, returns that type. If any of
+    /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
+    /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
+    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
     /// For top-level columns (when current_path is empty), returns the full mapped name to support
     /// column names with dots (e.g. `integer.col` in Iceberg).
-    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
+    std::string_view useColumnMapperIfNeeded(
+        const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
 };
 
 }

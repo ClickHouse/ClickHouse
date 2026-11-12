@@ -69,13 +69,17 @@ ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context
     return default_structure;
 }
 
-StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
+StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
         columns = parseColumnsListFromString(structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
+    /// A table created from this function gets its stored columns as `cached_columns`: without a structure argument they are
+    /// its structure, as for the object storage functions, not `dummy UInt8`.
+    else if (!cached_columns.empty())
+        columns = std::move(cached_columns);
     else
         columns = default_structure;
 
@@ -123,7 +127,7 @@ DROP TABLE IF EXISTS t;
 ## Related {#related}
 
 - [Null table engine](/reference/engines/table-engines/special/null)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

@@ -1,0 +1,11 @@
+The first use is a SELECT: only the base column is returned, the generated column is not expanded:
+a
+10
+The generated column is still readable when named explicitly:
+10	11
+Explicitly writing into the generated column is rejected:
+Cannot insert column b, because it is MATERIALIZED column
+The first use is an INSERT without a column list: only the base column is written, SQLite computes the generated column:
+a	b
+5	6
+10	11

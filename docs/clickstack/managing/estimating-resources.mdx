@@ -2,7 +2,7 @@
 slug: /use-cases/observability/clickstack/estimating-resources
 title: 'Estimating resources'
 sidebarTitle: 'Estimating resources'
-description: 'Resource estimation guidance for Managed ClickStack deployments'
+description: 'Resource estimation guidance for ClickStack Open Source deployments'
 doc_type: 'guide'
 keywords: ['clickstack', 'resources', 'sizing', 'compute', 'production', 'capacity planning']
 ---
@@ -74,5 +74,7 @@ Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses)
 - Share the same underlying datasets across services when needed
 
 This approach ensures your existing workloads remain unaffected while allowing ClickStack to scale independently as observability data grows.
+
+The same feature can be used to provision the ingest compute and query compute estimated above as separate services, so that each can be scaled independently. See our guide on [Isolating read and write workloads](/clickstack/managing/isolating-read-write).
 
 For larger deployments or custom sizing guidance, please contact support for a more precise estimate.

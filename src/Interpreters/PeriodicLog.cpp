@@ -1,5 +1,6 @@
 #include <Common/setThreadName.h>
 #include <Common/SystemLogBase.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
@@ -24,9 +25,14 @@ void PeriodicLog<LogElement>::startCollect(ThreadName thread_name, size_t collec
 template <typename LogElement>
 void PeriodicLog<LogElement>::stopCollect()
 {
-    bool old_val = false;
-    if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
-        return;
+    {
+        /// Under sleep_mutex, so that the collector cannot miss the notification.
+        std::lock_guard lock(sleep_mutex);
+        bool old_val = false;
+        if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
+            return;
+    }
+    sleep_cv.notify_all();
     if (collecting_thread)
         collecting_thread->join();
 }
@@ -62,7 +68,8 @@ void PeriodicLog<LogElement>::threadFunction()
             while (desired_timepoint <= current_time)
                 desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
 
-            std::this_thread::sleep_until(desired_timepoint);
+            std::unique_lock lock(sleep_mutex);
+            sleep_cv.wait_until(lock, desired_timepoint, [this] { return is_shutdown_metric_thread.load(); });
         }
         catch (...)
         {

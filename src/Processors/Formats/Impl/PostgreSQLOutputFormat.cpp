@@ -1,10 +1,15 @@
 #include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 
 #include <Columns/IColumn.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/Formats/PostgreSQLArrayText.h>
 
 #include <Processors/Port.h>
 
@@ -16,6 +21,11 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
+namespace FailPoints
+{
+extern const char postgresql_output_format_cancel_mid_loop[];
+}
+
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , format_settings(settings_)
@@ -24,12 +34,18 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader 
     // PostgreSQL uses 't' and 'f' for boolean values
     format_settings.bool_true_representation = "t";
     format_settings.bool_false_representation = "f";
+
+    /// Not in writePrefix: it is skipped when appending to a non-empty file.
+    const auto & header = getPort(PortKind::Main).getHeader();
+    data_types = header.getDataTypes();
+    serializations.reserve(data_types.size());
+    for (const auto & type : data_types)
+        serializations.emplace_back(type->getDefaultSerialization());
 }
 
 void PostgreSQLOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
-    auto data_types = header.getDataTypes();
 
     if (header.columns())
     {
@@ -40,7 +56,6 @@ void PostgreSQLOutputFormat::writePrefix()
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             columns.emplace_back(column_name, data_types[i]);
-            serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));
     }
@@ -60,6 +75,17 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
         if (isCancelled())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
+        if (i == 5)
+        {
+            /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so the
+            /// hook cancels the query the same way `KILL QUERY` does instead of blocking: the
+            /// check above then observes the cancellation on the next row.
+            fiu_do_on(FailPoints::postgresql_output_format_cancel_mid_loop, {
+                if (auto query_context = CurrentThread::tryGetQueryContext())
+                    query_context->killCurrentQuery();
+            });
+        }
+
         const Columns & columns = chunk.getColumns();
         VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
@@ -71,7 +97,12 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
+                if (isArray(data_types[j]))
+                    /// Arrays must be emitted in PostgreSQL array-literal form (`{...}`) so that a
+                    /// self-connected `postgresql(..., 'arr_table')` can read them back.
+                    writePostgreSQLArrayText(*columns[j], *data_types[j], i, ostr, format_settings);
+                else
+                    serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }

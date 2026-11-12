@@ -25,6 +25,12 @@ struct ExpressionStatistics
     /// Proven maximum number of rows. E.g. after a `LIMIT` step
     Float64 max_row_count = Float64(std::numeric_limits<UInt64>::max());
 
+    /// Estimated upper bound on the number of distinct rows. Tighter than `estimated_row_count`
+    /// when an operator keeps duplicates but limits the possible values: every `INTERSECT` output
+    /// value occurs in every input. A `Distinct` above clamps its estimate by this bound even
+    /// when the distinct columns have no NDV statistics.
+    Float64 estimated_distinct_bound = Float64(std::numeric_limits<UInt64>::max());
+
     /// Estimated average number of bytes per row in the output of this expression.
     /// Used to convert row-based costs into byte-based costs for network/memory/IO.
     Float64 estimated_bytes_per_row = 1.0;

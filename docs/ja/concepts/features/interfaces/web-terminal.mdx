@@ -26,15 +26,15 @@ doc_type: 'reference'
   `enable_webterminal` は、従来の `allow_experimental_webterminal` 設定に置き換わるものです。`enable_webterminal` が設定されていない場合は、後方互換性のため、古い名前も引き続き使用できます。
 </Note>
 
-<div id="authentication">
-  ## 認証
-</div>
+## 認証 {#authentication}
 
-ウェブターミナルは、HTTPプロトコルと同じ `Session` およびアクセス制御のチェックでユーザーを認証しますが、credentials は HTTP のアップグレードリクエスト経由ではなく、確立済みの WebSocket connection 上でインバンドにやり取りされます。WebSocket ハンドシェイクが完了すると、ブラウザーは最初のメッセージを JSON として送信します。
+ウェブターミナルは、HTTPプロトコルと同じ `Session` およびアクセス制御のチェックでユーザーを認証しますが、認証情報 は HTTP のアップグレードリクエスト経由ではなく、確立済みの WebSocket connection 上でインバンドにやり取りされます。WebSocket ハンドシェイクが完了すると、ブラウザーは最初のメッセージを JSON として送信します。
 
 ```json
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
+
+`user` フィールドは任意です。省略されているか空の場合、ユーザー名には `default_session_user` [サーバー設定](/ja/reference/settings/server-settings/settings) (または [コンポーザブルプロトコル](/ja/concepts/features/configuration/server-config/composable-protocols) 構成内のエンドポイントごとのオーバーライド) が使用され、別途設定されていない限り `default` になります。`default_session_user` が空文字列に設定されている場合、ユーザー名なしの接続は禁止されます。`user` が省略されているか空の `auth` メッセージは認証に失敗し、サーバーはコード `1008` で WebSocket を閉じます。また、サーバー構成で `session_log` セクションが有効になっている場合、この拒否は空の `user` を持つ `LoginFailure` イベントとして [`system.session_log`](/ja/reference/system-tables/session_log) に記録されます。
 
 これにより、認証情報を URL のクエリパラメータや、アップグレードリクエストに付与された `Authorization` ヘッダーに含めずに済みます。こうした場所に含めると、認証情報がブラウザの履歴、サーバーのアクセスログ、リバースプロキシのログに残るおそれがあります。アップグレードリクエストの URL パラメータ、HTTP Basic、および `X-ClickHouse-User`/`X-ClickHouse-Key` ヘッダーは、`/webterminal` では意図的に **参照されません**。
 
@@ -59,6 +59,16 @@ doc_type: 'reference'
 
 [`/play`](/ja/concepts/features/interfaces/http) Web SQL UI には、ウェブターミナルがドッキング可能なパネルとして組み込まれています。表示は、サイドバーの端末アイコンで切り替えるか、クエリエディタが空の状態で `~` キーを押して切り替えます。`/play` ページは読み込み時に `/webterminal` が利用可能かどうかを判定し、エンドポイントが利用できない場合 (たとえば、`enable_webterminal` が `false` に設定されている場合) には端末コントロールを非表示にします。
 
+<div id="docs-integration">
+  ## ドキュメントサイトとのインテグレーション
+</div>
+
+このドキュメントサイトでは、ページ下部の細い開発者向けトレイに同じ端末が埋め込まれており、読み取り専用の `play` ユーザーとして [ClickHouse playground](https://play.clickhouse.com) に接続されています。これにより、ページを離れることなく、どのページの例でも試すことができます。固定トレイはページ末尾に必要なスペースを確保するため、footer のコントロールを覆い隠しません。端末が開いている間はドキュメントページがロックされ、スクロールバーは非表示になります。端末上でスクロールしても、そのスクロールバック内に収まり、背後のドキュメントページはスクロールしません。「ClickHouse terminal」バーをクリックするか、`~` キーを押すと、バーの上に余白のあるパネルが開きます。バーをもう一度クリックする、シェブロンを使用する、`~` または `Escape` を押す、あるいはパネルの上端を下へドラッグすると、パネルが折りたたまれます。この上端をドラッグしてパネルのサイズを変更することもできます。`exit` または `Ctrl+D` でセッションを終了した場合も、パネルは折りたたまれます。
+
+パネルを閉じても、セッションとスクロールバックは保持されます。端末を再度開くと、同じプロンプトに戻ります。セッションはページ内に保持されるため、ドキュメントページ間を移動しても維持されますが、ブラウザータブを再読み込みすると維持されません。再読み込み後は、新しいセッションでパネルが表示されます。
+
+端末トレイはサイトのデスクトップレイアウトの一部であり、狭いビューポートでは利用できません。
+
 <div id="security">
   ## セキュリティに関する考慮事項
 </div>
@@ -70,7 +80,19 @@ doc_type: 'reference'
 * このエンドポイントは、クロスオリジン WebSocket ハイジャックを防ぐために、`Origin` ヘッダーを `Host` と照合して検証します。外部で TLS を終端する場合は、それに応じてリバースプロキシを設定してください。
 * TLS を終端するリバースプロキシの背後では、ブラウザが `https` を使用していても、ClickHouse への上流接続は平文の `http` になるため、厳密な same-origin チェックによって正当な接続が拒否されます。このようなデプロイメントでは、WebSocket セッションを開くことを許可する完全なオリジンのカンマ区切りリストとして `webterminal_allowed_origins` を設定してください。この設定が空でない場合、デフォルトの same-origin チェックの代わりに使用されます。例: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`。
 
-このハンドラーは、RFC 6455 に従って WebSocket プロトコル準拠も強制します。マスクされていないクライアントフレーム、予約済みオペコード、サイズ超過または断片化された制御フレーム、および予約済み RSV ビットは、protocol-error の close code で拒否されます。
+## セッションの制限 {#session-limits}
+
+各ウェブターミナルセッションでは、専用のスレッドと擬似端末を持つ埋め込みの `clickhouse-client` が実行されます。そのため、サーバーは他のインターフェイスのセッションと同じ制限を適用し、その値は認証済みユーザーの設定から取得されます。
+
+* [`max_sessions_for_user`](/ja/reference/settings/session-settings/max#max_sessions_for_user) は、ユーザーの同時セッション数を制限します。上限を超えたセッションは埋め込みクライアントの起動前に拒否され、サーバーはコード `1008` で WebSocket を閉じます。
+* [`idle_connection_timeout`](/ja/reference/settings/session-settings/other#idle_connection_timeout) は、ネイティブプロトコルの場合と同様に、埋め込みクライアントが次のクエリを待機している間に、指定した秒数のあいだ双方向ともトラフィックがなければセッションを閉じます。実行中のクエリは、出力がない場合でも、このタイムアウトによって中断されることはありません。
+* [`receive_timeout`](/ja/reference/settings/session-settings/receive#receive_timeout) と [`send_timeout`](/ja/reference/settings/session-settings/send#send_timeout) は、クライアントからの WebSocket フレームの読み取り時間と、クライアントへのデータ送信時間を制限します。値を `0` にするとタイムアウトは無効化されます。
+
+ターミナルで `SET` クエリを使ってこれらの設定を変更した場合、変更はクエリが完了し、埋め込みクライアントがプロンプトに戻った時点で反映されます。
+
+これらのセッションは、他のインターフェイスの接続とあわせて、サーバー全体の [`max_connections`](/ja/reference/settings/server-settings/settings/max#max_connections) 制限にもカウントされます。
+
+さらに、ハンドラーは RFC 6455 に基づき WebSocket プロトコルへの準拠を強制します。マスクされていないクライアントフレーム、予約されたオペコード、サイズ超過または断片化された制御フレーム、および予約された RSV ビットは、プロトコルエラーを示すクローズコードで拒否されます。
 
 <div id="platform">
   ## プラットフォーム対応状況

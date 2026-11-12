@@ -29,6 +29,7 @@ To declare a column of `JSON` type, you can use the following syntax:
     max_dynamic_paths=N,
     max_dynamic_types=M,
     some.path TypeName,
+    SHARED some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
 )
@@ -40,6 +41,7 @@ Where the parameters in the syntax above are defined as:
 | `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure called [shared data](#shared-data-structure).<br/><br/>There are also [ways](#controlling-the-number-of-dynamic-paths) how to change the limit on dynamic paths without changing this parameter. | `1024`        |
 | `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored separately inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be stored together in a single structure called `shared variant`.                                                                                    | `32`          |
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
+| `SHARED some.path TypeName` | A type hint whose path is stored in a MergeTree part together with the other `SHARED` paths of the column, in a constant number of files, instead of files of its own. See [`SHARED` typed paths](#shared-typed-paths). |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
 
@@ -197,6 +199,31 @@ SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 
 └───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
+Bracket syntax `json['key']` can also be used to access JSON paths. Nested access is supported via chaining:
+
+```sql title="Query"
+SELECT json['a']['b'], json['c'], json['d'] FROM test;
+```
+
+```text title="Response"
+┌─arrayElement(arrayElement(json, 'a'), 'b')─┬─arrayElement(json, 'c')─┬─arrayElement(json, 'd')─┐
+│ 42                                         │ [1,2,3]                 │ 2020-01-01              │
+│ 0                                          │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│ 43                                         │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+The bracket syntax works for `Nullable(JSON)` as well, and returns the same value and type as the
+equivalent dot syntax, following the same nullability rules as `json.key`: a path that can represent
+`NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for a `NULL` row,
+while a non-nullable typed path such as `Array` or `Map` keeps its default value there.
+
+Chained bracket access is flattened into a single JSON path when `optimize_functions_to_subcolumns`
+is enabled, so `json['a']['b']` reads the path `a.b` just like `json.a.b` does: a row where `a` holds
+a scalar instead of an object has no `a.b` and yields `NULL`. Without that optimization the outer
+access is applied to the `Dynamic` value of `json['a']` instead, and such a row follows the
+`dynamic_throw_on_type_mismatch` setting.
+
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
 
 ```sql title="Query"
@@ -311,7 +338,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Reading JSON combined sub-columns {#reading-json-combined-sub-columns}
@@ -364,7 +391,7 @@ FROM test;
 - Row 3: `a` is absent entirely. Both `json.a` and `json.@a` return `NULL`, while `json.^a` returns an empty `{}`.
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Type inference for paths {#type-inference-for-paths}
@@ -833,8 +860,8 @@ To extract a path subcolumn from it, we just iterate over all rows in this `Map`
 ### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
 
 In [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
-Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
-and `advanced`.
+Currently, there are 4 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`,
+`advanced`, and `advanced_chunked`.
 
 The serialization version is controlled by MergeTree
 settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -877,6 +904,38 @@ Note: because of storing some additional information inside the data structure, 
 `map` and `map_with_buckets` serializations.
 
 For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+`advanced_chunked` serialization is the same as `advanced` but with support for splitting rows into smaller chunks during serialization.
+This reduces peak memory usage during merges of JSON columns with many unique paths, because only one chunk worth of data
+needs to be materialized at a time instead of the entire row range.
+
+The chunk size is controlled by the MergeTree setting [object_shared_data_target_chunk_rows](/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 by default).
+This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
+so actual chunk sizes range from `target/2` to `1.5 * target`.
+
+## `SHARED` typed paths {#shared-typed-paths}
+
+In a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) part every typed path is stored like a column of its own, with a file per substream of its type. A column with hundreds of typed paths produces hundreds of files per part, and on object storage every file read is a separate request. Marking a typed path `SHARED` stores it in the typed shared data of the part instead: all `SHARED` paths of a column are written together into three files, however many they are. The data is laid out granule by granule, path by path, with the position of every path's data recorded, so reading one path still decodes only that path.
+
+```sql
+CREATE TABLE test (json JSON(SHARED a UInt32, SHARED b.c Array(String), d String)) ENGINE = MergeTree ORDER BY tuple();
+```
+
+Here `a` and `b.c` are stored in the typed shared data and `d` as a column of its own. Apart from the storage, a `SHARED` path is a typed path like any other: values are parsed and cast to the declared type, the path and its sub-columns are read with the same syntax (`json.a`, `json.b.c`, `json.b.c.size0`), and it takes part in sub-object and combined sub-column reads. Outside MergeTree parts, for example in the `Memory` engine or in the `Native` format, the modifier changes nothing.
+
+Choose `SHARED` for columns with many typed paths, especially on object storage, where the number of files per part matters more than the bytes read for one path. A read of one `SHARED` path reads the compressed blocks holding its data, which it may share with neighbouring paths, so it can read somewhat more than a path with files of its own; blocks are cut once they reach `min_compress_block_size`, which bounds the excess.
+
+The modifier is added or removed with `ALTER TABLE ... MODIFY COLUMN`:
+
+```sql
+ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(String), SHARED d String);
+```
+
+With [Lazy Type Hints](#lazy-type-hints) enabled this is a metadata-only change, and existing parts keep their layout until they are merged; otherwise the parts are rewritten. Parts of both layouts are read together.
+
+The on-disk format of the typed shared data is versioned by the MergeTree setting `object_typed_shared_data_serialization_version`; `v1` is the only version so far.
 
 ## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
 
@@ -1050,10 +1109,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Experimental) {#lazy-type-hints}
+## Lazy Type Hints {#lazy-type-hints}
 
 <Note>
-This feature is experimental and requires the setting `allow_experimental_json_lazy_type_hints` to be enabled.
+This feature requires the setting `enable_json_lazy_type_hints` to be enabled.
 </Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
@@ -1069,7 +1128,7 @@ This means you can add type hints instantly, and the data will be gradually conv
 ### Enabling Lazy Type Hints {#enabling-lazy-type-hints}
 
 ```sql
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 ```
 
 ### Example {#lazy-type-hints-example}
@@ -1079,8 +1138,8 @@ SET allow_experimental_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
-SET allow_experimental_json_lazy_type_hints = 1;
+-- Enable lazy type hints
+SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
 ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
@@ -1117,12 +1176,11 @@ To materialize type hints in existing data, you can either:
 
 ### Limitations {#lazy-type-hints-limitations}
 
-- This feature is experimental and may change in future versions
 - Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
 - Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
   - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
-  - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
+  - an explicit **data skipping index** — drop the index first, or disable `enable_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
   - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
 
   Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.
@@ -1316,6 +1374,9 @@ The `JSONAllPaths(json_column)` expression produces an `Array(String)` containin
 The skip index stores these path strings in its data structure (bloom filter or inverted index).
 When a query filters on `json.some.path`, the index checks whether the string `"some.path"` is present in the index for each granule and skips granules where it is absent.
 
+Only plain path access is matched against the index, optionally with a type hint or a cast (`json.a.b`, `json.a.b.:Int64`, `json.a.b::String`).
+Filters on the sub-object subcolumn (`json.^a`) and on the combined literal+sub-object subcolumn (``json.@`a``) do not use the index: these subcolumns are not `NULL` whenever any sub-path of `a` exists, so the presence of the path `a` itself in `JSONAllPaths` is not an equivalent condition.
+
 #### Safety with missing paths {#json-indexes-jsonallpaths-safety-with-missing-paths}
 
 When a JSON path is absent from a granule, the subcolumn evaluates to:
@@ -1335,6 +1396,7 @@ See [Value-based indexes with JSONAllValues](/reference/engines/table-engines/me
 Before creating `JSON` column and loading data into it, consider the following tips:
 
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
+- With many typed paths in a `MergeTree` table, especially on object storage, declare them `SHARED` to keep the number of files per part constant. See [`SHARED` typed paths](#shared-typed-paths).
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
   While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.

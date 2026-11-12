@@ -20,7 +20,7 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
 # poll_directory_watch_events_backoff_max bounds the watcher/reader idle backoff to ~1s
-# (default 32s), so new files are detected quickly on slow lanes (e.g. WasmEdge+MSan).
+# (default 32s), so new files are detected quickly on slow lanes (e.g. MSan).
 ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', 'CSV') settings poll_directory_watch_events_backoff_max = 1000;"
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -72,7 +73,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(SharedHeader header_, std::unique
       format_reader(std::make_unique<TemplateFormatReader>(*buf, ignore_spaces_, format, row_format, row_between_delimiter, settings))
 {
     /// Validate format string for rows
-    std::vector<UInt8> column_in_format(header_->columns(), false);
+    VectorWithMemoryTracking<UInt8> column_in_format(header_->columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         const auto & column_index = row_format.format_idx_to_column_idx[i];
@@ -664,9 +665,9 @@ The following escaping rules are supported:
 | `Raw`                | Without escaping, similar to `TSVRaw`    |   
 | `None`               | No escaping rule - see note below        |
 
-:::note
+<Note>
 If an escaping rule is omitted, then `None` will be used. `XML` is suitable only for output.
-:::
+</Note>
 
 Let's look at an example. Given the following format string:
 
@@ -713,9 +714,9 @@ It allows for specifying a prefix, a suffix and a way to print some additional i
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 
-:::note
+<Note>
 If the `format_template_resultset` setting is an empty string, `${data}` is used as the default value.
-:::
+</Note>
 
 For insert queries format allows skipping some columns or fields if prefix or suffix (see example).
 
@@ -728,11 +729,11 @@ Furthermore, the format may be so trivial that it does not require being placed 
 For these cases, `format_template_row_format` (for `format_template_row`) and `format_template_resultset_format` (for `format_template_resultset`) can be used to set the template string directly in the query, 
 rather than as a path to the file which contains it.
 
-:::note
+<Note>
 The rules for format strings and escape sequences are the same as those for:
 - [`format_template_row`](#format_template_row) when using `format_template_row_format`.
 - [`format_template_resultset`](#format_template_resultset) when using `format_template_resultset_format`.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -858,9 +859,9 @@ Also allows specifying empty placeholders (`${}` or `${:None}`) to split some de
 Such placeholders are used only for skipping whitespace characters.
 It's possible to read `JSON` using this format if the values of columns have the same order in all rows.
 
-:::note
+<Note>
 This format is suitable only for input.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -907,7 +908,7 @@ void registerTemplateSchemaReader(FormatFactory & factory)
             ParsedTemplateFormatString row_format;
             if (!settings.template_settings.row_format.empty())
                 row_format = fillRowFormat(settings, idx_getter, false);
-            std::unordered_set<FormatSettings::EscapingRule> visited_escaping_rules;
+            UnorderedSetWithMemoryTracking<FormatSettings::EscapingRule> visited_escaping_rules;
             String result = fmt::format("row_format={}, resultset_format={}, row_between_delimiter={}",
                 settings.template_settings.row_format,
                 settings.template_settings.resultset_format,

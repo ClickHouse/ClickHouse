@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -26,11 +27,22 @@ public:
 
     explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiExtract);
+        return std::make_shared<FunctionAiExtract>(context_);
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    String getSignatureString() const override
+    {
+        return
+            "(const String, Nullable(String), const String, [const Number]) -> Nullable(String)"
+            " OR (const String, String, const String, [const Number]) -> String";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -42,7 +54,6 @@ public:
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
@@ -241,7 +252,9 @@ are taken from the `credentials` key of the optional parameter map, or from the
         .returned_value = {"A single extracted value (instruction mode) or a JSON object string (schema mode). Returns the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
             {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')", "late and damaged package"},
-            {"Schema extraction", R"(SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
+            {"Schema extraction", R"(CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

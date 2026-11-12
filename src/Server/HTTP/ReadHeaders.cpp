@@ -87,7 +87,12 @@ void readHeaders(
         skipToNextLineOrEOF(in);
 
         Poco::trimRightInPlace(value);
-        headers.add(name, Poco::Net::MessageHeader::decodeWord(value));
+        std::string decoded_value = Poco::Net::MessageHeader::decodeWord(value);
+        /// RFC 2047 decoding can produce bytes that are forbidden in a field value (RFC 9110, section 5.5),
+        /// e.g. `=0D=0A` would become a line break that splits the header when it is written out again.
+        if (decoded_value.find_first_of(std::string_view("\r\n\0", 3)) != std::string::npos)
+            throw Poco::Net::MessageException(fmt::format("Value of field \"{}\" contains CR, LF or NUL", name));
+        headers.add(name, decoded_value);
         ++fields;
     }
 }

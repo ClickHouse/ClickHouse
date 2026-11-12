@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <IO/writeJSONNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -18,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -139,9 +141,8 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
     {
-        /// readIntTextUnsafe treats a leading '0' as the complete value zero, but readIntText tolerates it
-        if (settings.allow_number_leading_zeros)
-            readIntText(x, istr);
+        if (settings.check_integer_text_overflow)
+            readIntTextUnsafe<T, void, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr);
         else
             readIntTextUnsafe(x, istr);
     }
@@ -159,7 +160,16 @@ bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & i
 {
     T x{};
 
-    if (!tryDeserializeNumberText(x, istr, settings) || (whole && !istr.eof()))
+    /// `tryReadIntText`'s own overflow check is skipped for the big-int widths.
+    bool parsed = false;
+    if constexpr (is_integer<T> && is_arithmetic_v<T> && is_big_int_v<T>)
+        parsed = settings.check_integer_text_overflow
+            ? readIntTextUnsafe<T, bool, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr)
+            : tryDeserializeNumberText(x, istr, settings);
+    else
+        parsed = tryDeserializeNumberText(x, istr, settings);
+
+    if (!parsed || (whole && !istr.eof()))
         return false;
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
@@ -194,6 +204,17 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
             assertString("ull", istr);
         else if (!checkString("ull", istr))
             return ReturnType(false);
+
+        /// With `input_format_null_as_default = 0`, null must not be silently replaced by a number.
+        if (!settings.null_as_default)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot insert NULL value into a column of type '{}'. You can enable 'input_format_null_as_default' "
+                    "to insert the default value instead", TypeName<T>);
+            else
+                return ReturnType(false);
+        }
 
         x = NaNOrZero<T>();
     }
@@ -343,9 +364,8 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBuffer & istr, size_t rows_offset, size_t limit)
+void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBuffer & istr, size_t limit)
 {
-    istr.ignore(sizeof(T) * rows_offset);
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
     const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(T) * limit);
@@ -357,9 +377,9 @@ void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    deserializeBinaryBulk(typeid_cast<ColumnVector<T> &>(column).getData(), istr, rows_offset, limit);
+    deserializeBinaryBulk(typeid_cast<ColumnVector<T> &>(column).getData(), istr, limit);
 }
 
 template <typename T>

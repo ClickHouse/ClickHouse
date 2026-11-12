@@ -18,8 +18,12 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -318,6 +322,9 @@ Field ColumnDynamic::operator[](size_t n) const
 
 void ColumnDynamic::get(size_t n, Field & res) const
 {
+    /// Object, Dynamic and Variant values nest into each other to a depth that comes from the data, not from the declared type.
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
@@ -338,6 +345,8 @@ void ColumnDynamic::get(size_t n, Field & res) const
 
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     const auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -374,6 +383,8 @@ void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)
 void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
     /// Same variants: copy the Variant column directly. Skip this fast path when the source has values in
@@ -453,6 +464,8 @@ void ColumnDynamic::insertRangeFrom(const IColumn & src_, size_t start, size_t l
 void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 #endif
 {
+    checkStackSize();
+
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "
                                                             "[start({}) + length({}) > src.size()({})]", start, length, src_.size());
@@ -685,6 +698,8 @@ void ColumnDynamic::insertManyFrom(const IColumn & src_, size_t position, size_t
 void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
@@ -886,20 +901,10 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     }
 }
 
-void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 null_bit = 0;
-    readBinaryLittleEndian<UInt8>(null_bit, in);
-    if (null_bit)
-        return;
-
-    size_t type_and_value_size = 0;
-    readBinaryLittleEndian<size_t>(type_and_value_size, in);
-    in.ignore(type_and_value_size);
-}
-
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -930,7 +935,207 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    checkStackSize();
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
+}
+
+namespace
+{
+
+/// A `Dynamic` binary value starts with its binary encoded type, and one batch holds few distinct
+/// types, so values are grouped by that prefix. Decoding is deterministic in those bytes and the
+/// encoding is prefix-free, so an equal prefix means the same type and the same prefix length.
+struct SharedValueTypeGroup
+{
+    std::string_view prefix;
+    DataTypePtr type;
+    /// Null for `Nothing`, which is a serialized NULL and carries no value bytes.
+    SerializationPtr serialization;
+    size_t count = 0;
+    /// Start of this group's slice of the value order built when the batch is not single-typed.
+    size_t offset = 0;
+};
+
+/// Index of the group `value` belongs to, or `groups.size()` if it starts a new one. Runs of one
+/// type are the common case, so `hint` (the previous match) is tried before the scan.
+size_t findSharedValueTypeGroup(const VectorWithMemoryTracking<SharedValueTypeGroup> & groups, std::string_view value, size_t hint)
+{
+    if (hint < groups.size() && value.starts_with(groups[hint].prefix))
+        return hint;
+
+    for (size_t i = 0; i < groups.size(); ++i)
+    {
+        if (value.starts_with(groups[i].prefix))
+            return i;
+    }
+
+    return groups.size();
+}
+
+/// `buf` is hoisted out of the caller's loop and re-pointed at each value: constructing one read
+/// buffer per value is a measurable share of the cost once the temporary column is out of the way.
+void deserializeSharedValueBody(
+    IColumn & column, const ISerialization & serialization, ReadBufferFromMemory & buf, std::string_view value, size_t prefix_size)
+{
+    /// `ReadBuffer::set` is the external-buffer variant and leaves the working buffer empty; this needs
+    /// the plain re-point, so the base overload is named explicitly.
+    buf.BufferBase::set(const_cast<char *>(value.data()) + prefix_size, value.size() - prefix_size, 0);
+    serialization.deserializeBinary(column, buf, getFormatSettings());
+}
+
+template <typename GetValue>
+void hashSharedValuesImpl(GetValue && get_value, size_t count, UInt32 * hash_out)
+{
+    if (count == 0)
+        return;
+
+    VectorWithMemoryTracking<SharedValueTypeGroup> groups;
+    size_t hint = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const std::string_view value = get_value(i);
+        const size_t group_index = findSharedValueTypeGroup(groups, value, hint);
+        if (group_index == groups.size())
+        {
+            ReadBufferFromMemory buf(value);
+            auto type = decodeDataType(buf);
+            auto serialization = isNothing(type) ? nullptr : type->getDefaultSerialization();
+            groups.push_back(SharedValueTypeGroup{value.substr(0, buf.count()), std::move(type), std::move(serialization), 0, 0});
+        }
+
+        hint = group_index;
+        ++groups[group_index].count;
+    }
+
+    if (groups.size() == 1)
+    {
+        /// The whole batch is one type, so it deserializes in place and hashes straight into
+        /// `hash_out`: no per-value group index, no reordering, no scratch hash buffer.
+        const auto & group = groups.front();
+        if (!group.serialization)
+        {
+            /// A serialized NULL has no value bytes, so it hashes as the bare seed.
+            std::fill(hash_out, hash_out + count, WEAK_HASH32_INITIAL_VALUE);
+            return;
+        }
+
+        /// Hash the decoded values, not their serialized blobs, so they match the same values stored typed.
+        auto column = group.type->createColumn();
+        column->reserve(count);
+        ReadBufferFromMemory value_buf("", 0);
+        for (size_t i = 0; i < count; ++i)
+            deserializeSharedValueBody(*column, *group.serialization, value_buf, get_value(i), group.prefix.size());
+
+        column->computeHashInto(0, count, hash_out, /*initial=*/true);
+        return;
+    }
+
+    /// Counting sort of the value indices by group, so each group's values are visited contiguously.
+    size_t offset = 0;
+    for (auto & group : groups)
+    {
+        group.offset = offset;
+        offset += group.count;
+    }
+
+    PODArray<UInt64> cursor(groups.size());
+    for (size_t g = 0; g < groups.size(); ++g)
+        cursor[g] = groups[g].offset;
+
+    PODArray<UInt64> order(count);
+    hint = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        hint = findSharedValueTypeGroup(groups, get_value(i), hint);
+        order[cursor[hint]++] = i;
+    }
+
+    PaddedPODArray<UInt32> group_hash;
+    for (const auto & group : groups)
+    {
+        const UInt64 * group_order = order.data() + group.offset;
+
+        if (!group.serialization)
+        {
+            for (size_t k = 0; k < group.count; ++k)
+                hash_out[group_order[k]] = WEAK_HASH32_INITIAL_VALUE;
+            continue;
+        }
+
+        auto column = group.type->createColumn();
+        column->reserve(group.count);
+        ReadBufferFromMemory value_buf("", 0);
+        for (size_t k = 0; k < group.count; ++k)
+            deserializeSharedValueBody(*column, *group.serialization, value_buf, get_value(group_order[k]), group.prefix.size());
+
+        group_hash.resize(group.count);
+        column->computeHashInto(0, group.count, group_hash.data(), /*initial=*/true);
+        for (size_t k = 0; k < group.count; ++k)
+            hash_out[group_order[k]] = group_hash[k];
+    }
+}
+
+}
+
+void ColumnDynamic::hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out)
+{
+    hashSharedValuesImpl([&](size_t i) { return values.getDataAt(first + i); }, count, hash_out);
+}
+
+void ColumnDynamic::hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out)
+{
+    hashSharedValuesImpl([&](size_t i) { return values.getDataAt(value_indices[i]); }, count, hash_out);
+}
+
+void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    checkStackSize();
+
+    /// A value must hash the same whether it sits in a typed variant or the shared variant. Typed rows
+    /// are already correct via `ColumnVariant`; only shared rows need decoding to the typed leaf hash.
+    const auto & variant_col = getVariantColumn();
+    const auto & shared_variant = getSharedVariant();
+    if (shared_variant.empty())
+    {
+        variant_col.computeHashInto(row_begin, row_end, hash_out, initial);
+        return;
+    }
+
+    const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> value_hash(n);
+    variant_col.computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
+
+    /// Gather the rows served from the shared variant and rehash them from the typed leaf value.
+    const auto shared_discr = getSharedVariantDiscriminator();
+    PODArray<UInt64> shared_value_indices;
+    PODArray<UInt64> shared_rows;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const size_t row = row_begin + i;
+        if (variant_col.globalDiscriminatorAt(row) == shared_discr)
+        {
+            shared_value_indices.push_back(variant_col.offsetAt(row));
+            shared_rows.push_back(i);
+        }
+    }
+
+    if (!shared_rows.empty())
+    {
+        PODArray<UInt32> shared_hash(shared_rows.size());
+        hashSharedValues(shared_variant, shared_value_indices.data(), shared_rows.size(), shared_hash.data());
+        for (size_t k = 0; k < shared_rows.size(); ++k)
+            value_hash[shared_rows[k]] = shared_hash[k];
+    }
+
+    if (initial)
+    {
+        memcpy(hash_out, value_hash.data(), n * sizeof(UInt32));
+    }
+    else
+    {
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(value_hash[i], hash_out[i]);
+    }
 }
 
 int ColumnDynamic::compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint)
@@ -980,6 +1185,8 @@ int ColumnDynamic::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #endif
 {
+    checkStackSize();
+
     const auto & left_variant = getVariantColumn();
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);
     const auto & right_variant = right_dynamic.getVariantColumn();
@@ -1106,6 +1313,7 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
 
 ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
+    checkStackSize();
     ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
@@ -1117,6 +1325,7 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
 
 ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 {
+    checkStackSize();
     UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
         variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
@@ -1125,6 +1334,7 @@ ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 
 void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 {
+    checkStackSize();
     auto & variants_checkpoints = assert_cast<DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
@@ -1142,6 +1352,7 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
 {
+    checkStackSize();
     const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(checkpoint).variants_checkpoints;
 
     /// Manually rollback internals of Variant column
@@ -1214,6 +1425,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
 
 void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
+    checkStackSize();
     if (source_columns.empty())
         return;
 
@@ -1237,6 +1449,7 @@ void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr
 
 void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
+    checkStackSize();
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
     /// It may happen that the total number of variants in source columns will
@@ -1341,6 +1554,8 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
 
 bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
 {
+    checkStackSize();
+
     if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
         return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
             && variant_info.variant_name == rhs_concrete->variant_info.variant_name
@@ -1350,6 +1565,8 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
 
 void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
+    checkStackSize();
+
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Dynamic column");
 
@@ -1480,6 +1697,8 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
 void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 {
+    checkStackSize();
+
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Dynamic column");
 
@@ -1502,6 +1721,8 @@ void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 
 void ColumnDynamic::fixDynamicStructure()
 {
+    checkStackSize();
+
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
     /// to extend selected variants on inserts into this column.
     /// -1 because we don't count shared variant in the limit.
@@ -1536,6 +1757,8 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
 
 void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    checkStackSize();
+
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
     /// Collect total sizes for variants that are not in our structure (candidates for shared variant statistics).

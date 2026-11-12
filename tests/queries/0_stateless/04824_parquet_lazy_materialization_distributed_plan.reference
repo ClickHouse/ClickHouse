@@ -3,7 +3,10 @@
 0	val_0
 1	val_1
 2	val_2
--- make_distributed_plan = 1: the sort is exchange-split, no lazy read step in the plan
-0	1
--- make_distributed_plan = 1: the distributed conversion succeeds (every fragment is serializable)
-0
+-- make_distributed_plan = 1: lazy read step and exchanges never coexist
+plan: ok
+distributed plan: ok
+-- make_distributed_plan = 1: the query runs and returns the same rows
+0	val_0
+1	val_1
+2	val_2

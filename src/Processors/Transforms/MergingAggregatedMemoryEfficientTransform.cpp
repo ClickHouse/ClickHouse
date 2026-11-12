@@ -1,3 +1,5 @@
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <algorithm>
 #include <limits>
 #include <set>
@@ -25,11 +27,11 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
 {
 }
 
-std::vector<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+VectorWithMemoryTracking<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
 {
     /// A bucket with a smaller id can be pushed after `bucket` if either we already have its data buffered,
     /// or some of the inputs told us that it delayed that bucket and it still can arrive.
-    std::set<Int32> delayed;
+    SetWithMemoryTracking<Int32> delayed;
 
     for (const auto & [delayed_bucket, num_inputs_delayed_that_bucket] : out_of_order_buckets)
         if (delayed_bucket < bucket && num_inputs_delayed_that_bucket > 0)
@@ -59,11 +61,23 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
 
     /// Pushing the same bucket twice means it is merged twice and the same keys are returned twice.
     /// This is the failure mode of a producer which sends buckets out of order without reporting them as delayed.
-    chassert(bucket < 0 || pushed_buckets.insert(bucket).second, fmt::format("Bucket {} is pushed twice", bucket));
+    if (bucket >= 0 && !pushed_buckets.insert(bucket).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GroupingAggregatedTransform pushed bucket {} twice", bucket);
 
     Chunk chunk;
     chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
+}
+
+/// An input which has finished cannot send anything else, so it does not hold a bucket back. An input
+/// port reports itself finished only when it has no data left on it, so nothing of the bucket is lost.
+bool GroupingAggregatedTransform::everyLiveInputIsPastBucket(Int32 bucket)
+{
+    for (size_t input = 0; input < num_inputs; ++input)
+        if (last_bucket_number[input] <= bucket && !index_to_input[input]->isFinished())
+            return false;
+
+    return true;
 }
 
 bool GroupingAggregatedTransform::tryPushTwoLevelData()
@@ -99,7 +113,14 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
             /// The bucket is no longer delayed by any of the inputs.
             /// Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
+            ///
+            /// Every input which can still send something has to be strictly past the bucket, not at it:
+            /// an input whose last chunk is of this bucket can send more chunks of the same bucket, they
+            /// would be merged and pushed a second time, and the keys of the bucket would be returned
+            /// twice. The in order push below relies on the same: it pushes the buckets before
+            /// `current_bucket`, and `current_bucket` only moves on when every input has read a bucket
+            /// after it.
+            if (inputs_delayed_that_bucket == 0 && everyLiveInputIsPastBucket(bucket))
             {
                 if (try_push_by_iter(chunks_map.find(bucket)))
                 {
@@ -455,12 +476,12 @@ SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, Aggre
 {
 }
 
-std::vector<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+VectorWithMemoryTracking<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
 {
     /// This transform never delays a bucket on its own: it always pushes the smallest bucket it has.
     /// Hence a bucket with a smaller id can be pushed after `bucket` only if it hasn't arrived yet,
     /// and in that case the input which will deliver it has already reported it as delayed.
-    std::set<Int32> delayed;
+    SetWithMemoryTracking<Int32> delayed;
 
     for (const auto & buckets_of_input : input_out_of_order_buckets)
         for (const auto delayed_bucket : buckets_of_input)

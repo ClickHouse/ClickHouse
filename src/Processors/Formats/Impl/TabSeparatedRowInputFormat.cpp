@@ -149,9 +149,9 @@ void TabSeparatedFormatReader::skipHeaderRow()
 }
 
 template <bool is_header_row>
-std::vector<String> TabSeparatedFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> TabSeparatedFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readFieldIntoString<is_header_row>());
@@ -163,12 +163,14 @@ std::vector<String> TabSeparatedFormatReader::readRowImpl()
 }
 
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
-    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
+    const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
 {
-    const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
+    /// A field is empty if it is followed by the field delimiter or the end of the row.
+    /// The row can end before the last file column with `input_format_tsv_allow_variable_number_of_columns`.
+    const bool is_empty_field = buf->eof() || *buf->position() == '\t' || *buf->position() == '\n'
+        || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
 
-    if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    if (format_settings.tsv.empty_as_default && is_empty_field)
     {
         column.insertDefault();
         return false;
@@ -385,7 +387,7 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
@@ -425,6 +427,18 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
         if (is_raw)
             registerWithNamesAndTypes("Raw", register_func);
     }
+
+    /// `TSV` and `TSVRaw` (and `Raw`) are interchangeable spellings of `TabSeparated` and
+    /// `TabSeparatedRaw`, and the `tsv` extension below is registered only for the canonical
+    /// spellings.
+    factory.registerFormatAlias("TSV", "TabSeparated");
+    factory.registerFormatAlias("TSVRaw", "TabSeparatedRaw");
+    factory.registerFormatAlias("Raw", "TabSeparatedRaw");
+
+    /// `TabSeparated` and `TSV` are registered as independent formats, and the `tsv` extension
+    /// infers as `TSV`. Files of the raw flavour of the format carry the `tsv` extension too.
+    factory.registerFileExtension("tsv", "TabSeparated", /*used_for_format_inference=*/ false);
+    factory.registerFileExtension("tsv", "TabSeparatedRaw", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("Raw", Documentation{
         .description = "An alias for the `TabSeparatedRaw` format. See the `TabSeparatedRaw` entry for the full documentation.",
@@ -497,7 +511,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 ## Data formatting {#tabseparated-data-formatting}
 
-Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
+Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting), and leading zeros are ignored when parsing (`007` is read as `7`). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
 Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are 'inf', '+inf', '-inf', and 'nan'. An entry of floating-point numbers may begin or end with a decimal point.
 During formatting, accuracy may be lost on floating-point numbers.
@@ -648,9 +662,9 @@ The output will be in tab separated format:
 
 Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](/reference/formats/RawBLOB#raw-formats-comparison)
 
@@ -732,9 +746,9 @@ The output will be in tab separated format:
 Differs from the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format,
 in that the rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -816,9 +830,9 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 Differs from the [`TabSeparatedWithNamesAndTypes`](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format,
 in that the rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

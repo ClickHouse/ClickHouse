@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 SET explain_query_plan_default = 'legacy';
@@ -298,10 +297,18 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
-SELECT 'hasPhrase with 3rd argument bypasses the index';
+SELECT 'hasPhrase with a matching 3rd argument uses the index';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
     SELECT count() FROM tab WHERE hasPhrase(message, 'Hello World', 'splitByNonAlpha')
+)
+WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT 'hasPhrase with a different 3rd argument bypasses the index';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE hasPhrase(message, 'Hello World', 'ngrams(3)')
 )
 WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;

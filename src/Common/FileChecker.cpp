@@ -1,7 +1,10 @@
 #include <Common/FileChecker.h>
+#include <Formats/FormatSettings.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -22,6 +25,15 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char file_checker_update_and_save_fail_reading_sizes[];
+    extern const char file_checker_update_and_save_fail_persisting[];
+    extern const char file_checker_repair_memory_limit_exceeded[];
 }
 
 
@@ -65,6 +77,26 @@ void FileChecker::update(const String & full_file_path)
 void FileChecker::update(const String & filename, size_t size)
 {
     map[filename] = size;
+}
+
+void FileChecker::updateAndSave(const std::vector<String> & full_file_paths)
+{
+    Map candidate = map;
+    for (const auto & full_file_path : full_file_paths)
+    {
+        /// A sink commits an empty baseline before it writes anything, where no size has changed yet.
+        fiu_do_on(FailPoints::file_checker_update_and_save_fail_reading_sizes,
+        {
+            if (candidate != map)
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while reading the file sizes");
+        });
+
+        bool exists = fileReallyExists(full_file_path);
+        candidate[fileName(full_file_path)] = exists ? getRealFileSize(full_file_path) : 0;
+    }
+
+    save(candidate);
+    map = std::move(candidate);
 }
 
 void FileChecker::setEmpty(const String & full_file_path)
@@ -119,6 +151,14 @@ std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & 
 
 void FileChecker::repair()
 {
+    /// Behaves like a memory-tracked allocation that hits the memory limit: it is suppressed
+    /// where the memory tracker would not throw either.
+    fiu_do_on(FailPoints::file_checker_repair_memory_limit_exceeded,
+    {
+        if (!LockMemoryExceptionInThread::isBlocked(VariableContext::Global, true) && !std::uncaught_exceptions())
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injecting memory limit exceeded while repairing the files");
+    });
+
     for (const auto & name_size : map)
     {
         const String & name = name_size.first;
@@ -139,15 +179,15 @@ void FileChecker::repair()
     }
 }
 
-void FileChecker::save(WriteBuffer & buffer) const
+void FileChecker::save(WriteBuffer & buffer, const Map & map_to_save)
 {
     /// So complex JSON structure - for compatibility with the old format.
     writeCString("{\"clickhouse\":{", buffer);
 
     auto settings = FormatSettings();
-    for (auto it = map.begin(); it != map.end(); ++it)
+    for (auto it = map_to_save.begin(); it != map_to_save.end(); ++it)
     {
-        if (it != map.begin())
+        if (it != map_to_save.begin())
             writeString(",", buffer);
 
         /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
@@ -161,21 +201,38 @@ void FileChecker::save(WriteBuffer & buffer) const
 
 }
 
-void FileChecker::save() const
+void FileChecker::save(WriteBuffer & buffer) const
+{
+    save(buffer, map);
+}
+
+void FileChecker::save(const Map & map_to_save) const
 {
     std::string tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 
     {
         std::unique_ptr<WriteBufferFromFileBase> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
-        save(*out);
+        save(*out, map_to_save);
         out->sync();
         out->finalize();
     }
+
+    /// A sink commits an empty baseline before it writes anything, where no size has changed yet.
+    fiu_do_on(FailPoints::file_checker_update_and_save_fail_persisting,
+    {
+        if (map_to_save != map)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while persisting the file sizes");
+    });
 
     if (disk)
         disk->replaceFile(tmp_files_info_path, files_info_path);
     else
         fs::rename(tmp_files_info_path, files_info_path);
+}
+
+void FileChecker::save() const
+{
+    save(map);
 }
 
 void FileChecker::load()

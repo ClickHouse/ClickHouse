@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <ranges>
 #include <shared_mutex>
 
 #include <Common/Exception.h>
@@ -18,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/logger_useful.h>
+#include <Common/shuffle.h>
 #include <Common/thread_local_rng.h>
 
 #include <Coordination/CoordinationSettings.h>
@@ -41,6 +43,7 @@ namespace ProfileEvents
     extern const Event KeeperGetRequest;
     extern const Event KeeperListRequest;
     extern const Event KeeperListRecursiveRequest;
+    extern const Event KeeperListWithOptionsRequest;
     extern const Event KeeperExistsRequest;
     extern const Event KeeperPreprocessElapsedMicroseconds;
     extern const Event KeeperProcessElapsedMicroseconds;
@@ -103,9 +106,7 @@ bool fixupACL(
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
-            /// Save world:anyone ACLs to support specific permissions
-            if (request_acl.permissions != Coordination::ACL::All)
-                result_acls.push_back(request_acl);
+            result_acls.push_back(request_acl);
             valid_found = true;
         }
         else if (request_acl.scheme == "digest")
@@ -120,6 +121,14 @@ bool fixupACL(
             result_acls.push_back(new_acl);
         }
     }
+
+    /// ZooKeeper ORs the entries of an ACL list, so dropping one can only narrow the result. A list
+    /// consisting only of world:anyone with all permissions grants everyone everything, which is
+    /// exactly what the empty list (ACL id 0) means here, so it is the one list that can be dropped.
+    if (std::ranges::all_of(result_acls, [](const Coordination::ACL & acl)
+            { return acl.scheme == "world" && acl.id == "anyone" && acl.permissions == Coordination::ACL::All; }))
+        result_acls.clear();
+
     return valid_found;
 }
 
@@ -148,6 +157,8 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
             return function(static_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
         case Coordination::OpNum::ListRecursive:
             return function(static_cast<Coordination::ZooKeeperListRecursiveRequest &>(zk_request));
+        case Coordination::OpNum::ListWithOptions:
+            return function(static_cast<Coordination::ZooKeeperListWithOptionsRequest &>(zk_request));
         case Coordination::OpNum::Exists:
             return function(static_cast<Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
@@ -193,6 +204,14 @@ bool isRemoveNodeDelta(const KeeperDelta & delta)
         return op->new_node.action == Coordination::Storage::NodeAction::Remove;
     else
         return std::holds_alternative<RemoveNodeDelta>(delta.operation);
+}
+
+bool isCreateNodeDelta(const KeeperDelta & delta)
+{
+    if (const auto * op = std::get_if<LSMTDelta>(&delta.operation))
+        return op->new_node.action == Coordination::Storage::NodeAction::Create;
+    else
+        return std::holds_alternative<CreateNodeDelta>(delta.operation);
 }
 
 bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::DeltaRange & deltas, Coordination::Stat & out_stat)
@@ -283,12 +302,18 @@ process(const Coordination::ZooKeeperSyncRequest & zk_request, KeeperStorage & /
 
 /// CREATE Request ///
 static std::pair<KeeperResponsesForSessions, Int64> processWatches(
-    const Coordination::ZooKeeperCreateRequest & zk_request,
-    KeeperStorage::DeltaRange /*deltas*/,
+    const Coordination::ZooKeeperCreateRequest & /*zk_request*/,
+    KeeperStorage::DeltaRange deltas,
     KeeperStorage & storage,
     int64_t /*session_id*/)
 {
-    return storage.processWatchesImpl(zk_request.getPath(), Coordination::Event::CREATED);
+    for (const auto & delta : deltas)
+    {
+        if (isCreateNodeDelta(delta))
+            return storage.processWatchesImpl(delta.path, Coordination::Event::CREATED);
+    }
+
+    return {};
 }
 
 template <typename Storage>
@@ -960,7 +985,9 @@ processLocal(const Coordination::ZooKeeperCheckWatchRequest & zk_request, Keeper
     ProfileEvents::increment(ProfileEvents::KeeperCheckWatchRequest);
     auto response = zk_request.makeResponse();
 
-    if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
+    if (!magic_enum::enum_contains(zk_request.type))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
         response->error = Coordination::Error::ZNOWATCHER;
     return response;
 }
@@ -979,7 +1006,9 @@ processLocal(const Coordination::ZooKeeperRemoveWatchRequest & zk_request, Keepe
     ProfileEvents::increment(ProfileEvents::KeeperRemoveWatchRequest);
     auto response = zk_request.makeResponse();
 
-    if (!storage.removePersistentWatch(zk_request.path, zk_request.type, session_id))
+    if (!magic_enum::enum_contains(zk_request.type))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else if (!storage.removePersistentWatch(zk_request.path, zk_request.type, session_id))
         response->error = Coordination::Error::ZNOWATCHER;
 
     return response;
@@ -999,7 +1028,10 @@ processLocal(const Coordination::ZooKeeperAddWatchRequest & zk_request, KeeperSt
     ProfileEvents::increment(ProfileEvents::KeeperAddWatchRequest);
     auto response = zk_request.makeResponse();
 
-    storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
+    if (!magic_enum::enum_contains(zk_request.mode))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else
+        storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
     return response;
 }
 
@@ -1195,6 +1227,176 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperL
     return processLocal(zk_request, storage, session_id, /*check_acl=*/ true);
 }
 /// LIST Request ///
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr processLocal(
+    const Coordination::ZooKeeperListWithOptionsRequest & zk_request,
+    Storage & storage,
+    int64_t session_id,
+    bool check_acl)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperListWithOptionsRequest);
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperListWithOptionsResponse>(zk_request.makeResponse());
+
+    if (zk_request.options_version != Coordination::ListOptionsVersion::V1)
+    {
+        response->error = Coordination::Error::ZUNIMPLEMENTED;
+        return response;
+    }
+
+    if (zk_request.options.recursive && zk_request.has_watch)
+    {
+        response->error = Coordination::Error::ZBADARGUMENTS;
+        return response;
+    }
+
+    const auto root_holder = storage.nodes.getCommittedNode(zk_request.path);
+    const auto * root = root_holder.get();
+    if (root == nullptr)
+    {
+        response->error = Coordination::Error::ZNONODE;
+        return response;
+    }
+    if (check_acl && !storage.checkACL(root->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+    {
+        response->error = Coordination::Error::ZNOAUTH;
+        return response;
+    }
+    root->stats.setResponseStat(response->stat);
+
+    const size_t relative_path_offset = zk_request.path == "/" ? 1 : zk_request.path.size() + 1;
+    const auto auth_error = [&]() -> Coordination::ZooKeeperResponsePtr
+    {
+        response->names.clear();
+        response->stats.clear();
+        response->data.clear();
+        response->error = Coordination::Error::ZNOAUTH;
+        return response;
+    };
+    const bool materialize_shuffled_subtree = zk_request.options.recursive && zk_request.options.shuffle;
+    std::vector<String> shuffled_subtree_candidates;
+
+    const auto append_result = [&](std::string_view relative, const auto * child)
+    {
+        if (zk_request.options.max_results != 0 && response->names.size() >= zk_request.options.max_results)
+        {
+            response->truncated = true;
+            return false;
+        }
+
+        response->names.emplace_back(relative);
+        if (zk_request.options.with_stat)
+        {
+            Coordination::Stat stat;
+            child->stats.setResponseStat(stat);
+            response->stats.emplace_back(stat);
+        }
+        if (zk_request.options.with_data)
+            response->data.emplace_back(child->getData());
+        return true;
+    };
+
+    if (!zk_request.options.recursive && zk_request.options.filter == Coordination::ListRequestType::ALL
+        && !zk_request.options.with_stat && !zk_request.options.with_data)
+    {
+        std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
+        if (zk_request.options.shuffle)
+            shuffle_with_limit(children.begin(), children.end(), zk_request.options.max_results, thread_local_rng);
+
+        if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
+        {
+            response->names.assign(children.begin(), children.begin() + zk_request.options.max_results);
+            response->truncated = true;
+        }
+        else
+        {
+            response->names = std::move(children);
+        }
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
+    std::vector<String> frontier{zk_request.path};
+    for (size_t current = 0; current < frontier.size(); ++current)
+    {
+        const String parent_path = frontier[current];
+        std::vector<String> children = storage.nodes.listCommittedChildrenNames(parent_path);
+        if (zk_request.options.shuffle && !materialize_shuffled_subtree)
+            std::shuffle(children.begin(), children.end(), thread_local_rng);
+
+        for (const String & child_name : children)
+        {
+            const String child_path = parent_path == "/" ? "/" + child_name : parent_path + "/" + child_name;
+            const std::string_view relative{child_path.data() + relative_path_offset, child_path.size() - relative_path_offset};
+            const auto child_holder = storage.nodes.getCommittedNode(child_path);
+            const auto * child = child_holder.get();
+            chassert(child != nullptr);
+
+            const bool child_is_inspected = zk_request.options.recursive || zk_request.options.filter != Coordination::ListRequestType::ALL
+                || zk_request.options.with_stat || zk_request.options.with_data;
+            if (child_is_inspected && check_acl && !storage.checkACL(child->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            {
+                if (zk_request.options.recursive)
+                    continue;
+                return auth_error();
+            }
+
+            if (zk_request.options.recursive)
+                frontier.emplace_back(child_path);
+
+            bool matches = true;
+            if (zk_request.options.filter == Coordination::ListRequestType::PERSISTENT_ONLY)
+                matches = !child->stats.isEphemeral();
+            else if (zk_request.options.filter == Coordination::ListRequestType::EPHEMERAL_ONLY)
+                matches = child->stats.isEphemeral();
+            if (!matches)
+                continue;
+
+            if (materialize_shuffled_subtree)
+            {
+                shuffled_subtree_candidates.emplace_back(relative);
+                continue;
+            }
+
+            if (!append_result(relative, child))
+            {
+                response->error = Coordination::Error::ZOK;
+                return response;
+            }
+        }
+
+        if (!zk_request.options.recursive)
+            break;
+    }
+
+    if (materialize_shuffled_subtree)
+    {
+        shuffle_with_limit(
+            shuffled_subtree_candidates.begin(), shuffled_subtree_candidates.end(), zk_request.options.max_results, thread_local_rng);
+
+        for (const String & relative : shuffled_subtree_candidates)
+        {
+            const String child_path = zk_request.path == "/" ? "/" + relative : zk_request.path + "/" + relative;
+            const auto child_holder = storage.nodes.getCommittedNode(child_path);
+            const auto * child = child_holder.get();
+            chassert(child != nullptr);
+            if (!append_result(relative, child))
+                break;
+        }
+    }
+
+    response->error = Coordination::Error::ZOK;
+    return response;
+}
+
+template <typename Storage>
+static Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, KeeperStorage::DeltaRange deltas, int64_t session_id)
+{
+    chassert(deltas.empty());
+    return processLocal(zk_request, storage, session_id, /*check_acl=*/true);
+}
 
 /// CHECK Request ///
 namespace
@@ -1532,15 +1734,26 @@ static Coordination::Error preprocess(
     return Coordination::Error::ZOK;
 }
 
+/// Cuts the deltas of the next subrequest, up to its `SubDeltaEnd` marker, off the front of `deltas`
+/// and drops the marker. `preprocess` appends the marker after every subrequest, so a range without
+/// it does not match the request that is being processed: the markers were lost, and stepping past
+/// the end of the range to look for them is undefined behavior. This runs on the raft commit and
+/// replay threads, so treat it like every other mismatch between a request and its deltas.
+///
+/// `FailedMultiDelta` is the other marker `preprocess` emits, and the callers handle it before they
+/// get here: it is the sole delta of a failed multi request. Inside a subrequest slice it is out of
+/// place, and `commit` would ignore it and report the subrequest as successful, so the walk stops on
+/// both markers and rejects the failure marker instead of passing it on as an ordinary delta.
 static KeeperStorage::DeltaRange extractSubdeltas(KeeperStorage::DeltaRange & deltas)
 {
-    auto it = deltas.begin();
-
-    for (; it != deltas.end(); ++it)
-    {
-        if (std::holds_alternative<SubDeltaEnd>(it->operation))
-            break;
-    }
+    auto it = std::ranges::find_if(
+        deltas,
+        [](const auto & delta)
+        { return std::holds_alternative<SubDeltaEnd>(delta.operation) || std::holds_alternative<FailedMultiDelta>(delta.operation); });
+    if (it == deltas.end())
+        onStorageInconsistency("Missing SubDeltaEnd marker for a Multi subrequest");
+    if (std::holds_alternative<FailedMultiDelta>(it->operation))
+        onStorageInconsistency("Unexpected failure marker inside a subrequest of a Multi request");
 
     KeeperStorage::DeltaRange result{deltas.begin(), it};
     ++it;
@@ -1564,10 +1777,34 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     const auto & subrequests = zk_request.requests;
 
-    // the deltas will have at least SubDeltaEnd or FailedMultiDelta
-    chassert(!deltas.empty());
+    /// `preprocess` appends at least `SubDeltaEnd` or `FailedMultiDelta` for every subrequest, so the
+    /// range is empty only for a multi request that has no subrequests. Such a request is accepted -
+    /// ZooKeeper answers it with an empty successful response, and a client that builds a transaction
+    /// from a list that turns out to be empty sends exactly that - so answer it the same way here.
+    /// `processWatches` below already handles the empty range, and this runs on the raft commit
+    /// thread, where an exception terminates the process.
+    ///
+    /// The success return is reserved for the true zero-subrequest case: a multi request with
+    /// subrequests but without deltas means that the markers of the preprocessing were lost, and
+    /// answering it with an empty success would silently drop every suboperation, so it goes through
+    /// the storage inconsistency path like every other request whose deltas do not match.
+    if (deltas.empty())
+    {
+        if (!subrequests.empty())
+            onStorageInconsistency("Unexpected empty deltas for Multi request with subrequests");
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
+        /// `preprocess` puts the failure marker last and the caller rolls back everything before it,
+        /// so the marker is the only delta of a failed multi request. Anything else in the range is
+        /// a delta that no subrequest response would account for, so it cannot be dropped silently.
+        if (std::next(deltas.begin()) != deltas.end())
+            onStorageInconsistency("Unexpected deltas after the failure marker of a Multi request");
+
         const size_t subrequests_count = subrequests.size();
 
         for (size_t i = 0; i < subrequests_count; ++i)
@@ -1590,6 +1827,12 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
         response->responses.push_back(callOnConcreteRequestType(
             *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
+
+    /// Every delta of the transaction belongs to one of the subrequests above. Deltas left after the
+    /// last marker belong to no subrequest: they are already applied to the storage, and no response
+    /// would account for them, so they cannot be silently ignored either.
+    if (!deltas.empty())
+        onStorageInconsistency("Unexpected deltas after the last subrequest of a Multi request");
 
     response->error = Coordination::Error::ZOK;
     return response;
@@ -1645,14 +1888,146 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
 /// ========== End of request implementations ==========
 
 template <typename NS>
-KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
+std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperRequestBatch & batch, bool check_acl)
+{
+    chassert(!batch.requests.empty());
+    chassert(batch.first_zxid != 0);
+
+    if (isFinalized())
+        return std::nullopt;
+
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
+
+    if (!staging.deltas.empty() || staging.zxid != -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
+
+    if (!batch.ownsZxids())
+        return getNodesDigest(false, /*lock_transaction_mutex=*/true);
+
+    UncommittedBatchInfo * transaction = nullptr;
+    KeeperStagingTransaction batch_staging;
+    int64_t commit_zxid = 0; // (for cleanup, not related to the current batch preprocessing)
+    {
+        std::lock_guard lock(transaction_mutex);
+
+        /// On the leader preprocessBatch is called twice: in the PreAppendLogLeader callback
+        /// (before the entry is written to the changelog and before the log idx is known) and in
+        /// pre_commit. Detect the second call and don't run the request logic a second time.
+        if (!uncommitted_batches.empty())
+        {
+            auto & last_batch = uncommitted_batches.back();
+            if (last_batch.first_zxid == batch.first_zxid && last_batch.last_zxid == batch.getLastZxid()
+                && checkDigest(batch.digest, last_batch.nodes_digest))
+            {
+                /// The batch was preprocessed in the PreAppendLogLeader callback, before the
+                /// log idx was known; stamp it now.
+                chassert(last_batch.log_idx == 0);
+                last_batch.log_idx = batch.log_idx;
+                return batch.digest;
+            }
+        }
+
+        int64_t last_zxid = getNextZXIDLocked() - 1;
+        auto current_digest = getNodesDigest(false, /*lock_transaction_mutex=*/false);
+
+        if (batch.first_zxid <= last_zxid && (!uncommitted_batches.empty() || last_zxid != old_snapshot_zxid))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
+                            batch.first_zxid, last_zxid);
+
+        batch_staging.digest = current_digest;
+        KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
+        chassert(batch_staging.digest.version == version);
+
+        transaction = &uncommitted_batches.emplace_back(UncommittedBatchInfo{
+            .first_zxid = batch.first_zxid, .last_zxid = batch.getLastZxid(), .nodes_digest = current_digest, .log_idx = batch.log_idx});
+        commit_zxid = zxid;
+    }
+
+    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
+    /// than inside the storage's prepare methods to make sure storage_mutex is not held: sleeping
+    /// under storage_mutex would stall the background work that the throttling is waiting for.
+    nodes.throttleWrite();
+
+    auto preprocess_requests = [&]
+    {
+        for (size_t i = 0; i < batch.requests.size(); ++i)
+        {
+            const auto & request_for_session = batch.requests[i];
+            const auto op_num = request_for_session.request->getOpNum();
+
+            if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
+                continue;
+
+            chassert(staging.deltas.empty());
+            staging.zxid = batch.getZxid(i);
+            staging.digest = batch_staging.digest;
+
+            bool ok = preprocessOneRequest(
+                request_for_session.request,
+                request_for_session.session_id,
+                request_for_session.time,
+                check_acl);
+
+            if (ok)
+            {
+                if (staging.digest.version != KeeperDigestVersion::NO_DIGEST)
+                    nodes.updateNodesDigest(staging.digest.value, staging.zxid);
+                batch_staging.digest = staging.digest;
+            }
+
+            batch_staging.deltas.splice(batch_staging.deltas.end(), std::move(staging.deltas));
+            staging.deltas.clear();
+        }
+    };
+
+    preprocess_requests();
+
+#ifndef NDEBUG
+    /// In debug build, sometimes do a little consistency test: roll back the transaction,
+    /// prepare it again, and assert that the result is the same.
+    /// This shouldn't have any externally observable effects.
+    /// Good for finding bugs in rollback.
+    if (batch_staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 4 == 0)
+    {
+        const UInt64 first_digest = batch_staging.digest.value;
+        const size_t first_delta_count = batch_staging.deltas.size();
+
+        uncommitted_state.rollback(std::move(batch_staging.deltas));
+        batch_staging.deltas.clear();
+        batch_staging.digest = transaction->nodes_digest;
+
+        preprocess_requests();
+
+        chassert(
+            first_digest == batch_staging.digest.value && first_delta_count == batch_staging.deltas.size(),
+            "Re-preprocessing after rollback produced a different result. Preprocessing is non-deterministic or rollback is incorrect.");
+    }
+#endif
+
+    uncommitted_state.addDeltas(std::move(batch_staging.deltas));
+
+    // It's ok to assign this without locking transaction_mutex, even though `transaction`
+    // is inside `uncommitted_batches`. Because it just so happens that no code path
+    // reads nodes_digest from uncommitted_batches without holding nuraft's main lock_,
+    // which we're also holding. (Except for commit callback, which reads
+    // `uncommitted_batches.front()`, but only after the batch is committed,
+    // which can't happen before we return from here.)
+    transaction->nodes_digest = batch_staging.digest;
+
+    uncommitted_state.cleanup(commit_zxid);
+    staging.zxid = -1;
+
+    return batch_staging.digest;
+}
+
+template <typename NS>
+bool KeeperStorageImpl<NS>::preprocessOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     int64_t time,
-    int64_t new_last_zxid,
-    bool check_acl,
-    std::optional<KeeperDigest> digest,
-    int64_t log_idx)
+    bool check_acl)
 {
     Stopwatch watch;
     SCOPE_EXIT({
@@ -1671,117 +2046,6 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed_us);
-    });
-
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
-
-    if (!staging.deltas.empty() || staging.zxid != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
-
-    TransactionInfo * transaction = nullptr;
-    {
-        std::lock_guard lock(transaction_mutex);
-        int64_t last_zxid = getNextZXIDLocked() - 1;
-        auto current_digest = getNodesDigest(false, /*lock_transaction_mutex=*/false);
-
-        if (uncommitted_transactions.empty())
-        {
-            // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
-            if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
-                throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
-                                new_last_zxid, last_zxid);
-        }
-        else
-        {
-            /// On leader, preprocessRequest is called for each log entry twice:
-            ///  1. In PreAppendLogLeader callback, before the entry is written to changelog.
-            ///     (At this point we're allowed to reject the entry. We could do that for failed
-            ///      requests to avoid the cost of sending them through raft.
-            ///      But currently we don't, all non-read requests go through raft.)
-            ///  2. In pre_commit, after the entry is written to changelog, and there's no way back.
-            /// Here we detect the second call to avoid preprocessing request twice.
-            if (last_zxid == new_last_zxid && digest && checkDigest(*digest, current_digest))
-            {
-                auto & last_transaction = uncommitted_transactions.back();
-                // we found the preprocessed request with the same ZXID, we can get log_idx and skip preprocessing it
-                chassert(last_transaction.zxid == new_last_zxid && log_idx != 0);
-                /// initially leader preprocessed without knowing the log idx
-                /// on the second call we have that information and can set the log idx for the correct transaction
-                last_transaction.log_idx = log_idx;
-                return current_digest;
-            }
-
-            if (new_last_zxid <= last_zxid)
-                throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
-                                new_last_zxid, last_zxid);
-        }
-
-        staging.zxid = new_last_zxid;
-        staging.digest = current_digest;
-        KeeperDigestVersion version = keeper_context->digestEnabled() ? KEEPER_CURRENT_DIGEST_VERSION : KeeperDigestVersion::NO_DIGEST;
-        chassert(staging.digest.version == version);
-
-        transaction = &uncommitted_transactions.emplace_back(TransactionInfo{.zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
-    }
-
-    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
-    /// than inside the storage's prepare methods to make sure no locks are held: sleeping under
-    /// storage_mutex would stall the background work that the throttling is waiting for.
-    nodes.throttleWrite();
-
-    bool request_finalized = false;
-    const auto finalize = [&](bool rolled_back)
-    {
-        if (request_finalized)
-            return;
-        uncommitted_state.addDeltas(std::move(staging.deltas));
-        staging.deltas.clear();
-
-        if (zk_request->getOpNum() == Coordination::OpNum::Create
-            || zk_request->getOpNum() == Coordination::OpNum::CreateContainer)
-        {
-            fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging.digest.value = 42);
-        }
-
-        if (!rolled_back && staging.digest.version != KeeperDigestVersion::NO_DIGEST)
-        {
-            nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
-            // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
-            // and just check the digest on the commit
-            // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
-            //
-            // It's ok to assign this without locking transaction_mutex, even though `transaction`
-            // is inside `uncommitted_transactions`. Because it just so happens that no code path
-            // reads nodes_digest from uncommitted_transactions without holding nuraft's main lock_,
-            // which we're also holding. (Except for commit callback, which reads
-            // `uncommitted_transactions.front()`, but only after the transaction is committed,
-            // which can't happen before we return from here.)
-            transaction->nodes_digest = staging.digest;
-        }
-
-        uncommitted_state.cleanup(getZXID());
-        staging.zxid = -1;
-        request_finalized = true;
-    };
-
-    const int uncaught_exceptions_before = std::uncaught_exceptions();
-    SCOPE_EXIT({
-        /// The most common way to leave without finalizing is an exception thrown while preprocessing.
-        /// Don't abort in that case: let the exception propagate to `KeeperStateMachine::preprocess`,
-        /// whose handler logs the message and the stack trace before aborting. (We can't log it here:
-        /// `std::current_exception` is null while unwinding towards a handler that hasn't been entered
-        /// yet, so all we could print is the useless "Finalize not called" line, and aborting here
-        /// would destroy the only clue about what actually went wrong.)
-        if (!request_finalized && std::uncaught_exceptions() == uncaught_exceptions_before)
-        {
-            LOG_FATAL(getLogger("KeeperStorage"), "Finalize not called before returning");
-            std::abort();
-        }
     });
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
@@ -1805,8 +2069,7 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         staging.deltas.emplace_back(staging.zxid, CloseSessionDelta{session_id});
         uncommitted_state.closed_sessions_to_zxids[session_id].insert(staging.zxid);
 
-        finalize(/*rolled_back=*/ false);
-        return transaction->nodes_digest;
+        return true;
     }
 
     Coordination::Error error = Coordination::Error::ZOK;
@@ -1816,68 +2079,43 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
     };
 
     callOnConcreteRequestType(*zk_request, preprocess_request);
+
+    if (zk_request->getOpNum() == Coordination::OpNum::Create
+        || zk_request->getOpNum() == Coordination::OpNum::CreateContainer)
+    {
+        fiu_do_on(FailPoints::keeper_leader_sets_invalid_digest, staging.digest.value = 42);
+    }
+
     if (error == Coordination::Error::ZOK)
+        return true;
+
+    /// Request failed, do rollback.
+
+    /// Hack: Multi request needs a FailedMultiDelta instead of ErrorDelta. We pass it from
+    /// `preprocess` to here through staging.deltas.
+    std::optional<Delta> custom_error_delta;
+    if (!staging.deltas.empty() && std::get_if<FailedMultiDelta>(&staging.deltas.back().operation))
     {
-#ifndef NDEBUG
-        /// In debug build, sometimes do a little consistency test: roll back the transaction,
-        /// prepare it again, and assert that the result is the same.
-        /// This shouldn't have any externally observable effects.
-        /// Good for finding bugs in rollback.
-        if (staging.digest.version != KeeperDigestVersion::NO_DIGEST && thread_local_rng() % 2 == 0)
-        {
-            nodes.updateNodesDigest(staging.digest.value, new_last_zxid);
-            const UInt64 first_digest = staging.digest.value;
-            const size_t first_delta_count = staging.deltas.size();
-
-            uncommitted_state.rollback(std::move(staging.deltas));
-            staging.deltas.clear();
-            staging.digest = transaction->nodes_digest;
-
-            callOnConcreteRequestType(*zk_request, preprocess_request);
-            chassert(error == Coordination::Error::ZOK, "Re-preprocessing after a spurious rollback unexpectedly failed");
-
-            UInt64 second_digest = staging.digest.value;
-            nodes.updateNodesDigest(second_digest, new_last_zxid);
-            chassert(
-                first_digest == second_digest && first_delta_count == staging.deltas.size(),
-                "Re-preprocessing after rollback produced a different result: preprocessing is non-deterministic or rollback is incomplete");
-        }
-#endif
-
-        finalize(/*rolled_back=*/ false);
+        custom_error_delta = std::move(staging.deltas.back());
+        staging.deltas.pop_back();
     }
+
+    uncommitted_state.rollback(std::move(staging.deltas));
+    staging.deltas.clear();
+    if (custom_error_delta.has_value())
+        staging.deltas.push_back(std::move(*custom_error_delta));
     else
-    {
-        /// Note: We currently only have the capability to roll back *all* deltas for a zxid.
-        /// Can't roll back an arbitrary suffix of deltas because there's no digest update logic
-        /// in delta rollback. We either calculate fully updated digest (through a combination of
-        /// prepareWriteCommon and updateNodesDigest) or revert to original digest.
+        staging.deltas.emplace_back(staging.zxid, error);
 
-        /// Hack: Multi request needs a FailedMultiDelta instead of ErrorDelta. We pass it from
-        /// `preprocess` to here through staging.deltas.
-        std::optional<Delta> custom_error_delta;
-        if (!staging.deltas.empty() && std::get_if<FailedMultiDelta>(&staging.deltas.back().operation))
-        {
-            custom_error_delta = std::move(staging.deltas.back());
-            staging.deltas.pop_back();
-        }
-
-        uncommitted_state.rollback(std::move(staging.deltas));
-        staging.deltas.clear();
-        if (custom_error_delta.has_value())
-            staging.deltas.push_back(std::move(*custom_error_delta));
-        else
-            staging.deltas.emplace_back(staging.zxid, error);
-        finalize(/*rolled_back=*/ true);
-    }
-    return transaction->nodes_digest;
+    return false;
 }
 
 template <typename NS>
-KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
+KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
-    std::optional<int64_t> new_last_zxid)
+    int64_t commit_zxid,
+    bool produce_response)
 {
     Stopwatch watch;
     SCOPE_EXIT({
@@ -1900,32 +2138,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
 
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
-
-    int64_t commit_zxid = 0;
-    uint64_t transaction_digest = 0;
-    {
-        std::lock_guard lock(transaction_mutex);
-        if (new_last_zxid)
-        {
-            if (uncommitted_transactions.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
-
-            auto & front_transaction = uncommitted_transactions.front();
-            if (front_transaction.zxid != *new_last_zxid)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Trying to commit a ZXID {} while the next ZXID to commit is {}",
-                    *new_last_zxid,
-                    front_transaction.zxid);
-
-            commit_zxid = *new_last_zxid;
-            transaction_digest = front_transaction.nodes_digest.value;
-        }
-        else
-        {
-            commit_zxid = zxid;
-        }
-    }
 
     std::list<Delta> deltas;
     {
@@ -1960,8 +2172,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
         {
             std::lock_guard lock(storage_mutex);
             commit(deltas_range);
-            if (!keeper_context->digestEnabledOnCommit())
-                nodes_digest = transaction_digest;
         }
         {
             std::lock_guard lock(auth_mutex);
@@ -1973,11 +2183,14 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
         clearDeadWatches(session_id);
 
         /// Finish connection
+        session_expiry_queue.remove(session_id);
+        session_and_timeout.erase(session_id);
+        /// Always produce the `Close` response, regardless of `produce_response`: it is needed on the server
+        /// that has the session's connection, which is not always the server whose dispatcher sent the `Close`
+        /// (`sessionCleanerTask` on the leader closes sessions of clients connected to followers).
         auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
         response->xid = zk_request->xid;
         response->zxid = commit_zxid;
-        session_expiry_queue.remove(session_id);
-        session_and_timeout.erase(session_id);
         results.push_back(KeeperResponseForSession{session_id, response});
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
@@ -1987,10 +2200,12 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
             std::lock_guard lock(storage_mutex);
             response = process(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(*zk_request), *this, deltas_range, session_id);
         }
-        response->xid = zk_request->xid;
-        response->zxid = commit_zxid;
-
-        results.push_back(KeeperResponseForSession{session_id, response});
+        if (produce_response)
+        {
+            response->xid = zk_request->xid;
+            response->zxid = commit_zxid;
+            results.push_back(KeeperResponseForSession{session_id, response});
+        }
     }
     else /// normal requests processing
     {
@@ -2001,8 +2216,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
             {
                 std::lock_guard lock(storage_mutex);
                 response = process(concrete_zk_request, *this, deltas_range, session_id);
-                if (!keeper_context->digestEnabledOnCommit())
-                    nodes_digest = transaction_digest;
             }
 
             /// Watches for this request are added to the watches lists
@@ -2016,23 +2229,26 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
                 results.insert(results.end(), watch_responses.begin(), watch_responses.end());
             }
 
-            response->xid = zk_request->xid;
-            response->zxid = commit_zxid;
-
-            results.push_back(KeeperResponseForSession{session_id, response});
+            if (produce_response)
+            {
+                response->xid = zk_request->xid;
+                response->zxid = commit_zxid;
+                results.push_back(KeeperResponseForSession{session_id, response});
+            }
         };
 
         callOnConcreteRequestType(*zk_request, process_request);
     }
 
+    /// Update committed zxid after each request in a batch, not after the whole batch.
+    /// Because there may be read requests in the middle of the batch, and they use `zxid` to tell
+    /// the client what version of the data was read.
     {
         std::lock_guard lock(transaction_mutex);
 
-        if (new_last_zxid)
-            uncommitted_transactions.pop_front();
-
-        if (commit_zxid < zxid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit smaller ZXID, commit ZXID: {}, current ZXID {}", commit_zxid, zxid);
+        if (commit_zxid <= zxid)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Trying to commit ZXID {} while ZXID {} is already committed", commit_zxid, zxid);
 
         zxid = commit_zxid;
     }
@@ -2084,6 +2300,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             case Coordination::OpNum::GetACL:
             case Coordination::OpNum::SimpleList:
             case Coordination::OpNum::List:
+            case Coordination::OpNum::ListWithOptions:
             case Coordination::OpNum::Check:
             case Coordination::OpNum::MultiRead:
             case Coordination::OpNum::FilteredList:
@@ -2110,6 +2327,8 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
     {
         size_t request_idx;
         int64_t session_id;
+        Coordination::XID outer_xid;
+        size_t subrequest_index;
         const Coordination::ZooKeeperRequestPtr * request;
         void * response;
         bool is_base_response_type;
@@ -2165,7 +2384,11 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
                 auto * resp = &response->responses[i];
                 static_assert(std::is_same_v<decltype(resp), Coordination::ResponsePtr *>);
                 tasks.push_back(Task {
-                    .request_idx = request_idx, .session_id = session_id, .request = &subrequest,
+                    .request_idx = request_idx,
+                    .session_id = session_id,
+                    .outer_xid = zk_request->xid,
+                    .subrequest_index = i,
+                    .request = &subrequest,
                     .response = static_cast<void*>(resp), .is_base_response_type = true,
                     .thread_safe = is_request_thread_safe(subrequest->getOpNum())});
             }
@@ -2176,7 +2399,11 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             auto * resp = &results[request_idx].response;
             static_assert(std::is_same_v<decltype(resp), Coordination::ZooKeeperResponsePtr *>);
             tasks.push_back(Task {
-                .request_idx = request_idx, .session_id = session_id, .request = &zk_request,
+                .request_idx = request_idx,
+                .session_id = session_id,
+                .outer_xid = zk_request->xid,
+                .subrequest_index = 0,
+                .request = &zk_request,
                 .response = static_cast<void*>(resp), .is_base_response_type = false,
                 .thread_safe = is_request_thread_safe(op)});
         }
@@ -2214,7 +2441,10 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
 
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {
-            response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
+            if constexpr (std::same_as<T, Coordination::ZooKeeperListWithOptionsRequest>)
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
+            else
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
         };
 
         try

@@ -31,6 +31,8 @@ class ASTFunction;
  * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
+ * `Settings` is null when the function is constructed outside a query, e.g. while a background
+ * thread parses an `AggregateFunction(...)` type name.
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 
@@ -100,6 +102,15 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    /// The argument types after the conversion of the `Variant` arguments that the function, or the outermost combinator,
+    /// does not support according to `AggregateFunctionProperties::variant_arguments_conversion` and `VariantArgumentsOfNestedFunction`.
+    /// Every such argument is converted to `Nullable` of the least common supertype of its alternatives by `AggregateFunctionVariantAdapter`,
+    /// also inside an argument of a combinator like -ForEach (`Array(Variant(...))`). Returns an empty vector if nothing is converted.
+    /// If `including_nested` is true, the arguments that are converted by the nested function of a combinator
+    /// with `VariantArgumentsOfNestedFunction::Forwarded` are included as well.
+    DataTypes getVariantArgumentsConversion(
+        const String & name, NullsAction action, const DataTypes & argument_types, bool including_nested) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,
@@ -118,7 +129,7 @@ private:
     ActionMap respect_nulls;
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
-    std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    const AggregateFunctionWithProperties * getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
     /// Name-only variant: the registered name that `name` resolves to under `action` (see the definition).
     String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
     /// Helper for the above: adjusts a name that still carries combinator suffixes (strip the suffix,

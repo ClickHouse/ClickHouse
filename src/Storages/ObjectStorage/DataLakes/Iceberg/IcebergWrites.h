@@ -53,6 +53,7 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> column_sizes;
     std::vector<std::pair<Int32, Int64>> value_counts;
     std::vector<std::pair<Int32, Int64>> null_value_counts;
+    std::vector<std::pair<Int32, Int64>> nan_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
 };
@@ -65,10 +66,38 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
+/// The manifest-list `partitions` field summary of one manifest, accumulated over the partition tuples of its entries.
+class ManifestPartitionSummary
+{
+public:
+    struct FieldSummary
+    {
+        DataTypePtr type;
+        bool contains_null = false;
+        bool contains_nan = false;
+        /// A value whose type has no Iceberg single-value serialization was seen, so no bounds can be published.
+        bool bounds_unavailable = false;
+        std::optional<Field> lower_bound;
+        std::optional<Field> upper_bound;
+    };
+
+    explicit ManifestPartitionSummary(const DataTypes & partition_types);
+
+    void add(const Row & partition_value);
+
+    const std::vector<FieldSummary> & getFields() const { return fields; }
+
+private:
+    std::vector<FieldSummary> fields;
+};
+
+Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
-    const std::vector<Field> & partition_values,
+    /// One partition tuple per data file, parallel to `data_file_names`.
+    const std::vector<Row> & per_file_partition_values,
     const DataTypes & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
@@ -96,7 +125,10 @@ void generateManifestFile(
     /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number, else as ADDED by the new snapshot.
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
-    Poco::JSON::Object::Ptr schema_to_serialize = nullptr);
+    Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
+    /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
+    /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 
 /// Per manifest-list entry file/row counts and lineage for rewritten manifests.
 struct ManifestListEntryCounts
@@ -132,7 +164,9 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts = {},
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
+    const std::vector<ManifestPartitionSummary> & entry_partition_summaries = {},
+    const std::vector<Int64> & entry_row_counts = {},
+    const std::vector<Int64> & entry_file_counts = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
@@ -176,6 +210,8 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    /// Best-effort removal of the written data files and manifests; never throws.
+    void removeDataFilesAndManifests();
     bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
@@ -183,11 +219,24 @@ private:
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
 
+    /// Generated once per insert so the manifests stay valid across commit retries.
+    Int64 snapshot_id = 0;
+    /// The snapshot referencing the written files is committed, so they must never be removed.
+    bool committed = false;
+
+    /// The manifests are written once and reused on commit retries.
+    Strings manifest_entries_in_storage;
+    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
+    std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
+    std::vector<ManifestPartitionSummary> entry_partition_summaries;
+
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
 
 };

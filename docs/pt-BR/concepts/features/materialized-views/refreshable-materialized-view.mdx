@@ -30,9 +30,7 @@ No entanto, há casos de uso em que esse processo incremental não é necessári
 
 > As views materializadas atualizáveis podem executar processos em lote para realizar tarefas como desnormalização. É possível criar dependências entre views materializadas atualizáveis, de modo que uma view dependa dos resultados de outra e só seja executada depois que ela for concluída. Isso pode substituir fluxos de trabalho agendados ou DAGs simples, como um job do [dbt](https://www.getdbt.com/). Para saber mais sobre como definir dependências entre views materializadas atualizáveis, acesse [CREATE VIEW](/pt-BR/reference/statements/create/view#refresh-dependencies), na seção `Dependencies`.
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## Como atualizar uma view materializada atualizável?
-</div>
+## Como atualizar uma view materializada atualizável? {#how-do-you-refresh-a-refreshable-materialized-view}
 
 Views materializadas atualizáveis são atualizadas automaticamente no intervalo definido durante a criação.
 Por exemplo, a seguinte visão materializada é atualizada a cada minuto:
@@ -51,6 +49,10 @@ SYSTEM REFRESH VIEW table_name_mv;
 
 Você também pode cancelar, interromper ou iniciar uma view.
 Para mais detalhes, consulte a documentação sobre [como gerenciar views materializadas atualizáveis](/pt-BR/reference/statements/system#managing-refreshable-materialized-views).
+
+<Warning>
+  Views materializadas atualizáveis cujas atualizações não são coordenadas pelo ClickHouse Keeper não registram quando foram atualizadas pela última vez; por isso, após uma reinicialização do servidor, todas elas podem ser atualizadas ao mesmo tempo. Consulte [O que acontece com views materializadas atualizáveis quando o servidor é reiniciado](/pt-BR/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) para saber quais views são afetadas e como iniciá-las novamente, uma de cada vez.
+</Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
   ## Quando uma view materializada atualizável foi atualizada pela última vez?

@@ -46,12 +46,14 @@ namespace
             return ObjectStorageQueueMode::ORDERED;
         if (mode == "unordered")
             return ObjectStorageQueueMode::UNORDERED;
+        if (mode == "exclusive")
+            return ObjectStorageQueueMode::EXCLUSIVE;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 
     void validateMode(const std::string & mode)
     {
-        if (mode != "ordered" && mode != "unordered")
+        if (mode != "ordered" && mode != "unordered" && mode != "exclusive")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue mode: {}", mode);
     }
 }
@@ -226,14 +228,14 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
     if (processing_threads_num != from_zk.processing_threads_num)
     {
         auto log = getLogger("ObjectStorageQueueTableMetadata");
-        const std::string message = fmt::format(
+        const auto message = PreformattedMessage::create(
             "Using `processing_threads_num` from keeper: {} (local: {})",
             from_zk.processing_threads_num.load(), processing_threads_num.load());
 
         if (processing_threads_num_changed)
-            LOG_WARNING(log, "{}", message);
+            LOG_WARNING(log, message);
         else
-            LOG_TRACE(log, "{}", message);
+            LOG_TRACE(log, message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
     }

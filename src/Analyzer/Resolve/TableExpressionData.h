@@ -52,6 +52,8 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
+    /// Names of the ALIAS columns whose expressions are being resolved, outermost first.
+    std::vector<std::string> alias_columns_in_resolution;
 
     void ensureColumnMembershipSetsArePopulated() const;
 
@@ -59,13 +61,22 @@ struct AnalysisTableExpressionData
     /// (e.g. `SELECT count() FROM t`) never resolve any column identifier from a table and
     /// therefore never need this map; building 100+ `ColumnNode`s up front for such queries
     /// is the dominant cost of `initializeTableExpressionData` for wide tables.
+    /// The expressions of ALIAS columns in this map may be not resolved yet, so use it only for
+    /// the names and the types of the columns, and use `tryGetColumnNode` to get a column for a query.
     const ColumnNameToColumnNodeMap & getColumnNodeMap() const;
 
-    /// Install a populator that materialises the map (and resolves any ALIAS column
-    /// expressions) on first `getColumnNodeMap()`. The populator receives the (initially
-    /// empty) map by reference; emplacing it before invocation breaks recursion when ALIAS
-    /// resolution triggers identifier lookups that call `getColumnNodeMap()` again.
-    void setColumnNodeMapPopulator(std::function<void(ColumnNameToColumnNodeMap &)> populator);
+    /// Returns the column with the given name, or nullptr if there is no such column.
+    /// The expression of an ALIAS column is resolved on the first request of that column, because
+    /// a table can have thousands of ALIAS columns (e.g. `system.metric_log`) while a query uses a few.
+    ColumnNodePtr tryGetColumnNode(std::string_view column_name) const;
+
+    /// Install a populator that materialises the map on first `getColumnNodeMap()`, and a resolver
+    /// of the expression of an ALIAS column, called on the first `tryGetColumnNode` of this column.
+    /// The populator receives the (initially empty) map by reference and inserts every column into it,
+    /// ALIAS columns with not yet resolved expressions; it returns the names of the ALIAS columns.
+    using ColumnNodeMapPopulator = std::function<std::vector<std::string>(ColumnNameToColumnNodeMap &)>;
+    using AliasColumnResolver = std::function<void(const ColumnNodePtr &)>;
+    void setColumnNodeMapPopulator(ColumnNodeMapPopulator populator, AliasColumnResolver alias_column_resolver);
 
     /// Eagerly emplace an empty map and return a mutable reference for callers that fill
     /// it inline (used for subquery / union projection lists, which are typically small).
@@ -140,11 +151,11 @@ struct AnalysisTableExpressionData
                 continue;
             const auto & node_map = getColumnNodeMap();
             auto it = node_map.find(column_name);
-            if (it != node_map.end())
-            {
-                if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
-                    return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
-            }
+            if (it == node_map.end())
+                continue;
+            /// The type is checked first: `tryGetColumnNode` resolves an ALIAS column, and this lookup is only a probe.
+            if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                return SubcolumnInfo{tryGetColumnNode(column_name), subcolumn_name, subcolumn_type};
         }
 
         return std::nullopt;
@@ -152,7 +163,10 @@ struct AnalysisTableExpressionData
 
 private:
     mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
-    std::function<void(ColumnNameToColumnNodeMap &)> populate_column_node_map;
+    ColumnNodeMapPopulator populate_column_node_map;
+    AliasColumnResolver resolve_alias_column;
+    /// Names of ALIAS columns, which were not requested from this object yet.
+    mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> unresolved_alias_columns;
 };
 
 }
