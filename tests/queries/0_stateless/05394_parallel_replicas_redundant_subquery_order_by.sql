@@ -31,7 +31,8 @@ SETTINGS enable_parallel_replicas = 0;
 
 SELECT 'automatic parallel replicas match the plan and collect statistics for it';
 -- Matching failed on the sorting the replicas plan kept (`Cannot find step with matching hash`),
--- and then no statistics were collected. The plan-based implementation does not match this plan yet.
+-- and then no statistics were collected. The plan-based implementation does not match this plan yet:
+-- https://github.com/ClickHouse/ClickHouse/issues/131089
 SELECT sum(cityHash64(key, value)) FROM (SELECT key, value FROM t_pr_order WHERE value % 7 = 1 ORDER BY key)
 FORMAT Null
 SETTINGS automatic_parallel_replicas_mode = 2, parallel_replicas_plan_based = 0, log_comment = '05394_automatic';
