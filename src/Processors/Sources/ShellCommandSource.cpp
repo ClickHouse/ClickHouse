@@ -597,6 +597,8 @@ namespace
             /// The output was not read to the end: close it, so the command gets EPIPE instead of blocking the send threads.
             if (command && !finished && !valid_command)
             {
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
                 executor.reset();
                 pipeline.reset();
 
