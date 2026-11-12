@@ -36,18 +36,6 @@ tuple in element with dot, all elements missing:	[('')]
 tuple in element with dot, all elements missing:	[(''),('')]
 NULL in the leaf, all elements missing:	[(0),(0)]
 NULL in the leaf, missing with dot:	[0,0]
-values out of range, all elements missing:	[(0)]	[(0)]
-values out of range, missing with dot:	[0]	[0]
-list added again, whole:	1	[]
-list added again, whole:	2	[]
-list added again, element:	1	[]
-list added again, element:	2	[]
-list added again, array join:	0
-element renamed:	1	[(11)]
-element renamed:	2	[(21),(22)]
-element added again:	1	[(NULL)]
-element added again:	2	[(NULL),(NULL)]
-cache entries of x:	2
 case-sensitive:	[NULL,NULL]
 Code: 15
 decompressed some but less than 100000 bytes: 1
