@@ -46,7 +46,7 @@ used with a single thread	1
 used for a constant	1
 used for Nullable	1
 disabled	0
-LowCardinality	0
+used for LowCardinality	1
 two aggregates	0
 GROUP BY	0
 two arguments	0
