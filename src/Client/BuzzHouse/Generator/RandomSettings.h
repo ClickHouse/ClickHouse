@@ -20,6 +20,8 @@ const auto zeroOneTwo = [](RandomGenerator & rg, FuzzConfig &) { return std::to_
 
 const auto zeroToThree = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
+const auto oneToThree = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 3)); };
+
 const auto probRange = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); };
 
 const auto probRangeNoZero

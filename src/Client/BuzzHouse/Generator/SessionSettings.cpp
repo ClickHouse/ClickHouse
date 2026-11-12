@@ -1042,7 +1042,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_plan_optimize_exchanges", trueOrFalseSetting},
     {"distributed_plan_prefer_replicas_over_workers", trueOrFalseSettingNoOracle},
     {"distributed_plan_read_in_order", trueOrFalseSettingNoOracle},
-    {"distributed_plan_workers_num", CHSetting(zeroToThree, {}, false)},
+    /// Never 0: an explicit 0 now refuses a distributed plan, and this setting is randomized
+    /// independently of make_distributed_plan, which could want one.
+    {"distributed_plan_workers_num", CHSetting(oneToThree, {}, false)},
     {"distributed_product_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
