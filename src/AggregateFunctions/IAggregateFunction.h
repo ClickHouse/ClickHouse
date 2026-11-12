@@ -39,7 +39,6 @@ class ReadBuffer;
 class WriteBuffer;
 class IColumn;
 class IDataType;
-class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
@@ -180,6 +179,42 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
+    /// Create `count` states at `place + i * stride`; on exception, destroy the ones already created.
+    /// Zero-sized states (`stride == 0`) are not bounded by memory, so their number is limited per `NestedStatesScope`.
+    void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
+
+    /// While alive, the zero-sized states created on this thread count against one limit. A `create` that creates
+    /// states of several nested functions (`-Tuple`) opens one around them and counts the zero-sized ones itself.
+    class NestedStatesScope
+    {
+    public:
+        NestedStatesScope() : outermost(!active)
+        {
+            if (outermost)
+            {
+                active = true;
+                zero_sized_states = 0;
+            }
+        }
+
+        ~NestedStatesScope()
+        {
+            if (outermost)
+                active = false;
+        }
+
+        NestedStatesScope(const NestedStatesScope &) = delete;
+        NestedStatesScope & operator=(const NestedStatesScope &) = delete;
+
+        void addZeroSizedStates(size_t count, const IAggregateFunction & function);
+
+    private:
+        static thread_local constinit bool active;
+        static thread_local constinit size_t zero_sized_states;
+
+        const bool outermost;
+    };
+
     /// Delete all combinator states that were used after combinator -State.
     /// For example for uniqArrayStateForEachMap(...) it will destroy
     /// states that were created by combinators Map and ForEach.
@@ -225,7 +260,7 @@ public:
     /// All overrides must be done on `mergeImpl` below.
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, arena);
     }
 
@@ -236,6 +271,13 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Estimates merge work in independently mergeable state elements, or returns zero without an estimate.
+    /// Callers compare states in these units to decide which merges warrant additional parallelism.
+    virtual size_t getEstimatedMergeWork(ConstAggregateDataPtr /*place*/) const { return 0; }
+
+    /// Estimates state growth in bytes per distinct argument tuple, excluding the fixed storage from
+    /// `sizeOfData`. Returns zero when a linear model of distinct inputs does not describe the state.
+    virtual size_t getStateBytesPerDistinctInput() const { return 0; }
     /// Whether merging `rhs` into `place` is expensive enough to be deferred by `mergeBatchOrDefer` /
     /// `mergeAndDestroyBatchOrDefer` and merged later in parallel via `parallelizeMergeMulti`.
     /// Overridden by functions whose merge cost grows with the state size (e.g. `uniqExact`);
@@ -249,6 +291,10 @@ public:
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
 
+    /// Return true if adding a value that the state has already received leaves the state unchanged,
+    /// so that a caller may skip repeated values.
+    virtual bool ignoresRepeatedValues() const { return false; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.
@@ -259,7 +305,7 @@ public:
         std::atomic<bool> & is_cancelled,
         Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, thread_pool, is_cancelled, arena);
     }
 
@@ -340,6 +386,11 @@ public:
 
     /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
+
+    /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
+    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -624,6 +675,9 @@ public:
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
+    /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
+    bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+
     DataTypes argument_types;
     Array parameters;
     DataTypePtr result_type;
@@ -835,7 +889,7 @@ public:
                 /// Devirtualized call to `mergeImpl`; the public non-virtual `merge` performs
                 /// the same self-aliasing check, but we add it here to keep the assertion
                 /// when calling `mergeImpl` directly bypasses the wrapper.
-                chassert(places[i] + place_offset != rhs[i],
+                chassert(!this->isSelfMerge(places[i] + place_offset, rhs[i]),
                          "IAggregateFunction::mergeBatch called with the same source and destination state");
                 if constexpr (Derived::parallelizeMergeWithKey())
                     static_cast<const Derived *>(this)->mergeImpl(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
@@ -849,7 +903,7 @@ public:
     {
         for (size_t i = 0; i < size; ++i)
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+            chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                      "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
             if constexpr (Derived::parallelizeMergeWithKey())
                 static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
@@ -1167,6 +1221,19 @@ public:
 };
 
 
+/// Which arguments of `Variant` type an aggregate function cannot process natively.
+/// `AggregateFunctionFactory` converts such arguments to `Nullable` of the least common supertype
+/// of the alternatives with `AggregateFunctionVariantAdapter`.
+enum class VariantArgumentsConversion : UInt8
+{
+    /// The function processes `Variant` arguments natively (example: any, count, groupArray), or does not accept them at all.
+    None,
+    /// The function does not support `Variant` arguments (example: sum, avg, quantile).
+    All,
+    /// The first argument is processed natively, and the other arguments are not supported (example: argMin, topKWeighted).
+    AllExceptFirst,
+};
+
 /// Properties of aggregate function that are independent of argument types and parameters.
 struct AggregateFunctionProperties
 {
@@ -1181,8 +1248,16 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
+    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
+      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
+      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+      */
+    bool requires_ordered_rows_per_state = false;
+
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
 };
 
 

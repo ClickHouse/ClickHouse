@@ -51,13 +51,46 @@ struct QuantileExactBase
             array.push_back(x);
     }
 
+    /// Adds `count` values, skipping NaNs.
+    void addMany(const Value * __restrict values, size_t count)
+    {
+        if constexpr (is_floating_point<Value>)
+        {
+            /// Not `std::any_of`: a loop without an early exit is vectorized.
+            bool has_nan = false;
+            for (size_t i = 0; i < count; ++i)
+                has_nan |= isNaN(values[i]);
+            if (has_nan)
+            {
+                addManyIf(values, count, [](size_t) { return true; });
+                return;
+            }
+        }
+        reserveForMore(count);
+        array.insert_assume_reserved(values, values + count);
+    }
+
+    /// Adds the values where `(mask[i] != 0) == keep_nonzero`, skipping NaNs:
+    /// an `-If` condition keeps non-zero rows, a null map keeps zero rows.
+    template <bool keep_nonzero>
+    void addManyFiltered(const Value * __restrict values, size_t count, const UInt8 * __restrict mask)
+    {
+        addManyIf(values, count, [mask](size_t i) { return (mask[i] != 0) == keep_nonzero; });
+    }
+
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for QuantileExact");
     }
 
-    void merge(const QuantileExactBase & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
+    void merge(const QuantileExactBase & rhs)
+    {
+        /// Exact only into an empty state: merging many states into one would otherwise reallocate on every merge.
+        if (array.empty())
+            array.reserve_exact(rhs.array.size());
+        array.insert(rhs.array.begin(), rhs.array.end());
+    }
 
     void serialize(WriteBuffer & buf) const
     {
@@ -73,7 +106,7 @@ struct QuantileExactBase
         if (unlikely(size > QUANTILE_EXACT_MAX_ARRAY_SIZE))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", QUANTILE_EXACT_MAX_ARRAY_SIZE);
-        array.resize(size);
+        array.resize_exact(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
@@ -87,6 +120,48 @@ struct QuantileExactBase
     {
         auto derived = static_cast<Derived*>(this);
         return derived->getManyImpl(levels, indices, size, result);
+    }
+
+private:
+    /// Doubles the capacity as `push_back` does, starting from the inline capacity. Not `reserve`: it rounds up
+    /// to a power of two bytes, so a batch could make the array larger than adding the same values one by one.
+    void reserveForMore(size_t count)
+    {
+        size_t required = array.size() + count;
+        size_t capacity = std::max<size_t>(array.capacity(), (bytes_in_arena + sizeof(Value) - 1) / sizeof(Value));
+        while (capacity < required)
+            capacity *= 2;
+        array.reserve_exact(capacity);
+    }
+
+    /// Reserves only for the kept values, so rejected rows never grow the state.
+    template <typename Keep>
+    void addManyIf(const Value * __restrict values, size_t count, Keep && keep)
+    {
+        auto is_kept = [&](size_t i) { return static_cast<size_t>(!isNaN(values[i])) & static_cast<size_t>(keep(i)); };
+
+        size_t size = array.size();
+        if (array.capacity() - size < count)
+        {
+            /// The compaction writes every row at the next free slot, so it must end at a kept row to stay within the kept count.
+            while (count > 0 && !is_kept(count - 1))
+                --count;
+
+            size_t kept = 0;
+            for (size_t i = 0; i < count; ++i)
+                kept += is_kept(i);
+            if (kept == 0)
+                return;
+            reserveForMore(kept);
+        }
+
+        Value * __restrict out = array.data();
+        for (size_t i = 0; i < count; ++i)
+        {
+            out[size] = values[i];
+            size += is_kept(i);
+        }
+        array.resize_assume_reserved(size);
     }
 };
 
