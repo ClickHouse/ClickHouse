@@ -139,7 +139,7 @@ fi
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 checks=$($CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND query_id = '$waiter_query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$waiter_query_id'
       AND message LIKE 'Enqueueing % for check after %'")
 echo "spurious part checks: $checks"
 

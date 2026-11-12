@@ -11,13 +11,13 @@ namespace DB
 /// buckets, so the staging and the merge come in the same 256 buckets as the two-level hash tables.
 inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
-/// How the staged records of a session are partitioned, and the first chunk that the producers' staging buffers
-/// start every partition with: both follow the same budget (see `forProducers`). A partition is a sub-range of a
-/// two-level bucket: `partition = (bucket << sub_bits) | sub`, where `bucket` is the hash bits 24..31 the two-level
-/// tables take it from (`TwoLevelHashTable::getBucketFromHash`), and `sub` the next `sub_bits` bits below them. The
-/// bits are free: the 32-bit hashes of the two-level methods use 24..31 for the bucket and the low bits for the slot
-/// inside a bucket's table, which keeps a partition's table well spread up to 2^20 cells. Since the partitions nest
-/// in the buckets, every bucket-level contract of the merge holds unchanged.
+/// How the staged records of a session are partitioned, and the chunks of the producers' staging buffers: the first
+/// chunk of every partition and the cap its chunks double up to. The partitions and the chunks are chosen together (see
+/// `forProducers`). A partition is a sub-range of a two-level bucket: `partition = (bucket << sub_bits) | sub`, where
+/// `bucket` is the hash bits 24..31 the two-level tables take it from (`TwoLevelHashTable::getBucketFromHash`), and
+/// `sub` the next `sub_bits` bits below them. The bits are free: the 32-bit hashes of the two-level methods use 24..31
+/// for the bucket and the low bits for the slot inside a bucket's table, which keeps a partition's table well spread up
+/// to 2^20 cells. Since the partitions nest in the buckets, every bucket-level contract of the merge holds unchanged.
 class AdaptivePartitionLayout
 {
 public:
@@ -30,10 +30,19 @@ public:
     /// the first chunks of all streams fit within a quarter of it, and below one partition per bucket it reduces the
     /// first chunks, down to the smallest the staging buffer takes. The four free hash bits allow at most 16 partitions
     /// per bucket.
+    ///
+    /// The chunks of a partition double up to the staging buffer's default cap, and up to half of it with more than 4
+    /// partitions per bucket. Every partition of a producer leaves the unused end of its last chunk, so this slack
+    /// grows with the partitions, which grow with the producers, and at 8 partitions per bucket a smaller cap takes a
+    /// few percent off the peak memory of the high-cardinality aggregations of ClickBench at 64 threads at no cost in
+    /// time. At 4 per bucket it does not pay: there long records such as URLs leave the ends of the smaller chunks
+    /// unused instead.
     static AdaptivePartitionLayout forProducers(size_t producers, size_t max_bytes_before_external_group_by);
 
     /// The first chunk of every partition in a producer's staging buffer (see `PartitionedRecordBuffer`).
     size_t firstChunkBytes() const { return first_chunk_bytes; }
+    /// The cap that the chunks of every partition double up to.
+    size_t maxChunkBytes() const { return max_chunk_bytes; }
 
     size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
     size_t numPartitions() const { return partition_mask + 1; }
@@ -51,10 +60,11 @@ private:
     /// cell of a bucket falls into that bucket's partitions.
     static constexpr size_t bucket_bits = std::countr_zero(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
 
-    AdaptivePartitionLayout(UInt8 sub_bits, size_t first_chunk_bytes_)
+    AdaptivePartitionLayout(UInt8 sub_bits, size_t first_chunk_bytes_, size_t max_chunk_bytes_)
         : partition_mask(static_cast<UInt32>((ADAPTIVE_AGGREGATION_NUM_BUCKETS << sub_bits) - 1))
         , partition_shift(static_cast<UInt8>(32 - bucket_bits - sub_bits))
         , first_chunk_bytes(first_chunk_bytes_)
+        , max_chunk_bytes(max_chunk_bytes_)
     {
     }
 
@@ -63,6 +73,7 @@ private:
     UInt8 partition_shift;
 
     size_t first_chunk_bytes;
+    size_t max_chunk_bytes;
 };
 
 }
