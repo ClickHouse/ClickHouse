@@ -748,12 +748,16 @@ def test_current_grants_override():
         ["GRANT SELECT ON test.`table` TO B"]
     )
 
-    instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A")
+    # CURRENT GRANTS ... WITH REPLACE now authorizes its implicit REVOKE ALL like plain WITH REPLACE:
+    # A lacks grant option on test.`table`, so wiping B's grant there is denied and B is unchanged (#60304).
+    expected_error = (
+        "it's necessary to have the grant SELECT ON test.`table` WITH GRANT OPTION"
+    )
+    assert expected_error in instance.query_and_get_error(
+        "GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A"
+    )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        [
-            "GRANT SELECT ON *.* TO B",
-            "REVOKE SELECT ON test.* FROM B",
-        ]
+        ["GRANT SELECT ON test.`table` TO B"]
     )
 
 
