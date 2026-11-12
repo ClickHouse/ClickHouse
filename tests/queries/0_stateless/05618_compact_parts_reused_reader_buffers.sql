@@ -36,7 +36,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] < 2000000
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-    AND current_database = currentDatabase() AND log_comment LIKE '05618_%'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('05618_multi_granule_stripes', '05618_isolated_stripe_first')
 ORDER BY log_comment;
 
 DROP TABLE t_compact_reused_reader;
