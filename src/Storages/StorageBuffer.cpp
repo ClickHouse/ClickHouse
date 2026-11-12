@@ -1471,13 +1471,9 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// If the buffering user can never deliver this block (they were dropped, their authentication
-        /// expired, or they lack access to a downstream table), retrying never succeeds. Keeping the block
-        /// would wedge the shard: every later writer with a different identity must flush it first and hits
-        /// the same error, and background flush, OPTIMIZE and shutdown drain are blocked too. Fail closed by
-        /// discarding it - the data is never written under another authority - instead of retaining it.
-        /// Buffer data is non-durable by design. The synchronous direct-write path does not go through here,
-        /// so a user's own over-threshold insert still gets the error back directly.
+        /// An undeliverable block (the buffering user was dropped or expired, or lost access to a downstream
+        /// table) can never be flushed; discard it (fail closed) instead of retaining it and wedging the shard
+        /// for every other identity, background flush, OPTIMIZE and shutdown.
         if (flushed_under_user_identity && isUndeliverableUnderIdentity(getCurrentExceptionCode()))
         {
             total_writes.rows -= block_rows;
