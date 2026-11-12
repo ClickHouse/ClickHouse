@@ -52,7 +52,10 @@ public:
     /// copies can end up in the same plan -- so copying takes a fresh index instead of
     /// duplicating the source's.
     PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}
-    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
+
+    /// Assigning one step over another would either take the source's index, duplicating it, or
+    /// silently keep the old one. Steps are held by pointer and replaced, never assigned over.
+    PlanStepIndex & operator=(const PlanStepIndex &) = delete;
 
     /// Moving is the same step changing hands, so the index travels with it.
     PlanStepIndex(PlanStepIndex &&) noexcept = default;
