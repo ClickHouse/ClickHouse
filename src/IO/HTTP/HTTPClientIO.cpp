@@ -38,29 +38,15 @@ constexpr size_t chunk_footer_size = 2;
 /// `std::iostream` path used for it.
 constexpr size_t scratch_buffer_size = 8192;
 
-/// Drops a complete interim `100 Continue`, as `Poco` does: the final response follows it.
-/// Returns whether the parser holds a complete final response.
-bool finalResponseComplete(Poco::Net::HTTPResponseParser & parser)
-{
-    if (!parser.complete())
-        return false;
-    if (parser.response().getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
-        return true;
-    parser.reset();
-    return false;
-}
-
 /// Gives the data the session has buffered to its response parser, up to the end of the final
 /// response header. The bytes after it stay buffered for the body.
 void feedHTTPResponseParser(Poco::Net::HTTPClientSession & session)
 {
-    auto & parser = session.responseParser();
-    while (session.buffered() > 0)
-    {
-        session.consumeBuffered(static_cast<int>(parser.feed(session.bufferedData(), static_cast<size_t>(session.buffered()))));
-        if (finalResponseComplete(parser))
-            return;
-    }
+    /// Before the first read, the session has no buffer.
+    if (session.buffered() == 0)
+        return;
+    const size_t taken = session.responseParser().feed(session.bufferedData(), static_cast<size_t>(session.buffered()));
+    session.consumeBuffered(static_cast<int>(taken));
 }
 
 /// Continues the response parser of the session with blocking reads, until the final response
@@ -74,12 +60,7 @@ void readHTTPResponseHeader(Poco::Net::HTTPClientSession & session)
         /// The parser took all the buffered data, so the buffer has space.
         const int received = session.fillBuffer();
         if (received < 0)
-        {
             parser.feedEof();
-            /// The end of the data after a `100 Continue`: throws `NoMessageException`.
-            if (!finalResponseComplete(parser))
-                parser.feedEof();
-        }
         else if (received == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A blocking read of an HTTP response header returned no data");
         else

@@ -108,10 +108,14 @@ void HTTPResponseParser::feedEof()
             break;
         case State::LineStart:
         case State::FinalLine:
-        case State::Done:
             break;
+        case State::Done:
+            return;
     }
-    _state = State::Done;
+    finishHeader();
+    /// The data ended before the final response that a `100 Continue` announces.
+    if (_state != State::Done)
+        throw NoMessageException();
 }
 
 
@@ -192,7 +196,10 @@ bool HTTPResponseParser::step(char ch)
             if (ch == '\r' || ch == '\n')
             {
                 /// The empty line that ends the header: everything up to its line feed belongs to it.
-                _state = ch == '\n' ? State::Done : State::FinalLine;
+                if (ch == '\n')
+                    finishHeader();
+                else
+                    _state = State::FinalLine;
                 return true;
             }
             if (_limits.fields > 0 && _fields == _limits.fields)
@@ -266,7 +273,7 @@ bool HTTPResponseParser::step(char ch)
 
         case State::FinalLine:
             if (ch == '\n')
-                _state = State::Done;
+                finishHeader();
             return true;
 
         case State::Done:
@@ -298,6 +305,15 @@ void HTTPResponseParser::finishField()
     Poco::trimRightInPlace(_value);
     _response.add(_name, MessageHeader::decodeWord(_value));
     ++_fields;
+}
+
+
+void HTTPResponseParser::finishHeader()
+{
+    if (_response.getStatus() == HTTPResponse::HTTP_CONTINUE)
+        reset();
+    else
+        _state = State::Done;
 }
 
 

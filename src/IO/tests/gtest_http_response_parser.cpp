@@ -62,25 +62,32 @@ ParseResult fromException(const Poco::Exception & e)
     return result;
 }
 
-/// The reference: `Poco::Net::HTTPResponse::read`, which reads the header from a stream that ends
-/// where the input ends.
+/// The reference: `Poco::Net::HTTPClientSession::receiveResponse`, which calls
+/// `HTTPResponse::read` until the status is not `100`, each time on a new stream that ends where
+/// the input ends.
 ParseResult parseWithPoco(const std::string & input, const HTTPHeaderLimits & limits)
 {
     HTTPResponse response;
     response.setFieldLimit(limits.fields);
     response.setNameLengthLimit(limits.name_length);
     response.setValueLengthLimit(limits.value_length);
-    std::istringstream in(input);
+    size_t position = 0;
     try
     {
-        response.read(in);
+        do
+        {
+            std::istringstream in(input.substr(position));
+            response.clear();
+            response.read(in);
+            const auto end = in.tellg();
+            position = end < 0 ? input.size() : position + static_cast<size_t>(end);
+        } while (response.getStatus() == HTTPResponse::HTTP_CONTINUE);
     }
     catch (const Poco::Exception & e)
     {
         return fromException(e);
     }
-    const auto position = in.tellg();
-    return fromResponse(response, position < 0 ? input.size() : static_cast<size_t>(position));
+    return fromResponse(response, position);
 }
 
 /// Feeds `input` to the parser in pieces that end at `ends`, and then reports the end of the data.
@@ -124,6 +131,14 @@ const std::vector<std::string> inputs = {
     "HTTP/1.1 200 OK\r\ninvalid line\r\nA: 1\r\n\r\n",
     "HTTP/1.1 200 OK\r\nA:   spaced value   \r\n\r\n",
     "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\n\r\n",
+    "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 404 Not Found\r\nA: 1\r\n\r\nbody",
+    "HTTP/1.1 100 Continue\r\nA: 1\r\nB: 2\r\nC: 3\r\n\r\nHTTP/1.1 200 OK\r\nA: 1\r\nB: 2\r\nC: 3\r\n\r\n",
+    "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nA: 1\r\nB: 2\r\nC: 3\r\nD: 4\r\n\r\n",
+    "HTTP/1.1 103 Early Hints\r\nLink: x\r\n\r\nHTTP/1.1 200 OK\r\n\r\n",
+    "HTTP/1.1 100 Continue\r\n\r\n",
+    "HTTP/1.1 100 Continue\r\nA: 1",
+    "HTTP/1.1 100 Continue\r\n\r\n\r\n",
+    "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 20",
     "HTTP/1.1 204\r\n\r\n",
     "HTTP/1.1  503   Slow Down \r\nRetry-After: 1\r\n\r\n",
     "HTTP/1.1 200 OK\r\nA: =?UTF-8?B?aGVsbG8=?=\r\n\r\n",
@@ -201,17 +216,28 @@ TEST(HTTPResponseParser, StatusLineBeforeTheHeaderEnds)
     EXPECT_EQ(parser.response().getStatus(), HTTPResponse::HTTP_FORBIDDEN);
 }
 
+/// After a `100 Continue`, the parser waits for the status line of the final response.
+TEST(HTTPResponseParser, ContinueIsDropped)
+{
+    HTTPResponseParser parser;
+    const std::string data = "HTTP/1.1 100 Continue\r\nA: 1\r\n\r\nHTTP/1.1 4";
+    EXPECT_EQ(parser.feed(data.data(), data.size()), data.size());
+    EXPECT_FALSE(parser.statusLineComplete());
+    EXPECT_FALSE(parser.complete());
+    EXPECT_FALSE(parser.response().has("A"));
+}
+
 /// After `reset`, the parser reads the next response with the same limits.
 TEST(HTTPResponseParser, ResetKeepsTheLimits)
 {
     HTTPResponseParser parser(small_limits);
-    const std::string data = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nA: 1\r\nB: 2\r\nC: 3\r\nD: 4\r\n\r\n";
+    const std::string first = "HTTP/1.1 200 OK\r\n\r\n";
+    const std::string second = "HTTP/1.1 200 OK\r\nA: 1\r\nB: 2\r\nC: 3\r\nD: 4\r\n\r\n";
 
-    const size_t first = parser.feed(data.data(), data.size());
+    parser.feed(first.data(), first.size());
     ASSERT_TRUE(parser.complete());
-    EXPECT_EQ(parser.response().getStatus(), HTTPResponse::HTTP_CONTINUE);
 
     parser.reset();
     EXPECT_FALSE(parser.statusLineComplete());
-    EXPECT_THROW(parser.feed(data.data() + first, data.size() - first), Poco::Net::MessageException);
+    EXPECT_THROW(parser.feed(second.data(), second.size()), Poco::Net::MessageException);
 }
