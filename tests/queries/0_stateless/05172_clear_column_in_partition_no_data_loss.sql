@@ -1,3 +1,5 @@
+-- Tags: zookeeper
+
 -- A pending `ALTER TABLE ... CLEAR COLUMN c IN PARTITION p` used to be handed to the parts of every
 -- partition, and a mutation that rewrote such a part baked the column's default into it: permanent data
 -- loss outside the named partition. One `ALTER` with several commands is a single mutation entry, which

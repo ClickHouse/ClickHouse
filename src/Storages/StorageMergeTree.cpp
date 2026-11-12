@@ -1521,7 +1521,10 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        if (auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]); alter_lock == std::nullopt)
+        /// The lock is held through `startMutation`, which resolves the partitions of scoped commands
+        /// and allocates the mutation version.
+        auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (alter_lock == std::nullopt)
         {
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
