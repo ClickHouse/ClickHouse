@@ -989,7 +989,13 @@ def test_where(started_cluster):
     assert node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)") == "4\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
-    assert node.query("SELECT count() FROM where_table WHERE keyBool = true") == "2\n"
+    assert (
+        node.query(
+            "SELECT count() FROM where_table WHERE keyBool = true",
+            settings={"mongodb_throw_on_unsupported_query": 0},
+        )
+        == "2\n"
+    )
     assert (
         node.query(
             "SELECT count() FROM where_table WHERE keyBool IN (false)",
@@ -1073,7 +1079,7 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                     f"SELECT count() FROM {source} WHERE {predicate}",
                     settings=(
                         {"mongodb_throw_on_unsupported_query": 0}
-                        if predicate.startswith("flag ") and " IN " in predicate
+                        if "flag" in predicate
                         else {}
                     ),
                 )
@@ -1132,11 +1138,7 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
             actual = {
                 predicate: node.query(
                     f"SELECT count() FROM {source} WHERE {predicate}",
-                    settings=(
-                        {"mongodb_throw_on_unsupported_query": 0}
-                        if " IN " in predicate
-                        else {}
-                    ),
+                    settings={"mongodb_throw_on_unsupported_query": 0},
                 )
                 for predicate in expected
             }
@@ -1167,23 +1169,136 @@ def test_where_bool_wrapped_numbers(started_cluster, bool_type):
 
     node = started_cluster.instances["node"]
     arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
-    source = f"mongodb({arguments}, 'id Int32, flag {bool_type}')"
+    structure = f"id Int32, flag {bool_type}"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
     try:
-        for query, result in {
-            "SELECT count() FROM {} WHERE flag != 256": "4\n",
-            "SELECT count() FROM {} WHERE flag != -1": "4\n",
-            "SELECT count() FROM {} WHERE flag = 256": "0\n",
-            # The limit is pushed with the filter, so the filter must not return a row that the `WHERE` drops.
-            "SELECT id FROM {} WHERE flag IN (0, 2.0) ORDER BY id LIMIT 1": "2\n",
-        }.items():
-            assert (
-                node.query(
-                    query.format(source),
-                    settings={"mongodb_throw_on_unsupported_query": 0},
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for query, result in {
+                "SELECT count() FROM {} WHERE flag != 256": "4\n",
+                "SELECT count() FROM {} WHERE flag != -1": "4\n",
+                "SELECT count() FROM {} WHERE flag = 256": "0\n",
+                "SELECT id FROM {} WHERE flag = 0 ORDER BY id": "2\n3\n",
+                "SELECT id FROM {} WHERE flag > 0 ORDER BY id": "1\n4\n",
+                "SELECT id FROM {} WHERE flag = 0 ORDER BY id DESC LIMIT 1": "3\n",
+                # The limit must not discard rows before local filtering.
+                "SELECT id FROM {} WHERE flag IN (0, 2.0) ORDER BY id LIMIT 1": "2\n",
+            }.items():
+                assert node.query(query.format(reference)) == result
+                assert (
+                    node.query(
+                        query.format(source),
+                        settings={"mongodb_throw_on_unsupported_query": 0},
+                    )
+                    == result
                 )
-                == result
-            )
     finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize("bool_type", ["Bool", "Nullable(Bool)"])
+def test_where_bool_wide_constants(started_cluster, bool_type):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "bool_wide_constants"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many([{"id": 1, "flag": 1}, {"id": 2, "flag": True}])
+
+    node = started_cluster.instances["node"]
+    structure = f"id Int32, flag {bool_type}"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for wide_type in ("Int128", "UInt128", "Int256", "UInt256"):
+                query = f"SELECT id FROM {{}} WHERE flag = to{wide_type}(1) ORDER BY id"
+                assert node.query(query.format(reference)) == "1\n2\n"
+                assert (
+                    node.query(
+                        query.format(source),
+                        settings={"mongodb_throw_on_unsupported_query": 0},
+                    )
+                    == "1\n2\n"
+                )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize(
+    "column_type",
+    [
+        "UInt8",
+        "Nullable(UInt8)",
+        "Int128",
+        "Nullable(Int128)",
+        "Bool",
+        "Nullable(Bool)",
+    ],
+)
+def test_order_by_mixed_numeric_encodings(started_cluster, column_type):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "mixed_numeric_order"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many([{"id": 1, "n": True}, {"id": 2, "n": 2}])
+
+    node = started_cluster.instances["node"]
+    structure = f"id Int32, n {column_type}"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        bound = "0" if "Bool" in column_type else "false"
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for direction, expected in (("ASC", "1\t1\n"), ("DESC", "2\t2\n")):
+                for predicate in ("", f"WHERE n > {bound}"):
+                    query = (
+                        f"SELECT id, toUInt8(n) FROM {{}} {predicate} "
+                        f"ORDER BY n {direction} LIMIT 1"
+                    )
+                    assert node.query(query.format(reference)) == expected
+                    assert (
+                        node.query(
+                            query.format(source),
+                            settings={"mongodb_throw_on_unsupported_query": 0},
+                        )
+                        == expected
+                    )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
         collection.drop()
 
 
