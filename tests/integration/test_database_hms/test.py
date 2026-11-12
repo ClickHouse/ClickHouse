@@ -2,6 +2,7 @@
 import time
 import pytest
 import os
+from concurrent.futures import ThreadPoolExecutor
 from helpers.cluster import ClickHouseCluster
 
 @pytest.fixture(scope="module")
@@ -205,3 +206,35 @@ def test_check_database(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT check_database_datalake_negative")
         node.query("DROP DATABASE IF EXISTS test_hms_check_db")
+
+
+def test_hive_catalog_connection_limit(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    password = os.environ.get('MINIO_PASSWORD', '[HIDDEN]')
+    database_name = "test_hms_connection_limit"
+
+    def count_metastore_connections():
+        return int(
+            node.exec_in_container(
+                ["bash", "-c", "cat /proc/net/tcp /proc/net/tcp6 | awk '$4 == \"01\" && $3 ~ /:2373$/' | wc -l"]
+            ).strip()
+        )
+
+    node.query(f"DROP DATABASE IF EXISTS {database_name}")
+    connections_before = count_metastore_connections()
+
+    node.query(f"""
+        CREATE DATABASE {database_name} ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}')
+        SETTINGS catalog_type = 'hive',
+                 warehouse = 'test_warehouse',
+                 storage_endpoint = 'http://minio1:9001/warehouse-hms/data/',
+                 hive_metastore_max_connections = 2
+    """)
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        list(executor.map(lambda _: node.query(f"SHOW TABLES FROM {database_name}"), range(64)))
+
+    assert count_metastore_connections() - connections_before <= 2
+
+    node.query(f"DROP DATABASE {database_name}")
