@@ -28,12 +28,11 @@ OPTIMIZE TABLE t_column_ttl_enum_zero FINAL;
 SELECT id, e FROM t_column_ttl_enum_zero ORDER BY id;
 
 -- All rows of a wide part expire: the column is dropped from the part, but the projection is rebuilt from the reset values.
-CREATE TABLE t_column_ttl_enum_wide_expired (id UInt32, d DateTime, e Enum8('a' = 1, 'b' = 2), PROJECTION p (SELECT id, e ORDER BY e))
+CREATE TABLE t_column_ttl_enum_wide_expired (id UInt32, d DateTime, e Enum8('a' = 1, 'b' = 2) TTL d + INTERVAL 1 DAY, PROJECTION p (SELECT id, e ORDER BY e))
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-INSERT INTO t_column_ttl_enum_wide_expired VALUES (1, '2000-01-01 00:00:00', 'b'), (2, '2000-01-01 00:00:00', 'b');
 SYSTEM STOP TTL MERGES t_column_ttl_enum_wide_expired;
-ALTER TABLE t_column_ttl_enum_wide_expired MODIFY COLUMN e Enum8('a' = 1, 'b' = 2) TTL d + INTERVAL 1 DAY SETTINGS materialize_ttl_after_modify = 0;
+INSERT INTO t_column_ttl_enum_wide_expired VALUES (1, '2000-01-01 00:00:00', 'b'), (2, '2000-01-01 00:00:00', 'b');
 ALTER TABLE t_column_ttl_enum_wide_expired MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT id, toInt8(e) FROM mergeTreeProjection(currentDatabase(), t_column_ttl_enum_wide_expired, p) ORDER BY id;
 
