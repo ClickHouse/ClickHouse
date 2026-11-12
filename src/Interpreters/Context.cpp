@@ -9154,7 +9154,8 @@ bool Context::canUseTaskBasedParallelReplicas() const
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
             || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
-        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
+        && (getClientInfo().collaborate_with_initiator
+            || settings_ref[Setting::automatic_parallel_replicas_mode] == 0);
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
