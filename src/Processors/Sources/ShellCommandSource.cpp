@@ -660,6 +660,7 @@ namespace
             if (command_holder && process_pool)
             {
                 /// The default row count is not final until the output header has been read.
+                /// `prepare` intentionally keeps the old check: it must not wait on a live pooled worker.
                 bool valid_command = configuration.read_fixed_number_of_rows
                     && (!configuration.read_number_of_rows_from_process_output || executor)
                     && current_read_rows >= configuration.number_of_rows_to_read;
