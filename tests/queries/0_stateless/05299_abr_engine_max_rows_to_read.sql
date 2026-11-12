@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: settings profiles are server-global and their names cannot be made unique per run.
+
 -- Test: ABR engine fallback when max_rows_to_read limit is exceeded
 -- Verifies that ABR falls back to a table with fewer rows when the initial
 -- table would exceed the max_rows_to_read setting.
@@ -73,6 +76,22 @@ SETTINGS max_rows_to_read = 1800, send_logs_level = 'error';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT abr_interval, mapApply((k, v) -> (k, errorCodeToName(v)), abr_exception_codes) AS exception_codes FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05299, query 3 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+
+-- Test 3: the same limit set by a profile in the SETTINGS of the query is split too, and not restored by the attempt.
+-- The profile is set in a subquery, as the client would try to apply a top-level one itself.
+DROP SETTINGS PROFILE IF EXISTS profile_05299;
+CREATE SETTINGS PROFILE profile_05299 SETTINGS max_rows_to_read = 1800;
+SELECT /* test 05299, query 4 */ * FROM
+(
+    SELECT count(), max(value) AS source_table FROM abr
+    WHERE ts >= toDateTime('2025-11-11 12:00:00') - INTERVAL 950 HOUR
+    SETTINGS profile = 'profile_05299'
+)
+SETTINGS send_logs_level = 'error';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT abr_interval, mapApply((k, v) -> (k, errorCodeToName(v)), abr_exception_codes) AS exception_codes FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05299, query 4 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+DROP SETTINGS PROFILE profile_05299;
 
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS row_limits_1;

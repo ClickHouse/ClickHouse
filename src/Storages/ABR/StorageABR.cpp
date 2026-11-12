@@ -97,16 +97,6 @@ namespace
 constexpr Int64 SECONDS_PER_DAY = 24 * 60 * 60;
 constexpr UInt64 NANOSECONDS_PER_SECOND = 1'000'000'000;
 
-/// The limits that are split between the attempts, see `StorageABR::buildAttemptContext`.
-constexpr std::string_view SPLIT_SETTINGS[] = {
-    "max_execution_time",
-    "max_execution_time_leaf",
-    "max_rows_to_read",
-    "max_bytes_to_read",
-    "max_rows_to_read_leaf",
-    "max_bytes_to_read_leaf",
-};
-
 /// Unwraps the result of `QueryNode::toAST` (`ASTSelectWithUnionQuery` or `ASTSubquery`) down to the `ASTSelectQuery`.
 ASTPtr unwrapSelectQuery(ASTPtr ast)
 {
@@ -314,14 +304,8 @@ ASTPtr StorageABR::rewriteQueryForStorage(const SelectQueryInfo & query_info, co
         select_ast->as<ASTSelectQuery &>().replaceDatabaseAndTable(target->getStorageID());
     }
 
-    /// The time and read limits are recalculated per-attempt in buildAttemptContext
-    if (auto settings_ast = select_ast->as<ASTSelectQuery &>().settings())
-    {
-        std::erase_if(settings_ast->as<ASTSetQuery &>().changes, [](const SettingChange & change)
-        {
-            return std::ranges::contains(SPLIT_SETTINGS, change.name);
-        });
-    }
+    /// The `SETTINGS` of the query are applied to the context of the attempt in `buildAttemptContext`.
+    select_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
 
     return select_ast;
 }
@@ -329,14 +313,21 @@ ASTPtr StorageABR::rewriteQueryForStorage(const SelectQueryInfo & query_info, co
 ContextMutablePtr StorageABR::buildAttemptContext(
     const ContextPtr & base_context, const SelectQueryInfo & query_info, size_t tables_left, size_t total_tables)
 {
-    /// The `SETTINGS` of the query are not necessarily applied to the context passed to `read`
-    /// (with the analyzer they belong to the query node), and the split limits are removed from the
-    /// rewritten query, so apply them here before splitting the budgets.
+    /// The `SETTINGS` of the query are removed from the rewritten query, so apply them here, before splitting the budgets.
     SettingsChanges query_settings;
+    std::vector<String> default_settings;
     if (query_info.query_tree)
-        query_settings = query_info.query_tree->as<const QueryNode &>().getSettingsChanges();
+    {
+        const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+        query_settings = query_node.getSettingsChanges();
+        default_settings = query_node.getDefaultSettings();
+    }
     else if (auto settings_ast = query_info.query->as<const ASTSelectQuery &>().settings())
-        query_settings = settings_ast->as<const ASTSetQuery &>().changes;
+    {
+        const auto & set_query = settings_ast->as<const ASTSetQuery &>();
+        query_settings = set_query.changes;
+        default_settings = set_query.default_settings;
+    }
 
     /// `tables_left` is the number of candidate tables from the one of this attempt to the one of
     /// abr_last_table_suffix, this one included; `total_tables` is the number of all candidate tables.
@@ -353,6 +344,7 @@ ContextMutablePtr StorageABR::buildAttemptContext(
     /// share of the next one, and the total across all attempts stays within the original limit.
     ContextMutablePtr context = Context::createCopy(base_context);
     context->applySettingsChanges(query_settings);
+    context->resetSettingsToDefaultValue(default_settings);
     const auto & settings = context->getSettingsRef();
 
     /// With 'break', an attempt that exceeds its share would return a partial result instead of failing, so it would not
