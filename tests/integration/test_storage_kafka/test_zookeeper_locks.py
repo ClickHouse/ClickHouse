@@ -235,8 +235,9 @@ def test_inactive_replica_not_counted(kafka_cluster):
 
         # The ghost replica must not be counted as active. If it were, the node quota would be
         # `num_partitions / 2`, so `r1` would hold only half of the partitions as permanent locks
-        # (plus at most one temporary lock, because `has_replica_without_locks` keeps the temporary
-        # quota at zero every other round) and would never own the whole lock set.
+        # (and before the quota-freeze invariant was removed, `has_replica_without_locks` would
+        # have kept the temporary quota at zero every other round) and would never own the
+        # whole lock set.
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
 
         instance.query_with_retry(

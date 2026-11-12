@@ -163,7 +163,6 @@ private:
     struct ActiveReplicasInfo
     {
         UInt64 active_replica_count{0};
-        bool has_replica_without_locks{false};
     };
 
     std::filesystem::path keeper_path;
@@ -206,13 +205,13 @@ private:
     size_t computeConsumerQuota(size_t node_quota) const;
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
-    ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock);
+    ActiveReplicasInfo getActiveReplicasInfo();
     std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitionOffsets & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(const TopicPartition & partition_to_lock);
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.
