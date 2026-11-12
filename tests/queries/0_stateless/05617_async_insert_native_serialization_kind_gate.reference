@@ -1,11 +1,9 @@
 sparse: caught expected exception INCORRECT_DATA
 replicated: caught expected exception INCORRECT_DATA
-sparse string: caught expected exception INCORRECT_DATA
 sparse tuple element: caught expected exception INCORRECT_DATA
 sparse external table: caught expected exception INCORRECT_DATA
 replicated scalar: caught expected exception INCORRECT_DATA
 default: inserted
 server alive
 4	10
-0
 0

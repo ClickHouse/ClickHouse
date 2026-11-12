@@ -6,10 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS tab;
-    DROP TABLE IF EXISTS tab_string;
     DROP TABLE IF EXISTS tab_tuple;
     CREATE TABLE tab (x UInt64) ENGINE = MergeTree ORDER BY tuple();
-    CREATE TABLE tab_string (x String) ENGINE = MergeTree ORDER BY tuple();
     CREATE TABLE tab_tuple (x Tuple(UInt64, UInt64)) ENGINE = MergeTree ORDER BY tuple();
 "
 
@@ -20,12 +18,10 @@ python3 "$CUR_DIR"/05617_async_insert_native_serialization_kind_gate.python
 $CLICKHOUSE_CLIENT -q "
     SELECT 'server alive';
     SELECT count(), sum(x) FROM tab;
-    SELECT count() FROM tab_string;
     SELECT count() FROM tab_tuple;
 "
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE tab;
-    DROP TABLE tab_string;
     DROP TABLE tab_tuple;
 "

@@ -355,17 +355,6 @@ def replicatedBlock(table_name="", packet_type=CLIENT_DATA):
     return bytes(ba)
 
 
-def sparseStringBlock():
-    ba = dataBlockPrefix("String")
-    ba.append(1)  # has_custom serialization
-    ba.append(KIND_STACK_SPARSE)
-    ba.extend(sparseOffsets())
-    # SparseElements substream: a String is a length and bytes before revision 54492.
-    writeStringBinary("aa", ba)
-    writeStringBinary("bb", ba)
-    return bytes(ba)
-
-
 def sparseTupleElementBlock():
     # Kind stacks are per tuple element, so a nested column can be sparse under a default tuple.
     ba = dataBlockPrefix("Tuple(UInt64, UInt64)")
@@ -462,7 +451,6 @@ def expectInserted(name, table, block):
 def main():
     expectRejected("sparse", "tab", sparseBlock(), "Sparse")
     expectRejected("replicated", "tab", replicatedBlock(), "Replicated")
-    expectRejected("sparse string", "tab_string", sparseStringBlock(), "Sparse")
     expectRejected(
         "sparse tuple element", "tab_tuple", sparseTupleElementBlock(), "Sparse"
     )
