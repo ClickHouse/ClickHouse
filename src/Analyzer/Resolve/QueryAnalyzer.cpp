@@ -5441,7 +5441,9 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
           *
           * During resolve of alias_value_1, alias_value_2 column will be resolved.
           */
-        auto alias_column_resolver = [this, &data, &scope, captured_storage_snapshot = std::move(storage_snapshot)](const ColumnNodePtr & alias_column_to_resolve)
+        /// Created on the first resolved ALIAS column; shared by copies of `data`.
+        auto alias_column_context = std::make_shared<ContextPtr>();
+        auto alias_column_resolver = [this, &data, &scope, captured_storage_snapshot = std::move(storage_snapshot), alias_column_context](const ColumnNodePtr & alias_column_to_resolve)
         {
             const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
             if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
@@ -5455,7 +5457,11 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                     alias_column_to_resolve->setExpression(nullptr);
             });
 
-            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
+            /// `ALIAS` expressions are stored SQL: read table names in them as written.
+            if (!*alias_column_context)
+                *alias_column_context = Context::createCopyForStoredDefinition(scope.context);
+
+            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, *alias_column_context));
 
             auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
             /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
@@ -5463,7 +5469,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
             IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
-            alias_column_resolve_scope.context = scope.context;
+            alias_column_resolve_scope.context = *alias_column_context;
 
             /// Initialize aliases in alias column scope
             QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);

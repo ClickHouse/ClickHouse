@@ -1581,6 +1581,8 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     }
 
     auto execution_context = Context::createCopy(context);
+    /// Column defaults are stored SQL: read table names in them as written.
+    execution_context->setAllowCompoundTableIdentifierQualification(false);
 
     NameSet table_column_names;
     table_column_names.reserve(all_columns.size());
