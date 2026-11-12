@@ -495,7 +495,10 @@ public:
             std::swap(current_node->step, parent_node->step);
             parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
 
-            /// The hint comes from a LIMIT: ship it after a final DISTINCT, as on shards.
+            /// The limit hint only makes the preliminary DISTINCT stop reading its streams once each has enough distinct rows.
+            /// The last chunk still passes through whole, so the hint does not bound what a replica sends. A final DISTINCT and
+            /// a LIMIT of the hint in the fragment do. The final DISTINCT on replicas is needed because the preliminary one
+            /// deduplicates each stream separately.
             if (const UInt64 limit_hint = distinct_step->getLimitHint())
             {
                 const auto & header = current_node->step->getOutputHeader();
