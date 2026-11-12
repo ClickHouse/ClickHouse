@@ -21,6 +21,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <TableFunctions/ITableFunction.h>
+
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -311,6 +314,40 @@ void removeMisboundDefaultsFromStructureHint(
 
     for (const auto & name : removed)
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
+}
+
+String getStructureHintColumnName(
+    const Strings & identifier_parts,
+    const String & table_function_alias,
+    const ITableFunction & table_function,
+    const ContextPtr & context,
+    std::optional<NameSet> & source_column_names)
+{
+    if (identifier_parts.size() == 1)
+        return identifier_parts.front();
+
+    if (!source_column_names)
+    {
+        try
+        {
+            auto source_columns = table_function.getActualTableStructureWithAccess(context, /*is_insert_query=*/ false);
+            source_column_names = source_columns.getAll().getNameSet();
+        }
+        catch (const Exception &)
+        {
+            /// The source has no structure of its own, like `input`, which takes it from the structure hint.
+            source_column_names.emplace();
+        }
+    }
+
+    String full_name = boost::algorithm::join(identifier_parts, ".");
+    if (source_column_names->contains(full_name))
+        return full_name;
+
+    if (identifier_parts.size() == 2 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
+        return identifier_parts.back();
+
+    return {};
 }
 
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)

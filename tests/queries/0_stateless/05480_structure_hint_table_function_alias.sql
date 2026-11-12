@@ -10,4 +10,22 @@ INSERT INTO t_structure_hint_alias SELECT f.id, f.v FROM file(currentDatabase() 
 
 SELECT * FROM t_structure_hint_alias ORDER BY ALL;
 
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT id, g.v FROM file(currentDatabase() || '_structure_hint_alias.jsonl') AS f JOIN (SELECT 1 AS id2, 99 AS v) AS g ON id = g.id2;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_structure_hint_alias_tuple.jsonl', 'JSONEachRow', 'v UInt32, t Tuple(a UInt32)') SELECT number * 10, tuple(number * 100) FROM numbers(1, 2) SETTINGS engine_file_truncate_on_insert = 1;
+
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT f.t.a, f.v FROM file(currentDatabase() || '_structure_hint_alias_tuple.jsonl') AS f;
+INSERT INTO t_structure_hint_alias SELECT t.a, v FROM file(currentDatabase() || '_structure_hint_alias_tuple.jsonl');
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_structure_hint_alias_dotted.jsonl', 'JSONEachRow', '`f.id` UInt32, id UInt32') SELECT 7, 1 SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT f.id, id FROM file(currentDatabase() || '_structure_hint_alias_dotted.jsonl') AS f;
+TRUNCATE TABLE t_structure_hint_alias;
+INSERT INTO t_structure_hint_alias SELECT f.id, id FROM file(currentDatabase() || '_structure_hint_alias_dotted.jsonl') AS f;
+SELECT * FROM t_structure_hint_alias ORDER BY ALL;
+
 DROP TABLE t_structure_hint_alias;

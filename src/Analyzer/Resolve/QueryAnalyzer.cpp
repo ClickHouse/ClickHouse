@@ -5755,6 +5755,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         auto insert_column_name_it = insert_column_names.begin();
         auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
         auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+        std::optional<NameSet> source_column_names;
         bool asterisk = false;
         const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
         auto expression = expression_list.begin();
@@ -5765,12 +5766,22 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
-                /// `f.x` in `SELECT f.x FROM file(...) AS f` refers to the column `x` of the table function.
-                auto column_identifier = identifier_node->getIdentifier();
-                if (column_identifier.isCompound() && table_function_node->hasAlias() && column_identifier.at(0) == table_function_node->getAlias())
-                    column_identifier.popFirst();
+                auto column_name = getStructureHintColumnName(
+                    identifier_node->getIdentifier().getParts(),
+                    table_function_node->getAlias(),
+                    *table_function_ptr,
+                    scope_context,
+                    source_column_names);
 
-                if (!virtual_column_names.contains(column_identifier.getFullName()))
+                if (column_name.empty())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2)
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+                else if (!virtual_column_names.contains(column_name))
                 {
                     if (asterisk)
                     {
@@ -5782,7 +5793,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     }
 
                     ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                    column.name = column_identifier.getFullName();
+                    column.name = column_name;
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;
 
