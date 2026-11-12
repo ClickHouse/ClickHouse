@@ -162,4 +162,8 @@ QueryPlanStepPtr projectOnlyUsedColumns(
 /// is read like a subquery. Only the right-hand side of an IN is inspected.
 bool astContainsSubquery(const ASTPtr & ast);
 
+/// Whether the resolved expression calls a non-deterministic ordinary function; aggregate and window functions are not inspected.
+/// A call the analyzer folded into a constant (`now`, `hostName`) leaves a `ConstantNode` marked non-deterministic.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node);
+
 }

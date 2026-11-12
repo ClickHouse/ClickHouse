@@ -224,44 +224,6 @@ QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const Sto
     return nullptr;
 }
 
-/// Returns true if `node` contains any function whose IFunctionBase::isDeterministic() is false.
-/// Used by the view-pushdown gate: the optimization rewrites the outer query so its expressions
-/// run on shards instead of the coordinator, which changes results for functions like hostName,
-/// serverUUID, nowInBlock, blockNumber, rand, now etc. Aggregate and window functions are not
-/// flagged here — FunctionNode::getFunction() only returns the resolved IFunctionBase for
-/// ordinary functions, returning nullptr otherwise.
-///
-/// ConstantNode is also inspected because the analyzer constant-folds suitable function calls
-/// (server-local constants such as hostName, serverUUID, version) into ConstantNodes that carry
-/// is_deterministic = false (see resolveFunction.cpp:1766). Without this branch the visitor
-/// would miss folded calls — only functions that vary per row (rand, now, ...) stay as
-/// FunctionNodes after analysis. Plain literals (SELECT 1) use the default-deterministic
-/// ConstantNode constructor and are not flagged.
-bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return false;
-
-    if (const auto * function_node = node->as<FunctionNode>())
-    {
-        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
-            return true;
-    }
-
-    if (const auto * constant_node = node->as<ConstantNode>())
-    {
-        if (!constant_node->isDeterministic())
-            return true;
-    }
-
-    for (const auto & child : node->getChildren())
-    {
-        if (containsNonDeterministicFunction(child))
-            return true;
-    }
-    return false;
-}
-
 /// Whether the `LATERAL` subquery contains a function whose value may differ between two evaluations
 /// within one query (`rand`, `generateUUIDv4`, `rowNumberInAllBlocks`, ...). Decorrelation evaluates the
 /// subquery once per distinct value of the correlated columns, not once per outer row, so two outer rows

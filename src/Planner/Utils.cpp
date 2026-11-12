@@ -1062,4 +1062,29 @@ bool astContainsSubquery(const ASTPtr & ast)
     return false;
 }
 
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+    }
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (!constant_node->isDeterministic())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (containsNonDeterministicFunction(child))
+            return true;
+    }
+    return false;
+}
+
 }

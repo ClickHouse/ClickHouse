@@ -14,10 +14,6 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedWebAssembly.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 namespace DB
 {
@@ -65,26 +61,7 @@ public:
             {
                 /// NOTE It may be an aggregate function, so get(...) may throw.
                 /// However, an aggregate function can be used only in subquery and we do not go into subquery.
-                /// User-defined functions are not in `FunctionFactory`. An `EXECUTABLE` UDF's `deterministic` flag is read
-                /// from its configuration, because a parametric one cannot be instantiated without its parameters.
-                if (auto is_deterministic = UserDefinedExecutableFunctionFactory::tryGetIsDeterministic(function->name, data.context))
-                {
-                    if (!*is_deterministic)
-                        data.result.nondeterministic_function_name = function->name;
-                    return;
-                }
-
-                FunctionOverloadResolverPtr func;
-                if (auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
-                    user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-                {
-                    UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(data.context);
-                    func = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, data.context);
-                }
-
-                if (!func)
-                    func = FunctionFactory::instance().get(function->name, data.context);
-
+                const auto func = FunctionFactory::instance().get(function->name, data.context);
                 if (!func->isDeterministic())
                     data.result.nondeterministic_function_name = func->getName();
             }

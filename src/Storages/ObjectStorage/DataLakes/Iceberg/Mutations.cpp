@@ -1,4 +1,7 @@
 #include <Formats/ColumnNameMaps.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -15,7 +18,6 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/Chunk.h>
@@ -190,13 +192,15 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 "Iceberg ALTER UPDATE of partition column {} does not support a condition that reads a table or a subquery",
                 backQuote(*assigned_partition_column));
 
-        auto nondeterministic = findFirstNonDeterministicFunction(delete_commands[0], context);
-        if (nondeterministic.nondeterministic_function_name)
+        /// Resolved, because the determinism of some functions depends on their arguments (`arrayReduce` on its aggregate).
+        auto condition = buildQueryTree(predicate->clone(), context);
+        auto table_node = std::make_shared<TableNode>(storage_ptr, TableLockHolder{}, storage_ptr->getStorageSnapshot(metadata, context));
+        QueryAnalyzer(/*only_analyze=*/ true).resolve(condition, table_node, context);
+        if (containsNonDeterministicFunction(condition))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "Iceberg ALTER UPDATE of partition column {} does not support a non-deterministic condition, function '{}' is non-deterministic",
-                backQuote(*assigned_partition_column),
-                *nondeterministic.nondeterministic_function_name);
+                "Iceberg ALTER UPDATE of partition column {} does not support a non-deterministic condition",
+                backQuote(*assigned_partition_column));
     }
 
     DataFileWriteResultByPartitionKey delete_data_result;
