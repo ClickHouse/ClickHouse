@@ -644,11 +644,11 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return table_expression ? table_expression->getAlias() : String{};
     };
 
-    std::map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> single_node_reads_by_table;
+    std::unordered_map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> single_node_reads_by_table;
     for (auto * read : single_node_reads)
         single_node_reads_by_table[&read->getMergeTreeData()].push_back(read);
 
-    std::map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> replicas_reads_by_table;
+    std::unordered_map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> replicas_reads_by_table;
     for (auto * read : replicas_reads)
         replicas_reads_by_table[&read->getMergeTreeData()].push_back(read);
 
@@ -680,7 +680,7 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
 
         /// Several reads of one table. Tell them apart by the analyzer's name, which the two plans agree
         /// on only when the shard rewrite preserved the numbering - pair one to one or not at all.
-        std::map<String, ReadFromMergeTree *> single_node_by_name;
+        std::unordered_map<String, ReadFromMergeTree *> single_node_by_name;
         for (auto * read : single_node_reads_of_table)
         {
             auto name = table_expression_name(read);
