@@ -42,6 +42,7 @@ Si votre cluster applique des ACLs aux ressources sélectionnées, accordez au p
 
 Vous pouvez restreindre l’ACL du groupe de consommateurs au préfixe `clickpipes-`. Workload Identity nécessite TLS et n’est pris en charge qu’avec le type de source Google Managed Kafka (`gcmk`).
 
+<a id="isolation-level" />
 ## Niveau d’isolation
 
 Le niveau d’isolation du consommateur Kafka détermine si un ClickPipe lit et insère uniquement les messages validés par une transaction Kafka. Activez le paramètre `kafka_read_committed` pour utiliser `read_committed` et ignorer les messages provenant de transactions Kafka abandonnées. Désactivez-le pour utiliser `read_uncommitted` et lire tous les messages. Vous pouvez configurer ce paramètre dans **Paramètres avancés**.
@@ -85,6 +86,7 @@ Les types de données ClickHouse standard suivants sont actuellement pris en cha
 * Tuple et Array avec des éléments utilisant l’un des types ci-dessus (y compris Nullable, profondeur d’un seul niveau uniquement)
 * Types SimpleAggregateFunction (pour les destinations AggregatingMergeTree ou SummingMergeTree)
 
+<a id="variant-type-support" />
 ### Prise en charge du type Variant
 
 ClickPipes prend en charge le type Variant dans les cas suivants :
@@ -109,10 +111,12 @@ Notez que vous devrez modifier manuellement la colonne de destination pour lui a
   ### Avro
 </div>
 
+<a id="supported-avro-data-types" />
 #### Types de données Avro pris en charge
 
 ClickPipes prend en charge tous les types primitifs et complexes d’Avro, ainsi que tous les types logiques d’Avro, à l’exception de `local-timestamp-millis` et `local_timestamp-micros`.  Les types Avro `record` sont convertis en Tuple, les types `array` en Array, et `map` en Map (clés de type chaîne uniquement).  De manière générale, les conversions répertoriées [ici](/fr/concepts/features/interfaces/schema-inference#avro) sont disponibles.  Nous recommandons d’utiliser une correspondance exacte des types pour les types numériques Avro, car ClickPipes ne vérifie pas les dépassements de capacité ni les pertes de précision lors des conversions de type. Sinon, tous les types Avro peuvent être insérés dans une colonne `String` et seront alors représentés sous la forme d’une chaîne JSON valide.
 
+<a id="nullable-types-and-avro-unions" />
 #### Types Nullable et unions Avro
 
 Dans Avro, les types Nullable sont définis à l’aide d’un schéma Union de `(T, null)` ou `(null, T)`, où T est le type Avro de base. Lors de l’inférence de schéma, ces unions sont mappées sur une colonne ClickHouse « Nullable ». Notez que ClickHouse ne prend pas en charge les types `Nullable(Array)`, `Nullable(Map)` ou `Nullable(Tuple)`. Les unions Avro avec null pour ces types seront mappées sur des versions non Nullable (les types record Avro sont mappés sur un named Tuple ClickHouse). Les valeurs « null » Avro pour ces types seront insérées comme suit :
@@ -125,6 +129,7 @@ Dans Avro, les types Nullable sont définis à l’aide d’un schéma Union de 
   ### Protobuf
 </div>
 
+<a id="supported-protobuf-data-types" />
 #### Types de données Protobuf pris en charge
 
 ClickPipes prend en charge tous les types Protobuf 2 et 3, à l’exception du type `group` de proto 2, obsolète de longue date. Les conversions de types de base utilisent les correspondances suivantes :
@@ -166,6 +171,7 @@ Les [types bien connus](https://protobuf.dev/reference/protobuf/google.protobuf/
 | `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
+<a id="protobuf-one-ofs" />
 #### Protobuf `oneof`
 
 Lors de l’inférence de schéma, les champs Protobuf `oneof` sont, par défaut, mappés sur un `Tuple` nommé, dans lequel un seul champ au maximum contient une valeur autre que la valeur par défaut. Ces champs peuvent également être automatiquement mappés sur une colonne `Variant`, où la valeur active prend le type du champ constitutif qui est défini. Autrement, chaque champ constitutif peut être mappé manuellement à sa propre colonne ClickHouse ; comme les champs `oneof` sont mutuellement exclusifs, une seule colonne sera renseignée pour chaque enregistrement.
@@ -176,6 +182,7 @@ Lors de l’inférence de schéma, les champs Protobuf `oneof` sont, par défaut
 
 Si le schéma Protobuf de niveau supérieur défini pour le ClickPipe contient un seul champ répété qui est lui-même un message Protobuf, l’inférence de schéma et la mise en correspondance des colonnes seront basées sur le champ de message « contenu ». Le message Kafka sera traité comme une liste de tels messages, et un seul message Kafka sera décomposé en plusieurs lignes ClickHouse.
 
+<a id="kafka-virtual-columns" />
 ## Colonnes virtuelles Kafka
 
 Les colonnes virtuelles suivantes sont prises en charge pour les sources de données en streaming compatibles avec Kafka. Lors de la création d’une nouvelle destination, des colonnes virtuelles peuvent être ajoutées à la table cible à l’aide du bouton `Add Column`.
@@ -199,6 +206,7 @@ alimenter une vue matérialisée en aval), la suppression de toutes les colonnes
 La colonne `_is_deleted` est disponible lorsque la gestion des pierres tombales est configurée pour la suppression logique.
 Elle vaut `true` pour les pierres tombales Kafka et `false` pour les messages ordinaires.
 
+<a id="structured-message-keys" />
 ### Clés de messages structurées
 
 La mise en correspondance de `_key` vers une colonne `String` stocke la clé du message Kafka d’origine. Cette mise en correspondance contourne le décodage de la clé et la recherche de schéma. Pour extraire des champs d’une clé structurée, mettez les champs source commençant par `_key.` en correspondance. Par exemple, pour la clé JSON `{"customer":{"id":42}}`, mettez `_key.customer.id` en correspondance avec une colonne de destination telle que `customer_id`.

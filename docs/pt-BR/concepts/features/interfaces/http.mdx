@@ -288,6 +288,7 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
+<a id="modify-an-existing-query" />
 #### Modificar uma consulta existente
 
 As configurações de construção não se limitam a solicitações de caminho: elas também moldam uma consulta que você mesmo escreve. A consulta se torna a tabela derivada; portanto, as configurações se aplicam ao resultado dela, em vez de serem incorporadas a ela. Por exemplo, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` é executada como:
@@ -323,6 +324,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   `filter` não é um mecanismo de controle de acesso. Ele adiciona uma cláusula `WHERE` a uma subconsulta envolvente, portanto os dados subjacentes podem ser lidos e processados antes da aplicação do filtro. Para restringir as linhas que um usuário pode acessar, use [políticas de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management) ou [`additional_table_filters`](/pt-BR/reference/settings/session-settings/additional#additional_table_filters).
 </Warning>
 
+<a id="format-and-compression-overrides" />
 ### Substituição de formatos e compressão
 
 | Configuração     | Efeito                                                                                                                                                                                                                                                                                                                                                        |
@@ -339,6 +341,7 @@ As configurações de formato também funcionam com outros protocolos, incluindo
 
 Respostas HTTP binárias e comprimidas incluem um cabeçalho `Content-Disposition: attachment; filename=…`. O nome do arquivo é derivado do caminho da URL ou usa `result.<format>.<compression>` quando o caminho não fornece um nome.
 
+<a id="implicit-table" />
 ### Use uma tabela no caminho com uma consulta
 
 Quando o caminho identifica uma tabela e você também fornece um parâmetro `query`, a tabela no caminho é exposta por [`implicit_table_at_top_level`](/pt-BR/reference/settings/session-settings/implicit#implicit_table_at_top_level). Um `SELECT` sem uma cláusula `FROM` lê a tabela no caminho:
@@ -356,6 +359,7 @@ Se a consulta já contiver uma cláusula `FROM`, o componente do caminho fornece
 
 O método `POST` de transmissão de dados é necessário para consultas `INSERT`. Nesse caso, você pode escrever o início da consulta no parâmetro da URL e usar o POST para enviar os dados a serem inseridos. Os dados a serem inseridos podem ser, por exemplo, um dump do MySQL separado por tabulações. Dessa forma, a consulta `INSERT` substitui o `LOAD DATA LOCAL INFILE` do MySQL.
 
+<a id="examples" />
 ### Exemplos
 
 Para criar uma tabela:
@@ -442,6 +446,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Para requisições bem-sucedidas que não retornam uma tabela de dados, retorna-se um corpo de resposta vazio.
 
+<a id="insert-protobuf" />
 ### Inserir dados Protobuf
 
 Formatos binários como [`Protobuf`](/pt-BR/reference/formats/Protobuf/Protobuf) são enviados da mesma forma, já que `--data-binary` repassa os bytes sem alterações.
@@ -499,6 +504,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 O formato `Protobuf` espera que cada mensagem seja precedida pelo seu comprimento, codificado como varint.
 Para uma única mensagem sem o prefixo, use [`ProtobufSingle`](/pt-BR/reference/formats/Protobuf/ProtobufSingle); para linhas enviadas como submensagens de uma única mensagem `Envelope`, use [`ProtobufList`](/pt-BR/reference/formats/Protobuf/ProtobufList).
 
+<a id="compression" />
 ## Compressão
 
 A compressão pode ser usada para reduzir o tráfego de rede ao transmitir grandes volumes de dados ou para criar dumps já comprimidos.
@@ -647,6 +653,7 @@ Para mais informações, consulte:
 * [Configurações](/pt-BR/reference/settings/session-settings)
 * [SET](/pt-BR/reference/statements/set)
 
+<a id="using-clickhouse-sessions-in-the-http-protocol" />
 ## Uso de sessões do ClickHouse no protocolo HTTP
 
 Você também pode usar sessões do ClickHouse no protocolo HTTP. Para isso, é necessário adicionar o parâmetro `GET` `session_id` à requisição. Você pode usar qualquer string como ID da sessão.
@@ -688,6 +695,7 @@ Existem os seguintes parâmetros opcionais:
 
 A interface HTTP permite passar dados externos (tabelas temporárias externas) para consulta. Para mais informações, consulte [&quot;Dados externos para processamento de consultas&quot;](/pt-BR/reference/engines/table-engines/special/external-data).
 
+<a id="response-buffering" />
 ## Bufferização de resposta
 
 A bufferização de resposta pode ser habilitada no lado do servidor. Os seguintes parâmetros de URL são fornecidos para essa finalidade:
@@ -714,6 +722,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   Use bufferização para evitar situações em que ocorra um erro no processamento da consulta depois que o código de resposta e os cabeçalhos HTTP forem enviados ao cliente. Nessa situação, uma mensagem de erro é gravada no final do corpo da resposta e, no lado do cliente, o erro só pode ser detectado na etapa de parsing.
 </Tip>
 
+<a id="setting-role-with-query-parameters" />
 ## Definindo uma role com parâmetros de consulta
 
 Este recurso foi adicionado ao ClickHouse 24.4.
@@ -749,6 +758,7 @@ Neste caso, `?role=my_role&role=my_other_role` equivale a executar `SET ROLE my_
 
 O parâmetro de consulta `role` não é afetado pela configuração do servidor `access_control_improvements.readonly_restricts_set_role`, que bloqueia apenas a instrução `SET ROLE`.
 
+<a id="http_response_codes_caveats" />
 ## Ressalvas sobre códigos de resposta HTTP
 
 Devido às limitações do protocolo HTTP, um código de resposta HTTP 200 não garante que uma consulta tenha sido bem-sucedida.
@@ -885,6 +895,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
+<a id="predefined_http_interface" />
 ## Interface HTTP predefinida
 
 O ClickHouse suporta consultas específicas por meio da interface HTTP. Por exemplo, você pode gravar dados em uma tabela da seguinte forma:
@@ -1014,6 +1025,7 @@ Cada um deles é explicado abaixo:
 
 Os métodos de configuração para diferentes `type`s são discutidos a seguir.
 
+<a id="predefined_query_handler" />
 ### predefined_query_handler
 
 `predefined_query_handler` oferece suporte à definição de valores de `Settings` e `query_params`. Você pode configurar `query` para o tipo `predefined_query_handler`.
@@ -1094,6 +1106,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   Em um `predefined_query_handler`, apenas uma `consulta` é compatível.
 </Note>
 
+<a id="dynamic_query_handler" />
 ### dynamic_query_handler
 
 Em `dynamic_query_handler`, a consulta é escrita como um parâmetro da requisição HTTP. A diferença é que, em `predefined_query_handler`, a consulta é escrita no arquivo de configuração. `query_param_name` pode ser configurado em `dynamic_query_handler`.
@@ -1378,6 +1391,7 @@ No exemplo abaixo, toda resposta do servidor conterá dois cabeçalhos personali
 </clickhouse>
 ```
 
+<a id="valid-output-on-exception-http-streaming" />
 ## Resposta JSON/XML válida em caso de exceção durante HTTP streaming
 
 Durante a execução da consulta por HTTP, pode ocorrer uma exceção quando parte dos dados já tiver sido enviada. Normalmente, a exceção é enviada ao cliente em texto simples.

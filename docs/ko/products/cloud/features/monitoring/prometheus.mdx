@@ -270,6 +270,7 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 아래에서는 이러한 옵션을 사용하는 방법을 설명하며, ClickHouse Cloud Prometheus 엔드포인트와 관련된 세부 사항을 중심으로 다룹니다.
 
+<a id="grafana-cloud-with-metrics-endpoint" />
 ### Grafana Cloud와 메트릭 엔드포인트
 
 * Grafana Cloud 계정에 로그인하세요
@@ -289,6 +290,7 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 메트릭 탐색기 차트" border />
 
+<a id="grafana-cloud-with-alloy" />
 ### Alloy를 사용하는 Grafana Cloud
 
 Grafana Cloud를 사용 중이라면 Grafana에서 Alloy 메뉴로 이동한 후, 화면의 안내에 따라 Alloy를 설치할 수 있습니다:
@@ -340,6 +342,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
+<a id="grafana-self-managed-with-alloy" />
 ### Alloy를 사용하는 자가 관리형 Grafana
 
 자가 관리형 Grafana 사용자는 Alloy 에이전트 설치 지침을 [여기](https://grafana.com/docs/alloy/latest/get-started/install/)에서 확인할 수 있습니다. Alloy가 Prometheus 메트릭을 원하는 대상으로 전송하도록 이미 구성되어 있다고 가정합니다. 아래의 `prometheus.scrape` 컴포넌트는 Alloy가 ClickHouse Cloud 엔드포인트를 스크레이프하게 합니다. `prometheus.remote_write`가 스크레이프된 메트릭을 수신한다고 가정합니다. 이 구성이 없다면 `forward_to key`를 대상에 맞게 조정하십시오.
@@ -378,6 +381,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
+<a id="integrating-with-datadog" />
 ## Datadog와 통합하기
 
 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux)와 [OpenMetrics 통합](https://docs.datadoghq.com/integrations/openmetrics/)을 사용해 ClickHouse Cloud 엔드포인트에서 메트릭을 수집할 수 있습니다. 아래에는 이 Agent와 통합에 대한 간단한 예시 구성이 나와 있습니다. 다만, 실제로는 가장 필요한 메트릭만 선별하는 것이 좋습니다. 아래의 일괄 예시는 수천 개의 메트릭-인스턴스 조합을 내보내며, Datadog는 이를 커스텀 메트릭으로 처리합니다.
@@ -398,6 +402,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus Datadog 통합" />
 
+<a id="related" />
 ## 관련 페이지
 
 * [모니터링 개요](/ko/products/cloud/features/monitoring/overview) — ClickHouse Cloud의 모든 모니터링 방법을 비교합니다

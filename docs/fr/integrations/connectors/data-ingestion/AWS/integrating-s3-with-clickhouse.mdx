@@ -702,6 +702,7 @@ Ici, nous réutilisons le volume principal dans notre nouvelle politique s3&#95;
 
 La réplication avec des disques S3 peut être assurée à l’aide du moteur de table `ReplicatedMergeTree`. Consultez le guide [Réplication d’un shard unique sur deux régions AWS à l’aide du stockage objet S3](#s3-multi-region) pour plus de détails.
 
+<a id="read--writes" />
 ### Lectures et écritures
 
 Les notes suivantes portent sur l’implémentation des interactions entre S3 et ClickHouse. Bien qu’elles soient généralement fournies à titre informatif, elles peuvent aider les lecteurs lors de l’[optimisation des performances](#s3-optimizing-performance) :
@@ -783,6 +784,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
+<a id="testing" />
 ### Test
 
 1. Connectez-vous à l’aide du client ClickHouse, par exemple comme suit
@@ -1168,6 +1170,7 @@ Sur chacun des serveurs ClickHouse, exécutez
 sudo service clickhouse-server start
 ```
 
+<a id="verify-clickhouse-server" />
 #### Vérifier le serveur ClickHouse
 
 Lorsque vous avez ajouté la [configuration du cluster](#define-a-cluster), un shard unique répliqué sur les deux nœuds ClickHouse a été défini. Dans cette étape de vérification, vous allez confirmer que le cluster a bien été créé au démarrage de ClickHouse, puis créer une table répliquée à l’aide de ce cluster.
@@ -1239,6 +1242,7 @@ Lorsque vous avez ajouté la [configuration du cluster](#define-a-cluster), un s
   Vous pouvez personnaliser le chemin ZooKeeper `'clickhouse/tables/{uuid}/{shard}` affiché ci-dessus en définissant `default_replica_path` et `default_replica_name`. La documentation est disponible [ici](/fr/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
+<a id="testing-1" />
 ### test
 
 Ces tests permettront de vérifier que les données sont bien répliquées entre les deux serveurs et qu&#39;elles sont stockées dans les buckets S3, et non sur le disque local.

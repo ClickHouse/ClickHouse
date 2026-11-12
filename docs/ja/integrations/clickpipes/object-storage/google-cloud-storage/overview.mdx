@@ -151,6 +151,7 @@ Pub/Sub 通知で[順不同モード](#continuous-ingestion-any-order)を使用�
 
 [GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)に従い、ClickPipes のサービスコンテキストからマネージドの service account を取得します。ソースバケットに対してこの service account に `roles/storage.objectViewer` を付与し、`SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 認証でパイプを作成します。unordered モードでインジェストする場合は、既存の通知サブスクリプションに対して `roles/pubsub.subscriber` と `roles/pubsub.viewer` も付与し、サブスクリプションの完全修飾名 `projects/<project-id>/subscriptions/<subscription-id>` を指定してください。
 
+<a id="hmac-credentials" />
 #### HMAC認証情報
 
 [HMACキー](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) を使用して認証するには、ClickPipe 接続を設定する際に **Authentication method** で `Credentials` を選択します。次に、`Access key` と `Secret key` に、それぞれアクセスキー (例: `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) とシークレットキー (例: `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) を入力します。
@@ -172,6 +173,7 @@ GCS ClickPipes では、メタデータの検出とデータのインジェス�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
+<a id="advanced-settings" />
 ## 詳細設定
 
 ClickPipes には、ほとんどのユースケースの要件を満たす妥当なデフォルト設定が用意されています。さらに細かなチューニングが必要な場合は、以下の設定を調整できます。

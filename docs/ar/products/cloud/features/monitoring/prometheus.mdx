@@ -270,6 +270,7 @@ scrape_configs:
 
 نوفّر أدناه إرشادات لاستخدام هذين الخيارين، مع التركيز على التفاصيل الخاصة بـ نقطة نهاية Prometheus في ClickHouse Cloud.
 
+<a id="grafana-cloud-with-metrics-endpoint" />
 ### Grafana Cloud مع نقطة نهاية المقاييس
 
 * سجّل الدخول إلى حسابك في Grafana Cloud
@@ -289,6 +290,7 @@ scrape_configs:
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="مخطط في مستكشف مقاييس Grafana" border />
 
+<a id="grafana-cloud-with-alloy" />
 ### Grafana Cloud مع Alloy
 
 إذا كنت تستخدم Grafana Cloud، فيمكن تثبيت Alloy بالانتقال إلى قائمة Alloy في Grafana واتباع الإرشادات المعروضة على الشاشة:
@@ -340,6 +342,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 لاحظ أنه يجب ضبط معلمة التكوين `honor_labels` على `true` لكي يُملأ وسم المثيل بشكل صحيح.
 
+<a id="grafana-self-managed-with-alloy" />
 ### Grafana المُدارة ذاتيًا مع Alloy
 
 يمكن لمستخدمي Grafana المُدارة ذاتيًا العثور على تعليمات تثبيت وكيل Alloy [هنا](https://grafana.com/docs/alloy/latest/get-started/install/). نفترض أن المستخدمين قد أعدّوا Alloy لإرسال مقاييس Prometheus إلى الوجهة المطلوبة. يتولى المكوّن `prometheus.scrape` أدناه جعل Alloy يجمع المقاييس من نقطة نهاية ClickHouse Cloud. ونفترض أن `prometheus.remote_write` يستقبل المقاييس التي جُمعت. عدّل `forward_to key` ليشير إلى الوجهة المستهدفة إذا لم يكن موجودًا.
@@ -378,6 +381,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 تجدر الإشارة إلى أن معلمة التكوين `honor_labels` يجب ضبطها على `true` لكي تتم تعبئة وسم المثيل بشكل صحيح.
 
+<a id="integrating-with-datadog" />
 ## التكامل مع Datadog
 
 يمكنك استخدام [Agent](https://docs.datadoghq.com/agent/?tab=Linux) و[تكامل OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) في Datadog لجمع المقاييس من نقطة نهاية ClickHouse Cloud. فيما يلي مثال إعداد بسيط لهذا الـAgent وهذا التكامل. لكن يُرجى ملاحظة أنك قد ترغب في الاكتفاء باختيار المقاييس الأكثر أهمية بالنسبة إليك. أما المثال الشامل أدناه فسيصدّر عدة آلاف من تركيبات المقاييس والمثيلات، والتي سيتعامل معها Datadog على أنها مقاييس مخصصة.
@@ -398,6 +402,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="تكامل Prometheus وDatadog" />
 
+<a id="related" />
 ## الصفحات ذات الصلة
 
 * [نظرة عامة على المراقبة](/ar/products/cloud/features/monitoring/overview) — قارِن جميع أساليب المراقبة في ClickHouse Cloud

@@ -702,6 +702,7 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 Репликацию с дисками S3 можно организовать с помощью движка таблицы `ReplicatedMergeTree`. Подробнее см. в руководстве [Репликация одного сегмента между двумя регионами AWS с использованием объектного хранилища S3](#s3-multi-region).
 
+<a id="read--writes" />
 ### Чтение и запись
 
 Следующие примечания описывают реализацию взаимодействия ClickHouse с S3. Хотя в целом они носят справочный характер, они могут быть полезны при [оптимизации производительности](#s3-optimizing-performance):
@@ -783,6 +784,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
+<a id="testing" />
 ### Тестирование
 
 1. Войдите в клиент ClickHouse, например так:
@@ -1168,6 +1170,7 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
+<a id="verify-clickhouse-server" />
 #### Проверьте сервер ClickHouse
 
 Когда вы добавили [конфигурацию кластера](#define-a-cluster), был определён один сегмент, реплицируемый между двумя узлами ClickHouse. На этом этапе проверки вы убедитесь, что кластер был создан при запуске ClickHouse, и создадите реплицированную таблицу с использованием этого кластера.
@@ -1239,6 +1242,7 @@ sudo service clickhouse-server start
   Вы можете настроить путь ZooKeeper `'clickhouse/tables/{uuid}/{shard}`, показанный выше, задав `default_replica_path` и `default_replica_name`. Документация находится [здесь](/ru/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
+<a id="testing-1" />
 ### Тестирование
 
 Эти тесты проверяют, что данные реплицируются между двумя серверами и хранятся в S3 бакетах, а не на локальном диске.

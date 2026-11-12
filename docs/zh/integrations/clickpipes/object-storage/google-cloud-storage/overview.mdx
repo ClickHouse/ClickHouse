@@ -151,6 +151,7 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 按照 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)，从 ClickPipes 服务上下文中获取托管服务账号。在源桶上为该账号授予 `roles/storage.objectViewer` 角色，然后使用 `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 身份验证方式创建管道。如需以 unordered 模式摄取，还需在现有的通知订阅上为该账号授予 `roles/pubsub.subscriber` 和 `roles/pubsub.viewer` 角色，并使用该订阅的完全限定名称：`projects/<project-id>/subscriptions/<subscription-id>`。
 
+<a id="hmac-credentials" />
 #### HMAC 凭据
 
 要使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)进行身份验证，请在设置 ClickPipe 连接时，在 **身份验证方法** 中选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 (例如 `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) 和秘密密钥 (例如 `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`)。
@@ -159,6 +160,7 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 请按照[本指南](/zh/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret)创建带有 HMAC 密钥的服务账号。
 
+<a id="network-access" />
 ### 网络访问
 
 GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和数据摄取：对应为 ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外配置一层网络安全措施 (例如出于合规原因) ，则**必须为这两条路径都配置网络访问**。
@@ -170,6 +172,7 @@ GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
+<a id="advanced-settings" />
 ## 高级设置
 
 ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的需求。如果您的场景需要进一步微调，可以调整以下设置：

@@ -702,6 +702,7 @@ Aquí reutilizamos el volumen principal en nuestra nueva política s3&#95;tiered
 
 La replicación con discos S3 puede implementarse mediante el motor de tabla `ReplicatedMergeTree`. Consulte la guía sobre [cómo replicar un único segmento entre dos regiones de AWS con almacenamiento de objetos S3](#s3-multi-region) para obtener más detalles.
 
+<a id="read--writes" />
 ### Lecturas y escrituras
 
 Las siguientes notas describen la implementación de las interacciones de S3 con ClickHouse. Aunque en general son solo informativas, pueden resultar útiles al [optimización del rendimiento](#s3-optimizing-performance):
@@ -783,6 +784,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
+<a id="testing" />
 ### Prueba
 
 1. Inicie sesión con el cliente de ClickHouse; por ejemplo:
@@ -1168,6 +1170,7 @@ En cada servidor de ClickHouse, ejecute
 sudo service clickhouse-server start
 ```
 
+<a id="verify-clickhouse-server" />
 #### Verificar el servidor de ClickHouse
 
 Cuando agregó la [configuración del clúster](#define-a-cluster), se definió un único segmento replicado entre los dos nodos de ClickHouse. En este paso de verificación, comprobará que el clúster se creó cuando se inició ClickHouse y creará una tabla replicada usando ese clúster.
@@ -1239,6 +1242,7 @@ Cuando agregó la [configuración del clúster](#define-a-cluster), se definió 
   Puede personalizar la ruta de ZooKeeper `'clickhouse/tables/{uuid}/{shard}` que se muestra arriba configurando `default_replica_path` y `default_replica_name`. La documentación está [aquí](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
+<a id="testing-1" />
 ### Pruebas
 
 Estas pruebas verificarán que los datos se estén replicando entre los dos servidores y que se almacenen en los buckets de S3, no en el disco local.

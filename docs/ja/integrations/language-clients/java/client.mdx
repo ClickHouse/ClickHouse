@@ -18,6 +18,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   DBサーバーとそのプロトコルを通じて通信するための Java クライアントライブラリです。現在の実装は [HTTP インターフェイス](/ja/concepts/features/interfaces/http) のみをサポートしています。
   このライブラリはサーバーへリクエストを送信するための独自の API を提供します。また、さまざまなバイナリデータフォーマット (RowBinary* &amp; Native*) を扱うためのツールも提供しています。
 
+  <a id="setup" />
   ## セットアップ
 
   * Maven Central (プロジェクトのWebページ) : https://mvnrepository.com/artifact/com.clickhouse/client-v2
@@ -53,6 +54,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   <br />
 
+  <a id="initialization" />
   ## 初期化
 
   Client オブジェクトは `com.clickhouse.client.api.Client.Builder#build()` によって初期化されます。各クライアントは独自のコンテキストを持ち、クライアント間でオブジェクトが共有されることはありません。
@@ -70,6 +72,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   `Client` は `AutoCloseable` であり、不要になったらクローズしてください。
 
+  <a id="authentication" />
   ### 認証
 
   認証は初期化フェーズでクライアントごとに設定されます。サポートされる認証方式は 3 種類あります：パスワード、アクセストークン、SSL クライアント証明書。
@@ -114,6 +117,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       * 同じ値がデータベースに設定されていることを確認する: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (このクエリを実行すると、`auth_params` に ` {"common_names":["some_user"]}` のような内容が出力されます)
   </Note>
 
+  <a id="connection-pooling" />
   ### 接続プーリング
 
   `Client` は、内部に HTTP接続プールを持つ Apache HttpClient 5 を使用します。各操作ではプールから接続を取得してリクエストを送信し、レスポンスをストリーミングで受信した後、接続をプールに返却します。
@@ -129,6 +133,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | 再利用戦略             | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO`    | 接続プールの割り当て戦略 (`FIFO` または `LIFO`)。           |
   | 接続プーリング           | `enableConnectionPool(boolean enable)`                         | `true`    | HTTP接続プーリングを有効化または無効化します。                   |
 
+  <a id="recommended-connection-pool-configuration" />
   #### 接続プールの推奨設定
 
   ```java showLineNumbers
@@ -143,6 +148,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
           .build();
   ```
 
+  <a id="configuration" />
   ## 設定
 
   すべての設定は、各値のスコープとコンテキストが明確になるように、インスタンスメソッド (別名: 設定メソッド) で定義されています。
@@ -150,6 +156,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   設定はクライアントの作成時に定義されます。`com.clickhouse.client.api.Client.Builder` を参照してください。
 
+  <a id="client-configuration" />
   ## クライアント設定
 
   <Tabs>
@@ -273,6 +280,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   <br />
 
+  <a id="client-identification" />
   ### クライアントの識別
 
   クエリログには、リクエストの送信元アプリケーションを識別する2つのフィールドがあります: `client_name` と `http_user_agent` です。ネイティブTCPプロトコルはアプリケーションの識別に `client_name` を使用し、HTTPプロトコルは `http_user_agent` を使用します。クライアントビルダーには、両プロトコルに対して正しい値を設定するメソッド `setClientName` があります。
@@ -293,6 +301,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   アプリケーションは、自身を識別するために独自の HTTP ヘッダー `User-Agent` を設定できます。ただし、`clickhouse-java-v2/0.9.6-SNAPSHOT` の部分がヘッダーの末尾に追加されます。
 
+  <a id="operation-identification" />
   ### オペレーションの識別
 
   クエリログには、操作の識別やクエリログへの追加情報の付加に使用できる `query_id` と `log_comment` という2つのフィールドがあります。
@@ -311,6 +320,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   querySettings.logComment("some-comment");
   ```
 
+  <a id="server-settings" />
   ### サーバー設定
 
   サーバー側の設定は、クライアントレベルでは作成時に一度設定できます (`Builder` の `serverSetting` メソッドを参照) 。また、オペレーションレベルでも設定できます (オペレーション設定クラスの `serverSetting` を参照) 。
@@ -338,6 +348,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ⚠️ `setOption` メソッド (`Client.Builder` または操作設定クラス) でオプションを設定する場合、サーバー設定名には `clickhouse_setting_` というプレフィックスを付ける必要があります。この場合、`com.clickhouse.client.api.ClientConfigProperties#serverSetting()` を使用すると便利です。
 
+  <a id="custom-http-headers" />
   ### カスタム HTTP ヘッダー
 
   カスタムHTTPヘッダーは、すべての操作 (クライアントレベル) または個別の操作 (オペレーションレベル) に設定できます。操作ごとの設定は、同名の client-level ヘッダーをオーバーライドします。
@@ -366,10 +377,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
   ```
 
+  <a id="clickhouse-cloud-features" />
   ## ClickHouse Cloud の機能
 
   [ClickHouse Cloud](https://clickhouse.com/cloud) に接続する際に適用される機能です。
 
+  <a id="replica-aware-routing" />
   ### レプリカ対応ルーティング (CLOUD)
 
   ClickHouse Cloud では、関連するHTTPリクエストの送信先を同じレプリカに固定できます。`X-ClickHouse-Replica-Tag` ヘッダーを送信すると、Cloud プロキシは同じタグを持つすべてのリクエストを同じレプリカに転送します。一時テーブルなどの session スコープのオブジェクトを使用する場合や、レプリカ内のキャッシュの再利用、書き込み後の読み取り整合性が必要な場合に、この機能を使用してください。
@@ -392,10 +405,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   操作ごとに設定するには、クライアントビルダーではなく、`QuerySettings`、`InsertSettings`、または `CommandSettings` にヘッダーを設定してください。
 
+  <a id="jwt-authentication" />
   ### JWT認証 (CLOUD)
 
   [JWT認証](/ja/concepts/features/security/external-authenticators/jwt)を使用すると、ClickHouse Cloud で JSON Web Token (JWT) によるユーザー認証を行えます。ClickHouse は、既存のデータベースユーザーを使用する代わりに、各トークンに含まれるクレームに基づいて**一時ユーザー**を動的に作成します。
 
+  <a id="initial-configuration" />
   #### 初期設定
 
   クライアントで初期の JWT認証を設定するには、`Client` インスタンスの構築時に `useBearerTokenAuth(token)` を使用します (`Bearer_` プレフィックスは自動的に付加されます。
@@ -416,6 +431,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     `useBearerTokenAuth(token)` は、`Authorization` HTTP ヘッダーに `Bearer ` プレフィックスを自動的に付加します。
   </Note>
 
+  <a id="updating-token-at-runtime" />
   #### 実行時のトークンの更新
 
   JWT は有効期間が短く、一時ユーザーはトークンの存続期間中しか存在しないため、操作が失敗しないよう、現在のトークンの有効期限が切れる**前に**新しい JWT トークンを設定してください。
@@ -433,8 +449,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   以降、この `Client` インスタンスでのすべてのリクエストには、更新された JWT トークンが使用されます。
 
+  <a id="common-definitions" />
   ## 共通の定義
 
+  <a id="clickhouseformat" />
   ### ClickHouseFormat
 
   [対応フォーマット](/ja/reference/formats/index)のenumです。ClickHouseがサポートするすべてのフォーマットを含みます。
@@ -529,8 +547,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | [Markdown](/ja/reference/formats/Markdown)                                                                          |   -  |  raw |
   | [Form](/ja/reference/formats/Form)                                                                                  |  raw |   -  |
 
+  <a id="insert-api" />
   ## Insert API
 
+  <a id="insertstring-tablename-inputstream-data-clickhouseformat-format" />
   ### insert(String tableName, InputStream data, ClickHouseFormat format)
 
   指定されたフォーマットのバイト列を `InputStream` として受け取ります。`data` は `format` でエンコードされていることが前提です。
@@ -572,6 +592,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ```
 
+  <a id="insertstring-tablename-listlt-data-insertsettings-settings" />
   ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
 
   データベースへ書き込みリクエストを送信します。オブジェクトのリストは効率的なフォーマットに変換され、サーバーに送信されます。リスト要素のクラスは、`register(Class, TableSchema)` メソッドを使用して事前に登録しておく必要があります。
@@ -608,6 +629,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
+  <a id="insertsettings" />
   ### InsertSettings
 
   挿入操作の設定オプション。
@@ -627,6 +649,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                           |
   | `setOption(String option, Object value)`        | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                |
 
+  <a id="insertresponse" />
   ### InsertResponse
 
   insertオペレーションの結果を保持するレスポンスオブジェクトです。クライアントがサーバーからレスポンスを受け取った場合にのみ使用できます。
@@ -640,6 +663,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `OperationMetrics getMetrics()` | 操作のメトリクスを含むオブジェクトを返します。                                |
   | `String getQueryId()`           | アプリケーション (操作設定またはサーバー経由) によってこの操作に割り当てられたクエリ ID を返します。 |
 
+  <a id="query-api" />
   ## クエリ API
 
   **フォーマットの選択**
@@ -659,6 +683,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * クライアントの `0.11.0` 以降では、`format` のデフォルト値は操作レベルではなくクライアントレベルで設定されます。これにより、既存のコードは
     変更せずに動作し、新しいコードではクライアントの `format` を `null` に設定することで `FORMAT` 句を使用できます。
 
+  <a id="querystring-sqlquery" />
   ### query(String sqlQuery)
 
   `sqlQuery` をそのまま送信します。レスポンスのフォーマットはクエリの設定によって決まります。`QueryResponse` はレスポンスストリームへの参照を保持し、対応するフォーマットのリーダーによって読み取られる必要があります。
@@ -708,6 +733,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   // put business logic outside of the reading block to release http connection asap.
   ```
 
+  <a id="querystring-sqlquery-mapltstring-object-queryparams-querysettings-settings" />
   ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
 
   `sqlQuery` をそのまま送信します。また、サーバーがSQL式をコンパイルできるように、クエリパラメータも送信します。
@@ -756,6 +782,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ```
 
+  <a id="queryallstring-sqlquery" />
   ### queryAll(String sqlQuery)
 
   `RowBinaryWithNamesAndTypes` フォーマットでデータをクエリします。結果をコレクションとして返します。読み取りパフォーマンスはリーダーと同等ですが、データセット全体を保持するためにより多くのメモリが必要になります。
@@ -794,6 +821,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
+  <a id="querysettings" />
   ### QuerySettings
 
   クエリ操作の設定オプション。
@@ -816,6 +844,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                  | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                                                                   |
   | `setOption(String option, Object value)`          | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                                                        |
 
+  <a id="queryresponse" />
   ### QueryResponse
 
   クエリ実行の結果を保持するレスポンスオブジェクトです。クライアントがサーバーからレスポンスを受け取った場合にのみ使用できます。
@@ -832,13 +861,16 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `String getQueryId()`           | アプリケーションによってその操作に割り当てられたクエリ ID を返します (操作設定または server により割り当て) 。 |
   | `TimeZone getTimeZone()`        | レスポンス内の Date/DateTime types を処理する際に使用するタイムゾーンを返します。             |
 
+  <a id="examples" />
   ### 例
 
   * サンプルコードは[リポジトリ](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)で公開されています
   * Spring Service のリファレンス [実装](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service)
 
+  <a id="common-api" />
   ## 共通API
 
+  <a id="gettableschemastring-table" />
   ### getTableSchema(String table)
 
   `table` のテーブルスキーマを取得します。
@@ -860,6 +892,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   テーブルのカラム一覧を含む `TableSchema` オブジェクトを返します。
 
+  <a id="gettableschemafromquerystring-sql" />
   ### getTableSchemaFromQuery(String sql)
 
   SQLステートメントからスキーマを取得します。
@@ -878,8 +911,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   `sql` 式に対応するカラムを含む `TableSchema` オブジェクトを返します。
 
+  <a id="tableschema" />
   ### TableSchema
 
+  <a id="registerclasslt-clazz-tableschema-schema" />
   ### register(Class&lt;?&gt; clazz, TableSchema schema)
 
   `schema` を使用してデータの書き込み・読み込みを行う Java クラス向けに、シリアライゼーションおよびデシリアライゼーションのレイヤーをコンパイルします。このメソッドは、getter/setter のペアと対応するカラムに対して、シリアライザーとデシリアライザーを生成します。
@@ -903,6 +938,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
   ```
 
+  <a id="usage-examples" />
   ## 使用例
 
   完全なサンプルコードは、リポジトリの &#39;example&#96; [フォルダ](https://github.com/ClickHouse/clickhouse-java/tree/main/examples) に保存されています：
@@ -911,6 +947,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) - Spring Boot アプリケーションでクライアントを使用する方法を示す例。
   * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) - Ktor (Kotlin) アプリケーションでクライアントを使用する方法を示す例。
 
+  <a id="reading-data" />
   ## データの読み取り
 
   データを読み取る一般的な方法は2つあります。
@@ -923,6 +960,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **注意:** ストリーミング方式では、データがネットワークストリームから直接読み取られるため、読み取りが遅いとサーバーの書き込みタイムアウトが発生する可能性があります。十分な読み取り速度を確保してください。
 
+  <a id="reading-arrays" />
   ### 配列の読み取り
 
   **`ClickHouseBinaryFormatReader` のメソッド**
@@ -975,12 +1013,14 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
+  <a id="v2-o11y" />
   ## オブザーバビリティと監視
 
   ClickHouse Java クライアント (V2) は、OpenTelemetry のセマンティック規約と Micrometer メトリクスに基づいて設計された、組み込みのオブザーバビリティ機能を提供します。このクライアントでは、操作の所要時間、スループット、再試行、サーバーの実行統計、接続プールのステータス、および分散トレーシングのスパンを監視できます。
 
   クライアント V2 の設定、コネクションプーリング、`@Async` の境界をまたぐトレースコンテキストの伝播、テレメトリーとの完全なインテグレーションを実装した、本番環境を想定した Spring Boot アプリケーションの完全な例については、このリポジトリの `examples/demo-spring-service` モジュールを参照してください。
 
+  <a id="v2-o11y-builder-api" />
   ### Client Builder のオブザーバビリティ API
 
   `Client.Builder` には、オブザーバビリティとメトリクス収集を設定するための主要なメソッドが3つ用意されています：
@@ -1038,8 +1078,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
+  <a id="v2-o11y-metrics" />
   ### 報告されるメトリクス
 
+  <a id="operational-metrics" />
   #### オペレーションメトリクス
 
   `MetricsRecorder` 経由でエクスポートされたメトリクスは、データベースクライアントメトリクスに関する OpenTelemetry のセマンティック規約 (`MetricName` および `MetricAttribute`) に準拠します:
@@ -1051,6 +1093,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `clickhouse.client.operation.count`                  | カウンター (`{operation}`) | 完了したクライアント操作の総数。結果別に集計されます。                                 |
   | `clickhouse.client.operation.retries`                | カウンター (`{retry}`)     | クライアント操作全体での再試行回数。                                          |
 
+  <a id="metric-attributes-tags" />
   #### メトリクスの属性 / タグ
 
   `MicrometerMetricsRecorder` によって作成されるメーターには、低カーディナリティのタグ (`MetricAttribute`) が付与されます:
@@ -1064,6 +1107,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `db.response.status_code` | 失敗時にClickHouseサーバーが返すエラーコード。 | `60`                                        |
   | `error.type`              | 失敗時は例外クラス名、成功時は `none`。      | `com.clickhouse.client.api.ServerException` |
 
+  <a id="connection-pool-metrics" />
   #### コネクションプールのメトリクス
 
   `registerClientMetrics(meterRegistry, "groupName")` を呼び出すと、HTTP接続プールの Gauge が Micrometer に登録されます:
@@ -1074,6 +1118,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * `httpcomponents.httpclient.pool.route.max.default`: 設定済みのルートごとのデフォルト最大接続数。
   * `httpcomponents.httpclient.connect.time`: 接続確立時間の移動平均。
 
+  <a id="response-metrics-api" />
   #### レスポンスメトリクス API
 
   メトリクスレコーダーに加えて、レスポンスオブジェクト (`QueryResponse`、`InsertResponse`) からも `OperationMetrics` を介して詳細な実行統計に直接アクセスできます。
@@ -1095,6 +1140,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
+  <a id="v2-o11y-spans" />
   ### 送信されるスパン
 
   Client V2 のトレーシングでは、親子の階層構造を持つ 2 種類のスパンが生成されます。
@@ -1102,6 +1148,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   1. **Operation Span**: 高レベルのクライアント操作 (`QUERY <database>` または `INSERT <database>.<table_name>`) を表します。現在のスレッドのトレースコンテキスト (`Context.current()`) 配下で開始されるため、データベース操作は呼び出し元の有効なトレーススパンに紐付けられます。
   2. **Transport Request Span**: 個々の HTTP トランスポートリクエストの試行 (`POST`) を表します。対応する操作スパンの子として作成されます。再試行のたびに、操作スパンの配下に新しいトランスポートリクエストスパンが作成されます。
 
+  <a id="v2-o11y-span-attributes" />
   #### スパンの属性
 
   スパンには標準の OpenTelemetry 属性 (`SpanAttribute`) が設定されます:
@@ -1147,6 +1194,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     ```
   </Note>
 
+  <a id="v2-o11y-custom-recorders" />
   ### カスタムレコーダーの開発
 
   独自のオブザーバビリティバックエンドを使用するアプリケーションでは、`DefaultMetricsRecorder` (メトリクス用) または `DefaultSpanRecorder` (トレーシング用) を拡張することで、カスタムレコーダーを実装できます。
@@ -1159,6 +1207,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (OpenTelemetry トレーシングとのインテグレーション)
   * `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (Micrometer メトリクスとのインテグレーション)
 
+  <a id="migration_guide" />
   ## 移行ガイド
 
   旧クライアント (V1) では`com.clickhouse.client.ClickHouseClient#builder`を起点として使用していました。新クライアント (V2) では`com.clickhouse.client.api.Client.Builder`を用いた同様のパターンを採用しています。主な相違点は以下のとおりです：
@@ -1366,12 +1415,14 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
+  <a id="general-differences" />
   ### 主な相違点
 
   * Client V2 は、移植性を高めるために独自クラスへの依存を減らしています。たとえば、V2 では、サーバーにデータを書き込む際に `java.io.InputStream` の任意の実装を利用できます。
   * Client V2 の `async` 設定は、デフォルトで `off` です。これは、余分なスレッドが作成されず、クライアントをアプリケーション側でより細かく制御できることを意味します。この設定は、ほとんどのユースケースで `off` のままにしておくべきです。`async` を有効にすると、リクエストごとに別スレッドが作成されます。これは、アプリケーション側で制御する
     executor を使用する場合にのみ意味があります (`com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor` を参照)
 
+  <a id="writing-data" />
   ### データの書き込み
 
   * `java.io.InputStream` の任意の実装を使用できます。V1 の `com.clickhouse.data.ClickHouseInputStream` もサポートされていますが、推奨はされていません。
@@ -1424,6 +1475,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * 新しい低レベルAPI `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)` が利用できます。`com.clickhouse.client.api.DataStreamWriter` は、カスタムのデータ書き込みロジックを実装できるように設計されています。たとえば、キューからデータを読み取る
     ケースです。
 
+  <a id="reading-data-2" />
   ### データの読み取り
 
   * デフォルトでは、データは`RowBinaryWithNamesAndTypes`フォーマットで読み込まれます。現時点で、データのバインディングが必要な場合に対応しているのはこのフォーマットのみです。
@@ -1449,6 +1501,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     このライブラリはまもなく非推奨となります。新規プロジェクトでは、最新の [Java クライアント](/ja/integrations/language-clients/java/client) を使用してください
   </Warning>
 
+  <a id="v1-setup" />
   ## Setup
 
   <Tabs>
@@ -1507,6 +1560,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
+  <a id="v1-initialization" />
   ## 初期化
 
   接続 URL の形式: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`、例:
@@ -1528,6 +1582,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
       + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
   ```
 
+  <a id="v1-query-api" />
   ## クエリ API
 
   ```java showLineNumbers
@@ -1542,6 +1597,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   }
   ```
 
+  <a id="v1-streaming-query-api" />
   ## ストリーミングクエリAPI
 
   ```java showLineNumbers
@@ -1562,6 +1618,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   [リポジトリ](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client)内の[完全なコード例](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73)を参照してください。
 
+  <a id="v1-insert-api" />
   ## Insert API
 
   ```java showLineNumbers
@@ -1585,8 +1642,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   [コード](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622)の例を参照してください。
 
+  <a id="v1-features" />
   ## 機能
 
+  <a id="v1-compression" />
   ### 圧縮
 
   クライアントはデフォルトで LZ4 圧縮を使用します。これには次の依存関係が必要です。
@@ -1634,6 +1693,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   さまざまな圧縮オプションの詳細については、[圧縮ドキュメント](/ja/guides/clickhouse/data-modelling/compression/compression-modes)を参照してください。
 
+  <a id="v1-multiple-queries" />
   ### 複数のクエリ
 
   同一セッション内でワーカースレッドを使用して複数のクエリを順番に実行する:
@@ -1650,6 +1710,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   List<ClickHouseResponseSummary> results = future.get();
   ```
 
+  <a id="v1-named-parameters" />
   ### 名前付きパラメータ
 
   パラメータリスト内の位置に依存せず、名前でパラメータを渡すことができます。この機能は `params` 関数を使用して利用できます。
@@ -1702,6 +1763,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     `Integer`、`UUID`、`Array`、`Enum` などの他の型も、`params` 内で自動的に変換されます。
   </Info>
 
+  <a id="v1-node-discovery" />
   ## ノードディスカバリー
 
   Java クライアントには、ClickHouse ノードを自動的に検出する機能があります。自動検出はデフォルトで無効です。手動で有効にするには、`auto_discovery` を `true` に設定します。
@@ -1726,6 +1788,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | node&#95;discovery&#95;interval | `0`     | ノード検出の間隔 (ミリ秒) 。0 以下の値は一回限りの検出を意味します。                           |
   | node&#95;discovery&#95;limit    | `100`   | 一度に検出可能なノードの最大数。値が0以下の場合は、制限なしを意味します。                           |
 
+  <a id="v1-load-balancing" />
   ### 負荷分散
 
   Java クライアントは、ロードバランシングポリシーに従って、リクエストの送信先となる ClickHouse ノードを選択します。一般に、ロードバランシングポリシーは次の役割を担います。
@@ -1745,6 +1808,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | node&#95;check&#95;interval   | `0`                                      | ノードチェックの間隔をミリ秒単位で指定します。負の値は 0 として扱われます。前回のチェックから指定した時間が経過している場合に、そのノードの status がチェックされます。<br />`health_check_interval` と `node_check_interval` の違いは、`health_check_interval` オプションはノードのリスト (すべてまたは障害のあるノード) の status をチェックするバックグラウンドジョブをスケジュールするのに対し、`node_check_interval` は特定のノードについて前回のチェックからどれだけ時間が経過している必要があるかを指定する点です |
   | check&#95;all&#95;nodes       | `false`                                  | ヘルスチェックの対象をすべてのノードにするか、障害のあるノードのみにするか。                                                                                                                                                                                                                                                                                    |
 
+  <a id="v1-failover-and-retry" />
   ### フェイルオーバーと再試行
 
   Java クライアントは、失敗したクエリに対するフェイルオーバーと再試行の動作を設定するための設定オプションを提供します。
@@ -1755,6 +1819,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | retry                              | `0`    | リクエストに対して再試行を実行できる最大回数です。ゼロまたは負の値は、再試行しないことを意味します。再試行では、ClickHouse server が `NETWORK_ERROR` エラーコードを返した場合にのみ、リクエストが同じノードに送信されます                                 |
   | repeat&#95;on&#95;session&#95;lock | `true` | セッションがロックされている場合に、タイムアウトするまで (`session_timeout` または `connect_timeout` に従って) 実行を繰り返すかどうか。ClickHouse server が `SESSION_IS_LOCKED` エラーコードを返した場合、失敗したリクエストが再実行されます |
 
+  <a id="v1-adding-custom-http-headers" />
   ### カスタムHTTPヘッダーを追加する
 
   HTTP トランスポートでは、`custom_http_headers` プロパティ (`ClickHouseHttpOption.CUSTOM_HEADERS`) を使用して追加のリクエストヘッダーを指定できます。各ヘッダーは `Name=Value` の形式で指定します。複数のヘッダーはカンマで区切ります。値の中のカンマは `\,` としてエスケープしてください。値の中の `=` は値の一部としてそのまま保持されます。
@@ -1782,10 +1847,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
           .executeAndWait();
   ```
 
+  <a id="v1-clickhouse-cloud-features" />
   ## ClickHouse Cloud の機能
 
   [ClickHouse Cloud](https://clickhouse.com/cloud) に接続する際に適用される機能です。
 
+  <a id="v1-replica-aware-routing" />
   ### レプリカ対応ルーティング (CLOUD)
 
   ClickHouse Cloud では、関連する HTTPリクエストを同じレプリカに固定できます。`X-ClickHouse-Replica-Tag` ヘッダーを送信すると、Cloud のプロキシが同じタグを持つすべてのリクエストを 1 つのレプリカに振り分けます。一時テーブルなどの session スコープのオブジェクトを扱う場合や、レプリカローカルなキャッシュの再利用、書き込み後の読み取り整合性が必要な場合に利用してください。

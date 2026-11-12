@@ -153,6 +153,7 @@ A autenticação por conta de serviço é necessária ao usar o [modo não orden
 
 Siga o [guia de identidade de carga de trabalho do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter a service account gerenciada no contexto do serviço ClickPipes. Conceda a ela a função `roles/storage.objectViewer` no bucket de origem e crie o pipe com a autenticação `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Para ingestão no modo unordered, conceda também `roles/pubsub.subscriber` e `roles/pubsub.viewer` na assinatura de notificação existente e use o nome totalmente qualificado dela: `projects/<project-id>/subscriptions/<subscription-id>`.
 
+<a id="hmac-credentials" />
 #### Credenciais HMAC
 
 Para usar [chaves HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) na autenticação, escolha `Credentials` em **Método de autenticação** ao configurar a conexão do ClickPipe. Em seguida, informe a chave de acesso (por exemplo, `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) e a chave secreta (por exemplo, `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) nos campos `Access key` e `Secret key`, respectivamente.
@@ -174,6 +175,7 @@ Os ClickPipes do GCS usam dois caminhos de rede distintos para a descoberta de m
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
+<a id="advanced-settings" />
 ## Configurações avançadas
 
 O ClickPipes vem com configurações padrão adequadas para a maioria dos casos de uso. Se o seu caso de uso exigir um ajuste mais fino, você poderá ajustar as seguintes configurações:

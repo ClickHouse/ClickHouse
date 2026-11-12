@@ -83,12 +83,14 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   ### Autenticação
 </div>
 
+<a id="service-account-credentials" />
 #### Credenciais da conta de serviço
 
 O ClickPipes se autentica no seu projeto do Google Cloud usando uma [chave de conta de serviço](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos criar uma conta de serviço dedicada com o conjunto mínimo de [permissões](#permissions) necessárias para permitir que o ClickPipes exporte dados do BigQuery, carregue-os no bucket de staging do GCS e os leia no ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Criando uma chave de conta de serviço com permissões do BigQuery e do Cloud Storage" size="lg" border />
 
+<a id="gcp-workload-identity" />
 #### Workload Identity do GCP (Beta)
 
 Siga o [guia de Workload Identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter a service account gerenciada no contexto do serviço ClickPipes. Conceda a ela as [Funções do BigQuery e do GCS](#permissions) listadas abaixo e crie o pipe com a autenticação `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Não forneça credenciais de service account ao usar este método de autenticação.
@@ -97,6 +99,7 @@ Siga o [guia de Workload Identity do GCP](/pt-BR/integrations/clickpipes/securit
   ### Permissões
 </div>
 
+<a id="bigquery" />
 #### BigQuery
 
 A service account usada pelo ClickPipes, seja fornecida por você ou gerenciada por meio de Workload Identity, precisa destas funções do BigQuery:

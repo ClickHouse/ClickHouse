@@ -272,6 +272,7 @@ scrape_configs:
 
 Ниже приведены инструкции по использованию этих вариантов с акцентом на детали, относящиеся именно к конечной точке Prometheus ClickHouse Cloud.
 
+<a id="grafana-cloud-with-metrics-endpoint" />
 ### Grafana Cloud с конечной точкой метрик
 
 * Войдите в свою учетную запись Grafana Cloud
@@ -291,6 +292,7 @@ scrape_configs:
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Диаграмма в обозревателе метрик Grafana" border />
 
+<a id="grafana-cloud-with-alloy" />
 ### Grafana Cloud с Alloy
 
 Если вы используете Grafana Cloud, Alloy можно установить, открыв меню Alloy в Grafana и следуя инструкциям на экране:
@@ -342,6 +344,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Обратите внимание: чтобы метка `instance` заполнялась корректно, параметр конфигурации `honor_labels` должен быть установлен в `true`.
 
+<a id="grafana-self-managed-with-alloy" />
 ### Самоуправляемая Grafana с Alloy
 
 Пользователи самоуправляемой версии Grafana могут найти инструкции по установке агента Alloy [здесь](https://grafana.com/docs/alloy/latest/get-started/install/). Мы исходим из того, что Alloy уже настроен на отправку метрик Prometheus в нужный пункт назначения. Приведённый ниже компонент `prometheus.scrape` заставляет Alloy опрашивать конечную точку ClickHouse Cloud. Мы также предполагаем, что `prometheus.remote_write` принимает собранные метрики. Если `forward_to key` отсутствует, укажите в нём целевой пункт назначения.
@@ -380,6 +383,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Обратите внимание: для корректного заполнения метки instance параметру конфигурации `honor_labels` нужно задать значение `true`.
 
+<a id="integrating-with-datadog" />
 ## Интеграция с Datadog
 
 Вы можете использовать [агент Datadog](https://docs.datadoghq.com/agent/?tab=Linux) и [интеграцию OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) для сбора метрик с конечной точки ClickHouse Cloud. Ниже приведен простой пример конфигурации для этого агента и интеграции. Однако обратите внимание: возможно, стоит выбрать только те метрики, которые для вас наиболее важны. Приведенный ниже универсальный пример будет экспортировать многие тысячи комбинаций метрик и экземпляров, которые Datadog будет считать пользовательскими метриками.
@@ -400,6 +404,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Интеграция Prometheus с Datadog" />
 
+<a id="related" />
 ## Связанные страницы
 
 * [Обзор мониторинга](/ru/products/cloud/features/monitoring/overview) — Сравните все подходы к мониторингу в ClickHouse Cloud

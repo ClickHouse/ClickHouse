@@ -270,6 +270,7 @@ Os usuários têm duas maneiras principais de se integrar ao Grafana:
 
 Fornecemos abaixo instruções para usar essas opções, com foco nos detalhes específicos do endpoint Prometheus do ClickHouse Cloud.
 
+<a id="grafana-cloud-with-metrics-endpoint" />
 ### Grafana Cloud com endpoint de métricas
 
 * Faça login na sua conta do Grafana Cloud
@@ -289,6 +290,7 @@ Depois de concluir a configuração, as métricas deverão aparecer no menu susp
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Gráfico do Explorador de Métricas do Grafana" border />
 
+<a id="grafana-cloud-with-alloy" />
 ### Grafana Cloud com Alloy
 
 Se você estiver usando o Grafana Cloud, o Alloy pode ser instalado acessando o menu Alloy no Grafana e seguindo as instruções na tela:
@@ -340,6 +342,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Observe que o parâmetro de configuração `honor_labels` precisa ser definido como `true` para que o rótulo da instância seja preenchido corretamente.
 
+<a id="grafana-self-managed-with-alloy" />
 ### Grafana autogerenciado com Alloy
 
 Usuários do Grafana autogerenciado podem encontrar as instruções para instalar o agente Alloy [aqui](https://grafana.com/docs/alloy/latest/get-started/install/). Presumimos que os usuários já tenham configurado o Alloy para enviar métricas do Prometheus ao destino desejado. O componente `prometheus.scrape` abaixo faz o Alloy coletar métricas do endpoint do ClickHouse Cloud. Presumimos que `prometheus.remote_write` receba as métricas coletadas. Ajuste a `forward_to key` para o destino de envio desejado, caso ela não exista.
@@ -378,6 +381,7 @@ Depois de configurar, você deverá ver as métricas relacionadas ao ClickHouse 
 
 Observe que o parâmetro de configuração `honor_labels` precisa ser definido como `true` para que o rótulo da instância seja preenchido corretamente.
 
+<a id="integrating-with-datadog" />
 ## Integração com o Datadog
 
 Você pode usar o [Agent](https://docs.datadoghq.com/agent/?tab=Linux) e a [integração OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) do Datadog para coletar métricas do endpoint do ClickHouse Cloud. Abaixo está um exemplo simples de configuração desse agente e dessa integração. Observe, porém, que talvez você queira selecionar apenas as métricas mais importantes para você. O exemplo genérico abaixo exportará muitos milhares de combinações de métrica-instância, que o Datadog tratará como métricas personalizadas.
@@ -398,6 +402,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Integração do Prometheus com o Datadog" />
 
+<a id="related" />
 ## Páginas relacionadas
 
 * [Visão geral do monitoramento](/pt-BR/products/cloud/features/monitoring/overview) — Compare todas as abordagens de monitoramento do ClickHouse Cloud

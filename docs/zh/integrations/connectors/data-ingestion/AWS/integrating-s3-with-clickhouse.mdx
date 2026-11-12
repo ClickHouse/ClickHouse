@@ -702,6 +702,7 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 借助 `ReplicatedMergeTree` 表引擎，可在使用 S3 磁盘时实现复制。详情请参阅[使用 S3 对象存储跨两个 AWS 区域复制单个分片](#s3-multi-region)指南。
 
+<a id="read--writes" />
 ### 读写
 
 以下说明介绍了 ClickHouse 与 S3 交互的实现方式。虽然通常只是补充信息，但在[性能优化](#s3-optimizing-performance)时，可能会对读者有所帮助：
@@ -783,6 +784,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
+<a id="testing" />
 ### 测试
 
 1. 使用 ClickHouse 客户端登录，如下所示
@@ -1168,6 +1170,7 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
+<a id="verify-clickhouse-server" />
 #### 验证 ClickHouse 服务器
 
 添加[集群配置](#define-a-cluster)时，系统定义了一个单分片集群，并在两个 ClickHouse 节点之间进行复制。在此验证步骤中，你将检查 ClickHouse 启动时是否已构建该集群，并使用该集群创建一个复制表。
@@ -1239,6 +1242,7 @@ sudo service clickhouse-server start
   你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path)。
 </Note>
 
+<a id="testing-1" />
 ### 测试
 
 这些测试将验证数据是否已在两台服务器之间复制，以及数据是否存储在 S3 存储桶中而非本地磁盘。

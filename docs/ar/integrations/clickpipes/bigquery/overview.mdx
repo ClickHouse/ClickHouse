@@ -83,12 +83,14 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   ### المصادقة
 </div>
 
+<a id="service-account-credentials" />
 #### بيانات اعتماد حساب الخدمة
 
 يُجري ClickPipes المصادقة على مشروعك في Google Cloud باستخدام [مفتاح حساب الخدمة](https://docs.cloud.google.com/iam/docs/keys-create-delete). نوصي بإنشاء حساب الخدمة مخصّص بأقل مجموعة مطلوبة من [الأذونات](#permissions) للسماح لـ ClickPipes بتصدير البيانات من BigQuery، وتحميلها إلى حاوية GCS مرحلية، ثم قراءتها إلى ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="إنشاء مفتاح حساب خدمة بأذونات BigQuery وCloud Storage" size="lg" border />
 
+<a id="gcp-workload-identity" />
 #### Workload Identity في GCP (تجريبي)
 
 اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب [أدوار BigQuery وGCS](#permissions) الموضحة أدناه، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. لا تقدّم بيانات اعتماد حساب الخدمة عند استخدام طريقة المصادقة هذه.
@@ -97,6 +99,7 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   ### الأذونات
 </div>
 
+<a id="bigquery" />
 #### BigQuery
 
 يحتاج حساب الخدمة الذي تستخدمه ClickPipes، سواء قدّمته بنفسك أو كان مُدارًا عبر Workload Identity، إلى أدوار BigQuery التالية:
