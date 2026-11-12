@@ -134,33 +134,33 @@ struct BufferWriteIdentity
     String quota_key;
     /// The originating client addresses: a downstream `Distributed` destination over a cluster secret
     /// authenticates `initial_user` against `initial_address` on the remote, and IP-keyed quotas are billed
-    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`.
+    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`. Restored but not
+    /// batch keys (see hasSameFlushIdentity): a background/asynchronous flush does not carry them.
     std::optional<Poco::Net::SocketAddress> current_address;
     std::optional<Poco::Net::SocketAddress> initial_address;
     /// Quota bucket selectors for `KEYED BY forwarded_ip_address` / `KEYED BY normalized_query_hash`; without
-    /// them the flush would bill an empty forwarded address and hash 0 from the buffer context. `forwarded_for`
-    /// is a batch key below, but `normalized_query_hash` is not: it varies per INSERT statement, and a `Buffer`
-    /// accumulates many statements per connection, so batching by it would flush the shard on every
-    /// differently-shaped INSERT. It is only restored, best-effort, so the batch bills its first statement.
+    /// them the flush would bill an empty forwarded address and hash 0 from the buffer context. Both are
+    /// restored best-effort but are not batch keys (see hasSameFlushIdentity), so a batch bills its first row's
+    /// selector.
     String forwarded_for;
     UInt64 normalized_query_hash = 0;
 
-    /// Two identities may share a buffer shard only when the flush would replay them identically. The whole
-    /// identity is restored onto the nested insert, so beyond the access-control fields (user, roles, grants)
-    /// a difference in the authentication deadline, the client names, the quota key, the client addresses or
-    /// the forwarded address changes the expiry check, the written values (e.g. `currentUser()`), interserver
-    /// authentication or quota attribution. The normalized query hash is deliberately excluded (see above): it
-    /// varies per statement, so batching by it would defeat the `Buffer`. A shard is flushed before it accepts
-    /// a different identity; with several shards the sink routes different identities to different shards
-    /// instead, so this rarely forces a flush.
+    /// Two rows may share a buffer shard only when the flush would authorize and attribute them identically.
+    /// The comparison covers the user-identity fields that are stable however the rows arrive: the
+    /// access-control fields (user, roles, grants), the authentication deadline (the expiry check), the client
+    /// user names (`currentUser()` and triggered views) and the quota key. The client addresses, the forwarded
+    /// address and the normalized query hash are restored onto the flush but are not compared: a background or
+    /// asynchronous flush does not carry the originating connection's addresses (it runs with empty ones) and
+    /// the hash varies per statement, so comparing them would flush the shard whenever the same user's rows
+    /// arrive through a different path - including the async-insert path, which would surface the flush error
+    /// there. A shard is flushed before it accepts a different identity; with several shards the sink routes
+    /// different identities to different shards instead, so this rarely forces a flush.
     bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
     {
         if (std::tie(user_id, current_roles, external_roles, authentication_valid_until,
-                     current_user, initial_user, authenticated_user, quota_key, current_address, initial_address,
-                     forwarded_for)
+                     current_user, initial_user, authenticated_user, quota_key)
             != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until,
-                        other.current_user, other.initial_user, other.authenticated_user, other.quota_key, other.current_address, other.initial_address,
-                        other.forwarded_for))
+                        other.current_user, other.initial_user, other.authenticated_user, other.quota_key))
             return false;
 
         /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
