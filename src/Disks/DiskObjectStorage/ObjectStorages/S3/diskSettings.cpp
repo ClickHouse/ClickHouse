@@ -77,6 +77,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -176,6 +177,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     client_configuration.google_adc_client_id = auth_settings[S3AuthSetting::google_adc_client_id];
     client_configuration.google_adc_client_secret = auth_settings[S3AuthSetting::google_adc_client_secret];
     client_configuration.google_adc_refresh_token = auth_settings[S3AuthSetting::google_adc_refresh_token];
+    client_configuration.google_service_account_key = auth_settings[S3AuthSetting::google_service_account_key];
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
@@ -211,6 +213,19 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     /// server credentials. Server disks may; user dynamic S3 disks are handled earlier in getDiskConfigurationFromAST.
     credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
 
+    /// A Google credential counts as explicit below only when the query, a named collection or a BigLake catalog supplied
+    /// it (see `S3AuthSettings::google_credentials_explicit`). One merged from the server `<s3>`/endpoint config, e.g.
+    /// kept by a table created with `s3_allow_server_credentials_in_user_queries = 1` or merged in again when the client
+    /// is rebuilt, is the server's: drop it, so that the `gcp_oauth` client is refused below as one asking for the
+    /// server's credentials.
+    if (credentials_configuration.forbid_implicit_credentials && !auth_settings.google_credentials_explicit)
+    {
+        client_configuration.google_adc_client_id.clear();
+        client_configuration.google_adc_client_secret.clear();
+        client_configuration.google_adc_refresh_token.clear();
+        client_configuration.google_service_account_key.clear();
+    }
+
     /// On metadata load, downgrade a now-restricted definition to anonymous (if allowed by the server setting)
     /// so the server starts with the table inaccessible instead of aborting. Also drop a `gcp_oauth` http client
     /// without an explicit ADC triple, else the downgrade would still mint a token with the server's GCP identity.
@@ -225,9 +240,10 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     {
         credentials_configuration.anonymous_fallback_for_server_credentials = true;
 
-        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
+        const bool has_explicit_gcp_adc = (!client_configuration.google_adc_client_id.empty()
             && !client_configuration.google_adc_client_secret.empty()
-            && !client_configuration.google_adc_refresh_token.empty();
+            && !client_configuration.google_adc_refresh_token.empty())
+            || !client_configuration.google_service_account_key.empty();
         if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
             client_configuration.http_client.clear();
     }
@@ -285,7 +301,14 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         }
     }
 
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
+
+    /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
+    if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
+    {
+        HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
+        context->getHTTPHeaderFilter().checkHeaders(gcp_oauth_headers);
+    }
 
     auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
 

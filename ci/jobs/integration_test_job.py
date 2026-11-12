@@ -5,18 +5,28 @@ import shlex
 import subprocess
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
-from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.bugfix_validation import (
+    bugfix_build_types,
+    download_master_builds,
+    find_master_builds,
+)
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
+from ci.jobs.scripts.find_tests import GitHubUnavailableError, Targeting
+from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExporter
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
-    force_heavy_modules_sequential,
+    PER_TEST_COVERAGE_KEEP_PREFIXES,
+    PER_TEST_COVERAGE_SKIP_PREFIXES,
+    force_exclusive_modules_sequential,
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika.cidb import CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -25,12 +35,15 @@ repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
 # Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
-# rather than imported so this script does not depend on the test helpers' imports;
-# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
+# rather than imported so this script does not depend on the test helpers' imports.
 RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
 
 
 MAX_FAILS_BEFORE_DROP = 5
+# The merge-queue targeted check stops after this many failed tests (fail fast).
+MERGE_QUEUE_MAX_FAILURES = 3
+# The selection sources that are run whatever the coverage ranking (see `protect_selection`).
+MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed", "merge_queue_drift"}
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
 # flaky-check run will execute. A PR can mechanically touch a large number of integration
 # test modules (e.g. a repo-wide lint/format change), and running every one of them
@@ -129,7 +142,7 @@ MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
-# Flaky/targeted checks run with --dist=each, so every worker runs the full set
+# Flaky checks run with --dist=each, so every worker runs the full set
 # of changed modules concurrently (each with its own Docker cluster) instead of
 # splitting modules across workers. A worker's peak footprint is therefore much
 # larger, so it needs a bigger memory budget to avoid exhausting the container
@@ -689,8 +702,7 @@ TIMEOUT_ERROR_PATTERNS = [
 # `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
 # for the rest of the module through no fault of its own. Unlike the substrings below it
 # already carries its own proof, which is why the FAIL path trusts it without further
-# context. Must stay in step with the constant of the same name in the harness - pinned by
-# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
+# context. Must stay in step with the constant of the same name in the harness.
 LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
 
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
@@ -945,6 +957,22 @@ def report_rabbitmq_recreations(result: Result) -> int:
             result.files.append(snapshot)
     print(f"NOTE: RabbitMQ container recreations observed: {count}")
     return count
+
+
+# A targeted job runs one batch of the full suite when the shared integration harness
+# changes: neither coverage nor the owning-module mapping can select tests for it.
+HARNESS_FALLBACK_BATCHES = 8
+
+
+def is_shared_harness_file(fpath: str) -> bool:
+    """Shared integration test infrastructure, e.g. `tests/integration/helpers/cluster.py`,
+    `tests/integration/conftest.py`, `tests/integration/compose/...`."""
+    fpath = fpath.removeprefix("./")
+    return (
+        fpath.startswith("tests/integration/")
+        and not fpath.startswith("tests/integration/test_")
+        and not fpath.endswith(".md")
+    ) or fpath.startswith("ci/docker/integration/")
 
 
 def quote_tests(tests: List[str]) -> str:
@@ -1324,14 +1352,31 @@ def get_parallel_sequential_tests_to_run(
     ]
 
     if "amd_llvm_coverage" in (job_options or ""):
+        skip_prefixes = LLVM_COVERAGE_SKIP_PREFIXES
+        if "per_test_coverage" in (job_options or ""):
+            # The targeted jobs need the per-module coverage of these modules, see
+            # `PER_TEST_COVERAGE_KEEP_PREFIXES`.
+            skip_prefixes = [
+                p for p in skip_prefixes if p not in PER_TEST_COVERAGE_KEEP_PREFIXES
+            ]
         before = len(test_files)
         test_files = [
             f
             for f in test_files
-            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            if not any(f.startswith(prefix) for prefix in skip_prefixes)
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+    if "per_test_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in PER_TEST_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"Per-test coverage: skipped {before - len(test_files)} test files matching PER_TEST_COVERAGE_SKIP_PREFIXES"
         )
 
     assert len(test_files) > 100
@@ -1566,6 +1611,7 @@ def main():
     is_sequential = False
     is_targeted_check = False
     is_llvm_coverage = False
+    is_per_test_coverage = False
     llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout
@@ -1626,21 +1672,44 @@ tar -czf ./ci/tmp/logs.tar.gz \
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
+        elif to == "per_test_coverage":
+            is_per_test_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
+    assert (
+        not is_per_test_coverage or is_llvm_coverage
+    ), "per_test_coverage requires an amd_llvm_coverage* build"
+    if is_targeted_check and info.is_local_run:
+        # Apart from the full `amd_tsan` shards for submodule bumps, the PR workflow has only
+        # targeted integration jobs, so a local run of one (e.g. the `integration` job alias)
+        # runs as a regular job: test selection needs the PR diff and CIDB.
+        is_targeted_check = False
+    is_merge_queue_targeted_check = is_targeted_check and info.is_merge_queue_event
+
+    per_test_coverage_dir = f"{temp_path}/per_test_coverage"
+    cidb_cluster = None
+    if is_per_test_coverage:
+        Shell.check(f"rm -rf {per_test_coverage_dir}", verbose=True)
+        os.makedirs(per_test_coverage_dir)
+        if not info.is_local_run:
+            # Fail before the tests, not after hours of them.
+            os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+            cidb_cluster = CIDBCluster()
+            assert cidb_cluster.is_ready(), "CIDB is not ready for the coverage export"
 
     if args.count:
         repeat_option = f"--count {args.count} --random-order"
-    # For flaky/targeted checks, --count is not used. Instead, --dist=each runs N workers
+    # For flaky checks, --count is not used. Instead, --dist=each runs N workers
     # each executing all modules independently with their own isolated Docker cluster
     # (ClickHouseCluster appends PYTEST_XDIST_WORKER to project_name for isolation).
+    # Targeted checks run every selected test once, like the regular jobs.
 
     # Read the budget here, not at import: `--param` above writes the environment it comes from.
     workers = planned_workers(
         args.workers,
         nested_budget_gb(),
         ncpu,
-        dist_each=is_flaky_check or is_targeted_check,
+        dist_each=is_flaky_check,
     )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
@@ -1732,14 +1801,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
-            for bt, url in build_urls.items():
-                bt_path = bt_paths[bt]
-                if not info.is_local_run or not Path(bt_path).is_file():
-                    print(f"NOTE: Downloading {bt} build to [{bt_path}]")
-                    Shell.run(
-                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                    )
-                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+            download_master_builds(build_urls, bt_paths, info.is_local_run)
         clickhouse_path = f"{temp_path}/clickhouse_{build_types[0]}"
 
     if is_bugfix_validation or is_flaky_check:
@@ -1751,26 +1813,73 @@ tar -czf ./ci/tmp/logs.tar.gz \
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
 
     targeted_tests = []
+    mandatory_test_modules = set()
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+        try:
+            tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+        except (CIDBTimeoutError, GitHubUnavailableError) as ex:
+            # CIDB is overloaded (typically while the coverage export inserts),
+            # or the GitHub API keeps failing.
+            # Skip rather than fail, as the stateless targeted jobs do: an ERROR here
+            # would skip every job that waits for the core blocking jobs. Not cached,
+            # so a rerun or the next commit selects again.
+            if isinstance(ex, CIDBTimeoutError):
+                cause = "test selection timed out in CIDB"
+                comment = "CIDB timeout in test selection, rerun to test"
+            else:
+                cause = "the GitHub API failed during test selection"
+                comment = "GitHub API error in test selection, rerun to test"
+            message = f"Targeted tests were not run: {cause}: {ex}"
+            print(f"WARNING: {message}")
+            info.add_workflow_warning(message)
+            skipped = Result.create_from(
+                status=Result.Status.SKIPPED,
+                info=f"{message}\n{traceback.format_exc()}",
+            )
+            skipped.set_comment(comment)
+            skipped.complete_job(do_not_cache=True)
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
+        # The changed test modules run in every configuration, not only in the flaky
+        # check, and so do the modules of packages whose supporting files changed: the
+        # coverage selector sees only source files.
+        changed_files = info.get_changed_files() or []
+        owning_modules = Targeting.owning_test_modules(changed_files)
+        # The modules that run whatever the coverage ranking: the merge-queue check
+        # reserves part of its time budget for those of them in the sequential phase.
+        mandatory_test_modules = set(changed_test_modules + owning_modules) | {
+            r["test"].split("::")[0]
+            for r in targeter.selection_diagnostics["selected"]
+            if set(r["sources"]) & MANDATORY_SELECTION_SOURCES
+        }
+        tests = changed_test_modules + owning_modules + tests
+        harness_files = [f for f in changed_files if is_shared_harness_file(f)]
+        if harness_files:
+            fallback_parallel, fallback_sequential = get_parallel_sequential_tests_to_run(
+                1, HARNESS_FALLBACK_BATCHES, [], workers, args.options, info
+            )
+            print(
+                f"Shared integration harness changed ({harness_files}): also running batch "
+                f"1/{HARNESS_FALLBACK_BATCHES} of the full suite"
+            )
+            tests += fallback_parallel + fallback_sequential
         if not tests:
             # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
+                info="No changed tests, and no tests found by coverage or previous failures",
             ).complete_job()
 
-        # Parse test names from the query result
-        for test_ in tests:
-            if test_.strip():
-                test_name = test_.strip()
-                targeted_tests.append(
-                    test_name.split("[")[0]
-                )  # remove parametrization - does not work with test repeat with --count
+        # Coverage and changed files select whole modules (`test_x/test.py`), previous
+        # failures select test cases (`test_x/test.py::test_case[param]`). Drop
+        # parametrization and the test cases of selected modules, so that every test runs once.
+        names = [t.strip().split("[")[0] for t in tests if t.strip()]
+        modules = {t for t in names if "::" not in t}
+        targeted_tests = list(
+            dict.fromkeys(t for t in names if "::" not in t or t.split("::")[0] not in modules)
+        )
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
@@ -1790,17 +1899,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
     )
 
     if is_flaky_check or is_targeted_check:
-        # The flaky/targeted parallel bucket runs `--dist=each`: every worker runs
-        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
-        # would start one cluster per worker and OOM small runners, so move them to
-        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
         before = list(parallel_test_modules)
-        parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
-            parallel_test_modules, sequential_test_modules
+        parallel_test_modules, sequential_test_modules = force_exclusive_modules_sequential(
+            parallel_test_modules, sequential_test_modules, dist_each=is_flaky_check
         )
         moved = [m for m in before if m not in parallel_test_modules]
         if moved:
-            print(f"Forced heavy modules to the sequential phase (avoid concurrent --dist=each clusters): {moved}")
+            print(f"Moved to the sequential phase: {moved}")
 
     if is_sequential:
         parallel_test_modules = []
@@ -1826,11 +1931,28 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not args.test
     ):
         changed_files = info.get_changed_files()
-        if changed_files and all(
-            Targeting.is_functional_test_file(f)
-            or Targeting.is_integration_test_file(f)
-            or Targeting.is_ci_job_script(f)
-            for f in changed_files
+        # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
+        # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        is_coverage_replacement_with_ci_script_changes = False
+        if info.pr_number > 0 and any(
+            Targeting.is_ci_job_script(f) for f in changed_files or []
+        ):
+            # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
+            from ci.defs.job_configs import JobConfigs
+
+            is_coverage_replacement_with_ci_script_changes = info.job_name in [
+                j.name for j in JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if (
+            changed_files
+            and not is_coverage_replacement_with_ci_script_changes
+            and all(
+                Targeting.is_functional_test_file(f)
+                or Targeting.is_integration_test_file(f)
+                or Targeting.is_ci_job_script(f)
+                or Targeting.is_documentation_file(f)
+                for f in changed_files
+            )
         ):
             changed_integration_modules = {
                 f.removeprefix("tests/integration/")
@@ -1874,8 +1996,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # module-scoped fixtures between them, breaking tests that call
         # cluster.add_instance() inside the fixture.
         # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
-        parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
-        sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
+        #
+        # The merge-queue targeted check runs under a 30-minute cap that ends the run
+        # without failing it, so the order decides what is cut off. Keep the priority
+        # order of the selection there (the changed modules, the modules owning changed
+        # files, the modules `master` changed since the PR CI, then the coverage
+        # ranking): sorting by name would let a large coverage selection starve the
+        # mandatory modules and report OK without running them.
+        if is_merge_queue_targeted_check:
+            priority = {}
+            for t in targeted_tests:
+                priority.setdefault(t.split("::")[0], len(priority))
+
+            def module_key(t):
+                module = t.split("::")[0]
+                return (priority.get(module, len(priority)), module)
+
+        else:
+
+            def module_key(t):
+                return t.split("::")[0]
+
+        parallel_test_modules = sorted(parallel_test_modules, key=module_key)
+        sequential_test_modules = sorted(sequential_test_modules, key=module_key)
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
@@ -1923,7 +2066,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
     }
-    if is_llvm_coverage:
+    if is_per_test_coverage:
+        # Read by tests/integration/helpers/cluster.py: every instance attributes its
+        # coverage to the test module and the cluster dumps it here on shutdown.
+        test_env["CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR"] = per_test_coverage_dir
+        # No continuous mode (see cluster.py) and no profile merge: the coverage is
+        # taken from the servers' `system.coverage_log`, not from .profraw files.
+        test_env["LLVM_PROFILE_FILE"] = os.devnull
+    elif is_llvm_coverage:
         # %c enables continuous mode: the counters are memory-mapped into the
         # file and updated as the code runs, so the file is structurally valid
         # at every instant. Without it the profile is written only at process
@@ -1984,18 +2134,57 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # than a best-effort report). 45 min matches the functional flaky check and leaves
     # ample room for the hard-kill backstop (+600s below), cleanup and reporting.
     FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
+    # The merge-queue targeted check delays merges directly, and the queue is meant to
+    # fail fast, so it gets a tight soft budget, counted from the job start like the
+    # flaky one and equal to the one of the merge-queue stateless targeted check. It
+    # runs the selection once, and a session-timeout of a targeted check is not a job
+    # failure (see below), so a selection that does not fit is cut short rather than
+    # holding the queue.
+    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 30 * 60
+    check_time_limit = 0
     if is_flaky_check:
-        elapsed_for_flaky = int(sw.duration)
-        flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
+        check_time_limit = FLAKY_CHECK_TIME_LIMIT
+    elif is_merge_queue_targeted_check:
+        check_time_limit = MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT
+    if check_time_limit:
+        elapsed_s = int(sw.duration)
+        remaining_s = max(check_time_limit - elapsed_s, 60)
         print(
-            f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s "
-            f"(elapsed so far: {elapsed_for_flaky}s, remaining: {flaky_check_remaining_s}s)"
+            f"Check time limit: {check_time_limit}s "
+            f"(elapsed so far: {elapsed_s}s, remaining: {remaining_s}s)"
         )
         # Cap per-phase session timeouts so a single phase cannot consume the entire budget.
-        session_timeout_parallel = min(session_timeout_parallel, flaky_check_remaining_s)
-        session_timeout_sequential = min(session_timeout_sequential, flaky_check_remaining_s)
+        session_timeout_parallel = min(session_timeout_parallel, remaining_s)
+        session_timeout_sequential = min(session_timeout_sequential, remaining_s)
+        # The parallel phase runs first, so in the merge-queue targeted check a large
+        # coverage selection there could use the whole budget before a changed (or
+        # otherwise mandatory) module of the sequential phase starts, and the job would
+        # pass without it. Leave half of the budget to the sequential phase then; the
+        # mandatory modules come first within each phase (see the sort above).
+        mandatory_sequential = [
+            t for t in sequential_test_modules if t.split("::")[0] in mandatory_test_modules
+        ]
+        if is_merge_queue_targeted_check and parallel_test_modules and mandatory_sequential:
+            session_timeout_parallel = min(session_timeout_parallel, max(remaining_s // 2, 60))
+            print(
+                f"Mandatory sequential modules {mandatory_sequential}: the parallel phase "
+                f"gets {session_timeout_parallel}s"
+            )
 
     error_info = []
+
+    # The merge-queue targeted check stops at `MERGE_QUEUE_MAX_FAILURES` failed tests:
+    # a few failures are enough to bounce the entry, and running the rest of the
+    # selection only delays the queue. pytest (and xdist) stops scheduling tests once
+    # `--maxfail` is reached; the sequential phase gets what remains of the limit.
+    maxfail_option = ""
+    # `--dist=loadfile` schedules the modules by descending test count by default, which
+    # would undo the priority order of the merge-queue targeted check (see the sort of
+    # the modules above): keep the order of the command line there.
+    order_option = ""
+    if is_merge_queue_targeted_check:
+        maxfail_option = f"--maxfail={MERGE_QUEUE_MAX_FAILURES}"
+        order_option = "--no-loadscope-reorder"
 
     failed_test_cases = []
 
@@ -2025,7 +2214,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     clear_rabbitmq_recreation_scan_inputs()
 
-    if is_flaky_check or is_targeted_check:
+    if is_flaky_check:
         # Each xdist worker runs all modules independently with its own isolated Docker cluster.
         # ClickHouseCluster appends PYTEST_XDIST_WORKER to the project name, so clusters
         # from different workers never interfere. --dist=each sends all tests to every worker.
@@ -2046,7 +2235,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             parallel_timed_out,
             parallel_hard_killed,
         ) = run_pytest_and_collect_results(
-            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} {maxfail_option} {order_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
@@ -2071,34 +2260,38 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
+    max_fails_before_drop = MAX_FAILS_BEFORE_DROP
+    if is_merge_queue_targeted_check:
+        max_fails_before_drop = MERGE_QUEUE_MAX_FAILURES
+        maxfail_option = f"--maxfail={MERGE_QUEUE_MAX_FAILURES - fail_num}"
     # Under LLVM coverage the sequential phase runs regardless of how many
     # parallel tests failed: the coverage shard exists to execute code, and
     # dropping the phase would silently publish a profile that is short by
     # every sequential test. Test failures gate the PR through the regular
     # (non-coverage) jobs. An infrastructure error still skips the phase.
-    if sequential_test_modules and (fail_num < MAX_FAILS_BEFORE_DROP or is_llvm_coverage) and not has_error:
+    if sequential_test_modules and (fail_num < max_fails_before_drop or is_llvm_coverage) and not has_error:
         for attempt in range(sequential_repeat_cnt):
-            # Recompute remaining budget for flaky-check at every iteration and stop
-            # scheduling new runs once it is exhausted (soft timeout).
+            # Recompute the remaining budget at every iteration and stop scheduling
+            # new runs once it is exhausted (soft timeout).
             iter_session_timeout_sequential = session_timeout_sequential
-            if is_flaky_check:
-                elapsed_for_flaky = int(sw.duration)
-                flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 0)
-                if flaky_check_remaining_s < 60:
+            if check_time_limit:
+                elapsed_s = int(sw.duration)
+                remaining_s = max(check_time_limit - elapsed_s, 0)
+                if remaining_s < 60:
                     print(
-                        f"Flaky-check time limit reached after [{attempt}/{sequential_repeat_cnt}] sequential attempts "
-                        f"(elapsed: {elapsed_for_flaky}s, limit: {FLAKY_CHECK_TIME_LIMIT}s); stopping"
+                        f"Check time limit reached after [{attempt}/{sequential_repeat_cnt}] sequential attempts "
+                        f"(elapsed: {elapsed_s}s, limit: {check_time_limit}s); stopping"
                     )
                     break
                 iter_session_timeout_sequential = min(
-                    session_timeout_sequential, flaky_check_remaining_s
+                    session_timeout_sequential, remaining_s
                 )
             (
                 test_result_sequential,
                 sequential_timed_out,
                 sequential_hard_killed,
             ) = run_pytest_and_collect_results(
-                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
+                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} {maxfail_option} {order_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
@@ -2122,9 +2315,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     has_error = True
                     error_info.append(test_result_sequential.info)
                 break
-            if (is_flaky_check or is_targeted_check) and not test_result_sequential.is_ok():
+            if is_flaky_check and not test_result_sequential.is_ok():
                 print(
-                    f"Flaky/targeted check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
+                    f"Flaky check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
                 )
                 break
 
@@ -2276,9 +2469,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
             if Path(DOCKER_IN_DOCKER_LOG).exists():
                 attached_files.append(DOCKER_IN_DOCKER_LOG)
 
-    # Rerun failed tests if any to check if failure is reproducible
+    # Rerun failed tests if any to check if failure is reproducible. Not in the merge
+    # queue, which must fail fast: the PR CI already reran the PR's failures.
     if 0 < len(failed_test_cases) < 10 and not (
-        is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
+        is_flaky_check
+        or is_bugfix_validation
+        or info.is_local_run
+        or is_merge_queue_targeted_check
     ):
         test_result_retries, _, _ = run_pytest_and_collect_results(
             command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
@@ -2416,7 +2613,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # For targeted, flaky checks, and bugfix validation, the synthetic "Timeout"
     # result must not be propagated as a top-level `FAIL`: for targeted checks a
-    # session-timeout is an expected risk (because of `--count N` overloading), for
+    # session-timeout is an expected risk (the selection may be large), for
     # flaky checks because of the soft `FLAKY_CHECK_TIME_LIMIT`, and for bugfix
     # validation an inverted `FAIL` would be mistakenly treated as successful bug
     # reproduction.
@@ -2492,6 +2689,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
             is_bugfix_validation is False
         ), "LLVM coverage with bugfix validation is not supported"
         has_error = finalize_llvm_coverage_status(R, has_error)
+
+    if is_per_test_coverage and not info.is_local_run:
+        # Unlike the profile merge, a partial run is still exported: every module's
+        # coverage stands on its own, and the missing modules are simply absent.
+        export_result = Result.from_commands_run(
+            name="Collect coverage",
+            command=lambda: IntegrationCoverageExporter(
+                clickhouse_path=clickhouse_path,
+                coverage_dir=per_test_coverage_dir,
+                dest=cidb_cluster,
+                job_name=info.job_name,
+            ).do(),
+        )
+        R.results.append(export_result)
+        # The per-instance dumps, to check the merge against.
+        coverage_archive = f"{temp_path}/per_test_coverage.tar.gz"
+        if Shell.check(
+            f"tar -czf {coverage_archive} -C {temp_path} per_test_coverage", verbose=True
+        ):
+            R.files.append(coverage_archive)
+        if not export_result.is_ok():
+            has_error = True
+            error_info.append("Per-module coverage export failed")
 
     # Capture whether this run saw any infrastructure problems BEFORE the
     # clearing block below resets `has_error`. If the answer is yes, the
@@ -2624,6 +2844,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+    elif is_per_test_coverage:
+        force_ok_exit = True
+        print("NOTE: Per-module coverage job - do not block pipeline")
 
     # After the last `/init` work, so the peaks cover the coverage merge too.
     print_leaf_peak_usage(os.environ)

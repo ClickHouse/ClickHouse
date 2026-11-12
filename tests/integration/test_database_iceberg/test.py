@@ -22,6 +22,7 @@ from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -33,6 +34,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
 from helpers.s3_tools import get_file_contents, list_s3_objects
+from helpers.resource_soak import QueryLog, ResourceSampler, soak_iterations
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -156,7 +158,7 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
 {settings_suffix}
     """,
         settings={
-            "allow_experimental_database_iceberg": 1,
+            "allow_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -202,7 +204,7 @@ def started_cluster():
                 "configs/cluster.xml",
                 "configs/text_log.xml",
             ],
-            user_configs=[],
+            user_configs=["configs/delete_data_on_drop.xml"],
             stay_alive=True,
             with_iceberg_catalog=True,
         )
@@ -394,6 +396,36 @@ def test_namespace_filter_pushdown(started_cluster):
         f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
         "SETTINGS show_data_lake_catalogs_in_system_tables = true",
         one_table,
+    )
+
+    # `IN` pushdown: an `IN` list scopes to the namespaces of its names, exactly like the
+    # equality it generalizes. Both names here live in the target namespace, so the sibling
+    # must still be left alone.
+    in_list = ", ".join(f"'{namespace_1}.{t}'" for t in namespace_1_tables)
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name IN ({in_list}) ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # The same through a disjunction, which the analyzer keeps as an `OR` of equalities.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND (name = '{namespace_1}.{namespace_1_tables[0]}' OR name = '{namespace_1}.{namespace_1_tables[1]}') ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # `IN (SELECT ...)`: the set of a subquery is only built when the pipeline runs, long after
+    # the catalog has been listed, so the filter extraction builds it on the spot. Without that
+    # the query silently falls back to listing the whole catalog.
+    subquery = " UNION ALL ".join(
+        f"SELECT '{namespace_1}.{t}'" for t in namespace_1_tables
+    )
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name IN ({subquery}) ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
     )
 
 
@@ -718,7 +750,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
-            "allow_experimental_database_iceberg": 1,
+            "allow_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -947,6 +979,26 @@ def test_timestamps(started_cluster):
     assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
+    berlin_catalog = f"{CATALOG_NAME}_berlin"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        berlin_catalog,
+        {"iceberg_timezone_for_timestamptz": "Europe/Berlin"},
+    )
+    berlin_table = f"{berlin_catalog}.`{root_namespace}.{table_name}`"
+    assert node.query(
+        f"SELECT type FROM system.columns WHERE database = '{berlin_catalog}' AND table = '{root_namespace}.{table_name}' AND name = 'timestamptz'",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\n"
+    assert node.query(
+        f"SELECT toTypeName(timestamptz), timestamptz, toUnixTimestamp(timestamptz) FROM {berlin_table}"
+    ) == "Nullable(DateTime64(6, \\'Europe/Berlin\\'))\t2024-01-01 13:00:00.000000\t1704110400\n"
+    assert node.query(
+        f"SELECT count() FROM {berlin_table} WHERE timestamptz = '2024-01-01 13:00:00'"
+    ) == "1\n"
+    node.query(f"DROP DATABASE {berlin_catalog}")
+
 
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
@@ -967,6 +1019,45 @@ def test_insert(started_cluster):
 
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'Pavel Ivanov (pudge1000-7) pereezhai v amsterdam', 193.24, 193.31, tuple('bot'));", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
+
+
+def test_plain_optimize_rejected_with_catalog(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_plain_optimize_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"allow_experimental_iceberg_compaction": 0}
+    )
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    node.query(
+        f"INSERT INTO {table_ref} VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'))",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    def catalog_state():
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        return table.metadata_location, table.metadata.current_snapshot_id
+
+    state_before = catalog_state()
+    rows_before = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query(f"OPTIMIZE TABLE {table_ref}", settings={"allow_experimental_iceberg_compaction": 1})
+
+    error = str(exc_info.value)
+    assert (
+        "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build" in error
+        or "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables." in error
+    ), error
+    assert catalog_state() == state_before
+    assert node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL") == rows_before
 
 
 def test_optimize_manifest_with_catalog(started_cluster):
@@ -1105,7 +1196,11 @@ def test_remove_orphan_files_with_catalog(started_cluster):
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
         f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
-        settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        },
     )
 
     assert data_files() == data_before, (
@@ -1123,6 +1218,67 @@ def test_remove_orphan_files_with_catalog(started_cluster):
         f"the uncommitted {uncommitted_key} is an orphan relative to the committed state "
         "and should have been deleted"
     )
+
+
+def test_expire_snapshots_with_catalog(started_cluster):
+    # A REST catalog writes the table metadata itself, so expire_snapshots commits the removal of
+    # the snapshots to it (`remove-snapshots`) and then deletes the files only they referenced.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_expire_snapshots_with_catalog_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    for value in (1, 2, 3):
+        node.query(f"INSERT INTO {table_ref} VALUES ({value});", settings=write_settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    bucket = "warehouse-rest"
+
+    def committed_snapshots():
+        return catalog.load_table(f"{root_namespace}.{table_name}").metadata.snapshots
+
+    def object_exists(location):
+        assert location.startswith(f"s3://{bucket}/"), location
+        key = location[len(f"s3://{bucket}/"):]
+        prefix, name = key.rsplit("/", 1)
+        return name in list_s3_objects(started_cluster.minio_client, bucket, prefix + "/")
+
+    snapshots = committed_snapshots()
+    assert len(snapshots) == 3, snapshots
+    expired, retained = snapshots[:2], snapshots[2]
+    assert all(object_exists(snapshot.manifest_list) for snapshot in snapshots)
+
+    node.query(
+        f"ALTER TABLE {table_ref} EXECUTE expire_snapshots("
+        f"snapshot_ids = [{expired[0].snapshot_id}, {expired[1].snapshot_id}]);",
+        settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
+    )
+
+    assert [snapshot.snapshot_id for snapshot in committed_snapshots()] == [retained.snapshot_id]
+    for snapshot in expired:
+        assert not object_exists(snapshot.manifest_list), (
+            f"the manifest list of the expired snapshot {snapshot.snapshot_id} was not deleted"
+        )
+    assert object_exists(retained.manifest_list)
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "1\n2\n3\n"
+
+    # The retention policy path: with `retain_last = 1` only the current snapshot is kept.
+    node.query(f"INSERT INTO {table_ref} VALUES (4);", settings=write_settings)
+    assert len(committed_snapshots()) == 2
+    node.query(
+        f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);",
+        settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
+    )
+    snapshots = committed_snapshots()
+    assert len(snapshots) == 1 and snapshots[0].snapshot_id != retained.snapshot_id, snapshots
+    assert not object_exists(retained.manifest_list)
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "1\n2\n3\n4\n"
 
 
 @pytest.mark.parametrize(
@@ -1349,6 +1505,111 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+@pytest.mark.parametrize("engine_clause", [" ENGINE = Iceberg", ""])
+def test_create_without_engine_arguments(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    # The catalog places the table in its own warehouse bucket, so the endpoint must not name a bucket.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    catalog = load_catalog_impl(started_cluster)
+    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+@pytest.mark.parametrize("namespace_exists", [False, True])
+def test_create_without_engine_arguments_storage_mismatch(started_cluster, namespace_exists):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_storage_mismatch_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    if namespace_exists:
+        catalog.create_namespace(root_namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(QueryRuntimeException) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergLocal",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+    assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
+    assert (root_namespace,) in catalog.list_namespaces()
+
+
+@pytest.mark.parametrize("explicit_location", [False, True])
+def test_create_registers_full_location(started_cluster, explicit_location):
+    # No `write_full_path_in_iceberg_metadata`: the catalog resolves the location with its own FileIO.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_registers_full_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    # The endpoint names no bucket, so a table placed by the catalog lands where the catalog puts it.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+    engine = (
+        f" ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')"
+        if explicit_location
+        else ""
+    )
+    node.query(f"CREATE TABLE {table_ref} (x String){engine}", settings={"allow_database_iceberg": 1})
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1})
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    table = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}")
+    location = table.metadata.location
+    assert location.startswith("s3://"), location
+    manifest_list = table.current_snapshot().manifest_list
+    assert manifest_list.startswith(location.rstrip("/") + "/metadata/"), manifest_list
+    bucket, key = manifest_list[len("s3://"):].split("/", 1)
+    prefix, name = key.rsplit("/", 1)
+    assert name in list_s3_objects(started_cluster.minio_client, bucket, prefix + "/")
+
+
+def test_create_without_engine_arguments_outside_catalog(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    table_name = f"test_create_without_engine_arguments_outside_catalog_{uuid.uuid4().hex}"
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node.query(f"CREATE TABLE default.{table_name} (x String) ENGINE = IcebergS3")
+    assert "requires 1 to" in str(exc.value), str(exc.value)
+
+
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
     # compression exercises IcebergMetadata::createInitial and the
@@ -1382,10 +1643,14 @@ def test_create_gzip_metadata(started_cluster):
     )
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
-    # The initial metadata ClickHouse registered with the catalog must use the
-    # spec `gz` extension, and the catalog must point at the file that exists.
+    # The REST server writes the first metadata file itself. It must receive the
+    # `write.metadata.compression-codec` property so that it uses the spec `gz`
+    # extension, and later ClickHouse writes must follow the same codec.
+    catalog = load_catalog_impl(started_cluster)
+    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    metadata_bucket, metadata_key = metadata_location[len("s3://"):].split("/", 1)
     metadata_objects = list_s3_objects(
-        started_cluster.minio_client, "warehouse-rest", f"{table_name}/metadata/"
+        started_cluster.minio_client, metadata_bucket, metadata_key.rsplit("/", 1)[0] + "/"
     )
     assert any(obj.endswith(".gz.metadata.json") for obj in metadata_objects), metadata_objects
     assert not any(obj.endswith(".gzip.metadata.json") for obj in metadata_objects), metadata_objects
@@ -1393,6 +1658,70 @@ def test_create_gzip_metadata(started_cluster):
     # Reopen through the catalog (fresh database) and confirm read still works.
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_writes_no_orphan_metadata(started_cluster):
+    # The REST server writes the first metadata file on create. The client must not
+    # prewrite `v1.metadata.json` next to it, or the table root keeps an orphan file.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_no_orphan_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    metadata_prefix = f"{table_name}/metadata/"
+    metadata_objects = [
+        f"s3://warehouse-rest/{metadata_prefix}{obj}"
+        for obj in list_s3_objects(started_cluster.minio_client, "warehouse-rest", metadata_prefix)
+    ]
+    assert metadata_objects == [table.metadata_location], metadata_objects
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_in_fresh_multi_level_namespace(started_cluster):
+    # No `create_namespace` here. The client must register the namespace itself, as a
+    # list of levels, and must not store the table root as the namespace location.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_fresh_ns_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    namespace = f"{root_namespace}.sub"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, table_name, "(x String)")
+
+    assert (root_namespace, "sub") in catalog.list_namespaces((root_namespace,))
+    assert catalog.list_tables(namespace) == [(root_namespace, "sub", table_name)]
+
+    first_table = catalog.load_table(f"{namespace}.{table_name}")
+    assert first_table.location() == f"s3://warehouse-rest/{table_name}"
+
+    # A later table without an explicit location must not land inside the first table.
+    second_table = catalog.create_table(
+        identifier=f"{namespace}.{table_name}_second",
+        schema=Schema(NestedField(field_id=1, name="x", field_type=StringType(), required=False)),
+    )
+    assert not second_table.location().startswith(first_table.location()), second_table.location()
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`") == "AAPL\n"
 
 
 def test_drop_table(started_cluster):
@@ -1414,6 +1743,146 @@ def test_drop_table(started_cluster):
     drop_clickhouse_iceberg_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0
 
+
+def test_drop_table_in_multi_level_namespace(started_cluster):
+    # The DropTable URL must carry the catalog prefix and encode the namespace levels.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_drop_multi_level_{uuid.uuid4()}"
+    namespace = f"{test_ref}_namespace.sub"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, table_name, "(x String)")
+    assert catalog.table_exists(f"{namespace}.{table_name}")
+
+    drop_clickhouse_iceberg_table(node, namespace, table_name)
+    assert not catalog.table_exists(f"{namespace}.{table_name}")
+    assert catalog.list_tables(namespace) == []
+
+
+def test_drop_table_purge(started_cluster):
+    # DROP asks the catalog to purge the table's files only with `iceberg_delete_data_on_drop`,
+    # which node2's default profile enables.
+    catalog = load_catalog_impl(started_cluster)
+
+    def data_files(table_name):
+        return sorted(
+            name
+            for name in list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
+            if name.endswith(".parquet")
+        )
+
+    for node_name, purge in (("node2", True), ("node1", False)):
+        node = started_cluster.instances[node_name]
+        test_ref = f"test_drop_table_purge_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+
+        files = data_files(table_name)
+        assert files
+        drop_clickhouse_iceberg_table(node, root_namespace, table_name)
+        assert not catalog.table_exists(f"{root_namespace}.{table_name}")
+        assert data_files(table_name) == ([] if purge else files)
+        node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
+
+
+def test_drop_table_purge_query_setting(started_cluster):
+    # node1 has `iceberg_delete_data_on_drop` disabled in its profile.
+    node = started_cluster.instances["node1"]
+
+    for purge in (False, True):
+        test_ref = f"test_drop_table_purge_query_setting_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+        files = list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
+        assert files
+
+        node.query(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": int(purge)},
+        )
+        assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == ([] if purge else files)
+
+
+def test_create_table_order_by(started_cluster):
+    # `ORDER BY` must reach the catalog as the table's write order.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_order_by_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"""
+CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, name String)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY (id, name)
+        """,
+        settings={"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    sort_fields = catalog.load_table(f"{root_namespace}.{table_name}").sort_order().fields
+    assert [field.source_id for field in sort_fields] == [1, 2], sort_fields
+    assert all(isinstance(field.transform, IdentityTransform) for field in sort_fields), sort_fields
+
+
+def test_create_table_order_by_empty_tuple(started_cluster):
+    # `ORDER BY tuple()` is the unsorted order: Java Iceberg must accept it, through the catalog and from storage.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_table_order_by_empty_tuple_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    plain_table = f"{test_ref}_plain"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"""
+CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY tuple()
+        """,
+        settings={"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert catalog.load_table(f"{root_namespace}.{table_name}").sort_order().is_unsorted
+
+    node.query(
+        f"""
+CREATE TABLE `{plain_table}` (id Int64)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{plain_table}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY tuple()
+        """,
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+    registered = catalog.register_table(
+        f"{root_namespace}.{plain_table}", 
+        f"s3://warehouse-rest/{plain_table}/metadata/v1.metadata.json"
+    )
+    assert registered.sort_order().is_unsorted
+    node.query(f"DROP TABLE `{plain_table}`")
+    
 
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
@@ -1530,6 +1999,52 @@ def test_cluster_insert(started_cluster):
         settings=parallel_replicas_settings,
     )
     assert table_name not in node1.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_cluster_mutations(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_cluster_mutations_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node1, root_namespace, table_name, "(x String)"
+    )
+
+    parallel_replicas_settings = {
+        "parallel_replicas_for_cluster_engines": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "cluster_simple",
+    }
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **parallel_replicas_settings,
+    }
+
+    node1.query(
+        f"INSERT INTO {table_ref} VALUES ('a'), ('b'), ('c'), ('d')", settings=settings
+    )
+    node1.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'a'", settings=settings)
+    node1.query(f"DELETE FROM {table_ref} WHERE x = 'b'", settings=settings)
+    node1.query(
+        f"ALTER TABLE {table_ref} UPDATE x = 'z' WHERE x = 'c'", settings=settings
+    )
+
+    for replica in [node1, node2]:
+        assert replica.query(f"SELECT x FROM {table_ref} ORDER BY x") == "d\nz\n"
+        assert (
+            replica.query(
+                f"SELECT x FROM {table_ref} ORDER BY x",
+                settings=parallel_replicas_settings,
+            )
+            == "d\nz\n"
+        )
 
 
 def test_used_storages_in_query_log(started_cluster):
@@ -1894,6 +2409,38 @@ def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_clust
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
         node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
 
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_merge_reads_the_snapshot_it_inferred_from(started_cluster):
+    """`merge()` looks its tables up again for the read, and each catalog lookup builds a new storage
+    object. The read, including the row policy, must still use the snapshot the structure was inferred from."""
+    node = started_cluster.instances["node1"]
+    namespace = f"merge_snapshot_{uuid.uuid4().hex}"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    schema = Schema(NestedField(field_id=1, name="k", field_type=LongType(), required=False))
+    table = create_table(catalog, namespace, "t", schema, PartitionSpec(), SortOrder())
+    table.append(pa.Table.from_pylist([{"k": 7}, {"k": -1}]))
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    policy = f"merge_snapshot_policy ON {CATALOG_NAME}.`{namespace}.t`"
+    node.query(f"CREATE ROW POLICY {policy} USING k > 0 TO ALL")
+
+    # The failpoint sleeps 10 seconds before each catalog fetch, and the line is logged before each one,
+    # so the second line means the fetch of the structure inference is done and the next one is pending.
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    try:
+        request = node.get_query_request(
+            f"SELECT sum(k) FROM merge('{CATALOG_NAME}', '^{namespace}[.]t$')", timeout=300
+        )
+        node.wait_for_log_line(f"Get table information for table {namespace}.t", timeout=60, repetitions=2)
+        with catalog.load_table(f"{namespace}.t").update_schema() as update:
+            update.rename_column("k", "v")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT lightweight_show_tables")
+
+    assert request.get_answer().strip() == "7"
+    node.query(f"DROP ROW POLICY {policy}")
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
@@ -2559,6 +3106,34 @@ def test_incremental_refreshable_mv_rest_catalog(started_cluster):
     node.query(f"DROP TABLE {src}")
 
 
+def test_drop_mv_with_unreachable_target(started_cluster):
+    # DROP of a view must not depend on its `TO` table in a catalog that cannot be reached.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"mv_unreachable_ns_{uid}"
+    tgt_table = f"mv_unreachable_tgt_{uid}"
+    mv = f"mv_unreachable_mv_{uid}"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR APPEND
+            TO {CATALOG_NAME}.`{namespace}.{tgt_table}` EMPTY
+            AS SELECT toInt64(1) AS k
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        # SYNC waits for the background part of the drop, which calls `drop` of the view.
+        node.query(f"DROP TABLE {mv} SYNC")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+
 def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -2569,7 +3144,7 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(
-        started_cluster, node, root_namespace, table_name, "(x UInt64)"
+        started_cluster, node, root_namespace, table_name, "(x Int64)"
     )
 
     # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
@@ -2613,3 +3188,436 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
 
     assert int(node.query(f"SELECT count() FROM {table_ref}")) == 4000000
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+DROP_PARTITION_SETTINGS = {"allow_insert_into_iceberg": 1}
+
+
+def create_drop_partition_catalog_table(catalog, namespace, table_name):
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="b", field_type=StringType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1,
+            field_id=1000,
+            transform=IdentityTransform(),
+            name="a",
+        )
+    )
+    catalog.create_namespace(namespace)
+    create_table(
+        catalog,
+        namespace,
+        table_name,
+        schema=schema,
+        partition_spec=partition_spec,
+        sort_order=SortOrder(),
+    )
+
+
+def test_drop_partition_catalog_backed(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition"
+
+    create_drop_partition_catalog_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    for row in [(1, "x"), (2, "y"), (3, "z")]:
+        node.query(
+            f"INSERT INTO {qualified} VALUES {row}",
+            settings=DROP_PARTITION_SETTINGS,
+        )
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 2",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+    # Recreate the database so ClickHouse rereads the metadata location from the catalog.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+
+def test_drop_partition_catalog_concurrent_insert_survives(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_concurrent"
+
+    create_drop_partition_catalog_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'before-drop-1'), (1, 'before-drop-2')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    node.query(
+        f"INSERT INTO {qualified} VALUES (2, 'keep')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_partition_pause_after_discovery")
+
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: node.query(
+                "SYSTEM WAIT FAILPOINT iceberg_drop_partition_pause_after_discovery PAUSE",
+                timeout=60,
+            )
+        )
+        drop_future = executor.submit(
+            lambda: node.query(
+                f"ALTER TABLE {qualified} DROP PARTITION 1",
+                settings=DROP_PARTITION_SETTINGS,
+                timeout=120,
+            )
+        )
+        wait_future.result(timeout=60)
+
+        node.query(
+            f"INSERT INTO {qualified} VALUES (1, 'inserted-during-drop')",
+            settings=DROP_PARTITION_SETTINGS,
+        )
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_partition_pause_after_discovery")
+        drop_future.result(timeout=120)
+    finally:
+        try:
+            node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_partition_pause_after_discovery")
+        except Exception:
+            pass
+        executor.shutdown(wait=False)
+
+    expected = "1\tinserted-during-drop\n2\tkeep"
+    assert node.query(f"SELECT a, b FROM {qualified} ORDER BY a, b").strip() == expected
+
+    # Reread the catalog location and verify that the committed state is unchanged.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a, b FROM {qualified} ORDER BY a, b").strip() == expected
+
+
+# (id, schema, PARTITION BY, rows, partition key value, pass the value bare instead of in `tuple(...)`).
+# The drop predicate is always `<PARTITION BY> = <partition key value>`.
+DROP_PARTITION_TRANSFORM_CASES = [
+    ("identity_scalar", "(a Int64, b String)", "identity(a)", "(1, 'x'), (2, 'y'), (3, 'z')", "2", True),
+    ("identity_tuple", "(a Int64, b String)", "identity(a)", "(1, 'x'), (2, 'y'), (3, 'z')", "2", False),
+    ("bucket", "(id Int64, k String)", "icebergBucket(4, k)", "(1, 'apple'), (2, 'banana'), (3, 'cherry')", "icebergBucket(4, 'banana')", False),
+    ("truncate_literal", "(id Int64, k String)", "icebergTruncate(3, k)", "(1, 'apple'), (2, 'apricot'), (3, 'banana')", "'app'", True),
+    ("truncate_expr", "(id Int64, k String)", "icebergTruncate(3, k)", "(1, 'apple'), (2, 'apricot'), (3, 'banana')", "icebergTruncate(3, 'apricot')", False),
+    ("year", "(id Int64, d Date)", "toYearNumSinceEpoch(d)", "(1, '2024-03-15'), (2, '2025-01-10')", "toYearNumSinceEpoch(toDate('2024-06-01'))", False),
+    ("month", "(id Int64, d Date)", "toMonthNumSinceEpoch(d)", "(1, '2025-01-05'), (2, '2025-02-10')", "toMonthNumSinceEpoch(toDate('2025-01-15'))", False),
+    ("day", "(id Int64, d Date)", "toRelativeDayNum(d)", "(1, '2025-05-01'), (2, '2025-05-02')", "toRelativeDayNum(toDate('2025-05-01'))", False),
+    ("hour", "(id Int64, ts DateTime)", "toRelativeHourNum(ts)", "(1, '2025-05-19 10:15:00'), (2, '2025-05-19 11:00:00')", "toRelativeHourNum(toDateTime('2025-05-19 10:30:00'))", False),
+]
+
+
+@pytest.mark.parametrize(
+    "schema,partition_by,rows,key,bare",
+    [pytest.param(*case[1:], id=case[0]) for case in DROP_PARTITION_TRANSFORM_CASES],
+)
+def test_drop_partition_catalog_transforms(
+    started_cluster, schema, partition_by, rows, key, bare
+):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = f"drop_partition_{uuid.uuid4().hex[:8]}"
+
+    load_catalog_impl(started_cluster).create_namespace(namespace)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # `create_clickhouse_iceberg_table` cannot express PARTITION BY, which sits between ENGINE and SETTINGS.
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` {schema}
+        ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+        PARTITION BY {partition_by}
+        SETTINGS iceberg_format_version = 2
+        """,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    select = f"SELECT * FROM {qualified} ORDER BY ALL"
+    predicate = f"{partition_by} = {key}"
+
+    node.query(f"INSERT INTO {qualified} VALUES {rows}", settings=DROP_PARTITION_SETTINGS)
+    expected = node.query(f"SELECT * FROM {qualified} WHERE NOT ({predicate}) ORDER BY ALL")
+    assert int(node.query(f"SELECT count() FROM {qualified} WHERE {predicate}").strip()), (
+        "target partition is empty, the scenario proves nothing"
+    )
+
+    drop_expr = key if bare else f"tuple({key})"
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION {drop_expr}",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    assert node.query(select) == expected
+
+    # Reread the pointer from the catalog to confirm the commit is durable.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(select) == expected
+
+
+def test_drop_partition_catalog_no_matching_files(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_no_match"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    count_snapshots = (
+        "SELECT count() FROM system.iceberg_history "
+        f"WHERE database = '{CATALOG_NAME}' AND table = '{namespace}.{table_name}'"
+    )
+    snapshots_before = node.query(count_snapshots)
+
+    # Nothing matches, so the drop is a no-op and must not commit a snapshot.
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 99", settings=DROP_PARTITION_SETTINGS
+    )
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n2"
+    assert node.query(count_snapshots) == snapshots_before
+
+
+def test_drop_partition_catalog_without_snapshot(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_no_snapshot"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    # Never written to, so there is no snapshot to drop from.
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 1", settings=DROP_PARTITION_SETTINGS
+    )
+    assert node.query(f"SELECT count() FROM {qualified}").strip() == "0"
+
+
+def test_drop_partition_catalog_parallel_replicas(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_parallel_replicas"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y'), (3, 'z')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    # With parallel replicas the catalog table is served by `StorageObjectStorageCluster`.
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 2",
+        settings={
+            **DROP_PARTITION_SETTINGS,
+            "parallel_replicas_for_cluster_engines": 1,
+            "enable_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": "cluster_simple",
+        },
+    )
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+    # Reread the metadata location from the catalog to confirm the commit is durable.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+
+def test_drop_partition_catalog_through_alias(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_alias"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    alias = f"default.drop_partition_alias_{uuid.uuid4().hex[:8]}"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y'), (3, 'z')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    node.query(f"CREATE TABLE {alias} ENGINE = Alias('{CATALOG_NAME}', '{namespace}.{table_name}')")
+    try:
+        # The catalog builds a new storage object for each lookup, so the alias checks and drops on two different ones.
+        node.query(f"ALTER TABLE {alias} DROP PARTITION 2", settings=DROP_PARTITION_SETTINGS)
+        assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+    finally:
+        # `Alias` registers a dependency on its target, so drop it before a later test recreates the catalog database.
+        node.query(f"DROP TABLE IF EXISTS {alias}")
+
+
+# ---------------------------------------------------------------------------
+# Resource soak tests
+#
+# Each test repeats one workload `SOAK_ITERATIONS` times and checks that what the server holds (memory, file descriptors, threads, cache sizes, retained background tasks) and what each operation costs (object storage requests, catalog HTTP requests, per-query memory) do not grow from an early window of iterations to a late one. See `helpers/resource_soak.py` for the method and the tolerances. They live in this module to reuse its cluster, as they need only MinIO and the local REST catalog.
+#
+# The motivating case is memory that grows with repeated `DataLakeCatalog` queries of tables that keep receiving snapshots from another engine.
+# ---------------------------------------------------------------------------
+
+# The default keeps the cost of a CI run small; set `DATALAKE_SOAK_ITERATIONS` for a longer soak.
+SOAK_ITERATIONS = soak_iterations("DATALAKE_SOAK_ITERATIONS", default=20)
+SOAK_S3_EVENTS = ["S3GetObject", "S3HeadObject", "S3ListObjects", "S3PutObject", "S3DeleteObjects"]
+# The REST catalog is reached over pooled HTTP sessions, so these count the catalog requests of a query.
+SOAK_CATALOG_EVENTS = ["HTTPConnectionsCreated", "HTTPConnectionsReused"]
+SOAK_WRITE_SETTINGS = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+SOAK_SCHEMA = Schema(
+    NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+    NestedField(field_id=2, name="ts", field_type=TimestampType(), required=False),
+    NestedField(field_id=3, name="ts_utc", field_type=TimestamptzType(), required=False),
+    NestedField(field_id=4, name="payload", field_type=StringType(), required=False),
+)
+
+
+def _soak_rows(first, count):
+    ts = datetime(2026, 1, 1, 12)
+    return pa.Table.from_pylist(
+        [{"id": first + k, "ts": ts, "ts_utc": ts.replace(tzinfo=pytz.UTC), "payload": "x" * 100} for k in range(count)],
+        schema=pa.schema(
+            [("id", pa.int64()), ("ts", pa.timestamp("us")), ("ts_utc", pa.timestamp("us", tz="UTC")), ("payload", pa.string())]
+        ),
+    )
+
+
+def _soak_create_external_table(started_cluster, rows):
+    namespace = f"soak_{uuid.uuid4().hex[:10]}"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(identifier=f"{namespace}.t", schema=SOAK_SCHEMA, location=f"s3://warehouse-rest/{namespace}/t")
+    if rows:
+        table.append(_soak_rows(0, rows))
+    return namespace, table
+
+
+def test_soak_catalog_insert_and_read(started_cluster):
+    """`INSERT` into a catalog table, then `SHOW TABLES`, `DESCRIBE` and reads of it, `SOAK_ITERATIONS` times.
+
+    Every `INSERT` adds a data file, a manifest and a snapshot, so the table metadata grows linearly. What must not grow is the number of object storage and catalog requests of one operation: it must read the latest metadata and the new manifest, not every earlier one again, and the metadata cache must serve the rest. The point read filters on a value that only the newest data file holds, so min-max pruning keeps its data reads constant too."""
+    node = started_cluster.instances["node1"]
+    namespace, _ = _soak_create_external_table(started_cluster, rows=0)
+    database = f"soak_insert_{uuid.uuid4().hex[:8]}"
+    create_clickhouse_iceberg_database(started_cluster, node, database)
+    table = f"{database}.`{namespace}.t`"
+
+    log = QueryLog(node, "catalog_insert_read")
+    sampler = ResourceSampler(node, metrics=["IcebergMetadataFilesCacheBytes", "HTTPConnectionsTotal", "StorageConnectionsTotal", "GlobalThread"])
+    for i in range(SOAK_ITERATIONS):
+        log.query("insert", i, f"INSERT INTO {table} SELECT {i}, '2026-01-01 12:00:00', '2026-01-01 12:00:00', repeat('x', 100)", settings=SOAK_WRITE_SETTINGS)
+        assert f"{namespace}.t" in log.query("show_tables", i, f"SHOW TABLES FROM {database}")
+        assert "DateTime64(6)" in log.query("describe", i, f"DESCRIBE TABLE {table}")
+        assert log.query("count", i, f"SELECT count() FROM {table}").strip() == str(i + 1)
+        assert log.query("point_read", i, f"SELECT id FROM {table} WHERE id = {i}").strip() == str(i)
+        sampler.sample(i)
+
+    sampler.log_summary(table)
+    for operation in ["insert", "show_tables", "describe", "count", "point_read"]:
+        log.assert_constant_per_iteration(
+            operation,
+            SOAK_CATALOG_EVENTS + SOAK_S3_EVENTS,
+            SOAK_ITERATIONS,
+            require_nonzero={"insert": ["S3PutObject"], "point_read": ["S3GetObject"]}.get(operation, []),
+        )
+    sampler.assert_bounded(cache_metrics=["IcebergMetadataFilesCacheBytes"])
+    node.query(f"DROP DATABASE {database}")
+
+
+def test_soak_catalog_read_with_external_snapshots(started_cluster):
+    """`SHOW TABLES`, `DESCRIBE` and reads through a catalog database while another writer appends a snapshot every few iterations.
+
+    This is the shape of the motivating case: refreshable views read catalog tables that keep receiving snapshots from another engine. Every new snapshot is a new metadata file, so per-snapshot state that is kept instead of replaced grows with the number of snapshots. Timestamp columns are included because resolving their types is one path that reads and caches table metadata."""
+    node = started_cluster.instances["node1"]
+    namespace, iceberg_table = _soak_create_external_table(started_cluster, rows=1)
+    rows = 1
+    database = f"soak_read_{uuid.uuid4().hex[:8]}"
+    create_clickhouse_iceberg_database(started_cluster, node, database)
+    table = f"{database}.`{namespace}.t`"
+
+    log = QueryLog(node, "catalog_read")
+    sampler = ResourceSampler(node, metrics=["IcebergMetadataFilesCacheBytes", "HTTPConnectionsTotal", "StorageConnectionsTotal", "GlobalThread"])
+    for i in range(SOAK_ITERATIONS):
+        if i > 0 and i % 5 == 0:
+            iceberg_table.append(_soak_rows(rows, 1))
+            rows += 1
+        assert f"{namespace}.t" in log.query("show_tables", i, f"SHOW TABLES FROM {database}")
+        assert "DateTime64(6, \\'UTC\\')" in log.query("describe", i, f"DESCRIBE TABLE {table}")
+        assert log.query("count", i, f"SELECT count() FROM {table}").strip() == str(rows)
+        assert log.query("point_read", i, f"SELECT id FROM {table} WHERE id = 0").strip() == "0"
+        sampler.sample(i)
+
+    sampler.log_summary(table)
+    for operation in ["show_tables", "describe", "count", "point_read"]:
+        log.assert_constant_per_iteration(
+            operation,
+            SOAK_CATALOG_EVENTS + SOAK_S3_EVENTS,
+            SOAK_ITERATIONS,
+            require_nonzero=["S3GetObject"] if operation == "point_read" else [],
+        )
+    sampler.assert_bounded(cache_metrics=["IcebergMetadataFilesCacheBytes"])
+    node.query(f"DROP DATABASE {database}")
+
+
+def test_soak_catalog_database_lifecycle(started_cluster):
+    """Create a catalog database, read through it and drop it, `SOAK_ITERATIONS` times.
+
+    Each database owns a catalog client with its own HTTP sessions and credentials. A client that outlives its `DROP DATABASE` leaks its connections and memory once per cycle."""
+    node = started_cluster.instances["node1"]
+    namespace, _ = _soak_create_external_table(started_cluster, rows=3)
+    prefix = f"soak_lifecycle_{uuid.uuid4().hex[:6]}"
+    sampler = ResourceSampler(node, metrics=["HTTPConnectionsTotal", "StorageConnectionsTotal", "GlobalThread"])
+    for i in range(SOAK_ITERATIONS):
+        database = f"{prefix}_{i}"
+        create_clickhouse_iceberg_database(started_cluster, node, database)
+        assert node.http_query(f"SELECT count() FROM {database}.`{namespace}.t`").strip() == "3"
+        node.query(f"DROP DATABASE {database} SYNC")
+        sampler.sample(i)
+
+    sampler.log_summary("database lifecycle")
+    sampler.assert_bounded()
+    assert node.query(f"SELECT count() FROM system.databases WHERE startsWith(name, '{prefix}')").strip() == "0"
+
+
+# Every `INSERT` into a `DeltaLake` table leaves about ten more established connections to object storage and several threads, held by the table until `DROP TABLE`, beyond the 10 entries of its snapshot cache. Remove the mark once that is fixed: being strict, it turns red then.
+@pytest.mark.xfail(reason="every INSERT into a DeltaLake table leaks connections and threads until DROP TABLE", strict=True)
+def test_soak_delta_lake_insert_and_read(started_cluster):
+    """`INSERT` into a `DeltaLake` table, then reads of it, `SOAK_ITERATIONS` times.
+
+    The reader is the Rust Delta kernel, whose allocations `MemoryTracking` does not see, so the resident memory checked by `ResourceSampler.assert_bounded` is what covers it. Each table snapshot and each write transaction builds its own kernel engine with its own object store client, so `DeltaLakeSnapshotCacheSizeElements` is sampled too."""
+    node = started_cluster.instances["node1"]
+    table = f"soak_delta_{uuid.uuid4().hex[:8]}"
+    settings = {"allow_delta_lake_writes": 1, "allow_delta_lake_create_table": 1}
+    node.query(
+        f"CREATE TABLE {table} (id Int64, payload String) "
+        f"ENGINE = DeltaLake('http://minio1:9001/warehouse-rest/soak_delta/{table}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings=settings,
+    )
+
+    log = QueryLog(node, "delta_insert_read")
+    sampler = ResourceSampler(node, metrics=["DeltaLakeSnapshotCacheSizeElements", "StorageConnectionsTotal", "GlobalThread"])
+    for i in range(SOAK_ITERATIONS):
+        log.query("insert", i, f"INSERT INTO {table} SELECT {i}, repeat('x', 100)", settings=settings)
+        assert log.query("count", i, f"SELECT count() FROM {table}").strip() == str(i + 1)
+        assert log.query("point_read", i, f"SELECT id FROM {table} WHERE id = {i}").strip() == str(i)
+        sampler.sample(i)
+
+    sampler.log_summary(table)
+    # The Delta kernel reads the log through its own object store client, so the `S3*` events count only what ClickHouse itself reads and writes. The point read is not checked for constant requests: it reads every data file, as data files are not skipped by their statistics here.
+    log.assert_constant_per_iteration("insert", SOAK_S3_EVENTS, SOAK_ITERATIONS, require_nonzero=["S3PutObject"])
+    log.assert_constant_per_iteration("count", SOAK_S3_EVENTS, SOAK_ITERATIONS)
+    log.assert_constant_per_iteration("point_read", [], SOAK_ITERATIONS)
+    sampler.assert_bounded()
+    node.query(f"DROP TABLE {table}")

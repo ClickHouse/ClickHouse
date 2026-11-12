@@ -86,6 +86,7 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsBool enable_packed_string_keys_in_hash_join;
 }
 
 namespace ErrorCodes
@@ -235,6 +236,7 @@ TableJoin::TableJoin(
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
+    , enable_packed_string_keys_in_hash_join(settings[Setting::enable_packed_string_keys_in_hash_join])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -270,6 +272,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
+    , enable_packed_string_keys_in_hash_join(settings.enable_packed_string_keys_in_hash_join)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -1249,11 +1252,6 @@ void TableJoin::resetToCross()
     this->table_join.kind = JoinKind::Cross;
 }
 
-bool TableJoin::allowParallelHashJoin() const
-{
-    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
-}
-
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
 {
     ASTPtr expression_list = rightKeysList();
@@ -1304,16 +1302,17 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .current_metric = CurrentMetrics::TemporaryFilesForJoin,
         .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
+        .num_files = ProfileEvents::ExternalJoinWritePart,
+        .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
 }
 
-bool allowParallelHashJoin(
+bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct)
 {
-    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
@@ -1321,5 +1320,23 @@ bool allowParallelHashJoin(
     if (is_special_storage || !one_disjunct)
         return false;
     return true;
+}
+
+bool TableJoin::preferParallelHashLayout(
+    HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
+{
+    if (!(isInnerOrLeft(kind()) || isRightOrFull(kind())) || isSpecialStorage())
+        return false;
+
+    switch (layout)
+    {
+        case HashJoinLayout::SERIAL:
+            return false;
+        case HashJoinLayout::PARALLEL:
+            return true;
+        case HashJoinLayout::AUTO:
+            return !rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold;
+    }
+    UNREACHABLE();
 }
 }

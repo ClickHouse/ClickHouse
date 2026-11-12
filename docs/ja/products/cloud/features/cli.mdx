@@ -2,166 +2,114 @@
 sidebarTitle: 'ClickHouse CLI'
 slug: /cloud/features/cli
 title: 'ClickHouse CLI'
-description: 'ClickHouse CLI を使用して ClickHouse Cloud サービスとローカルの ClickHouse インスタンスを管理します'
-keywords: ['clickhousectl', 'CLI', 'クラウド管理', 'ローカル開発']
-doc_type: 'reference'
+description: 'ClickHouse CLI (clickhousectl) を使用して、端末から ClickHouse Cloud サービス、Managed Postgres、ClickPipes、ClickStack を作成・管理します'
+keywords: ['clickhousectl', 'chctl', 'CLI', 'cloud management', 'command line']
+doc_type: 'guide'
 ---
 
-ClickHouse CLI (`clickhousectl`) は、ClickHouse Cloud リソースの管理や、ClickHouse を使ったローカル開発を一元的に行えるコマンドラインツールです。[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの管理にも対応しています。
+ClickHouse CLI (`clickhousectl`、別名 `chctl`) を使用すると、端末、スクリプト、またはコーディングエージェントから ClickHouse Cloud を管理できます。このページでは、CLI のうち Cloud 関連の機能について説明します。すべてのコマンドグループやローカル開発、動作の詳細については、[clickhousectl リファレンス](/ja/concepts/features/interfaces/cli)を参照してください。
 
-<div id="installation">
-  ## インストール
-</div>
+## 管理できる対象 {#what-you-can-manage}
 
-```bash
-curl https://clickhouse.com/cli | sh
-```
+`clickhousectl cloud` コマンドで管理できる対象は次のとおりです。
 
-便宜上、`chctl` のエイリアスも自動的に作成されます。
+* **サービス:** ClickHouse Cloud サービスの作成、スケーリング、起動、停止、およびクエリ API 経由での SQL の実行。
+* **[Managed Postgres](/ja/products/managed-postgres/overview) (Beta):** Postgres サービス、読み取りレプリカ、ポイントインタイム復元の作成と、それらの設定の変更。
+* **[ClickPipes](/ja/integrations/clickpipes/home):** オブジェクトストレージ、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB、BigQuery からのデータ取り込み。
+* **[ClickStack](/ja/clickstack/overview):** [Managed ClickStack](/ja/clickstack/deployment/managed) サービス上のソース、ダッシュボード、アラート、Webhook、保存済み検索、ロールの管理。
+* **ユーザー定義関数:** 実行可能 UDF のローカルでのテストと、Cloud サービスへのデプロイ。
+* **バックアップ:** バックアップの一覧表示、バックアップスケジュールの変更、新しいサービスへのバックアップの復元。
+* **組織のアクセス管理:** 組織、メンバー、招待、APIキー、アクティビティログ。
 
-<div id="cloud-management">
-  ## Cloud 管理
-</div>
+各コマンドで使用できるフラグと、必要な APIキーのアクセス許可を確認するには、`clickhousectl cloud <command> --help` を実行してください。
 
-ClickHouse Cloud にログインし、コマンドラインから直接サービスを管理します。
-
-<div id="authentication">
-  ### 認証
-</div>
+## インストール {#installation}
 
 ```bash
-clickhousectl cloud auth
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-API key とシークレットの入力が求められ、これらは `.clickhouse/credentials.json` に保存されます (プロジェクトローカル、Git では無視されます) 。
+このスクリプトは `~/.local/bin/clickhousectl` と、その別名である `chctl` をインストールします。`~/.local/bin` が `PATH` に含まれていることを確認してください。npm、pip、uv など、その他のインストール方法については[インストール](/ja/concepts/features/interfaces/cli#installation)を参照してください。
 
-環境変数を使用することもできます。
+## 認証 {#authentication}
+
+ブラウザ経由の OAuth ログインは読み取り専用です。リソースを作成または変更するには、その変更を実行できるロールが付与された [APIキー](/ja/products/cloud/features/admin-features/api/openapi) が必要です。
 
 ```bash
-export CLICKHOUSE_CLOUD_API_KEY=your-key
-export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+# Read-only: OAuth device flow in your browser
+clickhousectl cloud auth login
+
+# Read and write: prompts for the API key and secret, keeping the secret out of shell history
+clickhousectl cloud auth login --interactive
+
+# Alternative for scripts
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 ```
 
-<div id="services">
-  ### サービス
-</div>
+ログインすると認証情報が検証され、アイデンティティが表示されます。`clickhousectl cloud auth whoami` でいつでも確認できます。複数の組織に所属している場合は、Cloud コマンドに `--org-id <org-id>` (または `--org-name <name>`) を指定してください。CI では、ログインせずに `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。認証情報の優先順位とログアウトについては、[認証](/ja/concepts/features/interfaces/cli#authentication)を参照してください。
+
+## 例 {#examples}
+
+### サービスを作成してクエリを実行する {#create-and-query-a-service}
 
 ```bash
-# サービスの一覧表示
-clickhousectl cloud service list
+# Create a service. Save the initial password; it is printed only once.
+# Omitting --ip-allow allows all addresses (0.0.0.0/0).
+clickhousectl cloud service create --name analytics \
+  --provider aws --region us-east-1 \
+  --ip-allow '203.0.113.10/32=Office'
 
-# サービスの作成
-clickhousectl cloud service create --name my-service \
-  --provider aws \
-  --region us-east-1
-
-# サービスの詳細取得
-clickhousectl cloud service get <service-id>
-
-# サービスのスケール
-clickhousectl cloud service scale <service-id> \
-  --min-replica-memory-gb 24 \
-  --max-replica-memory-gb 48 \
-  --num-replicas 3
-
-# サービスの起動/停止
-clickhousectl cloud service start <service-id>
-clickhousectl cloud service stop <service-id>
-
-# サービスの削除
-clickhousectl cloud service delete <service-id>
+# Look up the service ID, then run SQL over the Query API
+CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
+clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
 ```
 
-<div id="postgres-services">
-  ### Postgres サービス (ベータ)
-</div>
+作成コマンドは、サービスが稼働状態になる前に返ります。`state` が `running` になるまで `clickhousectl cloud service get "$CH_ID"` をポーリングしてください。
 
-[ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスの作成と管理を行います。
+APIキーで最初にクエリを実行すると、clickhousectl はサービスのクエリ API エンドポイントにお使いのAPIキーを追加します。エンドポイントが存在しない場合は作成されます。新しいキーは作成されません。この動作を行わずにエラーとするには、`--no-auto-enable` を指定してください。OAuth を使用する場合、`service query` は読み取り専用の `SELECT` 文を実行します。クエリ API は約 30 秒でタイムアウトするため、長時間かかるクエリや一括ロードには `clickhouse client` を使用してください。
+
+### Managed Postgres サービスを作成する {#create-a-managed-postgres-service}
 
 ```bash
-# List Postgres services
-clickhousectl cloud postgres list
-
-# Create a Postgres service
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m6gd.xlarge \
-  --pg-version 18
-
-# Get service details
-clickhousectl cloud postgres get <pg-id>
-
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# Delete a service
-clickhousectl cloud postgres delete <pg-id>
+clickhousectl cloud postgres create --name app-db \
+  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
+  --ip-allow '203.0.113.10/32:5432=Office'
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
 ```
 
-<div id="organizations">
-  ### Organizations
-</div>
+パスワードと接続文字列は `create` の実行時にしか返されないため、必ず保存しておいてください。`--ip-allow` を省略すると、ポート 5432 と 6432 がすべてのアドレスに対して開放されます。`state` が `running` になるまで待ってから、CA 証明書を使用して `psql` で接続してください。
+
+### ClickPipes、ClickStack、バックアップを確認する {#inspect-clickpipes-clickstack-and-backups}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+clickhousectl cloud clickpipe list "$CH_ID"
+clickhousectl cloud clickstack source list <clickstack-service-id>
+clickhousectl cloud backup list "$CH_ID"
 ```
 
-<div id="api-keys">
-  ### APIキー
-</div>
+これらの読み取り系コマンドは OAuth 認証で利用できます。ClickPipe の作成や ClickStack のリソースの変更には APIキーが必要です。詳しくは、以下のリポジトリ内のガイドを参照してください。
+
+### ユーザー定義関数をデプロイする {#deploy-a-user-defined-function}
 
 ```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
+# Uploads clickhouse/udfs/my_udf/, waits for the build, then attaches that version to the service
+clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 ```
 
-<div id="members-and-invitations">
-  ### メンバーと招待
-</div>
+まずはローカルサーバーに対して `clickhousectl local udf deploy my_udf` を実行し、関数をテストしてください。
 
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
+## JSON 出力とコーディングエージェント {#json-output}
 
-<div id="backups">
-  ### バックアップ
-</div>
+Cloud コマンドは `--json` を受け付けます。また、CLI はコーディングエージェントを検出すると自動的に JSON を選択します。この場合、`cloud service query` のデフォルトの出力形式は `JSONEachRow` になるため、出力をパースするスクリプトでは `--format` を指定してください (例：`--format TabSeparated`) 。詳しくは [JSON 出力](/ja/concepts/features/interfaces/cli#json-output) および [終了コード](/ja/concepts/features/interfaces/cli#exit-codes) を参照してください。ClickHouse agent skills は `clickhousectl skills` でインストールできます。
 
-```bash
-clickhousectl cloud backup list <service-id>
-clickhousectl cloud backup get <service-id> <backup-id>
-```
+## さらに詳しく {#learn-more}
 
-<div id="json-output">
-  ### JSON 出力
-</div>
-
-任意の cloud コマンドで JSON 形式のレスポンスを取得するには、`--json` フラグを使用します。
-
-```bash
-clickhousectl cloud --json service list
-```
-
-<div id="local-development">
-  ## ローカル開発
-</div>
-
-CLI は、ローカルの ClickHouse インストールやサーバーの管理にも対応しています。ローカル開発を始めるには、[clickhousectl (CLI)](/ja/get-started/setup/self-managed/clickhousectl) ページを参照してください。
-
-<div id="requirements">
-  ## 要件
-</div>
-
-* macOS (aarch64、x86&#95;64) または Linux (aarch64、x86&#95;64)
-* Cloud コマンドの実行には [ClickHouse Cloud API key](/ja/products/cloud/features/admin-features/api/openapi) が必要です
+* [clickhousectl リファレンス](/ja/concepts/features/interfaces/cli): すべてのコマンドグループ、ローカル開発、スキル、セルフアップデート、テレメトリーについて説明しています。
+* リポジトリ内のガイド:
+  * [ClickHouse Cloudサービス](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md)
+  * [ClickHouse Managed Postgres](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md)
+  * [ClickPipes](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md)
+  * [ClickStack](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md)
+  * [ユーザー定義関数](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)
+* リポジトリ内のリファレンス: [認証とアクセス](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md)、[SQL とクエリ API](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md)、[ClickPipe の設定](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md)、[自動化と出力の契約](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md)

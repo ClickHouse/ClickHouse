@@ -2,15 +2,12 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: 'Security'
 title: 'Security'
-description: 'Security features for ClickHouse Managed Postgres including IP whitelisting, encryption, and Private Link'
-keywords: ['postgres security', 'ip whitelisting', 'encryption', 'tls', 'ssl', 'private link', 'backup retention']
+description: 'Security features for ClickHouse Managed Postgres including IP whitelisting, encryption, AWS PrivateLink, and GCP Private Service Connect'
+keywords: ['postgres security', 'ip whitelisting', 'encryption', 'tls', 'ssl', 'private link', 'private service connect', 'psc', 'backup retention']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
 ClickHouse Managed Postgres is built with enterprise-grade security features to protect your data and meet compliance requirements. This page covers network security, encryption, and backup retention policies.
 
@@ -47,28 +44,14 @@ If no IP filters are configured, connections from all IP addresses are permitted
 
 ## Encryption {#encryption}
 
-ClickHouse Managed Postgres encrypts your data both at rest and in transit to ensure comprehensive data protection.
+ClickHouse Managed Postgres encrypts your data at rest and in transit.
 
 ### Encryption at rest {#encryption-at-rest}
 
-All data stored by ClickHouse Managed Postgres is encrypted at rest to protect against unauthorized access to the underlying storage infrastructure.
+Encryption at rest is enabled for every instance and can't be disabled. It's transparent to your applications and requires no configuration. It covers:
 
-#### NVMe storage encryption {#nvme-encryption}
-
-Your database files, transaction logs, and temporary files stored on NVMe drives are encrypted using industry-standard encryption algorithms. This encryption is transparent to your applications and requires no configuration.
-
-#### Object storage encryption {#s3-encryption}
-
-Backups and Write-Ahead Log (WAL) archives stored in object storage are also encrypted at rest. This includes:
-- Full daily backups
-- Incremental WAL archives
-- Point-in-time recovery data
-
-All backup data is stored in dedicated, isolated storage buckets with credentials scoped to each individual instance, ensuring that backup data remains secure and accessible only to authorized systems.
-
-<Info>
-Encryption at rest is enabled by default for all ClickHouse Managed Postgres instances and can't be disabled. No additional configuration is required.
-</Info>
+- **NVMe storage:** database files, transaction logs, and temporary files, encrypted using industry-standard encryption algorithms.
+- **Object storage:** full daily backups, incremental WAL archives, and point-in-time recovery data.
 
 ### Encryption in transit {#encryption-in-transit}
 
@@ -111,9 +94,48 @@ To enable AWS PrivateLink for your ClickHouse Managed Postgres instance:
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-Private Service Connect enables private connectivity between your ClickHouse Managed Postgres instance and your GCP Virtual Private Cloud (VPC) without exposing traffic to the public internet.
+GCP Private Service Connect (PSC) enables private connectivity between your ClickHouse Managed Postgres instance and your Google Cloud Virtual Private Cloud (VPC) without exposing traffic to the public internet. This provides an additional layer of network isolation and security.
 
-To enable Private Service Connect for your ClickHouse Managed Postgres instance, contact ClickHouse support by creating a support ticket.
+<Info>
+**Manual setup required**
+
+GCP Private Service Connect support is available but requires manual configuration by ClickHouse support. This feature is ideal for enterprise customers with strict network isolation requirements.
+</Info>
+
+### Requesting GCP Private Service Connect setup {#requesting-gcp-private-service-connect}
+
+Access is granted per Private Service Connect endpoint, not per GCP project. Only the specific endpoint you create and report to ClickHouse support is accepted, so the setup takes two rounds with support.
+
+To enable GCP Private Service Connect for your ClickHouse Managed Postgres instance:
+
+1. **Contact ClickHouse support** by creating a support ticket
+2. **Provide the following information**:
+   - Your ClickHouse organization ID
+   - ID/hostname of postgres service
+
+3. **ClickHouse support will**:
+   - Provision the Private Service Connect service attachment on the ClickHouse Managed Postgres side
+   - Provide you with the service attachment ID which you can use to create an endpoint.
+
+4. **Create your Private Service Connect endpoint**:
+   - Create the Private Service Connect endpoint in your VPC, in the same region as the Postgres service, using the service attachment ID provided by ClickHouse support. Private Service Connect endpoints are regional, so cross-region connections are not supported.
+   - The connection will show as "Pending" in the GCP console. This is expected until ClickHouse support accepts it.
+   - Find the **PSC connection ID** of the endpoint. It is shown on the endpoint in the GCP console, or you can run:
+
+     ```bash
+     gcloud compute forwarding-rules describe <endpoint-name> --region <region> --format='value(pscConnectionId)'
+     ```
+
+   - Send the PSC connection ID to ClickHouse support in the same support ticket.
+
+5. **ClickHouse support will**:
+   - Add your endpoint to the allow list of the service attachment. The connection then moves from "Pending" to "Accepted".
+
+6. **Connect to your ClickHouse Managed Postgres instance**:
+   - Once your endpoint is in an "Accepted" state, you can connect to it using the endpoint IP on port `5432` (direct) or `6432` (pooler).
+   - The endpoint IP has no DNS name matching the Postgres hostname, so use `sslmode=require`, or add a private Cloud DNS record mapping the Postgres hostname to the endpoint IP to use `sslmode=verify-full`.
+
+To connect an additional endpoint to the same instance, for example from another VPC or after recreating an endpoint, repeat steps 4 and 5: create the endpoint against the same service attachment ID and send its PSC connection ID to ClickHouse support. To remove an endpoint's access, ask ClickHouse support to remove it from the allow list.
 
 ## Backup retention {#backup-retention}
 
@@ -127,9 +149,6 @@ ClickHouse Managed Postgres automatically backs up your data to protect against 
 
 ### Backup security {#backup-security}
 
-Backups are stored with the same security guarantees as your primary data:
-- **Encryption at rest** in object storage
-- **Isolated storage buckets** per instance with scoped credentials
-- **Access control** limited to the Postgres Instance linked to the backup.
+Backups are [encrypted at rest](#encryption-at-rest) and stored in isolated storage buckets per instance, with credentials scoped so that only the Postgres instance linked to the backup can access them.
 
 For more details on backup strategies and point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) page.

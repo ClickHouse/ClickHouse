@@ -1,38 +1,41 @@
 #pragma once
 
+#include <Processors/ISimpleTransform.h>
+
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ActionsDAG.h>
-
-#include <Processors/IInflatingTransform.h>
 
 #include <Core/Field.h>
-
-#include <queue>
 
 namespace DB
 {
 
-/// Evaluates the watermark expression on a data chunk, emits a watermark marker after the chunk.
-class CalculateWatermarksTransform final : public IInflatingTransform
+struct WatermarkColumn
 {
+    static constexpr const char * name = "_watermark";
+};
+
+/// Appends the watermark column.
+class CalculateWatermarksTransform final : public ISimpleTransform
+{
+    void transform(Chunk & chunk) override;
+
 public:
     CalculateWatermarksTransform(
-        SharedHeader header_,
+        SharedHeader input_header_,
+        SharedHeader output_header_,
         ActionsDAG watermark_expression_,
+        Field initial_watermark_,
         ContextPtr context_);
 
     String getName() const override { return "CalculateWatermarks"; }
 
-protected:
-    void consume(Chunk chunk) override;
-    bool canGenerate() override;
-    Chunk generate() override;
-
 private:
+    const String result_name;
     const ExpressionActionsPtr watermark_expression;
 
-    std::queue<Chunk> pending_chunks;
+    Field watermark;
 };
 
 }

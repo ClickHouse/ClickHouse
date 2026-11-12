@@ -18,13 +18,15 @@ This guide covers how backups work in ClickHouse Cloud, what options you have to
 
 ## Backup status list {#backup-status-list}
 
-Backups run according to the schedule configured for your service, whether that is the default daily schedule or a [custom schedule](/products/cloud/guides/backups/configurable-backups) you have picked. All available backups can be viewed from the **Backups** tab of the service. From here, you can see the status of the backup, the duration, as well as the size of the backup. You can also restore a specific backup using the **Actions** column.
+Backups run according to the schedule configured for your service, whether that is the default daily schedule or a [custom schedule](/products/cloud/guides/backups/configurable-backups) you have picked. All available restore points can be viewed from the **Backups** tab of the service. From here, you can see the status of the backup, the duration, as well as the size of the backup. You can also restore a specific backup using the **Actions** column.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="List of backup statuses in ClickHouse Cloud" border/>
 
 ## Understanding backup cost {#understanding-backup-cost}
 
 Unless configured with a different schedule, services are backed up once every 24 hours, and each backup is retained for 24 hours. The ability to configure backup schedules varies by service and plan. Choosing a schedule that requires retaining more data, or causes more frequent backups can cause additional storage charges for backups.
+
+The restore points displayed in the console are not the billing boundary. A restore point can require a full backup and one or more incremental backups from its chain. Backup storage usage can include these retained dependencies even when they are not displayed as separate restore points.
 
 To understand the backup cost, you can view the backup cost per service from the usage screen (as shown below). Once you have backups running for a few days with a customized schedule, you can get an idea of the cost and extrapolate to get the monthly cost for backups.
 

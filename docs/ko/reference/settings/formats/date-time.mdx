@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)에서 자동으로 생성됩니다.
 
-<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
-  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
-</div>
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-datetime64 값의 소수부 끝에 있는 불필요한 0을 동적으로 제거하여 출력 scale을 [0, 3, 6]에 맞게 조정합니다.
-각각 &#39;seconds&#39;, &#39;milliseconds&#39;, &#39;microseconds&#39;에 해당합니다.
+`DateTime64` 값의 소수부 끝에 있는 0을 동적으로 제거하고, 모든 유효 자릿수를 유지하는 다음 3의 배수인
+[0, 3, 6, 9]로 출력 scale을 올림합니다. 소수부가 모두 0이면 제거합니다.
 
-<div id="date_time_input_format">
-  ## date_time_input_format
-</div>
+## date_time_input_format {#date_time_input_format}
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -51,9 +47,7 @@ datetime64 값의 소수부 끝에 있는 불필요한 0을 동적으로 제거�
 * [DateTime 데이터 타입.](/ko/reference/data-types/datetime)
 * [날짜 및 시간을 처리하는 함수.](/ko/reference/functions/regular-functions/date-time-functions)
 
-<div id="date_time_output_format">
-  ## date_time_output_format
-</div>
+## date_time_output_format {#date_time_output_format}
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -78,19 +72,21 @@ datetime64 값의 소수부 끝에 있는 불필요한 0을 동적으로 제거�
 * [DateTime 데이터 타입.](/ko/reference/data-types/datetime)
 * [날짜 및 시간을 처리하는 함수.](/ko/reference/functions/regular-functions/date-time-functions)
 
-<div id="date_time_overflow_behavior">
-  ## date_time_overflow_behavior
-</div>
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-[Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64) 또는 정수를 Date, Date32, DateTime 또는 DateTime64로 변환할 때, 해당 값을 결과 타입으로 표현할 수 없는 경우의 동작을 정의합니다.
+[Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64), [Time](/ko/reference/data-types/time), [Time64](/ko/reference/data-types/time64) 또는 숫자 값(정수(integer) 및 부동소수점 수)을 `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` 또는 `Time64`로 변환할 때, 해당 값을 결과 타입으로 표현할 수 없으면 어떻게 동작할지 정의합니다. `Decimal` 값은 `DateTime64`와 `Time64`로만 변환할 수 있으며, 이 변환에도 이 설정이 적용됩니다. `Decimal`을 `Date`, `Date32`, `DateTime` 또는 `Time`으로 변환하면 설정과 관계없이 거부됩니다. 또한 입력 포맷을 통한 경우를 포함하여 텍스트에서 `Date` 또는 `DateTime`을 파싱할 때에도 이 설정이 적용됩니다.
 
 가능한 값:
 
-* `ignore` — 오버플로우를 무시합니다. 결과는 정의되지 않습니다.
+* `ignore` — 오버플로우를 별도 알림 없이 무시합니다. 날짜 및 시간 타입 간 변환에서는 결과가 정의되지 않으며(값이 순환될 수 있음), 숫자 값은 결과 타입의 범위 경계값으로 포화됩니다.
 * `throw` — 오버플로우가 발생하면 예외를 발생시킵니다.
-* `saturate` — 결과를 포화시킵니다. 값이 대상 타입에서 표현할 수 있는 최솟값보다 작으면 결과는 표현 가능한 최솟값이 됩니다. 값이 대상 타입에서 표현할 수 있는 최댓값보다 크면 결과는 표현 가능한 최댓값이 됩니다.
+* `saturate` — 결과를 포화시킵니다. 값이 대상 타입으로 표현할 수 있는 최솟값보다 작으면 표현 가능한 최솟값이 결과가 됩니다. 값이 대상 타입으로 표현할 수 있는 최댓값보다 크면 표현 가능한 최댓값이 결과가 됩니다.
+
+정확한 형변환 함수(`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`)는 이 설정의 영향을 받지 않습니다. 표현할 수 없는 값은 각각 항상 거부되거나, `NULL`로 반환되거나, 기본값으로 대체됩니다.
+
+이 설정은 `CAST`와 변환 함수가 수행하는 변환에 적용되며, `INSERT ... VALUES` 표현식 템플릿이나 `INSERT ... SELECT`에서 수행되는 변환도 포함됩니다. 반면 `Values` 포맷이 템플릿 없이 평가하는 상수 표현식(`input_format_values_interpret_expressions`로 활성화되는 폴백)과 `values` 테이블 함수는 `DateTime64`와 `Time64`에 대해서만 이 설정을 따릅니다. 즉, 이때 `Date`, `Date32`, `DateTime` 또는 `Time` 컬럼에 범위를 벗어난 숫자를 넣으면 이 설정이 적용되지 않습니다. `values` 테이블 함수는 해당 값을 거부하며, `Values` 포맷도 마찬가지로 거부합니다. 단, `input_format_null_as_default`가 활성화되어 있으면 `Values` 포맷은 해당 컬럼의 기본값을 삽입합니다.
 
 기본값: `ignore`.
 

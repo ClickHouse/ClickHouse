@@ -1,4 +1,5 @@
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
@@ -7,28 +8,30 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProxyConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <base/scope_guard.h>
 
 #include <IO/SocketPeerClosed.h>
 
-#include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 
 #include <climits>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <queue>
 #include <unordered_set>
@@ -97,6 +100,11 @@ namespace
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char http_connection_socket_inode_unavailable[];
+}
 
 namespace ErrorCodes
 {
@@ -349,7 +357,9 @@ public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
     virtual HTTPConnectionGroupType getGroupType() const = 0;
-    virtual size_t wipeExpired() = 0;
+    /// Appends expired connections to `expired_connections` for the caller to destroy after releasing its locks:
+    /// closing a TLS connection may do socket I/O. Returns the number of connections left.
+    virtual size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) = 0;
 };
 
 
@@ -457,15 +467,82 @@ private:
             isExpired = true;
         }
 
+        /// Take over another session's socket, together with everything we know about that socket.
+        ///
+        /// `Poco::Net::HTTPClientSession::assign` moves the socket from one session object to
+        /// another, and the pool does this on both of its reuse paths: when a returning connection
+        /// is preserved for the pool, and when a borrowed one is swapped in on reconnect. The
+        /// fields below describe the socket, not the wrapper around it, so they have to travel with
+        /// it - otherwise every borrow of the same live keep-alive socket would mint a fresh
+        /// `connection_id` and restart `connection_requests` at zero, and grouping by the id would
+        /// stop following the connection it is supposed to identify.
+        void assignFrom(PooledConnection & other)
+        {
+            /// Take the copies first: `Poco::Net::HTTPClientSession::assign` ends by resetting the
+            /// source session, which runs the `reset` override below and clears the very fields we
+            /// are about to read. That is the right thing for the source - the socket is ours now,
+            /// and it must not keep claiming it - but reading it afterwards would hand us an
+            /// unidentified socket and mint a new id for a connection that did not change.
+            const UInt64 other_connection_id = other.connection_id;
+            const Poco::Timestamp other_established_at = other.established_at;
+            const int other_socket_fd = other.socket_fd;
+            const UInt64 other_socket_inode = other.socket_inode;
+            const UInt32 other_requests_on_socket = other.requests_on_socket;
+            const Poco::Timespan other_last_idle_time = other.last_idle_time;
+            const Poco::Timestamp other_idle_since = other.idle_since;
+
+            Session::assign(other);
+
+            connection_id = other_connection_id;
+            established_at = other_established_at;
+            socket_fd = other_socket_fd;
+            socket_inode = other_socket_inode;
+            requests_on_socket = other_requests_on_socket;
+            last_idle_time = other_last_idle_time;
+            idle_since = other_idle_since;
+        }
+
+        /// Called on every path that drops this session's socket. The fd number and the inode are
+        /// only a cache used to tell "still the same socket" from "a new one", and the OS recycles
+        /// both aggressively: a close followed by a connect routinely returns the very same pair.
+        /// Forgetting them here is what makes `notifySocketInode` mint a new `connection_id` -
+        /// and restart the age and the request count - for what is really a new TCP connection.
+        void forgetSocketIdentity()
+        {
+            socket_fd = -1;
+            socket_inode = 0;
+        }
+
+        /// Called when the connection is stored in the pool: from now on it is idle.
+        ///
+        /// Poco's own last-request timestamp cannot serve for this. It is updated when the request
+        /// headers go out, so the time since then includes the transfer of the request and response
+        /// bodies and whatever the user did with the connection before returning it - a warm
+        /// connection that has just finished a long transfer would look as if it had been sitting
+        /// in the pool all along.
+        void markIdle()
+        {
+            idle_since.update();
+        }
+
+        /// Called when the connection is handed out from the pool: the time it spent there is the
+        /// idle time of the next request it carries. A socket that has not carried a request yet
+        /// was never idle after one, so it reports zero.
+        void sampleIdleTime()
+        {
+            last_idle_time = requests_on_socket ? Poco::Timespan(Poco::Timestamp() - idle_since) : Poco::Timespan(0);
+        }
+
         void reconnect(UInt64 * connect_time) override
         {
             Session::close();
+            forgetSocketIdentity();
 
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getConnection(timeouts, connect_time);
-                Session::assign(*new_connection);
+                auto new_connection = lock->getPooledConnection(timeouts, connect_time);
+                assignFrom(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
@@ -474,6 +551,12 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
+            /// Poco can reconnect from inside sendRequest when the borrowed connection turns out
+            /// to be dead. The idle time of the socket that is going to carry the request was
+            /// sampled when `getPooledConnection` handed it out, and `assignFrom` carried it over;
+            /// a freshly opened socket gets zero from `notifySocketInode`. The connection itself is
+            /// published by `sendRequest` once the request has gone out, so it describes this
+            /// socket, not the discarded one.
             notifySocketInode();
         }
 
@@ -489,45 +572,10 @@ private:
                                Session::getPort());
         }
 
-        Poco::Timespan idleTime()
+        /// Installs IO scheduling hooks and per-thread throttlers on the session.
+        /// It has to run before any socket I/O of the exchange starts, so both send entrypoints call it.
+        void installTransportHooks(const Poco::Net::HTTPRequest & request)
         {
-            Poco::Timestamp now;
-            return now - Session::getLastRequest();
-        }
-
-        void flushRequest() override
-        {
-            if (bool(request_stream))
-            {
-                request_stream->flush();
-
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthOutputStream *>(request_stream))
-                {
-                    request_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedOutputStream *>(request_stream))
-                {
-                    chunked_steam->rdbuf()->close();
-                    request_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPOutputStream *>(request_stream))
-                {
-                    request_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    request_stream_completed = false;
-                }
-            }
-            request_stream = nullptr;
-
-            Session::flushRequest();
-        }
-
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
-        {
-            auto idle = idleTime();
-
             // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
@@ -537,67 +585,65 @@ private:
                 Session::setReceiveThrottler(throttler);
             if (auto throttler = CurrentThread::getWriteThrottler())
                 Session::setSendThrottler(throttler);
+        }
 
-            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
+        /// Runs one of Poco's send entrypoints, recording the connection that carried the request.
+        ///
+        /// Only for a request that is going to be logged: the pool is shared by many callers that
+        /// never read it, and they should not pay for the sampling.
+        ///
+        /// The connection is published only after the send returns, i.e. once the request has
+        /// actually been written to the socket. Anything that throws before that - a failed
+        /// reconnect of a dead keep-alive socket, the IO scheduler refusing the request in the
+        /// data hooks - leaves the slot empty, so the row the caller writes for the error does
+        /// not claim a connection that never carried it.
+        template <typename Send>
+        decltype(auto) sendWithConnectionInfo(const Poco::Net::HTTPRequest & request, Send && send)
+        {
+            const bool capture_connection_info = isHTTPConnectionInfoCaptureEnabled();
+            if (capture_connection_info)
+                beginHTTPConnectionInfoRequest();
 
-            request_stream = &result;
-            request_stream_completed = false;
+            installTransportHooks(request);
 
-            response_stream = nullptr;
-            response_stream_completed = false;
+            decltype(auto) result = send();
+            if (capture_connection_info)
+                publishConnectionInfo();
+            ++requests_on_socket;
+
+            /// The idle time belongs to the first request after the connection left the pool. Any
+            /// further request over the same checkout follows the previous one on a connection its
+            /// user was holding, not one that was idle in the pool.
+            last_idle_time = Poco::Timespan(0);
 
             return result;
         }
 
-        std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
+        Poco::Net::HTTPClientSession::BodyInfo
+        sendRequestHeaders(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
-            std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
+            return sendWithConnectionInfo(request, [&]() { return Session::sendRequestHeaders(request, connect_time, first_byte_time); });
+        }
 
-            response_stream = &result;
-            response_stream_completed = false;
-
-            return result;
+        /// `getConnection` hands out a full `Poco::Net::HTTPClientSession`, so callers may still use the
+        /// legacy iostream API. It does not go through `sendRequestHeaders`, hence the separate override.
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
+        {
+            return sendWithConnectionInfo(request, [&]() -> std::ostream & { return Session::sendRequest(request, connect_time, first_byte_time); });
         }
 
         void reset() override
         {
-            request_stream = nullptr;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
-
             Session::reset();
+            forgetSocketIdentity();
         }
 
         ~PooledConnection() override
         {
-            if (bool(response_stream))
-            {
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                {
-                    response_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                {
-                    response_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                {
-                    response_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    response_stream_completed = false;
-                }
-            }
             /// Unregister from live_connections first, before tearing down session internals,
             /// so that the async metrics thread cannot dereference a partially-destructed session.
             group->atConnectionDestroy(this);
 
-            response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
@@ -643,28 +689,104 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
-        /// Notify the connection group about the current socket inode.
-        /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
+        /// Notify the connection group about the current socket inode, and give the socket an
+        /// identity the first time we see it.
+        ///
+        /// Called on every route by which a session gets a connected socket: `doConnect`, the
+        /// `reconnect` override (which Poco also uses for the lazy connect inside sendRequest), and
+        /// the copy made by `assignFrom` when a connection is stored for reuse. The identity is
+        /// derived from the socket itself, so calling it again for a socket already seen is
+        /// harmless: `publishConnectionInfo` does that as a safety net, but only for requests that
+        /// are going to be logged, so the fstat is not paid on every request through the pool.
         void notifySocketInode()
         {
+            int fd = -1;
+            UInt64 inode = 0;
             try
             {
-                auto fd = Session::socket().impl()->sockfd();
-                if (fd < 0)
-                    return;
-                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                if (fstat(fd, &st) == 0)
-                    group->updateSocketInode(this, st.st_ino);
+                fd = Session::socket().impl()->sockfd();
+                if (fd >= 0)
+                {
+                    struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                    if (fstat(fd, &st) == 0)
+                        inode = st.st_ino;
+                }
             }
             catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
             {
             }
+
+            /// Not every OS exposes an inode for a socket: on macOS `fstat` succeeds with `st_ino`
+            /// set to zero. The inode is then reported as zero, but the socket still gets its
+            /// identity - it is told apart from the previous one by the fd alone, which is enough
+            /// because every path that drops a socket calls `forgetSocketIdentity`.
+            fiu_do_on(FailPoints::http_connection_socket_inode_unavailable,
+            {
+                inode = 0;
+            });
+
+            if (fd < 0)
+                return;
+
+            if (fd != socket_fd || inode != socket_inode)
+            {
+                /// A socket we have not identified yet. Note the OS recycles both fds and inodes,
+                /// so the pair can repeat across connections - which is exactly why the id below
+                /// exists and why callers should group by it instead.
+                socket_fd = fd;
+                socket_inode = inode;
+                connection_id = nextHTTPConnectionId();
+                established_at.update();
+                requests_on_socket = 0;
+                last_idle_time = Poco::Timespan(0);
+            }
+
+            group->updateSocketInode(this, inode);
         }
 
         void doConnect(UInt64 * connect_time)
         {
+            forgetSocketIdentity();
             Session::reconnect(connect_time);
             notifySocketInode();
+        }
+
+        /// Local port of the current socket, or zero when it has none yet. Asks the OS directly
+        /// instead of `Poco::Net::Socket::address`, which throws for a socket that is not bound.
+        UInt16 getLocalPort()
+        {
+            const int fd = Session::socket().impl()->sockfd();
+            if (fd < 0)
+                return 0;
+
+            sockaddr_storage address{};
+            socklen_t address_length = sizeof(address);
+            if (0 != ::getsockname(fd, reinterpret_cast<sockaddr *>(&address), &address_length))
+                return 0;
+
+            if (address.ss_family == AF_INET)
+                return ntohs(reinterpret_cast<const sockaddr_in &>(address).sin_port);
+            if (address.ss_family == AF_INET6)
+                return ntohs(reinterpret_cast<const sockaddr_in6 &>(address).sin6_port);
+            return 0;
+        }
+
+        /// Record which connection is carrying the current request, for whoever logs it. Every
+        /// number here is scoped to the socket rather than to the session object wrapping it, so a
+        /// row can never claim a socket is new but has been idle for a minute.
+        void publishConnectionInfo()
+        {
+            notifySocketInode();
+
+            HTTPConnectionInfo info;
+            info.has_value = true;
+            info.id = connection_id;
+            info.socket_inode = socket_inode;
+            info.local_port = getLocalPort();
+            info.requests_served = requests_on_socket;
+            info.age_microseconds = static_cast<UInt64>(std::max<Poco::Timestamp::TimeDiff>(0, Poco::Timestamp() - established_at));
+            info.idle_microseconds = static_cast<UInt64>(std::max<Poco::Timespan::TimeDiff>(0, last_idle_time.totalMicroseconds()));
+            setCurrentHTTPConnectionInfo(info);
         }
 
         /// Whether the underlying socket has actually established a connection to a remote peer.
@@ -687,9 +809,14 @@ private:
             }
         }
 
-        bool isCompleted() const
+        /// A connection can only be reused when both the request and the response of the last
+        /// exchange were transferred to the end: anything left unsent or unread would be taken
+        /// for a part of the next request or response.
+        /// Not `const`: for a chunked response body the check has to peek into the socket to tell
+        /// a body that ended exactly at the last chunk from a truncated one.
+        bool isCompleted()
         {
-            return request_stream_completed && response_stream_completed;
+            return Session::isRequestBodyComplete() && Session::isResponseBodyComplete();
         }
 
         EndpointConnectionPool::WeakPtr pool;
@@ -699,11 +826,17 @@ private:
 
         LoggerPtr log = getLogger("PooledConnection");
 
-        std::ostream * request_stream = nullptr;
-        std::istream * response_stream = nullptr;
-
-        bool request_stream_completed = true;
-        bool response_stream_completed = true;
+        /// State of the current TCP connection, reset together whenever a socket we have not seen
+        /// before turns up, so the numbers reported always describe one and the same socket.
+        UInt64 connection_id = 0;
+        Poco::Timestamp established_at;
+        int socket_fd = -1;
+        UInt64 socket_inode = 0;
+        UInt32 requests_on_socket = 0;
+        /// How long the socket had been idle in the pool when it was handed out for the next request.
+        Poco::Timespan last_idle_time;
+        /// When the socket was last stored in the pool.
+        Poco::Timestamp idle_since;
     };
 
     using Connection = PooledConnection;
@@ -745,7 +878,14 @@ public:
 
     IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
     {
-        std::vector<ConnectionPtr> expired_connections;
+        return getPooledConnection(timeouts, connect_time);
+    }
+
+    /// Same as `getConnection`, but keeps the concrete type: `PooledConnection::reconnect` needs it
+    /// in order to inherit the socket's identity from the connection it takes over.
+    ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    {
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
             MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -772,6 +912,8 @@ public:
             ProfileEvents::increment(getMetrics().reused, 1);
             group->releaseStoredConnections(1);
 
+            reused_connection->sampleIdleTime();
+
             setTimeouts(*reused_connection, timeouts);
 
             /// Apply socket buffer sizes outside the lock because applySocketBufferSizes
@@ -795,24 +937,19 @@ public:
         return group->getType();
     }
 
-    size_t wipeExpired() override
+    size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) override
     {
-        std::vector<ConnectionPtr> expired_connections;
-
-        SCOPE_EXIT({
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
-            expired_connections.clear();
-        });
-
         std::lock_guard lock(mutex);
         return wipeExpiredImpl(expired_connections);
     }
 
-    size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
+    size_t wipeExpiredImpl(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
+        const size_t expired_before = expired_connections.size();
         SCOPE_EXIT({
-            group->releaseStoredConnections(expired_connections.size());
-            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+            const size_t wiped = expired_connections.size() - expired_before;
+            group->releaseStoredConnections(wiped);
+            ProfileEvents::increment(getMetrics().expired, wiped);
         });
 
         auto is_soft_limit_reached = group->isSoftLimitReached();
@@ -823,9 +960,10 @@ public:
             if (!isExpired(connection, is_soft_limit_reached) && !isStale(*connection))
                 return stored_connections.size();
 
-            stored_connections.pop();
-            connection->markAsExpired();
+            /// Appended before it is removed: if `push_back` throws, the connection stays stored and accounted.
             expired_connections.push_back(connection);
+            connection->markAsExpired();
+            stored_connections.pop();
         }
 
         return stored_connections.size();
@@ -901,6 +1039,14 @@ private:
     ConnectionPtr prepareConnectionViaProxy(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
+        /// The proxy host name is resolved by Poco (`HTTPClientSession::reconnect` builds a
+        /// `SocketAddress` out of `ProxyConfig::host`), so it does not go through the DNS cache.
+        /// It cannot be replaced with a resolved address here: when TLS terminates at the proxy
+        /// rather than at the target - an `https` proxy, or an `http` proxy with tunneling turned
+        /// off - Poco also uses `ProxyConfig::host` as the TLS peer name
+        /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
+        /// there would break certificate verification. Routing it through the cache needs a
+        /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
@@ -1139,8 +1285,9 @@ private:
         try
         {
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection_to_store->assign(connection);
+            connection_to_store->assignFrom(connection);
             connection_to_store->notifySocketInode();
+            connection_to_store->markIdle();
 
             {
                 MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -1189,7 +1336,9 @@ struct EndpointPoolKey
                    proxy_config.protocol,
                    proxy_config.tunneling,
                    proxy_config.original_request_protocol,
-                   proxy_config.no_proxy_hosts)
+                   proxy_config.no_proxy_hosts,
+                   proxy_config.username,
+                   proxy_config.password)
             == std::tie(
                    rhs.connection_group,
                    rhs.target_host,
@@ -1200,7 +1349,9 @@ struct EndpointPoolKey
                    rhs.proxy_config.protocol,
                    rhs.proxy_config.tunneling,
                    rhs.proxy_config.original_request_protocol,
-                   rhs.proxy_config.no_proxy_hosts);
+                   rhs.proxy_config.no_proxy_hosts,
+                   rhs.proxy_config.username,
+                   rhs.proxy_config.password);
     }
 };
 
@@ -1218,6 +1369,8 @@ struct Hasher
         s.update(k.proxy_config.protocol);
         s.update(k.proxy_config.tunneling);
         s.update(k.proxy_config.original_request_protocol);
+        s.update(k.proxy_config.username);
+        s.update(k.proxy_config.password);
         return s.get64();
     }
 };
@@ -1265,11 +1418,20 @@ public:
     {
         Poco::Timestamp now;
 
+        /// Destroyed after `mutex` is released.
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
+        std::vector<IExtendedPool::Ptr> dropped_pools;
+        SCOPE_EXIT({
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            dropped_pools.clear();
+            expired_connections.clear();
+        });
+
         std::lock_guard lock(mutex);
 
         if (now - last_wipe_time > wipe_timeout)
         {
-            wipeExpired();
+            wipeExpired(expired_connections, dropped_pools);
             last_wipe_time = now;
         }
 
@@ -1305,10 +1467,31 @@ public:
         }
     }
 
+    bool isSoftLimitReached(HTTPConnectionGroupType type) const
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        switch (type)
+        {
+            case HTTPConnectionGroupType::DISK:
+                return disk_group->isSoftLimitReached();
+            case HTTPConnectionGroupType::STORAGE:
+                return storage_group->isSoftLimitReached();
+            case HTTPConnectionGroupType::HTTP:
+                return http_group->isSoftLimitReached();
+        }
+    }
+
     void dropCache()
     {
+        /// The pools and their stored connections are destroyed after `mutex` is released.
+        decltype(endpoints_pool) dropped_pools;
+        SCOPE_EXIT({
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            dropped_pools.clear();
+        });
+
         std::lock_guard lock(mutex);
-        endpoints_pool.clear();
+        dropped_pools.swap(endpoints_pool);
     }
 
     HTTPConnectionPools::PoolSocketInodes getSocketInodes()
@@ -1351,19 +1534,25 @@ protected:
         return it->second;
     }
 
-    void wipeExpired() TSA_REQUIRES(mutex)
+    /// A pool found empty can store a returned connection before it is erased, so erased pools
+    /// go to `dropped_pools` for the caller to destroy after releasing `mutex`, like expired connections.
+    void wipeExpired(
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections,
+        std::vector<IExtendedPool::Ptr> & dropped_pools) TSA_REQUIRES(mutex)
     {
-        std::vector<EndpointPoolKey> keys_to_drop;
-
-        for (auto & [key, pool] : endpoints_pool)
+        for (auto it = endpoints_pool.begin(); it != endpoints_pool.end();)
         {
-            auto left_connections = pool->wipeExpired();
-            if (left_connections == 0 && pool->getGroupType() != HTTPConnectionGroupType::DISK)
-                keys_to_drop.push_back(key);
-        }
+            const auto & pool = it->second;
+            auto left_connections = pool->wipeExpired(expired_connections);
+            if (left_connections != 0 || pool->getGroupType() == HTTPConnectionGroupType::DISK)
+            {
+                ++it;
+                continue;
+            }
 
-        for (const auto & key : keys_to_drop)
-            endpoints_pool.erase(key);
+            dropped_pools.push_back(pool);
+            it = endpoints_pool.erase(it);
+        }
     }
 
     static bool useSecureConnection(const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
@@ -1372,7 +1561,12 @@ protected:
             return false;
 
         if (uri.getScheme() != "https")
-            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
+        {
+            std::string masked_uri = uri.toString();
+            maskURIUserinfo(masked_uri);
+            maskPresignedURLParameters(masked_uri);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", masked_uri);
+        }
 
         if (!proxy_configuration.isEmpty())
         {
@@ -1418,6 +1612,11 @@ void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBuffer
 HTTPConnectionPools::SocketBufferSizes HTTPConnectionPools::getSocketBufferSizes(HTTPConnectionGroupType type) const
 {
     return impl->getSocketBufferSizes(type);
+}
+
+bool HTTPConnectionPools::isSoftLimitReached(HTTPConnectionGroupType type) const
+{
+    return impl->isSoftLimitReached(type);
 }
 
 void HTTPConnectionPools::dropCache()

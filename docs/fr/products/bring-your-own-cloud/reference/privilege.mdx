@@ -7,13 +7,9 @@ description: 'Déployer ClickHouse sur votre propre infrastructure cloud'
 doc_type: 'reference'
 ---
 
-<div id="aws-iam-roles">
-  ## Rôles IAM AWS
-</div>
+## Rôles IAM AWS {#aws-iam-roles}
 
-<div id="bootstrap-iam-role">
-  ### Rôle IAM Bootstrap
-</div>
+### Rôle IAM Bootstrap {#bootstrap-iam-role}
 
 Le rôle IAM Bootstrap dispose des autorisations suivantes :
 
@@ -22,17 +18,15 @@ Le rôle IAM Bootstrap dispose des autorisations suivantes :
 * **Opérations IAM (par ex., `iam:CreatePolicy`)** : nécessaires pour que les controllers créent des rôles supplémentaires (voir la section suivante pour plus de détails).
 * **Opérations EKS** : limitées aux ressources dont le nom commence par le préfixe `clickhouse-cloud`.
 
-<div id="additional-iam-roles-created-by-the-controller">
-  ### Rôles IAM supplémentaires créés par le contrôleur
-</div>
+### Rôles IAM supplémentaires créés par le contrôleur {#additional-iam-roles-created-by-the-controller}
 
 En plus du `ClickHouseManagementRole` créé via CloudFormation, le contrôleur créera plusieurs rôles supplémentaires.
 
-Ces rôles sont endossés par des applications exécutées dans le cluster EKS du client :
+Ces rôles sont endossés par des applications exécutées dans le cluster EKS du client :
 
 * **State Exporter Role**
-  * Composant ClickHouse qui transmet des informations sur l’état de santé du service à ClickHouse Cloud.
-  * Nécessite l’autorisation d’écrire dans une file d’attente SQS appartenant à ClickHouse Cloud.
+  * Composant ClickHouse qui transmet des informations sur l&#39;état de santé du service à ClickHouse Cloud.
+  * Nécessite l&#39;autorisation d&#39;écrire dans une file d&#39;attente SQS appartenant à ClickHouse Cloud.
 * **Load-Balancer Controller**
   * Contrôleur AWS de load balancer standard.
   * Contrôleur EBS CSI pour gérer les volumes des services ClickHouse.
@@ -42,18 +36,17 @@ Ces rôles sont endossés par des applications exécutées dans le cluster EKS d
   * Provisionne des certificats TLS pour les domaines de service BYOC.
 * **Cluster Autoscaler**
   * Ajuste la taille du groupe de nœuds selon les besoins.
+* **Stockage de monitoring (Thanos)**
+  * Endossé par les charges de travail Prometheus et Thanos de votre cluster.
+  * Écrit et lit les métriques conservées sur le long terme, avec une portée limitée au bucket de monitoring de votre propre compte.
 
 Les rôles **K8s-control-plane** et **k8s-worker** sont destinés à être endossés par les services AWS EKS.
 
 Enfin, **`data-plane-mgmt`** permet à un composant du plan de contrôle ClickHouse Cloud de réconcilier les Custom resources nécessaires, comme `ClickHouseCluster` et le service virtuel/la Gateway Istio.
 
-<div id="gcp-service-accounts">
-  ## Comptes de service de GCP
-</div>
+## Comptes de service de GCP {#gcp-service-accounts}
 
-<div id="bootstrap-service-account">
-  ### Compte de service Bootstrap
-</div>
+### Compte de service Bootstrap {#bootstrap-service-account}
 
 Le compte de service Bootstrap se voit attribuer des rôles personnalisés à l’échelle du projet avec les autorisations suivantes :
 
@@ -63,9 +56,7 @@ Le compte de service Bootstrap se voit attribuer des rôles personnalisés à l�
 * **Storage** : utilisé pour gérer les buckets Cloud Storage servant aux sauvegardes de ClickHouse, à l’état partagé et aux données de monitoring.
 * **IAM Role** : gère les comptes de service et les rôles personnalisés dans le projet. Ce rôle ne permet pas de créer des clés de compte de service, de lier des politiques d’organisation ou de modifier des ressources dans d’autres projets.
 
-<div id="additional-service-accounts-created-by-the-controller">
-  ### Comptes de service supplémentaires créés par le contrôleur
-</div>
+### Comptes de service supplémentaires créés par le contrôleur {#additional-service-accounts-created-by-the-controller}
 
 En plus du compte de service `clickhouse-management` créé via Terraform dans le cadre de l’onboarding, lorsque vous provisionnez votre premier service BYOC, le plan de contrôle de ClickHouse (s’authentifiant en tant que `clickhouse-management`) crée des comptes de service supplémentaires dans votre projet pour des charges de travail intra-cluster spécifiques. Chacun est créé avec un jeu d’autorisations restreint, à usage unique.
 
@@ -79,13 +70,11 @@ En plus du compte de service `clickhouse-management` créé via Terraform dans l
 * **Identité de gestion de l’exécution ClickHouse**
   * Utilisée par le contrôleur de gestion du plan de données à l’exécution de ClickHouse, qui gère les opérations courantes post-déploiement telles que la gestion des points de terminaison Private Service Connect, les ajustements du cycle de vie des buckets et les rotations de comptes de service.
 
-<div id="azure-roles-and-identities">
-  ## Rôles et identités Azure
-</div>
+Le state exporter, qui publie les événements de statut des services et des backups vers ClickHouse Cloud, ne figure délibérément pas dans cette liste : sur GCP, son identité de publication est un compte de service détenu par ClickHouse dans un projet détenu par ClickHouse, et non un compte créé dans le vôtre. Ce qui est créé dans votre projet, c’est un binding Workload Identity permettant au compte de service `state-exporter` intra-cluster de l’usurper. Aucun matériel de clé n’est impliqué, et l’identité qui publie vers Pub/Sub ne détient aucune autorisation dans votre projet.
 
-<div id="onboarding-service-principal">
-  ### Principal de service d’onboarding
-</div>
+## Rôles et identités Azure {#azure-roles-and-identities}
+
+### Principal de service d’onboarding {#onboarding-service-principal}
 
 L’onboarding via le [module Terraform pour Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisionne une application mutualisée en tant qu’application d’entreprise (principal de service) dans votre locataire, conformément aux recommandations d’Azure relatives à l’authentification inter-locataires. Le principal de service se voit attribuer un rôle personnalisé respectant le principe du moindre privilège, limité à l’abonnement cible, avec les autorisations suivantes :
 
@@ -95,14 +84,21 @@ L’onboarding via le [module Terraform pour Azure](https://github.com/ClickHous
 * **Identité** : Gérer les identités managées attribuées par l’utilisateur et leurs informations d’identification fédérées au sein de l’abonnement.
 * **Autorisation** : Gérer les définitions de rôles personnalisés et les attributions de rôles. Toutes les autorisations sont limitées à l’abonnement cible : le rôle ne peut pas accéder aux ressources d’autres abonnements ou locataires.
 
-<div id="additional-managed-identities-created-by-the-controller">
-  ### Identités managées supplémentaires créées par le contrôleur
-</div>
+### Identités managées supplémentaires créées par le contrôleur {#additional-managed-identities-created-by-the-controller}
 
-Lorsque vous provisionnez des services BYOC, le plan de contrôle de ClickHouse crée des identités managées affectées par l’utilisateur dans votre abonnement. Chacune est fédérée à un compte de service Kubernetes spécifique (identité de charge de travail) et dispose d’un ensemble d’autorisations restreint, dédié à un seul usage :
+Lorsque vous provisionnez des services BYOC, le plan de contrôle de ClickHouse crée des identités managées attribuées par l’utilisateur dans votre abonnement. Chacune est fédérée à un compte de service Kubernetes spécifique (identité de charge de travail) et dispose d’un ensemble d’autorisations restreint, dédié à un seul usage :
 
 * **Identité par service**
   * Utilisée par chaque service ClickHouse pour accéder à son propre compte de stockage afin d’y stocker les données de table et les sauvegardes, via un rôle personnalisé de stockage Blob limité à ce compte de stockage.
   * Lorsqu’un service est restauré à partir d’une sauvegarde, il reçoit également un accès en lecture seule au conteneur de sauvegarde du service source.
 * **Identité d’infrastructure partagée**
   * Utilisée par le contrôleur de gestion du plan de données à l’exécution de ClickHouse pour les opérations courantes, telles que la gestion des services Private Link.
+* **Identité de monitoring**
+  * Fédérée à la charge de travail Thanos de votre cluster, via un rôle personnalisé limité à l’accès au stockage de monitoring.
+  * Écrit et lit les métriques conservées à long terme dans votre propre abonnement.
+
+Comme sur GCP, le state exporter est délibérément absent de cette liste : son identité de publication est une identité managée attribuée par l’utilisateur, détenue par ClickHouse dans un abonnement appartenant à ClickHouse. Ce qui est créé de votre côté est une information d’identification fédérée permettant au compte de service `state-exporter` du cluster d’obtenir des jetons pour celle-ci, sans échange de secrets. L’identité qui publie vers Service Bus ne détient aucune autorisation dans votre abonnement.
+
+<Note>
+  Cela diffère d’AWS, où le rôle de publication est créé dans votre propre compte et assume un rôle côté ClickHouse pour atteindre la file d’attente. Sur GCP et Azure, l’identité de publication réside entièrement du côté ClickHouse et votre cluster ne fait que s’y fédérer : il n’y a donc aucune autorisation supplémentaire à auditer dans votre compte pour ce flux. Le trafic sortant lui-même est inventorié dans les [limites réseau](/fr/products/bring-your-own-cloud/reference/network-security#outbound-connections).
+</Note>

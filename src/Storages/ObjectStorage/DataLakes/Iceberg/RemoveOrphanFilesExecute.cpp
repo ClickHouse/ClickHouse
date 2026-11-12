@@ -35,6 +35,7 @@ extern const int BAD_ARGUMENTS;
 namespace Setting
 {
 extern const SettingsUInt64 iceberg_orphan_files_older_than_seconds;
+extern const SettingsUInt64 iceberg_orphan_files_min_retention_seconds;
 }
 
 namespace Iceberg
@@ -350,6 +351,8 @@ Pipe executeRemoveOrphanFiles(
     auto parsed = makeSchema().parse(args);
 
     RemoveOrphanFilesParams params;
+    const auto now_tp = std::chrono::system_clock::now();
+    const time_t now = std::chrono::system_clock::to_time_t(now_tp);
     if (parsed.has("older_than"))
     {
         String older_than_str = parsed.getAs<String>("older_than");
@@ -357,7 +360,6 @@ Pipe executeRemoveOrphanFiles(
         time_t ts = 0;
         readDateTimeText(ts, buf);
 
-        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         if (ts > now)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -368,9 +370,19 @@ Pipe executeRemoveOrphanFiles(
     else
     {
         UInt64 threshold_seconds = context->getSettingsRef()[Setting::iceberg_orphan_files_older_than_seconds].value;
-        auto now = std::chrono::system_clock::now();
-        params.older_than = std::chrono::system_clock::to_time_t(now - std::chrono::seconds(threshold_seconds));
+        params.older_than = std::chrono::system_clock::to_time_t(now_tp - std::chrono::seconds(threshold_seconds));
     }
+
+    /// Files of a write that has not committed yet are unreferenced by the table metadata, so only their age keeps them out of the orphan set.
+    UInt64 min_retention = context->getSettingsRef()[Setting::iceberg_orphan_files_min_retention_seconds];
+    if (*params.older_than > now || static_cast<UInt64>(now - *params.older_than) < min_retention)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "older_than must be at least {} seconds before now (setting iceberg_orphan_files_min_retention_seconds), got {} seconds: "
+            "files of a write that has not committed yet are not referenced by the table metadata and would be deleted. "
+            "Use an earlier older_than, or lower the setting if no write to the table can be in progress",
+            min_retention,
+            *params.older_than > now ? 0 : now - *params.older_than);
     if (parsed.has("location"))
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;

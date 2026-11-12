@@ -23,7 +23,7 @@ from clickhouse_backupview import open_backup, S3, FileInfo
 # backup = open_backup("/backups/my_backup_1/")
 backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
 
-# Get a list of databasess inside the backup.
+# Get a list of databases inside the backup.
 print(backup.get_databases()))
 
 # Get a list of tables inside the backup,
@@ -47,4 +47,4 @@ backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my
 backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
 ```
 
-For more examples see the [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py).
+For more examples see the [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test_backupview.py).

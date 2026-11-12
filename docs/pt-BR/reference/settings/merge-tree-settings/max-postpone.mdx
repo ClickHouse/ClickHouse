@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-O tempo máximo de adiamento de mutações com falha.
+Backoff exponencial máximo, em milissegundos, antes de tentar novamente uma mutação com falha na mesma parte de dados. O atraso aumenta a cada nova falha e é limitado por este valor. Defina como `0` para tentar novamente sem adiamento.
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Adicionada nova configuração para permitir o adiamento de tarefas de fetch na fila de replicação."}]}]} />
 
-O tempo máximo de adiamento para fetches replicados com falha.
+Backoff exponencial máximo, em milissegundos, antes de tentar novamente uma tarefa `GET_PART` que falhou em uma fila de replicação do `ReplicatedMergeTree`. O atraso aumenta a cada nova falha e é limitado por este valor. Defina como `0` para desativar o adiamento.
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Nova configuração adicionada para permitir o adiamento de tarefas de mesclagem na fila de replicação."}]}]} />
 
-O tempo máximo de adiamento para mesclagens replicadas que falharam.
+Backoff exponencial máximo, em milissegundos, antes de tentar novamente uma tarefa `MERGE_PARTS` com falha em uma fila de replicação de `ReplicatedMergeTree`. O atraso aumenta a cada nova falha e é limitado por este valor. Defina como `0` para desativar o adiamento.
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

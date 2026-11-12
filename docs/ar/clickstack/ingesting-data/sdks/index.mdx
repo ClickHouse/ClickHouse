@@ -4,8 +4,7 @@ description: 'حِزم SDK الخاصة باللغات لـ ClickStack - ClickHo
 title: 'حِزم SDK الخاصة باللغات'
 sidebarTitle: 'نظرة عامة'
 doc_type: 'guide'
-keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغات لـ ClickStack', 'حِزم OpenTelemetry SDKs لـ ClickStack', 'حِزم SDK لأدوات رصد التطبيق
-', 'حِزم SDK لجمع القياس عن بُعد']
+keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغات لـ ClickStack', 'حِزم OpenTelemetry SDKs لـ ClickStack', 'حِزم SDK لأدوات رصد التطبيق', 'حِزم SDK لجمع القياس عن بُعد']
 ---
 
 تُرسَل البيانات عادةً إلى ClickStack عبر **OpenTelemetry (OTel) collector**، إما مباشرةً من حِزم SDK الخاصة باللغات أو من خلال OpenTelemetry collector وسيط يعمل كـ agent، مثل جمع metrics والسجلات الخاصة بالبنية التحتية.
@@ -14,17 +13,13 @@ keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغ
 
 في البيئات المستندة إلى المتصفح، قد تتولى حِزم SDK أيضًا مسؤولية جمع **بيانات الجلسات**، بما في ذلك أحداث UI والنقرات والتنقل، مما يتيح إعادة تشغيل جلسات المستخدمين.
 
-<div id="how-it-works">
-  ## كيف يعمل
-</div>
+## كيف يعمل {#how-it-works}
 
 1. يستخدم تطبيقك إحدى حزم SDK الخاصة بـ ClickStack (مثل Node.js أو بايثون أو Go). وتعتمد هذه الحزم على OpenTelemetry SDKs مع مزايا إضافية وتحسينات في سهولة الاستخدام.
 2. تجمع حزمة SDK التتبعات والسجلات وتُصدّرها عبر OTLP ‏(HTTP أو gRPC).
 3. يتلقى OpenTelemetry Collector بيانات القياس عن بُعد ويكتبها إلى ClickHouse عبر exporterات المُعدّة.
 
-<div id="supported-languages">
-  ## اللغات المدعومة
-</div>
+## اللغات المدعومة {#supported-languages}
 
 <Info>
   **التوافق مع OpenTelemetry**
@@ -49,9 +44,7 @@ keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغ
 | React Native | تطبيقات React Native للأجهزة المحمولة         | [الوثائق](/ar/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | تطبيقات Ruby on Rails وخدمات الويب            | [الوثائق](/ar/clickstack/ingesting-data/sdks/ruby)         |
 
-<div id="securing-api-key">
-  ## التأمين باستخدام مفتاح API
-</div>
+## التأمين باستخدام مفتاح API {#securing-api-key}
 
 <Info>
   **غير مطلوب لـ Managed ClickStack**
@@ -70,12 +63,10 @@ OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 بالنسبة إلى معظم [حِزم SDK الخاصة باللغات](/ar/clickstack/ingesting-data/sdks/index) ومكتبات القياس عن بُعد التي تدعم OpenTelemetry، يمكنك ببساطة تعيين متغير البيئة `OTEL_EXPORTER_OTLP_ENDPOINT` في تطبيقك أو تحديده أثناء تهيئة الـ SDK:
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-<div id="kubernetes-integration">
-  ## تكامل Kubernetes
-</div>
+## تكامل Kubernetes {#kubernetes-integration}
 
 تدعم جميع SDKs الربط التلقائي ببيانات Kubernetes الوصفية (اسم الكبسولة، ومساحة الاسم، وما إلى ذلك) عند التشغيل ضمن بيئة Kubernetes. يتيح لك ذلك ما يلي:
 

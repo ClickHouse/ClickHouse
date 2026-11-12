@@ -3,13 +3,149 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+
 using namespace Coordination;
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int REPLICA_ALREADY_EXISTS;
+}
+
+namespace
+{
+
+zkutil::ZooKeeper::Ptr makeTestKeeperClient(int32_t session_timeout_ms)
+{
+    zkutil::ZooKeeperArgs args;
+    args.implementation = "testkeeper";
+    args.session_timeout_ms = session_timeout_ms;
+    return zkutil::ZooKeeper::createWithoutKillingPreviousSessions(args);
+}
+
+/// An `IKeeper` that only remembers the callback of the latest `get` and lets the test invoke it
+/// at will, emulating responses of earlier requests that arrive late. All other operations are not supported.
+class GetCallbackKeeper final : public IKeeper
+{
+public:
+    std::shared_ptr<const GetCallback> getLatestGetCallback() const
+    {
+        std::lock_guard lock(mutex);
+        return latest_get_callback;
+    }
+
+    void get(const String &, GetCallback callback, WatchCallbackPtrOrEventPtr) override
+    {
+        auto callback_ptr = std::make_shared<const GetCallback>(std::move(callback));
+        std::lock_guard lock(mutex);
+        latest_get_callback = std::move(callback_ptr);
+    }
+
+    bool isExpired() const override { return false; }
+    std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
+    String getConnectedHostPort() const override { return "GetCallbackKeeper:0000"; }
+    int64_t getConnectionXid() const override { return 0; }
+    int64_t getSessionID() const override { return 0; }
+    int64_t getLastZXIDSeen() const override { return 0; }
+    bool isFeatureEnabled(KeeperFeatureFlag) const override { return false; }
+    void finalize(const String &) override { }
+
+    void create(const String &, const String &, bool, bool, const ACLs &, CreateCallback) override { unsupported(); }
+    void remove(const String &, int32_t, RemoveCallback) override { unsupported(); }
+    void removeRecursive(const String &, uint32_t, RemoveRecursiveCallback) override { unsupported(); }
+    void listRecursive(const String &, uint32_t, ListRecursiveCallback) override { unsupported(); }
+    void listWithOptions(const String &, const ListOptions &, ListWithOptionsCallback, WatchCallbackPtrOrEventPtr) override { unsupported(); }
+    void exists(const String &, ExistsCallback, WatchCallbackPtrOrEventPtr) override { unsupported(); }
+    void set(const String &, const String &, int32_t, SetCallback) override { unsupported(); }
+    void list(const String &, ListRequestType, ListCallback, WatchCallbackPtrOrEventPtr, bool, bool) override { unsupported(); }
+    void check(const String &, int32_t, CheckCallback) override { unsupported(); }
+    void sync(const String &, SyncCallback) override { unsupported(); }
+    void reconfig(std::string_view, std::string_view, std::string_view, int32_t, ReconfigCallback) override { unsupported(); }
+    void multi(std::span<const RequestPtr>, MultiCallback) override { unsupported(); }
+    void multi(const Requests &, MultiCallback) override { unsupported(); }
+    void getACL(const String &, GetACLCallback) override { unsupported(); }
+
+private:
+    [[noreturn]] static void unsupported()
+    {
+        throw Coordination::Exception::fromMessage(Error::ZUNIMPLEMENTED, "Not supported by GetCallbackKeeper");
+    }
+
+    mutable std::mutex mutex;
+    std::shared_ptr<const GetCallback> latest_get_callback;
+};
+
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
+{
+    /// The node is persistent, so it never disappears and the wait always reaches its deadline.
+    constexpr int32_t session_timeout_ms = 200;
+    auto zk = makeTestKeeperClient(session_timeout_ms);
+    zk->create("/foreign", "someone-else", zkutil::CreateMode::Persistent);
+
+    const auto started_at = std::chrono::steady_clock::now();
+    try
+    {
+        zk->deleteEphemeralNodeIfContentMatches("/foreign", "me");
+        ADD_FAILURE() << "Expected an exception for a node held by someone else";
+    }
+    catch (const DB::Exception & e)
+    {
+        /// A foreign or not-yet-expired holder is expected runtime state, not a broken invariant.
+        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
+    }
+    const auto elapsed_ms
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_at).count();
+
+    EXPECT_GE(elapsed_ms, 3 * session_timeout_ms);
+    EXPECT_TRUE(zk->exists("/foreign"));
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesOwnNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/mine", "me", zkutil::CreateMode::Persistent);
+
+    EXPECT_NO_THROW(zk->deleteEphemeralNodeIfContentMatches("/mine", "me"));
+    EXPECT_FALSE(zk->exists("/mine"));
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesRewrittenNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/rewritten", "me", zkutil::CreateMode::Persistent);
+
+    try
+    {
+        /// The condition runs after the node and its version have been read, so writing from here makes the
+        /// versioned removal lose the same race a concurrent writer would cause.
+        zk->deleteEphemeralNodeIfContentMatches("/rewritten", [&](const std::string & content)
+        {
+            zk->set("/rewritten", "me");
+            return content == "me";
+        });
+        ADD_FAILURE() << "Expected an exception for a node rewritten while it was being removed";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
+    }
+
+    EXPECT_TRUE(zk->exists("/rewritten"));
+}
 
 TEST(ZooKeeperTest, TestMatchPath)
 {
@@ -19,6 +155,30 @@ TEST(ZooKeeperTest, TestMatchPath)
     ASSERT_EQ(matchPath("/", "/"), PathMatchResult::EXACT);
     ASSERT_EQ(matchPath("/path", "/path/"), PathMatchResult::EXACT);
     ASSERT_EQ(matchPath("/path/", "/path"), PathMatchResult::EXACT);
+}
+
+/// The orphaned-nodes log-tail guard (`KeeperStateMachine::findOrphanConflictInLogTail`) decides whether
+/// a request path and a removed subtree root lie on the same root-to-leaf chain by calling `matchPath`
+/// in both directions. Pin the boundary cases that decision depends on.
+TEST(ZooKeeperTest, TestMatchPathChainOverlap)
+{
+    /// A shared textual prefix that is not a path prefix must not match.
+    ASSERT_EQ(matchPath("/ab", "/a"), PathMatchResult::NOT_MATCH);
+    ASSERT_EQ(matchPath("/abc/d", "/ab"), PathMatchResult::NOT_MATCH);
+
+    /// Descendant direction.
+    ASSERT_EQ(matchPath("/a/b", "/a"), PathMatchResult::IS_CHILD);
+    ASSERT_EQ(matchPath("/a/b/c", "/a"), PathMatchResult::IS_CHILD);
+    ASSERT_EQ(matchPath("/x", "/"), PathMatchResult::IS_CHILD);
+
+    /// Ancestor direction: not a match forwards, but a match with the arguments reversed. This is the
+    /// asymmetry the guard relies on to also flag entries touching a parent of a removed subtree.
+    ASSERT_EQ(matchPath("/a", "/a/b"), PathMatchResult::NOT_MATCH);
+    ASSERT_EQ(matchPath("/a/b", "/a"), PathMatchResult::IS_CHILD);
+
+    /// Unrelated siblings match in neither direction.
+    ASSERT_EQ(matchPath("/a", "/b"), PathMatchResult::NOT_MATCH);
+    ASSERT_EQ(matchPath("/b", "/a"), PathMatchResult::NOT_MATCH);
 }
 
 TEST(ZooKeeperTest, ExtractZooKeeperPathAndCollapseTrailingSlashes)
@@ -78,6 +238,53 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
 }
 
+TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
+{
+    ZooKeeperListWithOptionsRequest request;
+    request.path = "/round/trip";
+    request.has_watch = true;
+    request.options = {
+        .filter = ListRequestType::EPHEMERAL_ONLY,
+        .with_stat = true,
+        .with_data = true,
+        .recursive = true,
+        .max_results = 17,
+        .shuffle = true,
+    };
+
+    WriteBufferFromOwnString request_out;
+    request.writeImpl(request_out);
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
+    ReadBufferFromString request_in(request_out.str());
+    decoded.readImpl(request_in);
+
+    EXPECT_TRUE(request_in.eof());
+    EXPECT_EQ(decoded.options_version, ListOptionsVersion::V1);
+    EXPECT_EQ(decoded.path, request.path);
+    EXPECT_EQ(decoded.has_watch, request.has_watch);
+    EXPECT_EQ(decoded.options.filter, request.options.filter);
+    EXPECT_EQ(decoded.options.with_stat, request.options.with_stat);
+    EXPECT_EQ(decoded.options.with_data, request.options.with_data);
+    EXPECT_EQ(decoded.options.recursive, request.options.recursive);
+    EXPECT_EQ(decoded.options.max_results, request.options.max_results);
+    EXPECT_EQ(decoded.options.shuffle, request.options.shuffle);
+
+    auto response = request.makeResponse();
+    auto & expected_response = dynamic_cast<ZooKeeperListWithOptionsResponse &>(*response);
+    expected_response.names = {"child", "child/grandchild"};
+    expected_response.stats.resize(expected_response.names.size());
+    expected_response.data = {"one", "two"};
+    expected_response.truncated = true;
+
+    WriteBufferFromOwnString response_out;
+    expected_response.writeImpl(response_out);
+    auto decoded_response = request.makeResponse();
+    ReadBufferFromString response_in(response_out.str());
+    dynamic_cast<ZooKeeperListWithOptionsResponse &>(*decoded_response).readImpl(response_in);
+    EXPECT_TRUE(response_in.eof());
+}
+
 TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
 {
     ZooKeeperCreate2Response original;
@@ -120,4 +327,97 @@ TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
     auto request = ZooKeeperRequestFactory::instance().get(OpNum::Multi);
     ReadBufferFromString in(out.str());
     EXPECT_THROW(request->readImpl(in), Coordination::Exception);
+}
+
+TEST(ZooKeeperTest, WaitForDisappearWithLateGetResponses)
+{
+    /// `waitForDisappear` issues a new `get` with the same callback in every iteration, so responses of earlier
+    /// requests may arrive at any moment and overwrite the stored code. Here threads keep delivering
+    /// alternating `ZOK` and `ZNONODE` responses. Each `ZNONODE` wakes up the waiter, which must then return
+    /// `true`, and must never throw `ZNONODE` because the code changed between two reads of it.
+    auto keeper_holder = std::make_unique<GetCallbackKeeper>();
+    auto & keeper = *keeper_holder;
+    auto zk = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::unique_ptr<IKeeper>(std::move(keeper_holder)));
+
+    /// Several threads deliver responses to make the interleaving more likely.
+    struct ResponsesThreads
+    {
+        std::atomic<bool> stop = false;
+        std::vector<std::thread> threads;
+
+        ~ResponsesThreads()
+        {
+            stop = true;
+            for (auto & thread : threads)
+                thread.join();
+        }
+    };
+
+    /// Declared after `zk` so that the threads are joined before the keeper is destroyed.
+    ResponsesThreads responses;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        responses.threads.emplace_back([&keeper, &stop = responses.stop]
+        {
+            GetResponse ok_response;
+            ok_response.error = Error::ZOK;
+            GetResponse no_node_response;
+            no_node_response.error = Error::ZNONODE;
+
+            while (!stop)
+            {
+                auto callback = keeper.getLatestGetCallback();
+                if (!callback)
+                {
+                    std::this_thread::yield();
+                    continue;
+                }
+                (*callback)(ok_response);
+                (*callback)(no_node_response);
+            }
+        });
+    }
+
+    for (size_t i = 0; i < 100000; ++i)
+        ASSERT_TRUE(zk->waitForDisappear("/node")) << "iteration " << i;
+}
+
+TEST(ZooKeeperTest, AsyncTryGetIsAwaitedOnFirstAccess)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/first", "1", zkutil::CreateMode::Persistent);
+    zk->create("/second", "2", zkutil::CreateMode::Persistent);
+
+    /// Both requests are sent before either response is awaited; the number of responses is known before they arrive.
+    auto first = zk->asyncTryGet(Strings{"/first", "/missing"});
+    auto second = zk->asyncTryGet(Strings{"/second"});
+    EXPECT_EQ(first.size(), 2);
+    EXPECT_EQ(second.size(), 1);
+
+    /// Awaited in any order; a missing node is a per-path result, as with `tryGet`.
+    EXPECT_EQ(second[0].data, "2");
+    EXPECT_EQ(first[0].data, "1");
+    EXPECT_EQ(first[1].error, Error::ZNONODE);
+
+    /// `waitForResponses` awaits a request that has not been accessed yet.
+    auto third = zk->asyncTryGet(Strings{"/first", "/second"});
+    EXPECT_NO_THROW(third.waitForResponses());
+    EXPECT_EQ(third[1].data, "2");
+}
+
+TEST(ZooKeeperTest, MultiReadResponsesInFlightThrowHardwareErrorOnAccess)
+{
+    /// A MultiRead request whose response is a hardware error: `tryGet` throws it in the call,
+    /// `asyncTryGet` on the first access to the result.
+    std::promise<MultiResponse> promise;
+    zkutil::ZooKeeper::MultiTryGetResponse responses(promise.get_future(), /*num_requests=*/ 1);
+    EXPECT_EQ(responses.size(), 1);
+
+    MultiResponse multi_response;
+    multi_response.error = Error::ZSESSIONEXPIRED;
+    promise.set_value(multi_response);
+
+    EXPECT_THROW(responses[0], zkutil::KeeperException);
+    EXPECT_THROW(responses[0], zkutil::KeeperException);
+    EXPECT_THROW(responses.waitForResponses(), zkutil::KeeperException);
 }

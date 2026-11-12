@@ -664,7 +664,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
-                    "be Unsigned Number, Date, DateTime", arguments.front().get()->getName(), name);
+                    "be Unsigned Number, Date, DateTime", arguments.front()->getName(), name);
 }
 
 }
