@@ -141,7 +141,12 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
     {
+        /// Nothing reached the measured steps, e.g. an inner join with an empty build side never read its probe side.
+        /// The zeros are not stored: the statistics key ignores the values of string constants, so another query could
+        /// decide from them. But the plan is deferred, so that it is not built again on every execution.
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "No statistics collected, skipping statistics update.");
+        if (undecided_key)
+            dataflow_cache.setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasNoStatistics);
         return;
     }
 

@@ -183,7 +183,7 @@ struct RuntimeDataflowStatisticsBlock
     };
 
     /// `undecided_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
-    /// step cannot collect.
+    /// step cannot collect, or when the collection measures nothing.
     RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)

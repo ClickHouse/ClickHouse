@@ -5,6 +5,10 @@ undecided_adopt_4	0	1	0	1	0	0
 undecided_correlated_1	1	0	1	0	0	0
 undecided_correlated_2	1	0	1	0	0	0
 undecided_correlated_3	0	1	1	0	0	0
+undecided_empty_1	1	0	0	0	1	0
+undecided_empty_2	1	0	0	0	1	0
+undecided_empty_3	0	1	0	0	1	0
+undecided_empty_4	0	1	0	0	1	0
 undecided_limit_1	1	0	0	1	0	0
 undecided_limit_2	1	0	0	1	0	0
 undecided_limit_3	0	1	0	1	0	0

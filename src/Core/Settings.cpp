@@ -9862,8 +9862,9 @@ decision are skipped independently of this setting.
     DECLARE(UInt64, automatic_parallel_replicas_undecided_retry_after_executions, 10, R"(
 How many executions of a query plan skip building the plan with parallel replicas after its last build ended without
 a decision in automatic parallel replicas: the two plans could not be compared, the planner used no parallel replicas
-in the plan built with them, or a step of the plan cannot collect the statistics. Concurrent executions take turns:
-one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
+in the plan built with them, a step of the plan cannot collect the statistics, or the collection measured nothing (for
+example, an inner join with an empty build side does not read its probe side). Concurrent executions take turns: one in
+every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
 
 After the first such outcome for a query plan, the next execution builds the plan again at once: the first execution
 of a join measures its hash table, and join reordering takes row counts from that, so the next build often orders both

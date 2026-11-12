@@ -90,6 +90,17 @@ WHERE o_orderkey = l_orderkey AND o_total = 5
   AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_undecided_l WHERE l_orderkey = o_orderkey)
 FORMAT Null SETTINGS log_comment = 'undecided_correlated_3';
 
+-- The build side of the join is empty, so its probe side, the read the replicas would split, is never read, and the
+-- collection measures nothing. The second run builds the plan again at once, the next two skip it.
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_1';
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_2';
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_3';
+SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
+GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_4';
+
 -- Without column statistics the plan with parallel replicas has no row estimates for the filtered read, so its joins
 -- are ordered differently and the two plans cannot be compared. The first run measures the hash tables; with their
 -- sizes, the second, which builds the plan again at once, orders both plans alike, matches them and collects
