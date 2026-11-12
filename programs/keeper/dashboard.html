@@ -2263,9 +2263,16 @@
             }
         });
 
-        command_input.addEventListener("keydown", function (event) {
-            if (pending_command_confirm !== null) {
-                if (event.code === "Enter") {
+        function scrollCommandOutputToBottom() {
+            command_container.scrollTop = command_container.scrollHeight;
+        }
+
+        function handleCommandConfirmKeys(event) {
+            if (pending_command_confirm === null)
+                return false;
+
+            switch (event.code) {
+                case "Enter": {
                     event.preventDefault();
                     const answer = command_input.value;
                     command_input.value = "";
@@ -2274,98 +2281,124 @@
                     setPendingCommandConfirm(null);
                     if (answer.length === 1 && (answer === "y" || answer === "Y"))
                         executeCommand(command, /*already_confirmed=*/ true);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
+                    scrollCommandOutputToBottom();
+                    return true;
                 }
-                if (event.code === "KeyC" && event.ctrlKey) {
+                case "KeyC":
+                    if (!event.ctrlKey)
+                        return false;
                     event.preventDefault();
                     appendToOutput("^C\n");
                     command_input.value = "";
                     setPendingCommandConfirm(null);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
-                }
-                /// Do not Tab-complete or walk history while answering [y/n].
-                if (event.code === "Tab" || event.code === "ArrowUp" || event.code === "ArrowDown") {
+                    scrollCommandOutputToBottom();
+                    return true;
+                case "Tab":
+                case "ArrowUp":
+                case "ArrowDown":
                     event.preventDefault();
-                    return;
-                }
+                    return true;
+                default:
+                    return false;
             }
-            if (pending_completion_display !== null) {
-                /// Tab / y → show all. n → decline. Other keys cancel the prompt.
-                /// Previously Tab fell through: it cleared the question then re-asked,
-                /// which looked like the completion hints "disappeared".
-                if (event.key === "y" || event.key === "Y" || event.code === "Tab") {
+        }
+
+        function handleCompletionDisplayKeys(event) {
+            if (pending_completion_display === null)
+                return false;
+
+            switch (event.key) {
+                case "y":
+                case "Y":
+                case "Tab": {
                     event.preventDefault();
                     const answer = (event.code === "Tab") ? "" : "y";
                     appendToOutput(answer + "\n" + formatCompletionColumns(pending_completion_display));
                     setPendingCompletionDisplay(null);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
+                    scrollCommandOutputToBottom();
+                    return true;
                 }
-                if (event.key === "n" || event.key === "N") {
+                case "n":
+                case "N":
                     event.preventDefault();
                     appendToOutput("n\n");
                     setPendingCompletionDisplay(null);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
-                }
-                /// Enter only dismisses the prompt — never fall through to executeCommand,
-                /// or a mutating line like `rm /partial` would run from a y/n question.
-                if (event.code === "Enter") {
+                    scrollCommandOutputToBottom();
+                    return true;
+                case "Enter":
                     event.preventDefault();
                     appendToOutput("\n");
                     setPendingCompletionDisplay(null);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
-                }
-                if (event.code === "KeyC" && event.ctrlKey) {
-                    event.preventDefault();
-                    appendToOutput("^C\n");
-                    setPendingCompletionDisplay(null);
-                    command_container.scrollTop = command_container.scrollHeight;
-                    return;
-                }
-                appendToOutput("\n");
-                setPendingCompletionDisplay(null);
-                command_container.scrollTop = command_container.scrollHeight;
+                    scrollCommandOutputToBottom();
+                    return true;
+                case "c":
+                case "C":
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        appendToOutput("^C\n");
+                        setPendingCompletionDisplay(null);
+                        scrollCommandOutputToBottom();
+                        return true;
+                    }
+                    break;
             }
-            if (event.code === "Tab") {
-                event.preventDefault();
-                handleTabCompletion(command_input);
-            } else if (event.code === "Enter") {
-                event.preventDefault();
-                let command = command_input.value;
-                command_input.value = "";
-                executeCommand(command);
-            } else if (event.code === "ArrowUp") {
-                event.preventDefault();
-                if (cli_history.length > 0 && cli_history_index > 0) {
-                    cli_history_index--;
-                    command_input.value = cli_history[cli_history_index];
-                }
-            } else if (event.code === "ArrowDown") {
-                event.preventDefault();
-                if (cli_history_index < cli_history.length - 1) {
-                    cli_history_index++;
-                    command_input.value = cli_history[cli_history_index];
-                } else {
-                    cli_history_index = cli_history.length;
+
+            appendToOutput("\n");
+            setPendingCompletionDisplay(null);
+            scrollCommandOutputToBottom();
+            return true;
+        }
+
+        command_input.addEventListener("keydown", function (event) {
+            if (handleCommandConfirmKeys(event) || handleCompletionDisplayKeys(event))
+                return;
+
+            switch (event.code) {
+                case "Tab":
+                    event.preventDefault();
+                    handleTabCompletion(command_input);
+                    break;
+                case "Enter": {
+                    event.preventDefault();
+                    const command = command_input.value;
                     command_input.value = "";
+                    executeCommand(command);
+                    break;
                 }
-            } else if (event.code === "KeyL" && event.ctrlKey) {
-                // Ctrl+L to clear output
-                event.preventDefault();
-                clearCommandOutput();
-            } else if (event.code === "KeyC" && event.ctrlKey) {
-                // Ctrl+C clears current input
-                event.preventDefault();
-                if (command_input.value !== "") {
-                    appendToOutput(`➜ ${cli_cwd} ${command_input.value}^C\n`);
-                    command_input.value = "";
-                    cli_history_index = cli_history.length;
-                }
-                command_container.scrollTop = command_container.scrollHeight;
+                case "ArrowUp":
+                    event.preventDefault();
+                    if (cli_history.length > 0 && cli_history_index > 0) {
+                        cli_history_index--;
+                        command_input.value = cli_history[cli_history_index];
+                    }
+                    break;
+                case "ArrowDown":
+                    event.preventDefault();
+                    if (cli_history_index < cli_history.length - 1) {
+                        cli_history_index++;
+                        command_input.value = cli_history[cli_history_index];
+                    } else {
+                        cli_history_index = cli_history.length;
+                        command_input.value = "";
+                    }
+                    break;
+                case "KeyL":
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        clearCommandOutput();
+                    }
+                    break;
+                case "KeyC":
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        if (command_input.value !== "") {
+                            appendToOutput(`➜ ${cli_cwd} ${command_input.value}^C\n`);
+                            command_input.value = "";
+                            cli_history_index = cli_history.length;
+                        }
+                        scrollCommandOutputToBottom();
+                    }
+                    break;
             }
         });
     }
