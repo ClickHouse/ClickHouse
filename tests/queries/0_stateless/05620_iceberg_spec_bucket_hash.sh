@@ -20,13 +20,14 @@ do
         long) expr="toInt64('$value')" ;;
         decimal*) expr="toDecimal32('$value', 2)" ;;
         date) expr="toDate32('$value')" ;;
-        # Iceberg `time` is microseconds since midnight. `icebergBucket` does not support `Time64` yet.
-        time) expr="toTime64('$value', 6)" ;;
+        # Iceberg `time` is microseconds since midnight, hashed as a `long`. `icebergBucket` does not support `Time64` yet,
+        # so hash the number of microseconds.
+        time) expr="toInt64(toUnixTimestamp(toDateTime('1970-01-01 $value', 'UTC'))) * 1000000" ;;
         timestamp) expr="parseDateTime64BestEffort('$value', 6, 'UTC')" ;;
         string) expr="'$value'" ;;
         uuid) expr="toUUID('$value')" ;;
         fixed*) expr="toFixedString(unhex('$value'), 4)" ;;
         binary) expr="unhex('$value')" ;;
     esac
-    echo "$id $($CLICKHOUSE_LOCAL --enable_time_time64_type 1 --query "SELECT icebergBucket(2147483647, $expr) = bitAnd($hash, 2147483647) % 2147483647" 2>&1 | head -n1)"
+    echo "$id $($CLICKHOUSE_LOCAL --query "SELECT icebergBucket(2147483647, $expr) = bitAnd($hash, 2147483647) % 2147483647" 2>&1 | head -n1)"
 done <<< "$CASES_TSV"
