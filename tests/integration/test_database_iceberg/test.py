@@ -2810,6 +2810,25 @@ def test_namespace_two_part_name_resolution(started_cluster):
         result = int(node.query(query))
         assert result == 3, f"row 3, setting off: expected the database table (3 rows), got {result}"
 
+        # the ambiguity is reported only to a user who can see both candidates
+        other = f"{CATALOG_NAME}.`system.one`"
+        grants = {
+            "catalog": f"GRANT SELECT ON {CATALOG_NAME}.`{X}.{T}` TO {{user}}",
+            "database": f"GRANT SELECT ON `{X}`.{T} TO {{user}}; GRANT SELECT ON {other} TO {{user}}",
+            "neither": f"GRANT SELECT ON {other} TO {{user}}",
+        }
+        for kind, grant in grants.items():
+            user = f"u_{kind}_{test_ref}"
+            node.query(f"DROP USER IF EXISTS {user}")
+            node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+            node.query(grant.format(user=user))
+        result = int(node.query(query, settings=on, user=f"u_catalog_{test_ref}"))
+        assert result == 5, f"only the catalog table visible: expected 5 rows, got {result}"
+        result = int(node.query(query, settings=on, user=f"u_database_{test_ref}"))
+        assert result == 3, f"only the database table visible: expected 3 rows, got {result}"
+        _, err = node.query_and_get_answer_with_error(query, settings=on, user=f"u_neither_{test_ref}")
+        assert "ACCESS_DENIED" in err, f"no candidate visible: {err}"
+
         columns = node.query(f"USE {CATALOG_NAME}; SHOW COLUMNS FROM {CATALOG_NAME}.{X}.{T}", settings=on)
         assert "symbol" in columns, f"SHOW COLUMNS must list the table columns: {columns}"
 
@@ -2829,6 +2848,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
         _, err = node.query_and_get_answer_with_error(query)
         assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting off: {err}"
     finally:
+        for kind in ("catalog", "database", "neither"):
+            node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
         node.query(f"DROP DATABASE IF EXISTS `{X}`")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.one`")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.columns`")
