@@ -25,8 +25,8 @@ WHERE database = currentDatabase() AND table = 't_lwd_proj' AND name = 'proj_pv'
 
 DELETE FROM t_lwd_proj WHERE message = 'a' SETTINGS lightweight_deletes_sync = 2;
 
--- After a lightweight delete the projection is rebuilt; the projection WHERE must be
--- AND-combined with _row_exists, so only surviving pageview rows remain (c, d = 2 rows).
+-- After a lightweight delete the projection is rebuilt from the surviving rows and its WHERE
+-- still applies, so only surviving pageview rows remain (c, d = 2 rows).
 SELECT 'after', sum(rows) FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_lwd_proj' AND name = 'proj_pv' AND active;
 
