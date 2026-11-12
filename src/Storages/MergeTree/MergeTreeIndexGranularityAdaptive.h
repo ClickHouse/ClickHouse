@@ -16,6 +16,8 @@ public:
     MergeTreeIndexGranularityAdaptive() = default;
     explicit MergeTreeIndexGranularityAdaptive(const std::vector<size_t> & marks_rows_partial_sums_);
 
+    [[nodiscard]] MergeTreeIndexGranularityType getType() const override { return MergeTreeIndexGranularityType::ADAPTIVE; }
+
     [[nodiscard]] std::optional<size_t> getConstantGranularity() const override { return {}; }
     [[nodiscard]] size_t getRowsCountInRange(size_t begin, size_t end) const override;
     [[nodiscard]] size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const override;
@@ -40,6 +42,9 @@ public:
 
 private:
     std::vector<size_t> marks_rows_partial_sums;
+
+    void writeDataImpl(WriteBuffer & out) const override;
+    void readDataImpl(ReadBuffer & in) override;
 };
 
 }

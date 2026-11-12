@@ -219,6 +219,8 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 };
 
+}
+
 REGISTER_FUNCTION(IcebergTruncate)
 {
     FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
@@ -230,8 +232,6 @@ REGISTER_FUNCTION(IcebergTruncate)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
     factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
-}
-
 }
 
 }

@@ -14,6 +14,14 @@ namespace DB
 class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
+    struct FinishedColumns
+    {
+        SerializationInfoByName serialization_infos;
+        MergeTreeDataPartChecksums checksums;
+        ColumnsSubstreams columns_substreams;
+        MergeTreeIndexGranularityPtr index_granularity;
+    };
+
     MergedBlockOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
         MergeTreeSettingsPtr data_settings,
@@ -29,7 +37,8 @@ public:
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        std::optional<FinishedColumns> finished_columns = {});
 
     [[nodiscard]] Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
@@ -75,6 +84,10 @@ public:
         const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizeIndexGranularity();
+
+    /// Finish the files of the columns before the part, for a merge checkpoint. The finalization then only writes metadata.
+    /// Once finished, returns the same columns.
+    const FinishedColumns & finalizeDataFiles(const MergeTreeMutableDataPartPtr & part, bool sync);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.

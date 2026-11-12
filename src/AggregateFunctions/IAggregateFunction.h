@@ -260,7 +260,7 @@ public:
     /// All overrides must be done on `mergeImpl` below.
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, arena);
     }
 
@@ -305,7 +305,7 @@ public:
         std::atomic<bool> & is_cancelled,
         Arena * arena) const
     {
-        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        chassert(!isSelfMerge(place, rhs), "IAggregateFunction::merge called with the same source and destination state");
         mergeImpl(place, rhs, thread_pool, is_cancelled, arena);
     }
 
@@ -675,6 +675,9 @@ public:
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
+    /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
+    bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+
     DataTypes argument_types;
     Array parameters;
     DataTypePtr result_type;
@@ -886,7 +889,7 @@ public:
                 /// Devirtualized call to `mergeImpl`; the public non-virtual `merge` performs
                 /// the same self-aliasing check, but we add it here to keep the assertion
                 /// when calling `mergeImpl` directly bypasses the wrapper.
-                chassert(places[i] + place_offset != rhs[i],
+                chassert(!this->isSelfMerge(places[i] + place_offset, rhs[i]),
                          "IAggregateFunction::mergeBatch called with the same source and destination state");
                 if constexpr (Derived::parallelizeMergeWithKey())
                     static_cast<const Derived *>(this)->mergeImpl(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
@@ -900,7 +903,7 @@ public:
     {
         for (size_t i = 0; i < size; ++i)
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+            chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                      "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
             if constexpr (Derived::parallelizeMergeWithKey())
                 static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
