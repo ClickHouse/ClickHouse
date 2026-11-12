@@ -433,7 +433,8 @@ def test_userinfo_with_forbidden_authorization(cluster):
     """
     )
     # The filter makes the query read the column instead of answering it from the part statistics.
-    query = f"SELECT sum(id) FROM {table_name} WHERE id % 2 = 0"
+    # The columns cache is disabled, so that the repeated reads go to the web disk.
+    query = f"SELECT sum(id) FROM {table_name} WHERE id % 2 = 0 SETTINGS use_columns_cache = 0"
     try:
         expected = node.query(query)
         assert int(expected) > 0
