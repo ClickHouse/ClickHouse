@@ -668,6 +668,19 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 
+        /// A window sorting that reuses the storage order (`query_plan_reuse_storage_ordering_for_window_functions`)
+        /// has just merged the streams read in order into a single stream sorted by the prefix. Scatter it by the
+        /// hash of the `PARTITION BY` columns, so that every window partition lands in one stream and the suffix
+        /// sorting and the window functions run in parallel. Each output of a single scatter is a subsequence of
+        /// its sorted input, so it stays sorted by the prefix without a merge after the scatter. Scattering the
+        /// streams before the merge instead would need an order-preserving merge per shard, and such merges pull
+        /// from their inputs selectively, which deadlocks against a scatter that must push to all its outputs.
+        if (hasPartitions() && limit == 0)
+        {
+            scatterByPartitionIfNeeded(pipeline);
+            scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
+        }
+
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

@@ -691,8 +691,8 @@ void optimizeTreeSecondPass(
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
-            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
-            /// must not request per-partition reading.
+            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges the streams read in order
+            /// and must not request per-partition reading.
             if (optimization_settings.window_partitions_independently)
                 optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
 

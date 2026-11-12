@@ -1971,6 +1971,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
+    /// Processing every table partition by its own window needs neither a scatter nor a merge, which is
+    /// cheaper than merging the streams read in order and scattering them again.
+    if (sorting->hasPartitions() && optimization_settings.window_partitions_independently && canOptimizeWindowPerPartition(node))
+        return;
+
     bool apply_virtual_row = true;
     ReadFromMergeTree * virtual_row_reader = nullptr;
 
