@@ -59,6 +59,15 @@ ALTER TABLE t_now_nullable_dependent MODIFY COLUMN v DateTime64(3) DEFAULT now64
 ALTER TABLE t_now_nullable_dependent ADD COLUMN w DateTime64(3) DEFAULT v;
 SELECT count() FROM t_now_nullable_dependent WHERE w >= thr FORMAT Null;
 
+-- The same after `KILL MUTATION`: the part keeps the `Nullable` column, and reads still replace its NULLs.
+CREATE TABLE t_now_nullable_killed (k UInt64, v Nullable(DateTime64(3)), thr DateTime64(3)) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+SYSTEM STOP MERGES t_now_nullable_killed;
+INSERT INTO t_now_nullable_killed SELECT number, NULL, now64(3) + 5 FROM numbers(100000);
+ALTER TABLE t_now_nullable_killed MODIFY COLUMN v DateTime64(3) DEFAULT now64(3);
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_now_nullable_killed' SYNC FORMAT Null;
+SELECT count() FROM t_now_nullable_killed WHERE v >= thr FORMAT Null;
+
 SELECT sleep(3) FORMAT Null;
 SELECT sleep(3) FORMAT Null;
 SELECT 'DEFAULT now64, WHERE', count() FROM t_now WHERE ts >= thr;
@@ -73,6 +82,8 @@ SELECT 'DEFAULT now64 for NULL, PREWHERE', count() FROM t_now_nullable_prewhere 
 SELECT 'DEFAULT now64 for NULL, PREWHERE', count() FROM t_now_nullable_prewhere PREWHERE v >= thr SETTINGS use_query_condition_cache = 0;
 SELECT 'DEFAULT reading a column filled by now64', count() FROM t_now_nullable_dependent WHERE w >= thr;
 SELECT 'DEFAULT reading a column filled by now64', count() FROM t_now_nullable_dependent WHERE w >= thr SETTINGS use_query_condition_cache = 0;
+SELECT 'DEFAULT now64 for NULL, KILL MUTATION', count() FROM t_now_nullable_killed WHERE v >= thr;
+SELECT 'DEFAULT now64 for NULL, KILL MUTATION', count() FROM t_now_nullable_killed WHERE v >= thr SETTINGS use_query_condition_cache = 0;
 
 -- A condition on stored columns is still cached when the query also reads such a default.
 -- The WHERE writer records whole blocks, so a block must not span the matching and the non-matching granules.

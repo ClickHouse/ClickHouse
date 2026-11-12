@@ -10,5 +10,7 @@ DEFAULT now64 for NULL, PREWHERE	100000
 DEFAULT now64 for NULL, PREWHERE	100000
 DEFAULT reading a column filled by now64	100000
 DEFAULT reading a column filled by now64	100000
+DEFAULT now64 for NULL, KILL MUTATION	100000
+DEFAULT now64 for NULL, KILL MUTATION	100000
 05458_now_prewhere_hit	1	1
 05458_now_where_hit	1	1
