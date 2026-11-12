@@ -19,3 +19,13 @@ head -c 300000000 /dev/zero | ${CLICKHOUSE_COMPRESSOR} --block-size 300000000 | 
 
 echo 'decompressed block sizes with 2 threads:'
 head -c 300000000 /dev/zero | ${CLICKHOUSE_COMPRESSOR} --threads 2 --block-size 300000000 | ${CLICKHOUSE_COMPRESSOR} --stat | cut -f2
+
+# A chain of expanding codecs could compress a 256 MiB block to more than 512 MiB, so the block is halved.
+FPC_CHAIN="FPC FPC FPC FPC FPC FPC FPC"
+echo -n 'round trip with a chain of seven FPC codecs: '
+# shellcheck disable=SC2086
+head -c 300000000 /dev/zero | ${CLICKHOUSE_COMPRESSOR} --block-size 300000000 --codec $FPC_CHAIN | ${CLICKHOUSE_COMPRESSOR} --decompress | wc -c
+
+echo 'decompressed block sizes with a chain of seven FPC codecs:'
+# shellcheck disable=SC2086
+head -c 300000000 /dev/zero | ${CLICKHOUSE_COMPRESSOR} --block-size 300000000 --codec $FPC_CHAIN | ${CLICKHOUSE_COMPRESSOR} --stat | cut -f2

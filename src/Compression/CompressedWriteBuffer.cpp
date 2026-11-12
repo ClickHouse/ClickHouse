@@ -32,6 +32,12 @@ void CompressedWriteBuffer::nextImpl()
     if (uncompressed_codec)
         compressed_reserve_size = std::max(compressed_reserve_size, uncompressed_codec->getCompressedReserveSize(decompressed_size));
 
+    /// The block size is limited by `maxBlockSize`, so this is checked before anything is allocated.
+    if (compressed_reserve_size > DBMS_MAX_COMPRESSED_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
+            "Cannot write a compressed block: {} bytes may compress to {} bytes, the maximum is {}",
+            decompressed_size, compressed_reserve_size, DBMS_MAX_COMPRESSED_SIZE);
+
     /** During compression we need buffer with capacity >= compressed_reserve_size + CHECKSUM_SIZE.
       *
       * If output buffer has necessary capacity, we can compress data directly into the output buffer.
@@ -58,11 +64,6 @@ void CompressedWriteBuffer::nextImpl()
     if (uncompressed_codec && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
         compressed_size = uncompressed_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
 
-    if (compressed_size > DBMS_MAX_COMPRESSED_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
-            "Cannot write a compressed block: {} bytes compress to {} bytes, the maximum is {}",
-            decompressed_size, compressed_size, DBMS_MAX_COMPRESSED_SIZE);
-
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_ptr, compressed_size);
 
     writeBinaryLittleEndian(checksum.low64, out);
@@ -84,21 +85,32 @@ void CompressedWriteBuffer::finalizeImpl()
     BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
-/// A reader rejects a block whose decompressed size is above DBMS_MAX_DECOMPRESSED_SIZE.
-static size_t maxBlockSize(size_t buf_size)
+/** The largest block size, not above `buf_size`, that a reader accepts: a block has at most DBMS_MAX_DECOMPRESSED_SIZE bytes
+  * and must not compress to more than DBMS_MAX_COMPRESSED_SIZE bytes, which a chain of expanding codecs (e.g. `FPC`) can exceed.
+  * The size is limited up front rather than by splitting a block on flush, because marks point inside the current block.
+  */
+static size_t maxBlockSize(size_t buf_size, const ICompressionCodec & codec)
 {
-    return std::min<size_t>(buf_size, DBMS_MAX_DECOMPRESSED_SIZE);
+    size_t size = std::min<size_t>(buf_size, DBMS_MAX_DECOMPRESSED_SIZE);
+    while (size > 1 && codec.getCompressedReserveSize(static_cast<UInt32>(size)) > DBMS_MAX_COMPRESSED_SIZE)
+        size /= 2;
+    return size;
+}
+
+static CompressionCodecPtr codecOrDefault(CompressionCodecPtr codec)
+{
+    return codec ? codec : CompressionCodecFactory::instance().getDefaultCodec();
 }
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    : BufferWithOwnMemory<WriteBuffer>(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, maxBlockSize(buf_size)))
+    : BufferWithOwnMemory<WriteBuffer>(
+        adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, maxBlockSize(buf_size, *codecOrDefault(codec_))))
     , out(out_)
-    , codec(std::move(codec_))
+    , codec(codecOrDefault(std::move(codec_)))
+    , requested_buf_size(buf_size)
 {
-    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, maxBlockSize(buf_size));
-    if (!codec)
-        codec = CompressionCodecFactory::instance().getDefaultCodec();
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, maxBlockSize(buf_size, *codec));
     codec_state = codec->createCompressionState();
 }
 
@@ -124,5 +136,11 @@ void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
     chassert(codec_);
     codec = std::move(codec_);
     codec_state = codec->createCompressionState();
+
+    /// The buffer is empty, so it can be resized to the block size limit of the new codec.
+    size_t max_size = maxBlockSize(requested_buf_size, *codec);
+    adaptive_buffer_max_size = max_size;
+    if (memory.size() > max_size || (!use_adaptive_buffer_size && memory.size() != max_size))
+        resize(max_size);
 }
 }
