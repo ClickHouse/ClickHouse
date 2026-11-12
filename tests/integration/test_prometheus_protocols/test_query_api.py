@@ -524,7 +524,9 @@ def test_query_context_parameters_get_and_post():
     suffix = uuid.uuid4().hex[:8]
     user_name = f"prom_ctx_user_{suffix}"
     role_name = f"prom_ctx_role_{suffix}"
+    quota_name = f"prom_ctx_quota_{suffix}"
 
+    node.query(f"DROP QUOTA IF EXISTS {quota_name}")
     node.query(f"DROP USER IF EXISTS {user_name}")
     node.query(f"DROP ROLE IF EXISTS {role_name}")
     node.query(f"CREATE ROLE {role_name}")
@@ -536,6 +538,7 @@ def test_query_context_parameters_get_and_post():
         f"CREATE USER {user_name} IDENTIFIED WITH no_password DEFAULT ROLE NONE"
     )
     node.query(f"GRANT {role_name} TO {user_name}")
+    node.query(f"CREATE QUOTA {quota_name} KEYED BY client_key TO {role_name}")
 
     try:
         denied_error = execute_query_via_http_api(
@@ -582,5 +585,6 @@ def test_query_context_parameters_get_and_post():
                 sleep_time=1,
             )
     finally:
+        node.query(f"DROP QUOTA IF EXISTS {quota_name}")
         node.query(f"DROP USER IF EXISTS {user_name}")
         node.query(f"DROP ROLE IF EXISTS {role_name}")
