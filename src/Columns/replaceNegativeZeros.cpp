@@ -1,13 +1,6 @@
 #include <Columns/replaceNegativeZeros.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 
@@ -59,16 +52,60 @@ bool containsNegativeZero(const PaddedPODArray<T> & data)
 }
 
 template <typename T>
-ColumnPtr replaceInVector(const ColumnVector<T> & column)
+ColumnPtr replaceInVector(const PaddedPODArray<T> & data)
 {
-    const auto & data = column.getData();
-    if (!containsNegativeZero(data))
-        return nullptr;
-
     auto res = ColumnVector<T>::create(data.size());
     auto & res_data = res->getData();
     for (size_t i = 0; i < data.size(); ++i)
         res_data[i] = isNegativeZero(data[i]) ? T{} : data[i];
+    return res;
+}
+
+bool hasNegativeZeros(const IColumn & column)
+{
+    if (const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column))
+        return containsNegativeZero(column_float64->getData());
+    if (const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column))
+        return containsNegativeZero(column_float32->getData());
+    if (const auto * column_bfloat16 = typeid_cast<const ColumnBFloat16 *>(&column))
+        return containsNegativeZero(column_bfloat16->getData());
+
+    /// `forEachSubcolumn` skips a shared dictionary.
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+        return hasNegativeZeros(*low_cardinality->getDictionary().getNestedNotNullableColumn());
+
+    bool found = false;
+    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || hasNegativeZeros(*subcolumn); });
+    return found;
+}
+
+/// The column has to contain negative zeros.
+ColumnPtr replaceNegativeZerosImpl(const ColumnPtr & column)
+{
+    if (const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(column.get()))
+        return replaceInVector(column_float64->getData());
+    if (const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(column.get()))
+        return replaceInVector(column_float32->getData());
+    if (const auto * column_bfloat16 = typeid_cast<const ColumnBFloat16 *>(column.get()))
+        return replaceInVector(column_bfloat16->getData());
+
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        /// The dictionary can hold both zeros as different values, so it cannot be modified in place:
+        /// the column is rebuilt with a new dictionary.
+        auto full = replaceNegativeZerosImpl(low_cardinality->convertToFullColumn());
+        auto res = low_cardinality->cloneEmpty();
+        assert_cast<ColumnLowCardinality &>(*res).insertRangeFromFullColumn(*full, 0, full->size());
+        return res;
+    }
+
+    /// The source column is still referenced, so this is a copy. It is only made when there are negative zeros.
+    auto res = IColumn::mutate(column);
+    res->forEachMutableSubcolumn([](auto & subcolumn)
+    {
+        if (hasNegativeZeros(*subcolumn))
+            subcolumn = replaceNegativeZerosImpl(subcolumn);
+    });
     return res;
 }
 
@@ -77,95 +114,16 @@ ColumnPtr replaceInVector(const ColumnVector<T> & column)
 
 ColumnPtr replaceNegativeZeros(const IColumn & column)
 {
-    if (const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column))
-        return replaceInVector(*column_float64);
-
-    if (const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column))
-        return replaceInVector(*column_float32);
-
-    if (const auto * column_bfloat16 = typeid_cast<const ColumnBFloat16 *>(&column))
-        return replaceInVector(*column_bfloat16);
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-    {
-        if (auto nested = replaceNegativeZeros(nullable->getNestedColumn()))
-            return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    if (!hasNegativeZeros(column))
         return nullptr;
-    }
-
-    if (const auto * array = typeid_cast<const ColumnArray *>(&column))
-    {
-        if (auto data = replaceNegativeZeros(array->getData()))
-            return ColumnArray::create(data, array->getOffsetsPtr());
-        return nullptr;
-    }
-
-    if (const auto * map = typeid_cast<const ColumnMap *>(&column))
-    {
-        if (auto nested = replaceNegativeZeros(map->getNestedColumn()))
-            return ColumnMap::create(nested);
-        return nullptr;
-    }
-
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
-    {
-        Columns elements;
-        for (size_t i = 0; i < tuple->tupleSize(); ++i)
-        {
-            if (auto element = replaceNegativeZeros(tuple->getColumn(i)))
-            {
-                if (elements.empty())
-                    elements = tuple->getColumnsCopy();
-                elements[i] = std::move(element);
-            }
-        }
-        if (elements.empty())
-            return nullptr;
-        return ColumnTuple::create(elements);
-    }
-
-    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
-    {
-        /// The dictionary can hold both zeros as different values, so it cannot be modified in place:
-        /// the column is rebuilt with a new dictionary.
-        if (!replaceNegativeZeros(*low_cardinality->getDictionary().getNestedNotNullableColumn()))
-            return nullptr;
-
-        auto full = low_cardinality->convertToFullColumn();
-        auto res = low_cardinality->cloneEmpty();
-        assert_cast<ColumnLowCardinality &>(*res).insertRangeFromFullColumn(*replaceNegativeZeros(full), 0, full->size());
-        return res;
-    }
-
-    if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
-    {
-        if (auto values = replaceNegativeZeros(sparse->getValuesColumn()))
-            return ColumnSparse::create(values, sparse->getOffsetsPtr(), sparse->size());
-        return nullptr;
-    }
-
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
-    {
-        if (auto data = replaceNegativeZeros(column_const->getDataColumn()))
-            return ColumnConst::create(data, column_const->size());
-        return nullptr;
-    }
-
-    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&column))
-    {
-        if (auto nested = replaceNegativeZeros(*replicated->getNestedColumn()))
-            return ColumnReplicated::create(nested, replicated->getIndexesColumn());
-        return nullptr;
-    }
-
-    return nullptr;
+    return replaceNegativeZerosImpl(column.getPtr());
 }
 
 ColumnPtr replaceNegativeZeros(const ColumnPtr & column)
 {
-    if (auto res = replaceNegativeZeros(*column))
-        return res;
-    return column;
+    if (!hasNegativeZeros(*column))
+        return column;
+    return replaceNegativeZerosImpl(column);
 }
 
 void replaceNegativeZeros(ColumnRawPtrs & key_columns, Columns & holder)

@@ -81,3 +81,11 @@ SELECT count() FROM
     SELECT DISTINCT a FROM (SELECT if(number = 0, [-0.], [0.]) AS a, [1, 2] AS arr FROM numbers(2)) ARRAY JOIN arr
 )
 SETTINGS enable_lazy_columns_replication = 1;
+
+SELECT '-- Nested columns';
+SELECT count() FROM (SELECT x FROM (SELECT arrayJoin([0., -0.])::Variant(Float64, String) AS x) GROUP BY x)
+SETTINGS allow_suspicious_types_in_group_by = 1;
+SELECT count() FROM (SELECT DISTINCT x FROM (SELECT [arrayJoin([0., -0.])]::Array(LowCardinality(Float64)) AS x))
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT count() FROM (SELECT x FROM (SELECT ('a', [toNullable(arrayJoin([0., -0.]))]) AS x) GROUP BY x);
+SELECT count() FROM (SELECT x FROM (SELECT map('k', arrayJoin([0., -0.])) AS x) GROUP BY x);
