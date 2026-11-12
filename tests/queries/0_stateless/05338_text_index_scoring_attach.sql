@@ -47,5 +47,19 @@ INSERT INTO tab_scoring_attach VALUES (4, 'raft raft raft');
 
 SELECT part_name, row_id, weight FROM mergeTreeTextIndex(currentDatabase(), tab_scoring_attach, idx_body) WHERE token = 'raft' ORDER BY part_name, row_id;
 
+SELECT '-- the table stays alterable after the gate is turned off, but a new scoring index needs the gate';
+ALTER TABLE tab_scoring_attach ADD COLUMN title String;
+ALTER TABLE tab_scoring_attach ADD INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25'); -- { serverError SUPPORT_IS_DISABLED }
+
+-- A new index is checked against the settings the table has after the statement.
+ALTER TABLE tab_scoring_attach
+    ADD INDEX idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', scoring = 'bm25'),
+    MODIFY SETTING allow_experimental_text_index_scoring = 1;
+
+ALTER TABLE tab_scoring_attach MODIFY SETTING allow_experimental_text_index_scoring = 0;
+ALTER TABLE tab_scoring_attach MODIFY SETTING allow_experimental_text_index_scoring = 1;
+
+SELECT name, type_full FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_scoring_attach' ORDER BY name;
+
 DROP TABLE tab_scoring_attach;
 DROP TABLE tab_scoring_no_codec;

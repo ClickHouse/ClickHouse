@@ -461,6 +461,10 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+/// A text index with scoring requires `allow_experimental_text_index_scoring` in `settings`, the settings the table has after
+/// the statement. The check is done only for indexes being declared, not on `ATTACH` and not for scoring indexes inherited from
+/// `old_index`, so that a table keeps loading and can be altered after the setting is turned off. Does nothing for other indexes.
+void textIndexCheckScoringAllowed(const IndexDescription & index, const IndexDescription * old_index, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
