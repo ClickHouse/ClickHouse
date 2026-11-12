@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
@@ -332,17 +331,6 @@ template <typename T>
 void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeBinaryLittleEndian(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
-}
-
-template <typename T>
-void SerializationNumber<T>::deserializeBinary(T & value, std::string_view & input, const FormatSettings &) const
-{
-    if (input.size() < sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read a value of {} bytes, only {} bytes are left", sizeof(T), input.size());
-
-    memcpy(&value, input.data(), sizeof(T));
-    transformEndianness<std::endian::little>(value);
-    input.remove_prefix(sizeof(T));
 }
 
 template <typename T>
