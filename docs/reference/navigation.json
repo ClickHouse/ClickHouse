@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-reference.svg",
   "item": "Reference",
   "pages": [
     "reference/home",
@@ -177,6 +176,7 @@
                 "reference/statements/select/qualify",
                 "reference/statements/select/replace_modifier",
                 "reference/statements/select/sample",
+                "reference/statements/select/shuffle",
                 "reference/statements/select/union",
                 "reference/statements/select/where",
                 "reference/statements/select/with"
@@ -1004,6 +1004,7 @@
         },
         "reference/formats/Values",
         "reference/formats/Vertical",
+        "reference/formats/Vortex",
         "reference/formats/XML"
       ]
     },

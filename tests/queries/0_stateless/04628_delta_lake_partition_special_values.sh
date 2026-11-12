@@ -163,13 +163,3 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     SELECT number, part FROM deltaLakeLocal('${ROOT}/unicode') ORDER BY number;
 "
 echo "committed paths: $(committed_paths "${ROOT}/unicode")"
-
-echo "-- the legacy (non-kernel) reader must also read a null partition value back as NULL"
-echo "-- (the committed JSON null previously threw in the String-only parsing path)"
-bootstrap "${ROOT}/legacy_null" "${SCHEMA_PART}" '["part"]'
-${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
-    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/legacy_null') VALUES (1, NULL), (2, 'x'), (3, '');
-"
-${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --allow_experimental_delta_kernel_rs=0 --query "
-    SELECT number, part FROM deltaLakeLocal('${ROOT}/legacy_null') ORDER BY number;
-"

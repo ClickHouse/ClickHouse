@@ -12,6 +12,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -347,7 +348,7 @@ void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & com
 Pipe StorageObjectStorageCluster::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 void StorageObjectStorageCluster::checkAlterPartitionIsPossible(
@@ -384,6 +385,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -397,6 +401,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const Sto
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -407,7 +414,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -422,7 +430,12 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTs & args = expression_list->children;
-    const auto & structure = storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription();
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    /// The `DEFAULT`s of an `'auto'` structure are the insertion table's, those of a written one are resolved against it alone.
+    const auto * insertion_columns = configuration->structure == "auto" ? context->getInsertionTableColumnsDescription().get() : nullptr;
+    const String structure = !add_structure_and_format ? String{}
+        : configuration->isDataLakeConfiguration() ? columns.getAll().toNamesAndTypesDescription()
+        : getStructureToSend(columns, insertion_columns);
     if (args.empty())
     {
         throw Exception(
@@ -445,7 +458,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     if (!endsWith(table_function->name, "Cluster"))
     {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -471,7 +485,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));
@@ -563,10 +578,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
-            configuration->format,
+            configuration,
             object_storage,
-            local_context
-        );
+            local_context,
+            getStorageID());
     }
 
     std::vector<std::string> ids_of_hosts;

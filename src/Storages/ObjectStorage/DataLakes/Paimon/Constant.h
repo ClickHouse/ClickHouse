@@ -13,6 +13,12 @@ constexpr const char * PAIMON_SNAPSHOT_LATEST_HINT = "LATEST";
 /// for options
 constexpr const char * PAIMON_SCAN_MODE = "scan.mode";
 constexpr const char * PAIMON_DEFAULT_PARTITION_NAME = "partition.default-name";
+constexpr const char * PAIMON_PARTITION_LEGACY_NAME = "partition.legacy-name";
+constexpr const char * PAIMON_DELETION_VECTORS_ENABLED = "deletion-vectors.enabled";
+constexpr const char * PAIMON_MERGE_ENGINE = "merge-engine";
+constexpr const char * PAIMON_MERGE_ENGINE_FIRST_ROW = "first-row";
+constexpr const char * PAIMON_BATCH_SCAN_MODE = "batch-scan-mode";
+constexpr const char * PAIMON_BATCH_SCAN_MODE_NONE = "none";
 /// for manifest list
 constexpr const char * PAIMON_MANIFEST_DIR = "manifest";
 constexpr const char * COLUMN_PAIMON_MANIFEST_LIST_FILE_NAME = "_FILE_NAME";

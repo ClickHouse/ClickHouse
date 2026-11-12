@@ -20,6 +20,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -36,8 +37,6 @@ namespace Setting
     extern const SettingsBool allow_reorder_prewhere_conditions;
     extern const SettingsBool use_statistics;
     extern const SettingsBool apply_string_filters_during_scan;
-    extern const SettingsBool use_columns_cache;
-    extern const SettingsBool enable_writes_to_columns_cache;
 }
 
 namespace
@@ -141,6 +140,12 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
     return names;
 }
 
+bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet & columns, const String & top_k_filter_column)
+{
+    return !top_k_filter_column.empty() && columns.size() == 1 && *columns.begin() == top_k_filter_column
+        && conjunct.getDAGNode() && canBeMovedToTheFrontOfAndChain(conjunct.getDAGNode());
+}
+
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -177,7 +182,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final,
-    const NameSet & columns_read_before_filter)
+    const NameSet & columns_read_before_filter,
+    const String & top_k_filter_column)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
@@ -189,9 +195,11 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
-    /// The reader does not apply string value filters when it may write the columns to the columns cache.
-    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
-        && !(settings[Setting::use_columns_cache] && settings[Setting::enable_writes_to_columns_cache]);
+    /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
+    /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
+    /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
+    /// a column served from the cache is filtered by the reader then, and the next read is likely to be served from it.
+    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan];
     /// Resolve the columns to their storage columns: the reader disables the scan filter for a storage column
     /// when anything reads it before the filter, including its subcolumns (e.g. `payload.size0` for `payload`).
     NameSet storage_columns_read_before_filter;
@@ -204,6 +212,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
             storage_columns_read_before_filter.insert(column_name);
     }
     where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
+    where_optimizer_context.top_k_filter_column = top_k_filter_column;
 
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
@@ -399,6 +408,24 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
         conjuncts.push_back(node);
 }
 
+/// True if evaluating the condition may throw on rows that a preceding condition rejects.
+/// Uses the same predicate as `tryBuildPrewhereSteps` (MergeTreeSplitPrewhereIntoReadSteps.cpp),
+/// which splits such a condition into a step that runs on the rows filtered by the previous step.
+static bool conditionMayThrow(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        DataTypesWithConstInfo argument_types;
+        argument_types.reserve(node->children.size());
+        for (const auto * child : node->children)
+            argument_types.push_back({child->result_type, child->column != nullptr});
+        if (node->function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+            return true;
+    }
+
+    return std::ranges::any_of(node->children, [](const auto * child) { return conditionMayThrow(child); });
+}
+
 /// Analyze the WHERE expression and populate `res` with one `Condition` per conjunct group.
 /// Algorithm:
 ///   1. Flatten the top-level AND chain into individual conjuncts with `collectConjuncts`.
@@ -407,6 +434,8 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
 ///      (i.e., eligible to be moved to PREWHERE).
 ///   3. Group viable conjuncts by their exact `NameSet` of referenced columns so that
 ///      conditions on the same column set are scored together (better selectivity estimate).
+///      Conjuncts over physical columns where a condition that may throw follows another condition
+///      are grouped by these physical columns instead, so that the throwing one is not moved ahead.
 ///   4. Emit non-viable conjuncts individually as single-node `Condition` objects (viable=false).
 ///   5. Emit each viable group as a single multi-node `Condition`, computing `good`,
 ///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group.
@@ -420,9 +449,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         RPNBuilderTreeNode node;
         NameSet columns;
-        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
-        /// Used for grouping: conditions on subcolumns of the same storage column
-        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
+        /// `columns` resolved to the physical columns they are read from (subcolumn suffix stripped).
         NameSet storage_columns;
         bool has_invalid_column = false;
         bool may_use_primary_index = true;
@@ -433,20 +460,18 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     std::vector<ConjunctInfo> infos;
     infos.reserve(conjuncts.size());
 
+    const auto & storage_columns_description = storage_metadata->getColumns();
     for (const auto & conjunct : conjuncts)
     {
         ConjunctInfo info{conjunct, {}, {}, false, true, false, false};
         collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
 
-        /// Resolve each column to its physical storage name so that subcolumns
-        /// of the same column (e.g. `map.key_k0`, `map.key_k1`) share one group.
-        const auto & storage_columns_description = storage_metadata->getColumns();
-        for (const auto & col : info.columns)
+        for (const auto & column : info.columns)
         {
-            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col))
+            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column))
                 info.storage_columns.insert(resolved->getNameInStorage());
             else
-                info.storage_columns.insert(col);
+                info.storage_columns.insert(column);
         }
 
         /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.
@@ -462,8 +487,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns,
             /// unless the condition can be used as a string filter during the scan:
-            /// then it is beneficial on its own, because the reader skips copying the non-matching values.
+            /// then it is beneficial on its own, because the reader skips copying the non-matching values,
+            /// or `__topKFilter` reads its only column in PREWHERE anyway, where the query condition cache records each emptied granule.
             && (info.columns.size() < queried_columns.size()
+                || isReadByTopKFilterOnly(conjunct, info.columns, where_optimizer_context.top_k_filter_column)
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
         info.expensive = isExpensiveExpression(conjunct);
@@ -471,18 +498,45 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         infos.push_back(std::move(info));
     }
 
-    /// Group viable conjuncts by their required storage column set so same-column conditions
+    /// Group viable conjuncts by their required column set so same-column conditions
     /// are treated as a single unit and their combined selectivity can be estimated.
-    /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
-    /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
-    /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
     /// Non-viable conjuncts stay as individual Conditions.
     /// 'expensive' conjuncts each get their own group.
     ///
+    /// A condition that may throw is guarded by the conditions written before it (`and` evaluates it only on
+    /// the rows they pass), but separate groups are reordered by cost. So when such a condition reads the same
+    /// physical columns as an earlier condition, e.g. `t.safe != '' AND toUInt64(t.val) > 50` on subcolumns
+    /// of one `Tuple`, all conditions over these physical columns are grouped by them instead of by the
+    /// exact columns. The group keeps the written order, and `tryBuildPrewhereSteps` splits it into steps
+    /// so that the throwing condition runs only on the rows the guard passes.
+    ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
+    std::vector<NameSet> storage_columns_guarding_throwing_condition;
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(infos[i].node.getDAGNode()))
+            continue;
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (infos[j].viable && !infos[j].expensive && infos[j].storage_columns == infos[i].storage_columns)
+            {
+                storage_columns_guarding_throwing_condition.push_back(infos[i].storage_columns);
+                break;
+            }
+        }
+    }
+
+    auto group_key = [&](const ConjunctInfo & info) -> const NameSet &
+    {
+        if (std::ranges::find(storage_columns_guarding_throwing_condition, info.storage_columns)
+            != storage_columns_guarding_throwing_condition.end())
+            return info.storage_columns;
+        return info.columns;
+    };
+
     struct Group
     {
-        NameSet storage_columns;
+        NameSet columns;
         std::vector<size_t> indices;
     };
     std::vector<Group> groups;
@@ -490,7 +544,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].storage_columns == cols && !infos[groups[g].indices.front()].expensive)
+            if (groups[g].columns == cols && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
@@ -502,11 +556,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         if (!infos[i].viable)
             continue;
-        auto g = infos[i].expensive ? std::nullopt : find_group_idx(infos[i].storage_columns);
+        const auto & key = group_key(infos[i]);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key);
         if (!g.has_value())
         {
             group_of[i] = groups.size();
-            groups.push_back({infos[i].storage_columns, {i}});
+            groups.push_back({key, {i}});
         }
         else
         {
@@ -636,6 +691,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
+                    || isReadByTopKFilterOnly(conjunct, columns, where_optimizer_context.top_k_filter_column)
                     || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
             res.emplace_back(std::move(cond));
         }

@@ -57,7 +57,7 @@ The columns cache stores deserialized columns from `MergeTree` tables, eliminati
 
 Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud); `MergeTree` tables in legacy `Ordinary` databases have a nil UUID and silently ignore this setting.
 
-The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
+The cache applies to both wide and compact parts, including the parts of projections.
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 
@@ -155,6 +155,14 @@ Enable pushing OR-connected parts of JOIN conditions down to the corresponding i
 This allows storage engines to filter earlier, which can reduce data read.
 The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
 predicate for the target side.
+
+## use_join_runtime_filters_for_iceberg_pruning {#use_join_runtime_filters_for_iceberg_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to prune Iceberg data files by JOIN runtime filters."}]}]}/>
+
+Skip the Iceberg data files that cannot contain a key of a JOIN runtime filter applied to the read (see `enable_join_runtime_filters`). Once the build side of the join has finished, the key values recorded by the runtime filter (or their minimum/maximum range when the exact set was too large) are checked against the column bounds of each data file in its manifest file, in the same way as a query filter. Data files requested before then are read in full. Requires [enable_join_runtime_filters_index_analysis](/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 

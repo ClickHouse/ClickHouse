@@ -2,11 +2,13 @@
 
 #include <base/types.h>
 #include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeperNodeVersion.h>
 
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace DB
@@ -14,12 +16,27 @@ namespace DB
 
 /// Support multi-level namespace names.
 using IcebergNamespaceName = std::vector<String>;
+/// Joins the levels of a namespace in a REST path. A level must not contain it.
+constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
+
+/// Checked for every table path the store builds. The handler maps `BAD_ARGUMENTS` to a 400 response.
+void validateTableName(const String & name);
 
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
 {
     String uuid;
     String metadata_location;
+    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
+    ZooKeeperNodeVersion version{};
+};
+
+struct UpdateNamespacePropertiesResult
+{
+    Strings updated;
+    Strings removed;
+    /// Keys from `removals` that were not present.
+    Strings missing;
 };
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
@@ -29,8 +46,13 @@ struct IcebergTablePointer
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
-///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
-///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
+///   <root>/namespaces/<level>/tables/<t>   data: table uuid, written once at create
+///   <root>/namespaces/<level>/tables/<t>/<uuid>  empty guard child, binds the name to the uuid
+///   <root>/tables_by_uuid/<uuid>           data: metadata location, the node a commit updates
+/// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
+/// The uuid node is outside the namespace tree, so a rename moves only the name node and the version keeps counting.
+/// Drop and rename read the uuid from the name node and then remove the guard child in the same multi-request as the name node.
+/// A table re-created under the same name has another guard child, so the multi-request fails instead of acting on the wrong table.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -43,6 +65,10 @@ public:
     bool namespaceExists(const IcebergNamespaceName & name) const;
 
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
+
+    /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.
+    std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
+        const IcebergNamespaceName & name, const std::map<String, String> & updates, const std::set<String> & removals);
 
     /// Lists direct children of `parent` or top-level namespaces when `parent` is empty.
     std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;
@@ -65,6 +91,34 @@ public:
 
     bool dropTable(const IcebergNamespaceName & ns, const String & table);
 
+    enum class RenameTableResult
+    {
+        Renamed,
+        TableMissing,
+        /// The destination namespace does not exist.
+        NamespaceMissing,
+        TargetExists,
+    };
+
+    /// Moves the name node. The uuid node, the metadata location and the commit version stay the same.
+    RenameTableResult renameTable(
+        const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest);
+
+    enum class UpdateTableResult
+    {
+        Updated,
+        /// The node changed since `expected` was read.
+        VersionMismatch,
+        TableMissing,
+        /// The name exists, but it was dropped and re-created with another uuid.
+        UuidMismatch,
+    };
+
+    /// Replaces the metadata location only if the uuid node still has `expected.version`.
+    /// Throws `KeeperException` for session or hardware errors. The caller must treat those as an unknown outcome.
+    UpdateTableResult updateTable(
+        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer);
+
 private:
     /// Returns the current session. Runs `initRoot` once per new session.
     zkutil::ZooKeeperPtr getZooKeeper() const;
@@ -76,7 +130,8 @@ private:
     String childNamespacesPath(const IcebergNamespaceName & name) const;
     String tablesPath(const IcebergNamespaceName & name) const;
     String tablePath(const IcebergNamespaceName & name, const String & table) const;
-    String tableUuidPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
+    String tableUuidPath(const String & uuid) const;
+    String tableGuardPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
 
     const String root_path;
     const zkutil::GetZooKeeper get_zookeeper;
