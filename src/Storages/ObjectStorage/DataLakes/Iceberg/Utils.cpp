@@ -351,6 +351,10 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
+        /// Holding the whole message lets the zstd buffer size its context to it at `finalize`.
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE;
+        if (compression_method == CompressionMethod::Zstd)
+            buf_size = std::max(buf_size, data.size());
         /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
         /// independent of the session `snappy_mode`. The wire format is not encoded in the
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
@@ -361,7 +365,8 @@ void writeMessageToFile(
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
-            SnappyMode::Basic);
+            SnappyMode::Basic,
+            buf_size);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -1700,8 +1705,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
             sorting_field->set(f_source_id, *source_id);
             sorting_field->set(f_transform, transform_name);
-            sorting_field->set(f_direction, reverse_flags.empty() || !reverse_flags[i] ? "asc" : "desc");
-            sorting_field->set("null-order", "nulls-first");
+            const bool descending = !reverse_flags.empty() && reverse_flags[i];
+            sorting_field->set(f_direction, descending ? "desc" : "asc");
+            /// ClickHouse sorts NULLs as greater than any value, see `sortBlockByKeyDescription`.
+            sorting_field->set(f_null_order, descending ? "nulls-first" : "nulls-last");
             sorting_fields->add(sorting_field);
         }
         sort_order->set(Iceberg::f_fields, sorting_fields);
@@ -1848,9 +1855,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             {
                 /// Manifests and manifest lists share this directory but are never named `v...`.
                 if (list_v_prefixed_names_only)
-                    listing = listPrefix(*object_storage, table_path, "metadata/v", ".metadata.json");
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "v", ".metadata.json");
                 if (!list_v_prefixed_names_only || listing.matched.empty())
-                    listing = listPrefix(*object_storage, table_path, "metadata", ".metadata.json");
+                    listing = listPrefixNonRecursive(*object_storage, table_path, "metadata", "", ".metadata.json");
                 if (!listing.matched.empty())
                     break;
                 if (attempt + 1 < MAX_LIST_RETRIES)
