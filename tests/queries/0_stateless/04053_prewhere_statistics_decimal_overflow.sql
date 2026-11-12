@@ -1,4 +1,4 @@
--- Repro: statistics-driven PREWHERE reordering can cause DECIMAL_OVERFLOW.
+-- Statistics-driven PREWHERE reordering must not move `arraySum` before the NOT-IN guard (DECIMAL_OVERFLOW).
 --
 -- Workaround: `allow_reorder_prewhere_conditions = 0` keeps the original WHERE order
 -- so the NOT-IN guard stays at position 0.
@@ -49,7 +49,7 @@ WHERE (ts >= '2024-01-01 00:00:00') AND (ts < '2024-01-02 00:00:00')
                         balance_changes) / 1000000000) > 0)
 SETTINGS use_statistics = 0, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 0, query_plan_merge_filters = 1; -- CI may inject merge_filters=False, separating NOT-IN and arraySum into disconnected filter nodes so prewhere can reorder them independently
 
--- Bug: statistics move `arraySum` before the NOT-IN guard → DECIMAL_OVERFLOW.
+-- Statistics no longer move `arraySum` before the NOT-IN guard.
 -- With `short_circuit_function_evaluation_reorder_arguments` the cheap NOT-IN guard is evaluated before the heavy
 -- `arraySum`, which hides the bug, so the setting is disabled here.
 SELECT sig
@@ -59,7 +59,7 @@ WHERE (ts >= '2024-01-01 00:00:00') AND (ts < '2024-01-02 00:00:00')
     AND (round(arraySum(x -> if(x.account = 'acct1' AND x.after > x.before,
                                  toFloat64(x.after - x.before), toFloat64(0)),
                         balance_changes) / 1000000000) > 0)
-SETTINGS use_statistics = 1, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 1, short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError DECIMAL_OVERFLOW }
+SETTINGS use_statistics = 1, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 1, short_circuit_function_evaluation_reorder_arguments = 0;
 
 -- Workaround: disable reordering to preserve the original WHERE order.
 SELECT sig

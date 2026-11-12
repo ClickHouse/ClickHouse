@@ -7,8 +7,8 @@ aiRedact: in PREWHERE, last
 aiEmbed: in PREWHERE, last
 aiSimilarity: in PREWHERE, last
 AI inside a lambda: in PREWHERE, last
-AI and a cheap condition on the same column: in PREWHERE, last
-AI inside OR: in PREWHERE, last
+AI and a cheap condition on the same column: not in PREWHERE
+AI inside OR: not in PREWHERE
 AI condition alone: in PREWHERE, last
 AI behind a condition left in WHERE: not in PREWHERE
 Reordering disabled, AI written first: in PREWHERE, not last

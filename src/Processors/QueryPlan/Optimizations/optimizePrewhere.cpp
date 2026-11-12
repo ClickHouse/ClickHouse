@@ -360,7 +360,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         source_step_with_filter->getContext(),
         is_final,
         columns_read_before_filter,
-        top_k_filter_column);
+        top_k_filter_column,
+        existing_prewhere_info != nullptr);
 
     if (optimize_result.prewhere_nodes.empty())
         return;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -60,7 +61,8 @@ public:
         const ContextPtr & context,
         bool is_final,
         const NameSet & columns_read_before_filter = {},
-        const String & top_k_filter_column = {});
+        const String & top_k_filter_column = {},
+        bool has_existing_prewhere = false);
 
 private:
     struct Condition
@@ -101,6 +103,13 @@ private:
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+
+        /// It can throw or is not deterministic, so it is moved to PREWHERE only after the conditions in front of it.
+        bool must_follow_preceding_conditions = false;
+
+        /// It also computes a node needed outside it, which PREWHERE evaluated in one step computes for all rows,
+        /// so then it is moved only to an empty PREWHERE.
+        bool must_be_first_in_prewhere = false;
 
         /// For debugging purposes
         String toString() const
@@ -151,6 +160,9 @@ private:
         bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
+        ShortCircuitFunctionEvaluation short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::ENABLE;
+        bool has_existing_prewhere = false;
+        const std::unordered_set<const ActionsDAG::Node *> * shared_nodes = nullptr;
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
         String top_k_filter_column;

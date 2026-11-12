@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsBool use_page_cache_lookahead_for_text_index;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace MergeTreeSetting
@@ -141,7 +142,9 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
-    result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
+    /// With `force_enable` every function is executed lazily, so any condition can be guarded by the preceding PREWHERE steps.
+    result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters]
+        || settings[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
     /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
