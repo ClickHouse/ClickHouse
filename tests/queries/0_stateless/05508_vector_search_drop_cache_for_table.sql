@@ -188,9 +188,10 @@ ORDER BY id;
 
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_minmax INDEX idx_minmax; -- { serverError BAD_ARGUMENTS }
 
--- Only `MergeTree` tables can have vector similarity indexes.
+-- Should be a no-op for non-`MergeTree` tables.
 CREATE TABLE tab_memory (id Int32) ENGINE = Memory;
-SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory; -- { serverError BAD_ARGUMENTS }
+SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory;
+SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory INDEX idx;
 
 SELECT '-- Access';
 

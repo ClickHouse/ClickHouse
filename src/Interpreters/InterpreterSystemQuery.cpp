@@ -3016,9 +3016,10 @@ void InterpreterSystemQuery::clearVectorSimilarityIndexCacheForTable(const ASTSy
 
     auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+    
+    /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
     if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Command CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE is supported only for MergeTree tables, but got: {}", table->getName());
+        return;
 
     /// The cache keys are built from the paths of the parts, which `RENAME TABLE` changes for a table without a UUID.
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
