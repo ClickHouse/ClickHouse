@@ -2,13 +2,17 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUT.h>
+#include <Common/assert_cast.h>
 
 #include <Common/config_version.h>
 
@@ -83,7 +87,7 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 21: return "smallint";
         case 23: return "integer";
         case 25: return "text";
-        case 26: return "bigint"; /// oid
+        case 26: return "oid";
         case 700: return "real";
         case 701: return "double precision";
         case 1042: return "character";
@@ -93,6 +97,19 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1184: return pgFormatTimestamp(typmod, "with time zone");
         case 1700: return pgFormatNumeric(typmod);
         case 2950: return "uuid";
+        case 3904: return "int4range";
+        case 3905: return "int4multirange";
+        case 3906: return "numrange";
+        case 3907: return "nummultirange";
+        case 3910: return "tsrange";
+        case 3911: return "tsmultirange";
+        case 3912: return "tstzrange";
+        case 3913: return "tstzmultirange";
+        case 3914: return "daterange";
+        case 3915: return "datemultirange";
+        case 3926: return "int8range";
+        case 3927: return "int8multirange";
+        case 40000: return "mood";
 
         /// Array types (element OID + "[]").
         case 1000: return "boolean[]";
@@ -117,6 +134,9 @@ String pgFormatType(Int64 oid, Int64 typmod)
 /// Provided so that ClickHouse's PostgreSQL wire protocol can answer the catalog-introspection
 /// queries issued by libpq/pqxx clients - in particular by ClickHouse itself when the `postgresql`
 /// table function or engine points at another ClickHouse instance.
+/// As in PostgreSQL, the function is not strict: a `NULL` type modifier means that no specific modifier
+/// is known (the same as `-1`), so `format_type(t.oid, NULL)` renders the base type name, and only a
+/// `NULL` type OID gives `NULL`.
 class FunctionFormatType final : public IFunction
 {
 public:
@@ -127,37 +147,82 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isInteger(removeNullable(arguments[0])))
+        const auto is_integer_or_null = [](const DataTypePtr & type)
+        {
+            const auto nested = removeNullable(type);
+            return isInteger(nested) || isNothing(nested);
+        };
+
+        if (!is_integer_or_null(arguments[0]))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of function {} must be an integer type OID, got {}",
                 getName(), arguments[0]->getName());
 
-        if (!isInteger(removeNullable(arguments[1])))
+        if (!is_integer_or_null(arguments[1]))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument of function {} must be an integer type modifier, got {}",
                 getName(), arguments[1]->getName());
 
+        if (arguments[0]->isNullable() || isNothing(arguments[0]))
+            return makeNullable(std::make_shared<DataTypeString>());
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IColumn & oid_column = *arguments[0].column;
-        const IColumn & typmod_column = *arguments[1].column;
+        /// The values of an argument and its null map; no values at all for an argument that is always `NULL`.
+        struct Argument
+        {
+            ColumnPtr full_column;
+            const IColumn * values = nullptr;
+            const NullMap * null_map = nullptr;
+
+            bool isNull(size_t row) const { return !values || (null_map && (*null_map)[row]); }
+        };
+
+        const auto unwrap = [](const ColumnWithTypeAndName & argument)
+        {
+            Argument result;
+            result.full_column = argument.column->convertToFullColumnIfConst();
+            if (isNothing(removeNullable(argument.type)))
+                return result;
+            result.values = result.full_column.get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.values))
+            {
+                result.values = &nullable->getNestedColumn();
+                result.null_map = &nullable->getNullMapData();
+            }
+            return result;
+        };
+
+        const Argument oid = unwrap(arguments[0]);
+        const Argument typmod = unwrap(arguments[1]);
 
         auto result = ColumnString::create();
         result->reserve(input_rows_count);
+        auto null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const String type_name = pgFormatType(oid_column.getInt(i), typmod_column.getInt(i));
+            if (oid.isNull(i))
+            {
+                result->insertDefault();
+                null_map->getData()[i] = 1;
+                continue;
+            }
+
+            const Int64 type_modifier = typmod.isNull(i) ? -1 : typmod.values->getInt(i);
+            const String type_name = pgFormatType(oid.values->getInt(i), type_modifier);
             result->insertData(type_name.data(), type_name.size());
         }
 
+        if (result_type->isNullable())
+            return ColumnNullable::create(std::move(result), std::move(null_map));
         return result;
     }
 };
@@ -211,15 +276,27 @@ class FunctionCurrentSetting final : public IFunction
 {
 public:
     static constexpr auto name = "current_setting";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCurrentSetting>(context->getCurrentDatabase()); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        /// The effective timezone of the query, as the `timezone` function reports it: `DateLUT::instance`
+        /// resolves the `session_timezone` setting of the current query context and falls back to the
+        /// server timezone when it is not set. Capturing a constant here is what `timezone` does too.
+        return std::make_shared<FunctionCurrentSetting>(context->getCurrentDatabase(), String(DateLUT::instance().getTimeZone()));
+    }
 
-    explicit FunctionCurrentSetting(String current_database_) : current_database(std::move(current_database_)) {}
+    FunctionCurrentSetting(String current_database_, String current_timezone_)
+        : current_database(std::move(current_database_)), current_timezone(std::move(current_timezone_))
+    {
+    }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    /// The result depends on the session: the current database (`search_path`) and the effective
+    /// timezone (which follows the `session_timezone` setting).
+    bool isDeterministic() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -287,7 +364,7 @@ private:
         else if (setting_name == "datestyle")
             value = "ISO, MDY";
         else if (setting_name == "timezone")
-            value = "UTC";
+            value = current_timezone;
         else if (setting_name == "search_path")
             /// Unqualified table names resolve in the connected database (`current_schema()` is
             /// `currentDatabase`), so report exactly that - not PostgreSQL's default `public`. A client
@@ -301,6 +378,72 @@ private:
     }
 
     String current_database;
+    String current_timezone;
+};
+
+/// `array_position(array, element)` - PostgreSQL compatibility function.
+/// Returns the 1-based position of the first occurrence of `element` in `array`, or `NULL` when the
+/// element does not occur (where ClickHouse's native `indexOf`, whose search this function reuses,
+/// returns 0). Provided so that the schema-discovery query of `fetchPostgreSQLTableStructure` - which
+/// resolves an unqualified table name through the schemas of the `search_path` in order, the way
+/// PostgreSQL itself does - can run unchanged against ClickHouse's PostgreSQL wire protocol emulation.
+/// PostgreSQL's `NULL` semantics are followed: a `NULL` element is a genuine search key that finds the
+/// first `NULL` of the array (`array_position([NULL, 1], NULL)` is `1`), which requires opting out of
+/// the common default-null shortcut of ClickHouse functions; `indexOf` underneath treats `NULL` as a
+/// normal value. A `NULL` in place of the array yields `NULL`, as in PostgreSQL.
+class FunctionArrayPosition final : public IFunction
+{
+public:
+    static constexpr auto name = "array_position";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayPosition>(FunctionFactory::instance().get("indexOf", context));
+    }
+
+    explicit FunctionArrayPosition(FunctionOverloadResolverPtr index_of_) : index_of(std::move(index_of_)) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    /// The default-null wrapper would short-circuit a `NULL` element to `NULL`, but in PostgreSQL a
+    /// `NULL` element searches for the first `NULL` of the array. `indexOf` handles `NULL` arguments
+    /// itself; the only `NULL` this function has to produce is for a `NULL` array.
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// A literal `NULL` array (`Nullable` cannot wrap `Array`, so `Nullable(Nothing)` is the only
+        /// nullable shape the array argument can take) is handled here; the rest of the argument
+        /// validation is delegated to `indexOf`, which throws for a non-array first argument or an
+        /// element type incomparable with the array elements.
+        if (isNothing(removeNullable(arguments[0].type)))
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+
+        return std::make_shared<DataTypeNullable>(index_of->build(arguments)->getResultType());
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        /// A literal `NULL` array: the result is all-`NULL`.
+        if (isNothing(removeNullable(arguments[0].type)))
+            return result_type->createColumnConst(input_rows_count, Field())->convertToFullColumnIfConst();
+
+        auto index_of_base = index_of->build(arguments);
+        ColumnPtr positions = index_of_base->execute(arguments, index_of_base->getResultType(), input_rows_count, /* dry_run = */ false);
+        positions = positions->convertToFullColumnIfConst();
+
+        const auto & positions_data = assert_cast<const ColumnUInt64 &>(*positions).getData();
+        auto null_map = ColumnUInt8::create(input_rows_count);
+        auto & null_map_data = null_map->getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            null_map_data[i] = positions_data[i] == 0 ? 1 : 0;
+
+        return ColumnNullable::create(positions, std::move(null_map));
+    }
+
+private:
+    FunctionOverloadResolverPtr index_of;
 };
 
 }
@@ -310,9 +453,10 @@ REGISTER_FUNCTION(PostgresCatalog)
     factory.registerFunction<FunctionFormatType>(FunctionDocumentation{
         .description = "PostgreSQL compatibility function. Returns the SQL name of a type given its OID. "
                        "For `numeric` the type modifier is decoded into the precision and scale "
-                       "(`numeric(p, s)`); for every other type the modifier is ignored.",
+                       "(`numeric(p, s)`); for every other type the modifier is ignored. "
+                       "A `NULL` type modifier means that no modifier is known, as `-1` does, and a `NULL` type OID gives `NULL`.",
         .syntax = "format_type(type_oid, typemod)",
-        .arguments = {{"type_oid", "The type OID.", {"(U)Int*"}}, {"typemod", "The type modifier.", {"(U)Int*"}}},
+        .arguments = {{"type_oid", "The type OID.", {"(U)Int*"}}, {"typemod", "The type modifier, or `NULL`.", {"(U)Int*", "NULL"}}},
         .returned_value = {"The SQL name of the type.", {"String"}},
         .examples = {{"Example", "SELECT format_type(23, -1)", "integer"}},
         .introduced_in = {26, 8},
@@ -328,6 +472,18 @@ REGISTER_FUNCTION(PostgresCatalog)
         .examples = {{"Example", "SELECT current_setting('server_version_num')", "120000"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionArrayPosition>(FunctionDocumentation{
+        .description = "PostgreSQL compatibility function. Returns the 1-based position of the first occurrence of the "
+                       "element in the array, or `NULL` when the element does not occur. "
+                       "A `NULL` element searches for the first `NULL` of the array, as in PostgreSQL. "
+                       "The native ClickHouse counterpart is `indexOf`, which returns 0 instead of `NULL`.",
+        .syntax = "array_position(array, element)",
+        .arguments = {{"array", "The array to search.", {"Array(T)"}}, {"element", "The element to search for.", {"Any"}}},
+        .returned_value = {"The 1-based position of the first occurrence, or `NULL` when the element does not occur.", {"Nullable(UInt64)"}},
+        .examples = {{"Example", "SELECT array_position(['a', 'b'], 'b')", "2"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Array});
 }
 
 }

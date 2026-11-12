@@ -122,7 +122,7 @@ Processed 8.87 million rows,
 
 ClickHouse client's result output indicates that ClickHouse executed a full table scan! Each single row of the 8.87 million rows of our table was streamed into ClickHouse. That doesn't scale.
 
-To make this (way) more efficient and (much) faster, we need to use a table with a appropriate primary key. This will allow ClickHouse to automatically (based on the primary key's columns) create a sparse primary index which can then be used to significantly speed up the execution of our example query.
+To make this (way) more efficient and (much) faster, we need to use a table with an appropriate primary key. This will allow ClickHouse to automatically (based on the primary key's columns) create a sparse primary index which can then be used to significantly speed up the execution of our example query.
 
 ## ClickHouse index design {#clickhouse-index-design}
 
@@ -362,7 +362,7 @@ For that we first need to copy the primary index file into the [user_files_path]
 SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
 ```
 
-returns `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
+returns `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
 
 **Step 2: Get user_files_path**
 
@@ -370,12 +370,12 @@ The [default user_files_path](https://github.com/ClickHouse/ClickHouse/blob/22.1
 
 and on Linux you can check if it got changed: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-On the test machine the path is `/Users/tomschreiber/Clickhouse/user_files/`
+On the test machine the path is `/Users/tomschreiber/ClickHouse/user_files/`
 
 **Step 3: Copy the primary index file into the user_files_path**
 
 ```bash
-cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
 ```
 
 Now we can inspect the content of the primary index via SQL:
@@ -486,6 +486,10 @@ If <a href="/reference/settings/server-settings/settings/other#logger" target="_
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
+
+<Note>
+In recent versions of ClickHouse the `Running binary search on index range`, `Found (LEFT) boundary mark`, and `Found (RIGHT) boundary mark` messages are logged at the `test` level (the highest verbosity) rather than at `trace`. To see them, raise the log verbosity to `test` (for example, `SET send_logs_level = 'test'` on the client, or `<logger><level>test</level></logger>` in the server configuration). The remaining lines shown above are still logged at `trace`. This applies to every binary-search log example in this guide.
+</Note>
 
 We can see in the trace log above, that one mark out of the 1083 existing marks satisfied the query.
 
@@ -807,7 +811,7 @@ If we want to significantly speed up both of our sample queries - the one that  
 - Creating a **materialized view** on our existing table.
 - Adding a **projection** to our existing table.
 
-All three options will effectively duplicate our sample data into a additional table in order to reorganize the table primary index and row sort order.
+All three options will effectively duplicate our sample data into an additional table in order to reorganize the table primary index and row sort order.
 
 However, the three options differ in how transparent that additional table is to the user with respect to the routing of queries and insert statements.
 
@@ -910,7 +914,7 @@ Now, instead of [almost doing a full table scan](/guides/clickhouse/data-modelli
 With the primary index from the [original table](#a-table-with-a-primary-key) where UserID was the first, and URL the second key column, ClickHouse used a [generic exclusion search](/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) over the index marks for executing that query and that wasn't very effective because of the similarly high cardinality of UserID and URL.
 
 With URL as the first column in the primary index, ClickHouse is now running <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">binary search</a> over the index marks.
-The corresponding trace log in the ClickHouse server log file confirms that:
+The corresponding server log confirms that (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
                                            'http://public_search'])
@@ -1007,7 +1011,7 @@ Ok.
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-1.webp" size="lg" alt="Sparse Primary Indices 12b1" />
 
-ClickHouse is storing the [column data files](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), the [mark files](#mark-files-are-used-for-locating-granules) (*.mrk2) and the [primary index](#the-primary-index-has-one-entry-per-granule) (primary.idx) of the implicitly created table in a special folder withing the ClickHouse server's data directory:
+ClickHouse is storing the [column data files](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), the [mark files](#mark-files-are-used-for-locating-granules) (*.mrk2) and the [primary index](#the-primary-index-has-one-entry-per-granule) (primary.idx) of the implicitly created table in a special folder within the ClickHouse server's data directory:
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-2.webp" size="md" alt="Sparse Primary Indices 12b2" />
 </Note>
@@ -1045,7 +1049,7 @@ Processed 335.87 thousand rows,
 
 Because effectively the implicitly created table (and its primary index) backing the materialized view is identical to the [secondary table that we created explicitly](/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), the query is executed in the same effective way as with the explicitly created table.
 
-The corresponding trace log in the ClickHouse server log file confirms that ClickHouse is running binary search over the index marks:
+The corresponding server log confirms that ClickHouse is running binary search over the index marks (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1124,7 +1128,7 @@ Processed 319.49 thousand rows, 1
 
 Because effectively the hidden table (and its primary index) created by the projection is identical to the [secondary table that we created explicitly](/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), the query is executed in the same effective way as with the explicitly created table.
 
-The corresponding trace log in the ClickHouse server log file confirms that ClickHouse is running binary search over the index marks:
+The corresponding server log confirms that ClickHouse is running binary search over the index marks (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

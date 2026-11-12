@@ -48,7 +48,7 @@ The default UUID is all-zero. It is used, for example, when a new record is inse
 00000000-0000-0000-0000-000000000000
 ```
 
-:::warning
+<Warning>
 Due to historical reasons, UUIDs are sorted by their second half.
 
 While this is fine for UUIDv4 values, this can deteriorate performance with UUIDv7 columns used in primary index definitions (usage in ordering keys or partition keys is fine).
@@ -56,7 +56,7 @@ More specifically, UUIDv7 values consist of a timestamp in the first half and a 
 UUIDv7 sorting in sparse primary key indexes (i.e., the first values of each index granule) will therefore be by counter field.
 Assuming UUIDs were sorted by the first half (timestamp), then the primary key index analysis step at the beginning of queries is expected to prune all marks in all but one part.
 However, with sorting by the second half (counter), at least one mark is expected to be returned for all parts, leading to unnecessary disk accesses.
-:::
+</Warning>
 
 Example:
 
@@ -164,9 +164,9 @@ SELECT * FROM t_uuid
 
 ## Restrictions {#restrictions}
 
-The UUID data type only supports functions which [String](/reference/data-types/string) data type also supports (for example, [min](/sql-reference/aggregate-functions/reference/min), [max](/sql-reference/aggregate-functions/reference/max), and [count](/sql-reference/aggregate-functions/reference/count)).
+The UUID data type only supports functions which [String](/reference/data-types/string) data type also supports (for example, [min](/reference/functions/aggregate-functions/min), [max](/reference/functions/aggregate-functions/max), and [count](/reference/functions/aggregate-functions/count)).
 
-The UUID data type is not supported by arithmetic operations (for example, [abs](/sql-reference/functions/arithmetic-functions#abs)) or aggregate functions, such as [sum](/sql-reference/aggregate-functions/reference/sum) and [avg](/sql-reference/aggregate-functions/reference/avg).
+The UUID data type is not supported by arithmetic operations (for example, [abs](/reference/functions/regular-functions/arithmetic-functions#abs)) or aggregate functions, such as [sum](/reference/functions/aggregate-functions/sum) and [avg](/reference/functions/aggregate-functions/avg).
 )DOCS_MD",
             .syntax = "UUID",
             .related = {},

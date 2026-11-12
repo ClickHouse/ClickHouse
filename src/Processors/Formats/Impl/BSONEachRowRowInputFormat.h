@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -81,9 +82,9 @@ private:
     String current_key_name;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    std::vector<UInt8> read_columns;
+    VectorWithMemoryTracking<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
-    std::vector<UInt8> seen_columns;
+    VectorWithMemoryTracking<UInt8> seen_columns;
     /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
     /// for row like {..., "non-nullable column name" : null, ...}
 
@@ -91,7 +92,7 @@ private:
     CaseAwareBlockNameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<std::pair<std::string_view, size_t>> prev_positions;
+    VectorWithMemoryTracking<std::pair<std::string_view, size_t>> prev_positions;
 
     DataTypes types;
 

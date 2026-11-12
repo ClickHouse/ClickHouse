@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_DATABASE;
 }
 
 namespace Setting
@@ -100,6 +101,13 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
         database_is_regexp = false;
         source_database_name_or_regexp = context->getCurrentDatabase();
 
+        /// The current database is not set, for example, in a background thread that interprets a mutation.
+        if (source_database_name_or_regexp.empty())
+            throw Exception(
+                ErrorCodes::UNKNOWN_DATABASE,
+                "Table function 'merge' is called with a single argument, so it uses the current database, "
+                "but the current database is not set. Specify the database explicitly: merge('db_name', 'tables_regexp')");
+
         args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
         source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
     }
@@ -148,7 +156,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
-        context);
+        context,
+        /*keep_inferred_source_metadata=*/ true);
 
     res->startup();
     return res;
@@ -176,10 +185,14 @@ merge(['db_name',] 'tables_regexp')
 | `db_name`       | Possible values (optional, default is `currentDatabase()`):<br/>    - database name,<br/>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br/>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
 | `tables_regexp` | A regular expression to match the table names in the specified DB or DBs.                                                                                                                                                                                                                       |
 
+## Access rights {#access-rights}
+
+The matched tables are read with the same access rules as for the [Merge](/reference/engines/table-engines/special/merge#access-rights) table engine. Data is read only from the matched tables that the current user can see, that is, has the [`SHOW TABLES`](/reference/statements/grant#show) privilege on, and the table schema is derived only from them. A matched table that the user cannot see is skipped without an error. Deriving the schema requires the [`SHOW COLUMNS`](/reference/statements/grant#show) privilege on the tables it is derived from. Reading a matched table that the user can see requires the [`SELECT`](/reference/statements/grant#select) privilege on the columns that the query reads, otherwise the query fails with `ACCESS_DENIED`.
+
 ## Related {#related}
 
 - [Merge](/reference/engines/table-engines/special/merge) table engine
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }

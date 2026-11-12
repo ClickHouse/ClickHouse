@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Migration de RBAC avec des rôles personnalisés'
+sidebar_label: 'Migration de RBAC avec des rôles personnalisés'
+sidebar_position: 4
+slug: /cloud/guides/security/migrating-rbac-custom-roles
+title: 'Migration de RBAC avec des rôles personnalisés'
+description: "Guide de l’administrateur pour migrer vers le nouveau système de contrôle d’accès basé sur les rôles dans ClickHouse Cloud à l’aide de l’assistant de migration"
+doc_type: 'guide'
+keywords: ['rbac', 'rôles personnalisés', 'migration', 'contrôle d’accès', 'autorisations', 'sécurité']
+---
+
+Ce guide s’adresse aux utilisateurs disposant du rôle Admin dans ClickHouse Cloud.
+
+En juin 2026, ClickHouse Cloud est passé à un nouveau système de contrôle d’accès basé sur les rôles (RBAC). Si votre organisation compte des membres ou des clés API disposant d’autorisations limitées à un service qui ne peuvent pas être migrées automatiquement, vous utiliserez un assistant de migration pour associer ces autorisations à de nouveaux rôles. Ce guide explique le fonctionnement du nouveau système et la procédure à suivre pour effectuer la migration.
+
+<Warning>
+  **Effectuez la migration dès que possible**
+
+  Les organisations qui n’auront pas terminé la migration avant la date limite indiquée dans l’assistant et dans vos notifications par e-mail seront migrées automatiquement (voir [Ce qui se passe si vous ne migrez pas](#automated-migration)).
+</Warning>
+
+<div id="whats-changing">
+  ## Ce qui change
+</div>
+
+Le nouveau système RBAC introduit des définitions de rôles personnalisés et un contrôle d’accès plus granulaire. Au lieu d’un ensemble fixe d’autorisations limitées à un service, vous définissez des rôles qui indiquent toutes les autorisations qu’ils accordent, ce qui permet de savoir précisément quels accès chaque rôle confère.
+
+Un rôle peut combiner des autorisations d’organisation, de service et de base de données. Vous pouvez appliquer ces autorisations à l’ensemble de vos services et bases de données, ou à un sous-ensemble. Pour obtenir la liste complète des autorisations et des rôles standard fournis avec ClickHouse Cloud, consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles). Pour savoir comment créer et modifier des rôles après la migration, consultez [Gérer les rôles personnalisés](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles).
+
+La plupart des autorisations sont automatiquement associées au nouveau modèle. L’assistant de migration vous demande de traiter les autorisations limitées à un service qui ne peuvent pas être associées directement.
+
+<div id="migration-wizard">
+  ## Finaliser l’assistant de migration
+</div>
+
+L’assistant vous invite à créer de nouveaux rôles reflétant les autorisations dont disposent actuellement vos membres et vos clés API, puis à attribuer ces rôles aux membres et clés concernés. Votre progression est enregistrée automatiquement ; vous n’avez donc pas besoin de tout terminer en une seule session.
+
+<Steps>
+  <Step title="Ouvrir l’assistant de migration" id="open-wizard">
+    Depuis la page **Utilisateurs et rôles**, suivez l’invite de migration pour ouvrir l’assistant. Vous pouvez également y accéder depuis la bannière de migration affichée dans la console.
+  </Step>
+
+  <Step title="Créer des rôles pour les autorisations non associées" id="create-roles">
+    L’assistant répertorie les membres et les clés API dont les autorisations limitées à un service n’ont pas pu être migrées automatiquement. Créez de nouveaux rôles correspondant aux accès dont ces membres et ces clés ont besoin. Consultez [Gérer les rôles personnalisés](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles) pour en savoir plus sur le périmètre des autorisations.
+  </Step>
+
+  <Step title="Attribuer des rôles à chaque membre et à chaque clé API" id="assign-roles">
+    Attribuez au moins un nouveau rôle à chaque membre, à chaque invitation en attente et à chaque clé API. Tout membre, invitation ou clé dont la colonne **Nouveau rôle** est vide empêchera l’envoi.
+  </Step>
+
+  <Step title="Conserver au moins un administrateur" id="keep-admin">
+    Attribuez un rôle Admin à au moins un membre existant. L’assistant ne vous permettra pas d’envoyer la migration sans cela, car votre organisation perdrait sinon ses accès administratifs après la migration.
+  </Step>
+
+  <Step title="Envoyer la migration" id="submit">
+    Une fois qu’un rôle a été attribué à chaque membre, invitation et clé API, envoyez la migration. En cas de réussite, vous serez redirigé vers l’onglet **Rôles**.
+  </Step>
+</Steps>
+
+Si vous tentez d’envoyer la migration avant que ces conditions ne soient remplies, l’assistant affiche un message indiquant les éléments manquants — membres sans rôle, clés API sans rôle ou administrateur manquant — afin que vous puissiez accéder directement aux entrées concernées.
+
+<div id="automated-migration">
+  ## Que se passe-t-il si vous n’effectuez pas la migration ?
+</div>
+
+Effectuez vous-même la migration dans la mesure du possible afin que vos rôles reflètent le modèle d’accès souhaité. Si votre organisation ne termine pas la migration à temps, ClickHouse effectue une migration automatisée au cours des semaines suivantes.
+
+La migration automatisée crée un rôle personnalisé par utilisateur et un rôle personnalisé par clé API, chacun reflétant les autorisations existantes de l’utilisateur ou de la clé concernés. Cela préserve le niveau d’accès actuel de chacun, de sorte qu’aucun membre ni aucune clé ne perde l’accès. Vous pouvez ensuite examiner et consolider ces rôles dans l’onglet **Rôles**.
+
+<div id="after-migration">
+  ## Après la migration
+</div>
+
+Vérifiez vos configurations OpenAPI et Terraform afin de garantir leur compatibilité avec le nouveau système de rôles. Les automatisations qui font référence aux anciens rôles peuvent nécessiter une mise à jour.
+
+Le rôle Query Endpoints devient le rôle Basic service API reader. Mettez à jour les intégrations qui dépendent de l’ancien nom de rôle.
+
+Pour savoir comment gérer les rôles à l’avenir, consultez [Gérer les rôles personnalisés](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles) et [Gestion des accès au Cloud](/fr/products/cloud/guides/security/cloud-access-management).

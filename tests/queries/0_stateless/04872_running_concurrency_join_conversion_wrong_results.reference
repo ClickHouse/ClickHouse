@@ -1,0 +1,16 @@
+ground truth	1
+carrier	1
+carrier convert=1	1
+carrier convert=0	1
+carrier any	1
+carrier any convert=0	1
+carrier date	1
+carrier datetime64	1
+control pure	1
+control sibling	1
+rowNumberInAllBlocks	0
+runningConcurrency	0
+legacy index attaches	0
+legacy text index attaches	0
+onfly off	0
+onfly after materialisation	1

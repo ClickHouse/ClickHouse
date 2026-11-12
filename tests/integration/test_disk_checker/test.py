@@ -1,3 +1,4 @@
+import re
 import time
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -12,6 +13,22 @@ def started_cluster():
         cluster.add_instance(
             "test_disk_checker",
             main_configs=["config.xml"],
+            with_minio=False,
+            with_zookeeper=False,
+            with_remote_database_disk=False,
+            stay_alive=True,
+        )
+        # An embedded Keeper gives one configured disk two DiskLocal objects.
+        cluster.add_instance(
+            "test_disk_checker_keeper",
+            main_configs=["config_keeper.xml"],
+            with_minio=False,
+            with_zookeeper=False,
+            with_remote_database_disk=False,
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "test_disk_checker_unusable_path",
             with_minio=False,
             with_zookeeper=False,
             with_remote_database_disk=False,
@@ -46,6 +63,36 @@ def test_disk_checker_started_log(started_cluster):
 
     wait_condition(lambda: assert_log_exists('test1'), lambda x: x, max_attempts=10, delay=1)
     wait_condition(lambda: assert_log_exists('test2'), lambda x: x, max_attempts=10, delay=1)
+
+
+def test_two_check_threads_for_one_disk_use_distinct_check_files(started_cluster):
+    """Two check threads on one disk must probe distinct files, otherwise their writes and
+    unlinks collide and the self-check reports a healthy disk as failing and broken.
+    """
+    node = cluster.instances["test_disk_checker_keeper"]
+    disk = "shared_with_keeper"
+
+    # Without two startups there is no collision to detect and the rest passes vacuously.
+    wait_condition(
+        func=lambda: int(node.count_in_log(f"Disk check for disk {disk} started")),
+        condition=lambda value: value == 2,
+        max_attempts=30,
+        delay=1,
+    )
+
+    check_files = node.grep_in_log(
+        f"Disk check for disk {disk} started", filename="clickhouse-server.log"
+    )
+    names = set(re.findall(r"clickhouse_disk_checker_[0-9a-f-]+", check_files))
+    assert len(names) == 2, f"expected two distinct check files, got {names}"
+
+    # Give the two threads time to overlap on their probes.
+    time.sleep(15)
+
+    errors = node.count_in_log(f"<Error> {disk}::DiskLocalCheckThread")
+    assert int(errors) == 0, f"disk check reported {errors} errors for a healthy disk"
+
+    assert get_metric_value(node, "BrokenDisks") == 0
 
 
 def test_disk_readonly_status(started_cluster):
@@ -124,3 +171,36 @@ def test_disk_broken_status(started_cluster):
             node.exec_in_container(["mv", f"{disk_path}_broken", disk_path])
         except:
             pass
+
+
+def test_server_starts_with_unusable_local_disk_path(started_cluster):
+    """A local disk whose directory cannot be created is marked broken at startup, and the access
+    check must be skipped for it, otherwise the server does not start at all.
+    """
+    node = cluster.instances["test_disk_checker_unusable_path"]
+
+    # A regular file in the middle of the path makes `create_directories` fail even for root.
+    node.exec_in_container(["bash", "-c", "touch /var/lib/clickhouse/not_a_directory"])
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/unusable_disk.xml << 'EOF'
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <unusable>
+                <type>local</type>
+                <path>/var/lib/clickhouse/not_a_directory/disk/</path>
+            </unusable>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+    node.restart_clickhouse()
+
+    assert node.query("SELECT is_broken FROM system.disks WHERE name = 'unusable'") == "1\n"
+    assert node.contains_in_log("Skip access check for disk unusable (disk is broken)")

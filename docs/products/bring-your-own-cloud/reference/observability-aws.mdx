@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-BYOC deployments include comprehensive observability capabilities, allowing you to monitor your ClickHouse services through a dedicated Prometheus monitoring stack, and direct metric endpoints from ClickHouse Servers. All observability data remains within your cloud account, giving you complete control over your monitoring infrastructure.
+BYOC deployments include comprehensive observability capabilities, allowing you to monitor your ClickHouse services through a dedicated Prometheus monitoring stack, and direct metric endpoints from ClickHouse Servers. Your monitoring data remains within your cloud account, giving you complete control over your monitoring infrastructure. The bounded usage and health telemetry listed in [network boundaries](/products/bring-your-own-cloud/reference/network-security#outbound-connections) is the only monitoring data exported to ClickHouse; separately, ClickHouse's dashboards and, on approved escalation, its engineers can query this stack in place over Tailscale, with nothing persisted on the ClickHouse side — see [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 ## Prometheus Monitoring Approaches {#prometheus-monitoring}
 
@@ -44,7 +44,7 @@ ClickHouse BYOC deploys a complete Prometheus monitoring stack within your Kuber
 
 To connect to the built-in Prometheus stack:
 
-1. **Contact ClickHouse Support** to enable the private load balancer for your BYOC environment.
+1. **Enable the private load balancer** for your BYOC infrastructure in the ClickHouse Cloud console (see [Load Balancers](/products/bring-your-own-cloud/configuration/configurations#load-balancers)).
 2. **Request the Prometheus endpoint URL** from ClickHouse Support.
 3. **Verify private network connectivity** to the Prometheus endpoint—typically via VPC/VNet peering or other private network setup.
 
@@ -103,7 +103,7 @@ ClickHouse services expose a Prometheus-compatible metrics endpoint that you can
 The metrics endpoint is available at `/metrics_all` on your ClickHouse service endpoint:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Sample Response:**
@@ -159,7 +159,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -169,7 +169,7 @@ scrape_configs:
 ```
 
 Replace:
-- `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` with your actual service endpoint
+- `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` with your actual service endpoint
 - `<username>` and `<password>` with your scraping user credentials
 
 ## ClickHouse Mixin {#clickhouse-mixin}

@@ -1,9 +1,9 @@
-OK native==library | Arrow
+| Arrow
 x	['y','z']	('t',0)
 x	['y','z']	('t',1)
 x	['y','z']	('t',2)
 x	['y','z']	('t',3)
-OK native==library | ArrowStream
+| ArrowStream
 x	['y','z']	('t',0)
 x	['y','z']	('t',1)
 x	['y','z']	('t',2)

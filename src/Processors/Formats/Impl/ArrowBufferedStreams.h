@@ -3,7 +3,7 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Common/LoggingFormatStringHelpers.h>
 
@@ -26,29 +26,6 @@ class WriteBuffer;
 
 class SeekableReadBuffer;
 struct FormatSettings;
-
-class ArrowBufferedOutputStream : public arrow::io::OutputStream
-{
-public:
-    explicit ArrowBufferedOutputStream(WriteBuffer & out_);
-
-    // FileInterface
-    arrow::Status Close() override;
-
-    arrow::Result<int64_t> Tell() const override;
-
-    bool closed() const override { return !is_open; }
-
-    // Writable
-    arrow::Status Write(const void * data, int64_t length) override;
-
-private:
-    WriteBuffer & out;
-    int64_t total_length = 0;
-    bool is_open = false;
-
-    ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowBufferedOutputStream);
-};
 
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {

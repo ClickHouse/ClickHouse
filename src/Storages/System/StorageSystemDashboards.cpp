@@ -27,6 +27,9 @@ static String trim(const char * text)
     return String(view);
 }
 
+/// Defined in StorageSystemDashboardsFilesystemCache.cpp.
+const std::vector<std::map<String, String>> & getFilesystemCacheDashboards();
+
 #if ENABLE_DISTRIBUTED_CACHE
 /// Defined in StorageSystemDashboardsDistributedCache.cpp, which exists only in the private repo.
 const std::vector<std::map<String, String>> & getDistributedCacheDashboards();
@@ -206,6 +209,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -463,6 +467,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -571,6 +576,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -982,7 +988,7 @@ FROM (
   GROUP BY event_time
 )
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -1259,6 +1265,9 @@ GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
 )EOQ") }
         },
+        /// With `asynchronous_metrics_key_values_mode = 'both'` every network interface is published twice:
+        /// as `NetworkReceiveBytes` with a key and as the legacy `NetworkReceiveBytes_eth0`, and summing the
+        /// LIKE pattern counts every byte twice. Prefer the key-value form, fall back to the legacy names.
         {
             { "dashboard", "Cloud overview" },
             { "title", "Network receive bytes/sec" },
@@ -1267,7 +1276,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
 FROM (
-  SELECT event_time, sum(value) AS value
+  SELECT event_time, if(countIf(metric = 'NetworkReceiveBytes') != 0, sumIf(value, metric = 'NetworkReceiveBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkReceiveBytes%'
@@ -1285,7 +1294,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
 FROM (
-  SELECT event_time, sum(value) AS value
+  SELECT event_time, if(countIf(metric = 'NetworkSendBytes') != 0, sumIf(value, metric = 'NetworkSendBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkSendBytes%'
@@ -1833,7 +1842,7 @@ FROM (
   GROUP BY event_time, hostname
 )
 GROUP BY t, hostname
-ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -2051,7 +2060,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
 FROM (
-  SELECT event_time, hostname, sum(value) AS value
+  SELECT event_time, hostname, if(countIf(metric = 'NetworkReceiveBytes') != 0, sumIf(value, metric = 'NetworkReceiveBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkReceiveBytes%'
@@ -2069,7 +2078,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(value)
 FROM (
-  SELECT event_time, hostname, sum(value) AS value
+  SELECT event_time, hostname, if(countIf(metric = 'NetworkSendBytes') != 0, sumIf(value, metric = 'NetworkSendBytes'), sum(value)) AS value
   FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))
   WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
     AND metric LIKE 'NetworkSendBytes%'
@@ -2119,7 +2128,7 @@ FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
-SETTINGS skip_unavailable_shards = 1
+SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -2288,6 +2297,7 @@ SETTINGS skip_unavailable_shards = 1
     else
     {
         add_dashboards(default_dashboards);
+        add_dashboards(getFilesystemCacheDashboards());
 #if ENABLE_DISTRIBUTED_CACHE
         add_dashboards(getDistributedCacheDashboards());
 #endif

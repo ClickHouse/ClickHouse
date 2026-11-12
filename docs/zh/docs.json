@@ -9,16 +9,24 @@
     {
       "menu": [
         {
-          "$ref": "./get-started/navigation.json"
+          "href": "#",
+          "icon": "/images/icons/icon-clickhouse.svg",
+          "item": "ClickHouse"
         },
         {
-          "$ref": "./concepts/navigation.json"
+          "$ref": "./get-started/navigation.json"
         },
         {
           "$ref": "./guides/navigation.json"
         },
         {
+          "$ref": "./concepts/navigation.json"
+        },
+        {
           "$ref": "./reference/navigation.json"
+        },
+        {
+          "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
       "tab": "数据库"
@@ -28,13 +36,21 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "ClickHouse Cloud"
+          "item": "部署"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "item": "BYOC",
+          "pages": [
+            "zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "应用"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -42,7 +58,12 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Langfuse"
+          "item": "AI 工程"
+        },
+        {
+          "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
+          "item": "安全"
         },
         {
           "href": "#",
@@ -50,7 +71,10 @@
           "item": "开源"
         },
         {
-          "$ref": "./products/agentic-data-stack/navigation.json"
+          "item": "ClickStack",
+          "pages": [
+            "zh/clickstack/index"
+          ]
         },
         {
           "$ref": "./chdb/navigation.json"
@@ -59,17 +83,19 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         },
         {
-          "$ref": "./products/clickhouse-private/navigation.json"
+          "href": "https://www.librechat.ai/docs",
+          "item": "LibreChat"
         }
       ],
-      "tab": "解决方案"
+      "tab": "产品"
     },
     {
       "menu": [
         {
-          "item": "生态",
+          "item": "生态系统",
           "pages": [
-            "zh/integrations/home"
+            "zh/integrations/home",
+            "zh/integrations/data-catalogs"
           ]
         },
         {

@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Introduzido em: v20.1.0
 
-Calcula um [quantil](https://en.wikipedia.org/wiki/Quantile) aproximado de uma sequência de dados numéricos usando o algoritmo [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
+Calcula um [quantil](https://en.wikipedia.org/wiki/Quantile) aproximado de uma sequência de valores numéricos usando o algoritmo [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
 A função leva em consideração o peso de cada elemento da sequência.
 
 O erro máximo é de 1%.
@@ -64,7 +64,7 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);
 
 ```response title=Response
 ┌─quantileTDigestWeighted(number, 1)─┐
-│                                4.5 │
+│                                  4 │
 └────────────────────────────────────┘
 ```
 

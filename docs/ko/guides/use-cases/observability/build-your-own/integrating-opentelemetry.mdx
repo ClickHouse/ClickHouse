@@ -570,12 +570,12 @@ SETTINGS ttl_only_drop_parts = 1
 이 스키마와 관련해 몇 가지 중요한 참고 사항이 있습니다:
 
 * 기본적으로 테이블은 `PARTITION BY toDate(Timestamp)`를 통해 날짜 기준으로 파티션됩니다. 이렇게 하면 만료된 데이터를 효율적으로 삭제할 수 있습니다.
-* TTL은 `TTL toDateTime(Timestamp) + toIntervalDay(3)`로 설정되며, collector 구성에 설정된 값과 일치합니다. [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings#ttl_only_drop_parts)은 포함된 모든 행이 만료되었을 때 전체 파트만 삭제함을 의미합니다. 이는 파트 내부의 행을 삭제하는 방식보다 더 효율적이며, 이 경우 비용이 큰 삭제 작업이 발생합니다. 이 설정은 항상 적용할 것을 권장합니다. 자세한 내용은 [TTL을 사용한 데이터 관리](/ko/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live)를 참고하십시오.
-* 이 테이블은 표준 [`MergeTree` 엔진](/ko/reference/engines/table-engines/mergetree-family/mergetree)을 사용합니다. 이는 logs와 traces에 권장되며, 일반적으로 변경할 필요가 없습니다.
+* TTL은 `TTL toDateTime(Timestamp) + toIntervalDay(3)`로 설정되며, collector 구성에 설정된 값과 일치합니다. [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)은 포함된 모든 행이 만료되었을 때 전체 파트만 삭제함을 의미합니다. 이는 파트 내부의 행을 삭제하는 방식보다 더 효율적이며, 이 경우 비용이 큰 삭제 작업이 발생합니다. 이 설정은 항상 적용할 것을 권장합니다. 자세한 내용은 [TTL을 사용한 데이터 관리](/ko/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live)를 참고하십시오.
+* 이 테이블은 표준 [`MergeTree` 엔진](/ko/reference/engines/table-engines/mergetree-family/mergetree)을 사용합니다. 이는 로그와 트레이스에 권장되며, 일반적으로 변경할 필요가 없습니다.
 * 테이블은 `ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)`로 정렬됩니다. 즉, `ServiceName`, `SeverityText`, `Timestamp`, `TraceId`에 대한 필터를 사용하는 쿼리에 최적화됩니다. 목록에서 앞쪽에 있는 컬럼일수록 뒤쪽 컬럼보다 더 빠르게 필터링됩니다. 예를 들어 `ServiceName`으로 필터링하는 것은 `TraceId`로 필터링하는 것보다 훨씬 빠릅니다. 예상되는 액세스 패턴에 맞게 이 정렬 순서를 조정해야 합니다. 자세한 내용은 [프라이머리 키 선택](/ko/guides/use-cases/observability/build-your-own/schema-design#choosing-a-primary-ordering-key)을 참고하십시오.
-* 위 스키마는 컬럼에 `ZSTD(1)`을 적용합니다. 이는 logs에 가장 적합한 압축을 제공합니다. 더 높은 압축률을 위해 ZSTD 압축 수준을 기본값인 1보다 높일 수 있지만, 실제로 큰 이점이 있는 경우는 드뭅니다. 이 값을 높이면 삽입 시점의 CPU 오버헤드(압축 중)는 커지지만, 압축 해제 성능(따라서 쿼리 성능)은 대체로 비슷한 수준을 유지합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)를 참고하십시오. 또한 디스크 사용량을 줄이기 위해 Timestamp에는 추가 [delta 인코딩](/ko/reference/statements/create/table#delta)이 적용됩니다.
+* 위 스키마는 컬럼에 `ZSTD(1)`을 적용합니다. 이는 로그에 가장 적합한 압축을 제공합니다. 더 높은 압축률을 위해 ZSTD 압축 수준을 기본값인 1보다 높일 수 있지만, 실제로 큰 이점이 있는 경우는 드뭅니다. 이 값을 높이면 삽입 시점의 CPU 오버헤드(압축 중)는 커지지만, 압축 해제 성능(따라서 쿼리 성능)은 대체로 비슷한 수준을 유지합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)를 참고하십시오. 또한 디스크 사용량을 줄이기 위해 Timestamp에는 추가 [delta 인코딩](/ko/reference/statements/create/table/codec#delta)이 적용됩니다.
 * [`ResourceAttributes`](https://opentelemetry.io/docs/specs/otel/resource/sdk/), [`LogAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-attributes), [`ScopeAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-instrumentationscope)가 맵이라는 점에 유의하십시오. 이들 사이의 차이를 이해하는 것이 중요합니다. 이러한 맵에 접근하는 방법과 내부 키 접근을 최적화하는 방법은 [&quot;맵 사용&quot;](/ko/guides/use-cases/observability/build-your-own/schema-design#using-maps)을 참고하십시오.
-* 여기서 대부분의 다른 타입도 최적화되어 있습니다. 예를 들어 `ServiceName`은 LowCardinality로 저장됩니다. 예시 logs에서 JSON인 `Body`는 String으로 저장된다는 점에 유의하십시오.
+* 여기서 대부분의 다른 타입도 최적화되어 있습니다. 예를 들어 `ServiceName`은 LowCardinality로 저장됩니다. 예시 로그에서 JSON인 `Body`는 String으로 저장된다는 점에 유의하십시오.
 * 블룸 필터는 맵의 키와 값, 그리고 `Body` 컬럼에 적용됩니다. 이는 이러한 컬럼에 접근하는 쿼리의 쿼리 시간을 개선하기 위한 것이지만, 일반적으로 꼭 필요한 것은 아닙니다. 자세한 내용은 [보조/데이터 스킵 인덱스](/ko/guides/use-cases/observability/build-your-own/schema-design#secondarydata-skipping-indices)를 참고하십시오.
 
 ```sql
@@ -656,7 +656,7 @@ collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다.
 
 collector에서 비동기 삽입을 활성화하려면 connection string에 `async_insert=1`을 추가하십시오. 전달 보장을 위해 `wait_for_async_insert=1`(기본값)을 사용하는 것을 권장합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)를 참조하십시오.
 
-비동기 삽입으로 전송된 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings#async_insert_max_data_size)를 초과했거나 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings#async_insert_max_data_size)밀리초가 경과한 경우에 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정되어 있으면 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 엔드투엔드 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings#async_insert)에 문서화되어 있습니다. 일반적으로는 기본값이 적절합니다.
+비동기 삽입으로 전송된 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings/async-insert#async_insert_max_data_size)를 초과했거나 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)밀리초가 경과한 경우에 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정되어 있으면 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 엔드투엔드 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings/async-insert#async_insert)에 문서화되어 있습니다. 일반적으로는 기본값이 적절합니다.
 
 <Info>
   **적응형 비동기 삽입을 고려하십시오**
@@ -664,7 +664,7 @@ collector에서 비동기 삽입을 활성화하려면 connection string에 `asy
   사용 중인 에이전트 수가 적고 처리량은 낮지만 엔드투엔드 지연 시간 요구 사항이 엄격한 경우에는 [적응형 비동기 삽입](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)이 유용할 수 있습니다. 일반적으로 이는 ClickHouse에서 볼 수 있는 고처리량 관측성 사용 사례에는 적용되지 않습니다.
 </Info>
 
-마지막으로, ClickHouse의 동기 삽입과 관련된 기존 중복 제거 동작은 비동기 삽입을 사용할 때 기본적으로 활성화되지 않습니다. 필요한 경우 [`async_insert_deduplicate`](/ko/reference/settings/session-settings#async_insert_deduplicate) 설정을 참조하십시오.
+마지막으로, ClickHouse의 동기 삽입과 관련된 기존 중복 제거 동작은 비동기 삽입을 사용할 때 기본적으로 활성화되지 않습니다. 필요한 경우 [`async_insert_deduplicate`](/ko/reference/settings/session-settings/async-insert#async_insert_deduplicate) 설정을 참조하십시오.
 
 이 기능 구성에 대한 전체 내용은 [여기](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서 확인할 수 있으며, 자세한 설명은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
 

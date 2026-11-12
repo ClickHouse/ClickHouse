@@ -33,7 +33,11 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 
 Introduced in: v20.1.0
 
-Converts a virtual memory address inside the ClickHouse server process to a filename and line number in ClickHouse's source code.
+Converts an address of an instruction inside the main ClickHouse executable to a filename and line number in ClickHouse's source code.
+
+The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, and `system.crash_log`, and the `last_error_trace` column of `system.error_log`.
+Runtime (virtual memory) addresses are not accepted, so that the function cannot be used to learn the memory layout of the server process.
+Frames outside the main executable are stored as `0`, and the function returns an empty result for them.
 
 <Note>
 This function is slow and may impose security considerations.
@@ -45,6 +49,10 @@ To enable this introspection function:
 - Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
     
 
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
 **Syntax**
 
 ```sql
@@ -53,11 +61,11 @@ addressToLine(address_of_binary_instruction)
 
 **Arguments**
 
-- `address_of_binary_instruction` — Address of instruction in a running process. [`UInt64`](/reference/data-types/int-uint)
+- `address_of_binary_instruction` — Offset of an instruction inside the main ClickHouse executable, as stored in the `trace` column of `system.trace_log` and similar tables. [`UInt64`](/reference/data-types/int-uint)
 
 **Returned value**
 
-Returns a source code filename and line number delimited by a colon, for example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. Returns the name of a binary, if no debug information could be found, otherwise an empty string, if the address is not valid. [`String`](/reference/data-types/string)
+Returns a source code filename and line number delimited by a colon, for example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. Returns the name of the binary, if no debug information could be found for the address, or an empty string for `0`. [`String`](/reference/data-types/string)
 
 **Examples**
 
@@ -65,7 +73,7 @@ Returns a source code filename and line number delimited by a colon, for example
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -78,20 +86,20 @@ revision:                54429
 timer_type:              Real
 thread_number:           48
 query_id:                421b6855-1858-45a5-8f37-f383409d6d72
-trace:                   [140658411141617,94784174532828,94784076370703,94784076372094,94784076361020,94784175007680,140658411116251,140658403895439]
+trace:                   [0,0,0,0,631010292,205306916,447260096,447257472,447067860,447068840,443102728,443098700,442466608,442461536,442451604,442504896,442512004,442579276,290968008,555786732,291036904,205189920,0,0]
 ```
 
 **Getting the source code filename and the line number for a single address**
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(447257472::UInt64) AS source_line FORMAT Vertical;
 ```
 
 ```response title=Response
 Row 1:
 ──────
-addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
+source_line: src/Processors/Formats/LazyOutputFormat.cpp:25
 ```
 
 **Applying the function to the whole stack trace**
@@ -104,20 +112,32 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
 Row 1:
 ──────
-trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
-/usr/lib/debug/usr/bin/clickhouse
-/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
-/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.h:155
-/usr/include/c++/9/bits/atomic_base.h:551
-/usr/lib/debug/usr/bin/clickhouse
-/lib/x86_64-linux-gnu/libpthread-2.27.so
-/build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
+trace_source_code_lines:
+
+contrib/llvm-project/libcxx/src/condition_variable.cpp:83
+contrib/llvm-project/libcxx/include/__condition_variable/condition_variable.h:165
+contrib/llvm-project/libcxx/include/__condition_variable/condition_variable.h:135
+src/Processors/Formats/LazyOutputFormat.cpp:25
+src/Processors/Executors/PullingAsyncPipelineExecutor.cpp:177
+src/Processors/Executors/PullingAsyncPipelineExecutor.cpp:190
+contrib/llvm-project/libcxx/include/__vector/vector.h:394
+src/Client/LocalConnection.cpp:786
+src/Client/ClientBase.cpp:2091
+contrib/boost/boost/smart_ptr/intrusive_ptr.hpp:76
+contrib/boost/boost/smart_ptr/intrusive_ptr.hpp:76
+contrib/boost/boost/smart_ptr/intrusive_ptr.hpp:76
+src/Client/ClientBase.cpp:0
+src/Client/ClientBase.cpp:5507
+programs/local/LocalServer.cpp:1541
+base/poco/Util/src/Application.cpp:0
+programs/local/LocalServer.cpp:0
+contrib/llvm-project/libcxx/include/__vector/vector.h:248
 ```
 
 ## addressToLineWithInlines {#addressToLineWithInlines}
@@ -127,11 +147,19 @@ Introduced in: v22.2.0
 Similar to `addressToLine`, but returns an Array with all inline functions.
 As a result of this, it is slower than `addressToLine`.
 
+The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, and `system.crash_log`, and the `last_error_trace` column of `system.error_log`.
+Runtime (virtual memory) addresses are not accepted, so that the function cannot be used to learn the memory layout of the server process.
+Frames outside the main executable are stored as `0`, and the function returns an empty result for them.
+
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
 - Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
     
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
 
 **Syntax**
 
@@ -141,11 +169,11 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 **Arguments**
 
-- `address_of_binary_instruction` — The address of an instruction in a running process. [`UInt64`](/reference/data-types/int-uint)
+- `address_of_binary_instruction` — Offset of an instruction inside the main ClickHouse executable, as stored in the `trace` column of `system.trace_log` and similar tables. [`UInt64`](/reference/data-types/int-uint)
 
 **Returned value**
 
-Returns an array whose first element is the source code filename and line number delimited by a colon. The second, third, etc. element list inline functions' source code filenames, line numbers and function names. If no debug information could be found, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid. [`Array(String)`](/reference/data-types/array)
+Returns an array whose first element is the source code filename and line number delimited by a colon. The second, third, etc. element list inline functions' source code filenames, line numbers and function names. If no debug information could be found, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned for `0`. [`Array(String)`](/reference/data-types/array)
 
 **Examples**
 
@@ -225,8 +253,16 @@ WHERE
 
 Introduced in: v20.1.0
 
-Converts virtual memory address inside the ClickHouse server process to a symbol from ClickHouse's object files.
+Converts an address of an instruction inside the main ClickHouse executable to a symbol from ClickHouse's object files.
+
+The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, and `system.crash_log`, and the `last_error_trace` column of `system.error_log`.
+Runtime (virtual memory) addresses are not accepted, so that the function cannot be used to learn the memory layout of the server process.
+Frames outside the main executable are stored as `0`, and the function returns an empty result for them.
     
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
 
 **Syntax**
 
@@ -236,11 +272,11 @@ addressToSymbol(address_of_binary_instruction)
 
 **Arguments**
 
-- `address_of_binary_instruction` — Address of instruction in a running process. [`UInt64`](/reference/data-types/int-uint)
+- `address_of_binary_instruction` — Offset of an instruction inside the main ClickHouse executable, as stored in the `trace` column of `system.trace_log` and similar tables. [`UInt64`](/reference/data-types/int-uint)
 
 **Returned value**
 
-Returns the symbol from ClickHouse object files or an empty string, if the address is not valid. [`String`](/reference/data-types/string)
+Returns the symbol from ClickHouse object files or an empty string, if the address is not valid or is `0`. [`String`](/reference/data-types/string)
 
 **Examples**
 
@@ -248,7 +284,7 @@ Returns the symbol from ClickHouse object files or an empty string, if the addre
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -261,20 +297,20 @@ revision:      54429
 timer_type:    Real
 thread_number: 48
 query_id:      724028bf-f550-45aa-910d-2af6212b94ac
-trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
+trace:         [0,0,0,0,631010292,205306916,447260096,447257472,447067860,447068840,443102728,443098700,442466608,442461536,442451604,442504896,442512004,442579276,290968008,555786732,291036904,205189920,0,0]
 ```
 
 **Getting a symbol for a single address**
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(447257472::UInt64) AS symbol FORMAT Vertical;
 ```
 
 ```response title=Response
 Row 1:
 ──────
-addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
+symbol: _ZN2DB16LazyOutputFormat8getChunkEm
 ```
 
 **Applying the function to the whole stack trace**
@@ -289,31 +325,32 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
 Row 1:
 ──────
-trace_symbols: _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
-_ZNK2DB10Aggregator21executeWithoutKeyImplERPcmPNS0_28AggregateFunctionInstructionEPNS_5ArenaE
-_ZN2DB10Aggregator14executeOnBlockESt6vectorIN3COWINS_7IColumnEE13immutable_ptrIS3_EESaIS6_EEmRNS_22AggregatedDataVariantsERS1_IPKS3_SaISC_EERS1_ISE_SaISE_EERb
-_ZN2DB10Aggregator14executeOnBlockERKNS_5BlockERNS_22AggregatedDataVariantsERSt6vectorIPKNS_7IColumnESaIS9_EERS6_ISB_SaISB_EERb
-_ZN2DB10Aggregator7executeERKSt10shared_ptrINS_17IBlockInputStreamEERNS_22AggregatedDataVariantsE
-_ZN2DB27AggregatingBlockInputStream8readImplEv
-_ZN2DB17IBlockInputStream4readEv
-_ZN2DB26ExpressionBlockInputStream8readImplEv
-_ZN2DB17IBlockInputStream4readEv
-_ZN2DB26ExpressionBlockInputStream8readImplEv
-_ZN2DB17IBlockInputStream4readEv
-_ZN2DB28AsynchronousBlockInputStream9calculateEv
-_ZNSt17_Function_handlerIFvvEZN2DB28AsynchronousBlockInputStream4nextEvEUlvE_E9_M_invokeERKSt9_Any_data
-_ZN14ThreadPoolImplI20ThreadFromGlobalPoolE6workerESt14_List_iteratorIS0_E
-_ZZN20ThreadFromGlobalPoolC4IZN14ThreadPoolImplIS_E12scheduleImplIvEET_St8functionIFvvEEiSt8optionalImEEUlvE1_JEEEOS4_DpOT0_ENKUlvE_clEv
-_ZN14ThreadPoolImplISt6threadE6workerESt14_List_iteratorIS0_E
-execute_native_thread_routine
-start_thread
-clone
+trace_symbols:
+
+_ZNSt3__118condition_variable15__do_timed_waitERNS_11unique_lockINS_5mutexEEENS_6chrono10time_pointINS5_12system_clockENS5_8durationIxNS_5ratioILl1ELl1000000000EEEEEEE
+_ZNSt3__118condition_variable10wait_untilB9nqe220101INS_6chrono12steady_clockENS2_8durationIxNS_5ratioILl1ELl1000000000EEEEEEENS_9cv_statusERNS_11unique_lockINS_5mutexEEERKNS2_10time_pointIT_T0_EE
+_ZN22ConcurrentBoundedQueueIN2DB5ChunkEE7popImplILb1EEEbRS1_NSt3__18optionalImEE
+_ZN2DB16LazyOutputFormat8getChunkEm
+_ZN2DB28PullingAsyncPipelineExecutor4pullERNS_5ChunkEm
+_ZN2DB28PullingAsyncPipelineExecutor4pullERNS_5BlockEm
+_ZN2DB15LocalConnection8pollImplEv
+_ZN2DB15LocalConnection4pollEm
+_ZN2DB10ClientBase13receiveResultEN5boost13intrusive_ptrINS_4IASTEEEib
+_ZN2DB10ClientBase20processOrdinaryQueryENSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEN5boost13intrusive_ptrINS_4IASTEEE
+_ZN2DB10ClientBase24processParsedSingleQueryENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEEN5boost13intrusive_ptrINS_4IASTEEERbm
+_ZN2DB10ClientBase17executeMultiQueryERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN2DB10ClientBase16processQueryTextERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN2DB10ClientBase17runNonInteractiveEv
+_ZN2DB11LocalServer4mainERKNSt3__16vectorINS1_12basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS6_IS8_EEEE
+_ZN4Poco4Util11Application3runEv
+_Z24mainEntryClickHouseLocaliPPc
+main
 ```
 
 ## demangle {#demangle}
@@ -343,7 +380,7 @@ Returns the name of the C++ function, or an empty string if the symbol is not va
 **Selecting the first string from the `trace_log` system table**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -363,7 +400,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -384,7 +421,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -452,7 +489,12 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 
 Introduced in: v20.12.0
 
-Emits a trace log message to the server log for each [Block](/resources/develop-contribute/introduction/architecture#block).
+Emits a trace log message to the server log.
+
+The function accepts a constant argument only, so the call is evaluated during query analysis and replaced
+by its result. The message is therefore emitted once while the query is analyzed, and not once per processed
+[Block](/resources/develop-contribute/introduction/architecture#block): the number of rows and the setting `max_block_size` have no effect
+on how many messages appear in the log.
     
 
 **Syntax**

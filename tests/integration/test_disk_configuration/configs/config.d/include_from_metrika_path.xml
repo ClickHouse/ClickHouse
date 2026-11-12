@@ -1,0 +1,3 @@
+<clickhouse>
+    <include_from>/etc/metrika.xml</include_from>
+</clickhouse>

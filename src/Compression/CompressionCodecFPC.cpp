@@ -5,12 +5,12 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/typeid_cast.h>
-#include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 #include <span>
 #include <bit>
 #include <concepts>
+#include <cstring>
 
 
 namespace DB
@@ -26,6 +26,7 @@ public:
     CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -69,14 +70,19 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    hash.update(float_width);
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_)
     : float_width(float_width_)
     , compression_level(compression_level_)
 {
-    setCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
+}
+
+ASTPtr CompressionCodecFPC::getCodecDescription() const
+{
+    return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -90,9 +96,14 @@ UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 namespace
 {
 
+bool isApplicableToType(const IDataType & column_type)
+{
+    return WhichDataType(column_type).isNativeFloat();
+}
+
 UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (!WhichDataType(column_type).isNativeFloat())
+    if (!isApplicableToType(column_type))
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Codec 'FPC' is not applicable for {} because the data type is not Float*",
@@ -143,7 +154,7 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
-    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
 
 namespace

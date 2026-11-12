@@ -9,9 +9,8 @@ SET log_queries = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET max_rows_to_read = 0; -- system.text_log can be really big
-SET enable_analyzer = 0; -- To produce consistent explain outputs
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
+SET query_plan_optimize_count_from_text_index = 0;
 
 ----------------------------------------------------
 SELECT '- Test direct read optimization from text log';
@@ -45,7 +44,7 @@ SYSTEM FLUSH LOGS text_log;
 SELECT message
 FROM (
      SELECT event_time_microseconds, message FROM system.text_log
-     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'processAndOptimizeTextIndexFunctions' AND startsWith(message, 'Added:')
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'processAndOptimizeTextIndexFunctions' AND startsWith(message, 'Text index optimization: Added:')
      ORDER BY event_time_microseconds DESC LIMIT 8
 )
 ORDER BY event_time_microseconds ASC;

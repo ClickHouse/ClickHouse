@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'Point de terminaison Prometheus'
-title: 'Intégration Prometheus pour Managed Postgres'
-description: 'Collectez les métriques de Managed Postgres dans Prometheus, Grafana, Datadog ou tout collector compatible OpenMetrics'
+title: 'Intégration Prometheus pour ClickHouse Managed Postgres'
+description: 'Collectez les métriques de ClickHouse Managed Postgres dans Prometheus, Grafana, Datadog ou tout collector compatible OpenMetrics'
 keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'métriques', 'openmetrics', 'observability']
 doc_type: 'guide'
 ---
@@ -14,17 +14,17 @@ import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTra
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
-Managed Postgres expose deux points de terminaison de métriques compatibles Prometheus
+ClickHouse Managed Postgres expose deux points de terminaison de métriques compatibles Prometheus
 sur la [ClickHouse Cloud API][cloud-api] :
 
-| Endpoint | Path                                                   | Renvoie                                                          |
-| -------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | Les métriques de tous les services Managed Postgres de l&#39;org |
-| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Les métriques d&#39;un seul service                              |
+| Endpoint | Path                                                   | Renvoie                                                                     |
+| -------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | Les métriques de tous les services ClickHouse Managed Postgres de l&#39;org |
+| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Les métriques d&#39;un seul service                                         |
 
 <Note>
   Le point de terminaison au niveau de l&#39;org renvoie les métriques d&#39;un maximum de 100 services. Si votre
-  organisation compte plus de 100 services Managed Postgres, [contactez le
+  organisation compte plus de 100 services ClickHouse Managed Postgres, [contactez le
   support](https://clickhouse.com/support/program).
 </Note>
 
@@ -123,7 +123,7 @@ avec des alertes sur seuil, les connexions par état, les transactions et le
 taux de rollback, l’activité des tuples, les E/S, le stockage par
 base de données et les interblocages.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Tableau de bord Grafana des services Managed Postgres" size="md" border />
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Tableau de bord Grafana des services ClickHouse Managed Postgres" size="md" border />
 
 <div id="import-dashboard">
   ### Importation du tableau de bord
@@ -177,8 +177,8 @@ CPU afin de vous permettre de déterminer si un pic est dû au code de l’appli
 Le point de terminaison suit la même structure que le [point de terminaison Prometheus
 de ClickHouse](/fr/products/cloud/features/monitoring/prometheus), donc les configurations de Grafana Cloud, Grafana
 Alloy et de l’agent OpenMetrics de Datadog qui y sont décrites
-s’appliquent aussi ici. Faites pointer `metrics_path` vers le chemin de l’org ou de l’instance Managed Postgres plutôt que vers celui de ClickHouse.
+s’appliquent aussi ici. Faites pointer `metrics_path` vers le chemin de l’org ou de l’instance ClickHouse Managed Postgres plutôt que vers celui de ClickHouse.
 
-[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+[cloud-api]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Gestion des clés API"

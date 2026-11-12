@@ -189,7 +189,7 @@ public:
         bool cleanup,
         ContextPtr query_context) override;
 
-    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -216,6 +216,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
+    /// Throws if the current query is cancelled or exceeds `max_execution_time`, whatever its `timeout_overflow_mode`.
     bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -256,7 +257,7 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, std::optional<bool> * has_metadata_out = nullptr);
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
@@ -484,6 +485,11 @@ private:
     std::atomic<bool> shutdown_prepared_called {false};
     std::optional<ShutdownDeadline> shutdown_deadline;
 
+    /// Serializes concurrent calls to shutdown(). A repeated call (e.g. from the failure path of
+    /// startupImpl racing with the first, full shutdown) tears down whatever a concurrent startup()
+    /// re-armed, and some of the members it touches are not atomic.
+    std::mutex shutdown_mutex;
+
     /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
     mutable std::mutex flush_and_shutdown_mutex;
 
@@ -573,13 +579,6 @@ private:
         size_t max_block_size,
         size_t num_streams);
 
-    void readParallelReplicasImpl(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        SelectQueryInfo & query_info,
-        ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage);
-
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 
@@ -639,8 +638,6 @@ private:
         Coordination::Requests & ops,
         String part_name,
         NameSet & absent_replicas_paths);
-
-    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
                                              std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
@@ -758,6 +755,7 @@ private:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         bool cleanup,
+        bool bypass_min_unreserved_space,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -852,6 +850,7 @@ private:
       * If replicas are added at the same time, it can not wait the added replica.
       *
       * Waits for inactive replicas no more than wait_for_inactive_timeout.
+      * With only_active, inactive replicas are not waited for and not reported.
       * Returns list of inactive replicas that have not executed entry or throws exception.
       *
       * NOTE: This method must be called without table lock held.
@@ -859,9 +858,10 @@ private:
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
                                              Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-                                             const String & error_context = {});
+                                             const String & error_context = {}, bool only_active = false);
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
+                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
+                                                   bool only_active = false);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -964,15 +964,16 @@ private:
     bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Wait for timeout seconds mutation is finished on replicas
+    /// With only_active, replicas that are not active are not reported as unfinished.
     void waitMutationToFinishOnReplicas(
-        const Strings & replicas, const String & mutation_id) const;
+        const Strings & replicas, const String & mutation_id, bool only_active = false) const;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

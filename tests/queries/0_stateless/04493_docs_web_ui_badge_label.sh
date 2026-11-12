@@ -23,8 +23,10 @@ PAGE="$(${CLICKHOUSE_CURL} -sS "${URL}/docs")"
 echo "$PAGE" | grep -oF 'ClickHouse <span class="accent">Reference</span>' | head -n1
 
 # `preprocessMarkdown` renders each `*Badge` as a readable label via `badgeLabel` ...
-echo "$PAGE" | grep -oF 'function badgeLabel(name) {' | head -n1
-echo "$PAGE" | grep -oF "'**[' + badgeLabel(name) + ']**'" | head -n1
+echo "$PAGE" | grep -oF 'function cloudOnlyBadgeLabel(attributes) {' | head -n1
+echo "$PAGE" | grep -oF 'function badgeLabel(name, attributes) {' | head -n1
+echo "$PAGE" | grep -oF "'**[' + badgeLabel(name, attributes) + ']**'" | head -n1
+echo "$PAGE" | grep -oF "case 'CloudOnlyBadge': return cloudOnlyBadgeLabel(attributes);" | head -n1
 # ... using the same labels as the terminal `help` renderer.
 echo "$PAGE" | grep -oF "case 'CloudNotSupportedBadge': return 'Not supported in ClickHouse Cloud';" | head -n1
 

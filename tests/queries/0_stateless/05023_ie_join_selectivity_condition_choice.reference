@@ -1,0 +1,15 @@
+-- keys chosen by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- no statistics: the first two in syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- results are independent of the choice
+5654	18438200
+5654	18438200
+5654	18438200
+-- LEFT JOIN: unchosen conditions become the in-operator residual
+6643	50670410	989
+6643	50670410	989
+-- band pair beats the marginal-greedy pick
+Conditions: __table1.a1 > __table2.lo AND __table1.a1 < __table2.hi
+79	1028580
+79	1028580

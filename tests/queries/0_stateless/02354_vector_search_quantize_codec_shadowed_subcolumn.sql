@@ -7,9 +7,8 @@
 -- subcolumn, ranking the shortlist on unrelated bytes (silently, when the widths match). The rewrite must detect the
 -- shadow and fall back to exact KNN. Exercises `useVectorSearchWithQuantizedCodes`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS quantize_shadow;
 -- The physical `vec.quantized` is a FixedString(12) - the same width as the `int8` code for 8 dims (8 + 4-byte norm),

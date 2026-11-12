@@ -53,14 +53,23 @@ namespace ErrorCodes
 /// Extract token info from the original AST before cloning.
 /// Traverses AST in DFS order and collects LiteralTokenInfo for each literal from the token_map.
 static void extractLiteralTokensImpl(
-    const ASTPtr & ast, const LiteralTokenMap & token_map, std::vector<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
+    const ASTPtr & ast, const LiteralTokenMap & token_map, VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
 {
     if (auto * literal = ast->as<ASTLiteral>())
     {
         /// Null and Bool literals are never recorded by the parser, so always push nullopt.
-        /// This also protects against stale token_map entries from address reuse.
         Field::Types::Which field_type = literal->value.getType();
         if (field_type == Field::Types::Null || field_type == Field::Types::Bool)
+        {
+            result.push_back(std::nullopt);
+            return;
+        }
+
+        /// Only literals actually tokenized from the query carry valid token info. A literal
+        /// synthesized by the parser (e.g. the Tuple/Array slow path, the EXTRACT arithmetic
+        /// operands, casts) has the bit unset, so we must ignore any token_map entry it may have
+        /// inherited from a freed, previously recorded literal that reused its address.
+        if (!literal->hasTokenInfo())
         {
             result.push_back(std::nullopt);
             return;
@@ -96,10 +105,10 @@ static void extractLiteralTokensImpl(
     }
 }
 
-static std::vector<std::optional<LiteralTokenInfo>> extractLiteralTokens(
+static VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> extractLiteralTokens(
     const ASTPtr & ast, const LiteralTokenMap & token_map, ContextPtr context)
 {
-    std::vector<std::optional<LiteralTokenInfo>> result;
+    VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> result;
     extractLiteralTokensImpl(ast, token_map, result, context);
     return result;
 }
@@ -116,7 +125,7 @@ struct SpecialParserType
     bool is_tuple = false;
     bool is_map = false;
     /// Type and nullability
-    std::vector<std::pair<Field::Types::Which, bool>> nested_types;
+    VectorWithMemoryTracking<std::pair<Field::Types::Which, bool>> nested_types;
 
     bool useDefaultParser() const
     {
@@ -218,10 +227,10 @@ class ReplaceLiteralsVisitor
 public:
     LiteralsInfo replaced_literals;
     ContextPtr context;
-    const std::vector<std::optional<LiteralTokenInfo>> & token_info_vec;
+    const VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & token_info_vec;
     size_t token_info_index = 0;
 
-    ReplaceLiteralsVisitor(ContextPtr context_, const std::vector<std::optional<LiteralTokenInfo>> & token_info_vec_)
+    ReplaceLiteralsVisitor(ContextPtr context_, const VectorWithMemoryTracking<std::optional<LiteralTokenInfo>> & token_info_vec_)
         : context(context_), token_info_vec(token_info_vec_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
@@ -239,7 +248,7 @@ public:
     }
 
 private:
-    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const std::vector<char> & force_nullable)
+    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const VectorWithMemoryTracking<char> & force_nullable)
     {
         for (size_t i = 0; i < ast->children.size(); ++i)
             if (std::find(dont_visit_children.begin(), dont_visit_children.end(), i) == dont_visit_children.end())
@@ -265,7 +274,7 @@ private:
         /// Allow nullable arguments if function never returns NULL
         ColumnNumbers can_always_be_nullable = builder->getArgumentsThatDontImplyNullableReturnType(function.arguments->children.size());
 
-        std::vector<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
+        VectorWithMemoryTracking<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
         for (auto & idx : can_always_be_nullable)
             if (idx < force_nullable_arguments.size())
                 force_nullable_arguments[idx] = true;

@@ -25,6 +25,9 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPandHTTPS)
     ASSERT_EQ(http_configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(http_configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
     ASSERT_EQ(http_configuration.no_proxy_hosts, poco_no_proxy_regex);
+    /// Credentials must survive the environment variable and be percent-decoded.
+    ASSERT_EQ(http_configuration.username, EnvironmentProxySetter::HTTP_PROXY_USERNAME);
+    ASSERT_EQ(http_configuration.password, EnvironmentProxySetter::HTTP_PROXY_PASSWORD);
 
     EnvironmentProxyConfigurationResolver https_resolver(ProxyConfiguration::Protocol::HTTPS);
 
@@ -34,6 +37,8 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPandHTTPS)
     ASSERT_EQ(https_configuration.port, https_proxy_server.getPort());
     ASSERT_EQ(https_configuration.protocol, ProxyConfiguration::protocolFromString(https_proxy_server.getScheme()));
     ASSERT_EQ(https_configuration.no_proxy_hosts, poco_no_proxy_regex);
+    ASSERT_EQ(https_configuration.username, EnvironmentProxySetter::HTTP_PROXY_USERNAME);
+    ASSERT_EQ(https_configuration.password, EnvironmentProxySetter::HTTP_PROXY_PASSWORD);
 }
 
 }

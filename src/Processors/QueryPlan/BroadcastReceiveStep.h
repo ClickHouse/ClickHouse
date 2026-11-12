@@ -16,9 +16,13 @@ public:
     {
         /// TODO: is there a scenario where we broadcast partitioned source and thus have multiple source shards?
         chassert(source_shards.size() == 1);
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
     String getName() const override { return "BroadcastReceive"; }
+
+    const String & getExchangeId() const { return exchange_id; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

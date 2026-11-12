@@ -101,4 +101,12 @@ partial_aucs AS (
 SELECT 
   floor(sum(partial_pr_auc), 10) as pr_auc,
   floor(sum(partial_roc_auc), 10) as roc_auc
-FROM partial_aucs
+FROM partial_aucs;
+
+-- A NaN score makes the partial area NaN too, whatever order the pairs are given in.
+select arrayAUCPR([nan, 0.5], [1, 0], [1, 1, 3]);
+select arrayAUCPR([0.5, nan], [0, 1], [1, 1, 3]);
+select arrayROCAUC([nan, 0.5], [1, 0], true, [1, 1, 3, 3]);
+select arrayROCAUC([0.5, nan], [0, 1], true, [1, 1, 3, 3]);
+select floor(arrayAUCPR([0.9, 0.5], [1, 0], [1, 1, 3]), 10);
+select floor(arrayROCAUC([0.9, 0.5], [1, 0], true, [1, 1, 3, 3]), 10);

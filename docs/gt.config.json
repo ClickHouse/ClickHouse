@@ -1,7 +1,7 @@
 {
   "framework": "mintlify",
   "options": {
-    "experimentalClearLocaleDirs": true,
+    "experimentalClearLocaleDirs": false,
     "skipFileValidation": {
       "mdx": true
     },
@@ -25,10 +25,13 @@
     "docsImportPattern": "/snippets/[locale]",
     "generateRedirects": "./docs.json",
     "experimentalLocalizeStaticImports": true,
-    "experimentalLocalizeStaticUrls": true,
+    "experimentalLocalizeStaticUrls": {
+      "skipUntranslatedPages": true
+    },
     "experimentalLocalizeRelativeAssets": true,
     "docsHideDefaultLocaleImport": true,
     "experimentalHideDefaultLocale": true,
+    "saveLocal": true,
     "experimentalAddHeaderAnchorIds": "mintlify"
   },
   "files": {
@@ -100,7 +103,9 @@
         "./en/**/*.md",
         "./en/**/*.mdx",
         "./products/cloud/api-reference/**/*.md",
-        "./products/cloud/api-reference/**/*.mdx"
+        "./products/cloud/api-reference/**/*.mdx",
+        "./products/clickhouse-private/**/*.md",
+        "./products/clickhouse-private/**/*.mdx"
       ]
     }
   },

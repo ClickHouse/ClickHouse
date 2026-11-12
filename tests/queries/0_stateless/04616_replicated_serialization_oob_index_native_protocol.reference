@@ -1,0 +1,7 @@
+out-of-bounds index: caught expected exception INCORRECT_DATA
+truncated elements: caught expected exception INCORRECT_DATA
+invalid index type size: caught expected exception INCORRECT_DATA
+index row count mismatch: caught expected exception INCORRECT_DATA
+sparse over replicated: caught expected exception INCORRECT_DATA
+huge element count: caught expected exception TOO_LARGE_ARRAY_SIZE
+server alive	0

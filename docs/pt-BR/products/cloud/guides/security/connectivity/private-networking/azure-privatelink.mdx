@@ -30,8 +30,8 @@ O Azure oferece suporte à conectividade entre regiões por meio do Private Link
 
 1. Obtenha o alias de conexão do Azure para o Private Link
 2. Crie um Private Endpoint no Azure
-3. Adicione o Resource ID do Private Endpoint à sua organização do ClickHouse Cloud
-4. Adicione o Resource ID do Private Endpoint à lista de permissões dos seus serviços
+3. Adicione o Private Endpoint Resource ID à sua organização do ClickHouse Cloud
+4. Adicione o Private Endpoint Resource ID à lista de permissões dos seus serviços
 5. Acesse seu serviço do ClickHouse Cloud usando o Private Link
 
 <Note>
@@ -214,7 +214,7 @@ O Private Endpoint Resource ID é exibido no Azure Portal. Abra o Private Endpoi
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Exibição do Private Endpoint" border />
 
-Em properties, localize o campo `id` e copie esse valor:
+Copie o campo `id` de nível superior (o Resource ID do endpoint privado, no formato `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — não use os campos `id` aninhados dentro do objeto `properties`:
 
 **Método preferido: usando o Resource ID**
 

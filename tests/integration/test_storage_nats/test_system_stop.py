@@ -99,6 +99,18 @@ def jetstream_ack_pending(nats_cluster, stream, durable):
     return asyncio.run(run())
 
 
+def jetstream_purge_stream(nats_cluster, stream):
+    """Remove all messages from the stream, so the broker cannot deliver them anymore."""
+
+    async def run():
+        nc = await nats_connect_ssl(nats_cluster)
+        js = nc.jetstream()
+        await js.purge_stream(stream)
+        await nc.close()
+
+    asyncio.run(run())
+
+
 def setup_consuming_table(table, subject):
     instance.query(
         f"""
@@ -745,15 +757,14 @@ def test_direct_select_leftover_does_not_pollute_view(nats_cluster):
     )
     jetstream_publish(nats_cluster, subject, 0, n)
 
-    # One direct read returns a single row (block size 1) and leaves the rest of the delivered burst
-    # buffered locally; retry until a read returns, confirming the burst was delivered.
-    for _ in range(40):
-        res = instance.query(
+    # A block-size-1 read returns one row while the broker is still streaming the rest of the burst,
+    # so keep reading until all n are delivered and unacked, leaving stale copies for the view below.
+    deadline = time.time() + 60
+    while time.time() < deadline and jetstream_ack_pending(nats_cluster, stream, durable) < n:
+        instance.query(
             f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
             ignore_error=True,
         )
-        if res.strip():
-            break
     assert jetstream_ack_pending(nats_cluster, stream, durable) == n
 
     # Let the unacked messages pass ack_wait so the broker will redeliver them to the next subscription.
@@ -894,17 +905,17 @@ def test_commit_on_select_failed_parse_does_not_ack(nats_cluster):
 
 
 def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
-    # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. With a long
-    # ack-wait the broker does not redeliver during the test, so after the burst is delivered a later read
-    # must return nothing: it drops the buffer before resubscribing. Before the fix the stale copies were
-    # handed out again, duplicating the broker's redelivery once ack_wait passed.
+    # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. A later read
+    # must not hand out those buffered copies again: every row it returns has to be a delivery of the
+    # broker. Before the fix the stale copies were handed out again, duplicating the broker's redelivery.
+    # Once the burst is delivered, the stream is purged, so the broker has nothing left to deliver: any
+    # row a later read returns can only be a stale local copy.
     stream = "js_stale_stream"
     subject = "js_stale_subject"
     durable = "js_stale_durable"
     table = "nats_stale"
     n = 10
-    # Long ack-wait: the broker will not redeliver within the test, so any row a later read returns can only
-    # be a stale local copy.
+    # Long ack-wait: the broker redelivers only what a read returned to it.
     jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
     instance.query(
         f"""
@@ -934,16 +945,14 @@ def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
         )
     assert jetstream_ack_pending(nats_cluster, stream, durable) == n
 
-    # The burst is delivered and unacked; with a 60s ack-wait the broker does not redeliver now, so further
-    # reads must return nothing: the local buffer is dropped on resubscribe and there is nothing fresh.
-    returned = 0
+    # Nothing is left for the broker to deliver, so further reads must return nothing.
+    jetstream_purge_stream(nats_cluster, stream)
     for _ in range(3):
         res = instance.query(
-            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
-            ignore_error=True,
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1"
         )
-        returned += len([x for x in res.split() if x.strip()])
-    assert returned == 0, f"a direct read returned stale buffered copies ({returned} rows)"
+        rows = len([x for x in res.split() if x.strip()])
+        assert rows == 0, f"a direct read returned {rows} stale buffered copies of purged messages"
 
 
 def test_system_stop_all_background(nats_cluster):
@@ -1181,25 +1190,19 @@ def test_stop_while_viewless_does_not_drop_after_start(nats_cluster):
     ), f"consumer subscribed {subscribes}x; a stale unsubscribe fired after a STOP-while-viewless"
 
 
-def _server_cpu_jiffies():
-    """utime + stime of the clickhouse server process, in clock ticks."""
-    pid = instance.get_process_pid("clickhouse server")
-    content = instance.exec_in_container(["bash", "-c", f"cat /proc/{pid}/stat"])
-    # Skip 'pid (comm)' -- comm may contain spaces -- then fields start at 'state' (field 3).
-    rest = content[content.rindex(")") + 1:].split()
-    return int(rest[11]) + int(rest[12])  # utime (field 14) + stime (field 15)
-
-
-def _cpu_over(seconds):
-    before = _server_cpu_jiffies()
-    time.sleep(seconds)
-    return _server_cpu_jiffies() - before
+def broker_pool_tasks(table):
+    """(log_name, delayed) of each task of the table queued, running or delayed in the message broker pool."""
+    result = instance.query(
+        "SELECT log_name, delayed FROM system.background_schedule_pool "
+        f"WHERE pool = 'message_broker' AND database = 'test' AND table = '{table}' ORDER BY log_name"
+    )
+    return [(name, int(delayed)) for name, delayed in (line.split("\t") for line in result.splitlines())]
 
 
 def test_detach_last_view_does_not_busy_loop(nats_cluster):
-    # After the last view is detached, the viewless streaming task must back off, not tight-loop the
-    # message-broker schedule pool. Compare server CPU with a view (idle 500ms polling) vs viewless;
-    # a busy-loop pegs roughly a full core, while backing off stays near the baseline.
+    # After the last view is detached, the streaming task must stop rescheduling itself: it leaves the
+    # message broker pool, and only the consumer initialization task keeps polling for views, waiting
+    # between runs. A busy-looping streaming task never leaves the pool.
     table = "nats_detach_loop"
     subject = "detach_loop_subject"
     setup_consuming_table(table, subject)
@@ -1207,15 +1210,31 @@ def test_detach_last_view_does_not_busy_loop(nats_cluster):
     nats_publish(nats_cluster, subject, 0, 5)
     wait_dst_count_at_least(table, 5)
 
-    baseline = _cpu_over(4)
+    def task_names(tasks):
+        return [name for name, _ in tasks]
+
+    tasks = broker_pool_tasks(table)
+    assert task_names(tasks).count("NATSStreamingTask") == 1, tasks
 
     instance.query(f"DROP TABLE test.{table}_mv SYNC")
-    time.sleep(2)  # settle into the viewless state
 
-    viewless = _cpu_over(4)
-    assert viewless < baseline + 150, ( # based on test runs, where it's ~15, or ~400-800 for busy
-        f"viewless streaming task appears to busy-loop: baseline={baseline} viewless={viewless} "
-        "CPU jiffies over 4s"
+    # The last streaming run may still be draining the subscription.
+    deadline = time.time() + 60
+    while True:
+        tasks = broker_pool_tasks(table)
+        if "NATSStreamingTask" not in task_names(tasks) and "NATSInitializeConsumersTask" in task_names(tasks):
+            break
+        assert time.time() < deadline, f"viewless streaming task appears to busy-loop: {tasks}"
+        time.sleep(0.5)
+
+    samples = []
+    for _ in range(8):
+        time.sleep(0.5)
+        tasks = broker_pool_tasks(table)
+        assert "NATSStreamingTask" not in task_names(tasks), f"viewless streaming task appears to busy-loop: {tasks}"
+        samples.append(tasks)
+    assert any(("NATSInitializeConsumersTask", 1) in tasks for tasks in samples), (
+        f"viewless consumer initialization task does not wait between runs: {samples}"
     )
 
 

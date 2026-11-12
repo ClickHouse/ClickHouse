@@ -37,6 +37,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
@@ -75,6 +76,7 @@ public:
         const std::string & zookeeper_name,
         LoggerPtr log);
 
+    /// `value` is the new number of buckets, `prev_value` is the old value of the `buckets` setting.
     static void migrateToBuckets(
         const std::string & zk_path,
         size_t value,

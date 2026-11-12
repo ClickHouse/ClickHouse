@@ -5,11 +5,20 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 # Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
-    OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
-    COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+if (OS_WASM)
+    # `emcc` knows its own target and sysroot, and rejects being passed an empty one.
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
+        OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+else ()
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COMPILER_TARGET} --sysroot=${CMAKE_SYSROOT}
+        OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif ()
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
@@ -28,12 +37,18 @@ if (LINKER_NAME MATCHES "gold")
     message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
 endif ()
 
+# Tools are taken from the compiler's own directory first, so that they belong to the same toolchain.
+get_filename_component (COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+
 macro(ch_find_program var)
     if (USING_DUMMY_LAUNCHERS)
         set(${var} "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
     else()
         unset(${var})
-        find_program(${var} ${ARGN})
+        find_program(${var} ${ARGN} PATHS "${COMPILER_BIN_DIR}" NO_DEFAULT_PATH)
+        if (NOT ${var})
+            find_program(${var} ${ARGN})
+        endif()
     endif()
 endmacro()
 
@@ -63,6 +78,9 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
+elseif (OS_WASM)
+    # `emcc` drives `wasm-ld` itself and takes no `--ld-path`.
+    message(STATUS "Using linker: <wasm-ld, through emcc>")
 elseif (NOT ARCH_S390X AND NOT OS_FREEBSD AND NOT OS_SUNOS)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 else ()

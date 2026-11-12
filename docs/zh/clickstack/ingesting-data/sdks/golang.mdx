@@ -6,29 +6,17 @@ doc_type: 'guide'
 keywords: ['Golang ClickStack SDK', 'Go OpenTelemetry 集成', 'Golang 可观测性', 'Go trace 埋点', 'ClickStack Go SDK']
 ---
 
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack 使用 OpenTelemetry 标准收集遥测数据 (日志和
 链路追踪) 。链路追踪可通过自动埋点自动生成，因此无需手动
 埋点也能发挥链路追踪的作用。
 
-**本指南集成：**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ 日志</td>
-      <td className="pe-2">✅ 指标</td>
-      <td className="pe-2">✅ 链路追踪</td>
-    </tr>
-  </tbody>
-</table>
+## 快速开始 {#getting-started}
 
-<div id="getting-started">
-  ## 快速开始
-</div>
-
-<div id="install-opentelemetry">
-  ### 安装 OpenTelemetry instrumentation 包
-</div>
+### 安装 OpenTelemetry instrumentation 包 {#install-opentelemetry}
 
 要安装 OpenTelemetry 和 HyperDX 的 Go 包，请使用以下命令。建议查看[当前可用的 instrumentation 包](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages)，并安装所需的包，以确保 trace 信息能够正确关联。
 
@@ -39,9 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-<div id="native-http-server-example">
-  ### 原生 HTTP 服务器示例 (net/http)
-</div>
+### 原生 HTTP 服务器示例 (net/http) {#native-http-server-example}
 
 在此示例中，我们将使用 `net/http/otelhttp`。
 
@@ -149,9 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-<div id="gin-application-example">
-  ### Gin 应用示例
-</div>
+### Gin 应用示例 {#gin-application-example}
 
 在本示例中，我们将使用 `gin-gonic/gin`。
 
@@ -235,26 +219,24 @@ func main() {
 }
 ```
 
-<div id="configure-environment-variables">
-  ### 配置环境变量
-</div>
+### 配置环境变量 {#configure-environment-variables}
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 
 <Tabs>
   <Tab title="托管 ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     ```
   </Tab>
 
   <Tab title="ClickStack 开源版">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

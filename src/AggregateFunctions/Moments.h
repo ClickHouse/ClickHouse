@@ -11,6 +11,7 @@
 #include <boost/math/distributions/students_t.hpp>
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/NaNUtils.h>
 
 namespace DB
 {
@@ -21,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 /// Zeroes the value's bit pattern when the flag is not set. Unlike multiplying by the
@@ -99,7 +101,7 @@ struct VarMoments
     template <typename Value>
     void addMany(const Value * __restrict ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(ptr, row_begin, row_end);
@@ -143,7 +145,7 @@ struct VarMoments
     template <typename Value, bool add_if_zero>
     void addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, row_begin, row_end);
@@ -184,16 +186,18 @@ struct VarMoments
             return std::numeric_limits<T>::quiet_NaN();
 
         /// Due to numerical errors, the result can be slightly less than zero,
-        /// but it should be impossible. Trim to zero.
-
-        return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / m[0]);
+        /// but it should be impossible. Trim to zero. A NaN (from a NaN or an infinity in the data) is kept:
+        /// `std::max` would turn it into zero.
+        T result = (m[2] - m[1] * m[1] / m[0]) / m[0];
+        return isNaN(result) ? result : std::max(T{}, result);
     }
 
     T getSample() const
     {
         if (m[0] <= 1)
             return std::numeric_limits<T>::quiet_NaN();
-        return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1));
+        T result = (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1);
+        return isNaN(result) ? result : std::max(T{}, result);
     }
 
     T getMoment3() const
@@ -305,7 +309,7 @@ struct CovarMoments
     template <typename Value1, typename Value2>
     void addMany(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(x_ptr, y_ptr, row_begin, row_end);
@@ -356,7 +360,7 @@ struct CovarMoments
     template <typename Value1, typename Value2, bool add_if_zero>
     void addManyConditional(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
@@ -477,7 +481,7 @@ struct CorrMoments
     template <typename Value1, typename Value2>
     void addMany(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(x_ptr, y_ptr, row_begin, row_end);
@@ -534,7 +538,7 @@ struct CorrMoments
     template <typename Value1, typename Value2, bool add_if_zero>
     void addManyConditional(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
@@ -906,9 +910,23 @@ struct AnalysisOfVarianceMoments
 
     void read(ReadBuffer & buf)
     {
-        readVectorBinary(xs1, buf);
-        readVectorBinary(xs2, buf);
-        readVectorBinary(ns, buf);
+        /// add and merge cap the group count at MAX_GROUPS_NUMBER via resizeIfNeeded, but read
+        /// trusts the serialized lengths. Enforce the same bound here, before the vectors are
+        /// resized, so a crafted state cannot exceed the aggregate's own invariant.
+        readVectorBinary(xs1, buf, MAX_GROUPS_NUMBER);
+        readVectorBinary(xs2, buf, MAX_GROUPS_NUMBER);
+        readVectorBinary(ns, buf, MAX_GROUPS_NUMBER);
+
+        /// The three vectors hold one entry per group and must stay equal in length.
+        /// The finalize path iterates up to xs1.size() and indexes xs2 and ns with the
+        /// same position, so a state with mismatched lengths reads out of bounds.
+        if (xs1.size() != xs2.size() || xs1.size() != ns.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Sizes of nested arrays in analysisOfVariance state do not match: {}, {}, {}",
+                xs1.size(),
+                xs2.size(),
+                ns.size());
     }
 
     Float64 getMeanAll() const

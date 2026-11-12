@@ -5,12 +5,19 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
 
-DB::KeeperContextPtr makeKeeperContext(bool /*use_lsmt_storage*/, std::shared_ptr<DB::CoordinationSettings> settings)
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsBool use_lsmt_storage;
+    extern const CoordinationSettingsBool storage_memory_only;
+}
+
+DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB::CoordinationSettings> settings)
 {
     if (!settings)
         settings = std::make_shared<DB::CoordinationSettings>();
-    /// TODO: translate use_lsmt_storage into a CoordinationSettings option here so
-    ///       KeeperStorage::create picks the right implementation.
+    (*settings)[DB::CoordinationSetting::use_lsmt_storage] = use_lsmt_storage;
+    /// These tests don't set a data disk; the on-disk LSMT path is covered by gtest_keeper_storage.
+    (*settings)[DB::CoordinationSetting::storage_memory_only] = true;
     /// Intentionally minimal: callers add setLocalLogsPreprocessed/disks/digest as they need them.
     return std::make_shared<DB::KeeperContext>(true, settings);
 }
@@ -18,10 +25,8 @@ DB::KeeperContextPtr makeKeeperContext(bool /*use_lsmt_storage*/, std::shared_pt
 INSTANTIATE_TEST_SUITE_P(
     Storage,
     CoordinationTest,
-    ::testing::Values(
-        /*use_lsmt_storage*/ false
-        /// TODO: Add `true` when LSMT storage is integrated.
-    ),
+    /// use_lsmt_storage
+    ::testing::Values(false, true),
     [](const ::testing::TestParamInfo<bool> & param_info) { return param_info.param ? "LSMT" : "Mem"; });
 
 INSTANTIATE_TEST_SUITE_P(
@@ -29,8 +34,8 @@ INSTANTIATE_TEST_SUITE_P(
     CoordinationTestWithCompression,
     ::testing::Values(
         StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = false},
-        StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = true}
-        /// TODO: StorageTypeAndCompression{.use_lsmt_storage = true, .enable_compression = true}
+        StorageTypeAndCompression{.use_lsmt_storage = false, .enable_compression = true},
+        StorageTypeAndCompression{.use_lsmt_storage = true, .enable_compression = true}
     ),
     [](const ::testing::TestParamInfo<StorageTypeAndCompression> & param_info) { return std::string(param_info.param.use_lsmt_storage ? "LSMT" : "Mem") + (param_info.param.enable_compression ? "Compressed" : "Uncompressed"); });
 
@@ -61,14 +66,16 @@ void assertFileDeleted(std::string path)
 }
 
 nuraft::ptr<nuraft::log_entry>
-getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
+getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t /*zxid*/, const Coordination::ZooKeeperRequestPtr & request)
 {
-    DB::KeeperRequestForSession request_for_session;
+    /// (zxid is unused: the serialized entry has a placeholder zxid, like the dispatchers produce;
+    ///  the real zxid is patched in by the leader or defaulted to the log idx on commit.)
+    DB::KeeperRequestBatch batch;
+    auto & request_for_session = batch.requests.emplace_back();
     request_for_session.session_id = session_id;
-    request_for_session.zxid = zxid;
     request_for_session.request = request;
-    auto buffer = DB::KeeperStateMachine::getZooKeeperLogEntry(request_for_session);
-    return nuraft::cs_new<nuraft::log_entry>(term, buffer);
+    auto buffers = DB::KeeperStateMachine::serializeRequestBatch(batch, /*log_entry_version=*/ thread_local_rng() % 2);
+    return nuraft::cs_new<nuraft::log_entry>(term, buffers.at(0));
 }
 
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner, DB::ACLId acl_id, int64_t seq_num)

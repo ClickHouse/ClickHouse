@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Functions/FunctionFactory.h>
@@ -29,9 +30,13 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorSum.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -39,14 +44,22 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/ProjectionsDescription.h>
+
+#include <algorithm>
+#include <unordered_map>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
+    extern const SettingsBool use_statistics_for_min_max_aggregation;
+    extern const SettingsBool use_statistics_for_sum_avg_aggregation;
 }
 
 namespace FailPoints
@@ -234,6 +247,8 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
+    std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
@@ -299,6 +314,11 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
+    Block source_block;
+    for (const auto & column : metadata_snapshot->getColumns().getByNames(
+             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
+        source_block.insert({column.type->createColumn(), column.type, column.name});
+
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
@@ -309,7 +329,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(metadata_snapshot->getSampleBlockWithSubcolumns()))),
+        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
@@ -564,6 +584,34 @@ struct MinMaxProjectionCandidate
     Block block;
 };
 
+/// An aggregate that can be answered for the parts that have column statistics materialized: `count` from the
+/// number of rows, `min`, `max`, `sum`, `avg` and `sumCount` from the statistics.
+struct StatisticsAggregate
+{
+    enum class Kind : UInt8
+    {
+        Min,
+        Max,
+        Count,
+        Sum,
+        /// `avg` and `sumCount`, whose states are the sum and the count.
+        SumAndCount,
+    };
+
+    Kind kind;
+
+    /// Physical column the aggregate is computed over (empty for `count()`).
+    String column_name = {};
+
+    /// The Field type the statistics values must have to be exact. Legacy statistics stored
+    /// min/max as Float64 for any column type; such values are rejected as potentially lossy.
+    Field::Types::Which expected_field_type = Field::Types::Null;
+
+    const AggregateDescription * aggregate = nullptr;
+
+    bool isSum() const { return kind == Kind::Sum || kind == Kind::SumAndCount; }
+};
+
 struct AggregateProjectionCandidates
 {
     std::vector<AggregateProjectionCandidate> real;
@@ -572,9 +620,176 @@ struct AggregateProjectionCandidates
     /// This flag means that DAG for projection candidate should be used in FilterStep.
     bool has_filter = false;
 
+    /// The value of `optimize_constant_columns_after_filter` of the original filters, for the replacement FilterStep.
+    std::optional<bool> optimize_constant_columns_after_filter;
+
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
+
+    /// If not empty, try to answer the aggregation from per-part column statistics.
+    std::vector<StatisticsAggregate> statistics_aggregates;
+
+    /// Why each projection that was not used could not be used.
+    std::unordered_map<String, String> reject_reasons;
 };
+
+/// Check if the whole aggregation can be answered from per-part column statistics: there is no
+/// `GROUP BY` and no filter, and every aggregate is `count`, or a `StatisticsAggregate` over a physical column
+/// whose declared statistics track it for the column type (`canStatisticsTrackMinMax`, `canStatisticsTrackSum`).
+///
+/// Statistics describe the physical rows of a part as they were written, so anything that changes
+/// the visible rows or values at read time disables the optimization: lightweight deletes, pending
+/// ALTER MODIFY/RENAME/DROP COLUMN mutations (checked per part), the delete bitmap of a unique-key table, and masking
+/// policies.
+/// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
+/// and FINAL together with SAMPLE are rejected there as well.)
+static std::vector<StatisticsAggregate> getStatisticsAggregates(
+    const AggregatingStep & aggregating,
+    ReadFromMergeTree & reading,
+    const StorageMetadataPtr & metadata,
+    const DAGIndex & query_index,
+    const ContextPtr & context)
+{
+    const bool use_min_max = context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation];
+    const bool use_sum_avg = context->getSettingsRef()[Setting::use_statistics_for_sum_avg_aggregation];
+    if (!use_min_max && !use_sum_avg)
+        return {};
+
+    if (!aggregating.getParams().keys.empty())
+        return {};
+
+    const auto & aggregates = aggregating.getParams().aggregates;
+    if (aggregates.empty())
+        return {};
+
+    const auto & query_info = reading.getQueryInfo();
+    if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
+        return {};
+
+    /// TODO(unique-key): support statistics-based answers; they don't see the delete bitmap.
+    if (metadata->hasUniqueKey())
+        return {};
+
+    if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
+        return {};
+
+    /// Pending alter and metadata mutations are checked per part in `makeBlockFromStatistics`:
+    /// the counters of the snapshot also include finished mutations kept for `system.mutations`,
+    /// which must not disable the optimization for the parts they were already applied to.
+    auto mutations_snapshot = reading.getMutationsSnapshot();
+    if (mutations_snapshot->hasLightweightDeletedMask())
+        return {};
+
+    const auto & columns = metadata->getColumns();
+
+    std::vector<StatisticsAggregate> result;
+    result.reserve(aggregates.size());
+
+    for (const auto & aggregate : aggregates)
+    {
+        if (!aggregate.parameters.empty())
+            return {};
+
+        const bool is_count = typeid_cast<const AggregateFunctionCount *>(aggregate.function.get());
+        if (is_count && aggregate.argument_names.empty())
+        {
+            result.push_back({.kind = StatisticsAggregate::Kind::Count, .aggregate = &aggregate});
+            continue;
+        }
+
+        const auto & function_name = aggregate.function->getName();
+        auto kind = StatisticsAggregate::Kind::Count;
+        if (function_name == "min")
+            kind = StatisticsAggregate::Kind::Min;
+        else if (function_name == "max")
+            kind = StatisticsAggregate::Kind::Max;
+        else if (function_name == "sum")
+            kind = StatisticsAggregate::Kind::Sum;
+        else if (function_name == "avg" || function_name == "sumCount")
+            kind = StatisticsAggregate::Kind::SumAndCount;
+        else if (!is_count)
+            return {};
+
+        const bool is_min_max = kind == StatisticsAggregate::Kind::Min || kind == StatisticsAggregate::Kind::Max;
+        if (!(is_min_max ? use_min_max : use_sum_avg))
+            return {};
+
+        if (aggregate.argument_names.size() != 1)
+            return {};
+
+        auto it = query_index.find(aggregate.argument_names.front());
+        if (it == query_index.end())
+            return {};
+
+        const auto * node = it->second;
+        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return {};
+
+        const auto * column = columns.tryGet(node->result_name);
+        if (!column || !column->type->equals(*node->result_type)
+            || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
+            return {};
+
+        /// Statistics don't record whether a part contains NULL values, while min/max over
+        /// a Nullable column must skip them, so only plain columns are supported.
+        if (column->type->isNullable() || column->type->lowCardinality())
+            return {};
+
+        /// Like the trivial count optimization, answer `count(column)` of a column that cannot be `NULL` with the number
+        /// of rows (`count(expr)` was declined above, because its argument has to be evaluated, and that can throw).
+        /// The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`, which can throw.
+        if (kind == StatisticsAggregate::Kind::Count)
+        {
+            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
+            continue;
+        }
+
+        if (!is_min_max)
+        {
+            if (!column->statistics.types_to_desc.contains(StatisticsType::Basic) || !canStatisticsTrackSum(column->type))
+                return {};
+
+            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
+            continue;
+        }
+
+        if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
+            && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+            return {};
+
+        /// `basic` is declared for every column type, but it records min/max only for numeric-like
+        /// columns, so a `String` column with the default `auto_statistics_types` passes the check
+        /// above while no part will ever provide min/max. Decline here instead of loading the
+        /// estimates of every part before falling back to a normal read.
+        if (!canStatisticsTrackMinMax(column->type))
+            return {};
+
+        result.push_back({
+            .kind = kind,
+            .column_name = node->result_name,
+            .expected_field_type = column->type->getDefault().getType(),
+            .aggregate = &aggregate});
+    }
+
+    return result;
+}
+
+/// The implicit `minmax_count` projection aggregates only with `min`, `max` and `count`
+/// (`ProjectionDescription::getMinMaxCountProjection`), and `matchAggregateFunctions` pairs a query
+/// aggregate with a projection one by exact function name, so no other name can ever match.
+static bool canMinMaxCountProjectionMatchAggregates(const AggregateDescriptions & aggregates)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        const auto & name = aggregate.function->getName();
+        if (name != "min" && name != "max" && name != "count")
+            return false;
+    }
+    return true;
+}
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
@@ -582,7 +797,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     ReadFromMergeTree & reading,
     const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections,
-    size_t max_set_size_for_match)
+    size_t max_set_size_for_match,
+    std::vector<const ProjectionDescription *> agg_projections)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -593,27 +809,26 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     ContextPtr context = reading.getContext();
 
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
-
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
-        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask();
+        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
+        && canMinMaxCountProjectionMatchAggregates(aggregates);
+    bool can_use_statistics = allow_implicit_projections && keys.empty();
 
-    if (!can_use_minmax_projection && agg_projections.empty())
+    if (!can_use_minmax_projection && !can_use_statistics && agg_projections.empty())
         return candidates;
 
     QueryDAG dag;
     if (!dag.build(*node.children.front()))
+    {
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
         return candidates;
+    }
 
     auto query_index = buildDAGIndex(*dag.dag);
 
     candidates.has_filter = dag.filter_node;
+    candidates.optimize_constant_columns_after_filter = dag.optimize_constant_columns_after_filter;
     /// We can't use minmax projection if filter has non-deterministic functions.
     if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
         can_use_minmax_projection = false;
@@ -646,9 +861,13 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 minmax.candidate.projection = projection;
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
+            else
+                candidates.reject_reasons.try_emplace(projection->name, "the implicit projection has no parts to read");
         }
         else
         {
+            candidates.reject_reasons.try_emplace(projection->name, "the implicit projection cannot compute the aggregation keys and functions of the query");
+
             /// Trivial count optimization only applies after @can_use_minmax_projection.
             if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
                 candidates.only_count_column = aggregates[0].column_name;
@@ -657,18 +876,9 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
-        auto it = std::find_if(
-            agg_projections.begin(),
-            agg_projections.end(),
-            [&](const auto * projection)
-            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-        if (it != agg_projections.end())
-        {
-            const ProjectionDescription * preferred_projection = *it;
-            agg_projections.clear();
-            agg_projections.push_back(preferred_projection);
-        }
+        const auto all_agg_projections = agg_projections;
+        filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+        rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
 
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
@@ -677,7 +887,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             if (projection->where_clause_ast)
             {
                 if (!doesQueryFilterImplyProjectionWhere(dag.filter_node, projection->where_clause_ast, projection->query_ast, context))
+                {
+                    candidates.reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
                     continue;
+                }
             }
 
             /// When the projection has a WHERE, strip the implied conjuncts from the query
@@ -695,28 +908,36 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 candidate.has_filter = (dag.filter_node != nullptr);
                 candidates.real.emplace_back(std::move(candidate));
             }
+            else
+                candidates.reject_reasons.try_emplace(projection->name, "the projection cannot compute the aggregation keys and functions of the query");
 
             dag.filter_node = original_filter;
         }
+    }
+
+    /// When no projection can serve the aggregation, try to answer it directly
+    /// from per-part column statistics.
+    if (can_use_statistics && !candidates.minmax_projection && candidates.real.empty()
+        && candidates.only_count_column.empty() && !dag.filter_node)
+    {
+        candidates.statistics_aggregates
+            = getStatisticsAggregates(aggregating, reading, metadata, query_index, context);
     }
 
     return candidates;
 }
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
-    QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match)
+    QueryPlan::Node & node,
+    DistinctStep & distinct,
+    ReadFromMergeTree & reading,
+    size_t max_set_size_for_match,
+    std::vector<const ProjectionDescription *> agg_projections)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     ContextPtr context = reading.getContext();
-
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
 
     AggregateProjectionCandidates candidates;
 
@@ -725,38 +946,37 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     QueryDAG dag;
     if (!dag.build(*node.children.front()))
+    {
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
         return candidates;
+    }
 
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
+    candidates.optimize_constant_columns_after_filter = dag.optimize_constant_columns_after_filter;
 
-    const auto & keys = distinct.getColumnNames();
+    /// The header is passed through, so a replacement must reproduce all of it, positions included.
+    const Names keys = distinct.getOutputHeader()->getNames();
 
     /// Prefer the user specified projection if any.
-    auto it = std::find_if(
-        agg_projections.begin(),
-        agg_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != agg_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        agg_projections.clear();
-        agg_projections.push_back(preferred_projection);
-    }
+    const auto all_agg_projections = agg_projections;
+    filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+    rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
 
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
 
-    /// Only select the projection where distinct columns are a subset of projection columns.
+    /// Only select a projection that can compute every column of the output header.
     for (const auto * projection : agg_projections)
     {
         /// Skip projections whose WHERE condition is not implied by the query's filter.
         if (projection->where_clause_ast)
         {
             if (!doesQueryFilterImplyProjectionWhere(dag.filter_node, projection->where_clause_ast, projection->query_ast, context))
+            {
+                candidates.reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
                 continue;
+            }
         }
 
         /// Strip implied conjuncts from the query filter (see aggregation path above).
@@ -772,11 +992,258 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             candidate.has_filter = (dag.filter_node != nullptr);
             candidates.real.emplace_back(std::move(candidate));
         }
+        else
+            candidates.reject_reasons.try_emplace(projection->name, "the projection cannot compute the DISTINCT columns of the query");
 
         dag.filter_node = original_filter;
     }
 
     return candidates;
+}
+
+/// Pseudo projection name used to indicate exact count optimization
+static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
+
+/// Pseudo projection name used to indicate aggregation from column statistics
+static constexpr const char * STATISTICS_PROJECTION_NAME = "_statistics_projection";
+
+/// Compute the states of the aggregate functions over the parts whose column statistics
+/// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
+/// with one row of aggregate function states, or an empty block if no part could be covered.
+static Block makeBlockFromStatistics(
+    const std::vector<StatisticsAggregate> & stats_aggregates,
+    ReadFromMergeTree::AnalysisResult & remaining_select_result,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & context,
+    const LoggerPtr & logger)
+{
+    std::vector<Field> folded_values(stats_aggregates.size());
+    size_t covered_parts = 0;
+    size_t covered_rows = 0;
+    size_t covered_marks = 0;
+    size_t covered_ranges = 0;
+
+    /// The columns whose estimates are needed, so that only their statistics are read.
+    NameSet required_columns;
+    for (const auto & stats_aggregate : stats_aggregates)
+        if (stats_aggregate.kind != StatisticsAggregate::Kind::Count)
+            required_columns.insert(stats_aggregate.column_name);
+
+    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
+
+    /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
+    /// consumed; `std::nullopt` for a part that is read instead.
+    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    auto part_may_use_statistics = [&](size_t part_index)
+    {
+        const auto & part_with_ranges = parts_with_ranges[part_index];
+        const auto & part = part_with_ranges.data_part;
+
+        /// A lightweight delete mask hides rows that the statistics still account for.
+        if (part->hasLightweightDelete())
+            return false;
+
+        /// Pending alter mutations (MODIFY COLUMN) and metadata mutations (RENAME/DROP COLUMN) are
+        /// applied at read time by AlterConversions, so the column data (and statistics) physically
+        /// stored in the part may not describe the column the query reads: `DROP COLUMN b, ADD COLUMN b`
+        /// must read as the new default, and a name freed by a drop can be taken over by a rename
+        /// (see test 04872).
+        if (MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(part, mutations_snapshot))
+            return false;
+
+        /// Part-level statistics can only answer a full-part read.
+        if (part->index_granularity->getRowsCountInRanges(part_with_ranges.ranges) != part->rows_count)
+            return false;
+
+        /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
+        /// it contributes nothing to the result anyway.
+        return part->rows_count != 0;
+    };
+
+    /// Returns false only if `only_from_memory` and the estimates of the part need reads from disk.
+    auto load_part_estimates = [&](size_t part_index, bool only_from_memory)
+    {
+        if (!part_may_use_statistics(part_index))
+            return true;
+
+        const auto & part = parts_with_ranges[part_index].data_part;
+        try
+        {
+            /// An empty set would mean all columns, but `count` needs no statistics.
+            if (required_columns.empty())
+                parts_estimates[part_index] = Estimates{};
+            else if (!only_from_memory)
+                parts_estimates[part_index] = part->getEstimates(required_columns);
+            else if (auto estimates = part->tryGetEstimatesFromMemory(required_columns))
+                parts_estimates[part_index] = std::move(*estimates);
+            else
+                return false;
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(logger, fmt::format(
+                "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
+        }
+        return true;
+    };
+
+    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, const Estimates & estimates)
+    {
+        const auto & part = part_with_ranges.data_part;
+
+        std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+        {
+            const auto & stats_aggregate = stats_aggregates[i];
+            if (stats_aggregate.column_name.empty())
+                continue;
+
+            /// The statistics describe the values as they are stored in the part. When the part stores
+            /// the column with a different type, a read converts the values to the current type, even
+            /// without a pending mutation in the snapshot (e.g. with `apply_mutations_on_fly = 0` or
+            /// after `KILL MUTATION`). A conversion that keeps the representation (e.g. an extended
+            /// `Enum`) leaves the values, and so the statistics, valid. A part without the column
+            /// (added after the part was written) is read, so that its `DEFAULT` is evaluated.
+            auto part_column = part->tryGetColumn(stats_aggregate.column_name);
+            const auto * metadata_column = metadata->getColumns().tryGet(stats_aggregate.column_name);
+            if (!part_column || !metadata_column
+                || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
+                return false;
+
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+                continue;
+
+            auto it = estimates.find(stats_aggregate.column_name);
+            if (it == estimates.end())
+                return false;
+
+            const auto & estimate = it->second;
+
+            /// Statistics that describe a different number of rows than the part cannot be trusted.
+            if (estimate.rows_count != part->rows_count)
+                return false;
+
+            const auto & value = stats_aggregate.isSum() ? estimate.estimated_sum
+                : stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min
+                : estimate.estimated_max;
+
+            /// Reject legacy statistics whose min/max were stored lossy (as Float64 for any column type).
+            if (!value || (!stats_aggregate.isSum() && value->getType() != stats_aggregate.expected_field_type))
+                return false;
+
+            part_values[i] = &*value;
+        }
+
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+        {
+            if (!part_values[i])
+                continue;
+
+            auto & folded = folded_values[i];
+            bool is_min = stats_aggregates[i].kind == StatisticsAggregate::Kind::Min;
+            const Field & value = *part_values[i];
+
+            /// `min`/`max` skip `NaN` and return it only when every value is `NaN`, and a part
+            /// whose values are all `NaN` reports `NaN` as both of its extremes, so fold the
+            /// per-part extrema with the same rule as `SingleValueDataFixed::setIfGreater`
+            /// and `SingleValueDataFixed::setIfSmaller` instead of the raw `Field` ordering.
+            if (folded.isNull() || isNaNField(folded))
+                folded = value;
+            else if (stats_aggregates[i].isSum())
+                applyVisitor(FieldVisitorSum(value), folded);
+            else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
+                folded = value;
+        }
+
+        ++covered_parts;
+        covered_rows += part->rows_count;
+        covered_marks += part_with_ranges.ranges.getNumberOfMarks();
+        covered_ranges += part_with_ranges.ranges.size();
+        return true;
+    };
+
+    RangesInDataParts parts_to_read;
+    auto consume_part_estimates = [&](size_t part_index)
+    {
+        auto & part_with_ranges = parts_with_ranges[part_index];
+        const auto estimates = std::move(parts_estimates[part_index]);
+        if (!estimates || !part_covered_by_statistics(part_with_ranges, *estimates))
+            parts_to_read.push_back(std::move(part_with_ranges));
+    };
+
+    /// `count` alone reads nothing, so there is nothing to parallelize then.
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts_with_ranges.size(),
+        required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
+        [&](size_t part_index) { return load_part_estimates(part_index, /* only_from_memory = */ true); },
+        [&](size_t part_index) { load_part_estimates(part_index, /* only_from_memory = */ false); },
+        consume_part_estimates);
+    parts_with_ranges = std::move(parts_to_read);
+
+    if (covered_parts == 0)
+        return {};
+
+    remaining_select_result.selected_parts = parts_with_ranges.size();
+    remaining_select_result.selected_marks -= covered_marks;
+    remaining_select_result.selected_rows -= covered_rows;
+    remaining_select_result.selected_ranges -= covered_ranges;
+    /// The original result may have exceeded_row_limits set because the full table scan was over
+    /// the limit. The reduced result will be re-checked during execution.
+    remaining_select_result.exceeded_row_limits = false;
+
+    auto & stat = remaining_select_result.projection_stats.emplace_back();
+    stat.name = STATISTICS_PROJECTION_NAME;
+    stat.selected_parts = covered_parts;
+    stat.selected_marks = covered_marks;
+    stat.selected_ranges = covered_ranges;
+    stat.selected_rows = covered_rows;
+    stat.filtered_parts = covered_parts;
+    auto message = PreformattedMessage::create(
+        "Aggregation from column statistics is applied: {} parts with {} rows are answered from statistics. Remaining parts to read: {}",
+        covered_parts, covered_rows, parts_with_ranges.size());
+    stat.description = message.text;
+    LOG_DEBUG(logger, message);
+
+    Block block;
+    for (size_t i = 0; i < stats_aggregates.size(); ++i)
+    {
+        const auto & stats_aggregate = stats_aggregates[i];
+        const auto & function = stats_aggregate.aggregate->function;
+
+        auto column = ColumnAggregateFunction::create(function);
+        Arena & arena = column->createOrGetArena();
+        auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
+        function->create(place);
+
+        if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+        {
+            AggregateFunctionCount::set(place, covered_rows);
+        }
+        else if (stats_aggregate.isSum())
+        {
+            /// Unlike for min/max, `add` cannot build the state from the value: the sum may not fit in the argument
+            /// type (the sum of an `Int16` column is an `Int64`), and the state of `avg` and `sumCount` also holds the
+            /// number of rows.
+            function->setSumAndCount(place, folded_values[i], covered_rows);
+        }
+        else
+        {
+            chassert(!folded_values[i].isNull());
+            auto value_column
+                = function->getArgumentTypes().front()->createColumnConst(1, folded_values[i])->convertToFullColumnIfConst();
+            const auto * value_column_ptr = value_column.get();
+            function->add(place, &value_column_ptr, 0, &arena);
+        }
+
+        column->insertFrom(place);
+        block.insert(ColumnWithTypeAndName(
+            std::move(column),
+            std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), stats_aggregate.aggregate->parameters),
+            stats_aggregate.aggregate->column_name));
+    }
+
+    return block;
 }
 
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
@@ -794,38 +1261,65 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
-/// Pseudo projection name used to indicate exact count optimization
-static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
-
-std::optional<String> optimizeUseAggregateProjections(
+UseProjectionsResult optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
+    UseProjectionsResult result;
     if (node.children.size() != 1)
-        return {};
+        return result;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-
     auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
-
-    /// In the event there is DISTINCT but no GROUP BY, we still want to use aggregate projections.
     if (!aggregating && !distinct)
-        return {};
-
-    if (aggregating && !aggregating->canUseProjection())
-        return {};
+        return result;
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
-        return {};
+        return result;
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
     if (!reading)
-        return {};
+        return result;
 
-    if (!canUseProjectionForReadingStep(reading))
-        return {};
+    std::vector<const ProjectionDescription *> agg_projections;
+    for (const auto & projection : reading->getStorageMetadata()->projections)
+        if (projection.type == ProjectionDescription::Type::Aggregate)
+            agg_projections.push_back(&projection);
+
+    /// a hypothetical aggregate projection of `EXPLAIN WHATIF`, the optimization weighs it but never reads it
+    auto hypothetical = reading->getHypotheticalProjection();
+    if (hypothetical && hypothetical->projection.type != ProjectionDescription::Type::Aggregate)
+        hypothetical = nullptr;
+    const ProjectionDescription * hypothetical_projection = hypothetical ? &hypothetical->projection : nullptr;
+    if (hypothetical)
+    {
+        agg_projections.push_back(hypothetical_projection);
+        hypothetical->outcome = {};
+        hypothetical->outcome.weighed = true;
+    }
+
+    auto reject_all = [&](const String & reason)
+    {
+        rejectProjections(result.projection_reject_reasons, agg_projections, {}, reason);
+        if (hypothetical)
+        {
+            hypothetical->outcome.rejected_for_query = true;
+            recordHypotheticalOutcome(*hypothetical, result, nullptr, false);
+        }
+        return std::move(result);
+    };
+
+    if (aggregating && !aggregating->canUseProjection())
+        return reject_all("this kind of aggregation cannot be served by a projection");
+
+    /// A merge-only step already consumes aggregate states; requesting projection merge mode for it again makes no sense.
+    if (aggregating && aggregating->getParams().only_merge)
+        return reject_all("the aggregation only merges states");
+
+    if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
+        return reject_all(can_use.error());
 
     /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
     /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
@@ -835,21 +1329,31 @@ std::optional<String> optimizeUseAggregateProjections(
     fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
     {
         if (reading->isParallelReplicasLocalPlanForFollower())
-            return {};
+            return reject_all("skipped on a parallel replicas follower by a failpoint");
     });
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
     const size_t max_set_size_for_match = optimization_settings.max_set_size_for_projection_match;
     auto candidates
-        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match)
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match, agg_projections)
                     : getAggregateProjectionCandidates(
                           node,
                           *aggregating,
                           *reading,
                           max_added_blocks,
                           optimization_settings.optimize_use_implicit_projections,
-                          max_set_size_for_match));
+                          max_set_size_for_match,
+                          agg_projections));
+
+    result.projection_reject_reasons = std::move(candidates.reject_reasons);
+
+    /// the matching rejects a projection for the query, whatever the parts
+    if (hypothetical && result.projection_reject_reasons.contains(hypothetical_projection->name))
+    {
+        hypothetical->outcome.rejected_for_query = true;
+        recordHypotheticalOutcome(*hypothetical, result, nullptr, false);
+    }
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -859,11 +1363,37 @@ std::optional<String> optimizeUseAggregateProjections(
 
     /// Stores row count from exact ranges of parts.
     size_t exact_count = 0;
+    /// Stores one row of aggregate function states computed from column statistics.
+    Block statistics_block;
     ReadFromMergeTree::AnalysisResultPtr parent_reading_select_result;
     ReadFromMergeTree::AnalysisResultPtr inexact_ranges_select_result;
     if (candidates.minmax_projection)
     {
         best_candidate = &candidates.minmax_projection->candidate;
+        if (hypothetical)
+        {
+            hypothetical->outcome.rejected_for_query = true;
+            hypothetical->outcome.reason = "the implicit projection of min, max and count serves the query";
+        }
+    }
+    else if (!candidates.statistics_aggregates.empty())
+    {
+        parent_reading_select_result = reading->getAnalyzedResult();
+        if (!parent_reading_select_result)
+            parent_reading_select_result = reading->selectRangesToRead(false);
+
+        if (parent_reading_select_result->parts_with_ranges.empty())
+            return reject_all("the read selects no parts");
+
+        /// Copy parent analysis result to isolate modifications. This result will store the
+        /// remaining parts (without statistics), to be used for normal reading.
+        inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+        statistics_block = makeBlockFromStatistics(
+            candidates.statistics_aggregates, *inexact_ranges_select_result,
+            reading->getMutationsSnapshot(), metadata, context, logger);
+
+        if (statistics_block.empty())
+            return result;
     }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
     {
@@ -871,14 +1401,16 @@ std::optional<String> optimizeUseAggregateProjections(
         bool find_exact_ranges = !candidates.only_count_column.empty();
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
+        if (hypothetical)
+            hypothetical->outcome.parent_read = parent_reading_select_result->parts_with_ranges;
 
-        bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+        const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-        if (!force_optimize_projection)
+        if (!relax_projection_checks)
         {
-            /// /// Nothing to read. Ignore projections.
+            /// Nothing to read. Ignore projections.
             if (parent_reading_select_result->parts_with_ranges.empty())
-                return {};
+                return reject_all("the read selects no parts");
         }
 
         /// Try to identify ranges that can be exactly counted using primary key analysis.
@@ -888,6 +1420,7 @@ std::optional<String> optimizeUseAggregateProjections(
             /// store the remaining inexact ranges (not covered by exact analysis), to be used for for normal reading
             /// and count calculation.
             inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+            inexact_ranges_select_result->exact_ranges_excluded = true;
             auto & parent_parts_with_ranges = inexact_ranges_select_result->parts_with_ranges;
             size_t exact_ranges_count = 0;
             size_t exact_ranges_parts = 0;
@@ -954,13 +1487,14 @@ std::optional<String> optimizeUseAggregateProjections(
             stat.filtered_parts
                 = std::erase_if(parent_parts_with_ranges, [&](const auto & part_with_ranges) { return part_with_ranges.ranges.empty(); });
 
-            stat.description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Exact count optimization is applied: {} ranges with exact row count {}. Filtered parts: {}",
                 stat.selected_ranges,
                 stat.selected_rows,
                 stat.filtered_parts);
+            stat.description = message.text;
 
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, message);
 
             inexact_ranges_select_result->selected_parts = parent_parts_with_ranges.size();
             /// The original result may have exceeded_row_limits set because the full table scan
@@ -978,7 +1512,7 @@ std::optional<String> optimizeUseAggregateProjections(
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
 
         /// If there are remaining parts to read, attempt to select the best candidate.
-        if (!parent_reading_select_result->parts_with_ranges.empty() || force_optimize_projection)
+        if (!parent_reading_select_result->parts_with_ranges.empty() || relax_projection_checks)
         {
             for (auto & candidate : candidates.real)
             {
@@ -1004,16 +1538,23 @@ std::optional<String> optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
+                    reading->getMutationsSnapshot(),
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,
                     *parent_reading_select_result,
                     projection_query_info,
                     reading->getTopKFilterInfo(),
-                    context);
+                    reading->isQueryConditionCacheAllowed(),
+                    reading->isTopKPrewhereQueryConditionCacheAllowed(),
+                    context,
+                    candidate.projection == hypothetical_projection ? hypothetical.get() : nullptr);
 
                 if (!analyzed)
+                {
+                    result.projection_reject_reasons.try_emplace(candidate.projection->name, "no selected part has the projection materialized, or its analysis exceeded the read limits");
                     continue;
+                }
 
                 auto & stat = parent_reading_select_result->projection_stats.emplace_back();
                 stat.name = candidate.projection->name;
@@ -1033,15 +1574,19 @@ std::optional<String> optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                if (candidate.projection == hypothetical_projection)
+                    hypothetical->outcome.forced = relax_projection_checks && candidate.sum_marks > parent_reading_marks;
+                if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
                 {
-                    stat.description = fmt::format(
+                    auto message = PreformattedMessage::create(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                         candidate.projection->name,
                         candidate.sum_marks,
                         parent_reading_marks);
+                    stat.description = message.text;
 
-                    LOG_DEBUG(logger, "{}", stat.description);
+                    result.projection_reject_reasons.try_emplace(candidate.projection->name, stat.description);
+                    LOG_DEBUG(logger, message);
                     continue;
                 }
 
@@ -1052,11 +1597,15 @@ std::optional<String> optimizeUseAggregateProjections(
 
         /// No suitable projection found, and exact count optimization is not used.
         if (!best_candidate && exact_count == 0)
-            return {};
+        {
+            if (hypothetical)
+                recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates.real, hypothetical_projection), false);
+            return result;
+        }
     }
     else
     {
-        return {};
+        return result;
     }
 
     /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging
@@ -1070,24 +1619,36 @@ std::optional<String> optimizeUseAggregateProjections(
             {
                 chassert(candidate.stat);
                 chassert(candidate.stat->description.empty());
-                candidate.stat->description = fmt::format(
+                auto message = PreformattedMessage::create(
                     "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
                     candidate.projection->name,
                     candidate.sum_marks,
                     parent_reading_select_result->selected_marks);
-                LOG_DEBUG(logger, "{}", candidate.stat->description);
+                candidate.stat->description = message.text;
+                LOG_DEBUG(logger, message);
             }
             else if (candidate.stat && candidate.stat->description.empty())
             {
-                candidate.stat->description = fmt::format(
+                auto message = PreformattedMessage::create(
                     "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
                     candidate.projection->name,
                     candidate.sum_marks,
                     best_candidate->projection->name,
                     best_candidate->sum_marks);
-                LOG_DEBUG(logger, "{}", candidate.stat->description);
+                candidate.stat->description = message.text;
+                result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
+                LOG_DEBUG(logger, message);
             }
         }
+    }
+
+    if (hypothetical)
+    {
+        const auto * own = findCandidate(candidates.real, hypothetical_projection);
+        recordHypotheticalOutcome(*hypothetical, result, own, own == best_candidate);
+        /// never read a hypothetical projection
+        if (best_candidate && best_candidate->projection == hypothetical_projection)
+            return result;
     }
 
     QueryPlanStepPtr projection_reading;
@@ -1120,6 +1681,28 @@ std::optional<String> optimizeUseAggregateProjections(
         has_parent_parts = false;
         short_circuited_with_prepared_source = true;
     }
+    else if (!statistics_block.empty())
+    {
+        /// Aggregation from column statistics: like the exact count optimization
+        /// below, the block with aggregate function states is a prepared source, and the parts
+        /// without statistics (if any) are read normally.
+        /// When parallel replicas is enabled, only the initiator should read the block to avoid data duplication.
+        chassert(inexact_ranges_select_result);
+
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(statistics_block))));
+        else
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(statistics_block.cloneEmpty())));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+
+        selected_projection_name = STATISTICS_PROJECTION_NAME;
+        has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
+        if (has_parent_parts)
+            reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+            short_circuited_with_prepared_source = true;
+    }
     else if (best_candidate == nullptr)
     {
         /// Exact count optimization.
@@ -1128,17 +1711,8 @@ std::optional<String> optimizeUseAggregateProjections(
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
-        std::vector<char> state(agg_count->sizeOfData());
-        AggregateDataPtr place = state.data();
-        agg_count->create(place);
-        SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));
-        AggregateFunctionCount::set(place, exact_count);
-
-        auto column = ColumnAggregateFunction::create(agg_count);
-        column->insertFrom(place);
-
         Block block_with_count{
-            {std::move(column),
+            {createSingleCountStateColumn(agg_count, exact_count),
              std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
              candidates.only_count_column}};
 
@@ -1235,12 +1809,15 @@ std::optional<String> optimizeUseAggregateProjections(
 
         if (candidates.has_filter && best_candidate->has_filter)
         {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
-            aggregate_projection_node->step = std::make_unique<FilterStep>(
+            /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
+            const String result_name = best_candidate->dag.getOutputs().front()->result_name;
+            auto filter_step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
                 true);
+            filter_step->setOptimizeConstantColumnsAfterFilter(candidates.optimize_constant_columns_after_filter);
+            aggregate_projection_node->step = std::move(filter_step);
         }
         else
             aggregate_projection_node->step
@@ -1315,7 +1892,8 @@ std::optional<String> optimizeUseAggregateProjections(
     else
         node.children.front() = source_node;
 
-    return selected_projection_name;
+    result.applied_projection = std::move(selected_projection_name);
+    return result;
 }
 
 }

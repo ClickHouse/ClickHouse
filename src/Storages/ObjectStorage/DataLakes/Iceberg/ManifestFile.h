@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <Common/Logger.h>
 #include <Core/Field.h>
 #include <Core/Range.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -11,10 +12,16 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
 #include <boost/noncopyable.hpp>
+
+namespace DB
+{
+struct FormatSettings;
+}
 
 namespace DB::Iceberg
 {
@@ -49,6 +56,7 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
+    std::optional<Int64> nans_count;
 };
 
 struct PartitionSpecsEntry
@@ -56,13 +64,32 @@ struct PartitionSpecsEntry
     Int32 source_id;
     String transform_name;
     String partition_name;
+    Int32 tuple_index;
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
+struct PartitionFieldSummary
+{
+    bool contains_null = false;
+    bool contains_nan = false;
+    std::optional<String> lower_bound;
+    std::optional<String> upper_bound;
+};
+
+using PartitionFieldSummaries = std::vector<PartitionFieldSummary>;
+
+/// The bytes of a manifest file, parsed by the first `getDeserializer` call.
 struct ManifestFileCacheableInfo
 {
-    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
-    size_t file_bytes_size;
+    struct State;
+
+    static ManifestFileCacheableInfo fromBytes(String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings);
+
+    /// Thread-safe. Concurrent callers wait for one parse; if it throws, the next caller parses again.
+    std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
+
+    std::shared_ptr<State> state;
+    size_t file_bytes_size = 0;
 };
 
 /// Description of Data file in manifest file
@@ -78,6 +105,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
     std::optional<Int64> parsed_sequence_number;
     std::optional<Int64> parsed_file_sequence_number;
     std::optional<Int64> parsed_snapshot_id;
+    std::optional<UInt64> parsed_first_row_id;
 
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
@@ -86,6 +114,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
     String file_format;
     std::optional<IcebergPathFromMetadata> lower_reference_data_file_path; // For position delete files only.
     std::optional<IcebergPathFromMetadata> upper_reference_data_file_path; // For position delete files only.
+    std::optional<IcebergPathFromMetadata> referenced_data_file_path; // Required for deletion vectors.
+    std::optional<Int64> content_offset; // Required for deletion vectors.
+    std::optional<Int64> content_size_in_bytes; // Required for deletion vectors.
     std::optional<std::vector<Int32>> equality_ids;
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
@@ -95,6 +126,10 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
+    std::optional<std::vector<Int64>> split_offsets;
+
+    bool isDeletionVector() const;
+
     ParsedManifestFileEntry(
         FileContentType content_type_,
         IcebergPathFromMetadata file_path_key_,
@@ -103,16 +138,21 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::optional<Int64> written_sequence_number_,
         std::optional<Int64> written_file_sequence_number_,
         std::optional<Int64> written_snapshot_id_,
+        std::optional<UInt64> written_first_row_id_,
         DB::Row partition_key_value_,
         std::unordered_map<Int32, ColumnInfo> columns_infos_,
         std::unordered_map<Int32, std::pair<Field, Field>> value_bounds_,
         String file_format_,
         std::optional<IcebergPathFromMetadata> lower_reference_data_file_path_,
         std::optional<IcebergPathFromMetadata> upper_reference_data_file_path_,
+        std::optional<IcebergPathFromMetadata> referenced_data_file_path_,
+        std::optional<Int64> content_offset_,
+        std::optional<Int64> content_size_in_bytes_,
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_,
         Int64 record_count_,
-        Int64 file_size_in_bytes_)
+        Int64 file_size_in_bytes_,
+        std::optional<std::vector<Int64>> split_offsets_ = std::nullopt)
         : content_type(content_type_)
         , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
@@ -120,16 +160,21 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , parsed_sequence_number(written_sequence_number_)
         , parsed_file_sequence_number(written_file_sequence_number_)
         , parsed_snapshot_id(written_snapshot_id_)
+        , parsed_first_row_id(written_first_row_id_)
         , partition_key_value(std::move(partition_key_value_))
         , columns_infos(std::move(columns_infos_))
         , value_bounds(std::move(value_bounds_))
         , file_format(std::move(file_format_))
         , lower_reference_data_file_path(std::move(lower_reference_data_file_path_))
         , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
+        , referenced_data_file_path(std::move(referenced_data_file_path_))
+        , content_offset(content_offset_)
+        , content_size_in_bytes(content_size_in_bytes_)
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
         , record_count(record_count_)
         , file_size_in_bytes(file_size_in_bytes_)
+        , split_offsets(std::move(split_offsets_))
     {
     }
 };
@@ -143,6 +188,14 @@ struct ProcessedManifestFileEntry
     Int64 sequence_number;
     Int32 resolved_schema_id;
     String manifest_file_path;
+    std::optional<UInt64> first_row_id;
+
+    /// `parsed_entry->partition_key_value` as it is stored in the manifest, brought to the ClickHouse
+    /// types of the partition columns (see `normalizePartitionKeyValue`). A manifest may keep a decimal
+    /// as raw `fixed` bytes, and manifests written by old ClickHouse versions keep a `DateTime64` as a
+    /// plain `long`, so the raw tuple of two manifests of the same table can be incomparable. Everything
+    /// that compares, groups or shows partition values has to use this one.
+    DB::Row normalized_partition_key_value;
 
     String dumpDeletesMatchingInfo() const;
 };
@@ -153,6 +206,13 @@ bool operator<(const PartitionSpecification & lhs, const PartitionSpecification 
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
+
+/// Returns the delete files that apply to the data file by partition and sequence number; `deletes_objects` must be sorted.
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger);
 
 }
 

@@ -19,6 +19,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 
+#include <algorithm>
+#include <limits>
 #include <unordered_set>
 
 
@@ -29,6 +31,30 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int ABORTED;
+}
+
+namespace
+{
+
+/// Delays are stored and waited on in microseconds, but `condition_variable::wait_for` widens its
+/// argument to nanoseconds internally, so only microsecond counts below this bound are usable
+/// (~292 years). Deadlines are bounded by the same value even though `Poco::Timestamp` could hold
+/// ~1000x more, so that a stored deadline always stays waitable.
+constexpr Poco::Timestamp::TimeDiff max_delay_microseconds = std::numeric_limits<Poco::Timestamp::TimeDiff>::max() / 1000;
+
+Poco::Timestamp::TimeDiff delayToMicroseconds(size_t milliseconds)
+{
+    if (milliseconds > static_cast<size_t>(max_delay_microseconds / 1000))
+        return max_delay_microseconds;
+    return static_cast<Poco::Timestamp::TimeDiff>(milliseconds) * 1000;
+}
+
+size_t maxParallelTasksPerType(size_t pool_size, double ratio)
+{
+    size_t limit = static_cast<size_t>(static_cast<double>(pool_size) * ratio);
+    return limit ? limit : pool_size;
+}
+
 }
 
 ///
@@ -277,12 +303,12 @@ Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback(
 /// BackgroundSchedulePool
 ///
 
-BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t initial_size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
+BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t initial_size, double max_parallel_tasks_per_type_ratio, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
 {
-    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, initial_size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
+    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, initial_size, max_parallel_tasks_per_type_ratio, tasks_metric, size_metric, thread_name));
 }
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, double max_parallel_tasks_per_type_ratio_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
     : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
     , tasks_metric(tasks_metric_)
     /// The metric reports the configured cap (so `system.server_settings` displays
@@ -290,7 +316,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
     /// not the number of currently spawned workers — that is tracked separately by `threads.size()`.
     , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
-    , max_parallel_tasks_per_type(max_parallel_tasks_per_type_ ? max_parallel_tasks_per_type_ : size_)
+    , max_parallel_tasks_per_type_ratio(max_parallel_tasks_per_type_ratio_)
 {
     const size_t initial_size = std::min(size_, initial_size_);
     LOG_INFO(logger, "Create BackgroundSchedulePool with {} initial threads (grows lazily up to {})", initial_size, size_);
@@ -300,6 +326,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
         {
             std::lock_guard tasks_lock(tasks_mutex);
             max_size = size_;
+            max_parallel_tasks_per_type = maxParallelTasksPerType(size_, max_parallel_tasks_per_type_ratio);
             threads.reserve(size_);
             for (size_t i = 0; i < initial_size; ++i)
                 spawnThreadLocked();
@@ -309,7 +336,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
     }
     catch (...)
     {
-        LOG_FATAL(
+        /// `~ThreadFromGlobalPoolImpl` aborts on a still-joinable thread, so `join()` must run
+        /// before the throw to tear down already-spawned workers.
+        LOG_ERROR(
             logger,
             "Couldn't get {} threads from global thread pool: {}",
             initial_size,
@@ -317,7 +346,8 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
                 ? "Not enough threads. Please make sure max_thread_pool_size is considerably "
                   "bigger than background_schedule_pool_size."
                 : getCurrentExceptionMessage(/* with_stacktrace */ true));
-        abort();
+        join();
+        throw;
     }
 }
 
@@ -370,8 +400,31 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
         return;
     }
 
+    /// Never lowered: a group may already run more tasks than a lower limit allows.
+    const size_t new_max_parallel_tasks_per_type = maxParallelTasksPerType(new_threads_count, max_parallel_tasks_per_type_ratio);
+    const bool raise_limit = new_max_parallel_tasks_per_type > max_parallel_tasks_per_type;
+    if (raise_limit)
+        runnable_task_types.reserve(task_groups.size());
+
     max_size = new_threads_count;
     size_metric.changeTo(new_threads_count);
+
+    if (raise_limit)
+    {
+        max_parallel_tasks_per_type = new_max_parallel_tasks_per_type;
+
+        /// Groups paused at the old limit are runnable under the new one.
+        for (auto & [task_type, group] : task_groups)
+        {
+            if (!group.runnable_list_pos && !group.tasks.empty())
+            {
+                group.runnable_list_pos = runnable_task_types.size();
+                runnable_task_types.push_back(task_type);
+            }
+        }
+        /// Wake parked workers: the spawn below counts them as available.
+        tasks_cond_var.notify_all();
+    }
 
     /// Consume already-queued demand with the freshly-raised cap. A saturated pool has no parked
     /// workers to wake and may receive no further scheduleTask call for a while, so without spawning
@@ -421,8 +474,13 @@ void BackgroundSchedulePool::join()
         {
             Stopwatch watch;
             LOG_TRACE(logger, "Waiting for threads to finish.");
-            delayed_thread->join();
-            delayed_thread.reset();
+            /// delayed_thread may be null when join() is called from the constructor's failure
+            /// path before the delayed thread was constructed (a worker spawn threw first).
+            if (delayed_thread)
+            {
+                delayed_thread->join();
+                delayed_thread.reset();
+            }
             for (auto & thread : threads_to_join)
                 thread.join();
             LOG_TRACE(logger, "Threads finished in {}ms.", watch.elapsedMilliseconds());
@@ -451,14 +509,8 @@ BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const Stor
 template<typename T>
 UInt64 getFunctionID(const std::function<T> & func)
 {
-    /// Get a pointer to the task function and use it as an identifier of the task type
-    auto * func_ptr = func.template target<T *>();
-    if (func_ptr)
-        return reinterpret_cast<UInt64>(func_ptr);
-
-    /// Lambdas have weird types, and we cannot get a pointer. Let's use has of the lambda type name,
-    /// which is usually smth like "ZN2DB22BackgroundJobsAssignee5startEvE3" or "DB::BackgroundJobsAssignee::start()::$_0"
-    /// And it's a good identifier
+    /// The hash of the callable's type name identifies the task type without using an address, which is logged.
+    /// For a lambda it is usually smth like "ZN2DB22BackgroundJobsAssignee5startEvE3" or "DB::BackgroundJobsAssignee::start()::$_0".
     SipHash hash;
     hash.update(func.target_type().name());
     return hash.get64();
@@ -468,7 +520,6 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
 {
     {
         std::lock_guard tasks_lock(tasks_mutex);
-        /// Get a pointer to the task function and use it as an identifier of the task type
         UInt64 task_type = getFunctionID(task_info.function);
         auto & group = task_groups[task_type];
         auto task_ptr = task_info.shared_from_this();
@@ -535,10 +586,12 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
     {
         std::lock_guard lock(delayed_tasks_mutex);
 
+        /// Insert before erasing the old entry: if the insertion throws, the task keeps its old entry and `task.iterator` stays valid.
+        auto it = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
         if (task.delayed)
             delayed_tasks.erase(task.iterator);
 
-        task.iterator = delayed_tasks.emplace(current_time + (ms * 1000), task.shared_from_this());
+        task.iterator = it;
         task.delayed = true;
     }
 
@@ -669,7 +722,10 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (min_time > current_time)
                 {
-                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
+                    /// Deadlines are wall-clock, so the remaining time can exceed the bound even for a
+                    /// bounded delay. An early wake is harmless: both times are recomputed below.
+                    const auto wait_us = std::min(min_time - current_time, max_delay_microseconds);
+                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(wait_us));
                     if (shutdown)
                         break;
                     continue;

@@ -2,6 +2,7 @@
 
 #if USE_HIVE
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/core.h>
@@ -197,7 +198,7 @@ public:
         }
     }
 
-    FormatSettings updateFormatSettings(const std::unordered_set<int> & skip_splits)
+    FormatSettings updateFormatSettings(const UnorderedSetWithMemoryTracking<int> & skip_splits)
     {
         auto updated = format_settings;
         if (format == "HiveText")
@@ -299,6 +300,7 @@ public:
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
+                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
@@ -609,6 +611,10 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
             "Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size());
 
+    if (!partition_key_expr)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+            "Hive metastore returned a partition for table {}.{}, but the table has no partition key", hive_database, hive_table);
+
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
     for (size_t i = 0; i < partition.values.size(); ++i)
@@ -748,7 +754,7 @@ HiveFileWithSkipSplits StorageHive::getHiveFileIfNeeded(
     /// This set depends on the query filter, so it is kept query-local rather than stored on the shared
     /// cached file: an unfiltered read leaves it empty (read all splits), and concurrent queries with
     /// different filters do not interfere with each other's pruning.
-    std::unordered_set<int> skip_splits;
+    UnorderedSetWithMemoryTracking<int> skip_splits;
 
     if (filter_actions_dag && prune_level >= PruneLevel::File)
     {
@@ -1146,6 +1152,7 @@ void registerStorageHive(StorageFactory & factory)
                 std::move(hive_settings),
                 args.getContext());
         },
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1179,7 +1186,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table')
 PARTITION BY expr
 ```
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the original Hive table structure:
 - Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
@@ -1195,25 +1202,6 @@ The table structure can differ from the original Hive table structure:
 - `table` — Remote table name.
 
 ## Usage example {#usage-example}
-
-### How to use local cache for HDFS filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
-
-We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
-
-Before using cache, add it to `config.xml`
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-- enable: ClickHouse will maintain local cache for remote filesystem(HDFS) after startup if true.
-- root_dir: Required. The root directory to store local cache files for remote filesystem.
-- limit_size: Required. The maximum size(in bytes) of local cache files.
-- bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
 
 ### Query Hive table with ORC input format  {#query-hive-table-with-orc-input-format}
 

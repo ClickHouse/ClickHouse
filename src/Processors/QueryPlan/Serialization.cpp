@@ -8,11 +8,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 #include <stack>
 
@@ -24,7 +27,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/// The serialized plan may come from an untrusted client connection, so every count read from the
+/// wire must be validated before it sizes an allocation.
+static constexpr size_t MAX_QUERY_PLAN_STEP_CHILDREN = 1'000'000;
 
 static void serializeHeader(const Block & header, WriteBuffer & out)
 {
@@ -39,10 +47,24 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
     }
 }
 
+static bool haveSameSerializedHeader(const Block & lhs, const Block & rhs)
+{
+    WriteBufferFromOwnString lhs_buf;
+    WriteBufferFromOwnString rhs_buf;
+    serializeHeader(lhs, lhs_buf);
+    serializeHeader(rhs, rhs_buf);
+    return lhs_buf.stringView() == rhs_buf.stringView();
+}
+
 static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 {
     UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
+
+    if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Suspiciously many columns ({}) in the header of a serialized query plan step (maximum: {})",
+            num_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 
     ColumnsWithTypeAndName columns(num_columns);
 
@@ -59,17 +81,31 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
-/// Nothing is here for now
-struct QueryPlan::SerializationFlags
+namespace
 {
-    /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
-    UInt64 version = 0;
-    bool skip_data = false;
-};
+
+void checkSupportedVersion(UInt64 version)
+{
+    if (version < DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan serialization version {} is not supported. The oldest supported version is {}",
+            version, DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION);
+}
+
+}
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    checkSupportedVersion(version);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a query plan with execution limits for serialization version {}; version {} or newer is required",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -77,9 +113,36 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     serialize(out, flags);
 }
 
+void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
+{
+    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    checkSupportedVersion(version);
+
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS && (max_threads || concurrency_control))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a query plan with execution limits for serialization version {}; version {} or newer is required",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+
+    writeVarUInt(version, out);
+
+    SerializationFlags flags;
+    flags.version = version;
+    flags.sets_must_be_ready = true;
+    flags.sets_transfer_limits = sets_transfer_limits;
+    serialize(out, flags);
+}
+
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
+
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        writeVarUInt(max_threads, out);
+        writeBinary(concurrency_control, out);
+    }
 
     SerializedSetsRegistry registry;
 
@@ -117,7 +180,19 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         stack.pop();
 
-        writeStringBinary(node->step->getSerializationName(), out);
+        auto step_name = node->step->getSerializationName();
+        writeStringBinary(step_name, out);
+
+        /// The per-step version selects how this step writes its own payload in `serialize` below; it is
+        /// chosen for the plan version this stream is serialized at. The step settings written further
+        /// down are gated by the plan version itself, not by the per-step version.
+        UInt64 step_version = 0;
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
+        {
+            step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, flags.version);
+            writeVarUInt(step_version, out);
+        }
+
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
@@ -126,12 +201,13 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
             serializeHeader({}, out);
 
         QueryPlanSerializationSettings settings;
-        node->step->serializeSettings(settings);
+        node->step->serializeSettings(settings, flags.version);
 
-        settings.writeChangedBinary(out);
+        settings.write(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
+        ctx.step_version = step_version;
         node->step->serialize(ctx);
     }
 
@@ -171,6 +247,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    checkSupportedVersion(version);
 
     SerializationFlags flags{.version = version, .skip_data = skip_data};
     return deserialize(in, context, flags, max_type_complexity);
@@ -178,6 +255,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
 {
+    /// It is called recursively for plans of sets from subqueries.
+    checkStackSize();
+
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
     DeserializedSetsRegistry sets_registry;
@@ -187,12 +267,18 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     {
         NodePtr & to_fill;
         size_t next_child = 0;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
     std::stack<Frame> stack;
 
     QueryPlan plan;
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        readVarUInt(plan.max_threads, in);
+        readBinary(plan.concurrency_control, in);
+    }
+
     stack.push(Frame{.to_fill = plan.root});
 
     while (!stack.empty())
@@ -202,6 +288,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         {
             UInt64 num_children = 0;
             readVarUInt(num_children, in);
+            if (num_children > MAX_QUERY_PLAN_STEP_CHILDREN)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Suspiciously many children ({}) of a serialized query plan step (maximum: {})",
+                    num_children, MAX_QUERY_PLAN_STEP_CHILDREN);
             frame.children.resize(num_children);
         }
 
@@ -213,14 +303,22 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         }
 
         std::string step_name;
-        std::string step_description;
         readStringBinary(step_name, in);
+
+        UInt64 step_version = 0;
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
+        {
+            readVarUInt(step_version, in);
+            step_registry.checkVersionReadable(step_name, step_version);
+        }
+
+        std::string step_description;
         readStringBinary(step_description, in);
 
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
-        settings.readBinary(in);
+        settings.read(in);
 
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
@@ -228,20 +326,27 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             input_headers.push_back(child->step->getOutputHeader());
 
         IQueryPlanStep::Deserialization ctx{
-            in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
+            in, sets_registry, {}, context, input_headers, output_header, settings,
+            max_type_complexity, flags.version, step_version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
         {
-            assertCompatibleHeader(
-                *step->getOutputHeader(), *output_header, fmt::format("deserialization of query plan {} step", step_name));
+            /// Headers encoding to the same bytes are indistinguishable to this serializer, so their
+            /// difference cannot have come off the wire. The encoding omits the aggregate state variant.
+            if (!isCompatibleHeader(*step->getOutputHeader(), *output_header)
+                && !haveSameSerializedHeader(*step->getOutputHeader(), *output_header))
+            {
+                assertCompatibleHeader(
+                    *step->getOutputHeader(), *output_header, fmt::format("deserialization of query plan {} step", step_name));
+            }
         }
         else if (output_header->columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
                 step_name, output_header->dumpStructure());
 
-        auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
+        auto & node = plan.nodes.emplace_back(std::move(step), std::vector<Node *>(frame.children.begin(), frame.children.end()));
         frame.to_fill = &node;
 
         for (const auto & storage : ctx.storage_holders)

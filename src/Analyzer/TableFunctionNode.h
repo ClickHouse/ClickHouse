@@ -101,6 +101,9 @@ public:
         return storage;
     }
 
+    /// True for a parameterized view call resolved into its `StorageView` (no real table function behind it)
+    bool isParameterizedView() const;
+
     /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_);
 
@@ -109,6 +112,10 @@ public:
 
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
+
+    /// See `ITableFunction::getParallelReplicasReadID`. Resolved once and stored, rather than asked of
+    /// `table_function`, because a cloned node does not carry the `ITableFunction` object.
+    const std::optional<String> & getParallelReplicasReadID() const { return parallel_replicas_read_id; }
 
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
@@ -145,11 +152,8 @@ public:
         settings_changes = std::move(settings_changes_);
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -172,6 +176,7 @@ private:
     TableFunctionPtr table_function;
     StoragePtr storage;
     StorageID storage_id;
+    std::optional<String> parallel_replicas_read_id;
     StorageSnapshotPtr storage_snapshot;
     VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;

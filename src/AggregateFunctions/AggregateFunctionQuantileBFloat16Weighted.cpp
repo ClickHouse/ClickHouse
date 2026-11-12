@@ -49,7 +49,7 @@ void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Like [`quantileBFloat16`](/sql-reference/aggregate-functions/reference/quantilebfloat16) but takes into account the weight of each sequence member.
+Like [`quantileBFloat16`](/reference/functions/aggregate-functions/quantileBFloat16) but takes into account the weight of each sequence member.
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers.
 
@@ -80,7 +80,7 @@ SELECT quantileBFloat16Weighted(0.75)(a, w), quantileBFloat16Weighted(0.75)(b, w
         )",
         R"(
 ┌─quantileBFloat16Weighted(0.75)(a, w)─┬─quantileBFloat16Weighted(0.75)(b, w)─┐
-│                                    3 │                                    1 │
+│                                    4 │                                    1 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
         )"
     }
@@ -89,10 +89,10 @@ SELECT quantileBFloat16Weighted(0.75)(a, w), quantileBFloat16Weighted(0.75)(b, w
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>, documentation});
+    factory.registerFunction(NameQuantileBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
-Like [`quantilesBFloat16`](/sql-reference/aggregate-functions/reference/quantilesBFloat16) but takes into account the weight of each value.
+Like [`quantilesBFloat16`](/reference/functions/aggregate-functions/quantilesBFloat16) but takes into account the weight of each value.
 
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers at different levels simultaneously, in a single pass.
     )";
@@ -124,7 +124,7 @@ SELECT quantilesBFloat16Weighted(0.25, 0.5, 0.75)(number, 1) FROM numbers(10)
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>, documentation_quantiles});
+    factory.registerFunction(NameQuantilesBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>, documentation_quantiles, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianBFloat16Weighted", NameQuantileBFloat16Weighted::name);

@@ -6,6 +6,7 @@
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Core/Defines.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -14,7 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SKIP_UNKNOWN_FIELD;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/// Bound number of columns in header so user cannot reserve() arbitrarily large amount of memory
+static constexpr auto TOO_MANY_COLUMNS_MESSAGE = "Suspiciously many columns in RowBinary header: {}";
 
 template <bool with_defaults>
 BinaryRowInputFormat<with_defaults>::BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
@@ -72,9 +77,9 @@ BinaryFormatReader<with_defaults>::BinaryFormatReader(ReadBuffer & in_, const Fo
 }
 
 template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
+VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readHeaderRow()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     String field;
     for (size_t i = 0; i < read_columns; ++i)
     {
@@ -85,17 +90,19 @@ std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
 }
 
 template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readNames()
+VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
 {
     readVarUInt(read_columns, *in);
+    if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, TOO_MANY_COLUMNS_MESSAGE, read_columns);
     return readHeaderRow();
 }
 
 template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
+VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
 {
     read_data_types.reserve(read_columns);
-    Names type_names;
+    VectorWithMemoryTracking<String> type_names;
     if (format_settings.binary.decode_types_in_binary_format)
     {
         type_names.reserve(read_columns);
@@ -116,7 +123,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 }
 
 template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
+bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
 {
     return readFieldImpl(column, serialization);
 }
@@ -150,6 +157,8 @@ template <bool with_defaults>
 void BinaryFormatReader<with_defaults>::skipNames()
 {
     readVarUInt(read_columns, *in);
+    if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, TOO_MANY_COLUMNS_MESSAGE, read_columns);
     skipHeaderRow();
 }
 
@@ -160,6 +169,8 @@ void BinaryFormatReader<with_defaults>::skipTypes()
     {
         /// It's possible only when with_names = false and with_types = true
         readVarUInt(read_columns, *in);
+        if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, TOO_MANY_COLUMNS_MESSAGE, read_columns);
     }
 
     skipHeaderRow();
@@ -419,7 +430,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 
 Stored as `Int32` (four bytes) representing the number of days ***before or after*** `1970-01-01`.
 
-Supported range of values: `[1900-01-01, 2299-12-31]`.
+Supported range of values: `[0000-01-01, 9999-12-31]`.
 
 Sample underlying values for `Date32`:
 
@@ -512,7 +523,7 @@ Stored as `Int32` representing a time value in seconds. Negative values are vali
 Supported range of values: `[-999:59:59, 999:59:59]` (i.e., `[-3599999, 3599999]` seconds).
 
 <Note>
-At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
+`Time` and `Time64` are enabled by default since version 25.12. On versions 25.6 to 25.11, set `enable_time_time64_type = 1` to use them.
 </Note>
 
 Sample underlying values for `Time`:
@@ -541,7 +552,7 @@ Where `precision` is an integer from `0` to `9`. Common values: `3` (millisecond
 Supported range of values: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
 
 <Note>
-At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
+`Time` and `Time64` are enabled by default since version 25.12. On versions 25.6 to 25.11, set `enable_time_time64_type = 1` to use them.
 </Note>
 
 The underlying `Int64` value represents fractional seconds scaled by `10^precision`.
@@ -1433,6 +1444,8 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 <Note>
 More complex functions like `uniq`, `quantile`, or `groupArray` use implementation-specific formats. If you need to read or write these states, consult the ClickHouse source code for the specific function.
 </Note>
+
+With the setting `aggregate_function_input_format` set to `value` or `array`, an `AggregateFunction(func, T)` column is read as a value of type `T` (or a `Tuple` of the argument types if there are several of them), or as an `Array` of such values, encoded exactly as that type is encoded in RowBinary. The state is built from the values on the server side. For example, with `aggregate_function_input_format = 'array'`, a cell of `AggregateFunction(avg, UInt32)` is an `Array(UInt32)`: a LEB128 length followed by the elements.
 
 ### QBit {#qbit}
 

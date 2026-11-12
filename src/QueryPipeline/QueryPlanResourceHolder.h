@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/VectorWithMemoryTracking.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <memory>
 
@@ -42,6 +43,11 @@ struct QueryPlanResourceHolder
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
     /// because QueryPipeline is alive until query is finished.
     VectorWithMemoryTracking<std::shared_ptr<const Context>> interpreter_context;
+    /// Why a plan carries these: the decision to fall back to local execution is taken on the whole plan,
+    /// but the steps read `make_distributed_plan` from the contexts they were built with, and those may come
+    /// from several planners and interpreters. Writing the decision into every one of them keeps the plan
+    /// consistent with itself, whichever code path built it.
+    VectorWithMemoryTracking<ContextMutablePtr> distributed_plan_decision_contexts;
     VectorWithMemoryTracking<StoragePtr> storage_holders;
     VectorWithMemoryTracking<TableLockHolder> table_locks;
     VectorWithMemoryTracking<std::shared_ptr<QueryIdHolder>> query_id_holders;

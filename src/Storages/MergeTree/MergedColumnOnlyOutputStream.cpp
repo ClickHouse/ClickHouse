@@ -18,7 +18,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
-    PackedFilesWriter * external_packed_skip_indices_writer)
+    PackedFilesWriter * external_packed_skip_indices_writer,
+    StreamBaseManifestPtr stream_base_manifest)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -33,9 +34,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     /// Granularity is never recomputed while writing only columns.
+    /// Only merges and mutations write columns separately.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
-        data_part->storage.getContext()->getWriteSettings(),
+        getWriteSettingsForMergeOrMutation(data_part->storage.getContext()->getWriteSettings(), data_part->storage.supportsReplication()),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
@@ -46,10 +48,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         try_adaptive_codec);
 
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
+    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations().toSerializationByName(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,

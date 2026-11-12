@@ -62,6 +62,8 @@ All services in a warehouse share the same:
 - ClickHouse database version
 - ClickHouse Keeper (for managing replicas)
 
+Warehouses group long-lived ClickHouse Cloud services that share data, with dedicated compute and an endpoint for each service. [On-Demand Compute](/products/cloud/features/infrastructure/on-demand-compute) temporarily assigns workers from a managed pool to supported workloads through an existing service and endpoint.
+
 ## Access controls {#access-controls}
 
 ### Database credentials {#database-credentials}
@@ -126,7 +128,7 @@ _Fig. 6 - Read-write and Read-only services in a warehouse_
 
 Each service in a warehouse scales independently. You can adjust the number and size of replicas, enable horizontal and vertical autoscaling, and configure auto-idling on inactivity.
 
-Services, including the primary service, can run with a single replica, but that isn't recommended for production — use at least 2 replicas for high availability. Secondary single-node services can scale vertically, while primary single-node services cannot.
+Services, including the primary service, can run with a single replica, but that isn't recommended for production — use at least 2 replicas for high availability. On the Scale and Enterprise tiers, single-replica primary and secondary services are available without contacting support. Scale services and Enterprise services with standard `1:4` profiles support self-service vertical autoscaling, while Enterprise services with custom profiles require support-assisted vertical resizing. Basic tier services remain fixed in size. For more information, see [Large single-replica services](/products/cloud/features/large-single-replica-services).
 
 The combined replica count across all services in a warehouse is capped at 50 by default. See [usage limits](/products/cloud/guides/best-practices/usagelimits) for details. Contact [support](https://clickhouse.com/support/program) to raise the limit.
 

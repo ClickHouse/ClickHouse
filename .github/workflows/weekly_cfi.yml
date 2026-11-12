@@ -17,7 +17,7 @@ env:
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -28,13 +28,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -51,8 +50,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "WeeklyCFI" --ci --timestamp
 
   dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
-    needs: [config_workflow]
+    runs-on: [self-hosted, amd-tiny]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
     outputs:
@@ -63,13 +63,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -86,8 +85,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "WeeklyCFI" --ci --timestamp
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    runs-on: [self-hosted, arm-tiny]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
     outputs:
@@ -98,13 +98,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -121,8 +120,11 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "WeeklyCFI" --ci --timestamp
 
   build_amd_cfi:
-    runs-on: [self-hosted, arm-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9jZmkp') }}
     name: "Build (amd_cfi)"
     outputs:
@@ -133,13 +135,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -157,7 +158,11 @@ jobs:
 
   integration_tests_amd_cfi_1_4:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_cfi
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9jZmksIDEvNCk=') }}
     name: "Integration tests (amd_cfi, 1/4)"
     outputs:
@@ -168,13 +173,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -192,7 +196,11 @@ jobs:
 
   integration_tests_amd_cfi_2_4:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_cfi
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9jZmksIDIvNCk=') }}
     name: "Integration tests (amd_cfi, 2/4)"
     outputs:
@@ -203,13 +211,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -227,7 +234,11 @@ jobs:
 
   integration_tests_amd_cfi_3_4:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_cfi
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9jZmksIDMvNCk=') }}
     name: "Integration tests (amd_cfi, 3/4)"
     outputs:
@@ -238,13 +249,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -262,7 +272,11 @@ jobs:
 
   integration_tests_amd_cfi_4_4:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_cfi
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9jZmksIDQvNCk=') }}
     name: "Integration tests (amd_cfi, 4/4)"
     outputs:
@@ -273,13 +287,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -297,7 +310,11 @@ jobs:
 
   stress_test_amd_cfi:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_cfi
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF9jZmkp') }}
     name: "Stress test (amd_cfi)"
     outputs:
@@ -308,13 +325,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -331,8 +347,17 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (amd_cfi)' --workflow "WeeklyCFI" --ci --timestamp
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
-    needs: [build_amd_cfi, config_workflow, dockers_build_amd, dockers_build_arm, integration_tests_amd_cfi_1_4, integration_tests_amd_cfi_2_4, integration_tests_amd_cfi_3_4, integration_tests_amd_cfi_4_4, stress_test_amd_cfi]
+    runs-on: [self-hosted, arm-tiny]
+    needs:
+    - build_amd_cfi
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - integration_tests_amd_cfi_1_4
+    - integration_tests_amd_cfi_2_4
+    - integration_tests_amd_cfi_3_4
+    - integration_tests_amd_cfi_4_4
+    - stress_test_amd_cfi
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
@@ -343,13 +368,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}

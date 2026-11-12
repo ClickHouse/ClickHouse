@@ -2,166 +2,114 @@
 sidebarTitle: 'ClickHouse CLI'
 slug: /cloud/features/cli
 title: 'ClickHouse CLI'
-description: 'ClickHouse CLI를 사용하여 ClickHouse Cloud 서비스와 로컬 ClickHouse 인스턴스를 관리합니다'
-keywords: ['clickhousectl', 'CLI', 'Cloud 관리', '로컬 개발']
-doc_type: 'reference'
+description: 'ClickHouse CLI(clickhousectl)를 사용하여 터미널에서 ClickHouse Cloud 서비스, Managed Postgres, ClickPipes, ClickStack을 생성하고 관리합니다'
+keywords: ['clickhousectl', 'chctl', 'CLI', 'cloud management', 'command line']
+doc_type: 'guide'
 ---
 
-ClickHouse CLI(`clickhousectl`)는 ClickHouse Cloud 리소스 관리와 로컬 환경에서의 ClickHouse 개발을 위한 통합 명령줄 도구입니다. 또한 [ClickHouse Cloud Postgres](/ko/products/managed-postgres/overview) 서비스 관리도 지원합니다.
+ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)를 사용하면 터미널, 스크립트 또는 코딩 에이전트에서 ClickHouse Cloud를 관리할 수 있습니다. 이 페이지에서는 CLI의 Cloud 관련 기능을 다룹니다. 모든 명령 그룹과 로컬 개발, 전체 동작에 대한 자세한 내용은 [clickhousectl 참고 문서](/ko/concepts/features/interfaces/cli)를 참조하십시오.
 
-<div id="installation">
-  ## 설치
-</div>
+## 관리할 수 있는 항목 {#what-you-can-manage}
 
-```bash
-curl https://clickhouse.com/cli | sh
-```
+`clickhousectl cloud` 명령어로 다음 항목을 관리할 수 있습니다.
 
-편의를 위해 `chctl` 별칭이 자동으로 함께 생성됩니다.
+* **서비스:** ClickHouse Cloud 서비스를 생성, 확장, 시작 및 중지하고, 쿼리 API를 통해 해당 서비스에서 SQL을 실행합니다.
+* **[Managed Postgres](/ko/products/managed-postgres/overview) (Beta):** Postgres 서비스, 읽기 복제본(Read Replicas), 특정 시점 복원을 생성하고 구성을 변경합니다.
+* **[ClickPipes](/ko/integrations/clickpipes/home):** 객체 스토리지, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB, BigQuery에서 데이터를 수집합니다.
+* **[ClickStack](/ko/clickstack/overview):** [Managed ClickStack](/ko/clickstack/deployment/managed) 서비스의 소스, 대시보드, 알림, 웹훅, 저장된 검색 및 역할을 관리합니다.
+* **사용자 정의 함수:** 실행형 UDF를 로컬에서 테스트한 후 Cloud 서비스에 배포합니다.
+* **백업:** 백업 목록을 조회하고, 백업 일정을 변경하며, 백업을 새 서비스로 복원합니다.
+* **조직 액세스:** 조직, 구성원, 초대, API 키 및 활동 로그를 관리합니다.
 
-<div id="cloud-management">
-  ## Cloud 관리
-</div>
+각 명령의 플래그와 필요한 API Key 권한을 확인하려면 `clickhousectl cloud <command> --help`를 실행하십시오.
 
-명령줄에서 직접 ClickHouse Cloud에 인증하고 서비스를 관리할 수 있습니다.
-
-<div id="authentication">
-  ### 인증
-</div>
+## 설치 {#installation}
 
 ```bash
-clickhousectl cloud auth
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-API Key와 시크릿 입력 메시지가 표시되며, 입력한 값은 `.clickhouse/credentials.json`에 저장됩니다(현재 프로젝트에만 적용되며, git에서는 무시됩니다).
+이 스크립트는 `~/.local/bin/clickhousectl`과 `chctl` 별칭을 설치합니다. `~/.local/bin`이 `PATH`에 포함되어 있는지 확인하십시오. npm, pip, uv 등 다른 설치 방법은 [설치](/ko/concepts/features/interfaces/cli#installation)를 참조하십시오.
 
-환경 변수도 사용할 수 있습니다:
+## 인증 {#authentication}
+
+브라우저 OAuth 로그인은 읽기 전용입니다. 리소스를 생성하거나 변경하려면 해당 작업을 허용하는 역할이 부여된 [API Key](/ko/products/cloud/features/admin-features/api/openapi)가 필요합니다.
 
 ```bash
-export CLICKHOUSE_CLOUD_API_KEY=your-key
-export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+# Read-only: OAuth device flow in your browser
+clickhousectl cloud auth login
+
+# Read and write: prompts for the API key and secret, keeping the secret out of shell history
+clickhousectl cloud auth login --interactive
+
+# Alternative for scripts
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 ```
 
-<div id="services">
-  ### 서비스
-</div>
+로그인하면 자격 증명을 검증한 후 아이덴티티를 출력합니다. 언제든지 `clickhousectl cloud auth whoami`로 확인할 수 있습니다. 여러 조직에 속해 있다면 Cloud 명령어에 `--org-id <org-id>`(또는 `--org-name <name>`)를 추가하십시오. CI 환경에서는 로그인하는 대신 `CLICKHOUSE_CLOUD_API_KEY`와 `CLICKHOUSE_CLOUD_API_SECRET`을 설정하십시오. 자격 증명 우선순위와 로그아웃 방법은 [인증](/ko/concepts/features/interfaces/cli#authentication)을 참조하십시오.
+
+## 예시 {#examples}
+
+### 서비스 생성 및 쿼리 {#create-and-query-a-service}
 
 ```bash
-# 서비스 목록 조회
-clickhousectl cloud service list
+# Create a service. Save the initial password; it is printed only once.
+# Omitting --ip-allow allows all addresses (0.0.0.0/0).
+clickhousectl cloud service create --name analytics \
+  --provider aws --region us-east-1 \
+  --ip-allow '203.0.113.10/32=Office'
 
-# 서비스 생성
-clickhousectl cloud service create --name my-service \
-  --provider aws \
-  --region us-east-1
-
-# 서비스 상세 정보 조회
-clickhousectl cloud service get <service-id>
-
-# 서비스 스케일 조정
-clickhousectl cloud service scale <service-id> \
-  --min-replica-memory-gb 24 \
-  --max-replica-memory-gb 48 \
-  --num-replicas 3
-
-# 서비스 시작/중지
-clickhousectl cloud service start <service-id>
-clickhousectl cloud service stop <service-id>
-
-# 서비스 삭제
-clickhousectl cloud service delete <service-id>
+# Look up the service ID, then run SQL over the Query API
+CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
+clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
 ```
 
-<div id="postgres-services">
-  ### Postgres 서비스(베타)
-</div>
+서비스 생성 명령은 서비스가 실행 상태가 되기 전에 반환됩니다. `state`가 `running`이 될 때까지 `clickhousectl cloud service get "$CH_ID"`를 폴링하십시오.
 
-[ClickHouse Cloud Postgres](/ko/products/managed-postgres/overview) 서비스를 생성하고 관리합니다.
+API Key로 처음 쿼리를 실행하면 clickhousectl이 서비스의 쿼리 API 엔드포인트에 사용자의 API Key를 추가하며, 엔드포인트가 없으면 새로 생성합니다. 이때 새 키는 생성되지 않습니다. 이렇게 하는 대신 오류가 발생하도록 하려면 `--no-auto-enable`을 지정하십시오. OAuth를 사용하면 `service query`는 읽기 전용 `SELECT` SQL 문만 실행합니다. 쿼리 API는 약 30초가 지나면 시간 초과되므로, 오래 걸리는 쿼리나 대량 적재(bulk loads)에는 `clickhouse client`를 사용하십시오.
+
+### 관리형 Postgres 서비스 생성 {#create-a-managed-postgres-service}
 
 ```bash
-# Postgres 서비스 목록 조회
-clickhousectl cloud postgres list
-
-# Postgres 서비스 생성
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size c6gd.xlarge \
-  --pg-version 18
-
-# 서비스 상세 정보 조회
-clickhousectl cloud postgres get <pg-id>
-
-# 서비스 업데이트
-clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
-
-# 비밀번호 재설정
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# 읽기 레플리카 및 특정 시점 복원
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# 서비스 삭제
-clickhousectl cloud postgres delete <pg-id>
+clickhousectl cloud postgres create --name app-db \
+  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
+  --ip-allow '203.0.113.10/32:5432=Office'
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
 ```
 
-<div id="organizations">
-  ### 조직
-</div>
+비밀번호와 연결 문자열(Connection String)은 `create` 실행 시에만 반환되므로 반드시 따로 저장하십시오. `--ip-allow`를 생략하면 5432 및 6432 포트가 모든 주소에 개방됩니다. `state`가 `running`이 될 때까지 기다린 후 CA 인증서를 사용하여 `psql`로 연결하십시오.
+
+### ClickPipes, ClickStack 및 백업 확인 {#inspect-clickpipes-clickstack-and-backups}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+clickhousectl cloud clickpipe list "$CH_ID"
+clickhousectl cloud clickstack source list <clickstack-service-id>
+clickhousectl cloud backup list "$CH_ID"
 ```
 
-<div id="api-keys">
-  ### API Keys
-</div>
+이러한 읽기 명령어는 OAuth로 사용할 수 있습니다. ClickPipe를 생성하거나 ClickStack 리소스를 변경하려면 API Key가 필요합니다. 자세한 내용은 아래 리포지토리 가이드를 참조하십시오.
+
+### 사용자 정의 함수(user-defined function) 배포 {#deploy-a-user-defined-function}
 
 ```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
+# Uploads clickhouse/udfs/my_udf/, waits for the build, then attaches that version to the service
+clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 ```
 
-<div id="members-and-invitations">
-  ### 구성원 및 초대
-</div>
+먼저 `clickhousectl local udf deploy my_udf`를 사용하여 로컬 서버에서 함수를 테스트하세요.
 
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
+## JSON 출력과 코딩 에이전트 {#json-output}
 
-<div id="backups">
-  ### 백업
-</div>
+Cloud 명령어는 `--json` 옵션을 지원하며, CLI는 코딩 에이전트를 감지하면 자동으로 JSON 출력을 사용합니다. 이때 `cloud service query`의 기본 포맷은 `JSONEachRow`가 되므로, 출력을 파싱하는 스크립트에서는 `--format TabSeparated`와 같이 `--format`을 명시적으로 지정하십시오. 자세한 내용은 [JSON 출력](/ko/concepts/features/interfaces/cli#json-output) 및 [종료 코드](/ko/concepts/features/interfaces/cli#exit-codes)를 참조하십시오. ClickHouse agent skills는 `clickhousectl skills`로 설치할 수 있습니다.
 
-```bash
-clickhousectl cloud backup list <service-id>
-clickhousectl cloud backup get <service-id> <backup-id>
-```
+## 더 알아보기 {#learn-more}
 
-<div id="json-output">
-  ### JSON 출력
-</div>
-
-`--json` 플래그를 사용하면 모든 cloud 명령의 응답을 JSON 포맷으로 받을 수 있습니다:
-
-```bash
-clickhousectl cloud --json service list
-```
-
-<div id="local-development">
-  ## 로컬 개발
-</div>
-
-CLI는 로컬 ClickHouse 설치와 서버도 관리합니다. 로컬 개발을 시작하려면 [clickhousectl (CLI)](/ko/get-started/setup/self-managed/clickhousectl) 페이지를 확인하십시오.
-
-<div id="requirements">
-  ## 요구 사항
-</div>
-
-* macOS (aarch64, x86&#95;64) 또는 Linux (aarch64, x86&#95;64)
-* Cloud 명령을 실행하려면 [ClickHouse Cloud API Key](/ko/products/cloud/features/admin-features/api/openapi)가 필요합니다
+* [clickhousectl 참고](/ko/concepts/features/interfaces/cli): 모든 명령 그룹, 로컬 개발, 스킬, 자체 업데이트, 텔레메트리를 다룹니다.
+* 리포지토리 가이드:
+  * [ClickHouse Cloud 서비스](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md)
+  * [ClickHouse Managed Postgres](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md)
+  * [ClickPipes](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md)
+  * [ClickStack](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md)
+  * [사용자 정의 함수(user-defined function)](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)
+* 리포지토리 참고 문서: [인증 및 액세스](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md), [SQL 및 쿼리 API](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md), [ClickPipe 구성](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md), [자동화 및 출력 계약](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md)

@@ -35,9 +35,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
     bool isDeterministic() const override { return false; }
@@ -60,7 +60,7 @@ REGISTER_FUNCTION(CurrentDatabase)
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-Also see the [`SET` statement](/sql-reference/statements/use).
+Also see the [`SET` statement](/reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentDatabase()";
     FunctionDocumentation::Arguments arguments = {};

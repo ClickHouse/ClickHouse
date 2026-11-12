@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <Disks/tests/gtest_disk.h>
+#include <base/scope_guard.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/ReadHelpers.h>
@@ -25,8 +27,8 @@ TEST(PackedFilesWriter, Basics)
 {
     static constexpr auto data_filename = "data.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer;
 
@@ -88,8 +90,8 @@ TEST(PackedFilesWriter, Removes)
 {
     static constexpr auto data_filename = "data.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer1;
 
@@ -139,8 +141,8 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
 {
     static constexpr auto data_filename = "data_prepare.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer1;
 
@@ -178,4 +180,19 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     auto in = reader.readFile(disk, data_filename, "file1", ReadSettings{}, {});
     assertString("123", *in);
     assertEOF(*in);
+}
+
+TEST(PackedFilesWriter, FilesOrderHint)
+{
+    PackedFilesWriter writer;
+
+    for (const auto & name : {"a%2Eb", "first", "second", "third"})
+        writer.writeFile(name)->finalize();
+
+    /// The hint names the files as they are stored, so `a.b` matches nothing. Repeated hints are
+    /// ignored too, and the files not in the hint keep their order.
+    const Strings hint = {"a.b", "third", "a%2Eb", "third", "first"};
+    auto plan = writer.prepareFinalize(hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
+    ASSERT_EQ(plan.ordered_file_names, (Strings{"third", "a%2Eb", "first", "second"}));
 }

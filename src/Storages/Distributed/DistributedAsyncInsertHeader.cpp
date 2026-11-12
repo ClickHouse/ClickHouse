@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int UNKNOWN_DISTRIBUTED_ASYNC_INSERT_FORMAT_VERSION;
 }
 
 DistributedAsyncInsertHeader::DistributedAsyncInsertHeader()
@@ -25,100 +26,122 @@ DistributedAsyncInsertHeader::DistributedAsyncInsertHeader()
 {
 }
 
-DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+namespace
+{
+
+DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
 {
     DistributedAsyncInsertHeader distributed_header;
 
-    UInt64 query_size = 0;
-    readVarUInt(query_size, in);
+    UInt64 signature = 0;
+    readVarUInt(signature, in);
 
-    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
+    /// Files written before version 19.18 (without the checksummed header) are not supported anymore.
+    if (signature != DBMS_DISTRIBUTED_SIGNATURE_HEADER)
+        throw Exception(ErrorCodes::UNKNOWN_DISTRIBUTED_ASYNC_INSERT_FORMAT_VERSION,
+            "Unknown signature {} of the {} batch: the file is either corrupted or written in the old format,"
+            " which is no longer supported (written before version 19.18)",
+            signature, in.getFileName());
+
+    /// Read the header as a string.
+    String header_data;
+    readStringBinary(header_data, in);
+
+    /// Check the checksum of the header.
+    CityHash_v1_0_2::uint128 expected_checksum;
+    readPODBinary(expected_checksum, in);
+    CityHash_v1_0_2::uint128 calculated_checksum =
+        CityHash_v1_0_2::CityHash128(header_data.data(), header_data.size());
+    if (expected_checksum != calculated_checksum)
     {
-        /// Read the header as a string.
-        String header_data;
-        readStringBinary(header_data, in);
-
-        /// Check the checksum of the header.
-        CityHash_v1_0_2::uint128 expected_checksum;
-        readPODBinary(expected_checksum, in);
-        CityHash_v1_0_2::uint128 calculated_checksum =
-            CityHash_v1_0_2::CityHash128(header_data.data(), header_data.size());
-        if (expected_checksum != calculated_checksum)
-        {
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                            "Checksum of extra info doesn't match: corrupted data. Reference: {}. Actual: {}.",
-                            getHexUIntLowercase(expected_checksum), getHexUIntLowercase(calculated_checksum));
-        }
-
-        /// Read the parts of the header.
-        ReadBufferFromString header_buf(header_data);
-
-        readVarUInt(distributed_header.revision, header_buf);
-        if (DBMS_TCP_PROTOCOL_VERSION < distributed_header.revision)
-        {
-            LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
-        }
-
-        readStringBinary(distributed_header.insert_query, header_buf);
-        distributed_header.insert_settings->read(header_buf);
-
-        if (header_buf.hasPendingData())
-            distributed_header.client_info.read(header_buf, distributed_header.revision, /*with_trailing_fields=*/ false);
-
-        if (header_buf.hasPendingData())
-        {
-            readVarUInt(distributed_header.rows, header_buf);
-            readVarUInt(distributed_header.bytes, header_buf);
-            readStringBinary(distributed_header.block_header_string, header_buf);
-        }
-
-        if (header_buf.hasPendingData())
-        {
-            NativeReader header_block_in(header_buf, distributed_header.revision);
-            distributed_header.block_header = header_block_in.read();
-            if (distributed_header.block_header.empty())
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
-                        in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
-        }
-
-        if (header_buf.hasPendingData())
-        {
-            readVarUInt(distributed_header.shard_num, header_buf);
-            readStringBinary(distributed_header.cluster, header_buf);
-            readStringBinary(distributed_header.distributed_table, header_buf);
-            readStringBinary(distributed_header.remote_table, header_buf);
-        }
-
-        /// Trailing field: the detected AI coding agent of the initiating client.
-        /// Stored outside the embedded `ClientInfo` above (read with `with_trailing_fields=false`) so that
-        /// older binaries can safely ignore it instead of misinterpreting it as `rows`/`bytes`.
-        if (header_buf.hasPendingData())
-            readStringBinary(distributed_header.client_info.client_agent, header_buf);
-
-        /// Trailing field: whether the initiating query is internal.
-        if (header_buf.hasPendingData())
-            readBinary(distributed_header.client_info.is_internal, header_buf);
-
-        /// Add handling new data here, for example:
-        ///
-        /// if (header_buf.hasPendingData())
-        ///     readVarUInt(my_new_data, header_buf);
-        ///
-        /// And note that it is safe, because we have checksum and size for header.
-
-        return distributed_header;
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
+                        "Checksum of extra info doesn't match: corrupted data. Reference: {}. Actual: {}.",
+                        getHexUIntLowercase(expected_checksum), getHexUIntLowercase(calculated_checksum));
     }
 
-    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
+    /// Read the parts of the header.
+    ReadBufferFromString header_buf(header_data);
+
+    readVarUInt(distributed_header.revision, header_buf);
+    if (DBMS_TCP_PROTOCOL_VERSION < distributed_header.revision)
     {
-        distributed_header.insert_settings->read(in, SettingsWriteFormat::BINARY);
-        readStringBinary(distributed_header.insert_query, in);
-        return distributed_header;
+        LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
     }
 
-    distributed_header.insert_query.resize(query_size);
-    in.readStrict(distributed_header.insert_query.data(), query_size);
+    readStringBinary(distributed_header.insert_query, header_buf);
+    distributed_header.insert_settings->read(header_buf);
+
+    if (header_buf.hasPendingData())
+        distributed_header.client_info.read(header_buf, distributed_header.revision, /*with_trailing_fields=*/ false);
+
+    if (header_buf.hasPendingData())
+    {
+        readVarUInt(distributed_header.rows, header_buf);
+        readVarUInt(distributed_header.bytes, header_buf);
+        readStringBinary(distributed_header.block_header_string, header_buf);
+    }
+
+    if (header_buf.hasPendingData())
+    {
+        NativeReader header_block_in(header_buf, distributed_header.revision);
+        distributed_header.block_header = header_block_in.read();
+        if (distributed_header.block_header.empty())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
+                    in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
+    }
+
+    if (header_buf.hasPendingData())
+    {
+        readVarUInt(distributed_header.shard_num, header_buf);
+        readStringBinary(distributed_header.cluster, header_buf);
+        readStringBinary(distributed_header.distributed_table, header_buf);
+        readStringBinary(distributed_header.remote_table, header_buf);
+    }
+
+    /// Trailing field: the detected AI coding agent of the initiating client.
+    /// Stored outside the embedded `ClientInfo` above (read with `with_trailing_fields=false`) so that
+    /// older binaries can safely ignore it instead of misinterpreting it as `rows`/`bytes`.
+    if (header_buf.hasPendingData())
+        readStringBinary(distributed_header.client_info.client_agent, header_buf);
+
+    /// Trailing field: whether the initiating query is internal.
+    if (header_buf.hasPendingData())
+        readBinary(distributed_header.client_info.is_internal, header_buf);
+
+    /// Trailing fields: the SQL-defined HTTP handler name and the request URL of the initiating query
+    /// (kept out of the embedded `ClientInfo` above for layout compatibility, like `client_agent`).
+    if (header_buf.hasPendingData())
+        readStringBinary(distributed_header.client_info.http_handler_name, header_buf);
+
+    if (header_buf.hasPendingData())
+        readStringBinary(distributed_header.client_info.http_request_url, header_buf);
+
+    /// Add handling new data here, for example:
+    ///
+    /// if (header_buf.hasPendingData())
+    ///     readVarUInt(my_new_data, header_buf);
+    ///
+    /// And note that it is safe, because we have checksum and size for header.
+
+    return distributed_header;
+}
+
+}
+
+DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+{
+    DistributedAsyncInsertHeader distributed_header = readHeader(in, log);
+
+    /// A batch file written by an older server from a server-initiated query context (a `Buffer` flush, a
+    /// streaming consumer, an asynchronous insert flush) carries a zero client version, because such
+    /// contexts used to inherit the empty client info of the global context. A header without client info
+    /// leaves it default-constructed, which is a zero version as well. In both cases `RemoteInserter`
+    /// replays the batch with exactly this client info, and this server is the one that re-initiates the insert.
+    ///
+    /// Normalizing rather than throwing: a stale batch file on disk is not a programming error, and
+    /// rejecting it would wedge the queue permanently.
+    distributed_header.client_info.setInitiatorVersionIfUnset();
 
     return distributed_header;
 }

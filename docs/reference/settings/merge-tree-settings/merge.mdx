@@ -20,6 +20,19 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 Only available in ClickHouse Cloud. Maximal size of parts in total to prewarm
 cache during merge.
 
+## merge_use_batch_sorting_queue {#merge_use_batch_sorting_queue}
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to use the batch sorting queue for ordinary `MergeTree` merges."}]}]}/>
+
+Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
+
+Only applies to merges that do not change rows, i.e. plain `MergeTree`
+(`Ordinary` merge mode). It has no effect on engines with merge-time
+semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
+`GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
+default queue regardless of this setting.
+
 ## merge_workload {#merge_workload}
 
 Used to regulate how resources are utilized and shared between merges and

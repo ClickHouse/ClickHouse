@@ -11,9 +11,10 @@
    The legacy driver's HTTP response parser can't handle current ClickHouse
    server output.
 2. Extend the `CLICKHOUSE.url` template in `dbconfigs/jdbc.properties` to carry
-   `user` and `password` query parameters. SQLancer++'s generic provider only
-   passes the URL string (no JDBC Properties) into `DriverManager.getConnection`,
-   so the new driver - which requires credentials - needs them embedded here.
+   `user` and `password` query parameters and to turn ClickHouse-framed response
+   compression off. SQLancer++'s generic provider only passes the URL string (no
+   JDBC Properties) into `DriverManager.getConnection`, so the new driver - which
+   requires credentials - needs them embedded here.
 3. Replace the `IS TRUE` postfix in `GeneralNoRECOracle.java` with `!= 0`.
    NoREC's row-counter must agree with `WHERE <expr>`, which ClickHouse
    evaluates by truthiness (any non-zero numeric is included, `NULL` is
@@ -37,6 +38,25 @@
    false-positive failure. Let the `IgnoreMeException` propagate instead; genuine
    unexpected errors (a re-thrown `SQLException`, or an `AssertionError` with a
    message) are unaffected and still reported.
+5. Read the view with `SELECT sum(ignore(*)) FROM <view>` in
+   `GeneralProvider.checkViewsAreValid`'s per-view validity probe, instead of
+   `SELECT * FROM <view>`. That probe goes through `SQLQueryAdapter.execute`,
+   which closes the statement without draining the result set, so an error
+   ClickHouse reports mid-stream is invisible: `execute` returns `true` and
+   neither `dropView` branch fires. An aggregate cannot emit its row before it
+   has consumed all input, and `ignore(*)` takes every view column as an
+   argument and is never constant-folded, so the projection cannot be pruned.
+   An outer predicate (`... WHERE NOT ignore(*)`) is not equivalent: it is
+   pushed into the view and can filter rows before the failing projection runs.
+   The existing `if (!execute()) -> dropView` / `catch (Throwable) -> dropView`
+   branches then drop exactly the unreadable view, so it no longer reaches the
+   cross-join size probe, which is called outside the per-oracle
+   `catch (AssertionError)` and so killed the run.
+6. Make `GeneratorInfoTable.calcAverageScore` in `GeneralErrorHandler.java`
+   synchronize on `GeneralErrorHandler.class`. It updates and iterates the
+   static `all*` success/count maps shared by every worker thread, but its
+   `synchronized` locked the per-database handler's own table, so concurrent
+   calls threw `ConcurrentModificationException`.
 """
 
 import argparse
@@ -67,9 +87,12 @@ CLICKHOUSE_URL = re.compile(
 # `--password` when they differ from the built-in defaults (`sqlancer`), so
 # even with explicit CLI flags those defaults fall through to the properties
 # file - meaning the entries below need real values.
+# `compress=false` is required: client-v2 requests ClickHouse-framed responses by
+# default and decodes only the LZ4 method byte (0x82), while the server frames
+# them with its default codec, ZSTD (0x90).
 NEW_CLICKHOUSE_LINES = (
     "CLICKHOUSE.url=jdbc:clickhouse://{host}:{port}/{database}"
-    "?user={user}&password={password}\n"
+    "?user={user}&password={password}&compress=false\n"
     "CLICKHOUSE.user=sqlancer\n"
     "CLICKHOUSE.password=sqlancer"
 )
@@ -150,6 +173,61 @@ def patch_where_oracle(repo: pathlib.Path) -> None:
     src.write_text(text.replace(anchor, replacement))
 
 
+def patch_view_validity_probe(repo: pathlib.Path) -> None:
+    src = repo / "src" / "sqlancer" / "general" / "GeneralProvider.java"
+    text = src.read_text()
+    # `SELECT * FROM <view>` cannot tell this probe that the view is unreadable:
+    # `execute` never drains the result set, so ClickHouse's mid-stream error is
+    # invisible and the view survives into the cross-join size probe, where the
+    # same error is fatal. An aggregate over `ignore(*)` reads the view the way
+    # that size probe does: every column is a required input, and no predicate
+    # sits above the view where it could drop rows before the projection runs.
+    anchor = (
+        '            SQLQueryAdapter q = new SQLQueryAdapter("SELECT * FROM " + view.getName(),'
+        " new ExpectedErrors(), false,\n"
+        "                    globalState.getOptions().canonicalizeSqlString());\n"
+    )
+    replacement = (
+        "            // ClickHouse patch: an aggregate makes the server finish the view before it answers, and\n"
+        "            // ignore(*) requires every column, so the view's projection cannot be pruned away.\n"
+        '            SQLQueryAdapter q = new SQLQueryAdapter("SELECT sum(ignore(*)) FROM " + view.getName(),\n'
+        "                    new ExpectedErrors(), false, globalState.getOptions().canonicalizeSqlString());\n"
+    )
+    if anchor not in text:
+        sys.exit(f"failed to locate the view-validity probe in {src}")
+    if text.count(anchor) != 1:
+        sys.exit(f"expected exactly one view-validity probe in {src}")
+    src.write_text(text.replace(anchor, replacement))
+
+
+def patch_average_score_lock(repo: pathlib.Path) -> None:
+    src = repo / "src" / "sqlancer" / "general" / "GeneralErrorHandler.java"
+    text = src.read_text()
+    anchor = (
+        "        public synchronized <N> Map<N, Double> calcAverageScore(Map<N, Integer> success, Map<N, Integer> count,\n"
+        "                Map<N, Integer> allSuccess, Map<N, Integer> allCount, int minCnt, boolean quickStart) {\n"
+        "            Map<N, Double> average = new HashMap<>();\n"
+    )
+    replacement = (
+        "        public <N> Map<N, Double> calcAverageScore(Map<N, Integer> success, Map<N, Integer> count,\n"
+        "                Map<N, Integer> allSuccess, Map<N, Integer> allCount, int minCnt, boolean quickStart) {\n"
+        "            // ClickHouse patch: allSuccess and allCount are static maps shared by every worker thread.\n"
+        "            synchronized (GeneralErrorHandler.class) {\n"
+        "                return calcAverageScoreLocked(success, count, allSuccess, allCount, minCnt, quickStart);\n"
+        "            }\n"
+        "        }\n"
+        "\n"
+        "        private <N> Map<N, Double> calcAverageScoreLocked(Map<N, Integer> success, Map<N, Integer> count,\n"
+        "                Map<N, Integer> allSuccess, Map<N, Integer> allCount, int minCnt, boolean quickStart) {\n"
+        "            Map<N, Double> average = new HashMap<>();\n"
+    )
+    if anchor not in text:
+        sys.exit(f"failed to locate GeneratorInfoTable.calcAverageScore in {src}")
+    if text.count(anchor) != 1:
+        sys.exit(f"expected exactly one GeneratorInfoTable.calcAverageScore in {src}")
+    src.write_text(text.replace(anchor, replacement))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", help="Path to the SQLancer++ checkout")
@@ -168,6 +246,8 @@ def main() -> None:
     patch_jdbc_properties(repo)
     patch_norec_oracle(repo)
     patch_where_oracle(repo)
+    patch_view_validity_probe(repo)
+    patch_average_score_lock(repo)
 
 
 if __name__ == "__main__":

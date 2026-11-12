@@ -1,7 +1,8 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#include <Formats/FormatSettings.h>
+#if USE_ARROW_LIBRARY
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -29,37 +30,6 @@ namespace ErrorCodes
 static arrow::Status statusFromCurrentException(arrow::StatusCode code, std::string message)
 {
     return arrow::Status(code, std::move(message), std::make_shared<ExceptionStatusDetail>(std::current_exception()));
-}
-
-ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
-{
-}
-
-arrow::Status ArrowBufferedOutputStream::Close()
-{
-    is_open = false;
-    return arrow::Status::OK();
-}
-
-arrow::Result<int64_t> ArrowBufferedOutputStream::Tell() const
-{
-    return arrow::Result<int64_t>(total_length);
-}
-
-arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length)
-{
-    try
-    {
-        out.write(reinterpret_cast<const char *>(data), length);
-        total_length += length;
-        return arrow::Status::OK();
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(false);
-        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while writing to arrow stream: {}", message);
-        return statusFromCurrentException(arrow::StatusCode::IOError, message);
-    }
 }
 
 RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_)

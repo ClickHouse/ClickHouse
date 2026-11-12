@@ -25,7 +25,7 @@ public:
 
     void unregisterTable(const StorageID & storage, bool if_exists = false);
 
-    void renameTable(const StorageID & from, const StorageID & to);
+    void renameTable(const StorageID & from, const StorageID & to, bool if_exists = false);
 
     void shutdown();
 
@@ -81,6 +81,11 @@ public:
         bool keep_data_in_keeper);
 
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
+
+    /// Whether a metadata object is still registered under `key` (the factory
+    /// key as returned by `getAll`). Used to tell a concurrently dropped queue
+    /// from genuinely broken metadata.
+    bool isRegistered(const std::string & key);
 
 private:
     struct MetadataWithRefCount

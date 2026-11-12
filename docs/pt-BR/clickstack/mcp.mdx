@@ -13,6 +13,10 @@ O ClickStack inclui um [servidor Model Context Protocol (MCP)](https://modelcont
 
 Isso permite que você use ferramentas como [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/) ou qualquer cliente compatível com MCP para investigar incidentes, criar dashboards e gerenciar sua configuração de observabilidade sem sair do ambiente de desenvolvimento.
 
+<Frame>
+  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
 <div id="availability">
   ## Disponibilidade
 </div>
@@ -144,9 +148,7 @@ Sem o cabeçalho `x-service-id`, as solicitações são direcionadas por padrão
 
 As implantações Open Source e BYOC usam o endpoint MCP integrado da sua instância do ClickStack com autenticação via token Bearer.
 
-<div id="oss-prerequisites">
-  ### Pré-requisitos
-</div>
+### Pré-requisitos {#oss-prerequisites}
 
 * Uma instância do ClickStack em execução (consulte [Implantação](/pt-BR/clickstack/deployment/overview) para ver as opções de configuração)
 * Uma **Personal API Access Key** — encontre a sua no HyperDX em **Team Settings → API Keys → Personal API Access Key**
@@ -158,6 +160,7 @@ As implantações Open Source e BYOC usam o endpoint MCP integrado da sua instâ
 </Note>
 
 <div id="managed-endpoint">
+  <a id="oss-endpoint" />
   ### Endpoint
 </div>
 
@@ -170,6 +173,7 @@ O servidor MCP está disponível no caminho `/api/mcp` na URL de frontend do seu
 O servidor MCP usa o transporte **Streamable HTTP** com autenticação por **token Bearer**.
 
 <div id="managed-connecting-a-client">
+  <a id="oss-connecting-a-client" />
   ### Conectar um cliente MCP
 </div>
 
@@ -267,7 +271,7 @@ Depois de se conectar, seu assistente de IA tem acesso a várias ferramentas que
 * **Consulta de dados** — Pesquise e agregue logs, traces e métricas usando o query builder do ClickStack, a sintaxe de busca ou SQL puro.
 * **Fontes de dados** — Liste as fontes de dados disponíveis, conexões de banco de dados, esquemas de colunas e chaves de atributos.
 * **Dashboards** — Crie, atualize, exclua e inspecione dashboards, junto com seus tiles.
-* **Alertas** — Crie, atualize e inspecione alertas, junto com seu histórico de avaliação.
+* **Alertas** — Crie, atualize e inspecione alertas, junto com seu histórico de avaliação. Quando a [detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection) estiver habilitada, os assistentes também podem fazer backtest das configurações de alertas de anomalia com base no histórico recente antes de salvá-las.
 * **Pesquisas salvas** — Crie, atualize e inspecione definições reutilizáveis de pesquisas salvas.
 * **Webhooks** — Liste os destinos de webhook disponíveis para notificações de alerta.
 * **Equipes** — Liste as equipes às quais o usuário atual pertence e identifique a equipe ativa.

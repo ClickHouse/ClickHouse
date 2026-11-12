@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_QUERY;
 }
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
@@ -22,7 +24,11 @@ public:
     static constexpr auto name = "timeSeriesTagsToGroup";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context); }
-    explicit FunctionTimeSeriesTagsToGroup(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    /// The creation context may expire before execution; without a query context only the signature is usable.
+    explicit FunctionTimeSeriesTagsToGroup(const ContextPtr & context)
+        : tags_collector(context->hasQueryContext() ? context->getQueryContext()->getTimeSeriesTagsCollector() : nullptr)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -45,6 +51,36 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — accepts an array of (tag_name, tag_value)
+    /// pairs followed by zero or more loose (name, value) string pairs. The
+    /// mandatory prefix is just `tags_array`; the loose pairs are an optional
+    /// group repeated by the ellipsis. Writing the pair as a bracketed
+    /// `[T1, V1]` group keeps the preceding `tags_array` argument out of the
+    /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
+    /// `Array(...) | Nothing` argument into it), so the accepted arities are
+    /// `1 + 2 * N` and a call like `timeSeriesTagsToGroup([])` is valid.
+    String getSignatureString() const override
+    {
+        return "(Array(Tuple(String, String)) | Nothing,"
+               " [T1 : MaybeNullable(StringOrFixedString | IsNothing),"
+               " V1 : MaybeNullable(StringOrFixedString | IsNothing)], ...) -> UInt64";
+    }
+
+    /// The declarative signature above is documentation-only — the `tags_array` matcher is
+    /// narrower than the helper's accepted shapes (`Map` / `FixedString`-element / `Nullable` /
+    /// `LowCardinality` wrappers), which the DSL cannot yet express. The `ColumnsWithTypeAndName`
+    /// override below is authoritative (it runs the helper). Route the types-only path to it too,
+    /// so the base `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the
+    /// approximate signature string as a validator.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
@@ -62,8 +98,20 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 0);
     }
 
+    /// A dry run is used to compute headers / partial results during query planning
+    /// (e.g. constant folding in `tryMergeExpressions`). The real group lookup only needs to happen
+    /// at execution time, so the dry run returns a column of the right type without consulting
+    /// the collector.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return result_type->createColumn()->cloneResized(input_rows_count);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        if (!tags_collector)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Function {} can be executed only in a query", name);
+
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0);
 
         auto groups = tags_collector->getGroupForTags(tags_vector);
@@ -73,7 +121,7 @@ public:
     }
 
 private:
-    std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
+    const std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 
@@ -83,7 +131,7 @@ REGISTER_FUNCTION(TimeSeriesTagsToGroup)
 Returns a group of tags associated with specified tags.
 If the same group of tags is found multiple times during the query execution, the function returns the same group.
 For an empty set of tags the function always returns 0.
-See also function [timeSeriesGroupToTags()](/sql-reference/functions/time-series-functions#timeSeriesGroupToTags).
+See also function [timeSeriesGroupToTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesTagsToGroup(tags_array, tag_name_1, tag_value_1, tag_name2, tag_value2, ...)";
     FunctionDocumentation::Arguments arguments = {

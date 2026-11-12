@@ -1,0 +1,86 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/release-markers
+title: 'Release markers on dashboard charts'
+sidebarTitle: 'Release markers'
+description: 'Overlay the moment each version of a service first appeared on dashboard time charts, derived from the service version expression configured on the tile source'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking', 'service.version', 'annotations', 'observability']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+The first question about a latency or error spike is usually whether something shipped. Dashboard time charts can answer it in place: turn on release markers and each tile draws a dashed vertical line at the moment a version of a service first appeared in its telemetry.
+
+The versions come from the telemetry you already send, read through an expression on the tile's source. There's no CI integration to wire up and nothing to push at deploy time.
+
+## Turn markers on {#turn-on}
+
+Release markers are off by default. Open a dashboard's overflow menu and select **Show release markers**.
+
+<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Dashboard overflow menu with the Show release markers item under the View section, below Show alert annotations" size="sm"/>
+
+The toggle adds `releaseMarkers=true` to the dashboard URL, so a link you share opens with markers already on. It's view state rather than dashboard configuration: it isn't saved with the dashboard, and turning it off removes the parameter again.
+
+Markers draw on time-series tiles whose source is a log or trace source. [Alert annotations](/clickstack/features/alerts) come from the same menu and can be shown at the same time — the two sets of markers are drawn together, and each keeps its own labels.
+
+## Configure where the version comes from {#version-expression}
+
+By default, ClickStack reads `ResourceAttributes['service.version']`, the OpenTelemetry resource attribute. If your services follow the [service resource semantic conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), markers work with no setup.
+
+To read the version from somewhere else, set **Service Version Expression** on the log or trace source. Edit the source under **Team Settings → Sources**. On a log source the field sits behind **Configure Optional Fields**; on a trace source it appears directly in the form, below **Service Name Expression**.
+
+<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Service Version Expression field in a log source's optional fields, showing the default placeholder ResourceAttributes['service.version']" size="lg"/>
+
+The value is a SQL expression, not an attribute name, which covers two common cases:
+
+- **The release identifier lives on another attribute.** Under GitOps the thing that identifies a release is usually the container image tag, arriving as `container.image.tag`. Pointing the source at `ResourceAttributes['container.image.tag']` is considerably cheaper than changing instrumentation across a fleet.
+- **Services in one table disagree.** Fall back across the attributes with `coalesce`:
+
+```sql
+coalesce(
+  nullIf(ResourceAttributes['service.version'], ''),
+  nullIf(ResourceAttributes['container.image.tag'], '')
+)
+```
+
+The field is also exposed as `serviceVersionExpression` on log and trace sources in the [sources API](/clickstack/api-reference), so you can set it when provisioning sources programmatically. See the full list of source settings for [logs](/clickstack/managing/config#logs) and [traces](/clickstack/managing/config#traces).
+
+## What a marker means {#what-a-marker-means}
+
+A marker records that a version value first appeared in the tile's data inside the visible window. That's close to a deployment but deliberately not the same claim, which is why these are release markers rather than deployment markers:
+
+- A deploy that doesn't change the version string produces no marker at all.
+- A service that goes idle for longer than the lookback draws a marker when it scales back up.
+
+The version that was already running when the window opened is recognized and dropped rather than drawn as a release that never happened. To do that, the query reaches back before the window start — by 30 minutes, or 10% of the window if that is longer — to find the incumbent version.
+
+## Which releases a tile shows {#scoping}
+
+The releases query runs against the tile's own source with the tile's own predicates: its `WHERE` clause, each series' filter, and any [dashboard filters](/clickstack/features/dashboards/overview#custom-filters). What a tile shows depends on what it charts:
+
+| Tile                              | Markers                                                             |
+| :-------------------------------- | :------------------------------------------------------------------ |
+| Filtered to one service           | That service's releases                                             |
+| Grouped by service                | Every charted service's releases, each tinted to match its own line |
+| Aggregate line over many services | None, unless every release in the window came from one service       |
+
+In the third case a marker's service has no line to match on the chart, so markers are dropped. If every release in the window came from a single service, they are drawn instead, in the default marker color.
+
+## Read markers on a busy chart {#reading-markers}
+
+Hover a marker's label to list every release at that point, each with the service that shipped it, its version, and the time.
+
+<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Hover tooltip on a release marker naming the service frontend and version 2.0.2 with the time the version first appeared, on a chart of two services" size="sm"/>
+
+Color ties a marker to its series, but a chart legend shows at most four entries before collapsing the rest behind "+N more", at which point there's nothing on screen to resolve the color against. The tooltip names the service outright, so it works regardless of how many series the tile charts.
+
+Markers too close together to label individually collapse into a single labeled anchor reading `N releases`; hovering it names all of them. A cluster spanning several services is drawn in a neutral color rather than wearing one of theirs, so the count stays true without implying an owner.
+
+Dragging horizontally across the plot still zooms while markers are shown.
+
+## Limitations {#limitations}
+
+- **Time-series tiles only.** Tables, numbers, and heatmaps don't draw markers.
+- **Log and trace sources only.** A metric source resolves its table per metric type, so there's no single table to re-aggregate and no way to make a tile's filters meaningful against it. To annotate metric data, place a log or trace tile alongside it on the same dashboard.
+- **Empty version values are skipped.** A service that emits no version contributes no markers. If a tile finds no version changes at all, ClickStack reports `No releases found` rather than leaving you to wonder whether the feature is broken.
+- **Up to 500 distinct versions** are read per window.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/BufferBase.h>
 #include <boost/noncopyable.hpp>
 
 #include <Common/Allocator.h>
@@ -71,6 +72,10 @@ struct Memory : boost::noncopyable, Allocator
 
     void resize(size_t new_size, bool deallocate_if_empty = false);
 
+    /// Like `resize`, but when the capacity is exceeded it grows by at least 1/8, so that a sequence of small
+    /// appends takes amortized linear time instead of reallocating the whole data on every append.
+    void resizeAmortized(size_t new_size);
+
 private:
     static size_t withPadding(size_t value)
     {
@@ -105,6 +110,37 @@ protected:
     Memory<> memory{};
     const bool use_existing_memory;
 
+    /// Adaptive sizing of a write buffer (see `use_adaptive_write_buffer` in WriteSettings): the
+    /// buffer starts at a small initial size and `growAdaptiveBufferAfterFlush` doubles it after
+    /// every full flush, up to `adaptive_buffer_max_size`, so one of many rarely-filled buffers
+    /// (e.g. one per column stream of a wide part) only pays for the memory it actually needs.
+    bool use_adaptive_buffer_size = false;
+    size_t adaptive_buffer_max_size = 0;
+
+    /// The initial allocation of an adaptive buffer. The maximum caps it, so an out-of-range
+    /// initial size is never passed straight to the allocator (e.g. a fuzzed
+    /// adaptive_write_buffer_initial_size).
+    static size_t adaptiveBufferInitialSize(bool use_adaptive, size_t initial_size, size_t max_size)
+    {
+        return use_adaptive ? std::min(initial_size, max_size) : max_size;
+    }
+
+    void enableAdaptiveBufferGrowth(bool use_adaptive, size_t max_size)
+    {
+        use_adaptive_buffer_size = use_adaptive;
+        adaptive_buffer_max_size = max_size;
+    }
+
+    /// Call at the end of nextImpl; grows only when the flush used the whole buffer.
+    void growAdaptiveBufferAfterFlush()
+    {
+        if (!Base::available() && use_adaptive_buffer_size && memory.size() < adaptive_buffer_max_size)
+        {
+            memory.resize(std::min(memory.size() * 2, adaptive_buffer_max_size));
+            this->BufferBase::setPaddedStorage(memory, 0, memory.size(), 0);
+        }
+    }
+
 public:
     /// If non-nullptr 'existing_memory' is passed,
     /// then buffer will not create its own memory and will use existing_memory without ownership.
@@ -115,8 +151,10 @@ public:
         : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
         , use_existing_memory(existing_memory != nullptr)
     {
-        Base::set(existing_memory ? existing_memory : memory.data(), size);
-        Base::padded = !existing_memory;
+        if (existing_memory)
+            Base::set(existing_memory, size);
+        else
+            Base::setPaddedStorage(memory, 0, size);
     }
 
     void resize(size_t size, bool deallocate_if_empty = false)
@@ -128,7 +166,7 @@ public:
                 "Existing memory was used for the buffer, resize is not allowed");
         }
         memory.resize(size, deallocate_if_empty);
-        Base::set(memory.data(), size);
+        Base::setPaddedStorage(memory, 0, size);
     }
 };
 
@@ -146,8 +184,7 @@ public:
     explicit BufferWithOutsideMemory(Memory<> & memory_)
         : Base(memory_.data(), memory_.size()), memory(memory_)
     {
-        Base::set(memory.data(), memory.size(), 0);
-        Base::padded = false;
+        Base::setPaddedStorage(memory, 0, memory.size());
     }
 
     size_t getActualSize()
@@ -160,7 +197,7 @@ private:
     {
         const size_t prev_size = Base::position() - memory.data();
         memory.resize(2 * prev_size + 1);
-        Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
+        Base::setPaddedStorage(memory, prev_size, memory.size() - prev_size);
     }
 
     void finalizeImpl() final

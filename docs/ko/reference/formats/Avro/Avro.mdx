@@ -63,7 +63,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 ClickHouse 테이블 컬럼의 데이터 타입은 삽입되는 Avro 데이터의 해당 필드와 다를 수 있습니다. 데이터를 삽입할 때 ClickHouse는 위 표에 따라 데이터 타입을 해석한 다음, 데이터를 해당 컬럼 타입으로 [캐스팅](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)합니다.
 
-데이터를 가져오는 중 스키마에서 필드를 찾을 수 없고 설정 [`input_format_avro_allow_missing_fields`](/ko/reference/settings/formats#input_format_avro_allow_missing_fields)가 활성화되어 있으면, 오류를 발생시키는 대신 기본값이 사용됩니다.
+데이터를 가져오는 중 스키마에서 필드를 찾을 수 없고 설정 [`input_format_avro_allow_missing_fields`](/ko/reference/settings/formats/input-format#input_format_avro_allow_missing_fields)가 활성화되어 있으면, 오류를 발생시키는 대신 기본값이 사용됩니다.
 
 <div id="writing-avro-data">
   ### Avro 파일에 데이터 쓰기
@@ -80,7 +80,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 * `[A-Za-z_]`로 시작해야 합니다
 * 뒤에는 `[A-Za-z0-9_]`만 사용할 수 있습니다
 
-Avro 파일의 출력 압축 및 동기화 인터벌은 각각 [`output_format_avro_codec`](/ko/reference/settings/formats#output_format_avro_codec) 및 [`output_format_avro_sync_interval`](/ko/reference/settings/formats#output_format_avro_sync_interval) 설정으로 구성할 수 있습니다.
+Avro 파일의 출력 압축 및 동기화 인터벌은 각각 [`output_format_avro_codec`](/ko/reference/settings/formats/output-format#output_format_avro_codec) 및 [`output_format_avro_sync_interval`](/ko/reference/settings/formats/output-format#output_format_avro_sync_interval) 설정으로 구성할 수 있습니다.
 
 <div id="inferring-the-avro-schema">
   ### Avro 스키마 추론

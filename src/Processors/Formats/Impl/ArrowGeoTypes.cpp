@@ -24,7 +24,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
-#if USE_ARROW
+#if USE_ARROW_LIBRARY
 const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
     if (!metadata)
@@ -38,7 +38,7 @@ const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMeta
 }
 #endif
 
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
+UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
 {
     if (!geo_json_str)
         return {};
@@ -51,7 +51,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata: missing \"columns\"");
     const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
 
     for (const auto & column_entry : *columns)
     {
@@ -60,11 +60,25 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
 
         String encoding_name = column_obj->getValue<std::string>("encoding");
         GeoEncoding geo_encoding = {};
+        /// The geometry type implied by a native (GeoArrow) encoding.
+        std::optional<GeoType> native_type;
 
         if (encoding_name == "WKB")
             geo_encoding = GeoEncoding::WKB;
         else if (encoding_name == "WKT")
             geo_encoding = GeoEncoding::WKT;
+        else if (encoding_name == "point")
+            native_type = GeoType::Point;
+        else if (encoding_name == "linestring")
+            native_type = GeoType::LineString;
+        else if (encoding_name == "polygon")
+            native_type = GeoType::Polygon;
+        else if (encoding_name == "multipoint")
+            native_type = GeoType::MultiPoint;
+        else if (encoding_name == "multilinestring")
+            native_type = GeoType::MultiLineString;
+        else if (encoding_name == "multipolygon")
+            native_type = GeoType::MultiPolygon;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
 
@@ -102,7 +116,57 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
             result_type = GeoType::Mixed;
         }
 
-        geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
+        if (native_type)
+        {
+            /// A native encoding can store only one geometry type, and `geometry_types` can only
+            /// repeat it (possibly with Z or M coordinates, which are then rejected when the data is
+            /// read, because the struct has more fields than the two of `Point`).
+            geo_encoding = GeoEncoding::Native;
+            result_type = *native_type;
+        }
+
+        GeoColumnMetadata meta;
+        meta.encoding = geo_encoding;
+        meta.type = result_type;
+
+        /// Parse optional covering.bbox.
+        /// GeoParquet 1.1.0 format: {"covering": {"bbox": {"xmin": ["col", "field"], ...}}}
+        /// Each value is an array of path components joined with '.' to form the primitive column name.
+        if (column_obj->has("covering"))
+        {
+            const auto covering_obj = column_obj->getObject("covering");
+            if (covering_obj && covering_obj->has("bbox"))
+            {
+                const auto bbox_obj = covering_obj->getObject("bbox");
+                if (bbox_obj
+                    && bbox_obj->has("xmin") && bbox_obj->has("ymin")
+                    && bbox_obj->has("xmax") && bbox_obj->has("ymax"))
+                {
+                    /// Convert path-component array ["col", "field"] → "col.field"
+                    auto get_col = [&](const std::string & bbox_key) -> String
+                    {
+                        const auto arr = bbox_obj->getArray(bbox_key);
+                        if (!arr || arr->size() == 0)
+                            return {};
+                        String path;
+                        for (unsigned j = 0; j < arr->size(); ++j)
+                        {
+                            if (j > 0) path += ".";
+                            path += arr->getElement<std::string>(j);
+                        }
+                        return path;
+                    };
+                    String xmin = get_col("xmin");
+                    String ymin = get_col("ymin");
+                    String xmax = get_col("xmax");
+                    String ymax = get_col("ymax");
+                    if (!xmin.empty() && !ymin.empty() && !xmax.empty() && !ymax.empty())
+                        meta.covering_bbox = GeoColumnMetadata::BboxCovering{xmin, ymin, xmax, ymax};
+                }
+            }
+        }
+
+        geo_columns[column_name] = std::move(meta);
     }
 
     return geo_columns;

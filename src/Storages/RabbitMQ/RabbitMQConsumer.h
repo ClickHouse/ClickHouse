@@ -4,8 +4,11 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/saturatedDuration.h>
 
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 
 namespace Poco
 {
@@ -78,7 +81,7 @@ public:
         std::unique_lock lock(mutex);
         if (!timeout_ms)
             timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms),
+        cv.wait_for(lock, saturatedMilliseconds(*timeout_ms),
             [&]{ return !received.empty() || isConsumerStopped() || (is_cancelled && is_cancelled()); });
     }
 
@@ -87,10 +90,28 @@ public:
 
     void closeConnections();
 
+    /// True once the broker has answered the channel.close sent by closeConnections(). A consumer
+    /// that never had a channel reports true, as there is nothing to wait for.
+    bool isChannelCloseCompleted() const { return !close_state || close_state->completed; }
+
+    /// Stop expecting that answer, so a callback dispatched later becomes a no-op.
+    void abandonChannelClose() { if (close_state) close_state->abandoned = true; }
+
 private:
-    void subscribe();
+    void subscribe(UInt64 generation);
+    bool isCurrentChannel(UInt64 generation) const { return generation == channel_generation; }
     bool isChannelUsable();
+    void notifyReceivedSpace();
     void updateCommitInfo(CommitInfo record);
+
+    /// Shared by value into the close() callbacks, mirroring RabbitMQProducer::finish, so that a
+    /// late dispatch after the wait was abandoned cannot touch a destroyed consumer.
+    struct ChannelCloseState
+    {
+        std::atomic<bool> completed = false;
+        std::atomic<bool> abandoned = false;
+    };
+    std::shared_ptr<ChannelCloseState> close_state;
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
@@ -104,6 +125,9 @@ private:
 
     String channel_id;
     UInt64 channel_id_counter = 0;
+    /// Incremented on every channel update and captured by value in the channel callbacks.
+    /// AMQP-CPP can dispatch callbacks of a replaced channel later, they must not touch the consumer state.
+    std::atomic<UInt64> channel_generation = 0;
 
     enum class State : uint8_t
     {
@@ -122,6 +146,13 @@ private:
 
     std::condition_variable cv;
     std::mutex mutex;
+
+    /// Held by the channel callbacks while they touch the consumer state and by `updateChannel`
+    /// while it replaces the generation and clears `received`. Recursive because AMQP-CPP calls the error
+    /// callback of a failed `consume` right away, from `subscribe` inside the `onReady` callback.
+    std::recursive_mutex channel_mutex;
+    /// Notified when `received` gets space, the channel is replaced, or the consumer is stopped.
+    std::condition_variable_any received_space_cv;
 };
 
 }
