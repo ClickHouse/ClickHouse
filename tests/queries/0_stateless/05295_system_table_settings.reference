@@ -1,0 +1,27 @@
+-- stated and altered settings, in the settings class form
+index_granularity	4096	1
+min_bytes_for_wide_part	10000000	1
+parts_to_throw_insert	500	1
+-- a table that states nothing has exactly its engine rows
+0
+0
+max_rows_to_keep	100
+-- Distributed: a stated value, one stated through an alias, and the server fill-in
+dist_alias	1	1
+dist_stated	1	1
+1
+-- a setting the engine never reads, such as a format setting of Set, is shown only where the definition states it
+set_plain	disk	default	0
+set_plain	persistent	1	0
+set_stated	disk	default	0
+set_stated	format_csv_delimiter	;	1
+set_stated	persistent	1	0
+-- a view has no engine settings
+0
+-- access: the SELECT grant, then SHOW TABLES per table
+ACCESS_DENIED
+0
+mem_stated
+-- the condition cannot probe a database or a table the user cannot see
+5
+5

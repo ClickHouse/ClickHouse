@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Elasticsearch/ElasticsearchSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 
 namespace DB
 {
@@ -98,4 +99,7 @@ void ElasticsearchSettings::sanityCheck() const
             "Setting `page_size` must be positive. `page_size`: {}",
             (*impl)[ElasticsearchSetting::page_size].value);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ElasticsearchSettings)
+
 }
