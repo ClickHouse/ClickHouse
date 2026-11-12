@@ -684,8 +684,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
 {
     /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
     /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
+    /// An insert without data queues a block without columns.
     for (const auto & elem : block)
-        if (elem.column->convertToFullIfWrapped().get() != elem.column.get())
+        if (elem.column && elem.column->convertToFullIfWrapped().get() != elem.column.get())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Async insert block column '{}' must be materialized before queuing, but has a "
