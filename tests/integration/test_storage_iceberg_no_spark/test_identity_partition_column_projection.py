@@ -396,6 +396,65 @@ def test_identity_partition_column_not_stored_in_data_files(
     )
 
 
+def test_identity_partition_column_kept_by_compaction(started_cluster_iceberg_no_spark):
+    # OPTIMIZE rewrites a data file that does not store its identity-partition column: the rewritten file must hold the
+    # partition value from the manifest, as SELECT reads it.
+    cluster = started_cluster_iceberg_no_spark
+    instance = cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    location = f"data_{uuid.uuid4().hex}"
+    catalog = load_catalog_impl(cluster)
+
+    table = catalog.create_table(
+        identifier=f"{namespace}.t_part",
+        schema=SCHEMA,
+        location=f"s3://warehouse-rest/{location}",
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=2,
+                field_id=1000,
+                transform=IdentityTransform(),
+                name="region",
+            )
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "region": "East", "val": "a"},
+                {"id": 2, "region": "West", "val": "b"},
+                {"id": 3, "region": "East", "val": "c"},
+            ],
+            schema=ARROW_SCHEMA,
+        )
+    )
+    files_before = data_file_paths(table)
+    for path in files_before:
+        drop_column_from_data_file(cluster, path, "region")
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{namespace}.t_part`"
+    settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "mutations_sync": 2}
+
+    instance.query(f"ALTER TABLE {table_expression} DELETE WHERE val = 'a'", settings=settings)
+    instance.query(f"OPTIMIZE TABLE {table_expression}", settings={**settings, "allow_experimental_iceberg_compaction": 1})
+
+    assert (
+        instance.query(f"SELECT id, region, val FROM {table_expression} ORDER BY id").strip()
+        == "2\tWest\tb\n3\tEast\tc"
+    )
+
+    rewritten = [
+        o.object_name
+        for o in cluster.minio_client.list_objects("warehouse-rest", f"{location}/", recursive=True)
+        if os.path.basename(o.object_name).startswith("data-")
+        and f"s3://warehouse-rest/{o.object_name}" not in files_before
+    ]
+    assert len(rewritten) == 1, rewritten
+    content = read_minio_object(cluster, "warehouse-rest", rewritten[0])
+    assert pq.read_table(pa.BufferReader(content)).select(["id", "region"]).to_pylist() == [{"id": 3, "region": "East"}]
+
+
 def test_identity_partition_column_added_by_partition_evolution(
     started_cluster_iceberg_no_spark,
 ):

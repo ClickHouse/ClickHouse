@@ -10,8 +10,8 @@ from helpers.iceberg_utils import create_iceberg_table, get_uuid_str
 # only durable place the cursor can live is the Iceberg snapshot (in MinIO for storage_type=s3). A kill
 # between rounds therefore proves the cursor is read back from the table, i.e. exactly-once.
 @pytest.mark.parametrize("storage_type", ["local", "s3"])
-@pytest.mark.parametrize("drop_partition", [False, True])
-def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg_no_spark, storage_type, drop_partition):
+@pytest.mark.parametrize("rewrite", [None, "drop_partition", "optimize"])
+def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg_no_spark, storage_type, rewrite):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     suffix = storage_type + "_" + get_uuid_str()
     src = f"irmv_src_{suffix}"
@@ -34,7 +34,7 @@ def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg
 
     create_iceberg_table(
         storage_type, instance, tgt, started_cluster_iceberg_no_spark, "(k Int64)",
-        partition_by="k" if drop_partition else "",
+        partition_by="k" if rewrite == "drop_partition" else "",
     )
 
     # REFRESH EVERY 10 YEAR + EMPTY: no automatic refresh; every refresh below is triggered manually.
@@ -60,13 +60,19 @@ def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg
     ).strip()
     assert cursor != "", "refresh cursor was not embedded in the Iceberg snapshot summary"
 
-    if drop_partition:
+    if rewrite == "drop_partition":
         instance.query(f"ALTER TABLE {tgt} DROP PARTITION 0 SETTINGS allow_insert_into_iceberg = 1")
+    elif rewrite == "optimize":
+        instance.query(f"ALTER TABLE {tgt} DELETE WHERE k = 0 SETTINGS allow_insert_into_iceberg = 1")
+        instance.query(f"OPTIMIZE TABLE {tgt} SETTINGS allow_experimental_iceberg_compaction = 1")
+    if rewrite:
         assert instance.query(f"SELECT count(), uniqExact(k) FROM {tgt}").strip() == "4\t4"
-        assert instance.query(
-            f"SELECT summary['clickhouse.refresh-cursor'] FROM system.iceberg_history "
+        operation, latest_cursor = instance.query(
+            f"SELECT operation, summary['clickhouse.refresh-cursor'] FROM system.iceberg_history "
             f"WHERE database = 'default' AND table = '{tgt}' ORDER BY made_current_at DESC LIMIT 1"
-        ).strip() == cursor
+        ).rstrip("\n").split("\t")
+        assert latest_cursor == cursor
+        assert rewrite != "optimize" or operation == "REPLACE", operation
 
     # Restart wipes all in-memory RefreshTask state. Only the cursor persisted in the Iceberg snapshot
     # summary can let the next refresh resume instead of re-reading from the beginning.
@@ -77,7 +83,7 @@ def test_incremental_refreshable_mv_iceberg_exactly_once(started_cluster_iceberg
     instance.query(f"INSERT INTO {src} SELECT number FROM numbers(5, 5)")
     instance.query(f"SYSTEM REFRESH VIEW {mv}")
     instance.query(f"SYSTEM WAIT VIEW {mv}")
-    expected_count = 9 if drop_partition else 10
+    expected_count = 9 if rewrite else 10
     assert instance.query(f"SELECT count(), uniqExact(k) FROM {tgt}").strip() == f"{expected_count}\t{expected_count}"
 
     instance.query(f"DROP TABLE {mv}")

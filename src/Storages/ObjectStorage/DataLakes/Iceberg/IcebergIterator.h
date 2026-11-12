@@ -33,6 +33,10 @@ namespace DB
 
 namespace Iceberg
 {
+
+/// Whether `data_file_path` is within the referenced data file bounds of `position_delete`.
+bool positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path);
+
 class ManifestFilesPrefetcher;
 class RuntimeFilterFilePruning;
 }

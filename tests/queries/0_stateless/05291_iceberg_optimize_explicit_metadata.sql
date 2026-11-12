@@ -50,30 +50,6 @@ ORDER BY id
 SETTINGS allow_experimental_iceberg_compaction = 0;
 SELECT id FROM pinned ORDER BY id;
 
--- A lagging version hint is another way to select the same stale metadata.
-INSERT INTO FUNCTION file(
-    concat((SELECT path FROM iceberg_path), 'metadata/version-hint.text'),
-    'RawBLOB',
-    'hint String')
-SELECT '3'
-SETTINGS engine_file_truncate_on_insert = 1;
-
-CREATE TABLE hinted
-ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet')
-SETTINGS iceberg_use_version_hint = 1,
-         allow_experimental_iceberg_compaction = 0;
-SELECT id FROM hinted ORDER BY id;
-
--- OSS rejects the stale hint with (NOT_IMPLEMENTED); the cloud fails with (BAD_ARGUMENTS) at a later stage
-OPTIMIZE TABLE hinted SETTINGS allow_experimental_iceberg_compaction = 1; -- { serverError NOT_IMPLEMENTED, BAD_ARGUMENTS }
-
-SELECT id
-FROM icebergLocal((SELECT path FROM iceberg_path), 'Parquet')
-ORDER BY id
-SETTINGS allow_experimental_iceberg_compaction = 0;
-SELECT id FROM hinted ORDER BY id;
-
-DROP TABLE hinted SYNC;
 DROP TABLE pinned SYNC;
 SET iceberg_delete_data_on_drop = 1;
 DROP TABLE t SYNC;

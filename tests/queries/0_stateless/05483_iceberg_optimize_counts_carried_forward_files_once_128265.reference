@@ -1,13 +1,13 @@
 appended_parent 2 2
-appended_parent total-records: ['1','2']
-appended_parent total-data-files: ['1','2']
+appended_parent total-records: ['2','2','3','3']
+appended_parent total-data-files: ['1','2','2','2']
 appended_parent total-files-size is the size of the data files: 1
 delete_parent 2 2
-delete_parent total-records: ['1','2']
-delete_parent total-data-files: ['1','2']
+delete_parent total-records: ['2','2','2','3']
+delete_parent total-data-files: ['1','1','2','2']
 delete_parent total-files-size is the size of the data files: 1
 delete_file_reads 2 2
-delete_file_reads total-records: ['0','0','1','2']
-delete_file_reads total-data-files: ['1','2','3','4']
+delete_file_reads total-records: ['1','2','2','3','4','4','4']
+delete_file_reads total-data-files: ['1','2','2','3','4','4','4']
 delete_file_reads total-files-size is the size of the data files: 1
 delete_file_reads reads per delete file: 2 2

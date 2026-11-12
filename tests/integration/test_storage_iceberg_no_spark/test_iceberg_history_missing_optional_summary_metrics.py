@@ -57,10 +57,7 @@ def test_iceberg_history_missing_optional_summary_metrics(
         "(x Int)",
         format_version,
     )
-    # Two `append` snapshots. `getHistory` parses every summary regardless of operation,
-    # so `append` is required not to reach the parse but to avoid an unrelated rejection
-    # after it: `tryGetAppendUpdate` skips `delete` and position-delete-only `overwrite`
-    # and throws on `replace` and any other `overwrite`.
+    # Two `append` snapshots: `system.iceberg_history` parses every summary regardless of operation.
     instance.query(f"INSERT INTO {table_name} VALUES (1);")
     instance.query(f"INSERT INTO {table_name} VALUES (2);")
 
@@ -73,8 +70,7 @@ def test_iceberg_history_missing_optional_summary_metrics(
         assert (
             summary.get("operation") == "append"
         ), f"fixture requires append snapshots, got {summary.get('operation')!r}"
-        # `checkIfIcebergHistorySupported` rejects an append with 0 added files, so only
-        # the two fields from the bug report are removed.
+        # Only the two spec-optional metrics named in the docstring are stripped; every other summary field stays.
         assert "added-data-files" in summary, "added-data-files must be kept"
         for field in ("added-files-size", "changed-partition-count"):
             if field in summary:
@@ -87,11 +83,10 @@ def test_iceberg_history_missing_optional_summary_metrics(
     # already-read version is not re-read and this test would pass without the fix.
     _write_next_metadata(instance, table_name, meta, prev)
 
-    # This is the statement from the bug report. `IcebergMetadata::optimize` calls
-    # `getHistory` before `compactIcebergTable`, so the summary is read here for both
-    # format versions and only the compaction that follows it is v2-only. On the cloud
-    # build `OPTIMIZE` is gated by a member flag rather than this setting and that path
-    # never calls `getHistory` at all.
+    # This is the statement from the bug report. `OPTIMIZE` plans over the current snapshot only: on format version 2,
+    # with no position deletes, it returns without committing, and format version 1 is refused first. Either way it
+    # must not trip over the stripped summaries. On the cloud build `OPTIMIZE` is gated by a member flag rather than
+    # this setting.
     is_cloud = instance.query(
         "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'"
     ).strip()
@@ -105,7 +100,7 @@ def test_iceberg_history_missing_optional_summary_metrics(
         assert (
             "Can not convert empty value" not in message
         ), f"OPTIMIZE hit the missing-optional-summary-metric conversion: {message}"
-        # Anything else must be one of the two known post-`getHistory` rejections,
+        # Anything else must be one of the two known rejections,
         # otherwise an unrelated failure would pass this check silently.
         tolerated = is_cloud == "1" or (
             format_version == 1
