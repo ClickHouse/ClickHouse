@@ -1,0 +1,20 @@
+UInt8	0
+UInt16	0
+UInt32	0
+UInt64	0
+UInt128	0
+Int128	0
+UInt256	0
+Int256	0
+Decimal32	0
+Decimal64	0
+Decimal128	0
+Decimal256	0
+Float32	0
+Float64	0
+FixedString	0
+Nullable(UInt64)	0
+LowCardinality(Nullable(UInt64))	0
+Tuple(UInt16, Decimal128)	0
+Array(UInt64)	0
+String	0

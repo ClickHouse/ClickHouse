@@ -671,6 +671,14 @@ size_t ColumnArray::byteSizeAt(size_t n) const
     size_t end = offsets_data[n];
 
     size_t res = sizeof(offsets_data[0]);
+    const size_t array_size = end - pos;
+    /// Avoid the additional virtual call for short arrays.
+    if (array_size > 4 && pos < end && getData().isFixedAndContiguous())
+    {
+        /// Per-value accounting can include overhead beyond the contiguous payload.
+        return res + array_size * getData().byteSizeAt(pos);
+    }
+
     for (; pos < end; ++pos)
         res += getData().byteSizeAt(pos);
 
@@ -1558,7 +1566,7 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
             /// memcpySmallAllowReadWriteOverflow15 is slower than memcpy for long values.
-            if (value_bytes <= 64)
+            if (value_bytes <= 128)
                 memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_bytes);
             else
                 memcpy(&res_data[current_new_offset], src, value_bytes);
