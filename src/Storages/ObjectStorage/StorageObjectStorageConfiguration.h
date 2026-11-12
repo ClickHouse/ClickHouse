@@ -229,6 +229,9 @@ public:
     }
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    /// Request settings given as explicit arguments, which `update` keeps over the server config.
+    virtual std::map<String, String> getExplicitRequestSettings() const { return {}; }
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     /// For a table created on top of a server disk: the config section of the disk that holds the
@@ -298,6 +301,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
     virtual Pipe alterPartition(
+        ObjectStoragePtr /* object_storage */,
         const PartitionCommands & /* commands */,
         ContextPtr /* context */,
         std::shared_ptr<DataLake::ICatalog> /* catalog */,

@@ -203,6 +203,26 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (auto rows = table->totalRows(getContext()); rows > 0)
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
+
+        AccessFlags drop_storage;
+
+        if (table->isView())
+            drop_storage = AccessType::DROP_VIEW;
+        else if (table->isDictionary())
+            drop_storage = AccessType::DROP_DICTIONARY;
+        else
+            drop_storage = AccessType::DROP_TABLE;
+
+        /// Authorize before asking whether the table supports transactions: for a lazily loaded table
+        /// (see the `lazy_load_tables` database setting) that loads the table and reveals its engine.
+        /// An internal `DROP` with `no_access_check` (e.g. the cleanup of `CREATE OR REPLACE`) was authorized by its caller.
+        if (context_->getCurrentTransaction())
+        {
+            if (query.kind == ASTDropQuery::Kind::Truncate)
+                context_->checkAccess(AccessType::TRUNCATE, table_id);
+            else if (query.kind != ASTDropQuery::Kind::Drop || !query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
+        }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
         auto & ast_drop_query = query.as<ASTDropQuery &>();
@@ -260,15 +280,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
-
-        AccessFlags drop_storage;
-
-        if (table->isView())
-            drop_storage = AccessType::DROP_VIEW;
-        else if (table->isDictionary())
-            drop_storage = AccessType::DROP_DICTIONARY;
-        else
-            drop_storage = AccessType::DROP_TABLE;
 
         auto new_query_ptr = query.clone();
         auto & query_to_send = new_query_ptr->as<ASTDropQuery &>();
