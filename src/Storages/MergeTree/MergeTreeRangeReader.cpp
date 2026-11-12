@@ -1973,10 +1973,14 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         /// Rows that this step filtered out: those that entered the step minus those that still survive
         /// (mirrors the survivor count used for `rows_passed_filter` above). Summed over all steps, this is
-        /// the total number of rows dropped by PREWHERE.
-        const size_t rows_after_prewhere_filter
-            = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
-        ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_prewhere_filter - rows_after_prewhere_filter);
+        /// the total number of rows dropped by PREWHERE. Counted only for the query's PREWHERE predicate, so a
+        /// row-level-security filter, a lightweight-delete mask, or an on-fly mutation is not attributed to it.
+        if (prewhere_info->is_query_prewhere)
+        {
+            const size_t rows_after_prewhere_filter
+                = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+            ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_prewhere_filter - rows_after_prewhere_filter);
+        }
     }
 
     LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());

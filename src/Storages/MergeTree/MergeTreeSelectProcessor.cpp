@@ -459,6 +459,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .perform_alter_conversions = true,
             .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
+            .is_query_prewhere = true,
         };
 
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));

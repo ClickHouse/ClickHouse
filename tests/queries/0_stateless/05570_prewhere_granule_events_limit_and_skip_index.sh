@@ -58,12 +58,30 @@ qid_skip="${CLICKHOUSE_DATABASE}_skip_$RANDOM$RANDOM"
 ${CLICKHOUSE_CLIENT} --max_threads 1 --use_query_condition_cache 0 --optimize_move_to_prewhere 0 --use_skip_indexes_on_data_read 1 \
   --query_id "$qid_skip" -q "SELECT sum(a) FROM t_skip PREWHERE b % 2 = 0 WHERE v < 500 FORMAT Null"
 
+# -------- Early termination drops a fully-read trailing granule --------
+# max_block_size=16384 reads two whole granules per block. PREWHERE b < 8192 OR b >= 16384 keeps granule 0
+# (rows 0..8191) and rejects every row of granule 1 (rows 8192..16383). LIMIT 1 is satisfied by granule 0,
+# so the read stops with granule 1 as the last, fully-read granule of the block. It must be counted dropped
+# even though no later granule and no normal task end follow to flush it: PREWHERE read 2 granules, dropped 1.
+${CLICKHOUSE_CLIENT} -q "
+  DROP TABLE IF EXISTS t_drop_trailing;
+  CREATE TABLE t_drop_trailing(a UInt32, b UInt32) ENGINE=MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, index_granularity=8192, add_minmax_index_for_numeric_columns=0;
+  INSERT INTO t_drop_trailing SELECT number, number FROM numbers(131072)
+    SETTINGS min_insert_block_size_rows = 131073, min_insert_block_size_bytes = 0;
+"
+qid_drop_trailing="${CLICKHOUSE_DATABASE}_drop_trailing_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --max_threads 1 --max_block_size 16384 --use_query_condition_cache 0 --optimize_read_in_order 0 \
+  --query_id "$qid_drop_trailing" -q "SELECT a FROM t_drop_trailing PREWHERE b < 8192 OR b >= 16384 LIMIT 1 FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # granules read / granules dropped by PREWHERE.
-#   limit: 2, 1
-#   skip:  8, 0
+#   limit:         2, 1
+#   skip:          8, 0
+#   drop_trailing: 2, 1
 dump_events "$qid_limit"
 dump_events "$qid_skip"
+dump_events "$qid_drop_trailing"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_limit; DROP TABLE t_skip"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_limit; DROP TABLE t_skip; DROP TABLE t_drop_trailing"

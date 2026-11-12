@@ -55,6 +55,13 @@ struct PrewhereExprStep
 
     /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
     bool query_condition_cache_attribution_boundary = false;
+
+    /// True only for a step that evaluates the query's `PREWHERE` predicate. A `Filter` step may instead
+    /// be a row-level-security filter, a lightweight-delete `_row_exists` mask, or an on-fly mutation
+    /// (`UPDATE`/`DELETE`) filter, all of which look identical here. The PREWHERE effect ProfileEvents
+    /// count only these steps, so that a query without `PREWHERE` reports nothing and filtering by
+    /// mutations/policies is not attributed to `PREWHERE`.
+    bool is_query_prewhere = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -382,13 +389,16 @@ public:
 
         /// Calls `callback(mark, surviving_rows)` once for every granule that PREWHERE actually read, where
         /// `mark` is the granule's mark number in the part and `surviving_rows` is
-        /// `surviving_rows_per_granule[i]` for it. The caller passes `survivingRowsPerGranule()`. Granules
-        /// skipped before PREWHERE (`raw_rows_per_granule[i] == 0`: pruned by a skip index or the query
-        /// condition cache) are omitted. Uses the same mark mapping as `computeUnmatchedMarkRanges`. A
-        /// granule split across read blocks appears in each block it spans, so the caller must combine the
-        /// pieces (see `MergeTreeReadersChain` PREWHERE granule stats).
+        /// `surviving_rows_per_granule[i]` for it. The caller passes `survivingRowsPerGranule()` as the
+        /// survivors. A granule is "read by PREWHERE" only if rows reached the first query-PREWHERE step:
+        /// `entering_rows_per_granule[i] == 0` omits it, covering both a mark pruned before PREWHERE (a skip
+        /// index or the query condition cache) and a granule emptied by an earlier mutation/row-policy
+        /// filter. The caller passes the survivor count at the PREWHERE boundary (or the raw rows read when
+        /// PREWHERE is the first step). Uses the same mark mapping as `computeUnmatchedMarkRanges`. A granule
+        /// split across read blocks appears in each block it spans, so the caller must combine the pieces
+        /// (see `MergeTreeReadersChain` PREWHERE granule stats).
         template <typename Callback>
-        void forEachGranuleMark(const NumRows & surviving_rows_per_granule, Callback && callback) const
+        void forEachGranuleMark(const NumRows & entering_rows_per_granule, const NumRows & surviving_rows_per_granule, Callback && callback) const
         {
             if (rows_per_granule.empty())
                 return;
@@ -399,7 +409,7 @@ public:
 
             if (in_progress_start_mark.has_value())
                 for (size_t i = 0; i < i_start; ++i)
-                    if (raw_rows_per_granule[i] != 0)
+                    if (entering_rows_per_granule[i] != 0)
                         callback(*in_progress_start_mark + i, surviving_rows_per_granule[i]);
 
             size_t range_idx = 0;
@@ -408,7 +418,7 @@ public:
                 while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
                     ++range_idx;
 
-                if (raw_rows_per_granule[i] == 0)
+                if (entering_rows_per_granule[i] == 0)
                     continue;
 
                 const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;

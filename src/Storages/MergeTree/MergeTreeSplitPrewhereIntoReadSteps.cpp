@@ -514,6 +514,7 @@ bool tryBuildPrewhereSteps(
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
                 .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
+                .is_query_prewhere = true,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

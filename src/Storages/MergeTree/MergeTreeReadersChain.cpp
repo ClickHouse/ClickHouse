@@ -62,14 +62,17 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
         }
     }
 
-    /// The PREWHERE granule ProfileEvents are only meaningful when the chain actually evaluates a PREWHERE
-    /// filter: a chain without a Filter step neither reads nor drops granules "by PREWHERE".
-    for (const auto & range_reader : range_readers)
+    /// The PREWHERE granule ProfileEvents are only meaningful when the chain evaluates the query's PREWHERE
+    /// predicate. A `Filter` step may instead be a row-level-security filter, a lightweight-delete mask, or
+    /// an on-fly mutation filter, none of which is PREWHERE; `is_query_prewhere` marks the real one. A chain
+    /// without such a step (e.g. a query with no PREWHERE, only an on-fly DELETE) counts nothing.
+    for (size_t i = 0; i < range_readers.size(); ++i)
     {
-        const auto * step = range_reader.getPrewhereInfo();
-        if (step && step->type == PrewhereExprStep::Filter)
+        const auto * step = range_readers[i].getPrewhereInfo();
+        if (step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere)
         {
             prewhere_granule_stats_enabled = true;
+            first_query_prewhere_reader_index = i;
             break;
         }
     }
@@ -380,8 +383,16 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
+    /// Survivors per granule at the first query-PREWHERE reader's input, captured only when an earlier reader
+    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
+    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
+    std::optional<std::vector<size_t>> rows_entering_prewhere;
+
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
+        if (prewhere_granule_stats_enabled && i == first_query_prewhere_reader_index)
+            rows_entering_prewhere = read_result.survivingRowsPerGranule();
+
         const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
@@ -425,20 +436,26 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
 
-    /// Account the granules this block read and dropped by PREWHERE. The result now reflects all PREWHERE
-    /// steps, so `survivingRowsPerGranule` holds the final survivor count of each granule PREWHERE read.
-    /// Feed them in mark order; a granule split across blocks is reassembled by `feedPrewhereGranuleMark`.
+    /// Account the granules this block read and dropped by PREWHERE. `survivingRowsPerGranule` holds the
+    /// final survivor count of each granule, and `entering` the rows that reached PREWHERE (survivors at its
+    /// input, or the raw rows read when PREWHERE is the first reader). A granule is read by PREWHERE only when
+    /// `entering > 0`, so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy
+    /// filter are excluded. Feed them in mark order; a granule split across blocks is reassembled by
+    /// `feedPrewhereGranuleMark`.
     if (prewhere_granule_stats_enabled)
     {
+        const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
         const auto surviving_rows_per_granule = read_result.survivingRowsPerGranule();
-        read_result.forEachGranuleMark(surviving_rows_per_granule, [this](size_t mark, size_t surviving_rows)
+        read_result.forEachGranuleMark(entering, surviving_rows_per_granule, [this](size_t mark, size_t surviving_rows)
         {
             feedPrewhereGranuleMark(mark, surviving_rows > 0);
         });
 
-        /// The whole part is read: the pending granule was read in full, so finalize it. On early
-        /// termination this is not reached, leaving the trailing granule counted as read but not dropped.
-        if (ranges.empty() && isCurrentRangeFinished() && prewhere_pending_mark)
+        /// Finalize the trailing granule as soon as the first reader's cursor proves it was read in full
+        /// (`numReadRowsInCurrentGranule() == 0`: the stream is at a mark boundary, not mid-granule). It stays
+        /// pending only when the block stopped mid-granule, i.e. the granule continues in the next block. This
+        /// also finalizes it on early termination (LIMIT), which the task-end path below would miss.
+        if (prewhere_pending_mark && range_readers.front().numReadRowsInCurrentGranule() == 0)
             finalizeCompletedPrewhereGranule();
     }
 

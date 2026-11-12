@@ -144,6 +144,10 @@ private:
     void finalizeCompletedPrewhereGranule();
 
     bool prewhere_granule_stats_enabled = false;
+    /// Index in `range_readers` of the first reader whose step is the query `PREWHERE`. Granules are counted
+    /// as entering PREWHERE from the survivors at this reader's input, so filtering done by earlier readers
+    /// (on-fly mutations, row-level policies) is not attributed to PREWHERE. Valid only when stats enabled.
+    size_t first_query_prewhere_reader_index = 0;
     std::optional<size_t> prewhere_pending_mark;
     bool prewhere_pending_mark_survived = false;
 
