@@ -74,14 +74,34 @@ qid_drop_trailing="${CLICKHOUSE_DATABASE}_drop_trailing_$RANDOM$RANDOM"
 ${CLICKHOUSE_CLIENT} --max_threads 1 --max_block_size 16384 --use_query_condition_cache 0 --optimize_read_in_order 0 \
   --query_id "$qid_drop_trailing" -q "SELECT a FROM t_drop_trailing PREWHERE b < 8192 OR b >= 16384 LIMIT 1 FORMAT Null"
 
+# -------- Drop a complete granule while the cursor stops inside a later, emptied granule --------
+# Same keep/reject pattern, but an on-fly DELETE empties granule 2 (rows 16384..24575) and max_block_size=20480
+# makes the block stop partway through granule 2. Granule 1 (rows 8192..16383) is read in full and rejected, so
+# it must be counted dropped even though the cursor is mid-granule-2: the pending granule is complete once the
+# cursor advances past its mark, regardless of where inside the next (unfed) granule it stopped. Read 2, dropped 1.
+${CLICKHOUSE_CLIENT} -q "
+  DROP TABLE IF EXISTS t_drop_behind;
+  CREATE TABLE t_drop_behind(a UInt32, b UInt32) ENGINE=MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, index_granularity=8192, add_minmax_index_for_numeric_columns=0;
+  INSERT INTO t_drop_behind SELECT number, number FROM numbers(131072)
+    SETTINGS min_insert_block_size_rows = 131073, min_insert_block_size_bytes = 0;
+  SYSTEM STOP MERGES t_drop_behind;
+  ALTER TABLE t_drop_behind DELETE WHERE a >= 16384 AND a < 24576 SETTINGS mutations_sync = 0;
+"
+qid_drop_behind="${CLICKHOUSE_DATABASE}_drop_behind_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --apply_mutations_on_fly 1 --max_threads 1 --max_block_size 20480 --use_query_condition_cache 0 --optimize_read_in_order 0 \
+  --query_id "$qid_drop_behind" -q "SELECT a FROM t_drop_behind PREWHERE b < 8192 OR b >= 16384 LIMIT 1 FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # granules read / granules dropped by PREWHERE.
 #   limit:         2, 1
 #   skip:          8, 0
 #   drop_trailing: 2, 1
+#   drop_behind:   2, 1
 dump_events "$qid_limit"
 dump_events "$qid_skip"
 dump_events "$qid_drop_trailing"
+dump_events "$qid_drop_behind"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_limit; DROP TABLE t_skip; DROP TABLE t_drop_trailing"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_limit; DROP TABLE t_skip; DROP TABLE t_drop_trailing; DROP TABLE t_drop_behind"

@@ -451,11 +451,13 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             feedPrewhereGranuleMark(mark, surviving_rows > 0);
         });
 
-        /// Finalize the trailing granule as soon as the first reader's cursor proves it was read in full
-        /// (`numReadRowsInCurrentGranule() == 0`: the stream is at a mark boundary, not mid-granule). It stays
-        /// pending only when the block stopped mid-granule, i.e. the granule continues in the next block. This
-        /// also finalizes it on early termination (LIMIT), which the task-end path below would miss.
-        if (prewhere_pending_mark && range_readers.front().numReadRowsInCurrentGranule() == 0)
+        /// Finalize the pending granule once the first reader's cursor has advanced past its mark, which
+        /// proves it was read in full. Comparing the mark (not `numReadRowsInCurrentGranule() == 0`) is needed
+        /// because the cursor may stop partway through a *later* granule that an earlier filter emptied, so it
+        /// was not fed here; the pending, earlier granule is still complete. It stays pending only while the
+        /// cursor is still inside it: a genuine split across blocks, or a granule cut short by early
+        /// termination. This also finalizes it on early termination (LIMIT), which the task-end path would miss.
+        if (prewhere_pending_mark && range_readers.front().currentMark() > *prewhere_pending_mark)
             finalizeCompletedPrewhereGranule();
     }
 
