@@ -493,7 +493,8 @@ WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
 ```
 
-The vector similarity indexes of a single table can be removed from the cache with statement [SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE](/reference/statements/system#drop-vector-similarity-index-cache), while the indexes of the other tables stay cached:
+The statement [`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#drop-vector-similarity-index-cache) removes all vector similarity indexes from the cache.
+To remove only the indexes of a single table and keep those of the other tables cached, add the `FOR TABLE` clause:
 
 ```sql
 SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;

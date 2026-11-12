@@ -1328,7 +1328,7 @@ Its size is configured with the server-level setting [`vector_similarity_index_c
 SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
 ```
 
-With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and the cache entries of the other tables stay cached.
+With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and the entries of the other tables stay cached.
 
 With `FOR TABLE`, the statement requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege on the table. Without it, the statement clears the entries of all tables, so it requires the privilege on all tables (`ON *.*`).
 
