@@ -26,7 +26,7 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
-        String write_format_,
+        const String & write_format_,
         SharedHeader sample_block_);
 
     void consume(const Chunk & chunk);
@@ -80,13 +80,13 @@ private:
     std::vector<UInt64> data_file_byte_counts;
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
-    /// Used only while writing. The rest is owned, because the written files may outlive the sink, see `IcebergWrittenFiles`.
     FileNamesGenerator & filename_generator;
+    /// Shared: `clearAllDataFiles` may run after the sink is destroyed, see `IcebergPartitionFiles`.
     std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
-    const String write_format;
+    const String& write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
 };
