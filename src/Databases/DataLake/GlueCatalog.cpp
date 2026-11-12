@@ -338,6 +338,8 @@ CatalogTables GlueCatalog::getTables() const
     {
         auto & pool = getContext()->getIcebergCatalogThreadpool();
         DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_GLUE_CATALOG);
+        /// Reserve tracking capacity, so `enqueueAndKeepTrack` cannot schedule a job and then fail to track it.
+        runner.reserve(databases.size());
         for (size_t i = 0; i < databases.size(); ++i)
             runner.enqueueAndKeepTrack([this, &databases, &tables_by_database, i] { tables_by_database[i] = getTablesForDatabase(databases[i]); });
         runner.waitForAllToFinishAndRethrowFirstError();
