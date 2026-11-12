@@ -43,7 +43,7 @@ hyperdx:
     defaultConnections: |
       [
         {
-          "name": "External ClickHouse",
+          "name": "Local ClickHouse",
           "host": "http://your-clickhouse-server:8123",
           "port": 8123,
           "username": "your-username",
@@ -51,6 +51,8 @@ hyperdx:
         }
       ]
 ```
+
+Keep the connection name `Local ClickHouse` because the chart's default sources reference it, even when the server is external.
 
 Install with this configuration:
 ```shell
@@ -203,7 +205,7 @@ hyperdx:
     defaultConnections: |
       [
         {
-          "name": "External ClickHouse",
+          "name": "Local ClickHouse",
           "host": "http://your-clickhouse-server:8123",
           "port": 8123,
           "username": "your-username",
