@@ -26,6 +26,8 @@ ClickStack's Helm chart supports multiple deployment configurations:
 
 If you have an existing ClickHouse cluster (including ClickHouse Cloud), you can disable the built-in ClickHouse and connect to your external instance.
 
+The bundled OTel collector remains enabled. Configure its native-protocol endpoint and credentials separately from HyperDX's HTTP query connection. The collector user needs permission to create the telemetry schema and insert data.
+
 ### Option 1: Inline configuration (development/testing) {#external-clickhouse-inline}
 
 Use this approach for quick testing or non-production environments. Provide connection details via `hyperdx.config` and `hyperdx.secrets`:
@@ -35,6 +37,9 @@ clickhouse:
   enabled: false  # Disable the operator-managed ClickHouse
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-clickhouse-server:9000?dial_timeout=10s"
+    CLICKHOUSE_USER: "your-username"
   secrets:
     CLICKHOUSE_PASSWORD: "your-password"
     CLICKHOUSE_APP_PASSWORD: "your-password"
@@ -131,12 +136,19 @@ rm connections.json sources.json
 ```
 
 #### Configure Helm to use the secret {#configure-helm-secret}
+
+The configuration secret supplies HyperDX's query connection and sources. Set the collector's endpoint and credentials separately below, using your server's native TLS port (shown as `9440`).
 ```yaml
 # values-external-clickhouse-secret.yaml
 clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-production-clickhouse.com:9440?secure=true"
+    CLICKHOUSE_USER: "hyperdx_user"
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-secure-password"
   deployment:
     useExistingConfigSecret: true
     existingConfigSecret: "hyperdx-external-config"
@@ -156,6 +168,9 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
