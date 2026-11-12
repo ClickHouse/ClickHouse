@@ -35,10 +35,10 @@ Setting backup retention to a reasonably long value depending on the replication
 <Step title="Binlog retention hours" id="binlog-retention-hours-rds">
 Amazon RDS for MariaDB has a different method of setting binlog retention duration, which is the amount of time a binlog file containing changes is kept. If some changes aren't read before the binlog file is removed, replication will be unable to continue. The default value of binlog retention hours is NULL, which means binary logs aren't retained.
 
-To specify the number of hours to retain binary logs on a DB instance, use the mysql.rds_set_configuration function with a binlog retention period long enough for replication to occur. `24 hours` is the recommended minimum.
+To specify the number of hours to retain binary logs on a DB instance, use the `mysql.rds_set_configuration` procedure with a binlog retention period long enough for replication to occur. ClickPipes requires at least **72 hours**. A pipe that falls behind by more than the retention period has to be resynced.
 
 ```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 ```
 
 </Step>
@@ -85,20 +85,27 @@ Connect to your RDS MariaDB instance as an admin user and execute the following 
 1. Create a dedicated user for ClickPipes:
 
     ```sql
-    CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+    CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
     ```
 
-2. Grant schema permissions. The following example shows permissions for the `mysql` database. Repeat these commands for each database and host that you want to replicate:
+2. Grant schema permissions. The following example shows permissions for the `clickpipes` database. Repeat these commands for each database and host that you want to replicate:
 
     ```sql
-    GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
     ```
 
-3. Grant replication permissions to the user:
+3. Grant replication permissions to the user. MariaDB 10.5.9 and newer also require `SLAVE MONITOR`:
 
     ```sql
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+    GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
+    ```
+
+4. Allow ClickPipes to read the binlog retention setting:
+
+    ```sql
+    GRANT SELECT ON `mysql`.`rds_configuration` TO 'clickpipes_user'@'%';
     ```
 
 ### Using IAM authentication (optional) {#iam-authentication}

@@ -6,7 +6,7 @@ set optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimiz
 
 create table x (i int) engine MergeTree order by i settings index_granularity = 3;
 insert into x select * from numbers(10);
-select trimLeft(*) from (explain select count() from x where (i >= 3 and i <= 6) or i = 7) where explain like '%ReadFromPreparedSource%' or explain like '%ReadFromMergeTree%';
+select trimLeft(*) from (explain select count() from x where (i >= 3 and i <= 6) or i = 7 settings enable_parallel_replicas = 0) where explain like '%ReadFromPreparedSource%' or explain like '%ReadFromMergeTree%';
 select count() from x where (i >= 3 and i <= 6) or i = 7;
 
 drop table x;

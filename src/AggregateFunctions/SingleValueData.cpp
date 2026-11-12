@@ -1,4 +1,5 @@
 #include <AggregateFunctions/SingleValueData.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

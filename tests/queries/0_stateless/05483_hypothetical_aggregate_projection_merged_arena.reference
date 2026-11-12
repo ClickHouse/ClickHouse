@@ -1,0 +1,16 @@
+-- groupArray states of a merged part
+Baseline (after PK + partition + existing indexes):
+marks: 475
+With p (aggregate projection, hypothetical):
+marks: 500
+verdict: too close to call
+real projection part: 500 marks
+real: 475 marks
+-- uniqExact states of a merged part
+Baseline (after PK + partition + existing indexes):
+marks: 475
+With p_u (aggregate projection, hypothetical):
+marks: 100
+verdict: chosen
+real projection part: 100 marks
+real: 100 marks

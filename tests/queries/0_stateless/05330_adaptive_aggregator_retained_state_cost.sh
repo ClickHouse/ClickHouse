@@ -43,8 +43,8 @@ do
     echo "$aggregate"
 done
 
-# Narrow staged arguments remain cheaper than the local tables' hash buffers and aggregate states.
-# The stored verdict must allow the second execution to freeze its tables as well.
+# Narrow staged arguments stay cheaper than the `uniqCombined` states, so no thread thaws. The stored
+# verdict therefore lets the second execution freeze its tables as well.
 query="SELECT n % 100000 AS k, uniqCombined(16)(n % 200000) FROM (${input}) GROUP BY k"
 $CLICKHOUSE_LOCAL --query "
     ${settings}

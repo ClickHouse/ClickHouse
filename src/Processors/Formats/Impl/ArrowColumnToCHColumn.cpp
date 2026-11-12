@@ -1,8 +1,9 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Common/Exception.h>
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -1397,6 +1398,8 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                 case GeoEncoding::WKT:
                     result_object = parseWKTFormat(in_buffer, precise_float_parsing);
                     break;
+                case GeoEncoding::Native:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A geometry column with a native encoding is not read from bytes");
             }
             appendObjectToGeoColumn(result_object, geo_metadata.type, *column);
         }
@@ -1906,29 +1909,29 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
     std::string full_column_name,
-    std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
+    UnorderedMapWithMemoryTracking<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
-    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet);
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet);
 
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
     std::string full_column_name,
-    std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
+    UnorderedMapWithMemoryTracking<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
     bool make_nullable_if_low_cardinality,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
-    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet)
 {
     switch (arrow_column->type()->id())
     {
@@ -1995,7 +1998,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             // Unwrap the Extension array into raw physical chunks
             auto ext_type = std::static_pointer_cast<arrow::ExtensionType>(arrow_column->type());
-            std::vector<std::shared_ptr<arrow::Array>> storage_chunks;
+            arrow::ArrayVector storage_chunks;
 
             for (int i = 0; i < arrow_column->num_chunks(); ++i)
             {
@@ -2304,7 +2307,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             auto arrow_type = arrow_column->type();
             auto * arrow_struct_type = assert_cast<arrow::StructType *>(arrow_type.get());
-            std::vector<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
+            VectorWithMemoryTracking<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
             for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
                 auto & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
@@ -2335,7 +2338,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             Columns tuple_elements;
             DataTypes tuple_types;
-            std::vector<String> tuple_names;
+            Strings tuple_names;
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
 
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
@@ -2432,13 +2435,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             /// many of them match, consistently with the other format readers.
             if (tuple_type_hint && tuple_type_hint->hasExplicitNames() && !is_map_nested_column)
             {
-                std::unordered_map<std::string_view, size_t> read_positions;
+                UnorderedMapWithMemoryTracking<std::string_view, size_t> read_positions;
                 for (size_t i = 0; i < tuple_names.size(); ++i)
                     read_positions.emplace(tuple_names[i], i);
 
                 Columns matched_elements;
                 DataTypes matched_types;
-                std::vector<String> matched_names;
+                Strings matched_names;
                 const auto & hint_names = tuple_type_hint->getElementNames();
                 matched_elements.reserve(hint_names.size());
                 matched_types.reserve(hint_names.size());
@@ -2613,15 +2616,15 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
     std::string full_column_name,
-    std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
+    UnorderedMapWithMemoryTracking<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
-    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet)
 {
     /// Validate each chunk up front, before anything reads the declared length:
     ///   - checkValidityBitmap rejects a negative length/offset and a validity bitmap (buffers[0])
@@ -2634,6 +2637,33 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     /// This runs for every nested level too, since the function recurses for nested types.
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
+
+    /// GeoParquet geometry column with a native (GeoArrow) encoding: nested lists of `struct<x, y>`
+    /// with the same layout as the corresponding geo type. Read it as a regular nested column with
+    /// the geo type requested. The geo types are not Nullable, so a NULL geometry becomes the
+    /// default value, the same as for WKB. A different requested type (e.g. `Geometry`) is
+    /// obtained by the cast to the requested type at the end of reading.
+    if (geo_metadata && geo_metadata->encoding == GeoEncoding::Native && settings.allow_geoparquet_parser)
+    {
+        DataTypePtr geo_type = getGeoDataType(geo_metadata->type);
+        auto column = readNonNullableColumnFromArrowColumn(arrow_column,
+            column_name,
+            full_column_name,
+            dictionary_infos,
+            geo_type,
+            is_map_nested_column,
+            /*make_nullable_if_low_cardinality*/ false,
+            /*geo_metadata*/ std::nullopt,
+            settings,
+            arrow_field,
+            parquet_columns_to_clickhouse,
+            clickhouse_columns_to_parquet);
+        if (!column.column)
+            return {};
+        column.column = castColumn(column, geo_type);
+        column.type = geo_type;
+        return column;
+    }
 
     /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
     bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
@@ -2747,7 +2777,7 @@ static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(con
     if (type->id() == arrow::Type::STRUCT)
     {
         auto struct_type = std::static_pointer_cast<arrow::StructType>(type);
-        std::vector<std::shared_ptr<arrow::Field>> new_fields;
+        std::vector<std::shared_ptr<arrow::Field>> new_fields; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- built for `arrow::struct_`, which takes std::vector
         for (const auto & struct_field : struct_type->fields())
         {
             // WithType preserves the field name and nullable status, only changing the underlying type
@@ -2790,8 +2820,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     bool case_insensitive_matching,
     bool allow_geoparquet_parser,
     bool enable_json_parsing,
-    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -2809,7 +2839,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
     if (settings.allow_geoparquet_parser)
     {
         const std::string * geo_json_str = extractGeoMetadata(metadata);
@@ -2821,7 +2851,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         /// Create empty arrow column by it's type and convert it to ClickHouse column.
         auto arrow_column = createArrowColumn(field, format_name);
 
-        std::unordered_map<std::string, DictionaryInfo> dict_infos;
+        UnorderedMapWithMemoryTracking<std::string, DictionaryInfo> dict_infos;
 
         auto sample_column = readColumnFromArrowColumn(
             arrow_column,
@@ -2848,8 +2878,8 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_,
     const std::string & format_name_,
     const FormatSettings & format_settings_,
-    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet_,
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse_,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet_,
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -2940,9 +2970,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
     Columns columns;
     columns.reserve(header.columns());
 
-    std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
+    UnorderedMapWithMemoryTracking<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
     if (settings.allow_geoparquet_parser)
     {
         const std::string * geo_json_str = extractGeoMetadata(metadata);
