@@ -141,26 +141,28 @@ A connection doesn't block deleting either service. During the private preview, 
 
 ## FAQ {#faq}
 
-### Does this cost extra? {#cost}
-
+<AccordionGroup>
+<Accordion title="Does this cost extra?" id="cost">
 You only pay for the compute you use, including the time the Producer isn't idling.
+</Accordion>
 
-### Do I need to manage passwords or certificates? {#credentials}
-
+<Accordion title="Do I need to manage passwords or certificates?" id="credentials">
 No. The Consumer authenticates with a certificate that ClickHouse Cloud manages for you.
+</Accordion>
 
-### Does traffic go over the public internet? {#public-internet}
-
+<Accordion title="Does traffic go over the public internet?" id="public-internet">
 No. Traffic stays on ClickHouse Cloud's private network, which is why it works even when the Producer only accepts PrivateLink traffic or its IP access list allows nothing.
+</Accordion>
 
-### Can the Producer read from the Consumer? {#reverse-reads}
-
+<Accordion title="Can the Producer read from the Consumer?" id="reverse-reads">
 Not unless you ask for a second connection in that direction.
+</Accordion>
 
-### Will enabling this restart my services? {#restarts}
-
+<Accordion title="Will enabling this restart my services?" id="restarts">
 The first connection on a Consumer triggers one rolling restart. The Producer doesn't restart, and later connections or revocations don't restart anything.
+</Accordion>
 
-### How do I remove access? {#remove-access}
-
+<Accordion title="How do I remove access?" id="remove-access">
 To remove access to a table, run `REVOKE` on the Producer. To remove the connection itself, contact your ClickHouse contact during the private preview.
+</Accordion>
+</AccordionGroup>
