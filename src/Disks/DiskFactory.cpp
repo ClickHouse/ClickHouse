@@ -21,11 +21,18 @@ DiskFactory & DiskFactory::instance()
     return factory;
 }
 
-void DiskFactory::registerDiskType(const String & disk_type, Creator creator, Documentation documentation)
+void DiskFactory::registerDiskType(const String & disk_type, Creator creator, Documentation documentation, bool reaches_no_source)
 {
     if (!registry.emplace(disk_type, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskFactory: the disk type '{}' is not unique", disk_type);
     documentations.emplace(disk_type, std::move(documentation));
+    if (reaches_no_source)
+        types_reaching_no_source.insert(disk_type);
+}
+
+bool DiskFactory::reachesNoSource(const String & disk_type) const
+{
+    return types_reaching_no_source.contains(disk_type);
 }
 
 std::vector<String> DiskFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -225,5 +232,6 @@ void DiskFactory::clearRegistry()
 {
     registry.clear();
     documentations.clear();
+    types_reaching_no_source.clear();
 }
 }

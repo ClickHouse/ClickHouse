@@ -1,0 +1,76 @@
+A: s3 disk
+READ, WRITE ON S3
+0
+0
+B: s3 disk inside a cache disk
+READ, WRITE ON S3
+0
+H: local disk
+allowed
+1
+C: ALTER to an s3 disk
+READ, WRITE ON S3
+0
+D: ON CLUSTER
+READ, WRITE ON S3
+0
+D2: ON CLUSTER, legacy entry format, engine from default_table_engine
+READ, WRITE ON S3
+0
+D3: the same for the inner table of a materialized view
+READ, WRITE ON S3
+0
+E: database metadata disk
+READ, WRITE ON S3
+0
+F: projection settings do not build a disk
+BAD_ARGUMENTS
+0
+J: cache over a configured disk
+allowed
+1
+K: web disk needs only READ ON URL
+READ ON URL
+allowed
+L: repeated type
+READ, WRITE ON *
+0
+N: unknown type
+READ, WRITE ON *
+O: a key = value argument written as equals() with an extra operand
+READ, WRITE ON S3
+0
+P: the source each object storage type declares
+s3_with_keeper: READ, WRITE ON S3
+s3_plain: READ, WRITE ON S3
+s3_plain_rewritable: READ, WRITE ON S3
+azure_blob_storage: READ, WRITE ON AZURE
+azure: READ, WRITE ON AZURE
+azure_plain: READ, WRITE ON AZURE
+azure_plain_rewritable: READ, WRITE ON AZURE
+hdfs: READ, WRITE ON HDFS
+S: the types that declare no source
+local_blob_storage: allowed
+1
+local_plain: allowed
+1
+local_plain_rewritable: allowed
+1
+encrypted: allowed
+1
+U: a function named disk* outside a disk setting defines no disk
+allowed
+1
+G: with the S3 grant
+10
+I: include needs the grant on every source, even with an s3 type
+READ, WRITE ON *
+0
+Z: a from_zk type needs the grant on every source, even with an s3 object storage
+READ, WRITE ON *
+Q: a from_zk value can add locations, even with a local object storage
+READ, WRITE ON *
+0
+M: a substituted type needs the grant on every source
+READ, WRITE ON *
+allowed

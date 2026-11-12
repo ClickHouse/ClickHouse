@@ -17,6 +17,7 @@
 #include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -381,6 +382,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                         && create.storage->engine->arguments)
                         DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
                 }
+
+                /// Not tied to the existence check: nothing checks the disk again if the database is dropped before it is created.
+                if (database_info.create_database_query)
+                    required_access.append_range(DiskFromAST::getSourceAccess(database_info.create_database_query));
             }
 
             if (!flags)
@@ -451,6 +456,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
                 && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
                 required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
+            /// Unconditional: `restore_replace_external_engines_to_null` keeps a MergeTree table with its custom disk.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                required_access.append_range(DiskFromAST::getSourceAccess(table_info.create_table_query));
 
             /// A skipped database creates none of its tables, so their targets are never written to.
             const auto database_it = database_infos.find(table_name.database);

@@ -667,10 +667,13 @@ def test_dynamic_disk_security_settings(start_cluster):
         "CREATE USER IF NOT EXISTS restricted_user SETTINGS PROFILE 'default'"
     )
     node.query("GRANT CREATE TABLE, CREATE DATABASE ON *.* TO restricted_user")
+    # Defining a disk needs the grants of its sources; `include` and `from_zk` can name any of them.
+    node.query("GRANT READ, WRITE ON * TO restricted_user")
     node.query(
         "CREATE USER IF NOT EXISTS privileged_user SETTINGS PROFILE 'allow_dynamic_disk_access'"
     )
     node.query("GRANT CREATE TABLE, CREATE DATABASE ON *.* TO privileged_user")
+    node.query("GRANT READ, WRITE ON * TO privileged_user")
 
     try:
         # restricted_user (default profile): from_env is blocked
