@@ -414,12 +414,12 @@ SELECT * FROM search_tree ORDER BY depth;
 ```
 
 ```text
-┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
-│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
-│  1 │    0 │ Child_1   │ [0,1]   │     1 │
-│  2 │    0 │ Child_2   │ [0,2]   │     1 │
-│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
-└────┴──────┴───────────┴─────────┴───────┘
+┌─id─┬─parent_id─┬─data──────┬─path────┬─depth─┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │         0 │ Child_1   │ [0,1]   │     1 │
+│  2 │         0 │ Child_2   │ [0,2]   │     1 │
+│  3 │         1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴───────────┴───────────┴─────────┴───────┘
 ```
 
 ### Cycle detection {#cycle-detection}

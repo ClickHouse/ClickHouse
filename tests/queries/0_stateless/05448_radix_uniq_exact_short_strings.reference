@@ -1,0 +1,5 @@
+only zero bytes, by length	21	21
+lengths 14 to 17	30000	30000
+with and without a trailing zero byte	60002	60002
+empty and lengths 1 to 15	16813	16813
+short string matching the hash of a long one	2	2

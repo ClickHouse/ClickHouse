@@ -7,13 +7,18 @@
     </settings>
 
     <create_query>CREATE TABLE prewhere_combine_filters (a UInt8, b UInt8, c UInt8, d UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE prewhere_combine_filters_string (a UInt8, b UInt8, c UInt8, d Date, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <fill_query>INSERT INTO prewhere_combine_filters SELECT intHash32(number) % 100, intHash32(number + 1) % 100, intHash32(number + 2) % 100, number FROM numbers_mt(10000000)</fill_query>
     <fill_query>OPTIMIZE TABLE prewhere_combine_filters FINAL</fill_query>
+    <fill_query>INSERT INTO prewhere_combine_filters_string SELECT intHash32(number) % 100, intHash32(number + 1) % 100, intHash32(number + 2) % 100, toDate('2020-01-01') + intHash32(number + 5) % 100, if(intHash32(number + 3) % 10 = 0, '', concat('https://example.com/', toString(intHash64(number)), '/', repeat('p', intHash32(number + 4) % 64))) FROM numbers_mt(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_combine_filters_string FINAL</fill_query>
 
     <query>SELECT count() FROM prewhere_combine_filters WHERE a &lt; 50 AND b &lt; 50 AND c &lt; 50</query>
     <query>SELECT sum(d) FROM prewhere_combine_filters WHERE a &lt; 90 AND b &lt; 90 AND c &lt; 90</query>
     <query>SELECT sum(d) FROM prewhere_combine_filters WHERE a &lt; 10 AND b &lt; 50 AND c &lt; 50</query>
+    <query>SELECT s FROM prewhere_combine_filters_string PREWHERE a &lt; 95 AND s != '' AND b &lt; 95 AND c &lt; 95 AND d &gt;= '2020-01-06' FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS prewhere_combine_filters</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prewhere_combine_filters_string</drop_query>
 </test>

@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/NegativeOffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
