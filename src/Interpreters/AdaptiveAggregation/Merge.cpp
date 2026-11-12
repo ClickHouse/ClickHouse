@@ -167,10 +167,11 @@ namespace
         size_t skipped = 0;
     };
 
-    /// Walks the records of `ranges`, written in `format`, in order and calls `apply(record, hash)` for every record whose
-    /// routing hash `filter` takes. With `prefetch`, which the caller decides once for the walk, it prefetches the table
-    /// slot of the taken record `adaptive_drain_prefetch_look_ahead` positions ahead. The format, the filter and `apply`
-    /// run once per record, so all of them are inlined into the loop.
+    /// Walks the records of `ranges`, written in `format`, in order and calls `apply(record, hash)` for
+    /// every record whose routing hash `filter` takes. With `prefetch`, which the caller decides once for
+    /// the walk, it prefetches the table slot of the taken record `adaptive_drain_prefetch_look_ahead`
+    /// positions ahead. Either way, it requests every range into L2 one range ahead. The format, the filter
+    /// and `apply` run once per record, so all of them are inlined into the loop.
     template <typename Key, typename Format, typename Table, typename Filter, typename Apply>
     StagedRecordWalk ALWAYS_INLINE walkStagedRecords(
         Format format, Table & table, const DB::AdaptiveRecordRanges & ranges, const Filter & filter, bool prefetch, Apply && apply)
@@ -178,6 +179,19 @@ namespace
         StagedRecordWalk walk;
         const auto walk_ranges = [&]<bool with_prefetch>() ALWAYS_INLINE
         {
+            /// A range is cold until its records are read, and the hardware prefetchers start a new stream
+            /// only after its first misses. So whichever reader enters a range first, the prefetch cursor or
+            /// else the walk, requests the following range into L2, up to a page.
+            const auto request_range = [&](size_t range_index) ALWAYS_INLINE
+            {
+                if (range_index >= ranges.size())
+                    return;
+                const char * line = ranges[range_index].data();
+                const char * const end = line + std::min<size_t>(ranges[range_index].size(), DB::adaptive_drain_range_prefetch_bytes);
+                for (; line < end; line += CH_CACHE_LINE_SIZE)
+                    __builtin_prefetch(line, /*rw=*/0, /*locality=*/2);
+            };
+
             /// The prefetch cursor runs the look-ahead distance in front of the walk and crosses from one range to the
             /// next as the walk does: a partition's ranges are as small as a first chunk of a few kilobytes, so
             /// restarting the distance in every range would leave a good share of the records unprefetched.
@@ -193,17 +207,7 @@ namespace
                     ahead = ranges[ahead_range].data();
                     ahead_end = ahead + ranges[ahead_range].size();
                     ++ahead_range;
-                    /// A range is cold until the cursor reads its records, and the hardware prefetchers take up a new
-                    /// stream only after its first misses: the following range, up to a page, is requested into L2 as
-                    /// the cursor enters this one.
-                    if (ahead_range < ranges.size())
-                    {
-                        const char * next = ranges[ahead_range].data();
-                        const char * const next_end
-                            = next + std::min<size_t>(ranges[ahead_range].size(), DB::adaptive_drain_range_prefetch_bytes);
-                        for (; next < next_end; next += CH_CACHE_LINE_SIZE)
-                            __builtin_prefetch(next, /*rw=*/0, /*locality=*/2);
-                    }
+                    request_range(ahead_range);
                 }
                 const UInt64 hash = format.hash(table, ahead);
                 if (filter.takes(hash))
@@ -217,10 +221,12 @@ namespace
                 for (size_t i = 0; i < DB::adaptive_drain_prefetch_look_ahead; ++i)
                     prefetch_next();
 
-            for (const auto & range : ranges)
+            for (size_t range_index = 0; range_index < ranges.size(); ++range_index)
             {
-                const char * record = range.data();
-                const char * const end = range.data() + range.size();
+                if constexpr (!with_prefetch)
+                    request_range(range_index + 1);
+                const char * record = ranges[range_index].data();
+                const char * const end = record + ranges[range_index].size();
                 while (record < end)
                 {
                     if constexpr (with_prefetch)

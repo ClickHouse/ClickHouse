@@ -203,6 +203,31 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
 
+/// Source ids of the sort fields whose null order differs from ClickHouse's (NULLs last for ASC, first for DESC).
+std::vector<Int32> getSourceIdsWithMismatchedNullOrder(const Poco::JSON::Object::Ptr & metadata_object, Int64 sort_order_id)
+{
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+
+        std::vector<Int32> result;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            bool asc = field->getValue<String>(f_direction) == "asc";
+            bool nulls_first = field->getValue<String>(f_null_order) == "nulls-first";
+            if (asc == nulls_first)
+                result.push_back(field->getValue<Int32>(f_source_id));
+        }
+        return result;
+    }
+    return {};
+}
+
 }
 
 std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> IcebergMetadata::initializePersistentTableComponents(
@@ -1533,6 +1558,13 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     if (!data_snapshot)
         return true;
 
+    auto metadata_object = getMetadataJSONObject(
+        table_state_snapshot->metadata_file_path, object_storage, persistent_components.metadata_cache, context, log,
+        persistent_components.metadata_compression_method, persistent_components.table_uuid);
+    /// Reading in order merges files with NULLs placed the ClickHouse way; files sorted with the other null order
+    /// are only in that order if they have no NULLs.
+    const auto mismatched_null_order_source_ids = getSourceIdsWithMismatchedNullOrder(metadata_object, *sorting_key.sort_order_id);
+
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
@@ -1540,6 +1572,16 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
+
+        for (const auto & file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            for (Int32 source_id : mismatched_null_order_source_ids)
+            {
+                auto info = file->parsed_entry->columns_infos.find(source_id);
+                if (info == file->parsed_entry->columns_infos.end() || info->second.nulls_count.value_or(1) != 0)
+                    return false;
+            }
+        }
     }
     return true;
 }

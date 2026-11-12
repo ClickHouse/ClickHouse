@@ -1,4 +1,4 @@
-#include <Common/Silk/FiberStreamSocketImpl.h>
+#include <IO/SilkFiberStreamSocketImpl.h>
 
 #if USE_SILK
 
