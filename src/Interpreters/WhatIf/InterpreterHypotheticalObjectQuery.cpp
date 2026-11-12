@@ -264,7 +264,10 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
-    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    /// `tryResolveStorageID` does not throw for an unknown database, so it does not leak before the check below
+    auto table_id = context->tryResolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    if (!table_id)
+        table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
 
     /// same privilege as the real ADD PROJECTION, before the table is looked up so nothing about it leaks;
     /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
