@@ -4,6 +4,9 @@
 SELECT length(arrayReverse(materialize([arrayWithConstant(10000000, toUInt8(1))])))
 FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
 
+SELECT length(arrayReverse(materialize([CAST(arrayWithConstant(10000000, toUInt8(1)), 'Variant(Array(UInt8), String)')])))
+FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
+
 SELECT length([materialize(arrayWithConstant(5000000, toUInt8(1))), materialize(arrayWithConstant(5000000, toUInt8(1)))])
 FROM numbers(1) SETTINGS max_threads = 1, max_memory_usage = '64Mi';
 
@@ -16,6 +19,7 @@ SELECT arrayReverse([map(1, [1, 2]), map(2, [3])]);
 SELECT arrayReverse([(1, [toNullable(1), NULL]), (2, [])]);
 SELECT arrayReverse([[1]::Array(Nullable(UInt8)), [NULL]]);
 SELECT arrayReverse(CAST([1, 2, 3], 'Array(Dynamic)'));
+SELECT arrayReverse([CAST([1, 2], 'Variant(Array(UInt8), String)'), CAST('a', 'Variant(Array(UInt8), String)')]);
 SELECT arrayReverse(materialize(CAST([], 'Array(Array(UInt8))')));
 
 SELECT [[number], [number + 1, number]] FROM numbers(3);

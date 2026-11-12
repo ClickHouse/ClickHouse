@@ -113,9 +113,16 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 }
 
 
+static bool containsArray(const IColumn & column)
+{
+    bool found = false;
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn) { found = found || typeid_cast<const ColumnArray *>(&subcolumn); });
+    return found;
+}
+
 /// `src.index(indexes)`, except that arrays are copied by ranges: `ColumnArray::index` makes an index entry
-/// for every element of every array. A column of dynamic structure, which may hold arrays, is copied element
-/// by element.
+/// for every element of every array. Other columns that hold arrays (e.g. `Variant`), or may hold them
+/// (dynamic structure), are copied element by element.
 static ColumnPtr gatherElements(const IColumn & src, const ColumnUInt64 & indexes_column)
 {
     const auto & indexes = indexes_column.getData();
@@ -159,7 +166,7 @@ static ColumnPtr gatherElements(const IColumn & src, const ColumnUInt64 & indexe
         return ColumnNullable::create(
             gatherElements(src_nullable->getNestedColumn(), indexes_column), src_nullable->getNullMapColumn().index(indexes_column, 0));
 
-    if (src.hasDynamicStructure())
+    if (src.hasDynamicStructure() || containsArray(src))
     {
         auto res = src.cloneEmpty();
         res->reserve(indexes.size());
