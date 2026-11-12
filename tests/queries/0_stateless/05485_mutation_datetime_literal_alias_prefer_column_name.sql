@@ -88,6 +88,22 @@ ALTER TABLE t_prefer_tuple_merge_tree DELETE WHERE isNotNull(CAST(n, 'Tuple(ts D
 SELECT extract(command, 'n\\.ts = .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_prefer_tuple_merge_tree';
 SELECT id FROM t_prefer_tuple_merge_tree ORDER BY id;
 
+-- The literal is read with the precision of what the identifier names, so a date beyond the range of `DateTime64(9)` is
+-- accepted, and an instant before 1970 with more digits of a second than that precision is rounded down, as the comparison of
+-- the string does.
+SELECT '--- a date beyond the range of DateTime64(9), and a fraction of a second before 1970';
+DROP TABLE IF EXISTS t_prefer_range;
+CREATE TABLE t_prefer_range (id UInt8, event DateTime64(3)) ENGINE = Memory;
+INSERT INTO t_prefer_range VALUES (1, '2290-01-01 00:00:00.000'), (2, '2020-01-01 00:00:00.000');
+ALTER TABLE t_prefer_range DELETE WHERE isNotNull(toDateTime64(event, 6) AS event) AND event = '2290-01-01 00:00:00.000';
+SELECT id FROM t_prefer_range ORDER BY id;
+DROP TABLE IF EXISTS t_prefer_before_1970;
+CREATE TABLE t_prefer_before_1970 (id UInt8, event DateTime64(3)) ENGINE = Memory;
+INSERT INTO t_prefer_before_1970 VALUES (1, '1960-01-01 00:00:00.123'), (2, '1960-01-01 00:00:00.124');
+SELECT id FROM t_prefer_before_1970 WHERE isNotNull(toDateTime64(event, 6) AS event) AND event = '1960-01-01 00:00:00.123456';
+ALTER TABLE t_prefer_before_1970 DELETE WHERE isNotNull(toDateTime64(event, 6) AS event) AND event = '1960-01-01 00:00:00.123456';
+SELECT id FROM t_prefer_before_1970 ORDER BY id;
+
 -- The analysis of the expression of an alias with the name of a column keeps the aliases inside its lambdas and subqueries.
 SELECT '--- aliases inside the expression of an alias with the name of a column';
 DROP TABLE IF EXISTS t_prefer_nested;
@@ -106,4 +122,6 @@ DROP TABLE t_prefer_precision_reverse_ne;
 DROP TABLE t_prefer_precision_merge_tree;
 DROP TABLE t_prefer_tuple;
 DROP TABLE t_prefer_tuple_merge_tree;
+DROP TABLE t_prefer_range;
+DROP TABLE t_prefer_before_1970;
 DROP TABLE t_prefer_nested;

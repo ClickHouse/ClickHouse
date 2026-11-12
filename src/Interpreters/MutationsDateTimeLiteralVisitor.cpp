@@ -147,8 +147,11 @@ std::optional<DataTypePtr> tryGetAliasType(const ASTIdentifier & identifier, con
 struct LiteralConversion
 {
     DataTypePtr type;
-    /// Whether the precision is that of the type of the identifier where the mutation runs, see `getDateTimeColumnType`.
-    bool follows_identifier_type = false;
+    /// If the identifier names an alias, or a column of another precision instead with other settings, the type of the column
+    /// without a time zone and the name of its whole type, which tells where the mutation runs which of the two the identifier
+    /// names, see `getDateTimeColumnType`.
+    DataTypePtr column_type = nullptr;
+    String column_type_name = {};
 
     explicit operator bool() const { return type != nullptr; }
 };
@@ -172,7 +175,7 @@ LiteralConversion getDateTimeColumnType(
         /// right for both only if the column is a `DateTime` or `DateTime64` without a time zone too, such as `event` in
         /// `toNullable(event) AS event`. If their precisions differ, such as in `toDateTime64(event, 3) AS event` of a `DateTime`
         /// column, the comparison reads the string with the precision of the one that the identifier names, which depends on the
-        /// settings with which the mutation runs, so the literal is converted to the type of the identifier there.
+        /// settings with which the mutation runs, so the literal is converted with the precision of the identifier there.
         const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
         if (datetime_type && column)
         {
@@ -182,7 +185,7 @@ LiteralConversion getDateTimeColumnType(
             const auto alias_scale = getDateTimeScale(*datetime_type);
             const auto column_scale = getDateTimeScale(*column_datetime_type);
             if (alias_scale != column_scale)
-                return {alias_scale > column_scale ? datetime_type : column_datetime_type, /*follows_identifier_type=*/ true};
+                return {datetime_type, column_datetime_type, column->type->getName()};
         }
         return {datetime_type};
     }
@@ -291,25 +294,25 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
 }
 
 /// Wraps `literal_ast` if it is a string literal that `conversion` converts, for a comparison with `identifier_ast`. Returns
-/// whether it did. If the precision follows the type of the identifier, the literal is read with the highest precision in the
-/// time zone and cast to the type of the identifier, `CAST(toDateTime64('...', 9, 'tz'), toTypeName(identifier))`, which drops
-/// the fraction of a second beyond its precision as the comparison of the string does, except that it rounds an instant before
-/// 1970 toward zero instead of down.
+/// whether it did. If the identifier names an alias or a column of another precision depending on the settings, the literal is
+/// read in the time zone with the precision of each, and the one of the type that the identifier has where the mutation runs is
+/// taken: `if(toTypeName(event) = 'DateTime', toDateTime('...', 'tz'), toDateTime64('...', 3, 'tz'))`. So it is read as the
+/// comparison of the string reads it, with the same range and rounding, also before 1970.
 bool tryWrapLiteral(ASTPtr & literal_ast, const ASTPtr & identifier_ast, const LiteralConversion & conversion, const String & timezone)
 {
     const auto * literal = literal_ast->as<ASTLiteral>();
     if (!conversion || !literal || literal->value.getType() != Field::Types::String)
         return false;
-    if (!conversion.follows_identifier_type)
+    if (!conversion.column_type)
     {
         literal_ast = wrapWithTimezone(literal_ast, conversion.type, timezone);
         return true;
     }
-    /// The maximum precision of a `DateTime64`, nanoseconds.
-    static constexpr UInt64 max_scale = 9;
-    auto read = makeASTFunction(
-        "toDateTime64", literal_ast, make_intrusive<ASTLiteral>(Field(max_scale)), make_intrusive<ASTLiteral>(Field(timezone)));
-    literal_ast = makeASTFunction("CAST", std::move(read), makeASTFunction("toTypeName", identifier_ast->clone()));
+    auto names_column = makeASTFunction(
+        "equals", makeASTFunction("toTypeName", identifier_ast->clone()), make_intrusive<ASTLiteral>(Field(conversion.column_type_name)));
+    auto read_for_column = wrapWithTimezone(literal_ast->clone(), conversion.column_type, timezone);
+    auto read_for_alias = wrapWithTimezone(literal_ast, conversion.type, timezone);
+    literal_ast = makeASTFunction("if", std::move(names_column), std::move(read_for_column), std::move(read_for_alias));
     return true;
 }
 
@@ -420,6 +423,14 @@ bool hasIdentifierWithName(const ASTPtr & ast, const NameSet & names)
     if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && names.contains(identifier->name_parts.front()))
         return true;
     return std::ranges::any_of(ast->children, [&](const ASTPtr & child) { return hasIdentifierWithName(child, names); });
+}
+
+/// Whether every identifier of `ast` names a column or a subcolumn of the table, so that `ast` can be analyzed alone against it.
+bool usesOnlyColumns(const ASTPtr & ast, const ColumnsDescription & columns)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        return columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()).has_value();
+    return std::ranges::all_of(ast->children, [&](const ASTPtr & child) { return usesOnlyColumns(child, columns); });
 }
 
 /// Adds the names of the identifiers and of the functions in `ast` to `names`, also in the assignments of
@@ -552,6 +563,9 @@ public:
         LambdaParameters lambda_parameters = {};
         /// Whether this is the body of a lambda that is shared by several invocations, or is inside one.
         bool in_shared_lambda = false;
+        /// The type that the analyzer gives the alias with the name and the expression, see `getAliasTypes`, if it can be
+        /// analyzed against the table.
+        std::function<DataTypePtr(const ASTPtr & aliased_expression, const String & name)> resolve_alias_type = {};
     };
 
     static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
@@ -630,20 +644,44 @@ public:
             ? DataTypes(parameter_asts.size())
             : getLambdaParameterTypes(
                   function, lambda_position, parameter_asts.size(), data.columns, data.aliases, data.lambda_parameters, data.context);
-        /// An alias in the body shadows the columns and the outer aliases with its name in the body only, and its type is not
+        const bool shared = data.in_shared_lambda || invoked_by_alias;
+        LambdaParameters body_parameters = data.lambda_parameters;
+        for (size_t i = 0; i < parameter_asts.size(); ++i)
+            if (const auto * identifier = parameter_asts[i]->as<ASTIdentifier>())
+                body_parameters[identifier->name()] = LambdaParameter{types[i], shared};
+
+        /// An alias in the body shadows the columns and the outer aliases with its name in the body only. Its type is that of its
+        /// expression against the table, as for an alias outside the lambdas, if the expression uses only columns of the table,
+        /// and not a parameter of a lambda or another alias with the name of one, such as `identity(event) AS event`, where
+        /// `event` names the column. Otherwise, such as for an expression that invokes the alias of a lambda, its type is not
         /// known.
         NameSet body_alias_names;
-        collectAliases(lambda.arguments->children[1], body_alias_names);
+        std::unordered_map<String, ASTPtr> body_aliased_expressions;
+        collectAliases(lambda.arguments->children[1], body_alias_names, &body_aliased_expressions);
         AliasTypes body_aliases = data.aliases;
         for (const auto & name : body_alias_names)
             body_aliases[name] = nullptr;
+        if (data.resolve_alias_type)
+        {
+            NameSet parameter_names;
+            for (const auto & [name, _] : body_parameters)
+                parameter_names.insert(name);
+            NameSet alias_names;
+            for (const auto & [name, _] : body_aliases)
+                alias_names.insert(name);
+            for (const auto & [name, aliased_expression] : body_aliased_expressions)
+            {
+                NameSet other_alias_names = alias_names;
+                other_alias_names.erase(name);
+                if (usesOnlyColumns(aliased_expression, data.columns) && !hasIdentifierWithName(aliased_expression, parameter_names)
+                    && !hasIdentifierWithName(aliased_expression, other_alias_names))
+                    body_aliases[name] = data.resolve_alias_type(aliased_expression, name);
+            }
+        }
 
-        const bool shared = data.in_shared_lambda || invoked_by_alias;
         Data body_data{
-            data.columns, body_aliases, data.referenced_names, data.session_timezone, data.context, false, data.lambda_parameters, shared};
-        for (size_t i = 0; i < parameter_asts.size(); ++i)
-            if (const auto * identifier = parameter_asts[i]->as<ASTIdentifier>())
-                body_data.lambda_parameters[identifier->name()] = LambdaParameter{types[i], shared};
+            data.columns, body_aliases, data.referenced_names, data.session_timezone, data.context, false, body_parameters, shared,
+            data.resolve_alias_type};
 
         InDepthNodeVisitor<RewriteDateTimeLiteralsMatcher, true>(body_data).visit(lambda.arguments->children[1]);
         data.modified |= body_data.modified;
@@ -693,6 +731,10 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
 
     const ColumnsDescription & columns = storage_snapshot->metadata->getColumns();
     RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, referenced_names, session_timezone, context, false};
+    data.resolve_alias_type = [&](const ASTPtr & aliased_expression, const String & name)
+    {
+        return getAliasTypes({aliased_expression}, {name}, table, storage_snapshot, context).at(name);
+    };
     RewriteDateTimeLiteralsVisitor visitor(data);
 
     if (new_command.update_assignments)

@@ -16,12 +16,16 @@ event = \'2020-01-01 00:00:00\')
 2
 1
 --- the same for MergeTree
-event <= CAST(toDateTime64(\'2020-01-01 00:00:00.500\', 9, \'Asia/Tokyo\'), toTypeName(event))))
+event <= if(equals(toTypeName(event), \'DateTime\'), toDateTime(\'2020-01-01 00:00:00.500\', \'Asia/Tokyo\'), toDateTime64(\'2020-01-01 00:00:00.500\', 3, \'Asia/Tokyo\'))))
 2
 --- an alias of a tuple with another precision of an element than the column
 2
 --- the same for MergeTree
-n.ts = CAST(toDateTime64(\'2020-01-01 00:00:00\', 9, \'Asia/Tokyo\'), toTypeName(n.ts))))
+n.ts = if(equals(toTypeName(n.ts), \'DateTime64(3)\'), toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\'), toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))))
+2
+--- a date beyond the range of DateTime64(9), and a fraction of a second before 1970
+2
+1
 2
 --- aliases inside the expression of an alias with the name of a column
 3

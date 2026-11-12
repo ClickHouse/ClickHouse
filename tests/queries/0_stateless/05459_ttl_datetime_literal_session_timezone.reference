@@ -30,10 +30,10 @@ event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
 DELETE changed temporal alias	[2,4,6]
 event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
 n = toDateTime(\'2020-01-02 00:00:00\', \'Asia/Tokyo\')))
-event = CAST(toDateTime64(\'2020-01-03 00:00:00\', 9, \'Asia/Tokyo\'), toTypeName(event))))
+event = if(equals(toTypeName(event), \'DateTime\'), toDateTime(\'2020-01-03 00:00:00\', \'Asia/Tokyo\'), toDateTime64(\'2020-01-03 00:00:00\', 3, \'Asia/Tokyo\'))))
 DELETE lower precision alias	[3]
-event = CAST(toDateTime64(\'2020-01-01 00:00:00\', 9, \'Asia/Tokyo\'), toTypeName(event))))
-n.ts = CAST(toDateTime64(\'2020-01-01 09:00:00\', 9, \'Asia/Tokyo\'), toTypeName(n.ts))))
+event = if(equals(toTypeName(event), \'DateTime64(3)\'), toDateTime64(\'2020-01-01 00:00:00\', 3, \'Asia/Tokyo\'), toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))))
+n.ts = if(equals(toTypeName(n.ts), \'DateTime64(3)\'), toDateTime64(\'2020-01-01 09:00:00\', 3, \'Asia/Tokyo\'), toDateTime(\'2020-01-01 09:00:00\', \'Asia/Tokyo\'))))
 DELETE Nullable tuple	[3]
 n.ts = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
 x.ts = toDateTime(\'2020-01-01 09:00:00\', \'Asia/Tokyo\')), arr))
