@@ -55,10 +55,17 @@ SELECT 'the derivation and its adjustments show up in query_log for that query o
 -- setting, and the point is to see it flip from the session's own value to the adjusted one.
 SET distributed_plan_workers_num = 0, make_distributed_plan = DEFAULT, compile_expressions = 1;
 SET distributed_plan_workers_num = 3;
-SELECT 1 SETTINGS log_comment = '05621_query_log_probe';
+SELECT 1 SETTINGS log_comment = '05621_query_log_probe_on';
 SET distributed_plan_workers_num = 0;
+SELECT 1 SETTINGS log_comment = '05621_query_log_probe_off';
 SYSTEM FLUSH LOGS query_log;
 SELECT Settings['make_distributed_plan'], Settings['compile_expressions']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05621_query_log_probe'
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05621_query_log_probe_on'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'and a later query with the workers num back to zero logs neither override';
+SELECT Settings['make_distributed_plan'], Settings['compile_expressions']
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05621_query_log_probe_off'
 ORDER BY event_time_microseconds DESC LIMIT 1;

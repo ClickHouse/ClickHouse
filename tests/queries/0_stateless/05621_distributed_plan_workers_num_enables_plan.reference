@@ -16,4 +16,7 @@ DEFAULT clears an explicit off, so the workers num derives it again
 true
 the derivation and its adjustments show up in query_log for that query only
 1
+1
 1	0
+and a later query with the workers num back to zero logs neither override
+	1
