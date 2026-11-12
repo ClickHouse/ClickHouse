@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {

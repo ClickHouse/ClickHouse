@@ -433,6 +433,10 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     if (!ast)
         return false;
 
+    /// `SHUFFLE` returns the rows in random order, and with `LIMIT` a random subset of them.
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->shuffle)
+        return true;
+
     if (const auto * table_expr = ast->as<ASTTableExpression>())
     {
         /// SAMPLE picks a row subset; which rows end up in the subset is not
