@@ -16,6 +16,12 @@
 
 using namespace DB;
 
+namespace DB::Setting
+{
+extern const SettingsBool make_distributed_plan;
+extern const SettingsUInt64 distributed_plan_workers_num;
+}
+
 template <typename Ptr>
 void run(Ptr context)
 {
@@ -432,4 +438,23 @@ TEST(Context, SetClustersConfigAfterReloadClusterConfig)
     std::map<String, ClusterPtr> clusters;
     ASSERT_NO_THROW(clusters = context->getClusters());
     EXPECT_TRUE(clusters.empty());
+}
+
+/// Context::resetSettingsToDefaultValue (used by `SET ... = DEFAULT`) mutates settings through a
+/// path separate from Context::setSetting (used by a plain `SET`), so the derivation of
+/// make_distributed_plan from distributed_plan_workers_num has to be re-established there too, not
+/// only on the path an explicit assignment takes. No query or SQL in this test: both of those
+/// re-finalize the settings on every query regardless of how the previous one changed them, which
+/// would mask a resetSettingsToDefaultValue that failed to finalize on its own.
+TEST(Context, ResetSettingsToDefaultValueRederivesDistributedPlan)
+{
+    auto context = Context::createCopy(getContext().context);
+
+    context->setSetting("distributed_plan_workers_num", Field(UInt64(3)));
+    context->setSetting("make_distributed_plan", Field(false));
+    ASSERT_FALSE(context->getSettingsRef()[Setting::make_distributed_plan]);
+
+    context->resetSettingsToDefaultValue({"make_distributed_plan"});
+
+    EXPECT_TRUE(context->getSettingsRef()[Setting::make_distributed_plan]);
 }
