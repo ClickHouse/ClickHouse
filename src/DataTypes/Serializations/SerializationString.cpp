@@ -26,7 +26,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -122,20 +121,6 @@ void SerializationString::serializeBinary(const IColumn & column, size_t row_num
     writeString(s, ostr);
 }
 
-
-void SerializationString::deserializeBinary(std::string_view & value, std::string_view & input, const FormatSettings & settings) const
-{
-    UInt64 size = 0;
-    const char * data = readVarUInt(size, input.data(), input.size());
-    checkStringSize(size, settings);
-
-    const size_t remaining = input.size() - (data - input.data());
-    if (size > remaining)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read a string of {} bytes, only {} bytes are left", size, remaining);
-
-    value = std::string_view(data, size);
-    input.remove_prefix(input.size() - remaining + size);
-}
 
 void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
