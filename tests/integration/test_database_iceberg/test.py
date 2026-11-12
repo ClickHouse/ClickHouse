@@ -2734,7 +2734,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
     A two-part name `X.T` in a table expression is read as table `T` of database `X`; the
     current-database reading (table `X.T`) is tried too only when the current database
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
-    existing is an error.
+    existing is an error unless the user can access only one of them.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}

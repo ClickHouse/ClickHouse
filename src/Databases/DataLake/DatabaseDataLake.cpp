@@ -2396,7 +2396,8 @@ You can also spell out every part with dots:
   (a data lake catalog) and `a` is not `system`. A catalog namespace named
   `system` is referenced as `` `system.t` `` or `catalog_name.system.t`.
   Database `a` must exist; when only one of the two tables exists it is used,
-  and when both exist the query fails with `AMBIGUOUS_IDENTIFIER`. Other
+  and when both exist and the user can access both, the query fails with
+  `AMBIGUOUS_IDENTIFIER`; if the user can access only one, that one is used. Other
   statements (`EXISTS`, `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL)
   always read `a.b` as database `a`, table `b`.
 

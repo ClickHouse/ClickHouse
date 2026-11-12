@@ -301,6 +301,14 @@ static bool canBeTablePathInCurrentDatabase(const Identifier & table_identifier,
     return database && database->isDatalakeCatalog();
 }
 
+/// Temporary tables of the current session are always accessible.
+static bool isTableMetadataVisible(const TableNode & table_node, const ContextPtr & context)
+{
+    return !table_node.getTemporaryTableName().empty()
+        || IdentifierResolver::hasAccessToTableMetadata(
+            table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), context);
+}
+
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
@@ -313,36 +321,52 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
             "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
             table_identifier.getFullName());
 
-    if (table_identifier.isCompound())
+    std::shared_ptr<TableNode> result;
+    if (!table_identifier.isCompound())
     {
-        if (allow_table_namespaces)
-        {
-            std::shared_ptr<TableNode> current_database_result;
-            if (canBeTablePathInCurrentDatabase(table_identifier, context))
-                current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context, replaced_storage);
-
-            IdentifierView table_identifier_view = table_identifier;
-            table_identifier_view.popFirst();
-            auto specified_database_result = tryResolveTableIdentifier(table_identifier[0], std::string(table_identifier_view.getFullName()), context, replaced_storage);
-
-            if (specified_database_result && current_database_result)
-                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "Ambiguous table identifier '{}'", table_identifier.getFullName());
-            if (current_database_result)
-                return current_database_result;
-            if (specified_database_result)
-                return specified_database_result;
-            return {};
-        }
-        else
-        {
-            return tryResolveTableIdentifier(table_identifier[0], table_identifier[1], context, replaced_storage);
-        }
+        result = tryResolveTableIdentifier("", table_identifier[0], context, replaced_storage);
+    }
+    else if (!allow_table_namespaces)
+    {
+        result = tryResolveTableIdentifier(table_identifier[0], table_identifier[1], context, replaced_storage);
     }
     else
     {
-        return tryResolveTableIdentifier("", table_identifier[0], context, replaced_storage);
+        std::shared_ptr<TableNode> current_database_result;
+        if (canBeTablePathInCurrentDatabase(table_identifier, context))
+            current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context, replaced_storage);
+
+        IdentifierView table_identifier_view = table_identifier;
+        table_identifier_view.popFirst();
+        auto specified_database_result = tryResolveTableIdentifier(
+            table_identifier[0], std::string(table_identifier_view.getFullName()), context, replaced_storage);
+
+        if (current_database_result && specified_database_result)
+        {
+            const bool current_visible = isTableMetadataVisible(*current_database_result, context);
+            const bool specified_visible = isTableMetadataVisible(*specified_database_result, context);
+
+            /// A table the user cannot see does not make the name ambiguous.
+            if (current_visible && specified_visible)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Ambiguous table identifier '{}'", table_identifier.getFullName());
+            if (current_visible)
+                return current_database_result;
+            if (specified_visible)
+                return specified_database_result;
+
+            /// Neither is visible: deny the table the identifier means without table namespaces.
+            context->checkAccess(AccessType::SELECT, specified_database_result->getStorageID());
+            return specified_database_result;
+        }
+
+        result = current_database_result ? std::move(current_database_result) : std::move(specified_database_result);
     }
+
+    /// The standard check reports the table-level requirement without naming any column.
+    if (result && !isTableMetadataVisible(*result, context))
+        context->checkAccess(AccessType::SELECT, result->getStorageID());
+    return result;
 }
 
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
@@ -473,17 +497,17 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
 /// check the planner performs later for the columns the query actually reads, and a query that
 /// can be executed can always be analyzed. Table expressions constructed programmatically
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
-void IdentifierResolver::checkAccessToTableMetadata(
+bool IdentifierResolver::hasAccessToTableMetadata(
     const StoragePtr & storage,
     const StorageID & storage_id,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
     if (!storage_id.hasDatabase())
-        return;
+        return true;
 
     if (isInsertedDataOfTableFunction(storage, storage_id, context))
-        return;
+        return true;
 
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
@@ -499,7 +523,7 @@ void IdentifierResolver::checkAccessToTableMetadata(
     for (const auto & column : columns)
     {
         if (is_visible(column.name))
-            return;
+            return true;
 
         /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
         /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
@@ -510,7 +534,7 @@ void IdentifierResolver::checkAccessToTableMetadata(
         {
             if (!columns.getSubcolumnsWithExplicitGrant(
                      *access_rights, access_type, storage_id.database_name, storage_id.table_name, column.name).empty())
-                return;
+                return true;
         }
     }
     /// A grant on a virtual column alone is enough to read it. An `Alias` reports its target's virtual columns, so there
@@ -520,24 +544,27 @@ void IdentifierResolver::checkAccessToTableMetadata(
         if (is_visible(column.name)
             && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)
                 || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name)))
-            return;
+            return true;
 
-    /// Not a single column of the table is visible to the user. Report the denial through the
-    /// standard check, so the message and the query log get the table-level requirement without
-    /// naming any column.
-    context->checkAccess(AccessType::SELECT, storage_id);
+    return false;
+}
+
+void IdentifierResolver::checkAccessToTableMetadata(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context)
+{
+    /// Report the denial through the standard check, so the message names the table, not a column.
+    if (!hasAccessToTableMetadata(storage, storage_id, storage_snapshot, context))
+        context->checkAccess(AccessType::SELECT, storage_id);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
     const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
     if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
-    {
-        /// Temporary tables of the current session are always accessible.
-        if (result->getTemporaryTableName().empty())
-            checkAccessToTableMetadata(result->getStorage(), result->getStorageID(), result->getStorageSnapshot(), context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-    }
 
     return {};
 }
