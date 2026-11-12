@@ -18,9 +18,9 @@ This page covers **self-managed ClickHouse Observability**. For the recommended 
 
 Time-to-Live (TTL) is a crucial feature in Self-managed ClickHouse Observability for efficient data retention and management, especially given vast amounts of data are continuously generated. TTL allows for automatic expiration and deletion of older data, ensuring that the storage is optimally used and performance is maintained without manual intervention. This capability is essential for keeping the database lean, reducing storage costs, and ensuring that queries remain fast and efficient by focusing on the most relevant and recent data. Moreover, it helps in compliance with data retention policies by systematically managing data life cycles, thus enhancing the overall sustainability and scalability of the observability solution.
 
-**By default, data is retained for 3 days. To modify this, see ["Modifying TTL"](#modifying-ttl).**
+**By default, data is retained for 30 days. To modify this, see ["Modifying TTL"](#modifying-ttl).**
 
-TTL is controlled at a table level in ClickHouse. For example, the default schema for logs is shown below; `${TABLES_TTL}` is substituted with the configured retention (3 days unless changed) when the collector creates the table:
+TTL is controlled at a table level in ClickHouse. For example, the default schema for logs is shown below; `${TABLES_TTL}` is substituted with the configured retention (30 days unless changed) when the collector creates the table:
 
 <OtelLogsSchema />
 
@@ -30,7 +30,7 @@ As shown in the above example, partitioning is specified on a table when it is i
 
 <Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg"/>
 
-The table schema also includes `TTL toDateTime(Timestamp) + ${TABLES_TTL}` and setting `ttl_only_drop_parts = 1`. The former clause ensures data will be dropped once it is older than the configured TTL (3 days by default). The setting `ttl_only_drop_parts = 1` enforces only expiring data parts where all of the data has expired (vs. attempting to partially delete rows). With partitioning ensuring data from separate days is never "merged," data can thus be efficiently dropped.
+The table schema also includes `TTL toDateTime(Timestamp) + ${TABLES_TTL}` and setting `ttl_only_drop_parts = 1`. The former clause ensures data will be dropped once it is older than the configured TTL (30 days by default). The setting `ttl_only_drop_parts = 1` enforces only expiring data parts where all of the data has expired (vs. attempting to partially delete rows). With partitioning ensuring data from separate days is never "merged," data can thus be efficiently dropped.
 
 <Warning>
 **`ttl_only_drop_parts`**

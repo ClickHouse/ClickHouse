@@ -109,18 +109,20 @@ See also [external authenticators](/concepts/features/security/external-authenti
 
 ### User permissions for ClickStack UI {#user-permissions}
 
-The ClickHouse user for the ClickStack UI only needs to be a `readonly` user with access to change the following settings:
+The ClickHouse user for the ClickStack UI should have `readonly = 2`. The UI sets its own settings, such as `date_time_output_format`, on every query, and raw SQL charts also set `readonly = 2`, so a `readonly = 1` user fails these queries with `Cannot modify '...' setting in readonly mode`. With `readonly = 2` the UI can also set `max_rows_to_read`, `read_overflow_mode` and `cancel_http_readonly_queries_on_client_close`; if you constrain `max_rows_to_read`, allow at least 1 million. `wait_end_of_query` is an HTTP interface parameter rather than a setting, so it needs no grant.
 
-- `max_rows_to_read` (at least up to 1 million)
-- `read_overflow_mode`
-- `cancel_http_readonly_queries_on_client_close`
-- `wait_end_of_query`
+For example:
 
-By default, the `default` user in both OSS and ClickHouse Cloud will have these permissions available however you're recommended to create a new user with these permissions.
+```sql
+CREATE USER clickstack_ui IDENTIFIED BY '<password>' SETTINGS readonly = 2;
+GRANT SELECT ON default.* TO clickstack_ui;
+```
+
+By default, the `default` user in both OSS and ClickHouse Cloud has these permissions, but we recommend creating a dedicated user.
 
 ## Configure Time To Live (TTL) {#configure-ttl}
 
-Ensure the [Time To Live (TTL)](/clickstack/managing/ttl) has been [appropriately configured](/clickstack/managing/ttl#modifying-ttl) for your ClickStack deployment. This controls how long data is retained for - the default of 3 days often needs to be modified.
+Ensure the [Time To Live (TTL)](/clickstack/managing/ttl) has been [appropriately configured](/clickstack/managing/ttl#modifying-ttl) for your ClickStack deployment. This controls how long data is retained for - the default of 30 days may need adjusting.
 
 ## MongoDB guidelines {#mongodb-guidelines}
 
