@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -1041,6 +1042,12 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// The default value of a String date, the empty string, is not a valid date.
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return arguments.empty() || !isString(removeLowCardinalityAndNullable(arguments[0].type));
+    }
 
     /// Documentation-only — adds/subtracts the integer/float `delta` of the
     /// given interval unit (encoded in `Transform`) to/from a date or

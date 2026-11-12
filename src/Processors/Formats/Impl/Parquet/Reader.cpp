@@ -89,6 +89,7 @@ namespace ProfileEvents
     extern const Event ParquetPagesDecompressedToSkipRows;
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
+    extern const Event ParquetRuntimeFilterPrunedRowGroups;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
 }
 
@@ -535,9 +536,9 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
-        if (!column_info.used_by_key_condition)
-            continue;
-        if (only_spatial_bbox && !column_info.is_spatial_bbox_column)
+        const bool used_by_static_condition
+            = column_info.used_by_key_condition && (!only_spatial_bbox || column_info.is_spatial_bbox_column);
+        if (!used_by_static_condition && !column_info.used_by_join_runtime_filter)
             continue;
         if (!column_info.decoder.allow_stats)
             continue;
@@ -601,6 +602,13 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             /// "input_format_parquet_filter_push_down=0" would not even disable this path.
             if (column_info.is_spatial_bbox_column && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 continue;
+            /// Only the JOIN runtime filter reads this column: reset its range, which the failed parse may have half-set,
+            /// and skip pruning by it instead of failing the query.
+            if (!column_info.used_by_key_condition && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            {
+                hyperrectangle[column_info.idx_in_output_block] = Range::createWholeUniverse();
+                continue;
+            }
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
         }
@@ -1274,6 +1282,24 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         }
     }
 
+    if (format_filter_info->join_runtime_filter_predicate && options.format.parquet.filter_push_down)
+    {
+        auto condition = format_filter_info->tryGetJoinRuntimeFilterKeyCondition(*sample_block);
+        if (condition && *condition && !(*condition)->alwaysUnknownOrTrue())
+        {
+            join_runtime_filter_key_condition = *condition;
+            for (size_t idx_in_output_block : join_runtime_filter_key_condition->getUsedColumns())
+            {
+                const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+                if (!output_idx.has_value())
+                    continue;
+                const OutputColumnInfo & output_info = output_columns[output_idx.value()];
+                if (output_info.is_primitive)
+                    primitive_columns[output_info.primitive_start].used_by_join_runtime_filter = true;
+            }
+        }
+    }
+
     const auto & rows_to_read = format_filter_info->rows_to_read;
     if (rows_to_read && !std::is_sorted(rows_to_read->begin(), rows_to_read->end()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows to read are not sorted");
@@ -1464,7 +1490,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if ((options.format.parquet.filter_push_down && format_filter_info->key_condition)
-            || !spatial_key_conditions.empty())
+            || !spatial_key_conditions.empty() || join_runtime_filter_key_condition)
         {
             /// When filter_push_down is disabled, only read bbox column stats to preserve the
             /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
@@ -1500,6 +1526,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             if (!format_filter_info->key_condition->checkInHyperrectangle(
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
+        }
+
+        if (join_runtime_filter_key_condition
+            && !join_runtime_filter_key_condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
+        {
+            ++row_groups_pruned_by_join_runtime_filter;
+            continue;
         }
 
         /// Check spatial KeyConditions (covering.bbox column stats via hyperrectangle).
@@ -1543,6 +1576,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     }
 
     key_condition_column_ranges_complete = record_key_condition_ranges;
+    ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedRowGroups, row_groups_pruned_by_join_runtime_filter);
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.

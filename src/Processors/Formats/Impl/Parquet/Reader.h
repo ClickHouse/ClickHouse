@@ -244,6 +244,7 @@ struct Reader
         StringValueFilterPtr string_value_filter;
 
         bool used_by_key_condition = false;
+        bool used_by_join_runtime_filter = false;
         bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
@@ -660,6 +661,10 @@ struct Reader
     VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
+
+    /// See FormatFilterInfo::join_runtime_filter_predicate.
+    std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
+    size_t row_groups_pruned_by_join_runtime_filter = 0;
 
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).

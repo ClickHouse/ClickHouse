@@ -3,6 +3,12 @@
 #include <algorithm>
 #include <limits>
 
+#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
+
 namespace DB
 {
 
@@ -197,5 +203,24 @@ std::string MergeTreeIndexGranularityConstant::describe() const
         "Constant(constant_granularity: {}, last_mark_granularity: {}, num_marks_without_final: {}, has_final_mark: {})",
         constant_granularity, last_mark_granularity, num_marks_without_final, has_final_mark);
 }
+
+void MergeTreeIndexGranularityConstant::writeDataImpl(WriteBuffer & out) const
+{
+    out << "constant granularity: " << constant_granularity << "\n";
+    out << "last mark granularity: " << last_mark_granularity << "\n";
+
+    out << "num marks without final: " << num_marks_without_final << "\n";
+    out << "has final mark: " << has_final_mark << "\n";
+}
+
+void MergeTreeIndexGranularityConstant::readDataImpl(ReadBuffer & in)
+{
+    in >> "constant granularity: " >> constant_granularity >> "\n";
+    in >> "last mark granularity: " >> last_mark_granularity >> "\n";
+
+    in >> "num marks without final: " >> num_marks_without_final >> "\n";
+    in >> "has final mark: " >> has_final_mark >> "\n";
+}
+
 
 }

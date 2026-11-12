@@ -3861,6 +3861,14 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 #endif
 
     bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
+
+    /// The String operand of a date and interval operation is parsed for every row, and its default value is not a valid date.
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return canBeExecutedOnDefaultArguments()
+            && !(prepared_interval_function
+                 && std::ranges::any_of(arguments, [](const auto & argument) { return isString(removeLowCardinalityAndNullable(argument.type)); }));
+    }
 };
 
 
