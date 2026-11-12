@@ -106,7 +106,8 @@ IMergeTreeReader::IMergeTreeReader(
             ColumnPtr default_row = frozen_type->createColumnConstWithDefaultValue(1);
             if (column_to_read.isSubcolumn())
                 default_row = frozen_type->getSubcolumn(column_to_read.getSubcolumnName(), default_row);
-            frozen_columns.push_back({columns_to_read.size() - 1, column.getNameInStorage(), default_row->convertToFullColumnIfConst()});
+            frozen_columns.push_back(
+                {columns_to_read.size() - 1, column.getNameInStorage(), default_row->convertToFullColumnIfConst(), isOncePerBlockSubcolumn(column_to_read)});
         }
 
         if (data_part_info_for_read->isCompactPart()
@@ -280,8 +281,16 @@ void IMergeTreeReader::fillMissingColumns(
     try
     {
         for (const auto & frozen : frozen_columns)
-            if (!res_columns[frozen.index])
-                res_columns[frozen.index] = ColumnConst::create(frozen.default_row, num_rows)->convertToFullColumnIfConst();
+        {
+            if (res_columns[frozen.index])
+                continue;
+
+            /// The distinct-paths subcolumn of a `JSON` column holds the paths in the first row of a block and nothing in the
+            /// other rows; `distinctJSONPaths` would otherwise process the paths once per row.
+            res_columns[frozen.index] = frozen.once_per_block
+                ? frozen.default_row->cloneResized(num_rows)
+                : ColumnConst::create(frozen.default_row, num_rows)->convertToFullColumnIfConst();
+        }
 
         /// Do a quick check to see if doing any work is necessary to begin with. The frozen columns are filled before it:
         /// when they were all that was missing, the generic filler is skipped, as it walks the streams of every available
@@ -842,7 +851,7 @@ void IMergeTreeReader::serveRowsFromColumnsCacheEntry(
     }
 }
 
-bool IMergeTreeReader::isColumnNotCacheable(const NameAndTypePair & column)
+bool IMergeTreeReader::isDistinctPathsSubcolumn(const NameAndTypePair & column)
 {
     if (!column.isSubcolumn())
         return false;
@@ -850,6 +859,16 @@ bool IMergeTreeReader::isColumnNotCacheable(const NameAndTypePair & column)
     const auto & subcolumn_name = column.getSubcolumnName();
     const std::string_view special_name = DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION;
     return subcolumn_name == special_name || subcolumn_name.ends_with(fmt::format(".{}", special_name));
+}
+
+bool IMergeTreeReader::isOncePerBlockSubcolumn(const NameAndTypePair & column)
+{
+    return isDistinctPathsSubcolumn(column);
+}
+
+bool IMergeTreeReader::isColumnNotCacheable(const NameAndTypePair & column)
+{
+    return isDistinctPathsSubcolumn(column);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
