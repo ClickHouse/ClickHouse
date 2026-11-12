@@ -21,6 +21,10 @@ undecided_limit_max_3	0	1	0	1	0	0
 undecided_limit_off_1	1	0	0	1	0	0
 undecided_limit_off_2	1	0	0	1	0	0
 undecided_limit_off_3	1	0	0	1	0	0
+undecided_no_rows_1	1	0	0	1	0	0
+undecided_no_rows_2	1	0	0	1	0	0
+undecided_no_rows_3	0	1	0	1	0	0
+undecided_no_rows_4	0	1	0	1	0	0
 undecided_warm_1	1	0	0	1	0	0
 undecided_warm_2	1	0	0	0	1	0
 undecided_warm_3	0	0	0	0	0	1

@@ -1235,6 +1235,15 @@ static bool decideAtBoundary(
     const QueryPlan::Node * const replicas_plan_boundary,
     const UInt64 undecided_key)
 {
+    /// Remembered only when the replicas plan was built for this execution: from a remembered boundary the same
+    /// outcome is reached without building it.
+    auto end_undecided = [&]
+    {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        if (undecided_key && plan_with_parallel_replicas)
+            getRuntimeDataflowStatisticsCache().setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasPlansNotComparable);
+    };
+
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
     /// estimate the number of bytes replicas would send to the initiator: the reading step records only
@@ -1244,7 +1253,7 @@ static bool decideAtBoundary(
     /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
     if (single_replica_plan_boundary->step.get() == source_reading_step)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
@@ -1256,7 +1265,7 @@ static bool decideAtBoundary(
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return false;
     }
@@ -1271,14 +1280,14 @@ static bool decideAtBoundary(
     /// the parallel-replicas plan cannot be relied on to reproduce.
     if (analysis->readFromProjection())
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
         return false;
     }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Index analysis result doesn't contain selected rows. Skipping optimization");
         return false;
     }
@@ -1286,14 +1295,6 @@ static bool decideAtBoundary(
     bool table_data_drifted_significantly = true;
 
     auto & stats_cache = getRuntimeDataflowStatisticsCache();
-    /// Only for the ways the replicas plan can turn out unusable once the cost model favours it: they are found only
-    /// with that plan, which the boundary remembered from an earlier execution cannot spare then.
-    auto end_undecided = [&]
-    {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
-        if (undecided_key)
-            stats_cache.setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasPlansNotComparable);
-    };
     if (const auto stats = stats_cache.getStats(single_replica_plan_boundary_hash))
     {
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;

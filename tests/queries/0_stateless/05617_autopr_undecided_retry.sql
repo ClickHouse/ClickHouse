@@ -101,6 +101,18 @@ GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_3';
 SELECT o_total, sum(l_price) FROM t_undecided_l INNER JOIN t_undecided_o ON o_orderkey = l_orderkey WHERE o_total = 0.5
 GROUP BY o_total FORMAT Null SETTINGS log_comment = 'undecided_empty_4';
 
+-- Index analysis selects no rows, so the plans are not compared. Without remembered boundaries this is found only
+-- after building the plan with parallel replicas, and is deferred like the other outcomes: the second run builds the
+-- plan again at once, the next two skip it.
+SELECT sum(o_total) FROM t_undecided_o WHERE o_orderkey > 100000
+FORMAT Null SETTINGS log_comment = 'undecided_no_rows_1', automatic_parallel_replicas_remember_boundary = 0;
+SELECT sum(o_total) FROM t_undecided_o WHERE o_orderkey > 100000
+FORMAT Null SETTINGS log_comment = 'undecided_no_rows_2', automatic_parallel_replicas_remember_boundary = 0;
+SELECT sum(o_total) FROM t_undecided_o WHERE o_orderkey > 100000
+FORMAT Null SETTINGS log_comment = 'undecided_no_rows_3', automatic_parallel_replicas_remember_boundary = 0;
+SELECT sum(o_total) FROM t_undecided_o WHERE o_orderkey > 100000
+FORMAT Null SETTINGS log_comment = 'undecided_no_rows_4', automatic_parallel_replicas_remember_boundary = 0;
+
 -- Without column statistics the plan with parallel replicas has no row estimates for the filtered read, so its joins
 -- are ordered differently and the two plans cannot be compared. The first run measures the hash tables; with their
 -- sizes, the second, which builds the plan again at once, orders both plans alike, matches them and collects
