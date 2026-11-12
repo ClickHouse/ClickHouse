@@ -1698,6 +1698,7 @@ ContextData::ContextData(const ContextData &o) :
     is_analyzing_background_expressions(o.is_analyzing_background_expressions),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    allow_compound_table_identifier_qualification(o.allow_compound_table_identifier_qualification),
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
@@ -1778,6 +1779,16 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
     if (!ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
     return createCopy(ptr);
+}
+
+ContextPtr Context::createCopyForStoredDefinition(const ContextPtr & other)
+{
+    if (!other->isCompoundTableIdentifierQualificationAllowed())
+        return other;
+
+    auto copy = createCopy(other);
+    copy->setAllowCompoundTableIdentifierQualification(false);
+    return copy;
 }
 
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)

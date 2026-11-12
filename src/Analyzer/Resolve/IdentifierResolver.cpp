@@ -287,9 +287,12 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Resolve identifier functions implementation
 
 /// `a.b` is also read as table `a.b` of the current database only if that database has table namespaces.
-/// `system` always names the system database.
+/// `system` always names the system database. The reading is also skipped when the context does not allow it (stored definitions).
 static bool canBeTablePathInCurrentDatabase(const Identifier & table_identifier, const ContextPtr & context)
 {
+    if (!context->isCompoundTableIdentifierQualificationAllowed())
+        return false;
+
     if (table_identifier[0] == DatabaseCatalog::SYSTEM_DATABASE)
         return false;
 
