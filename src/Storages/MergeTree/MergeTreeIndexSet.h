@@ -47,6 +47,7 @@ struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
 {
     explicit MergeTreeIndexBulkGranulesSet(const Block & index_sample_block_);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    size_t size() const override { return block.rows(); }
 
     size_t min_granule = 0;
     size_t max_granule = 0;
