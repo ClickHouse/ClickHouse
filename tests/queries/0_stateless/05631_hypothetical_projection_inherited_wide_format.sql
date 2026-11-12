@@ -6,7 +6,8 @@ SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_
 
 CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '';
+        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '',
+        merge_max_block_size = 8192;
 CREATE TABLE t_real AS t_est;
 ALTER TABLE t_real ADD PROJECTION p_k (SELECT a, b, v ORDER BY intDiv(b, 10));
 
