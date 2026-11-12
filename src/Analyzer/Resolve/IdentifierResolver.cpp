@@ -30,6 +30,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
@@ -42,6 +43,7 @@
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
 #include <base/scope_guard.h>
+#include <functional>
 #include <ranges>
 
 
@@ -754,6 +756,16 @@ enum class OuterReading : uint8_t
     BLOCKS,
 };
 
+/// How the join tree of an enclosing scope binds the identifier of a lookup: as `OuterReading`, or ambiguously, when
+/// two of its table expressions bind it and the lookup cannot choose between them.
+enum class JoinTreeReading : uint8_t
+{
+    ABSENT,
+    READABLE,
+    BLOCKS,
+    AMBIGUOUS,
+};
+
 /// The reading that an expression of type `type`, or no expression if it is nullptr, gives the identifier of `identifier_lookup`.
 OuterReading outerReadingOfType(const DataTypePtr & type, const IdentifierLookup & identifier_lookup)
 {
@@ -1002,7 +1014,10 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   * argument, a column or an `ARRAY JOIN` output of another type does not hide the name. Such a carrier is still the
   * nearest expression binding of the qualifier, where `resolveQualifiedMatcher` stops, so it also keeps a table of that
   * name in the same scope or farther out from hiding it. Within a scope, the carriers are probed in the order in which
-  * the lookup tries them, so the one the lookup actually binds decides.
+  * the lookup tries them, so the one the lookup actually binds decides. The columns of a join tree follow the join
+  * resolution: the left side wins with `single_join_prefer_left_table` or for a `USING` column, and an identifier that
+  * is ambiguous between the sides hides the name - the lookup reports `AMBIGUOUS_IDENTIFIER` - unless an expression
+  * alias takes over with `prefer_column_name_to_alias`.
   *
   * The rule is about the qualifier, not about the shape of the lookup, so it applies to the qualifier of a
   * matcher (`t.*`, `t.COLUMNS(...)`, `db.t.*`) as well. That qualifier is resolved as an expression first
@@ -1255,34 +1270,128 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                     break;
             }
 
-            /// The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
-            /// element `val` gives `t.val` a reading there. Only a column the identifier can be read from
-            /// counts, so an unrelated column with the same name as the table does not hide it.
-            OuterReading column_reading = OuterReading::ABSENT;
-            for (const auto & [outer_table_expression_node, outer_table_expression_data] : outer_scope->table_expression_node_to_data)
+            /** The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
+              * element `val` gives `t.val` a reading there. Only a column the identifier can be read from
+              * counts, so an unrelated column with the same name as the table does not hide it.
+              *
+              * The join tree is walked the way `tryResolveIdentifierFromJoinTreeNode` walks it, so the column that
+              * the lookup actually binds decides: when both sides of a `JOIN` bind the identifier, the left side
+              * wins with `single_join_prefer_left_table` (for a single `JOIN`) or for a `USING` column, and
+              * otherwise the identifier is ambiguous.
+              */
+            const bool prefer_left_table = outer_scope->joins_count == 1
+                && outer_scope->context->getSettingsRef()[Setting::single_join_prefer_left_table];
+
+            std::function<JoinTreeReading(const QueryTreeNodePtr &)> join_tree_reading = [&](const QueryTreeNodePtr & node) -> JoinTreeReading
             {
-                if (!table_expression_is_visible(outer_table_expression_node.get()))
-                    continue;
-                combine(column_reading, tableExpressionDataReadingOfIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context));
+                if (!node)
+                    return JoinTreeReading::ABSENT;
+
+                /// Combines the readings of two sides of a `JOIN` (or of two consecutive tables of a `CROSS JOIN`).
+                auto combine_sides = [&](JoinTreeReading left, JoinTreeReading right, bool left_wins)
+                {
+                    if (left == JoinTreeReading::AMBIGUOUS || right == JoinTreeReading::AMBIGUOUS)
+                        return JoinTreeReading::AMBIGUOUS;
+                    if (left == JoinTreeReading::ABSENT)
+                        return right;
+                    if (right == JoinTreeReading::ABSENT)
+                        return left;
+                    return left_wins ? left : JoinTreeReading::AMBIGUOUS;
+                };
+
+                if (const auto * join_node = node->as<JoinNode>())
+                {
+                    bool left_wins = prefer_left_table;
+                    if (join_node->isUsingJoinExpression())
+                    {
+                        if (const auto * using_list = join_node->getJoinExpression()->as<ListNode>())
+                        {
+                            for (const auto & using_node : using_list->getNodes())
+                            {
+                                const auto * using_column = using_node->as<ColumnNode>();
+                                if (using_column && using_column->getColumnName() == identifier.front())
+                                    left_wins = true;
+                            }
+                        }
+                    }
+
+                    return combine_sides(
+                        join_tree_reading(join_node->getLeftTableExpressionNode()),
+                        join_tree_reading(join_node->getRightTableExpressionNode()),
+                        left_wins);
+                }
+
+                if (const auto * cross_join_node = node->as<CrossJoinNode>())
+                {
+                    JoinTreeReading result = JoinTreeReading::ABSENT;
+                    for (const auto & table_expression : cross_join_node->getTableExpressions())
+                        result = combine_sides(result, join_tree_reading(table_expression), prefer_left_table);
+                    return result;
+                }
+
+                if (const auto * array_join_node = node->as<ArrayJoinNode>())
+                    return join_tree_reading(array_join_node->getTableExpressionNode());
+
+                if (!table_expression_is_visible(node.get()))
+                    return JoinTreeReading::ABSENT;
+
+                auto data_it = std::find_if(
+                    outer_scope->table_expression_node_to_data.begin(),
+                    outer_scope->table_expression_node_to_data.end(),
+                    [&](const auto & entry) { return entry.first.get() == node.get(); });
+                if (data_it == outer_scope->table_expression_node_to_data.end())
+                    return JoinTreeReading::ABSENT;
+
+                const auto & [outer_table_expression_node, outer_table_expression_data] = *data_it;
+
+                /// The readings of one table expression: a readable one takes precedence over a blocking one.
+                OuterReading reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context);
 
                 /// What looks like `database.table` in this scope can be `table.column` in the enclosing one, e.g.
                 /// `FROM u AS default` with a `Tuple` column `t` gives `default.t.val` a reading there.
-                if (identifier_column_qualifier_parts > 1
+                if (reading != OuterReading::READABLE
+                    && identifier_column_qualifier_parts > 1
                     && pathStartAddressesTableExpression(identifier.front(), outer_table_expression_node, outer_table_expression_data))
                 {
                     IdentifierView rest(identifier);
                     rest.popFirst();
-                    combine(column_reading, tableExpressionDataReadingOfIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context));
+                    auto rest_reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context);
+                    if (rest_reading != OuterReading::ABSENT)
+                        reading = rest_reading;
                 }
-            }
 
-            switch (column_reading)
+                switch (reading)
+                {
+                    case OuterReading::READABLE:
+                        return JoinTreeReading::READABLE;
+                    case OuterReading::BLOCKS:
+                        return JoinTreeReading::BLOCKS;
+                    case OuterReading::ABSENT:
+                        return JoinTreeReading::ABSENT;
+                }
+            };
+
+            const auto * outer_query_node = outer_scope->scope_node->as<QueryNode>();
+            switch (outer_query_node ? join_tree_reading(outer_query_node->getJoinTreeNode()) : JoinTreeReading::ABSENT)
             {
-                case OuterReading::READABLE:
+                case JoinTreeReading::READABLE:
                     return true;
-                case OuterReading::BLOCKS:
+                case JoinTreeReading::BLOCKS:
                     return false;
-                case OuterReading::ABSENT:
+                case JoinTreeReading::AMBIGUOUS:
+                {
+                    /// The lookup reports `AMBIGUOUS_IDENTIFIER`, unless an expression alias of the full name takes
+                    /// over, which `QueryAnalyzer::tryResolveIdentifier` allows with `prefer_column_name_to_alias`.
+                    /// Either way the identifier does not silently read the aliased table expression of this scope.
+                    const bool alias_can_take_over = prefer_column_name_to_alias
+                        && outer_aliases_are_visible
+                        && !outer_scope->expressions_in_resolve_process_stack.getExpressionWithAlias(identifier.getFullName())
+                        && outer_scope->aliases.alias_name_to_expression_node.contains(identifier.getFullName());
+                    if (!alias_can_take_over)
+                        return true;
+                    break;
+                }
+                case JoinTreeReading::ABSENT:
                     break;
             }
         }
