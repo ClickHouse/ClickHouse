@@ -1,9 +1,4 @@
 -- Tags: no-fasttest
--- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL grammar requires it.
-
--- A selector rejected by the PromQL parser must be rejected with the same parse error
--- when it is followed by `offset` or `@`. It used to throw a `LOGICAL_ERROR` instead.
--- https://github.com/ClickHouse/ClickHouse/issues/123075
 
 SET enable_time_series_table = 1;
 
