@@ -3037,12 +3037,8 @@ static BlockIO executeQueryImpl(
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
 
-            /// Checked (and derived) here, not as part of applying a `SET`, so it runs once for the query
-            /// that actually wants the plan rather than on whichever of two contradictory `SET`s happens
-            /// to run second - the same per-query resolution `log_queries_probability` gets just above.
-            /// Secondary queries are excluded: `ReadFromMerge::createChildrenPlans` clears
-            /// `make_distributed_plan` on a child's own context for structural reasons of its own, while
-            /// an inherited `distributed_plan_workers_num` is not a user conflict to reject.
+            /// Per query, like `log_queries_probability` above; secondary queries carry the
+            /// initiator's already-resolved settings.
             if (!out_ast->as<ASTSetQuery>() && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
                 checkDistributedPlanSettings(context);
 

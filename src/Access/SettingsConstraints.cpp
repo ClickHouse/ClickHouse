@@ -174,28 +174,15 @@ void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_
 
 bool SettingsConstraints::allowsValue(std::string_view setting_name, const Field & value) const
 {
-    auto it = constraints.find(resolveSettingNameWithCache(setting_name));
+    auto resolved_name = resolveSettingNameWithCache(setting_name);
+    auto it = constraints.find(resolved_name);
     if (it == constraints.end())
         return true;
 
-    const auto & constraint = it->second;
-
-    if (constraint.writability == SettingConstraintWritability::CONST)
-        return false;
-
-    if (!constraint.min_value.isNull() && accurateLess(value, constraint.min_value))
-        return false;
-
-    if (!constraint.max_value.isNull() && accurateLess(constraint.max_value, value))
-        return false;
-
-    for (const auto & disallowed_value : constraint.disallowed_values)
-    {
-        if (accurateEquals(disallowed_value, value))
-            return false;
-    }
-
-    return true;
+    /// A value clamped into range, like a disallowed value dropped, is still not the value asked for.
+    SettingChange change(resolved_name, value);
+    return Checker(it->second, Settings::resolveName).check(change, value, CLAMP_ON_VIOLATION, SettingSource::PROFILE)
+        && change.value == value;
 }
 
 void SettingsConstraints::merge(const SettingsConstraints & other)

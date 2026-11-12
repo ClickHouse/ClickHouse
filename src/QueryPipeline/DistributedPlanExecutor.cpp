@@ -1429,15 +1429,12 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
     {
-        /// Local execution needs no client at all; let a zero count through for the caller
-        /// (Optimizer::buildContext) to give its own, more specific error for it, instead of this
-        /// function faulting the client for a count execution was never going to ask it for.
+        /// Local execution needs no client at all; let a zero count through for the caller's own,
+        /// more specific error.
         if (settings[Setting::distributed_plan_execute_locally])
             return requested_workers;
 
-        /// A plan that needs workers cannot serve any selection, named or default, without the
-        /// client: reject it instead of silently planning zero nodes and running on the initiator
-        /// alone.
+        /// A plan that needs workers cannot serve any selection, named or default, without the client.
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled; cannot run a distributed query plan{}",
             worker_cluster.empty() ? "" : fmt::format(" on worker cluster '{}'", worker_cluster));
@@ -1481,13 +1478,11 @@ void checkDistributedPlanSettings(ContextMutablePtr context)
             "`distributed_plan_workers_num = DEFAULT`, or set the conflicting setting back to `DEFAULT`.",
             fmt::join(wants, ", "));
 
-    /// `make_distributed_plan` is already explicit (and did not refuse, checked above): nothing to derive.
     if (make_plan.changed)
         return;
 
-    /// `allowsValue` is the plain min/max/disallowed/CONST verdict, without the readonly-mode and
-    /// feature-tier checks `checkSettingsConstraints` folds in for a user changing a setting - this
-    /// is the server deriving one instead.
+    /// `allowsValue`, not `checkSettingsConstraints`: the server is deriving this value, not a
+    /// user changing a setting, so the readonly-mode and feature-tier checks do not apply.
     if (!query_context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValue(
             "make_distributed_plan", Field(true)))
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
