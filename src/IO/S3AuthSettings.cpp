@@ -244,6 +244,20 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_service_account_key", "");
 }
 
+void S3AuthSettings::restoreServerManagedFieldsFrom(const S3AuthSettings & other)
+{
+    for (const auto * name : {
+             "role_arn", "role_session_name", "external_id",
+             "http_client", "service_account", "metadata_service", "request_token_path",
+             "google_adc_client_id", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
+             "server_side_encryption_customer_key_base64"})
+        impl->set(name, other.impl->get(name));
+
+    headers = other.headers;
+    access_headers = other.access_headers;
+    server_side_encryption_kms_config = other.server_side_encryption_kms_config;
+}
+
 NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
     bool auth_settings_is_default = !impl->isChanged("access_key_id");

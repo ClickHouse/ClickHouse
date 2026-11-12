@@ -805,14 +805,11 @@ void S3ObjectStorage::applyNewSettings(
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
     /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
-    /// So does a restricted client: the parsing of a restricted query dropped the server's authentication material
-    /// (`role_arn`, headers, GCP OAuth) from its settings, and the config must not bring it back.
-    const bool merge_auth_from_config = options.allow_client_change && !restricts_now;
     auto apply_endpoint_settings = [&]
     {
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         {
-            if (merge_auth_from_config)
+            if (options.allow_client_change)
                 modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
             modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
         }
@@ -820,7 +817,7 @@ void S3ObjectStorage::applyNewSettings(
 
     auto apply_config_settings = [&]
     {
-        if (merge_auth_from_config)
+        if (options.allow_client_change)
             modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
         modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
     };
@@ -839,6 +836,11 @@ void S3ObjectStorage::applyNewSettings(
         apply_config_settings();
         apply_endpoint_settings();
     }
+
+    /// The parsing of a restricted query dropped the server's `role_arn`, headers, GCP OAuth and encryption keys from the
+    /// settings of a restricted client, so the config merged above must not bring them back.
+    if (restricts_now && options.allow_client_change)
+        modified_settings->auth_settings.restoreServerManagedFieldsFrom(s3_settings.get()->auth_settings);
 
     for (const auto & [name, value] : options.explicit_request_settings)
         modified_settings->request_settings.setByName(name, value);
