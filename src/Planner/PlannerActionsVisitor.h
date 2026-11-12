@@ -41,12 +41,12 @@ using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
 class PlannerActionsVisitor
 {
 public:
-    /// a node in node_to_name takes its name from the map
+    /// the visitor reads the names of the nodes from node_to_name and adds new names to it
     explicit PlannerActionsVisitor(
       const PlannerContextPtr & planner_context_,
       const ColumnNodePtrWithHashSet & correlated_columns_set_,
       bool use_column_identifier_as_action_node_name_ = true,
-      QueryTreeNodeToName node_to_name_ = {});
+      QueryTreeNodeToName * node_to_name_ = nullptr);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -58,7 +58,7 @@ private:
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
-    QueryTreeNodeToName node_to_name;
+    QueryTreeNodeToName * node_to_name = nullptr;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.

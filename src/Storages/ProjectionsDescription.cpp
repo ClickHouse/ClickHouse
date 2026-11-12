@@ -16,15 +16,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/HashUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerContext.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -148,42 +143,15 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
 namespace
 {
 
-/// Provides source data for the projection pipeline
-class ProjectionDataSource final : public ISource
-{
-public:
-    explicit ProjectionDataSource(SharedHeader block)
-        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
-        , chunk(block->getColumns(), block->rows())
-    {
-    }
-
-    String getName() const override { return "ProjectionDataSource"; }
-
-    /// Avoid tracking read progress for projection calculation pipeline.
-    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
-
-protected:
-    Chunk generate() override { return std::move(chunk); }
-
-private:
-    Chunk chunk;
-};
-
-/// Fake storage which stands in for the missing `FROM` clause of a projection query,
-/// both when the projection metadata is built and when the projection is calculated.
+/// Fake storage which stands in for the missing `FROM` clause of a projection query
+/// when the projection metadata is built.
 ///
-/// It borrows the name of `system.one`, which is what a `SELECT` without a `FROM` clause reads from
-/// anyway. The Analyzer plans a read from a table expression as a read from a table, so it checks the
-/// access rights and applies the quotas for it, and calculating a projection must not require
-/// anything beyond the rights of the query which writes the data: `system.one` is readable by every
-/// user and is exempt from quotas and limits.
+/// It has the name of `system.one`, which is what a `SELECT` without a `FROM` clause reads from anyway.
 class StorageProjectionSource final : public IStorage
 {
 public:
-    StorageProjectionSource(const ColumnsDescription & columns_description, VirtualColumnsDescription virtuals, Block data_)
+    StorageProjectionSource(const ColumnsDescription & columns_description, VirtualColumnsDescription virtuals)
         : IStorage({DatabaseCatalog::SYSTEM_DATABASE, "one"})
-        , data(std::move(data_))
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(columns_description);
@@ -195,7 +163,7 @@ public:
 
     /// The storage is not a table of the catalog, it only borrows the name of `system.one`, so the
     /// row policies and the `additional_table_filters` of that name must not be applied to it: they
-    /// would silently reshape the data written into the projection part.
+    /// would change the metadata of the projection.
     bool isSyntheticDataSource() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -211,18 +179,8 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/) override
     {
-        if (data.columns() == 0)
-            return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
-
-        Block block;
-        for (const auto & name : column_names)
-            block.insert(data.getColumnOrSubcolumnByName(name));
-
-        return Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(block))));
+        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
     }
-
-private:
-    Block data;
 };
 
 /// Collects processed data from the projection pipeline into a single chunk,
@@ -272,95 +230,9 @@ private:
     const size_t max_rows_allowed;
 };
 
-/** The Analyzer names the columns of a query plan by its own rules: a column is named by the
-  * identifier of its table expression (`__table1.a`), a constant is suffixed with its data type
-  * (`1_UInt8`), a set is named by its key. A projection, on the other hand, stores its columns under
-  * the names of the expressions of its query as they are written, because those names are the names
-  * of the files in the projection part (see `sample_block`).
-  *
-  * Collects the map from the names the Analyzer gives to the expressions of `query_tree` to the
-  * candidate names the projection may store them under, so that the result of the pipeline can be
-  * renamed back. There may be more than one candidate, because resolving a function changes its name:
-  * the canonical name replaces an alias (`SUM` becomes `sum`), and the nulls action and the types of
-  * the arguments may select another aggregate function (`count() IGNORE NULLS` becomes `count`, `sum`
-  * of `NULL` becomes `nothingNull`). The name the function has before the resolution is the one the
-  * query is written with, while the name after it is the one of a rewrite the old analysis also does
-  * (`countDistinct` becomes `uniqExact`).
-  */
-void collectProjectionColumnNames(
-    const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    const QueryTreeNodeToName & unresolved_node_names,
-    std::unordered_map<String, Names> & result)
+StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals)
 {
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT
-        || node_type == QueryTreeNodeType::FUNCTION)
-    {
-        /// The names must be exactly the ones the AST of the projection query gives: a constant is
-        /// written as the expression it was folded from (`toIntervalSecond(300)`) or as a plain
-        /// literal (`NULL`, never `_CAST(NULL, 'Nullable(Nothing)')`), and a column is not qualified
-        /// with its table expression.
-        ConvertToASTOptions ast_options;
-        ast_options.use_source_expression_for_constants = true;
-        ast_options.add_cast_for_constants = false;
-        ast_options.fully_qualified_identifiers = false;
-
-        auto & candidates = result[calculateActionNodeName(node, planner_context)];
-        auto add_candidate = [&](String candidate)
-        {
-            if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end())
-                candidates.push_back(std::move(candidate));
-        };
-
-        add_candidate(node->toAST(ast_options)->getColumnName());
-
-        const QueryTreeNodePtr * unresolved_node = &node;
-        if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-            unresolved_node = &constant_node->getSourceExpression();
-        if (auto it = unresolved_node_names.find(*unresolved_node); it != unresolved_node_names.end())
-            add_candidate(it->second);
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectProjectionColumnNames(child, planner_context, unresolved_node_names, result);
-}
-
-/** The `ORDER BY` expression of a projection is appended to its `SELECT` list
-  * (see `ASTProjectionSelectQuery::cloneToASTSelect`), so the list of the projection columns may
-  * contain the same expression twice, while a projection stores every column only once.
-  *
-  * Aliases are ignored, because the projection metadata is built with `ignoreAlias`: the columns
-  * `a AS x` and `a AS y` are both stored as the single column `a`.
-  *
-  * Returns the removed columns: they may be spelled differently from the remaining ones
-  * (`count() IGNORE NULLS` and `count()`), and the projection metadata stores a column for every spelling.
-  */
-QueryTreeNodes removeDuplicateProjectionColumns(QueryTreeNodePtr & query_tree)
-{
-    auto & query_node = query_tree->as<QueryNode &>();
-    const auto & projection_nodes = query_node.getProjection().getNodes();
-
-    QueryTreeNodePtrWithHashIgnoreAliasesSet unique_projection_nodes;
-    std::unordered_set<size_t> unique_projection_column_indexes;
-    QueryTreeNodes removed_projection_nodes;
-
-    for (size_t i = 0; i < projection_nodes.size(); ++i)
-    {
-        if (unique_projection_nodes.emplace(projection_nodes[i]).second)
-            unique_projection_column_indexes.emplace(i);
-        else
-            removed_projection_nodes.push_back(projection_nodes[i]);
-    }
-
-    query_node.removeUnusedProjectionColumns(unique_projection_column_indexes);
-    return removed_projection_nodes;
-}
-
-StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals, Block data = {})
-{
-    return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals), std::move(data));
+    return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals));
 }
 
 }
@@ -859,22 +731,6 @@ Block ProjectionDescription::calculateByQuery(
     if (block.rows() == 0)
         return sample_block.cloneEmpty();
 
-    auto mut_context = Context::createCopy(context);
-    /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
-    /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
-    mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
-    mut_context->setSetting("transform_null_in", Field(0));
-    /// The projection is calculated locally from the block, see `getProjectionFromAST`.
-    mut_context->setSetting("enable_parallel_replicas", Field(0));
-    /// Building the metadata analyzes `query_ast` in place, which already replaces its positional arguments,
-    /// so resolving them again would re-interpret the integer literals they were replaced with.
-    mut_context->setSetting("enable_positional_arguments", false);
-    /// A projection column is the stored `IN` expression, not a join it may be rewritten to.
-    mut_context->setSetting("rewrite_in_to_join", false);
-    /// Analyze the projection query as an initial one, as its metadata is built, also when the data
-    /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
-    mut_context->setQueryKindInitial();
-
     ASTPtr query_ast_copy = nullptr;
 
     /// Only keep required columns
@@ -967,78 +823,21 @@ Block ProjectionDescription::calculateByQuery(
         return projection_block;
     }
 
-    /// A projection query has no `FROM` clause, the source block is provided by a fake storage.
-    /// Note that the columns of the source block are not necessarily the physical columns of the
-    /// table: `_row_exists` and `_part_offset` are added above, so they are exposed as ordinary
-    /// columns instead of virtual ones.
-    ColumnsDescription source_columns(source_block.getNamesAndTypesList());
-    auto source = createProjectionQuerySource(source_columns, /*virtuals=*/{}, std::move(source_block));
-
-    auto select_query_options = SelectQueryOptions{processing_stage}.ignoreASTOptimizations().ignoreSettingConstraints();
-
-    QueryTreeNodeToName unresolved_node_names;
-    auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context, &unresolved_node_names);
-    auto removed_projection_nodes = removeDuplicateProjectionColumns(query_tree);
-
-    InterpreterSelectQueryAnalyzer interpreter(query_tree, mut_context, select_query_options);
-    auto builder = interpreter.buildQueryPipeline();
-    std::unordered_map<String, Names> projection_column_names;
-    const auto & planner_context = *interpreter.getPlanner().getPlannerContext();
-    collectProjectionColumnNames(query_tree, planner_context, unresolved_node_names, projection_column_names);
-    for (const auto & removed_projection_node : removed_projection_nodes)
-        collectProjectionColumnNames(removed_projection_node, planner_context, unresolved_node_names, projection_column_names);
-    builder.resize(1);
+    /// `_row_exists` and `_part_offset` are added above, so they are ordinary columns of the source block.
+    ProjectionPlanner planner(query_ast_copy ? query_ast_copy : query_ast, ColumnsDescription(source_block.getNamesAndTypesList()), context);
+    auto pipe = planner.buildPipe(std::move(source_block));
 
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    auto sink = std::make_shared<ProjectionDataSink>(builder.getSharedHeader(), block.rows());
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto sink = std::make_shared<ProjectionDataSink>(pipe.getSharedHeader(), block.rows());
+    QueryPipeline pipeline(std::move(pipe));
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
     /// Always return the proper header, even if nothing was accumulated, in case the caller needs to use it
-    Block pipeline_block = sink->isAccumulatedSomething() ? sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns())
-                                                          : sink->getPort().getHeader().cloneEmpty();
-
-    /// Bring the columns of the result to the names the projection stores them under.
-    /// Distinct columns of the pipeline must not be brought to the same name: a block with two
-    /// columns of the same name (possibly of different types, like `1_UInt8` and `1_Int32` would be)
-    /// is ambiguous, and only one of them would be written into the projection part.
-    /// One column of the pipeline may be stored under several names: the projection metadata keeps
-    /// the expressions which are spelled differently but resolved by the Analyzer to the same one
-    /// (`count()` and `count() IGNORE NULLS`) as separate columns, while the pipeline calculates it once.
-    Block projection_block;
-    for (const auto & column : pipeline_block)
-    {
-        /// Prefer the candidate names the projection metadata describes.
-        Names projection_column_names_for_column;
-        if (auto it = projection_column_names.find(column.name); it != projection_column_names.end())
-        {
-            const auto & candidates = it->second;
-            for (const auto & candidate : candidates)
-                if (sample_block.has(candidate))
-                    projection_column_names_for_column.push_back(candidate);
-            if (projection_column_names_for_column.empty())
-                projection_column_names_for_column.push_back(candidates.front());
-        }
-        else
-        {
-            projection_column_names_for_column.push_back(column.name);
-        }
-
-        for (const auto & projection_column_name : projection_column_names_for_column)
-        {
-            if (projection_block.has(projection_column_name))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Projection {} calculated more than one column named {}: the columns {}. It's a bug",
-                    name,
-                    projection_column_name,
-                    pipeline_block.dumpNames());
-            projection_block.insert({column.column, column.type, projection_column_name});
-        }
-    }
+    Block projection_block = sink->isAccumulatedSomething() ? sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns())
+                                                            : sink->getPort().getHeader().cloneEmpty();
 
     /// Rename parent _part_offset to _parent_part_offset column
     if (with_parent_part_offset)

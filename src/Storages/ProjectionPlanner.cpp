@@ -7,11 +7,21 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/CollectSets.h>
+#include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageDummy.h>
 
@@ -20,6 +30,28 @@ namespace DB
 
 namespace
 {
+
+/// Provides source data for the projection pipeline
+class ProjectionDataSource final : public ISource
+{
+public:
+    explicit ProjectionDataSource(SharedHeader block)
+        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
+        , chunk(block->getColumns(), block->rows())
+    {
+    }
+
+    String getName() const override { return "ProjectionDataSource"; }
+
+    /// Avoid tracking read progress for projection calculation pipeline.
+    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
+protected:
+    Chunk generate() override { return std::move(chunk); }
+
+private:
+    Chunk chunk;
+};
 
 /// Remembers the names of the functions of `node` as they are written in the projection query.
 void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName & result)
@@ -76,9 +108,8 @@ void collectStoredNodeNames(const QueryTreeNodePtr & node, const QueryTreeNodeTo
             collectStoredNodeNames(child, unresolved_node_names, result);
 }
 
-}
 
-QueryTreeNodePtr buildProjectionQueryTree(
+QueryTreeNodePtr buildProjectionQueryTreeImpl(
     const ASTPtr & query_ast,
     const StoragePtr & source,
     const ContextPtr & context,
@@ -122,6 +153,13 @@ QueryTreeNodePtr buildProjectionQueryTree(
     return query_tree;
 }
 
+}
+
+QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+{
+    return buildProjectionQueryTreeImpl(query_ast, source, context, nullptr);
+}
+
 ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context)
 {
     auto query_context = Context::createCopy(context);
@@ -132,7 +170,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
 
     auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
     QueryTreeNodeToName unresolved_node_names;
-    query_tree = buildProjectionQueryTree(query_ast, source, query_context, &unresolved_node_names);
+    query_tree = buildProjectionQueryTreeImpl(query_ast, source, query_context, &unresolved_node_names);
     auto & query_node = query_tree->as<QueryNode &>();
 
     /// the analysis resolved the tree with the context of the query node
@@ -154,27 +192,90 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     aggregates = extractAggregateDescriptions(collectAggregateFunctionNodes(query_tree), *planner_context, node_to_name);
 }
 
-ActionsDAG ProjectionPlanner::buildBeforeAggregationActions() const
+ActionsDAG ProjectionPlanner::buildActions(const QueryTreeNodes & expressions)
 {
     ActionsDAG actions_dag;
     ColumnNodePtrWithHashSet no_correlated_columns;
-    PlannerActionsVisitor actions_visitor(planner_context, no_correlated_columns, /*use_column_identifier_as_action_node_name=*/false, node_to_name);
+    PlannerActionsVisitor actions_visitor(planner_context, no_correlated_columns, /*use_column_identifier_as_action_node_name=*/false, &node_to_name);
 
     NameSet output_names;
-    auto add_outputs = [&](const QueryTreeNodePtr & expressions)
+    for (const auto & expression : expressions)
     {
-        auto [nodes, correlated_subtrees] = actions_visitor.visit(actions_dag, expressions);
+        auto [nodes, correlated_subtrees] = actions_visitor.visit(actions_dag, expression);
         correlated_subtrees.assertEmpty("in a projection");
         for (const auto * node : nodes)
             if (output_names.emplace(node->result_name).second)
                 actions_dag.getOutputs().push_back(node);
-    };
-
-    add_outputs(query_tree->as<QueryNode &>().getGroupByNode());
-    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
-        add_outputs(aggregate_function_node->as<FunctionNode &>().getArgumentsNode());
+    }
 
     return actions_dag;
+}
+
+ActionsDAG ProjectionPlanner::buildBeforeAggregationActions()
+{
+    QueryTreeNodes expressions{query_tree->as<QueryNode &>().getGroupByNode()};
+    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
+        expressions.push_back(aggregate_function_node->as<FunctionNode &>().getArgumentsNode());
+
+    return buildActions(expressions);
+}
+
+Pipe ProjectionPlanner::buildPipe(Block source)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & query_node = query_tree->as<QueryNode &>();
+
+    Pipe pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source))));
+    ExpressionActionsSettings actions_settings(query_context, CompileExpressions::yes);
+
+    if (query_node.hasWhere())
+    {
+        auto filter_dag = buildActions({query_node.getWhere()});
+        auto filter_column_name = filter_dag.getOutputs().front()->result_name;
+        /// the next step reads the source columns again, so the filter keeps the columns that it reads
+        for (const auto * input : filter_dag.getInputs())
+            if (input->result_name != filter_column_name)
+                filter_dag.getOutputs().push_back(input);
+
+        auto filter = std::make_shared<ExpressionActions>(std::move(filter_dag), actions_settings);
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<FilterTransform>(header, filter, filter_column_name, /*remove_filter_column=*/false);
+        });
+    }
+
+    bool is_aggregate = query_node.hasGroupBy() || !aggregates.empty();
+    auto expression_dag = is_aggregate ? buildBeforeAggregationActions() : buildActions({query_node.getProjectionNode()});
+    /// a normal projection stores only the columns of its SELECT
+    if (!is_aggregate)
+        expression_dag.appendInputsForUnusedColumns(pipe.getHeader());
+
+    auto expression = std::make_shared<ExpressionActions>(std::move(expression_dag), actions_settings);
+    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+
+    if (is_aggregate)
+    {
+        auto params = std::make_shared<AggregatingTransformParams>(
+            pipe.getSharedHeader(), getAggregatorParams(query_context, aggregation_keys, aggregates), /*final=*/false);
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, params, nullptr); });
+    }
+
+    /// a subquery of IN is an ordinary query: plan it and build its set before the pipe runs
+    auto subquery_options = SelectQueryOptions{}.subquery();
+    for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+    {
+        auto subquery_tree = subquery->detachQueryTree();
+        createUniqueAliasesIfNecessary(subquery_tree, query_context);
+        Planner subquery_planner(
+            subquery_tree,
+            subquery_options,
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+        subquery_planner.buildQueryPlanIfNeeded();
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+        subquery->buildSetInplace(query_context);
+    }
+
+    return pipe;
 }
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/Block.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Context_fwd.h>
@@ -13,6 +14,7 @@ namespace DB
 {
 
 class ColumnsDescription;
+class Pipe;
 
 /// plans the SELECT of a projection
 /// names each expression as the query writes it, because a projection part stores its columns under these names
@@ -29,9 +31,15 @@ public:
     const AggregateDescriptions & getAggregates() const { return aggregates; }
 
     /// calculates the aggregation keys and the aggregate function arguments from the source columns
-    ActionsDAG buildBeforeAggregationActions() const;
+    ActionsDAG buildBeforeAggregationActions();
+
+    /// calculates the projection of a block of the source columns, keep the planner while the pipe runs
+    Pipe buildPipe(Block source);
 
 private:
+    /// calculates the expressions from the source columns, the outputs have the stored names
+    ActionsDAG buildActions(const QueryTreeNodes & expressions);
+
     QueryTreeNodePtr query_tree;
     PlannerContextPtr planner_context;
     QueryTreeNodeToName node_to_name;
@@ -40,11 +48,6 @@ private:
 };
 
 /// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-/// If `unresolved_node_names` is set, remembers the names of the functions before the analysis.
-QueryTreeNodePtr buildProjectionQueryTree(
-    const ASTPtr & query_ast,
-    const StoragePtr & source,
-    const ContextPtr & context,
-    QueryTreeNodeToName * unresolved_node_names = nullptr);
+QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
 
 }
