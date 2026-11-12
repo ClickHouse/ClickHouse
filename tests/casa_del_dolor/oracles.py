@@ -162,6 +162,12 @@ class ElOraculoDeTablas:
             except Exception as ex:
                 logger.warn(f"Error while renaming table after restarting server: {ex}")
 
+    # Errors caused by the data, not the server, e.g. a mutation stuck on `MODIFY COLUMN` to a non-Nullable type
+    # over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
+    DATA_CONVERSION_ERRORS = (
+        "(6, 25, 26, 27, 38, 41, 70, 72, 321, 349, 376, 407, 441, 467, 675, 676)"
+    )
+
     HEALTH_CHECKS = [
         "broken detached part(s)",
         "broken replica(s)",
@@ -186,7 +192,7 @@ class ElOraculoDeTablas:
         "",
         "",
         "SELECT database, table, last_exception FROM system.replicas WHERE readonly_start_time IS NOT NULL LIMIT 3;",
-        "SELECT database, table, part_name, exception FROM system.part_log WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
+        f"SELECT database, table, part_name, exception FROM system.part_log WHERE exception != '' AND error NOT IN {DATA_CONVERSION_ERRORS} AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3;",
         "SELECT database, table, last_exception FROM system.replication_queue WHERE last_exception != '' LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
@@ -206,7 +212,7 @@ class ElOraculoDeTablas:
             )
             info_str = ""
             try:
-                info_str = client.query("""
+                info_str = client.query(f"""
                     SELECT x FROM (
                     (SELECT count() x, 1 y FROM system.detached_parts WHERE startsWith("name", 'broken'))
                      UNION ALL
@@ -237,7 +243,8 @@ class ElOraculoDeTablas:
                     (SELECT count() x, 6 y FROM clusterAllReplicas(default, system.replicas) WHERE readonly_start_time IS NOT NULL)
                      UNION ALL
                     (SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, system.part_log)
-                     WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)
+                     WHERE exception != '' AND error NOT IN {self.DATA_CONVERSION_ERRORS} AND event_time > (now() - toIntervalSecond(60))
+                     GROUP BY part_name HAVING count() > 10) tx)
                      UNION ALL
                     (SELECT count() x, 9 y FROM system.replication_queue WHERE last_exception != '')
                      UNION ALL
