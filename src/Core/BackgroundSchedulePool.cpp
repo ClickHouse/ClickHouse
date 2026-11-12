@@ -6,6 +6,7 @@
 
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
@@ -31,6 +32,12 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int ABORTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char background_schedule_pool_delayed_task_insert_fail[];
 }
 
 namespace
@@ -586,10 +593,18 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
     {
         std::lock_guard lock(delayed_tasks_mutex);
 
+        /// Stands in for an allocation failure of the new entry.
+        fiu_do_on(FailPoints::background_schedule_pool_delayed_task_insert_fail,
+        {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::background_schedule_pool_delayed_task_insert_fail);
+        });
+
+        /// Insert before erasing the old entry: if the insertion throws, the task keeps its old entry and `task.iterator` stays valid.
+        auto it = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
         if (task.delayed)
             delayed_tasks.erase(task.iterator);
 
-        task.iterator = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
+        task.iterator = it;
         task.delayed = true;
     }
 
