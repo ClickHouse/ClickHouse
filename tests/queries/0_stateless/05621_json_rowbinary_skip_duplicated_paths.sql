@@ -3,6 +3,7 @@ SET type_json_skip_duplicated_paths = 1;
 
 SELECT x FROM format(RowBinary, 'x JSON(a UInt8)', unhex('02016105016100' || '01016109'));
 SELECT x FROM format(RowBinary, 'x JSON(a String)', unhex('020161013101610132' || '0101610133'));
+SELECT x FROM format(RowBinary, 'x JSON(a Variant(String, UInt8))', unhex('02016101050161010101' || '0101610109'));
 SELECT x FROM format(RowBinary, 'x JSON', unhex('0201611501310161150132' || '010161150133'));
 
 DROP TABLE IF EXISTS t_json_dup_rowbinary;

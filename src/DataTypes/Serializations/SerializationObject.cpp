@@ -1422,8 +1422,8 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
 
                         /// Skip value of this path.
-                        Field tmp;
-                        typed_it->second->deserializeBinary(tmp, istr, settings);
+                        auto tmp_column = typed_column->cloneEmpty();
+                        typed_it->second->deserializeBinary(*tmp_column, istr, settings);
                     }
                     else
                     {
