@@ -853,6 +853,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_query_sending_for_remote", trueOrFalseSettingNoOracle},
     {"async_socket_for_remote", trueOrFalseSettingNoOracle},
     {"automatic_parallel_replicas_mode", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
+    {"azure_skip_hidden_files", trueOrFalseSettingNoOracle},
     {"azure_validate_etag_on_read", trueOrFalseSettingNoOracle},
     {"backup_s3_expired_token_retry_timeout_ms",
      CHSetting(
@@ -1214,6 +1215,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"hdfs_create_new_file_on_insert", trueOrFalseSettingNoOracle},
     {"hdfs_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
     {"hdfs_skip_empty_files", trueOrFalseSettingNoOracle},
+    {"hdfs_skip_hidden_files", trueOrFalseSettingNoOracle},
     {"hdfs_throw_on_zero_files_match", trueOrFalseSettingNoOracle},
     {"http_allow_database_as_path", trueOrFalseSettingNoOracle},
     {"http_allow_filters_as_path", trueOrFalseSettingNoOracle},
@@ -1422,6 +1424,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"insert_shard_id",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 2)); }, {}, false)},
+    {"insert_squashing_max_memory_ratio",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"0", "0.0001", "0.01", "0.1125", "0.5", "1"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"intersect_default_mode", setSetting},
     {"interval_output_format",
      CHSetting(
@@ -1745,6 +1756,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_low_cardinality_as_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_max_record_batch_size_bytes", CHSetting(bytesRangeNonZero, {}, false)},
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
+    {"output_format_arrow_uuid_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_arrow_unsupported_types",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -2023,6 +2035,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3_create_new_file_on_insert", trueOrFalseSettingNoOracle},
     {"s3_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
     {"s3_skip_empty_files", trueOrFalseSettingNoOracle},
+    {"s3_skip_hidden_files", trueOrFalseSettingNoOracle},
     {"s3_slow_all_threads_after_network_error", trueOrFalseSettingNoOracle},
     {"s3_throw_on_zero_files_match", trueOrFalseSettingNoOracle},
     {"s3_upload_checksum_algorithm",
@@ -2427,6 +2440,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "min_external_table_block_size_bytes",
            "min_insert_block_size_bytes",
            "min_joined_block_size_bytes",
+           "min_string_column_bytes_for_hash_join_row_store",
            "page_cache_block_size",
            "page_cache_max_coalesced_bytes",
            "partial_merge_join_left_table_buffer_bytes",

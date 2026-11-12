@@ -352,15 +352,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
-    {"merge_memory_estimate_per_source_part_column",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"0", "1", "4096", "1048576"};
-             return rg.pickRandomly(choices);
-         },
-         {"0", "1", "4096", "1048576"},
-         false)},
     {"merge_selecting_sleep_ms", highRangeSetting},
     {"merge_selecting_sleep_slowdown_factor",
      CHSetting(
