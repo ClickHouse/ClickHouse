@@ -3,7 +3,6 @@
 
 #include <Core/Field.h>
 #include <Common/CurrentThread.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,6 +22,8 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
@@ -194,6 +195,8 @@ public:
     }
 
     bool isCopy() const { return is_copy; }
+
+    const IMergeTreeDataPart::IndexPtr & getIndex() const { return index; }
 
     /// Replaces the index with a copy of the values for the marks of the ranges, which is accounted as memory usage of the query.
     void copyRanges(const MarkRanges & ranges, size_t max_columns)
@@ -367,24 +370,26 @@ public:
         : parts(parts_), loaded_columns(max_columns_in_index)
     {
         /// The primary index cache does not necessarily keep the indexes of all parts, so copy the needed values of those that it does
-        /// not keep any more. Other queries evict indexes as well, so check this all the time, but do not spend more than a tenth of the
-        /// time on it. What is evicted after the last check is not copied, this is not more than the size of the cache.
-        static constexpr UInt64 min_time_between_checks_to_check_time = 10;
-        std::vector<size_t> not_copied;
-        UInt64 check_ns = 0;
-        Stopwatch watch;
+        /// not keep any more. After a check, the others are in the cache all at the same time, so they are not larger than the cache.
+        /// Check each time when they have become larger by a quarter, so they do not become much larger than that, and the number of
+        /// checks of one index does not depend on the number of parts on average. What other queries evict after the last check is not
+        /// copied, so a query can hold indexes that are not larger than the cache, but not in it.
+        static constexpr size_t min_bytes_between_checks = 16 << 20;
+        std::vector<HeldIndex> not_copied;
+        size_t not_copied_bytes = 0;
+        size_t checked_bytes = 0;
         auto copy_evicted = [&]
         {
-            watch.restart();
-            auto evicted = std::ranges::partition(
-                not_copied, [&](size_t part_index) { return parts[part_index].data_part->isIndexInMemory(); });
-            check_ns = watch.elapsedNanoseconds();
-
-            for (size_t part_index : evicted)
-                indices[part_index]->copyRanges(parts[part_index].ranges, max_columns_in_index);
-
-            not_copied.erase(evicted.begin(), evicted.end());
+            for (const auto & evicted : removeEvicted(not_copied))
+            {
+                not_copied_bytes -= evicted.bytes;
+                indices[evicted.part_index]->copyRanges(parts[evicted.part_index].ranges, max_columns_in_index);
+            }
+            checked_bytes = not_copied_bytes;
         };
+
+        if (!parts.empty())
+            index_cache = parts.front().data_part->storage.getPrimaryIndexCache();
 
         indices.reserve(parts.size());
         for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -404,10 +409,12 @@ public:
                 index = std::make_shared<PartIndexAccess>(*part.data_part);
 
             indices.push_back(index);
-            if (!index->isCopy())
-                not_copied.push_back(part_index);
+            if (index->isCopy())
+                continue;
 
-            if (watch.elapsedNanoseconds() > min_time_between_checks_to_check_time * check_ns)
+            not_copied.push_back({part_index, PrimaryIndexWeightFunction{}(*index->getIndex())});
+            not_copied_bytes += not_copied.back().bytes;
+            if (not_copied_bytes - checked_bytes > std::max(checked_bytes / 4, min_bytes_between_checks))
                 copy_evicted();
         }
         copy_evicted();
@@ -447,7 +454,47 @@ public:
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
 private:
+    struct HeldIndex
+    {
+        size_t part_index;
+        size_t bytes;
+    };
+
+    /// Removes those indexes that neither the cache nor the part keeps, and returns them.
+    std::vector<HeldIndex> removeEvicted(std::vector<HeldIndex> & held) const
+    {
+        /// Without the cache, the parts keep their indexes.
+        if (held.empty() || !index_cache)
+            return {};
+
+        std::vector<UInt128> keys;
+        std::vector<const PrimaryIndex *> values;
+        keys.reserve(held.size());
+        values.reserve(held.size());
+        for (const auto & [part_index, _] : held)
+        {
+            keys.push_back(parts[part_index].data_part->getIndexCacheKey());
+            values.push_back(indices[part_index]->getIndex().get());
+        }
+        const auto is_cached = index_cache->containsMany(keys, values);
+
+        std::vector<HeldIndex> evicted;
+        size_t kept = 0;
+        for (size_t i = 0; i < held.size(); ++i)
+        {
+            /// A part can also keep its index itself, for example, if the cache was not used before.
+            const size_t part_index = held[i].part_index;
+            if (is_cached[i] || parts[part_index].data_part->keepsIndex(indices[part_index]->getIndex()))
+                held[kept++] = held[i];
+            else
+                evicted.push_back(held[i]);
+        }
+        held.resize(kept);
+        return evicted;
+    }
+
     const RangesInDataParts & parts;
+    PrimaryIndexCachePtr index_cache;
     std::vector<PartIndexAccessPtr> indices;
     size_t loaded_columns;
 };

@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -58,24 +60,49 @@ def test_only_needed_values_of_indexes_are_kept():
     assert node.query(f"SELECT sum(v) FROM t FINAL WHERE s = 5 SETTINGS {SETTINGS}") == "5\n"
 
 
+CONDITIONS = [
+    "s = 5",
+    "s IN (5, 4999, 5000, 14999, 15000)",
+    "s BETWEEN 4900 AND 5100",
+    "s < 100 AND k > repeat('0', 61) || '5'",
+    "s < 14000",
+    "1",
+]
+
+
+def get_expected(where):
+    return node.query(
+        f"SELECT count(), sum(v) FROM (SELECT k, max(v) AS v, any(s) AS s FROM d GROUP BY k) WHERE {where}"
+    )
+
+
 @pytest.mark.parametrize("split", [0, 1])
 @pytest.mark.parametrize("layers", [0, 1])
-@pytest.mark.parametrize(
-    "where",
-    [
-        "s = 5",
-        "s IN (5, 4999, 5000, 14999, 15000)",
-        "s BETWEEN 4900 AND 5100",
-        "s < 100 AND k > repeat('0', 61) || '5'",
-        "s < 14000",
-        "1",
-    ],
-)
+@pytest.mark.parametrize("where", CONDITIONS)
 def test_results(split, layers, where):
     settings = f"""split_parts_ranges_into_intersecting_and_non_intersecting_final = {split},
         split_intersecting_parts_ranges_into_layers_final = {layers},
         use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0, max_threads = 4"""
-    expected = node.query(
-        f"SELECT count(), sum(v) FROM (SELECT k, max(v) AS v, any(s) AS s FROM d GROUP BY k) WHERE {where}"
-    )
-    assert node.query(f"SELECT count(), sum(v) FROM d FINAL WHERE {where} SETTINGS {settings}") == expected
+    assert node.query(f"SELECT count(), sum(v) FROM d FINAL WHERE {where} SETTINGS {settings}") == get_expected(where)
+
+
+def test_concurrent_queries():
+    # The cache keeps about a half of the indexes, so the queries evict and reload the indexes that the others use.
+    expected = {where: get_expected(where) for where in CONDITIONS}
+    settings = "use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0, max_threads = 4"
+    conditions = CONDITIONS * 4
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = pool.map(
+            lambda where: node.query(f"SELECT count(), sum(v) FROM d FINAL WHERE {where} SETTINGS {settings}"), conditions
+        )
+        assert list(results) == [expected[where] for where in conditions]
+
+    # The indexes are much larger than the cache here, so they are checked several times while they are loaded.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = pool.map(
+            lambda s: node.query(f"SELECT sum(v) FROM t FINAL WHERE s = {s} SETTINGS max_memory_usage = '50M', {SETTINGS}"), range(8)
+        )
+        plans = pool.map(lambda _: node.query(explain("", "500M")), range(8))
+        assert list(results) == [f"{s}\n" for s in range(8)]
+        assert all("MergeTreeSelect" in plan for plan in plans)

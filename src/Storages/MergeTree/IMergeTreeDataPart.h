@@ -533,8 +533,10 @@ public:
     /// It doesn't check cache
     IndexPtr tryGetIndex() const;
 
-    /// Returns true if the index is loaded, or in the cache, or is being loaded.
-    bool isIndexInMemory() const;
+    UInt128 getIndexCacheKey() const;
+
+    /// Returns true if the part keeps this index itself. Can also return false if another thread uses the index of the part now.
+    bool keepsIndex(const IndexPtr & index_) const;
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
