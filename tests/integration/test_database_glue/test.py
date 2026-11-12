@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import re
 import uuid
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +20,7 @@ from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -1116,6 +1118,51 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
     expected = "123\t1" + "\t\\N" * num_columns + "\n"
     assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
+
+
+def test_alternating_commits_with_pyiceberg(started_cluster):
+    # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
+    # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name
+    # it had already used, so every following write failed with `Write into iceberg was not successful`.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alternating_commits_with_pyiceberg_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), SortOrder(), table_name)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    metastore_name = re.compile(r"(\d{5})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.metadata\.json")
+    versions = []
+
+    def check_pointer():
+        file_name = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location.rsplit("/", 1)[1]
+        match = metastore_name.fullmatch(file_name)
+        assert match, file_name
+        versions.append(int(match.group(1)))
+
+    expected = []
+    for i in range(3):
+        catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([10 * i], pa.int64())}))
+        check_pointer()
+        node.query(f"INSERT INTO {table_ref} VALUES ({10 * i + 1})", settings=write_settings)
+        check_pointer()
+        expected += [10 * i, 10 * i + 1]
+
+    catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([100], pa.int64())}))
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE id = 1", settings=write_settings)
+    check_pointer()
+    expected = sorted([x for x in expected if x != 1] + [100])
+
+    assert versions == sorted(set(versions)), versions
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "".join(f"{x}\n" for x in expected)
+    assert sorted(catalog.load_table(f"{root_namespace}.{table_name}").scan().to_arrow()["id"].to_pylist()) == expected
 
 
 def test_drop_table(started_cluster):

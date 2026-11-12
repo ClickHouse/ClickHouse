@@ -9,6 +9,7 @@
 #include <Processors/Port.h>
 #include <Core/Defines.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <unordered_set>
 

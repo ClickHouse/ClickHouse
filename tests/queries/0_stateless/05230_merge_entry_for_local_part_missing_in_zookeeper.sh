@@ -80,7 +80,7 @@ do
     found=$(${CLICKHOUSE_CLIENT} -q "
         SYSTEM FLUSH LOGS text_log;
         SELECT count() FROM system.text_log
-        WHERE logger_name = '${table_uuid}::${part_name} (MergeFromLogEntryTask)'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = '${table_uuid}::${part_name} (MergeFromLogEntryTask)'
           AND message LIKE '%exists locally but has no node in ZooKeeper%'")
     if [[ "$found" != "0" ]]; then
         break
