@@ -8569,6 +8569,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 1/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8594,6 +8598,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/6)' --workflow "PR" --ci --timestamp
@@ -8636,6 +8642,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 2/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8661,6 +8671,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/6)' --workflow "PR" --ci --timestamp
@@ -8703,6 +8715,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 3/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8728,6 +8744,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/6)' --workflow "PR" --ci --timestamp
@@ -8770,6 +8788,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 4/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8795,6 +8817,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/6)' --workflow "PR" --ci --timestamp
@@ -8837,6 +8861,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 5/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8862,6 +8890,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/6)' --workflow "PR" --ci --timestamp
@@ -8904,6 +8934,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 6/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8929,6 +8963,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/6)' --workflow "PR" --ci --timestamp
@@ -8971,6 +9007,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzgp') }}
     name: "Performance Comparison (amd_release, master_head, 1/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8996,6 +9036,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/8)' --workflow "PR" --ci --timestamp
@@ -9038,6 +9080,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzgp') }}
     name: "Performance Comparison (amd_release, master_head, 2/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9063,6 +9109,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/8)' --workflow "PR" --ci --timestamp
@@ -9105,6 +9153,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzgp') }}
     name: "Performance Comparison (amd_release, master_head, 3/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9130,6 +9182,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/8)' --workflow "PR" --ci --timestamp
@@ -9172,6 +9226,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 4/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9197,6 +9255,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/8)' --workflow "PR" --ci --timestamp
@@ -9239,6 +9299,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 5/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9264,6 +9328,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/8)' --workflow "PR" --ci --timestamp
@@ -9306,6 +9372,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 6/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9331,6 +9401,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/8)' --workflow "PR" --ci --timestamp
@@ -9373,6 +9445,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA3Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 7/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9398,6 +9474,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 7/8)' --workflow "PR" --ci --timestamp
@@ -9440,6 +9518,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA4Lzgp') }}
     name: "Performance Comparison (amd_release, master_head, 8/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9465,6 +9547,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 8/8)' --workflow "PR" --ci --timestamp
@@ -9507,6 +9591,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 1/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9532,6 +9620,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/6)' --workflow "PR" --ci --timestamp
@@ -9574,6 +9664,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 2/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9599,6 +9693,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/6)' --workflow "PR" --ci --timestamp
@@ -9641,6 +9737,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 3/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9666,6 +9766,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/6)' --workflow "PR" --ci --timestamp
@@ -9708,6 +9810,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 4/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9733,6 +9839,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/6)' --workflow "PR" --ci --timestamp
@@ -9775,6 +9883,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 5/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9800,6 +9912,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/6)' --workflow "PR" --ci --timestamp
@@ -9842,6 +9956,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 6/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9867,6 +9985,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "PR" --ci --timestamp
@@ -9909,6 +10029,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzgp') }}
     name: "Performance Comparison (arm_release, master_head, 1/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9934,6 +10058,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/8)' --workflow "PR" --ci --timestamp
@@ -9976,6 +10102,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzgp') }}
     name: "Performance Comparison (arm_release, master_head, 2/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10001,6 +10131,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/8)' --workflow "PR" --ci --timestamp
@@ -10043,6 +10175,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzgp') }}
     name: "Performance Comparison (arm_release, master_head, 3/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10068,6 +10204,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/8)' --workflow "PR" --ci --timestamp
@@ -10110,6 +10248,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 4/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10135,6 +10277,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/8)' --workflow "PR" --ci --timestamp
@@ -10177,6 +10321,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 5/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10202,6 +10350,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/8)' --workflow "PR" --ci --timestamp
@@ -10244,6 +10394,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 6/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10269,6 +10423,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/8)' --workflow "PR" --ci --timestamp
@@ -10311,6 +10467,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA3Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 7/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10336,6 +10496,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 7/8)' --workflow "PR" --ci --timestamp
@@ -10378,6 +10540,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA4Lzgp') }}
     name: "Performance Comparison (arm_release, master_head, 8/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -10403,6 +10569,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 8/8)' --workflow "PR" --ci --timestamp

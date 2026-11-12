@@ -2058,7 +2058,9 @@ class JobConfigs:
     )
     # One family per architecture: six selected-test shards, or eight full-suite shards.
     # pr-performance requests the full suite on ARM; ci-force-all does so on both architectures.
-    performance_comparison_pr_jobs = performance_comparison_with_master_head_job.parametrize(
+    performance_comparison_pr_job = performance_comparison_with_master_head_job.copy()
+    performance_comparison_pr_job.enable_gh_read_token = True
+    performance_comparison_pr_jobs = performance_comparison_pr_job.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"{arch}_release, master_head, {batch}/{total_batches}",
@@ -2655,6 +2657,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/filter_coverage_lines.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
             ],
         ),
