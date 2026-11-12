@@ -1,6 +1,9 @@
 DROP TABLE IF EXISTS t_lc_single_dictionary_index;
 
 SET allow_suspicious_low_cardinality_types = 1;
+-- Aggregation by dictionary index is not used under a `max_rows_to_group_by` limit (the CI profile sets one),
+-- and columns served from the columns cache lose the part's shared dictionary.
+SET max_rows_to_group_by = 0, use_columns_cache = 0;
 
 CREATE TABLE t_lc_single_dictionary_index
 (
