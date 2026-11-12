@@ -102,6 +102,8 @@ struct ProjectionPartData
     size_t bytes = 0;
     /// uncompressed bytes without the key columns, used for the part format
     size_t format_bytes = 0;
+    /// a merge of normal projection parts can write the part: a merge of the parent, or `MATERIALIZE PROJECTION` in more batches
+    bool merged = false;
     /// for a merged normal part: the bytes that the parts it merges store, a merge chooses the format and a constant granule from them
     /// a part does not record the formats and the serialization versions of those parts, so also the fewest and the most of these bytes
     size_t stored_bytes = 0;
@@ -507,6 +509,17 @@ std::pair<size_t, size_t> calculatedBlockBytes(const Block & block)
     return {shared, owned};
 }
 
+/// `MATERIALIZE PROJECTION` calculates in batches of `min_insert_block_size_rows` or `min_insert_block_size_bytes` of the background
+/// profile, and the blocks it calculates go to temporary parts in batches of the same size, see `PartMergerWriter`
+/// returns true if these rows and bytes can give more than one batch
+bool overMaterializationBatch(const MergeTreeData & data, size_t rows, size_t bytes)
+{
+    const auto & background = data.getContext()->getBackgroundContext()->getSettingsRef();
+    const size_t limit_rows = background[Setting::min_insert_block_size_rows];
+    const size_t limit_bytes = background[Setting::min_insert_block_size_bytes];
+    return (limit_rows == 0 && limit_bytes == 0) || (limit_rows != 0 && rows > limit_rows) || (limit_bytes != 0 && bytes > limit_bytes);
+}
+
 /// one row for each group, with the merged states, as in a merged aggregate projection part
 /// the same sort and merge as the writer of a projection part, see `MergeTreeDataWriter::writeProjectionPartImpl`
 Block mergeGroups(const ProjectionDescription & projection, const Blocks & blocks)
@@ -573,7 +586,8 @@ String buildProjectionPart(
     size_t batch_rows = 0;
     MutableColumns key_columns;
     /// a merge of normal projection parts chooses the format and a constant granule from the bytes that these parts store
-    const bool merged_rows = !aggregate && part->info.level > 0;
+    /// the scan shows only at its end if `MATERIALIZE PROJECTION` can merge, so count these bytes for each normal projection
+    const bool merged_rows = !aggregate;
     const auto stored_settings = mergedPartSerializations(mt_settings);
     const auto stored_columns = projection.metadata->getColumns().getAllPhysical();
     const ISerialization::StreamFileNameSettings stream_names(mt_settings);
@@ -710,11 +724,7 @@ String buildProjectionPart(
         else
         {
             /// a mutation calculates the projection in batches of the parent rows and merges the parts of more batches, see `PartMergerWriter`
-            const auto & background = read_step->getMergeTreeData().getContext()->getBackgroundContext()->getSettingsRef();
-            const size_t mutation_rows = background[Setting::min_insert_block_size_rows];
-            const size_t mutation_bytes = background[Setting::min_insert_block_size_bytes];
-            out.merge_history_unknown |= (mutation_rows == 0 && mutation_bytes == 0) || (mutation_rows != 0 && out.read_rows > mutation_rows)
-                || (mutation_bytes != 0 && read_bytes > mutation_bytes);
+            out.merge_history_unknown |= overMaterializationBatch(merge_tree, out.read_rows, read_bytes);
             /// `MATERIALIZE PROJECTION` merges the block that it calculates, see `writeTempProjectionPart`
             /// the merge builds each state anew, and it compares the keys as a sort does: 0 and -0 or two NaNs are one group there,
             /// the hash table of an insert keeps them apart
@@ -731,8 +741,17 @@ String buildProjectionPart(
         add(out, key_columns, std::move(merged), merged_part);
     }
     finish(out, key_columns);
+    /// `MATERIALIZE PROJECTION` writes more temporary parts only if the parent rows give more batches and the projection rows fill one
+    /// a sample stands for the whole part
+    if (merged_rows)
+    {
+        auto whole = [&](size_t sample_value) { return static_cast<size_t>(UInt128(sample_value) * part->rows_count / out.read_rows); };
+        out.merged = part->info.level > 0
+            || (out.read_rows != 0 && overMaterializationBatch(merge_tree, part->rows_count, whole(read_bytes))
+                && overMaterializationBatch(merge_tree, whole(out.rows), whole(out.format_bytes)));
+    }
     /// a part does not record the parts it merged, their bytes can give a compact part only if the fewest bytes give one
-    if (!stored_bytes_known)
+    if (out.merged && !stored_bytes_known)
     {
         out.merge_history_unknown |= constant_granularity;
         out.both_formats = merge_tree.choosePartFormat(0, 0, part->info.level, &projection).part_type != MergeTreeDataPartType::Wide;
@@ -874,7 +893,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
     std::optional<PartFromSample> materialized_part;
-    const bool merged_rows = projection.type != ProjectionDescription::Type::Aggregate && parent_part->info.level > 0;
+    const bool merged_rows = data.merged;
     if (data.materialized)
     {
         stableGetPermutation(data.materialized->key_block, sort_description, data.materialized->order);
@@ -956,7 +975,9 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             layouts.push_back(std::move(most));
             layouts.push_back(std::move(least));
             layouts.push_back(stored(data.stored_bytes));
-            primary = layouts.size() - 1;
+            /// a level-zero part comes from an insert or from `MATERIALIZE PROJECTION`, the estimate takes the insert
+            if (parent_part->info.level > 0)
+                primary = layouts.size() - 1;
         }
         return std::pair{std::move(layouts), primary};
     };
@@ -965,11 +986,12 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     auto type_of = [&](size_t sample_bytes)
     { return merge_tree.choosePartFormat(whole_part.scaled(sample_bytes), whole_part.rows, parent_part->info.level, &projection).part_type; };
     const auto block_type = type_of(data.format_bytes);
-    const auto part_type = merged_rows ? type_of(data.stored_bytes) : block_type;
+    const auto merged_type = type_of(data.stored_bytes);
+    const auto part_type = merged_rows && parent_part->info.level > 0 ? merged_type : block_type;
     /// a merge keeps a wide format of the parts that it merges, and the settings that chose their formats are unknown
-    data.both_formats |= part_type != block_type
-        || (merged_rows
-            && (part_type != MergeTreeDataPartType::Wide || type_of(data.stored_bytes_least) != type_of(data.stored_bytes_most)));
+    data.both_formats |= merged_rows
+        && (merged_type != block_type || merged_type != MergeTreeDataPartType::Wide
+            || type_of(data.stored_bytes_least) != type_of(data.stored_bytes_most));
     auto [layouts, primary] = layouts_of(part_type);
     data.wide = part_type == MergeTreeDataPartType::Wide;
     if (data.both_formats)
