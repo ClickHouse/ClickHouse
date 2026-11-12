@@ -52,6 +52,8 @@
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Access/ContextAccess.h>
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
@@ -1445,9 +1447,9 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
 }
 
-void checkDistributedPlanSettings(ContextPtr context)
+void checkDistributedPlanSettings(ContextMutablePtr context)
 {
-    const ContextPtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+    const ContextMutablePtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     const auto & settings = query_context->getSettingsRef();
 
     const auto & make_plan = settings[Setting::make_distributed_plan];
@@ -1479,16 +1481,21 @@ void checkDistributedPlanSettings(ContextPtr context)
             "`distributed_plan_workers_num = DEFAULT`, or set the conflicting setting back to `DEFAULT`.",
             fmt::join(wants, ", "));
 
-    /// Nothing explicit refused it, yet it is off: a settings constraint vetoed the derivation
-    /// (adjustSettingsForMakeDistributedPlan). Not re-checked via `allowsValue` here: that constraint
-    /// check refuses every value of a `CONST` setting, including one that is already pinned to the
-    /// value `wants` asks for, which `SET` itself does not refuse (SettingsConstraints::checkImpl
-    /// accepts an unchanged value under `CONST`).
-    if (!make_plan)
+    /// `make_distributed_plan` is already explicit (and did not refuse, checked above): nothing to derive.
+    if (make_plan.changed)
+        return;
+
+    /// `allowsValue` is the plain min/max/disallowed/CONST verdict, without the readonly-mode and
+    /// feature-tier checks `checkSettingsConstraints` folds in for a user changing a setting - this
+    /// is the server deriving one instead.
+    if (!query_context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValue(
+            "make_distributed_plan", Field(true)))
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "A settings constraint forbids enabling `make_distributed_plan`, but {} requests a distributed query "
             "plan. Set the conflicting setting back to `DEFAULT`.",
             fmt::join(wants, ", "));
+
+    query_context->applySettingsChanges({SettingChange("make_distributed_plan", Field(true))});
 }
 
 TaskToHostMap::~TaskToHostMap() = default;

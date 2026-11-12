@@ -5,7 +5,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <thread>
@@ -16,12 +15,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;
-
-namespace DB::Setting
-{
-extern const SettingsBool make_distributed_plan;
-extern const SettingsUInt64 distributed_plan_workers_num;
-}
 
 template <typename Ptr>
 void run(Ptr context)
@@ -327,11 +320,11 @@ TEST(Context, GetReadSettingsRace)
 /// Test for a data race on the Settings block between Context::setDefaultProfiles() and a
 /// concurrent settings write.
 ///
-/// `setDefaultProfiles` re-applies `applySettingsQuirks` and `doSettingsSanityCheckClamp` to
-/// `*settings` after `setCurrentProfile` has released Context::mutex. `setCurrentProfile` already
-/// ran both under the lock (as part of finalizing the profile's settings), so in a resolved profile
-/// the trailing pass changes nothing and only *reads* the settings it inspects -- which is why the
-/// concurrent thread here is a writer holding the mutex, not another reader.
+/// `setDefaultProfiles` re-applies `applySettingsQuirks`, `adjustSettingsForMakeDistributedPlan`
+/// and `doSettingsSanityCheckClamp` to `*settings` after `setCurrentProfile` has released
+/// Context::mutex. `setCurrentProfile` already ran all three under the lock, so in a resolved
+/// profile the trailing pass changes nothing and only *reads* the settings it inspects -- which is
+/// why the concurrent thread here is a writer holding the mutex, not another reader.
 ///
 /// `setCurrentProfile` orders this thread after every earlier writer, so the race window is the
 /// interval between that release and `makeBackgroundContext` taking the mutex again. The writer
@@ -439,23 +432,4 @@ TEST(Context, SetClustersConfigAfterReloadClusterConfig)
     std::map<String, ClusterPtr> clusters;
     ASSERT_NO_THROW(clusters = context->getClusters());
     EXPECT_TRUE(clusters.empty());
-}
-
-/// Context::resetSettingsToDefaultValue (used by `SET ... = DEFAULT`) mutates settings through a
-/// path separate from Context::setSetting (used by a plain `SET`), so the derivation of
-/// make_distributed_plan from distributed_plan_workers_num has to be re-established there too, not
-/// only on the path an explicit assignment takes. No query or SQL in this test: both of those
-/// re-finalize the settings on every query regardless of how the previous one changed them, which
-/// would mask a resetSettingsToDefaultValue that failed to finalize on its own.
-TEST(Context, ResetSettingsToDefaultValueRederivesDistributedPlan)
-{
-    auto context = Context::createCopy(getContext().context);
-
-    context->setSetting("distributed_plan_workers_num", Field(UInt64(3)));
-    context->setSetting("make_distributed_plan", Field(false));
-    ASSERT_FALSE(context->getSettingsRef()[Setting::make_distributed_plan]);
-
-    context->resetSettingsToDefaultValue({"make_distributed_plan"});
-
-    EXPECT_TRUE(context->getSettingsRef()[Setting::make_distributed_plan]);
 }

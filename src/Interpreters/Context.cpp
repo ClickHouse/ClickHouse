@@ -2852,18 +2852,9 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-
-    /// Installed first, so that a `compatibility` the profile sets is restricted by the constraints of the
-    /// profile, and so that finalizing below derives make_distributed_plan under the incoming constraints,
-    /// not the outgoing ones.
+    /// Installed first, so that a `compatibility` the profile sets is restricted by the constraints of the profile.
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
-
-    /// Apply the profile's settings without finalizing: deriving make_distributed_plan as part of
-    /// applying could latch the distributed-plan adjustments before the compatibility recheck below
-    /// runs. Finalize once, after that recheck.
-    for (const SettingChange & change : profiles_info.settings)
-        applySettingChangeWithLock(change, lock);
-
+    applySettingsChangesWithLock(profiles_info.settings, lock);
     /// The new constraints decide anew what a `compatibility` set before may change.
     if (!profiles_info.settings.tryGet(COMPATIBILITY_SETTING_NAME) && !(*settings)[Setting::compatibility].value.empty())
     {
@@ -2871,7 +2862,6 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
         restrictSettingsChangedByCompatibilityWithLock(lock);
     }
     contextSanityClampSettingsWithLock(*this, *settings, lock);
-    finalizeSettingsWithLock(lock);
 }
 
 void Context::restrictSettingsChangedByCompatibilityWithLock(const std::lock_guard<ContextSharedMutex> &)
@@ -3969,7 +3959,6 @@ void Context::setSettings(const Settings & settings_)
     *settings = settings_;
     need_recalculate_access = true;
     contextSanityClampSettings(*this, *settings);
-    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -4021,40 +4010,18 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     }
 }
 
-void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex> &)
-{
-    applySettingsQuirks(*settings);
-
-    /// Deriving the plan and adjusting for it is the server's call. clickhouse-client applies the
-    /// session settings the server pushes after the handshake onto a context that has no settings
-    /// constraints, so deriving here would enable the plan the server may have just vetoed, and the
-    /// adjustments would ride back to the server as explicit changes of the client.
-    if (getApplicationType() == ApplicationType::CLIENT)
-        return;
-
-    /// Deriving `make_distributed_plan` is vetoed by the full verdict, constant-writability locks
-    /// included. Restoring a remembered adjustment ignores a constant lock: putting back a value
-    /// the setting already held before the override is not a change the lock is meant to block.
-    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
-    const auto & constraints = constraints_and_profiles->constraints;
-    adjustSettingsForMakeDistributedPlan(
-        *settings,
-        [&](std::string_view name, const Field & value) { return constraints.allowsValue(name, value); },
-        [&](std::string_view name, const Field & value) { return constraints.allowsValue(name, value, /*ignore_const=*/ true); });
-}
-
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
 {
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
-    finalizeSettingsWithLock(lock);
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
-    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSetting(std::string_view name, const Field & value)
@@ -4062,7 +4029,6 @@ void Context::setSetting(std::string_view name, const Field & value)
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
-    finalizeSettingsWithLock(lock);
 }
 
 void Context::setServerSetting(std::string_view name, const Field & value)
@@ -4352,7 +4318,8 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
         settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
         restrictSettingsChangedByCompatibilityWithLock(lock);
     }
-    finalizeSettingsWithLock(lock);
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -9197,11 +9164,11 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
-    /// Not around `setCurrentProfile` above, which takes the same mutex itself. make_distributed_plan
-    /// derivation already happened inside it, via `finalizeSettingsWithLock`.
+    /// Not around `setCurrentProfile` above, which takes the same mutex itself.
     {
         std::lock_guard lock(mutex);
         applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+        adjustSettingsForMakeDistributedPlan(*settings);
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
     }
 

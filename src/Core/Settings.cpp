@@ -26,9 +26,6 @@
 #include <base/types.h>
 #include <Common/NamePrompter.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-
-#include <utility>
 #include <Common/typeid_cast.h>
 #include <base/sanitizer_defs.h>
 
@@ -11341,9 +11338,7 @@ An empty string lets the catalog choose the codec when it writes the first metad
 )", EXPERIMENTAL, \
         {"25.8", "", "", "New setting"}) \
     DECLARE(Bool, make_distributed_plan, false, R"(
-Make distributed query plan.
-
-It is enabled automatically when `distributed_plan_workers_num` is an explicit non-zero value or `distributed_plan_worker_cluster` is an explicit non-empty value, unless `make_distributed_plan` is itself set explicitly or a settings constraint forbids enabling it. Explicitly setting `make_distributed_plan` to a value that contradicts one of those two settings (e.g. `make_distributed_plan = 0` together with a non-zero `distributed_plan_workers_num`), or wanting the plan while a settings constraint forbids it, is rejected at query start with an error naming the conflicting settings; set the conflicting one back to `DEFAULT` to resolve it.
+Make distributed query plan. Derived automatically for the query from `distributed_plan_workers_num` or `distributed_plan_worker_cluster` unless set explicitly; an explicit value that contradicts one of those two settings, or a settings constraint that forbids enabling it, is rejected at query start.
 
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
@@ -11388,9 +11383,7 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 )", 0, \
         {"25.5", true, true, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
-How many stateless workers to lease for this query's distributed plan.
-
-Left at its default (unset), the server picks the number of workers. An explicit non-zero value both requests that many workers and enables `make_distributed_plan` on its own, unless that setting is itself set explicitly or a settings constraint forbids enabling it. An explicit `0` means no workers, and is rejected at query start if `make_distributed_plan` or `distributed_plan_worker_cluster` wants the plan regardless.
+How many stateless workers to lease for this query's distributed plan. An explicit non-zero value also enables `make_distributed_plan` for the query unless that setting is itself set explicitly; an explicit `0` disables leasing and is rejected at query start if `make_distributed_plan` or `distributed_plan_worker_cluster` wants the plan regardless.
 )", PRIVATE_PREVIEW, \
         {"26.6", 0, 0, "New experimental setting for how many stateless workers to lease for a distributed query. Zero disables leasing."}) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
@@ -11446,9 +11439,7 @@ Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
     DECLARE(String, distributed_plan_worker_cluster, "", R"(
-Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
-
-An explicit non-empty value also enables `make_distributed_plan` on its own, unless that setting is itself set explicitly or a settings constraint forbids enabling it; an explicit empty value stays inert (it still means the default cluster), so it is never a reason on its own to turn the plan off.
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster (and, being empty, never triggers the behavior below); other clusters are configured under `stateless_worker_client.clusters`. Setting it to a non-empty value also enables `make_distributed_plan` for the query unless that setting is itself set explicitly.
 )", PRIVATE_PREVIEW, \
         {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
@@ -12014,23 +12005,14 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
-    void setDefaultValue(std::string_view name);
 
     bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
     void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed);
     void markSettingsChangedByCompatibilityAsUnchanged();
 
-    void rememberBeforeDistributedPlanAdjustment(std::string_view name);
-    void restoreDistributedPlanAdjustments(const std::function<bool(std::string_view, const Field &)> & is_allowed);
-
 private:
     void applyCompatibilitySetting(const String & compatibility);
-
-    /// The pre-override (value, changed) of the settings force-adjusted for a derived distributed
-    /// plan, so the overrides can be undone when the plan turns off. Not serialized: a receiver
-    /// re-derives the plan and re-adjusts from the changes it gets.
-    UnorderedMapWithMemoryTracking<std::string_view, std::pair<Field, bool>> settings_adjusted_for_distributed_plan;
 
     /// Which settings the compatibility setting changed, as a bitmap over setting indexes. An old
     /// `compatibility` value marks hundreds of them on every query that sets it, so a hash set of names
@@ -12263,42 +12245,7 @@ void SettingsImpl::set(std::string_view name, const Field & value)
             unmarkChangedByCompatibility(index);
     }
 
-    /// An explicit change takes the setting out of the distributed-plan adjustment memory, so
-    /// turning the derived plan off does not overwrite the new value with the remembered one.
-    if (!settings_adjusted_for_distributed_plan.empty())
-        settings_adjusted_for_distributed_plan.erase(SettingsTraits::resolveName(name));
-
     BaseSettings::set(name, value);
-}
-
-void SettingsImpl::setDefaultValue(std::string_view name)
-{
-    /// `SET name = DEFAULT` is an explicit change like any other - see the note in set().
-    if (!settings_adjusted_for_distributed_plan.empty())
-        settings_adjusted_for_distributed_plan.erase(SettingsTraits::resolveName(name));
-
-    resetToDefault(name);
-}
-
-void SettingsImpl::rememberBeforeDistributedPlanAdjustment(std::string_view name)
-{
-    auto final_name = SettingsTraits::resolveName(name);
-    if (settings_adjusted_for_distributed_plan.contains(final_name))
-        return;
-
-    settings_adjusted_for_distributed_plan.emplace(final_name, std::pair{get(final_name), isChanged(final_name)});
-}
-
-void SettingsImpl::restoreDistributedPlanAdjustments(const std::function<bool(std::string_view, const Field &)> & is_allowed)
-{
-    const auto remembered = std::exchange(settings_adjusted_for_distributed_plan, {});
-    for (const auto & [name, value_and_changed] : remembered)
-    {
-        if (value_and_changed.second && is_allowed(name, value_and_changed.first))
-            BaseSettings::set(name, value_and_changed.first);
-        else
-            resetToDefault(name);
-    }
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
@@ -12567,17 +12514,7 @@ void Settings::setCustom(std::string_view name, const Field & value)
 
 void Settings::setDefaultValue(std::string_view name)
 {
-    impl->setDefaultValue(name);
-}
-
-void Settings::rememberBeforeDistributedPlanAdjustment(std::string_view name)
-{
-    impl->rememberBeforeDistributedPlanAdjustment(name);
-}
-
-void Settings::restoreDistributedPlanAdjustments(const std::function<bool(std::string_view, const Field &)> & is_allowed)
-{
-    impl->restoreDistributedPlanAdjustments(is_allowed);
+    impl->resetToDefault(name);
 }
 
 bool Settings::hasSettingsChangedByCompatibility() const

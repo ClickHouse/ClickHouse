@@ -172,7 +172,7 @@ void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_
     writability = checker.constraint.writability;
 }
 
-bool SettingsConstraints::allowsValue(std::string_view setting_name, const Field & value, bool ignore_const) const
+bool SettingsConstraints::allowsValue(std::string_view setting_name, const Field & value) const
 {
     auto it = constraints.find(resolveSettingNameWithCache(setting_name));
     if (it == constraints.end())
@@ -180,7 +180,7 @@ bool SettingsConstraints::allowsValue(std::string_view setting_name, const Field
 
     const auto & constraint = it->second;
 
-    if (!ignore_const && constraint.writability == SettingConstraintWritability::CONST)
+    if (constraint.writability == SettingConstraintWritability::CONST)
         return false;
 
     if (!constraint.min_value.isNull() && accurateLess(value, constraint.min_value))
