@@ -75,7 +75,7 @@ SELECT abr_interval FROM system.query_log WHERE current_database = currentDataba
 -- Test 3: the share of an attempt also covers the work after reading. The fine tier reads its rows at once, but its
 -- ~200 groups then sleep for about 6 seconds in HAVING, more than its 5-second share, so it is retried on the coarse tier.
 -- The groups come in blocks of about 10 rows, so the attempt is stopped soon after its share is used up, which leaves
--- the coarse tier most of the remaining 5 seconds.
+-- the coarse tier most of the remaining 5 seconds. With parallel replicas, the merged groups come in a single block.
 SELECT /* test 05304, query 3 */ max(_sample_interval) FROM
 (
     SELECT _sample_interval, value % 200 AS k FROM abr
@@ -83,7 +83,7 @@ SELECT /* test 05304, query 3 */ max(_sample_interval) FROM
     GROUP BY _sample_interval, k
     HAVING sleepEachRow(0.03) + count() > 0
 )
-SETTINGS max_execution_time = 10, max_threads = 1, max_block_size = 10, send_logs_level = 'error';
+SETTINGS max_execution_time = 10, max_threads = 1, max_block_size = 10, enable_parallel_replicas = 0, send_logs_level = 'error';
 
 SYSTEM FLUSH LOGS query_log;
 

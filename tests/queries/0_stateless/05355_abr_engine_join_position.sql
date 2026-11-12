@@ -3,6 +3,9 @@
 
 SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
+-- With parallel replicas, the right side of a JOIN is read as a query of its own, without the filters of the JOIN, so
+-- it is rejected for the missing filter on the time column before its position is checked.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS src_1;
