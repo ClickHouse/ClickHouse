@@ -5,7 +5,8 @@
 -- A distributed `GROUP BY` returns each group once when one shard stores the string key as `String` and the other as
 -- `LowCardinality(String)`, or when the `Distributed` table declares it as `LowCardinality(String)` over `String`
 -- tables. The shards aggregate both column types with the same method and hash, so they number the two-level buckets
--- alike, and the initiator merges each bucket with the buckets of the same number.
+-- alike, and the initiator merges each bucket with the buckets of the same number. Without aggregate functions the
+-- shards take the key-only forms of the methods, which hash the keys the same way.
 
 DROP TABLE IF EXISTS dist_mixed_05617;
 DROP TABLE IF EXISTS dist_mixed_low_cardinality_05617;
@@ -50,6 +51,13 @@ SELECT 'String and LowCardinality(String) shards, LowCardinality(String) Distrib
     count(), sum(c) FROM (SELECT k, s, count() AS c FROM dist_mixed_low_cardinality_05617 GROUP BY k, s);
 SELECT 'String shards, LowCardinality(String) Distributed',
     count(), sum(c) FROM (SELECT k, s, count() AS c FROM dist_string_as_low_cardinality_05617 GROUP BY k, s);
+
+-- The key-only forms, merged bucket by bucket with the memory-efficient merge, and without it, when the initiator
+-- takes the blocks of all buckets at once and groups them by bucket.
+SELECT 'Key-only, String and LowCardinality(String) shards', count() FROM (SELECT k, s FROM dist_mixed_05617 GROUP BY k, s);
+SELECT 'Key-only, String and LowCardinality(String) shards, no memory-efficient merge', count()
+FROM (SELECT k, s FROM dist_mixed_05617 GROUP BY k, s)
+SETTINGS distributed_aggregation_memory_efficient = 0;
 
 -- The adaptive aggregator does not take `LowCardinality` keys, so the shard of `LowCardinality(String)` aggregates with
 -- the ordinary aggregator, which numbers the buckets as the adaptive one does.
