@@ -99,11 +99,9 @@ for field in metadata["schemas"][-1]["fields"]:
 with open(path, "w") as f:
     json.dump(metadata, f)
 PY
-${CLICKHOUSE_CLIENT} --query "
-    INSERT INTO FUNCTION icebergLocal('${REQUIRED_TABLE_PATH}') VALUES (1, NULL), (2, 3)
-    SETTINGS allow_insert_into_iceberg = 1, use_iceberg_metadata_files_cache = 0;
-    SELECT id, dynamicType(d), d FROM icebergLocal('${REQUIRED_TABLE_PATH}') ORDER BY id
-    SETTINGS use_iceberg_metadata_files_cache = 0;
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --query "
+    INSERT INTO FUNCTION icebergLocal('${REQUIRED_TABLE_PATH}') VALUES (1, NULL), (2, 3);
+    SELECT id, dynamicType(d), d FROM icebergLocal('${REQUIRED_TABLE_PATH}') ORDER BY id;
 "
 for manifest in "${REQUIRED_TABLE_PATH}"/metadata/*.avro; do
     case "$(basename "${manifest}")" in snap-*) continue ;; esac
