@@ -52,6 +52,8 @@ JoinRightColumns::JoinRightColumns(
     for (const size_t robin_hood : {0, 1})
         for (const size_t later : {0, 1})
             find_keys_ring_fns[robin_hood][later] = functions.find_keys_ring[robin_hood][later][fast_path];
+    for (const size_t later : {0, 1})
+        prepare_keys_fns[later] = functions.prepare_keys[later][fast_path];
 
     if (functions.words_in_row_refs)
     {
@@ -62,6 +64,7 @@ JoinRightColumns::JoinRightColumns(
         if (ring_searches)
         {
             search_batch_find_keys_fn = ringFn(0);
+            search_batch_prepare_keys_fn = prepare_keys_fns[0];
             add_matches_fn = functions.ring_batches[need_filter];
         }
         if (search_batch_find_keys_fn)

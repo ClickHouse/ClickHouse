@@ -11,6 +11,7 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KnownRowsHolder.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
+#include <Interpreters/HashJoin/PrepareKeys.h>
 
 #include <type_traits>
 
@@ -975,14 +976,17 @@ JoinRightColumns::Functions selectFunctions(HashJoin::Type key_type, size_t num_
 
     JoinRightColumns::Functions functions;
     /// In the lambdas below, `later` is true for the disjuncts after the first.
-    /// The key search by the AMAC ring, in two copies: for a table whose buckets are not in the Robin Hood mode, and for one
-    /// whose buckets are.
+    /// The key search by the AMAC ring and the prepare step that runs before it. The search has two copies: for a table whose
+    /// buckets are not in the Robin Hood mode, and for one whose buckets are.
     const auto select_find_keys_ring = [&](bool later, FindKeysMode mode)
     {
         functions.find_keys_ring[0][later][0] = selectFindKeys<Maps, AmacLookup<false>>(key_type, mode, /*fast_path=*/false);
         functions.find_keys_ring[0][later][1] = selectFindKeys<Maps, AmacLookup<false>>(key_type, mode, /*fast_path=*/true);
         functions.find_keys_ring[1][later][0] = selectFindKeys<Maps, AmacLookup<true>>(key_type, mode, /*fast_path=*/false);
         functions.find_keys_ring[1][later][1] = selectFindKeys<Maps, AmacLookup<true>>(key_type, mode, /*fast_path=*/true);
+        const bool row_list = mode == FindKeysMode::WordsOfRowList;
+        functions.prepare_keys[later][0] = selectPrepareKeys<Maps>(key_type, row_list, /*fast_path=*/false);
+        functions.prepare_keys[later][1] = selectPrepareKeys<Maps>(key_type, row_list, /*fast_path=*/true);
     };
     const auto select_find_keys_in_row_order = [&](bool later, FindKeysMode mode)
     {

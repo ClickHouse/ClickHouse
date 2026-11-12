@@ -57,6 +57,22 @@ struct FindKeysArgs
 /// Returns how many rows it visited: `rows.size`, unless the row limit stopped it.
 using FindKeysFn = size_t (*)(const FindKeysArgs &);
 
+/// A key type whose key is not read from the key column but built from the key columns: packed from several columns
+/// (`keysN`), packed from a string (`key_packed_string`), or hashed (`hashed`). The map key has a fixed width.
+template <typename KeyGetter>
+concept BuildsKeys = detail::PacksKeysIntoBlob<KeyGetter> || PreparedKeyGetter<KeyGetter>;
+
+/// The key of a row as the map compares it: a fixed key by value, a string key as a view into the key column.
+template <typename KeyGetter>
+using KeyOfGetter = std::decay_t<decltype(keyHolderGetKey(
+    std::declval<std::remove_reference_t<decltype(std::declval<KeyGetter &>().getKeyHolder(0uz, std::declval<Arena &>()))> &>()))>;
+
+/// The prepare step of a batch, before the key search: builds the keys of `args.rows` as an array of the map's key type and
+/// sets `args.keys.ready_keys` to it. `[i]` is the key of the `i`-th row of `args.rows`. The key of a row with a NULL key,
+/// or of a row that the ON-section mask filters out, is unspecified. The array is valid until the next prepare step of these
+/// key columns. Defined in `PrepareKeys.h`.
+using PrepareKeysFn = void (*)(const FindKeysArgs & args);
+
 /// A lookup method has a `run` that visits every row of `args.rows`, finds its key, and calls `on_row(i, ind, find_result)`
 /// for the position `i` and the block row `ind`. `on_row` may return false to stop after that row. `run` returns how many
 /// rows it visited. A row with a NULL key, or one that the ON-section mask filters out, gets a result that is not found;
@@ -100,8 +116,9 @@ constexpr bool key_getter_holds_block_state
     = detail::PacksKeysIntoBlob<KeyGetter> || PreparedKeyGetter<KeyGetter> || is_low_cardinality_join_key_getter<KeyGetter>;
 
 /// The key getter of the key columns `args.keys`, kept in `JoinOnKeyColumns::kept_key_getter`. Its first use in a call
-/// builds it, and the later uses in the call get the same getter. The lookup methods that search the batches of one
-/// disjunct share it, so every method must use the getter type `KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type`.
+/// builds it, and the later uses in the call get the same getter. The lookup methods and the prepare step (`PrepareKeys.h`)
+/// share it across the batches of one disjunct, so they must all use the getter type
+/// `KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type`.
 template <typename KeyGetter, bool is_asof_join>
 ALWAYS_INLINE KeyGetter & keptKeyGetter(const FindKeysArgs & args)
 {
@@ -142,5 +159,10 @@ void prepareListedRows(KeyGetter & key_getter, const ProbeRows & rows, const UIn
 /// `FindKeys.h`. Each lookup method declares the instances of its maps `extern` and instantiates them in one file per map.
 template <typename Maps, LookupMethod Lookup>
 FindKeysFn selectFindKeys(HashJoin::Type key_type, FindKeysMode mode, bool fast_path);
+
+/// The prepare step of `key_type`, for a range of rows or for a row list. Null for a key type that does not build its keys.
+/// Defined in `PrepareKeys.h` and instantiated in `PrepareKeysMaps*.cpp`, one file per map.
+template <typename Maps>
+PrepareKeysFn selectPrepareKeys(HashJoin::Type key_type, bool row_list, bool fast_path);
 
 }

@@ -13,6 +13,7 @@
 #include <Interpreters/HashJoin/AmacLookup.h>
 #include <Interpreters/HashJoin/FindKeys.h>
 #include <Interpreters/HashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/PrepareKeys.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Common/PODArray.h>
@@ -32,7 +33,8 @@ using namespace DB::JoinProbe;
 
 /// The key search of the AMAC ring (`AmacLookup.h`) must write the words and key offsets that `PrefetchingLookup` writes for
 /// the same `FindKeysArgs`. The tests call the two `findKeys` on one frozen table, because a query reaches the ring only
-/// with a table larger than the L2 cache.
+/// with a table larger than the L2 cache. For a key type that builds its keys, the prepare step (`PrepareKeys.h`) runs before
+/// the search by the ring, as in the probe.
 namespace
 {
 
@@ -44,6 +46,10 @@ enum class KeyShape : uint8_t
     Number32,
     Number64,
     String,
+    /// Strings of 16 bytes or more, which a packed `String` key holds as a hash.
+    LongString,
+    /// A `String` and a `UInt64`, the key columns of a `hashed` map.
+    StringAndNumber,
     FixedString,
     Packed32,
     Packed64,
@@ -75,6 +81,9 @@ const std::vector<KeyClass> & keyClasses()
         {"keys128", HashJoin::Type::keys128, KeyShape::Packed128, {8, 8}},
         {"keys256", HashJoin::Type::keys256, KeyShape::Packed256, {8, 8, 8}},
         {"keys32 of odd widths", HashJoin::Type::keys32, KeyShape::PackedOddWidths, {3, 1}},
+        {"key_packed_string", HashJoin::Type::key_packed_string, KeyShape::String, {0}},
+        {"key_packed_string of long strings", HashJoin::Type::key_packed_string, KeyShape::LongString, {0}},
+        {"hashed", HashJoin::Type::hashed, KeyShape::StringAndNumber, {0, 8}},
     };
     return classes;
 }
@@ -148,8 +157,21 @@ std::string stringKeyOf(UInt64 id)
     return key;
 }
 
-/// The key columns of the rows `ids`. Equal ids have equal keys. Id 0 has the zero key of the map, except for a fixed string,
-/// whose map has no zero key.
+ColumnWithTypeAndName stringColumn(const String & name, const std::vector<UInt64> & ids, bool long_strings)
+{
+    auto column = ColumnString::create();
+    for (const UInt64 id : ids)
+    {
+        std::string key = stringKeyOf(id);
+        if (long_strings && id != 0)
+            key.insert(0, "a prefix of 21 bytes ");
+        column->insertData(key.data(), key.size());
+    }
+    return {std::move(column), std::make_shared<DataTypeString>(), name};
+}
+
+/// The key columns of the rows `ids`. Equal ids have equal keys. Id 0 has the zero key of the map, except for a fixed string
+/// and for the key of a `hashed` map, whose maps have no zero key that a row can have.
 ColumnsWithTypeAndName keyColumns(KeyShape shape, const std::vector<UInt64> & ids)
 {
     switch (shape)
@@ -159,15 +181,11 @@ ColumnsWithTypeAndName keyColumns(KeyShape shape, const std::vector<UInt64> & id
         case KeyShape::Number64:
             return {numberColumn<UInt64>("k0", ids, [](UInt64 id) { return id; })};
         case KeyShape::String:
-        {
-            auto column = ColumnString::create();
-            for (const UInt64 id : ids)
-            {
-                const std::string key = stringKeyOf(id);
-                column->insertData(key.data(), key.size());
-            }
-            return {ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "k0")};
-        }
+            return {stringColumn("k0", ids, /*long_strings=*/false)};
+        case KeyShape::LongString:
+            return {stringColumn("k0", ids, /*long_strings=*/true)};
+        case KeyShape::StringAndNumber:
+            return {stringColumn("k0", ids, /*long_strings=*/false), numberColumn<UInt64>("k1", ids, [](UInt64 id) { return id * 31; })};
         case KeyShape::FixedString:
         {
             auto column = ColumnFixedString::create(fixed_string_size);
@@ -327,20 +345,24 @@ void expectRingFindsWhatPrefetchingLookupFinds(
     std::vector<size_t> key_offsets_in_row_order(records_key_offsets ? slots : 0, not_visited);
     std::vector<size_t> key_offsets_ring(records_key_offsets ? slots : 0, not_visited);
 
-    const auto search = [&](FindKeysFn find_keys, std::vector<MatchWord> & words, std::vector<size_t> & key_offsets)
+    const auto args = [&](std::vector<MatchWord> & words, std::vector<size_t> & key_offsets) -> FindKeysArgs
     {
-        return find_keys(
-            {table,
-             keys,
-             rows,
-             /*enable_prefetch=*/true,
-             base,
-             words.data(),
-             records_key_offsets ? key_offsets.data() : nullptr,
-             /*max_output_rows=*/0});
+        return {
+            table,
+            keys,
+            rows,
+            /*enable_prefetch=*/true,
+            base,
+            words.data(),
+            records_key_offsets ? key_offsets.data() : nullptr,
+            /*max_output_rows=*/0};
     };
-    ASSERT_EQ(search(in_row_order, words_in_row_order, key_offsets_in_row_order), rows.size);
-    ASSERT_EQ(search(ring, words_ring, key_offsets_ring), rows.size);
+    ASSERT_EQ(in_row_order(args(words_in_row_order, key_offsets_in_row_order)), rows.size);
+
+    const FindKeysArgs ring_args = args(words_ring, key_offsets_ring);
+    if (const PrepareKeysFn prepare_keys = selectPrepareKeys<Maps>(table.type(), rows.rows != nullptr, fast_path))
+        prepare_keys(ring_args);
+    ASSERT_EQ(ring(ring_args), rows.size);
 
     const auto first_difference = [](const auto & left, const auto & right) -> size_t
     {
@@ -593,7 +615,8 @@ TYPED_TEST(HashJoinAmacLookup, FindsWhatPrefetchingLookupFinds)
 
 TYPED_TEST(HashJoinAmacLookup, RowsOutsideTheRing)
 {
-    for (const HashJoin::Type type : {HashJoin::Type::key64, HashJoin::Type::key_string, HashJoin::Type::keys128})
+    for (const HashJoin::Type type :
+         {HashJoin::Type::key64, HashJoin::Type::key_string, HashJoin::Type::keys128, HashJoin::Type::key_packed_string})
         for (const bool two_level : {false, true})
             for (const bool with_zero_id : {false, true})
                 ASSERT_NO_FATAL_FAILURE(checkRowsOutsideTheRing<TypeParam>(keyClass(type), two_level, with_zero_id));
@@ -680,13 +703,23 @@ void checkBucketsInRobinHoodMode()
     /// A bucket reserved for more keys than half of 2^16 cells gets 2^16 cells in the Robin Hood mode.
     constexpr size_t keys_to_reserve = Map::NUM_BUCKETS * (cells_per_bucket / 2 + 1);
     constexpr bool string_key = std::is_same_v<typename Map::key_type, std::string_view>;
+    constexpr bool packed_string_key = TYPE == HashJoin::Type::two_level_key_packed_string;
 
-    const KeyClass & key_class = keyClass(string_key ? HashJoin::Type::key_string : HashJoin::Type::key64);
+    const KeyClass & key_class = keyClass(
+        packed_string_key ? HashJoin::Type::key_packed_string : string_key ? HashJoin::Type::key_string : HashJoin::Type::key64);
     auto table = createTable<Maps>(key_class, /*two_level=*/true);
     const Map & map = table->template mapOf<TYPE, Maps>();
     const auto bucket_of = [&](UInt64 id) -> size_t
     {
-        if constexpr (string_key)
+        if constexpr (packed_string_key)
+        {
+            /// `PackedStringJoinKey::build` reads 16 bytes from the start of the string.
+            const std::string key = stringKeyOf(id);
+            std::array<char, 16> padded{};
+            std::copy(key.begin(), key.end(), padded.begin());
+            return Map::getBucketFromHash(map.hash(PackedStringJoinKey::build(padded.data(), key.size())));
+        }
+        else if constexpr (string_key)
         {
             const std::string key = stringKeyOf(id);
             return Map::getBucketFromHash(map.hash(std::string_view(key)));
@@ -785,4 +818,10 @@ TEST(HashJoinAmacLookupRobinHood, IntegerKeys)
 TEST(HashJoinAmacLookupRobinHood, StringKeys)
 {
     checkBucketsInRobinHoodMode<HashJoin::Type::two_level_key_string, HashJoin::MapsSet>();
+}
+
+/// A key of 128 bits, which the prepare step builds.
+TEST(HashJoinAmacLookupRobinHood, PackedStringKeys)
+{
+    checkBucketsInRobinHoodMode<HashJoin::Type::two_level_key_packed_string, HashJoin::MapsSet>();
 }

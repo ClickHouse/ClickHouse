@@ -5,7 +5,6 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/PODArray.h>
 
 #include <algorithm>
 #include <array>
@@ -68,15 +67,16 @@ struct AmacFindPolicy
     static_assert(Map::NUM_BUCKETS <= 256);
     static_assert(!robin_hood || !one_bucket, "Only the buckets of a map of several buckets switch to the Robin Hood mode");
 
-    /// The key as the map compares it: a fixed key by value, a string key as a view into the key column. A slot can keep the
-    /// view, because the string holder copies a key into the arena only for an insert.
-    using KeyHolder = std::remove_reference_t<decltype(std::declval<KeyGetter &>().getKeyHolder(0uz, std::declval<Arena &>()))>;
-    using StoredKey = std::decay_t<decltype(keyHolderGetKey(std::declval<KeyHolder &>()))>;
+    /// A slot can keep a string key, a view into the key column, because the string holder copies a key into the arena only
+    /// for an insert.
+    using StoredKey = KeyOfGetter<KeyGetter>;
     static_assert(std::is_trivially_copyable_v<StoredKey>);
-    /// `HashMethodKeysFixed` packs the key columns of a row into one key: row by row, unless it packed the whole block into
-    /// `prepared_keys` when it was built. For such a getter `run` gives the policy the keys of the chunk in `packed_keys`,
-    /// so that `start` loads a key and calls nothing.
-    static constexpr bool packs_keys = detail::PacksKeysIntoBlob<KeyGetter>;
+    /// For a key type that builds its keys, `run` gives the policy the keys that the prepare step built for the chunk, in
+    /// `ready_keys`. Then `start` only loads a key and calls nothing, and the policy needs no key getter (`NoKeyGetter`).
+    static constexpr bool reads_ready_keys = BuildsKeys<KeyGetter>;
+    struct NoKeyGetter
+    {
+    };
 
     /** The state of the ring. A slot is inactive when its `cell` is null, so a value-initialized ring has no active slot and
       * `row` needs no reserved value. A slot does not store the offset of its cell: `hit` computes it from the cell pointer.
@@ -116,7 +116,11 @@ struct AmacFindPolicy
 
     /// By value where possible. The key-column pointer is then a field of the frame-local policy. Behind a reference,
     /// reading it would take two dependent loads.
-    std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter;
+    using KeyGetterField = std::conditional_t<
+        reads_ready_keys,
+        NoKeyGetter,
+        std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &>>;
+    KeyGetterField key_getter;
     const Map & map;
     /// `Map::bucket_cells`, which `computeBucketPrefix` fills when the table is frozen. For a map of one bucket, `table` is
     /// a copy of its only entry, so that a visit reads the bounds from the frame.
@@ -126,7 +130,7 @@ struct AmacFindPolicy
     const UInt32 * list = nullptr; /// a row list: the block rows of the chunk
     size_t position_base = 0;      /// the position of the chunk's first row in `FindKeysArgs::rows`
     const UInt8 * skip_data = nullptr; /// indexed by the block row, not by the chunk; null on the fast path
-    const StoredKey * packed_keys = nullptr; /// with `packs_keys`: `[i]` is the key of the chunk's row `i`
+    const StoredKey * ready_keys = nullptr; /// with `reads_ready_keys`: `[i]` is the key of the chunk's row `i`
     Arena & pool;
     OnRow on_row;
 
@@ -165,8 +169,8 @@ struct AmacFindPolicy
 
     ALWAYS_INLINE decltype(auto) keyHolderAt(size_t i [[maybe_unused]], size_t ind [[maybe_unused]])
     {
-        if constexpr (packs_keys)
-            return packed_keys[i];
+        if constexpr (reads_ready_keys)
+            return ready_keys[i];
         else
             return key_getter.getKeyHolder(ind, pool);
     }
@@ -298,15 +302,14 @@ constexpr bool amac_buckets_switch_to_robin_hood<Map> = GrowerWithRobinHood<type
 
 /// Whether the ring can look up the keys of `KeyGetter` in `Map`. The LowCardinality getter stays on `PrefetchingLookup`: it
 /// deduplicates lookups per dictionary index through its own cache, and a ring would bypass that cache. For the same reason,
-/// the getter turns off the look-ahead prefetch of `PrefetchingLookup`. A getter that builds the keys of many rows at once
-/// (`PreparedJoinKeys`), such as the `hashed` getter and the getter of the packed `String` keys, stays there too: the ring
-/// does not prepare keys, so it would build each key alone.
+/// the getter turns off the look-ahead prefetch of `PrefetchingLookup`.
 template <typename KeyGetter, typename Map, bool robin_hood>
 constexpr bool amac_probe_supported = AmacWalkableMap<Map> && (!robin_hood || amac_buckets_switch_to_robin_hood<Map>)
-    && !is_low_cardinality_join_key_getter<KeyGetter> && !PreparedKeyGetter<KeyGetter>;
+    && !is_low_cardinality_join_key_getter<KeyGetter>;
 
 /// Looks the keys up with the AMAC ring. Rows retire out of order. Only for a table with `HashJoinTable::takesAmacLookup`.
-/// `robin_hood` must equal `bucketsAreRobinHood` of the table.
+/// `robin_hood` must equal `bucketsAreRobinHood` of the table. For a key type that builds its keys (`BuildsKeys`), the
+/// caller must run the prepare step of the rows first (`PrepareKeysFn`).
 template <bool robin_hood>
 struct AmacLookup
 {
@@ -315,6 +318,17 @@ struct AmacLookup
     template <HashJoin::Type TYPE, typename Maps>
     static constexpr bool supports = amac_probe_supported<
         typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type, JoinMapOf<TYPE, Maps>, robin_hood>;
+
+    /// No key getter for a key type whose keys the prepare step built. The other key getters that the ring supports hold
+    /// no state for the block, so `keep_key_getter` changes nothing for them.
+    template <typename Policy, typename KeyGetter, bool is_asof_join>
+    ALWAYS_INLINE static decltype(auto) keyGetterFor(const FindKeysArgs & args [[maybe_unused]])
+    {
+        if constexpr (Policy::reads_ready_keys)
+            return typename Policy::NoKeyGetter{};
+        else
+            return keyGetterOf<KeyGetter, is_asof_join, /*keep_key_getter=*/false>(args);
+    }
 
     template <HashJoin::Type TYPE, typename Maps, bool fast_path, bool row_list, bool keep_key_getter = false, typename OnRow>
     ALWAYS_INLINE static size_t run(const FindKeysArgs & args, OnRow && on_row)
@@ -330,47 +344,25 @@ struct AmacLookup
         const Map & map = args.table.mapOf<TYPE, Maps>();
         chassert(map.bucket_cells.size() == Map::NUM_BUCKETS, "The table was not frozen");
         chassert(map.robin_hood_buckets == (robin_hood ? Map::RobinHoodBuckets::All : Map::RobinHoodBuckets::None));
-        decltype(auto) key_getter = keyGetterOf<KeyGetter, is_asof_join, keep_key_getter>(args);
+        decltype(auto) key_getter = keyGetterFor<Policy, KeyGetter, is_asof_join>(args);
 
         const size_t size = args.rows.size;
-        [[maybe_unused]] const auto row_of = [&](size_t i) -> size_t { return row_list ? args.rows.rows[i] : args.rows.first + i; };
         const UInt8 * skip_data = nullptr;
         IColumn::Filter skip_buffer;
         if constexpr (!fast_path)
         {
+            const auto row_of = [&](size_t i) -> size_t { return row_list ? args.rows.rows[i] : args.rows.first + i; };
             if (size)
                 skip_data = args.keys.buildRowSkipData(skip_buffer, row_of(0), row_of(size - 1) + 1 - row_of(0));
         }
         Arena pool;
-        /// The getter was built for the columns of the whole block, so its prepared keys are indexed by the block row.
-        [[maybe_unused]] const bool keys_are_prepared = [&]
-        {
-            if constexpr (Policy::packs_keys)
-                return !row_list && !key_getter.prepared_keys.empty();
-            else
-                return false;
-        }();
-        [[maybe_unused]] PODArray<typename Policy::StoredKey> packed;
+        /// `[i]` is the key of the `i`-th row of `args.rows`.
+        const auto * ready_keys = static_cast<const typename Policy::StoredKey *>(args.keys.ready_keys);
+        chassert(!Policy::reads_ready_keys || ready_keys || !size, "The prepare step of the rows did not run");
 
         for (size_t chunk_begin = 0; chunk_begin < size; chunk_begin += Policy::chunk_rows_max)
         {
             const size_t chunk_rows = std::min(Policy::chunk_rows_max, size - chunk_begin);
-            const typename Policy::StoredKey * packed_keys = nullptr;
-            if constexpr (Policy::packs_keys)
-            {
-                if (keys_are_prepared)
-                    packed_keys = key_getter.prepared_keys.data() + row_of(chunk_begin);
-                else
-                {
-                    packed.resize(chunk_rows);
-                    for (size_t j = 0; j < chunk_rows; ++j)
-                    {
-                        auto key_holder = key_getter.getKeyHolder(row_of(chunk_begin + j), pool);
-                        packed[j] = keyHolderGetKey(key_holder);
-                    }
-                    packed_keys = packed.data();
-                }
-            }
             Policy policy{
                 .key_getter = key_getter,
                 .map = map,
@@ -380,7 +372,7 @@ struct AmacLookup
                 .list = row_list ? args.rows.rows + chunk_begin : nullptr,
                 .position_base = chunk_begin,
                 .skip_data = skip_data,
-                .packed_keys = packed_keys,
+                .ready_keys = Policy::reads_ready_keys ? ready_keys + chunk_begin : nullptr,
                 .pool = pool,
                 .on_row = on_row};
             /// Inlined, so that what `on_row` captured by reference stays in registers, like the fields of the frame-local policy.

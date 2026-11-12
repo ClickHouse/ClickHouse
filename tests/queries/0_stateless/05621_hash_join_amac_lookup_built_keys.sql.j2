@@ -1,0 +1,98 @@
+-- Tags: long
+-- long: a flaky check runs copies of the test at the same time, and with a sanitizer the joins below take more than 180 seconds.
+-- The key types of a hash join whose key is built from the key columns: the packed key of a single `String` column, and the
+-- `hashed` key of key columns whose total size is not fixed. Before the AMAC ring looks up a batch of rows, a prepare step
+-- builds the keys of the batch. The ring takes a left block only when the block has at least 256 rows, the cells of the hash
+-- table take at least as many bytes as the L2 cache and `enable_software_prefetch_in_join` is on.
+-- Every join below runs with the setting on and off, with the `serial` and with the `parallel` layout of the hash table.
+-- The four runs must give the same result. The joins on 10 million keys run in the `parallel` layout only, so they have two runs.
+
+SET join_algorithm = 'hash', join_use_nulls = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;
+SET enable_join_fixed_hash_table_conversion = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SET enable_robin_hood_hash_for_joins = 1;
+-- A single `String` key is packed whatever the estimate of the right rows is.
+SET enable_packed_string_keys_in_hash_join = 1, min_rows_for_packed_string_keys_in_hash_join = 0;
+
+-- 300 thousand keys: the even numbers. Every tenth key has a second row. `s` is the key as a string of up to 6 bytes, the
+-- empty string for 0, which is the zero key of the packed map. `ls` is 16 bytes or longer, so its packed key is a hash.
+-- `sv` is the row number as a string.
+CREATE TABLE r (k UInt64, s String, ls String, sv String, k2 UInt32, t UInt32, v UInt64) ENGINE = Memory;
+INSERT INTO r SELECT number * 2 AS k, if(k = 0, '', toString(k)) AS s, if(k = 0, '', concat('a key of 16 bytes or more: ', s)), toString(number), k % 1000, 5, number FROM numbers(300000);
+INSERT INTO r SELECT number * 20 AS k, if(k = 0, '', toString(k)) AS s, if(k = 0, '', concat('a key of 16 bytes or more: ', s)), toString(300000 + number), k % 1000, 8, 300000 + number FROM numbers(30000);
+
+-- Keys in random order. Half of them are odd, so they are not in `r`. One row in 1000 has the key 0.
+CREATE TABLE l (k UInt64, s String, ls String, sx String, t UInt32, x UInt64) ENGINE = Memory;
+INSERT INTO l SELECT if(number % 1000 = 0, 0, intHash64(number) % 600000) AS k, if(k = 0, '', toString(k)) AS s, if(k = 0, '', concat('a key of 16 bytes or more: ', s)), toString(number), number % 10, number FROM numbers(400000);
+
+CREATE TABLE results (name String, prefetch UInt8, layout String, rows UInt64, checksum UInt64) ENGINE = Memory;
+
+-- A checksum must not depend on the order of the threads. A join that takes one right row of a key may take any row of the
+-- key, so its checksum reads only what the rows of a key share. A join that gives a right key to one left row may give it to
+-- any left row with the key, so its checksum reads only the key of the left row.
+-- A join with `OR` has a hash table per condition, and a join that stops at the first match gives the second table only
+-- the rows that the first one did not match.
+{% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
+{% set left_row_and_key = 'count(), sum(cityHash64(l.x, r.k))' -%}
+{% set left_row_and_k2 = 'count(), sum(cityHash64(l.x, r.k2))' -%}
+{% set key_and_right_row = 'count(), sum(cityHash64(l.k, r.v))' -%}
+{% set right_key = 'count(), sum(cityHash64(r.k))' -%}
+{% set left_row = 'count(), sum(cityHash64(l.x))' -%}
+{% set key_kinds = [
+    ('string key', 'l.s = r.s', 'l.sx = r.sv'),
+    ('hashed key', 'l.s = r.s AND l.k = r.k', 'l.sx = r.sv AND l.x = r.v'),
+] -%}
+{% set cases = [] -%}
+{% for kind, on, other_on in key_kinds -%}
+{% set _ = cases.extend([
+    (kind ~ ', inner all', pairs, 'l INNER JOIN r ON ' ~ on),
+    (kind ~ ', left all', pairs, 'l LEFT JOIN r ON ' ~ on),
+    (kind ~ ', right all', pairs, 'l RIGHT JOIN r ON ' ~ on),
+    (kind ~ ', full all', pairs, 'l FULL JOIN r ON ' ~ on),
+    (kind ~ ', inner any', right_key, 'l ANY INNER JOIN r ON ' ~ on),
+    (kind ~ ', left any', left_row_and_key, 'l ANY LEFT JOIN r ON ' ~ on),
+    (kind ~ ', right any', key_and_right_row, 'l ANY RIGHT JOIN r ON ' ~ on),
+    (kind ~ ', left semi', left_row_and_k2, 'l LEFT SEMI JOIN r ON ' ~ on),
+    (kind ~ ', right semi', key_and_right_row, 'l RIGHT SEMI JOIN r ON ' ~ on),
+    (kind ~ ', left anti', left_row, 'l LEFT ANTI JOIN r ON ' ~ on),
+    (kind ~ ', right anti', key_and_right_row, 'l RIGHT ANTI JOIN r ON ' ~ on),
+    (kind ~ ', asof', pairs, 'l ASOF JOIN r ON ' ~ on ~ ' AND l.t >= r.t'),
+    (kind ~ ', nullable', pairs, '(SELECT if(x % 11 = 0, NULL, s) AS s, k, sx, t, x FROM l) AS l LEFT JOIN r ON ' ~ on),
+    (kind ~ ', condition on the left table', pairs, 'l LEFT JOIN r ON ' ~ on ~ ' AND l.t != 3'),
+    (kind ~ ', or', pairs, 'l INNER JOIN r ON (' ~ on ~ ') OR (' ~ other_on ~ ')'),
+    (kind ~ ', or, left any', left_row_and_key, 'l ANY LEFT JOIN r ON (' ~ on ~ ') OR (' ~ other_on ~ ')'),
+    (kind ~ ', or, left anti', left_row, 'l LEFT ANTI JOIN r ON (' ~ on ~ ') OR (' ~ other_on ~ ')'),
+    (kind ~ ', mixed condition', pairs, 'l LEFT JOIN r ON ' ~ on ~ ' AND l.x > r.v'),
+    (kind ~ ', or with mixed conditions', pairs, 'l LEFT JOIN r ON (' ~ on ~ ' AND l.x > r.v) OR (' ~ other_on ~ ' AND l.t < r.t)'),
+    (kind ~ ', small joined block', pairs, 'l FULL JOIN r ON ' ~ on ~ ' SETTINGS max_joined_block_size_rows = 1000'),
+    (kind ~ ', no right columns', left_row, 'l INNER JOIN r ON ' ~ on),
+]) -%}
+{% endfor -%}
+{% set _ = cases.extend([
+    ('long string key, inner all', pairs, 'l INNER JOIN r ON l.ls = r.ls'),
+    ('long string key, right all', pairs, 'l RIGHT JOIN r ON l.ls = r.ls'),
+    ('long string key, left any', left_row_and_key, 'l ANY LEFT JOIN r ON l.ls = r.ls'),
+    ('long string key, or, left any', left_row_and_key, 'l ANY LEFT JOIN r ON l.ls = r.ls OR l.sx = r.sv'),
+    ('string key that is not packed, inner all', pairs, 'l INNER JOIN r ON l.s = r.s SETTINGS enable_packed_string_keys_in_hash_join = 0'),
+    ('string key that is not packed, right any', key_and_right_row, 'l ANY RIGHT JOIN r ON l.s = r.s SETTINGS enable_packed_string_keys_in_hash_join = 0'),
+]) -%}
+
+-- 10 million keys, about 39 thousand in each of the 256 buckets of the `parallel` layout. With
+-- `enable_robin_hood_hash_for_joins`, every bucket is in the Robin Hood mode. Half of the left keys are not in the table, so
+-- their search stops by the Robin Hood rule.
+{% set big_l = '(SELECT toString(intHash64(number) % 20000000) AS s, number AS x FROM numbers(1000000)) AS l' -%}
+{% set big_r = '(SELECT toString(number * 2) AS s, number AS v FROM numbers(10000000)) AS r' -%}
+{% set big_cases = [
+    ('10 million string keys, inner', pairs, big_l ~ ' INNER JOIN ' ~ big_r ~ ' ON l.s = r.s'),
+    ('10 million string keys, left', pairs, big_l ~ ' LEFT JOIN ' ~ big_r ~ ' ON l.s = r.s'),
+] -%}
+
+{% for prefetch in [1, 0] -%}
+{% for layout in ['serial', 'parallel'] -%}
+SET enable_software_prefetch_in_join = {{ prefetch }}, hash_join_layout = '{{ layout }}';
+{% for name, columns, join in cases + (big_cases if layout == 'parallel' else []) -%}
+INSERT INTO results SELECT '{{ name }}', {{ prefetch }}, '{{ layout }}', {{ columns }} FROM {{ join }};
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+-- The name of the join, its runs, their distinct results, and the result.
+SELECT name, count(), uniqExact((rows, checksum)), any(rows), any(checksum) FROM results GROUP BY name ORDER BY name;
