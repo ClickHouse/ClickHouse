@@ -1488,16 +1488,16 @@ void applyDistributedPlanSettings(ContextMutablePtr context)
             "which runs the plan in-process. Set one of them back to `DEFAULT`.",
             worker_cluster.value);
 
-    if (make_plan.changed)
+    /// Already on; nothing to infer.
+    if (make_plan.value)
         return;
 
-    /// `allowsValue`, not `checkSettingsConstraints`: the server is deriving this value, not a
-    /// user changing a setting, so the readonly-mode and feature-tier checks do not apply.
-    if (!context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValue("make_distributed_plan", Field(true)))
+    /// Judged like a value `compatibility` derives: constraints and feature tier, not readonly mode.
+    if (!context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValueFromCompatibility("make_distributed_plan", Field(true)))
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-            "A settings constraint forbids enabling `make_distributed_plan`, but {} requests a distributed query "
-            "plan. Set the conflicting setting back to `DEFAULT`.",
-            fmt::join(wants, ", "));
+            "A settings constraint forbids enabling `make_distributed_plan`, but {} {} a distributed query plan. "
+            "Set {} back to `DEFAULT`.",
+            fmt::join(wants, ", "), requests_verb, conflicting_settings);
 
     context->applySettingsChanges({SettingChange("make_distributed_plan", Field(true))});
 }
