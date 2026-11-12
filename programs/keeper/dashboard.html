@@ -2087,8 +2087,6 @@
     }
 
     function showCompletionMatches(inputValue, matches) {
-        /// Mirror keeper-client: echo the prompt line, then the match columns, then
-        /// the live prompt below continues to show the same command.
         appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
         if (matches.length > COMPLETION_DISPLAY_LIMIT) {
             /// Hide the live prompt until y/n/Tab.
@@ -2134,9 +2132,6 @@
 
             const replaceStart = Number.isFinite(data.replace_start) ? data.replace_start : 0;
             const head = sliceByUtf8ByteOffset(prefix, replaceStart);
-            /// Same filter as `LineReader::Suggest::getMatchingWords`: only keep
-            /// completions that still start with the typed last word. Escaped
-            /// forms like `/prod/'app;2'` drop out, so LCP cannot shrink to `/prod/`.
             const typed = sliceByUtf8ByteOffsetFrom(prefix, replaceStart);
             const visible = matches.filter((m) => m.startsWith(typed));
             if (visible.length === 0) return;
