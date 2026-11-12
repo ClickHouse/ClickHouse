@@ -1299,6 +1299,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
             .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
             .withHostFilter(&getContext()->getRemoteHostFilter())
             .withHeaders(result_headers)
+            .withBypassProxy(bypassProxy())
             .withDelayInit(false)
             .withSkipNotFound(false)
             .create(credentials);
@@ -1934,6 +1935,7 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
+        .withBypassProxy(bypassProxy())
         .withOutCallback(out_stream_callback)
         /// Send the JSON body with an explicit Content-Length: Snowflake Horizon rejects
         /// chunked transfer encoding on catalog commits with HTTP 500 and an empty body.

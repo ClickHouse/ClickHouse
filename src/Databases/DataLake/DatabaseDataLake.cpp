@@ -5,6 +5,7 @@
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -2148,6 +2149,15 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "catalog_type = 'clickhouse' requires a user to act as, but the query has none. "
                                 "For ON CLUSTER queries enable distributed_ddl_use_initial_user_and_roles");
+
+                        /// The catalog applies the host restriction of the user to the loopback address of the request.
+                        const auto loopback_address = DataLake::ClickHouseCatalog::getLoopbackAddress(args.context->getConfigRef());
+                        if (!args.context->getUser()->allowed_client_hosts.contains(loopback_address))
+                            throw Exception(ErrorCodes::ACCESS_DENIED,
+                                "catalog_type = 'clickhouse' sends catalog requests as user `{}` from {}, "
+                                "but the user is not allowed to connect from this address. "
+                                "Add it to the allowed hosts of the user, for example with ALTER USER ... ADD HOST LOCAL",
+                                user_name, loopback_address.toString());
 
                         /// Catalog requests run as the user who creates the database.
                         /// Add the name to the stored `CREATE DATABASE` query, so it survives a restart.

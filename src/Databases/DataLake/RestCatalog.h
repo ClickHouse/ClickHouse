@@ -236,6 +236,9 @@ protected:
     Config loadConfig(const CatalogState & catalog_state, const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt);
     virtual DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const;
 
+    /// Whether requests go directly to the catalog even when the server has a proxy configured.
+    virtual bool bypassProxy() const { return false; }
+
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(
         const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode);

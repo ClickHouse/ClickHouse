@@ -11,6 +11,11 @@ namespace Poco::Util
     class AbstractConfiguration;
 }
 
+namespace Poco::Net
+{
+    class IPAddress;
+}
+
 namespace DataLake
 {
 
@@ -39,9 +44,16 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE;
     }
 
+    /// The loopback address where the catalog of this server listens.
+    /// The catalog also sees requests of the database arrive from this address.
+    static Poco::Net::IPAddress getLoopbackAddress(const Poco::Util::AbstractConfiguration & config);
+
 private:
     /// The database sends requests to the Iceberg REST catalog of this same server over loopback.
     static std::string getCatalogURL(const Poco::Util::AbstractConfiguration & config);
+
+    /// A proxy runs on another machine, where the loopback address means that machine.
+    bool bypassProxy() const override { return true; }
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 

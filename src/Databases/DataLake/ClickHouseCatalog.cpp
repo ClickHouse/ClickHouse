@@ -2,7 +2,7 @@
 
 #if USE_AVRO
 
-#include <algorithm>
+#include <optional>
 #include <Interpreters/Context.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogLoopbackAuth.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -18,6 +18,41 @@ namespace DB::ErrorCodes
 namespace DataLake
 {
 
+Poco::Net::IPAddress ClickHouseCatalog::getLoopbackAddress(const Poco::Util::AbstractConfiguration & config)
+{
+    /// Same default as `getListenHosts` in `Server.cpp`.
+    auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+    if (listen_hosts.empty())
+        listen_hosts = {"::1", "127.0.0.1"};
+
+    auto find_loopback_address = [&](Poco::Net::IPAddress::Family family) -> std::optional<Poco::Net::IPAddress>
+    {
+        for (const auto & host : listen_hosts)
+        {
+            Poco::Net::IPAddress address;
+            if (!Poco::Net::IPAddress::tryParse(host, address) || address.family() != family)
+                continue;
+            /// Every `127.x.x.x` address is loopback. The catalog listens only on the configured one.
+            if (address.isLoopback())
+                return address;
+            /// A wildcard address also accepts loopback connections.
+            if (address.isWildcard())
+                return Poco::Net::IPAddress(family == Poco::Net::IPAddress::IPv4 ? "127.0.0.1" : "::1");
+        }
+        return {};
+    };
+
+    /// Prefer IPv4. The server lists `::1` by default but may not bind it on a host without IPv6.
+    if (auto address = find_loopback_address(Poco::Net::IPAddress::IPv4))
+        return *address;
+    if (auto address = find_loopback_address(Poco::Net::IPAddress::IPv6))
+        return *address;
+
+    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+        "catalog_type = 'clickhouse' requires the server to listen on a loopback address, got listen_host: {}",
+        fmt::join(listen_hosts, ", "));
+}
+
 std::string ClickHouseCatalog::getCatalogURL(const Poco::Util::AbstractConfiguration & config)
 {
     const auto port = config.getString("iceberg_rest_catalog.port", "");
@@ -25,32 +60,10 @@ std::string ClickHouseCatalog::getCatalogURL(const Poco::Util::AbstractConfigura
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
             "catalog_type = 'clickhouse' requires iceberg_rest_catalog.port in the server config");
 
-    /// Same default as `getListenHosts` in `Server.cpp`.
-    auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
-    if (listen_hosts.empty())
-        listen_hosts = {"::1", "127.0.0.1"};
-
-    /// A wildcard address also accepts loopback connections.
-    auto listens_on_loopback = [&](Poco::Net::IPAddress::Family family)
-    {
-        return std::ranges::any_of(listen_hosts, [&](const auto & host)
-        {
-            Poco::Net::IPAddress address;
-            return Poco::Net::IPAddress::tryParse(host, address)
-                && address.family() == family
-                && (address.isLoopback() || address.isWildcard());
-        });
-    };
-
-    /// Prefer IPv4. The server lists `::1` by default but may not bind it on a host without IPv6.
-    if (listens_on_loopback(Poco::Net::IPAddress::IPv4))
-        return fmt::format("http://127.0.0.1:{}", port);
-    if (listens_on_loopback(Poco::Net::IPAddress::IPv6))
-        return fmt::format("http://[::1]:{}", port);
-
-    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-        "catalog_type = 'clickhouse' requires the server to listen on a loopback address, got listen_host: {}",
-        fmt::join(listen_hosts, ", "));
+    const auto address = getLoopbackAddress(config);
+    if (address.family() == Poco::Net::IPAddress::IPv6)
+        return fmt::format("http://[{}]:{}", address.toString(), port);
+    return fmt::format("http://{}:{}", address.toString(), port);
 }
 
 ClickHouseCatalog::ClickHouseCatalog(
