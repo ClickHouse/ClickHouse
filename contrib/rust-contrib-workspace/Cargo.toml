@@ -7,5 +7,6 @@ members = [
     "../vortex-cmake",
     "../pcodec-cmake",
     "../wasmtime-cmake",
+    "../avro-rust-cmake",
 ]
 resolver = "2"

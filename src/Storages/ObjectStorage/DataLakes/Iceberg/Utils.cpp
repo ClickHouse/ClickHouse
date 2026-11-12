@@ -51,7 +51,12 @@
 
 #if USE_AVRO
 
+#if USE_AVRO_RUST
+#include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+#else
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#endif
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <IO/ReadHelpers.h>
@@ -2450,6 +2455,20 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     sortBlock(block, result_sort_description);
 }
 
+#if USE_AVRO_RUST
+void forEachAvroMetadataBatch(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    const std::function<void(const AvroForIcebergDeserializer & batch)> & callback)
+{
+    RelativePathWithMetadata relative_path_with_metadata(filename);
+    auto buffer = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
+    AvroForIcebergDeserializer::forEachBatch(
+        std::move(buffer), IcebergPathFromMetadata::deserialize(filename), getFormatSettings(context), callback);
+}
+#else
 void forEachAvroEntry(
     const String & filename,
     ObjectStoragePtr object_storage,
@@ -2475,6 +2494,7 @@ void forEachAvroEntry(
     while (reader.read(datum))
         callback(datum);
 }
+#endif
 
 namespace
 {

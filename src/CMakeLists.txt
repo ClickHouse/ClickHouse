@@ -521,6 +521,7 @@ add_object_library(clickhouse_processors_executors_runtime_v1 Processors/Executo
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
+add_object_library(clickhouse_processors_formats_impl_avro Processors/Formats/Impl/Avro)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_transforms_window Processors/Transforms/Window)
 add_object_library(clickhouse_window_functions WindowFunctions)
@@ -866,6 +867,14 @@ if (TARGET ch_contrib::avrocpp)
     target_link_libraries(dbms PRIVATE ch_contrib::avrocpp)
 endif ()
 
+if (TARGET ch_rust::avro)
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::avro,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(dbms PRIVATE ch_rust::avro)
+    if (TARGET ch_contrib::bzip2)
+        target_link_libraries(dbms PRIVATE ch_contrib::bzip2)
+    endif ()
+endif ()
+
 set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 
@@ -1131,6 +1140,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_rust::delta_kernel_rs)
         target_link_libraries(unit_tests_dbms PRIVATE ch_rust::delta_kernel_rs)
+    endif ()
+
+    if (TARGET ch_rust::avro)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_rust::avro)
     endif ()
 
     if (TARGET ch_contrib::azure_sdk)

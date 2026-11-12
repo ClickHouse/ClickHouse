@@ -161,6 +161,24 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
+# The Avro Rust tests read the `.avro` files of the repository (the functional tests' data, the
+# Iceberg/Paimon corpora and the fuzzer seed corpora) as their corpus, so a change to them is
+# a change to the tests' input.
+avro_rust_tests_digest_config = Job.CacheDigestConfig(
+    include_paths=[
+        "./ci/jobs/avro_rust_tests.py",
+        "./contrib/avro-rust-cmake",
+        "./contrib/rust-contrib-workspace/Cargo.toml",
+        "./contrib/rust-contrib-workspace/Cargo.lock",
+        "./contrib/rust_vendor",
+        "./.gitmodules",
+        "./tests/fuzz",
+        "./tests/queries/0_stateless/data_avro",
+        "./tests/queries/0_stateless/data_lake_corpus",
+        "./tests/queries/0_stateless/data_minio",
+    ],
+)
+
 # The Darwin fast test additionally consumes its wrapper script, so changes to it
 # must schedule the job (the shared digest above does not cover it).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
@@ -366,6 +384,20 @@ class JobConfigs:
         run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
+        needs_submodules=True,
+    )
+    # The Rust regression suite of the Avro decoder. The server build links only the staticlib and no
+    # other job runs `cargo test`, so without this job the crate's tests are never executed. Runs in the
+    # `fasttest` image, which carries the pinned Rust toolchain, and needs only the vendored crates
+    # (`contrib/rust_vendor`) and the workspace's path dependencies (`contrib/pcodec`, `contrib/wasmtime`),
+    # not a ClickHouse build.
+    avro_rust_tests = Job.Config(
+        name=JobNames.AVRO_RUST_TESTS,
+        runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+        command="python3 ./ci/jobs/avro_rust_tests.py",
+        run_in_docker="clickhouse/fasttest+--network=host",
+        digest_config=avro_rust_tests_digest_config,
+        timeout=3600,
         needs_submodules=True,
     )
     darwin_fast_test_jobs = Job.Config(

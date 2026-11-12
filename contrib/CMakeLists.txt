@@ -127,6 +127,15 @@ add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
 
+# The Rust Avro/AvroConfluent input decoder. It is ON wherever both Rust and Avro are available; builds without Rust
+# (including FreeBSD, see below) keep the `contrib/avro` decoder. `ENABLE_AVRO` and `ENABLE_RUST` are known here.
+include (CMakeDependentOption)
+cmake_dependent_option (ENABLE_AVRO_RUST
+    "Enable the Rust Avro/AvroConfluent input decoder"
+    ON
+    "ENABLE_AVRO;ENABLE_RUST;NOT OS_FREEBSD"
+    OFF)
+
 # Members of the cargo workspace in `rust-contrib-workspace`
 if (ENABLE_RUST AND OS_FREEBSD)
     # Right nix/libc requires fspacectl and it had been added only since FreeBSD14.
@@ -148,6 +157,7 @@ elseif (ENABLE_RUST)
     add_contrib (polyglot-cmake)
     add_contrib (pcodec-cmake)
     add_contrib (vortex-cmake)
+    add_contrib (avro-rust-cmake)
     add_contrib (wasmtime-cmake)
 endif()
 

@@ -1,0 +1,1 @@
+{"name": "Decimals", "namespace": "test", "type": "record", "fields": [{"name": "d", "type": {"type": "bytes", "logicalType": "decimal", "precision": 14, "scale": 4}}]}

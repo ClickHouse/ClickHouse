@@ -1,0 +1,6 @@
+contiguous, limit 100
+60	60
+split into 30-byte buffers, limit 100
+60	60
+split into 30-byte buffers, no limit
+60	60
