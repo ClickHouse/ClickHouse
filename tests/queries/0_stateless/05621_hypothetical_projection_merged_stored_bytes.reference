@@ -25,3 +25,11 @@ marks: 8
 verdict: too close to call
 real: ReadFromMergeTree (p_b)
 real: Granules: 6/59
+-- the same parts merged after the ratio disables sparse columns: the current ratio does not show how the merged parts were written
+Baseline (after PK + partition + existing indexes):
+marks: 7
+With p_b (normal projection, hypothetical):
+marks: 8
+verdict: too close to call
+real: ReadFromMergeTree (p_b)
+real: Granules: 6/59

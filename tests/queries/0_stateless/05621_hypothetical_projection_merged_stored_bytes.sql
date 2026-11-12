@@ -73,6 +73,31 @@ SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM s_real WHERE b < 10 AND a < 340)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
+SELECT '-- the same parts merged after the ratio disables sparse columns: the current ratio does not show how the merged parts were written';
+DROP TABLE s_est;
+DROP TABLE s_real;
+CREATE TABLE s_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 0.5, auto_statistics_types = '';
+CREATE TABLE s_real AS s_est;
+ALTER TABLE s_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
+INSERT INTO s_est SELECT number, number % 100, 0 FROM numbers(1500);
+INSERT INTO s_est SELECT number + 1500, number % 100, number + 1 FROM numbers(1500);
+INSERT INTO s_real SELECT number, number % 100, 0 FROM numbers(1500);
+INSERT INTO s_real SELECT number + 1500, number % 100, number + 1 FROM numbers(1500);
+ALTER TABLE s_est MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 1;
+ALTER TABLE s_real MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 1;
+OPTIMIZE TABLE s_est FINAL;
+OPTIMIZE TABLE s_real FINAL;
+
+CREATE HYPOTHETICAL PROJECTION p_b ON s_est (SELECT a, b, v ORDER BY b);
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM s_est WHERE b < 10 AND a < 340)
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM s_real WHERE b < 10 AND a < 340)
+WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
+
 DROP TABLE t_est;
 DROP TABLE t_real;
 DROP TABLE c_est;

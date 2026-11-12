@@ -329,9 +329,8 @@ bool addMergedPartsBytes(
         const auto values = elem->column->convertToFullColumnIfConst();
         for (const auto & versions : settings)
             known &= !storesDataPerPart(*column.type->getSerialization(versions), *values);
-        /// the newest versions allow the most sparse columns
-        known &= !(settings[2].ratio_of_defaults_for_sparse < 1 && settings[2].canUseSparseSerialization(*column.type)
-                   && (isTuple(column.type) || values->getNumberOfDefaultRows() != 0));
+        /// the newest versions allow the most sparse columns, a part does not record the ratio of sparse defaults of the parts it merged
+        known &= !(settings[2].canUseSparseSerialization(*column.type) && (isTuple(column.type) || values->getNumberOfDefaultRows() != 0));
     }
     return known;
 }
