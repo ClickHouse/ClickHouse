@@ -160,4 +160,8 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
 
+/// Whether the expression contains a subquery or reads a table: a bare `IN some_table` or `IN some_table_function(...)`
+/// is read like a subquery. Only the right-hand side of an IN is inspected.
+bool astContainsSubquery(const ASTPtr & ast);
+
 }

@@ -15,6 +15,9 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Planner/Utils.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -39,6 +42,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <limits>
 #include <unordered_set>
 
@@ -139,6 +143,21 @@ getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chun
 }
 
 
+/// The partition source column that the UPDATE assigns, if any: such an UPDATE may move a row to another partition.
+static std::optional<String> getAssignedPartitionColumn(const MutationCommand & command, const std::optional<ChunkPartitioner> & chunk_partitioner)
+{
+    if (!chunk_partitioner)
+        return std::nullopt;
+
+    const auto column_to_update = getColumnToUpdateExpression(*command.ast());
+    for (const auto & column : chunk_partitioner->getColumns())
+    {
+        if (column_to_update.contains(column))
+            return column;
+    }
+    return std::nullopt;
+}
+
 static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
@@ -153,6 +172,33 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     Poco::JSON::Object::Ptr data_schema)
 {
     chassert(commands.size() == 1);
+    const bool is_update = commands[0].type == MutationCommand::UPDATE;
+    const auto assigned_partition_column = is_update ? getAssignedPartitionColumn(commands[0], chunk_partitioner) : std::nullopt;
+    const bool separate_delete_pass = commands[0].type == MutationCommand::DELETE || assigned_partition_column.has_value();
+
+    auto delete_commands = commands;
+    delete_commands[0].type = MutationCommand::DELETE;
+
+    if (assigned_partition_column)
+    {
+        /// Both passes below evaluate the condition, so it must select the same rows twice.
+        auto alter = commands[0].ast();
+        ASTPtr predicate(alter->predicate);
+        if (astContainsSubquery(predicate))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg ALTER UPDATE of partition column {} does not support a condition that reads a table or a subquery",
+                backQuote(*assigned_partition_column));
+
+        auto nondeterministic = findFirstNonDeterministicFunction(delete_commands[0], context);
+        if (nondeterministic.nondeterministic_function_name)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg ALTER UPDATE of partition column {} does not support a non-deterministic condition, function '{}' is non-deterministic",
+                backQuote(*assigned_partition_column),
+                *nondeterministic.nondeterministic_function_name);
+    }
+
     DataFileWriteResultByPartitionKey delete_data_result;
     DataFileStatisticsByPartitionKey delete_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
@@ -163,108 +209,74 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
 
-    if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
+    bool has_any_rows = false;
+
+    auto write_position_deletes = [&](
+        const ChunkPartitioner::PartitionKey & partition_key, ColumnWithTypeAndName col_data_filename, ColumnWithTypeAndName col_position)
     {
-        MutationsInterpreter::Settings settings(true);
-        settings.return_all_columns = true;
-        settings.return_mutated_rows = true;
+        if (!delete_data_statistics.contains(partition_key))
+            delete_data_statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
 
-        auto delete_commands = commands;
-        delete_commands[0].type = MutationCommand::DELETE;
-
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
-        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
-        PullingPipelineExecutor executor(pipeline);
-
-        auto header = interpreter->getUpdatedHeader();
-
-        Block block;
-        bool has_any_rows = false;
-        while (executor.pull(block))
+        if (!delete_data_writers.contains(partition_key))
         {
-            if (block.rows() == 0)
-                continue;
+            auto delete_file_path = generator.generatePositionDeleteFile();
 
-            has_any_rows = true;
-            Chunk chunk(block.getColumns(), block.rows());
-            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
+            delete_data_result[partition_key].path = delete_file_path;
+            auto write_buffer = object_storage->writeObject(
+                StoredObject(path_resolver.resolve(delete_file_path)),
+                WriteMode::Rewrite,
+                std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                context->getWriteSettings());
 
+            auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
+            ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
+            ColumnNameToFieldId field_ids;
+            field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
+            field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
+            column_mapper->setStorageColumnEncoding(std::move(field_ids));
+            /// `file_path` is Iceberg `string`, so mark it: without this the string-path-aware
+            /// writer would emit it as `binary` and produce spec-incompatible delete files.
+            column_mapper->setIcebergStringPaths({String(IcebergPositionDeleteTransform::data_file_path_column_name)});
+            FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+            auto output_format = FormatFactory::instance().getOutputFormat(
+                write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
-            size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
-            size_t col_position_index = block.getPositionByName(block_row_number);
-            ColumnWithTypeAndName col_data_filename = block.getByPosition(col_data_filename_index);
-            ColumnWithTypeAndName col_position = block.getByPosition(col_position_index);
-
-            for (const auto & [partition_key, partition_chunk] : partition_result)
-            {
-                if (!delete_data_statistics.contains(partition_key))
-                    delete_data_statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
-
-                if (!delete_data_writers.contains(partition_key))
-                {
-                    auto delete_file_path = generator.generatePositionDeleteFile();
-
-                    delete_data_result[partition_key].path = delete_file_path;
-                    auto write_buffer = object_storage->writeObject(
-                        StoredObject(path_resolver.resolve(delete_file_path)),
-                        WriteMode::Rewrite,
-                        std::nullopt,
-                        DBMS_DEFAULT_BUFFER_SIZE,
-                        context->getWriteSettings());
-
-                    auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
-                    ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
-                    ColumnNameToFieldId field_ids;
-                    field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
-                    field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
-                    column_mapper->setStorageColumnEncoding(std::move(field_ids));
-                    /// `file_path` is Iceberg `string`, so mark it: without this the string-path-aware
-                    /// writer would emit it as `binary` and produce spec-incompatible delete files.
-                    column_mapper->setIcebergStringPaths({String(IcebergPositionDeleteTransform::data_file_path_column_name)});
-                    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-                    auto output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
-
-                    delete_data_write_buffers[partition_key] = std::move(write_buffer);
-                    delete_data_writers[partition_key] = std::move(output_format);
-                }
-
-                col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
-                col_position.column = partition_chunk.getColumns()[col_position_index];
-
-                /// The virtual column `_iceberg_metadata_file_path` may arrive as
-                /// LowCardinality(String) from the pipeline, but the position delete
-                /// file format expects plain String. Unwrap it.
-                col_data_filename.column = col_data_filename.column->convertToFullColumnIfLowCardinality();
-                col_data_filename.type = removeLowCardinality(col_data_filename.type);
-
-                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
-                {
-                    const auto & null_map = nullable->getNullMapData();
-                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
-                    col_position.column = nullable->getNestedColumnPtr();
-                    col_position.type = removeNullable(col_position.type);
-                }
-
-                /// _iceberg_metadata_file_path already contains the correct metadata path format
-                /// (e.g. wasb://container@host/.../data/xxx.parquet or /iceberg/.../data/xxx.parquet)
-                /// so no transformation is needed.
-                Columns chunk_pos_delete;
-                chunk_pos_delete.push_back(col_data_filename.column);
-                chunk_pos_delete.push_back(col_position.column);
-                auto stats_chunk = Chunk(chunk_pos_delete, partition_chunk.getNumRows());
-                delete_data_statistics.at(partition_key).update(stats_chunk);
-
-                Block delete_file_block({col_data_filename, col_position});
-                delete_data_result[partition_key].total_rows += delete_file_block.rows();
-                delete_data_writers[partition_key]->write(delete_file_block);
-            }
+            delete_data_write_buffers[partition_key] = std::move(write_buffer);
+            delete_data_writers[partition_key] = std::move(output_format);
         }
 
-        if (!has_any_rows)
-            return std::nullopt;
+        /// The virtual column `_iceberg_metadata_file_path` may arrive as
+        /// LowCardinality(String) from the pipeline, but the position delete
+        /// file format expects plain String. Unwrap it.
+        col_data_filename.column = col_data_filename.column->convertToFullColumnIfLowCardinality();
+        col_data_filename.type = removeLowCardinality(col_data_filename.type);
 
+        if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
+        {
+            const auto & null_map = nullable->getNullMapData();
+            if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
+            col_position.column = nullable->getNestedColumnPtr();
+            col_position.type = removeNullable(col_position.type);
+        }
+
+        /// _iceberg_metadata_file_path already contains the correct metadata path format
+        /// (e.g. wasb://container@host/.../data/xxx.parquet or /iceberg/.../data/xxx.parquet)
+        /// so no transformation is needed.
+        Columns chunk_pos_delete;
+        chunk_pos_delete.push_back(col_data_filename.column);
+        chunk_pos_delete.push_back(col_position.column);
+        auto stats_chunk = Chunk(chunk_pos_delete, col_position.column->size());
+        delete_data_statistics.at(partition_key).update(stats_chunk);
+
+        Block delete_file_block({col_data_filename, col_position});
+        delete_data_result[partition_key].total_rows += delete_file_block.rows();
+        delete_data_writers[partition_key]->write(delete_file_block);
+    };
+
+    auto finalize_position_deletes = [&]()
+    {
         for (const auto & [partition_key, _] : delete_data_result)
         {
             delete_data_writers[partition_key]->flush();
@@ -282,9 +294,51 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             delete_data_writers[partition_key].reset();
             delete_data_write_buffers[partition_key].reset();
         }
+    };
+
+    if (separate_delete_pass)
+    {
+        MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = true;
+        settings.return_mutated_rows = true;
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto header = interpreter->getUpdatedHeader();
+
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            has_any_rows = true;
+            Chunk chunk(block.getColumns(), block.rows());
+            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
+
+
+            size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
+            size_t col_position_index = block.getPositionByName(block_row_number);
+            ColumnWithTypeAndName col_data_filename = block.getByPosition(col_data_filename_index);
+            ColumnWithTypeAndName col_position = block.getByPosition(col_position_index);
+
+            for (const auto & [partition_key, partition_chunk] : partition_result)
+            {
+                col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
+                col_position.column = partition_chunk.getColumns()[col_position_index];
+                write_position_deletes(partition_key, col_data_filename, col_position);
+            }
+        }
+
+        if (!has_any_rows)
+            return std::nullopt;
+
+        finalize_position_deletes();
     }
 
-    if (commands[0].type == MutationCommand::UPDATE)
+    if (is_update)
     {
         MutationsInterpreter::Settings settings(true);
         settings.return_all_columns = true;
@@ -306,14 +360,25 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             /// Strip virtual columns and unwrap LowCardinality to ensure the
             /// block types are compatible with the Avro serializer schema.
             auto data_block = getNonVirtualColumns(block, /*remove_low_cardinality=*/ true);
-            Chunk chunk(data_block.getColumns(), data_block.rows());
+            const size_t num_data_columns = data_block.columns();
+            Columns chunk_columns = data_block.getColumns();
+            if (!separate_delete_pass)
+            {
+                has_any_rows = true;
+                chunk_columns.push_back(block.getByName(block_datafile_path).column);
+                chunk_columns.push_back(block.getByName(block_row_number).column);
+            }
+            Chunk chunk(std::move(chunk_columns), data_block.rows());
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
+                const auto & partition_columns = partition_chunk.getColumns();
+                Columns data_columns(partition_columns.begin(), partition_columns.begin() + num_data_columns);
+
                 /// Drive the write and stats from this partition's rows only; the full `chunk`
                 /// spans every partition and would duplicate rows into each per-partition file.
-                auto partition_block = data_block.cloneWithColumns(partition_chunk.getColumns());
+                auto partition_block = data_block.cloneWithColumns(data_columns);
 
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
@@ -341,8 +406,25 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
                 update_data_result[partition_key].total_rows += partition_block.rows();
                 it->second->write(partition_block);
-                update_data_statistics.at(partition_key).update(partition_chunk);
+                update_data_statistics.at(partition_key).update(Chunk(data_columns, partition_block.rows()));
+
+                if (!separate_delete_pass)
+                {
+                    ColumnWithTypeAndName col_data_filename = block.getByName(block_datafile_path);
+                    ColumnWithTypeAndName col_position = block.getByName(block_row_number);
+                    col_data_filename.column = partition_columns[num_data_columns];
+                    col_position.column = partition_columns[num_data_columns + 1];
+                    write_position_deletes(partition_key, col_data_filename, col_position);
+                }
             }
+        }
+
+        if (!separate_delete_pass)
+        {
+            if (!has_any_rows)
+                return std::nullopt;
+
+            finalize_position_deletes();
         }
 
         for (const auto & [partition_key, _] : update_data_result)
