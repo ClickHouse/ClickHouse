@@ -1148,7 +1148,9 @@ impl Compiler<'_> {
             }
             ("big-decimal", Kind::Bytes) => Logical::BigDecimal,
             ("uuid", Kind::String) => Logical::Uuid,
-            ("uuid", Kind::Fixed) if size == 16 => Logical::Uuid,
+            // `uuid` on `fixed` stays uninterpreted, as in the legacy C++ compiler:
+            // Node::setLogicalType rejects it (UUID annotates only STRING) and the schema
+            // compiler ignores the malformed attribute per the specification.
             ("date", Kind::Int) => Logical::Date,
             ("time-millis", Kind::Int) => Logical::TimeMillis,
             ("time-micros", Kind::Long) => Logical::TimeMicros,
