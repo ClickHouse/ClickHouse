@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/PartsRemoteFSUtils.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
@@ -71,6 +72,18 @@ bool automaticUncompressedCacheIsOverriddenByOptOut(const Settings & settings)
     /// the secondary-query settings round-trip.
     return settings[Setting::use_uncompressed_cache].changed
         && !settings[Setting::use_uncompressed_cache];
+}
+
+void preserveUncompressedCacheOptOut(Context & context, bool caller_opted_out)
+{
+    if (!caller_opted_out)
+        return;
+
+    const auto & setting = context.getSettingsRef()[Setting::use_uncompressed_cache];
+    if (setting.changed || setting.value)
+        return;
+
+    context.setSetting("use_uncompressed_cache", Field(false));
 }
 
 }

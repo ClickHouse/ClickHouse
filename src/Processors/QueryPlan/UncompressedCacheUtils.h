@@ -7,6 +7,7 @@ namespace DB
 
 struct Settings;
 struct MergeTreeSettings;
+class Context;
 
 constexpr bool canAutoEnableUncompressedCacheForMergeTreeRead(
     bool any_parts_on_remote_disk,
@@ -60,5 +61,16 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
 /// into the forwarded query text, whose own `SETTINGS` clause the leaf replays after that clamping
 /// (`ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery`).
 bool automaticUncompressedCacheIsOverriddenByOptOut(const Settings & settings);
+
+/// Keep an explicit `use_uncompressed_cache = 0` of the caller when a query context is rebuilt from the global
+/// context for another user (a `SQL SECURITY DEFINER` view, `EXECUTE AS`). Such a rebuild clamps the caller's
+/// `SettingsChanges` to the new user's constraints, which drops every change whose value equals the current one,
+/// so the default-valued opt-out is lost while `enable_automatic_use_uncompressed_cache = 1` survives.
+///
+/// `caller_opted_out` is `automaticUncompressedCacheIsOverriddenByOptOut` of the caller's settings, taken before
+/// the rebuild. The setting is marked as explicitly set only when the rebuilt context still holds the unchanged
+/// default `0`: its value does not change, so the new user's constraints are respected, and a value set by the
+/// new user's profile, or a `1` forced by its constraints, is left alone.
+void preserveUncompressedCacheOptOut(Context & context, bool caller_opted_out);
 
 }
