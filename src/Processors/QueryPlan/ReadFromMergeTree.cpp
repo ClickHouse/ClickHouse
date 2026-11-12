@@ -3908,7 +3908,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// statistics could save, so parts are pruned by statistics only if the primary key leaves enough marks.
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res_parts, metadata_snapshot, query_info_, mutations_snapshot, indexes->key_condition,
-        settings[Setting::min_marks_per_part_to_load_statistics], context_, log, result.index_stats);
+        settings[Setting::min_marks_per_part_to_load_statistics], context_, log, result.index_stats,
+        /*deferred_parts=*/nullptr, indexes->primary_key_probe_cache.get());
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
@@ -7048,7 +7049,8 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     RangesInDataParts parts_with_deferred_statistics;
     res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res.parts, getStorageMetadata(), query_info, mutations_snapshot, indexes->key_condition,
-        min_marks_per_part_to_load_statistics, getContext(), log, unused_stats, &parts_with_deferred_statistics);
+        min_marks_per_part_to_load_statistics, getContext(), log, unused_stats, &parts_with_deferred_statistics,
+        indexes->primary_key_probe_cache.get());
 
     if (!selectivity_estimator_columns || !settings[Setting::use_statistics] || !getStorageMetadata()->hasStatistics())
     {
@@ -7059,7 +7061,8 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     /// The range analysis has not run yet. Bound the number of marks to read by the primary key, to not
     /// load statistics for a read that is cheaper than loading them.
     res.use_statistics = !MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
-        res.parts, getStorageMetadata(), indexes->key_condition, min_marks_to_load_statistics(res.parts), settings, log);
+        res.parts, getStorageMetadata(), indexes->key_condition, min_marks_to_load_statistics(res.parts), settings, log,
+        indexes->primary_key_probe_cache.get());
 
     /// The statistics are loaded for ordering the conditions anyway, so prune the parts whose statistics
     /// were not loaded above as well. The other parts were already checked and are not checked again.

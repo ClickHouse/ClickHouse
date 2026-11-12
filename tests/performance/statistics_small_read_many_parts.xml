@@ -1,0 +1,25 @@
+<test>
+    <create_query>
+        CREATE TABLE statistics_small_read (p UInt16, k UInt32, d Date, x UInt64, y UInt8, z UInt8)
+        ENGINE = MergeTree PARTITION BY p ORDER BY (k, d)
+        SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO statistics_small_read
+        SELECT intDiv(number, 200000), intHash32(number) % 100000, toDate('2026-01-01') + intHash64(number) % 30, number,
+               number % 3 = 0, number % 7 = 0
+        FROM numbers_mt(100000000) SETTINGS max_partitions_per_insert_block = 0
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE statistics_small_read FINAL</fill_query>
+    <!-- An insert or a merge keeps the statistics of the new part in memory; reattach to read them from disk, as after a restart. -->
+    <fill_query>DETACH TABLE statistics_small_read</fill_query>
+    <fill_query>ATTACH TABLE statistics_small_read</fill_query>
+    <fill_query>SELECT throwIf(count() != 500) FROM system.parts WHERE database = currentDatabase() AND table = 'statistics_small_read' AND active</fill_query>
+
+    <query>SELECT sum(x) FROM statistics_small_read WHERE k = 62 AND y = 0 FORMAT Null</query>
+    <query>SELECT count() FROM statistics_small_read WHERE k = 62 AND d >= '2026-01-10' AND d &lt;= '2026-01-11' AND y = 0 AND z = 0 FORMAT Null</query>
+    <query>SELECT sum(x) FROM statistics_small_read WHERE k = 62 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS statistics_small_read</drop_query>
+</test>
