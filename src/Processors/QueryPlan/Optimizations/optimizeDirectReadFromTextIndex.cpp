@@ -616,6 +616,16 @@ private:
             || function_name == "hasPhrase";
     }
 
+    /// The canonical node has its constants folded, so an index on `concat(s, toString(1))` is named differently there
+    /// and matches only the original node.
+    static TextSearchQueryPtr createSearchQuery(
+        const MergeTreeIndexConditionText & condition, const ActionsDAG::Node & canonical_node, const ActionsDAG::Node & function_node)
+    {
+        if (auto search_query = condition.createTextSearchQuery(canonical_node))
+            return search_query;
+        return &canonical_node == &function_node ? nullptr : condition.createTextSearchQuery(function_node);
+    }
+
     /// All indexes that can serve the function must use the same tokenizer.
     /// Prefer an index that can be read directly, then one that can scan its dictionary, then the first by name.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
@@ -637,7 +647,7 @@ private:
             if (condition.getHeader().columns() != 1)
                 continue;
 
-            auto search_query = condition.createTextSearchQuery(canonical_node);
+            auto search_query = createSearchQuery(condition, canonical_node, function_node);
             if (!search_query || search_query->getFunctionName() != function_name || !condition.canAnswerFunctionNode(function_node))
                 continue;
 
@@ -708,7 +718,7 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
+            auto search_query = createSearchQuery(text_index_condition, canonical_node, function_node);
             if (!search_query)
                 continue;
 

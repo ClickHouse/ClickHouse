@@ -1,0 +1,6 @@
+hasTokenPrefix	64
+hasTokenPrefix, no index	64
+hasTokenLike	64
+hasTokenLike, no index	64
+hasTokenMatch	64
+hasTokenMatch, no index	64
