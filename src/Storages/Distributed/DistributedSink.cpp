@@ -234,9 +234,6 @@ void DistributedSink::consume(Chunk & chunk)
                 query_status = query_context->getProcessListElementSafe();
 
         storage.delayInsertOrThrowIfNeeded([&] { return isCancelled() || (query_status && query_status->isKilled()); });
-
-        if (query_status && query_status->isKilled())
-            LOG_DEBUG(log, "The INSERT was killed, so it does not wait in the Distributed insert delay and queues its block");
         is_first_chunk = false;
     }
 
