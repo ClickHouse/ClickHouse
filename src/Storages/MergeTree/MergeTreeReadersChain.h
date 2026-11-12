@@ -132,6 +132,25 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    /// PREWHERE granule ProfileEvents (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders).
+    /// Every granule PREWHERE reads is fed in mark order from the final result of each block.
+    /// `GranulesReadByPrewhereReaders` is incremented as soon as a granule is first seen, so a query that
+    /// stops early (e.g. a LIMIT) still counts the granules it read. The granule is kept pending until a
+    /// higher mark (or the end of the task) proves it was read in full; only then, if no row survived, is it
+    /// counted in `GranulesSkippedByPrewhereReaders` -- the unread remainder of a granule cut off by early
+    /// termination is never declared dropped. A granule split across blocks repeats with the same mark; its
+    /// survivor flags are OR-ed and it is counted once.
+    void feedPrewhereGranuleMark(size_t mark, bool survived);
+    void finalizeCompletedPrewhereGranule();
+
+    bool prewhere_granule_stats_enabled = false;
+    /// Index in `range_readers` of the first reader whose step is the query `PREWHERE`. Granules are counted
+    /// as entering PREWHERE from the survivors at this reader's input, so filtering done by earlier readers
+    /// (on-fly mutations, row-level policies) is not attributed to PREWHERE. Valid only when stats enabled.
+    size_t first_query_prewhere_reader_index = 0;
+    std::optional<size_t> prewhere_pending_mark;
+    bool prewhere_pending_mark_survived = false;
+
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };

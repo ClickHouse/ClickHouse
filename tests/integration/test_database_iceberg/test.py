@@ -3438,6 +3438,30 @@ def test_drop_partition_catalog_parallel_replicas(started_cluster):
     assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
 
 
+def test_drop_partition_catalog_through_alias(started_cluster):
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_alias"
+
+    create_drop_partition_catalog_table(load_catalog_impl(started_cluster), namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    alias = f"default.drop_partition_alias_{uuid.uuid4().hex[:8]}"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'x'), (2, 'y'), (3, 'z')",
+        settings=DROP_PARTITION_SETTINGS,
+    )
+    node.query(f"CREATE TABLE {alias} ENGINE = Alias('{CATALOG_NAME}', '{namespace}.{table_name}')")
+    try:
+        # The catalog builds a new storage object for each lookup, so the alias checks and drops on two different ones.
+        node.query(f"ALTER TABLE {alias} DROP PARTITION 2", settings=DROP_PARTITION_SETTINGS)
+        assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+    finally:
+        # `Alias` registers a dependency on its target, so drop it before a later test recreates the catalog database.
+        node.query(f"DROP TABLE IF EXISTS {alias}")
+
+
 # ---------------------------------------------------------------------------
 # Resource soak tests
 #
