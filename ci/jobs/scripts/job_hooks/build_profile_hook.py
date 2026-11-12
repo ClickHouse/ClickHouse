@@ -20,8 +20,9 @@ build_dir = "./ci/tmp/build"
 # the cluster's per-user memory limit (Code 241 MEMORY_LIMIT_EXCEEDED). Two
 # representative release builds keep the profile we actually look at (the
 # production binaries) while removing that contention at the source. Uncomment a
-# build below to profile it too; the full set of build names is BuildTypes in
-# ci/defs/defs.py.
+# build below to profile it too, and set -DENABLE_BUILD_PROFILING=1 for it in
+# BUILD_TYPE_TO_CMAKE (ci/jobs/build_clickhouse.py); the full set of build names
+# is BuildTypes in ci/defs/defs.py.
 _PROFILED_BUILDS = (
     "amd_release",
     "arm_release",
