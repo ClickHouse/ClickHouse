@@ -1,0 +1,47 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: it measures merges of MergeTree text indexes (`OPTIMIZE ... DRY RUN`). -->
+    <create_query>
+        CREATE TABLE t_text_index_merge_replacing
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha')
+        )
+        ENGINE = ReplacingMergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_text_index_merge_replacing_most
+        (
+            id UInt64,
+            s String,
+            INDEX idx_s (s) TYPE text(tokenizer = 'splitByNonAlpha')
+        )
+        ENGINE = ReplacingMergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_replacing</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_text_index_merge_replacing_most</fill_query>
+
+    <!-- Part k holds ids [75000 * k, 75000 * k + 100000), so the merge drops 125000 of 600000 rows. -->
+    <fill_query>INSERT INTO t_text_index_merge_replacing SELECT 75000 * 0 + number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version0') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing SELECT 75000 * 1 + number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version1') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing SELECT 75000 * 2 + number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version2') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing SELECT 75000 * 3 + number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version3') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing SELECT 75000 * 4 + number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version4') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing SELECT 75000 * 5 + number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version5') FROM numbers(100000)</fill_query>
+
+    <!-- Every part holds the same ids, so the merge drops 500000 of 600000 rows. -->
+    <fill_query>INSERT INTO t_text_index_merge_replacing_most SELECT number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version0') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing_most SELECT number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version1') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing_most SELECT number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version2') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing_most SELECT number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version3') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing_most SELECT number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version4') FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO t_text_index_merge_replacing_most SELECT number AS id, concat('common ', 'medium' || intDiv(id, 1000), ' rare' || id, ' version5') FROM numbers(100000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_text_index_merge_replacing DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1', 'all_5_5_1', 'all_6_6_1'</query>
+    <query>OPTIMIZE TABLE t_text_index_merge_replacing_most DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1', 'all_4_4_1', 'all_5_5_1', 'all_6_6_1'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_replacing</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_text_index_merge_replacing_most</drop_query>
+</test>

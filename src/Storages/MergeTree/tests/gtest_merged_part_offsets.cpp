@@ -422,6 +422,62 @@ TEST(PackedPartOffsetsTest, ConsecutiveExceptLastValue)
         EXPECT_EQ(offsets[i], values[i]) << "offset " << i;
 }
 
+// Test non-decreasing input with runs of equal values
+TEST(PackedPartOffsetsTest, RepeatedValues)
+{
+    PackedPartOffsets offsets;
+    offsets.allowRepeatedValues();
+
+    std::vector<UInt64> values = {5, 5, 5, 7, 7, 100, 100, 100, 101};
+
+    for (const auto & val : values)
+    {
+        offsets.insert(val);
+    }
+    offsets.flush();
+
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        EXPECT_EQ(offsets[i], values[i]);
+    }
+}
+
+// Test pages consisting of a single repeated value
+TEST(PackedPartOffsetsTest, AllEqualPage)
+{
+    PackedPartOffsets offsets;
+    offsets.allowRepeatedValues();
+
+    // More than one full page of a single repeated value
+    const size_t total_values = TEST_PAGE_SIZE + 100;
+    for (size_t i = 0; i < total_values; ++i)
+    {
+        offsets.insert(42);
+    }
+    offsets.flush();
+
+    for (size_t i = 0; i < total_values; ++i)
+    {
+        EXPECT_EQ(offsets[i], 42);
+    }
+}
+
+// Repeated values whose page spans exactly size() - 1, like a consecutive run, must not be read back as one
+TEST(PackedPartOffsetsTest, RepeatedValuesSpanningConsecutiveRange)
+{
+    PackedPartOffsets offsets;
+    offsets.allowRepeatedValues();
+
+    std::vector<UInt64> values = {2, 2, 2, 5};
+
+    for (const auto & val : values)
+        offsets.insert(val);
+    offsets.flush();
+
+    for (size_t i = 0; i < values.size(); ++i)
+        EXPECT_EQ(offsets[i], values[i]) << "offset " << i;
+}
+
 //////////////////////////
 // MergedPartOffsets Tests
 //////////////////////////
@@ -549,3 +605,230 @@ TEST(MergedPartOffsetsTest, ManyValues)
         ++offsets[part];
     }
 }
+
+TEST(MergedPartOffsetsTest, TryGetNewOffsetExactMode)
+{
+    std::vector<UInt64> part_indices = {0, 1, 0, 1};
+    MergedPartOffsets merged_offsets(2);
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
+    merged_offsets.flush();
+
+    EXPECT_FALSE(merged_offsets.hasDroppedRows());
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 0), 0);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 0), 1);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 1), 2);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 1), 3);
+}
+
+//////////////////////////////////////
+// MergedPartOffsets with drops tests
+//////////////////////////////////////
+
+TEST(MergedPartOffsetsTest, DropsBasic)
+{
+    // Part 0 has 5 rows, part 1 has 4 rows.
+    // Merge output: (0,1) (1,0) (0,3) (1,3); the rest is dropped,
+    // including the leading, middle and trailing rows of part 0.
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{5, 4});
+
+    std::vector<UInt64> part_indices = {0, 1, 0, 1};
+    std::vector<UInt64> part_offsets = {1, 0, 3, 3};
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data());
+    merged_offsets.flush();
+
+    EXPECT_TRUE(merged_offsets.hasDroppedRows());
+    EXPECT_EQ(merged_offsets.size(), 4);
+
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 0), std::nullopt);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 1), 0);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 2), std::nullopt);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 3), 2);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 4), std::nullopt);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 0), 1);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 1), std::nullopt);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 2), std::nullopt);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 3), 3);
+
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(0), 2);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(1), 2);
+
+    EXPECT_TRUE(merged_offsets.areRowsDropped(0, 0, 0));
+    EXPECT_TRUE(merged_offsets.areRowsDropped(0, 2, 2));
+    EXPECT_TRUE(merged_offsets.areRowsDropped(0, 4, 4));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(0, 0, 1));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(0, 2, 4));
+    EXPECT_TRUE(merged_offsets.areRowsDropped(1, 1, 2));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(1, 1, 3));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(1, 0, 3));
+}
+
+TEST(MergedPartOffsetsTest, DropsNothingDropped)
+{
+    // All rows survive: drops mode must produce the same mapping as the exact mode.
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{3, 3});
+
+    std::vector<UInt64> part_indices = {0, 1, 0, 1, 0, 1};
+    std::vector<UInt64> part_offsets = {0, 0, 1, 1, 2, 2};
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data());
+    merged_offsets.flush();
+
+    EXPECT_FALSE(merged_offsets.hasDroppedRows());
+    EXPECT_EQ(merged_offsets.size(), 6);
+
+    for (UInt64 offset = 0; offset < 3; ++offset)
+    {
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(0, offset), 2 * offset);
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(1, offset), 2 * offset + 1);
+    }
+}
+
+TEST(MergedPartOffsetsTest, DropsWholePartAndEmptyPart)
+{
+    // All rows of part 1 are dropped, part 2 has no rows at all.
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{2, 4, 0, 2});
+
+    std::vector<UInt64> part_indices = {0, 3, 0, 3};
+    std::vector<UInt64> part_offsets = {0, 0, 1, 1};
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data());
+    merged_offsets.flush();
+
+    EXPECT_TRUE(merged_offsets.hasDroppedRows());
+    EXPECT_EQ(merged_offsets.size(), 4);
+
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 0), 0);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 1), 2);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(3, 0), 1);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(3, 1), 3);
+
+    for (UInt64 offset = 0; offset < 4; ++offset)
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(1, offset), std::nullopt);
+
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(0), 2);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(1), 0);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(2), 0);
+    EXPECT_EQ(merged_offsets.getPartSurvivingRowsCount(3), 2);
+
+    EXPECT_TRUE(merged_offsets.areRowsDropped(1, 0, 3));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(0, 0, 1));
+    EXPECT_FALSE(merged_offsets.areRowsDropped(3, 1, 1));
+}
+
+TEST(MergedPartOffsetsTest, DropsAllRowsDropped)
+{
+    // The merge produced an empty part.
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{3, 3});
+    merged_offsets.flush();
+
+    EXPECT_TRUE(merged_offsets.hasDroppedRows());
+    EXPECT_EQ(merged_offsets.size(), 0);
+
+    for (UInt64 offset = 0; offset < 3; ++offset)
+    {
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(0, offset), std::nullopt);
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(1, offset), std::nullopt);
+    }
+}
+
+TEST(MergedPartOffsetsTest, DropsManyValues)
+{
+    // 3 parts x 5000 rows, spanning multiple pages; drop every third row of each part
+    // (with a per-part phase shift), interleave the survivors round-robin.
+    constexpr size_t num_parts = 3;
+    constexpr size_t rows_per_part = 5000;
+    const auto is_dropped = [](UInt64 part, UInt64 offset) { return (part + offset) % 3 == 0; };
+
+    MergedPartOffsets merged_offsets(std::vector<UInt64>(num_parts, rows_per_part));
+
+    std::vector<UInt64> part_indices;
+    std::vector<UInt64> part_offsets;
+    for (UInt64 offset = 0; offset < rows_per_part; ++offset)
+    {
+        for (UInt64 part = 0; part < num_parts; ++part)
+        {
+            if (!is_dropped(part, offset))
+            {
+                part_indices.push_back(part);
+                part_offsets.push_back(offset);
+            }
+        }
+    }
+
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data());
+    merged_offsets.flush();
+
+    EXPECT_TRUE(merged_offsets.hasDroppedRows());
+    EXPECT_EQ(merged_offsets.size(), part_indices.size());
+
+    for (size_t i = 0; i < part_indices.size(); ++i)
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(part_indices[i], part_offsets[i]), i);
+
+    for (UInt64 part = 0; part < num_parts; ++part)
+        for (UInt64 offset = 0; offset < rows_per_part; ++offset)
+            if (is_dropped(part, offset))
+                EXPECT_EQ(merged_offsets.tryGetNewOffset(part, offset), std::nullopt);
+}
+
+TEST(MergedPartOffsetsTest, DropsBatchBoundaries)
+{
+    // The same part offsets arriving across multiple insert calls must gap-fill correctly.
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{6, 6});
+
+    std::vector<UInt64> batch1_parts = {0, 1};
+    std::vector<UInt64> batch1_offsets = {1, 2};
+    merged_offsets.insert(batch1_parts.data(), batch1_parts.data() + batch1_parts.size(), batch1_offsets.data());
+
+    std::vector<UInt64> batch2_parts = {1, 0};
+    std::vector<UInt64> batch2_offsets = {4, 5};
+    merged_offsets.insert(batch2_parts.data(), batch2_parts.data() + batch2_parts.size(), batch2_offsets.data());
+    merged_offsets.flush();
+
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 1), 0);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 2), 1);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(1, 4), 2);
+    EXPECT_EQ(merged_offsets.tryGetNewOffset(0, 5), 3);
+
+    for (UInt64 offset : {0, 2, 3, 4})
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(0, offset), std::nullopt);
+    for (UInt64 offset : {0, 1, 3, 5})
+        EXPECT_EQ(merged_offsets.tryGetNewOffset(1, offset), std::nullopt);
+}
+
+TEST(MergedPartOffsetsTest, DropsOutOfOrderThrows)
+{
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{4});
+
+    std::vector<UInt64> part_indices = {0, 0};
+    std::vector<UInt64> part_offsets = {2, 1};
+    EXPECT_THROW(
+        merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data()), DB::Exception);
+}
+
+/// LOGICAL_ERROR aborts in debug and sanitizer builds, so it can only be caught in other builds.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+
+TEST(MergedPartOffsetsTest, DropsOffsetBeyondPartRowsThrows)
+{
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{2});
+
+    std::vector<UInt64> part_indices = {0};
+    std::vector<UInt64> part_offsets = {5};
+    EXPECT_THROW(
+        merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data()), DB::Exception);
+}
+
+#else
+
+TEST(MergedPartOffsetsDeathTest, DropsOffsetBeyondPartRowsAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    MergedPartOffsets merged_offsets(std::vector<UInt64>{2});
+
+    std::vector<UInt64> part_indices = {0};
+    std::vector<UInt64> part_offsets = {5};
+    EXPECT_DEATH(
+        merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size(), part_offsets.data()),
+        "Got row with offset 5 for source part 0 that has only 2 rows");
+}
+
+#endif
