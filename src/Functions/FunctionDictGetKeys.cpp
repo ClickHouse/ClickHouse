@@ -75,11 +75,12 @@ VectorWithMemoryTracking<size_t> getColumnPositions(const Block & header, const 
 
 void checkDictionarySupportsReverseLookup(const IDictionary & dict)
 {
-    if (dict.getTypeName() == "RegExpTree")
+    if (!dict.supportsReverseLookup())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
-            "Function dictGetKeys does not support dictionary {} with layout regexp_tree",
-            dict.getFullName());
+            "Function dictGetKeys does not support dictionary {} of type {}",
+            dict.getFullName(),
+            dict.getTypeName());
 }
 
 inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
