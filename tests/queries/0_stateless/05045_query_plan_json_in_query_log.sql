@@ -7,13 +7,11 @@
 -- assertions cannot see queries left by an earlier run or by another test running in parallel.
 --
 -- The column has the JSON type, so it is turned back into text with toJSONString before being
--- inspected: that keeps the assertions independent of how JSON subcolumns are addressed, and the
--- keys inherited from EXPLAIN json=1 (`Node Type`, `Node Id`) contain spaces, which a JSON path
--- would have to quote.
+-- inspected, which keeps the assertions independent of how JSON subcolumns are addressed.
 --
 -- The plan is stored as a flat array: `{"Root": <id>, "ExecutionTimeNs": <ns>, "MaxThreads": <n>,
 -- "Output": [...], "Nodes": [...]}`, with each node naming its children by id. Anything a reader
--- can compute from those is not stored -- see StepStatisticsJSONPrinter.
+-- can compute from those is not stored -- see FlatJsonPlanRenderer.
 
 SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 AND '05045_off' != '' FORMAT Null;

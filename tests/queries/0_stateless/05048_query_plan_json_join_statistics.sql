@@ -53,7 +53,7 @@ SELECT
 FROM
 (
     SELECT JSONExtractRaw(
-        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'Join',
+        arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'Join',
                     JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes'))[1],
         'Statistics') AS join_stats
     FROM system.query_log

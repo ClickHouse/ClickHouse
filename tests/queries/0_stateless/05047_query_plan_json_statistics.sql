@@ -28,13 +28,13 @@ SELECT
     anyLast(JSONExtractUInt(source, 'Statistics', 'IO', 'OutputBytes')),
     -- Two steps, and the root names the one below it.
     anyLast(length(nodes)),
-    anyLast(JSONExtractString(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractString(source, 'Node Id'))
+    anyLast(JSONExtractString(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractString(source, 'NodeId'))
 FROM
 (
     SELECT
         JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes') AS nodes,
-        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers', nodes)[1] AS source,
-        arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Root'), nodes)[1] AS root
+        arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'ReadFromSystemNumbers', nodes)[1] AS source,
+        arrayFilter(n -> JSONExtractString(n, 'NodeId') = JSONExtractString(toJSONString(query_plan), 'Root'), nodes)[1] AS root
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
 );
@@ -61,7 +61,7 @@ FROM
 (
     SELECT
         toJSONString(query_plan) AS plan,
-        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers',
+        arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'ReadFromSystemNumbers',
                     JSONExtractArrayRaw(plan, 'Nodes'))[1] AS source,
         JSONExtractArrayRaw(source, 'Statistics', 'Stages')[1] AS stage
     FROM system.query_log

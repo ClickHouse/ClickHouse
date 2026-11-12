@@ -37,8 +37,8 @@ SELECT
     -- A plan was stored, and it is the set operation's own plan: the step that performs it is there
     -- along with a source per branch.
     length(JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')) > 0 AS captured,
-    countSubstrings(toJSONString(query_plan), '"Node Type":"IntersectOrExcept"') AS set_op_steps,
-    countSubstrings(toJSONString(query_plan), '"Node Type":"ReadFromSystemNumbers"') AS sources
+    countSubstrings(toJSONString(query_plan), '"NodeType":"IntersectOrExcept"') AS set_op_steps,
+    countSubstrings(toJSONString(query_plan), '"NodeType":"ReadFromSystemNumbers"') AS sources
 FROM system.query_log
 -- Named one by one rather than matched by prefix: `clickhouse-test` gives every statement it runs
 -- a default `log_comment` of `<test file name>-<database>`, which starts with `05185_` too, so a

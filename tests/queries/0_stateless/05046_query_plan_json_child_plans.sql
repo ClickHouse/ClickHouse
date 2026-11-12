@@ -31,7 +31,7 @@ SELECT
     -- The step that owns the sub-plans, and one entry per underlying table below it. Without the
     -- recursion into getChildPlans the tree would stop at ReadFromMerge.
     anyLast(position(toJSONString(query_plan), 'ReadFromMerge"')) > 0,
-    anyLast(countSubstrings(toJSONString(query_plan), '"Node Type":"ReadFromMergeTree"')),
+    anyLast(countSubstrings(toJSONString(query_plan), '"NodeType":"ReadFromMergeTree"')),
     -- Written once, for the plan the caller asked about. A sub-plan root must not repeat it, which
     -- is the whole reason explainPlan knows whether it is rendering a child plan.
     anyLast(countSubstrings(toJSONString(query_plan), '"Output":')),

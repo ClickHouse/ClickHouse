@@ -217,8 +217,8 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
 {
     auto map = std::make_unique<JSONBuilder::JSONMap>();
 
-    map->add("Node Type", step.type);
-    map->add("Node Id", step.id);
+    map->add("NodeType", step.type);
+    map->add("NodeId", step.id);
 
     if (!step.description.empty())
         map->add("Description", step.description);
