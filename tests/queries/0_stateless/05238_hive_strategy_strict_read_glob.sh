@@ -3,7 +3,7 @@
 # paths laid out exactly as it writes them (`key1=*/.../keyN=*/<file>`): staging output of
 # Hive-ecosystem writers (`_temporary/...`, `.spark-staging-<id>/...`), files at other depths
 # and files under non-`key=value` directories are excluded structurally. Without the setting
-# the recursive glob reads all of them.
+# the recursive glob skips only the hidden staging paths and reads the rest.
 # Tags: no-fasttest
 # Tag no-fasttest: Depends on S3
 
@@ -14,8 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 path="http://localhost:11111/test/${CLICKHOUSE_DATABASE}/05238"
 
 $CLICKHOUSE_CLIENT -q "
--- One committed file plus files a strict layout must not read: Spark staging output, a file
--- under a non-partition directory and a file nested below the partition directories.
+-- One committed file plus files a strict layout must not read: Spark staging output (hidden,
+-- skipped by the recursive glob too), a file under a non-partition directory and a file nested
+-- below the partition directories (both read by the recursive glob).
 INSERT INTO FUNCTION s3('$path/t/org=a/dt=2026-01-01/x.parquet', 'test', 'testtest', 'Parquet') SELECT toInt64(1) AS id;
 INSERT INTO FUNCTION s3('$path/t/_temporary/0/_temporary/attempt_x/org=a/dt=2026-01-01/y.parquet', 'test', 'testtest', 'Parquet') SELECT toInt64(2) AS id;
 INSERT INTO FUNCTION s3('$path/t/.spark-staging-y/org=a/dt=2026-01-01/z.parquet', 'test', 'testtest', 'Parquet') SELECT toInt64(3) AS id;

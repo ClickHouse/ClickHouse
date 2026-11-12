@@ -10450,13 +10450,13 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 )", 0, \
         {"26.8", false, true, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage, instead of running without the Hive partition columns."}) \
     DECLARE(Bool, hive_partition_strategy_strict_read_glob, false, R"(
-Build the read glob of object storage tables with `partition_strategy = 'hive'` from the partition columns — `table_root/key1=*/.../keyN=*/*.<format>` — instead of the recursive `table_root/**.<format>`. Only objects laid out exactly as the table itself writes them are read: staging output and marker objects of Hive-ecosystem writers under the same root (`_temporary/...`, `.spark-staging-<id>/...`, `_SUCCESS`) are excluded structurally, and the shorter listing prefix skips them during listing. Note that files at a different depth or with differently named partition directories are silently ignored, where the recursive glob reads them or fails loudly with a hive partitioning parse error. The setting takes effect when the table is instantiated (`CREATE`, `ATTACH`, server startup).
+Build the read glob of object storage tables with `partition_strategy = 'hive'` from the partition columns — `table_root/key1=*/.../keyN=*/*.<format>` — instead of the recursive `table_root/**.<format>`. Only objects laid out exactly as the table itself writes them are read: files at a different depth or under directories that are not `key=value` partition directories are excluded by shape, in addition to the hidden paths (`_temporary/...`, `.spark-staging-<id>/...`, `_SUCCESS`) that the recursive glob already skips, and the longer non-glob prefix skips foreign objects during listing. Note that such files are silently ignored, where the recursive glob reads them or fails loudly with a hive partitioning parse error. The setting takes effect when the table is instantiated (`CREATE`, `ATTACH`, server startup).
 
 Possible values:
 - 0 — read using the recursive glob.
 - 1 — read only paths matching the partition columns layout.
 )", 0, \
-        {"26.10", false, false, "New setting: build the read glob of tables with `partition_strategy = 'hive'` from the partition columns instead of a recursive glob, so only objects laid out as the table writes them are read."}) \
+        {"26.11", false, false, "New setting: build the read glob of tables with `partition_strategy = 'hive'` from the partition columns instead of a recursive glob, so only objects laid out as the table writes them are read."}) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
