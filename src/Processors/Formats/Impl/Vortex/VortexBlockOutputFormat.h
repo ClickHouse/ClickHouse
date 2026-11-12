@@ -16,7 +16,7 @@ class CHColumnToArrowColumn;
 struct VortexWriteContext;
 
 /// Writes Vortex files (https://docs.vortex.dev/) through the Rust bindings in
-/// `rust/workspace/vortex`. Chunks are passed over as Arrow record batches; the library chooses the
+/// `contrib/vortex-cmake`. Chunks are passed over as Arrow record batches; the library chooses the
 /// encodings and the layout of the file and streams the bytes back through a callback. Unlike
 /// reading, this runs entirely on the calling thread.
 class VortexBlockOutputFormat final : public IOutputFormat

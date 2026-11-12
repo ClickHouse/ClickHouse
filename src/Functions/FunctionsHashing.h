@@ -15,6 +15,7 @@
 
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
+#include <Common/SipHashStrings.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -310,6 +311,14 @@ struct SipHash128Impl
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
     static UInt128 applyPadded(const char * data, const size_t size) { return sipHash128Padded(data, size); }
+    static void applyPaddedStrings(const char * chars, const UInt64 * offsets, size_t num_rows, UInt128 * hashes)
+    {
+        sipHash128PaddedStrings(chars, offsets, num_rows, hashes);
+    }
+    static void applyPaddedFixedStrings(const char * chars, size_t n, size_t num_rows, UInt128 * hashes)
+    {
+        sipHash128PaddedFixedStrings(chars, n, num_rows, hashes);
+    }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -814,7 +823,7 @@ struct ImplXXH3_128
     static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
@@ -914,7 +923,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -924,14 +933,14 @@ class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Na
 public:
     explicit FunctionIntHash([[maybe_unused]] ContextPtr context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
             return;
         }
 #endif
-#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE && !defined(__AVX2__)
         /// Only reached from the translation units pinned to `-march=x86-64-v2` in
         /// `src/Functions/CMakeLists.txt` (`FunctionsHashingMisc.cpp`), where `Default` inherits v2
         /// codegen and this per-function body is the only AVX2 one. Everywhere else `Default` is
@@ -959,7 +968,7 @@ private:
     std::unique_ptr<IFunction> impl;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, bool Keyed, typename KeyType, typename KeyColumnsType>
 class FunctionAnyHash : public IFunction
@@ -1193,6 +1202,30 @@ private:
         }
     }
 
+    /// The unkeyed `sipHash128` hashes the strings of a `ColumnString` or a `ColumnFixedString` several at a time.
+    static constexpr bool hashes_many_strings = !Keyed && requires(const char * chars, const UInt64 * offsets, size_t n, ToType * hashes) {
+        Impl::applyPaddedStrings(chars, offsets, n, hashes);
+        Impl::applyPaddedFixedStrings(chars, n, n, hashes);
+    };
+
+    /// Calls `hash_rows` to compute one hash per row of `vec_to`. With `first` they are stored in `vec_to`, otherwise
+    /// combined with the hashes already there.
+    template <bool first, typename HashRows>
+    static void setHashes(const KeyType & key, typename ColumnVector<ToType>::Container & vec_to, HashRows && hash_rows)
+    {
+        if constexpr (first)
+        {
+            hash_rows(vec_to.data());
+        }
+        else
+        {
+            PaddedPODArray<ToType> hashes(vec_to.size());
+            hash_rows(hashes.data());
+            for (size_t i = 0; i < vec_to.size(); ++i)
+                vec_to[i] = combineHashes(key, vec_to[i], hashes[i]);
+        }
+    }
+
     template <bool first>
     void executeString(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
@@ -1205,22 +1238,29 @@ private:
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
-            ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (hashes_many_strings)
             {
-                if constexpr (Keyed)
-                    if (!key_cols.is_const && i != 0)
-                        key = Impl::getKey(key_cols, i);
-                const ToType hash = applyPadded(key,
-                    reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset);
+                const char * chars = reinterpret_cast<const char *>(data.data());
+                setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedStrings(chars, offsets.data(), size, hashes); });
+            }
+            else
+            {
+                ColumnString::Offset current_offset = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if constexpr (Keyed)
+                        if (!key_cols.is_const && i != 0)
+                            key = Impl::getKey(key_cols, i);
+                    const ToType hash
+                        = applyPadded(key, reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset);
 
-                if constexpr (first)
-                    vec_to[i] = hash;
-                else
-                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+                    if constexpr (first)
+                        vec_to[i] = hash;
+                    else
+                        vec_to[i] = combineHashes(key, vec_to[i], hash);
 
-                current_offset = offsets[i];
+                    current_offset = offsets[i];
+                }
             }
         }
         else if (const ColumnFixedString * col_from_fixed = checkAndGetColumn<ColumnFixedString>(column))
@@ -1229,16 +1269,24 @@ private:
             size_t n = col_from_fixed->getN();
             size_t size = data.size() / n;
 
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (hashes_many_strings)
             {
-                if constexpr (Keyed)
-                    if (!key_cols.is_const && i != 0)
-                        key = Impl::getKey(key_cols, i);
-                const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
-                if constexpr (first)
-                    vec_to[i] = hash;
-                else
-                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+                const char * chars = reinterpret_cast<const char *>(data.data());
+                setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedFixedStrings(chars, n, size, hashes); });
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if constexpr (Keyed)
+                        if (!key_cols.is_const && i != 0)
+                            key = Impl::getKey(key_cols, i);
+                    const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                    if constexpr (first)
+                        vec_to[i] = hash;
+                    else
+                        vec_to[i] = combineHashes(key, vec_to[i], hash);
+                }
             }
         }
         else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
@@ -1699,7 +1747,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 struct ImplWyHash64;
 
@@ -1740,7 +1788,7 @@ class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Ke
 public:
     explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if constexpr (hash_avx512_usage<Impl> != HashAVX512Usage::Never)
         {
             if (isArchSupported(TargetArch::x86_64_v4))
@@ -1765,7 +1813,7 @@ public:
 private:
     static std::unique_ptr<IFunction> makeBaselineImpl()
     {
-#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE && !defined(__AVX2__)
         /// See the note in `FunctionIntHash`: only the v2-pinned translation units get here.
         if (isArchSupported(TargetArch::x86_64_v3))
             return std::make_unique<TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();

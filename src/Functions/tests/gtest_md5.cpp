@@ -148,7 +148,7 @@ struct AVX2MD5Trait
 
 #endif
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 
 struct AVX512MD5Trait
 {
@@ -207,7 +207,7 @@ using MD5Implementations = ::testing::Types<
     ,
     AVX2MD5Trait
 #endif
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
     ,
     AVX512MD5Trait
 #endif
