@@ -1231,13 +1231,39 @@ void generateManifestList(
                                 if (old_entries.has(field))
                                     setFieldFromValue(new_entry, field, old_entries.value(row, field));
                             };
-                            add_field_to_datum(Iceberg::f_added_files_count);
-                            add_field_to_datum(Iceberg::f_existing_files_count);
-                            add_field_to_datum(Iceberg::f_deleted_files_count);
+                            /// Each count is rebuilt in the shape of the new list, as in the legacy branch. Iceberg
+                            /// Java before 1.5 names the file counts `added_data_files_count` and so on.
+                            auto copy_count = [&](const String & field, const char * old_name, AvroKind kind, const char * kind_name)
+                            {
+                                String source = field;
+                                if (!old_entries.has(source) && old_name)
+                                    source = old_name;
+                                if (!old_entries.has(source) || old_entries.value(row, source).isNull())
+                                {
+                                    if (version > 1)
+                                        throw Exception(
+                                            ErrorCodes::NOT_IMPLEMENTED,
+                                            "Cannot carry manifest {} of manifest list {} over into a format-version {} manifest list: "
+                                            "it has no '{}', and recomputing it from the manifest is not supported",
+                                            old_manifest_path,
+                                            resolved_manifest_list_path,
+                                            version,
+                                            field);
+                                    return;
+                                }
+                                const Field value = old_entries.required(row, source, kind, kind_name);
+                                if (kind == AVRO_KIND_INT)
+                                    setVersionedField(new_entry, value.safeGet<Int32>(), field);
+                                else
+                                    setVersionedField(new_entry, value.safeGet<Int64>(), field);
+                            };
+                            copy_count(Iceberg::f_added_files_count, Iceberg::f_added_data_files_count, AVRO_KIND_INT, "int");
+                            copy_count(Iceberg::f_existing_files_count, Iceberg::f_existing_data_files_count, AVRO_KIND_INT, "int");
+                            copy_count(Iceberg::f_deleted_files_count, Iceberg::f_deleted_data_files_count, AVRO_KIND_INT, "int");
+                            copy_count(Iceberg::f_added_rows_count, nullptr, AVRO_KIND_LONG, "long");
+                            copy_count(Iceberg::f_existing_rows_count, nullptr, AVRO_KIND_LONG, "long");
+                            copy_count(Iceberg::f_deleted_rows_count, nullptr, AVRO_KIND_LONG, "long");
                             copyPartitionSummaries(old_entries, row, new_entry);
-                            add_field_to_datum(Iceberg::f_added_rows_count);
-                            add_field_to_datum(Iceberg::f_existing_rows_count);
-                            add_field_to_datum(Iceberg::f_deleted_rows_count);
                             add_field_to_datum(Iceberg::f_key_metadata);
                             /// v2 and v3 share the manifest-list schema, so these fields exist for both.
                             if (version > 1)

@@ -112,9 +112,6 @@ pub enum Logical {
     Duration = 13,
 }
 
-/// Upper bound on a full name (namespace, dot, simple name) in bytes.
-pub const MAX_NAME_LEN: usize = 4096;
-
 #[derive(Debug)]
 enum Body {
     None,
@@ -909,9 +906,8 @@ impl Compiler<'_> {
             };
             (ns, name)
         };
-        if ns.len() + simple.len() >= MAX_NAME_LEN {
-            return Err(invalid("Name is too long"));
-        }
+        // No per-name length bound: the legacy C++ compiler accepts any length, and the total
+        // name budget (`charge_name`) already bounds all names of the schema together.
         check_namespace(ns)?;
         check_simple_name(simple)?;
         let full: Box<str> = if ns.is_empty() {
@@ -1552,6 +1548,22 @@ mod tests {
         let f = s.fields(s.root());
         assert_eq!(s.in_degree(f[0].ty), 2);
         assert_eq!(s.in_degree(s.root()), 1);
+    }
+
+    #[test]
+    fn long_names_are_accepted() {
+        // The legacy C++ compiler bounds only the characters of a name, not its length: a 4 KiB
+        // record name, a long namespace and a long enum/fixed name are valid schemas.
+        let long = "r".repeat(4096);
+        let j = format!(
+            r#"{{"type":"record","name":"{long}","fields":[
+                {{"name":"id","type":"long"}},
+                {{"name":"e","type":{{"type":"enum","name":"{long}.E","symbols":["A"]}}}},
+                {{"name":"f","type":{{"type":"fixed","name":"{long}.F","size":1}}}}
+            ]}}"#
+        );
+        let s = Schema::parse(j.as_bytes(), 0).unwrap();
+        assert_eq!(s.node(s.root()).full_name().unwrap().len(), 4096);
     }
 
     #[test]
