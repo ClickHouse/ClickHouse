@@ -119,6 +119,7 @@ extern const DataLakeStorageSettingsUInt32 iceberg_metadata_async_prefetch_perio
 extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
+extern const DataLakeStorageSettingsTimezone iceberg_timezone_for_timestamptz;
 }
 
 namespace ErrorCodes
@@ -259,10 +260,15 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
                 std::call_once(cell->table_metadata_validated, [&] { IcebergSchemaProcessor::checkTableSchemas(*metadata_object); });
                 return cell;
             });
+    String timezone_for_timestamptz
+        = (*configuration->getDataLakeSettings())[DataLakeStorageSetting::iceberg_timezone_for_timestamptz].value;
+    if (timezone_for_timestamptz.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `iceberg_timezone_for_timestamptz` must not be empty");
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     PersistentTableComponents persistent_components{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg]),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(
+            context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg], timezone_for_timestamptz),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
