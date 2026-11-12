@@ -142,7 +142,10 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
         if (cte->is_plan_optimized.exchange(true))
             continue;
 
-        cte->plan->optimize(optimization_settings);
+        auto cte_optimization_settings = optimization_settings;
+        if (cte->optimize_plan_on_build)
+            cte_optimization_settings.optimize_plan = *cte->optimize_plan_on_build;
+        cte->plan->optimize(cte_optimization_settings);
     }
 }
 

@@ -80,6 +80,32 @@ DELETE FROM mutation_set_target WHERE (k, payload) IN
 SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 2;
 SELECT count(), sum(matched), sum(previous_matched) FROM mutation_set_target;
 
+-- A materialized CTE that the set subquery reads is materialized by the mutation plan; it is an
+-- ordinary read as well. A Memory table mutates in the query thread, with these settings, so the ones
+-- that decide about `PREWHERE` are pinned against randomization.
+CREATE TABLE mutation_set_memory (k UInt64, payload String, matched UInt8) ENGINE = Memory;
+INSERT INTO mutation_set_memory SELECT number * 1024, hex(sipHash128(number * 1024)), 0 FROM numbers(16);
+
+ALTER TABLE mutation_set_memory UPDATE matched = (k, payload) IN
+(
+    WITH c AS MATERIALIZED (SELECT k, payload FROM mutation_set_source WHERE period = 7)
+    SELECT k, payload FROM c UNION ALL SELECT k, payload FROM c
+)
+WHERE 1
+SETTINGS enable_materialized_cte = 1, use_query_condition_cache = 0, optimize_move_to_prewhere = 1,
+    query_plan_enable_optimizations = 1, log_comment = '05332_mutation_set_cte';
+
+SELECT count(), sum(matched) FROM mutation_set_memory;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    ProfileEvents['RowsReadByPrewhereReaders'] > 0 AS used_prewhere,
+    ProfileEvents['RowsReadByMainReader'] < 8192 AS avoided_full_key_read
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05332_mutation_set_cte'
+    AND type = 'QueryFinish' AND query_kind = 'Alter';
+
+DROP TABLE mutation_set_memory;
 DROP TABLE mutation_set_target;
 DROP TABLE mutation_set_control;
 DROP TABLE mutation_set_source;

@@ -55,6 +55,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -2326,8 +2327,15 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
         /// The mutation plan keeps the shape of its stages with `optimize_plan = false`. A set subquery is an
-        /// ordinary read and needs the full optimization, e.g. to move its filter to `PREWHERE`.
-        subquery->setOptimizePlanOnBuild(QueryPlanOptimizationSettings(context_).optimize_plan);
+        /// ordinary read and needs the full optimization, e.g. to move its filter to `PREWHERE`. So do the
+        /// materialized CTEs it reads, which the mutation plan materializes.
+        const bool optimize_plan = QueryPlanOptimizationSettings(context_).optimize_plan;
+        subquery->setOptimizePlanOnBuild(optimize_plan);
+        for (const auto & level : materialized_ctes_per_subquery.back())
+            for (const auto & node : level)
+                if (const auto * table_node = node->as<TableNode>())
+                    if (auto cte = table_node->getMaterializedCTE())
+                        cte->optimize_plan_on_build = optimize_plan;
     }
 
     const auto & settings = context_->getSettingsRef();
