@@ -150,17 +150,24 @@ heavy_first()
         sort -t "$TAB" -k1,1n -s | cut -f2-
 }
 
-# Copies submodule git data $1 to $2, which must not exist. See "Storage sharing" above.
+# Copies submodule git data $1 to $2, which must not exist, and writes the marker of the first checkout into it. See
+# "Storage sharing" above. The copy is made in a temporary sibling directory and renamed to $2 only when it is complete:
+# an interrupted copy must not look like existing git data. A temporary directory left by an interrupted copy has no
+# local work, only a copy of the main git data, so it is replaced.
 copy_store()
 {
+    local stage=$2.worktree-sh-tmp
+    rm -rf "$stage"
     if [ "$OS" = Darwin ]
     then
-        cp -Rc "$1" "$2"
+        cp -Rc "$1" "$stage"
     else
-        cp -al "$1" "$2"
-        find "$2" -type f -links +1 ! -path '*/objects/*' -exec sh -c '
+        cp -al "$1" "$stage"
+        find "$stage" -type f -links +1 ! -path '*/objects/*' -exec sh -c '
             for f do cp -p "$f" "$f.unshare" && mv -f "$f.unshare" "$f" || exit 1; done' sh {} +
     fi
+    : > "$stage/$INCOMPLETE"
+    mv "$stage" "$2"
 }
 
 # Runs an object-only git command (cat-file, fetch) on submodule git data $1. The work tree is set to the git data
@@ -203,7 +210,7 @@ set_module_worktree()
 # that the git data of that worktree already has are skipped, for example a local commit in one of its submodules.
 refresh_main_stores()
 {
-    local wgd=${2:-} sha path name url store tmp up
+    local wgd=${2:-} sha path name url store stage tmp up
     while IFS="$TAB" read -r sha path name url
     do
         if [ -n "$wgd" ] && [ -d "$wgd/modules/$name" ] &&
@@ -221,12 +228,16 @@ refresh_main_stores()
         then
             note "main git data: cloning new submodule $path"
             mkdir -p "$(dirname "$store")"
+            # As in copy_store: clone into a temporary sibling directory, rename it when the clone is complete.
+            stage=$store.worktree-sh-tmp
+            rm -rf "$stage"
             tmp=$(mktemp -d "$GD/worktree-sh.XXXXXX")
-            git clone -q --no-checkout --separate-git-dir="$store" -- "$url" "$tmp/files"
+            git clone -q --no-checkout --separate-git-dir="$stage" -- "$url" "$tmp/files"
             rm -rf "$tmp"
             # The same relative path that `git submodule update --init` writes, so that the main checkout can init it.
             up=$(printf '%s' "modules/$name" | awk -F / '{ for (i = 0; i <= NF; ++i) printf "../" }')
-            git config --file "$store/config" core.worktree "$up$path"
+            git config --file "$stage/config" core.worktree "$up$path"
+            mv "$stage" "$store"
         fi
         if ! git_store "$store" cat-file -e "$sha^{commit}" 2> /dev/null
         then
@@ -459,7 +470,6 @@ sync_submodules()
         else
             mkdir -p "$(dirname "$store")"
             copy_store "$GD/modules/$name" "$store"
-            : > "$store/$INCOMPLETE"
             copied=$((copied + 1))
         fi
         # The git data under this worktree belongs to it. This also repairs git data that points at another checkout.
