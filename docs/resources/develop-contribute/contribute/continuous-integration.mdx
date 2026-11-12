@@ -309,6 +309,7 @@ The performance test report is described in detail [here](https://github.com/Cli
 
 A draft pull request runs only the fast test: it gives quick feedback on work in progress without spending hours of CI on it.
 The full CI starts when you mark the pull request ready for review.
+Until it completes, the `Mergeable Check` of a draft run fails, so the pull request cannot be merged on the fast test alone; the bug-fix validation also waits for the full CI.
 
 To run the full CI on a draft anyway, add the `ci-force-all` label and re-run the workflow (or push a commit).
 

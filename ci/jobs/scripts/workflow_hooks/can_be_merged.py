@@ -17,6 +17,13 @@ FORBIDDEN_LABELS = [
 STATELESS_TESTS_DIR = "tests/queries/0_stateless/"
 
 
+def is_draft_only_run(info):
+    """A draft pull request without `ci-force-all` runs only the fast test (see
+    `should_skip_job` in `filter_job.py`). The draft status is the one the workflow
+    started with, so it matches the set of jobs that actually ran."""
+    return bool(info.pr_is_draft) and Labels.CI_FORCE_ALL not in info.pr_labels
+
+
 def llvm_coverage_label_allows_merge(changed_files):
     """`ci-llvm-coverage` runs a subset of the jobs too (see `LLVM_COVERAGE_ONLY_JOBS` in
     `filter_job.py`), but a pull request that changes only stateless tests may merge with it:
@@ -34,6 +41,16 @@ def llvm_coverage_label_allows_merge(changed_files):
 
 def check():
     info = Info()
+    # The jobs skipped for a draft are reported as `SKIPPED`, which the workflow finalizer
+    # accepts, so without this a draft run would publish a successful merge gate after only
+    # the fast test. The failed gate stays until the full CI of the ready PR completes.
+    if is_draft_only_run(info):
+        print(
+            f"WARNING: draft PR ran only the fast test, merge not allowed until the full CI "
+            f"runs (mark the PR ready for review or add the `{Labels.CI_FORCE_ALL}` label)"
+        )
+        return False
+
     for label in FORBIDDEN_LABELS:
         if label in info.pr_labels:
             print(f"WARNING: {label} label is set, merge not allowed")

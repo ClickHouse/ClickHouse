@@ -5,6 +5,7 @@ from ci.defs.defs import JobNames
 from ci.jobs.scripts.docker_server.docker_library import (
     changed_tests as changed_docker_tests,
 )
+from ci.jobs.scripts.workflow_hooks.can_be_merged import is_draft_only_run
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -203,6 +204,13 @@ def unit_bugfix_validation_refuted():
 
 
 def check():
+    # A draft runs only the fast test, so the bug-fix validation jobs are skipped and there
+    # is nothing to check yet. The draft cannot merge (`can_be_merged.py` blocks it); the
+    # validation runs with the full CI once the PR is ready for review.
+    if is_draft_only_run(Info()):
+        print("Draft PR ran only the fast test - the bug-fix validation is deferred")
+        return True
+
     _title, _body, labels, _is_draft = GH.get_pr_title_body_labels()
     if not labels:
         labels = Info().pr_labels
