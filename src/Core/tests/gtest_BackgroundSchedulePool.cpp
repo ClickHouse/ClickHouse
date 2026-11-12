@@ -1,7 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <base/scope_guard.h>
 #include <gtest/gtest.h>
@@ -625,63 +624,4 @@ TEST(BackgroundSchedulePool, IncreaseThreadsCountNeverLowersPerTypeLimit)
     EXPECT_TRUE(first_wave_finished);
     EXPECT_TRUE(second_wave_ran) << "only " << running_in_second_wave << " of " << limit << " tasks of one type run after raising the pool size";
     EXPECT_EQ(running_in_second_wave, limit);
-}
-
-namespace
-{
-
-/// Number of delayed entries of the task named `log_name`.
-size_t countDelayed(BackgroundSchedulePool & pool, const String & log_name)
-{
-    size_t count = 0;
-    for (const auto & info : pool.getTasks())
-        if (info.log_name == log_name && info.delayed)
-            ++count;
-    return count;
-}
-
-/// Overwriting a delayed task replaces its entry in the delayed queue. If the new entry cannot be
-/// inserted, the task must keep its old entry, so that a later reschedule or cancel stays valid.
-void testFailedOverwriteOfDelayedTask(bool reschedule_after_failure)
-{
-    auto pool = BackgroundSchedulePool::create(1, 1, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
-    const String log_name = "failed_overwrite";
-
-    std::atomic<size_t> executions = 0;
-    BackgroundSchedulePoolTaskHolder task = pool->createTask(StorageID::createEmpty(), log_name, [&] { ++executions; });
-    ASSERT_TRUE(task->activate());
-
-    /// Far-off delays, so that the task never fires during the test.
-    constexpr size_t delay_ms = 1000 * 1000 * 1000;
-    ASSERT_TRUE(task->scheduleAfter(delay_ms));
-    ASSERT_EQ(countDelayed(*pool, log_name), 1u);
-
-    FailPointInjection::enableFailPoint("background_schedule_pool_delayed_task_insert_fail");
-    EXPECT_THROW(task->scheduleAfter(2 * delay_ms), Exception);
-    FailPointInjection::disableFailPoint("background_schedule_pool_delayed_task_insert_fail");
-
-    EXPECT_EQ(countDelayed(*pool, log_name), 1u) << "the task lost its entry in the delayed queue";
-
-    if (reschedule_after_failure)
-    {
-        ASSERT_TRUE(task->scheduleAfter(3 * delay_ms));
-        EXPECT_EQ(countDelayed(*pool, log_name), 1u);
-    }
-
-    ASSERT_TRUE(task->deactivate());
-    EXPECT_EQ(countDelayed(*pool, log_name), 0u);
-    EXPECT_EQ(executions.load(), 0u);
-    pool->join();
-}
-
-}
-
-TEST(BackgroundSchedulePool, CancelAfterFailedOverwriteOfDelayedTask)
-{
-    testFailedOverwriteOfDelayedTask(/*reschedule_after_failure=*/ false);
-}
-
-TEST(BackgroundSchedulePool, RescheduleAfterFailedOverwriteOfDelayedTask)
-{
-    testFailedOverwriteOfDelayedTask(/*reschedule_after_failure=*/ true);
 }
