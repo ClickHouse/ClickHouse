@@ -1,0 +1,12 @@
+-- control: nothing between the two patches, so they do merge
+0
+2	0
+1	1
+-- a merge that applies the first patch keeps the two patches apart
+1
+2	0
+2	0
+1	100
+3	300
+1	100
+3	3
