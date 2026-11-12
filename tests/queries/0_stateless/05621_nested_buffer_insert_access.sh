@@ -4,6 +4,9 @@
 # https://github.com/ClickHouse/clickhouse-private/issues/87440
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Flushing an undeliverable buffered batch logs it server-side; don't forward that to the client that
+# triggered the flush (it would appear on the test's stderr).
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 

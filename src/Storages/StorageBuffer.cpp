@@ -1461,7 +1461,10 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         {
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
-            LOG_ERROR(
+            /// Logged below the `warning` level so it is not forwarded to the client of an unrelated user whose
+            /// insert happened to trigger this flush (that would leak the buffering user's name and grants to
+            /// them); `ProfileEvents::StorageBufferErrorOnFlush` already counted it for monitoring.
+            LOG_INFO(
                 log,
                 "Discarding {} rows ({} bytes) buffered for destination table {}: the buffering user can no longer "
                 "write to it ({}).",
