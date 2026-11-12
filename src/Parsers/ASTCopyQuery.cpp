@@ -5,16 +5,36 @@
 namespace DB
 {
 
-void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << table_name;
+    if (subquery_ast)
+    {
+        /// The inner query is a standalone query in its own parentheses. Format it on one line, with
+        /// the default settings, except that its secrets are hidden unless `show_secrets` is set.
+        /// Only `COPY (query) TO` is parsed, so the direction is always `TO STDOUT`.
+        FormatSettings subquery_settings(/*one_line_=*/true);
+        subquery_settings.show_secrets = settings.show_secrets;
+        ostr << "COPY (";
+        subquery_ast->format(ostr, subquery_settings);
+        ostr << ") TO STDOUT";
+    }
+    else
+        ostr << table_name;
 }
 
 ASTPtr ASTCopyQuery::clone() const
 {
     auto res = make_intrusive<ASTCopyQuery>(*this);
     res->children.clear();
+    res->subquery_ast = nullptr;
+    if (subquery_ast)
+        res->setSubquery(subquery_ast->clone());
     return res;
+}
+
+void ASTCopyQuery::setSubquery(ASTPtr subquery_ast_)
+{
+    set(subquery_ast, std::move(subquery_ast_));
 }
 
 String toString(ASTCopyQuery::Formats format)
