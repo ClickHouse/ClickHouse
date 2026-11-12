@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
@@ -189,6 +190,27 @@ struct ORCPredicateColumnTypes
     DataTypePtr declared_type;
 };
 
+struct ORCSubcolumnInfo
+{
+    ISerialization::SubstreamData data;
+    ISerialization::SubstreamPath substreams_path;
+};
+
+/// Finds a subcolumn of `type` together with the substreams path that leads to it.
+static std::optional<ORCSubcolumnInfo> tryGetORCSubcolumnInfo(const IDataType & type, std::string_view subcolumn_name)
+{
+    std::optional<ORCSubcolumnInfo> result;
+    auto data = ISerialization::SubstreamData(type.getDefaultSerialization()).withType(type.getPtr());
+    IDataType::forEachSubcolumn(
+        [&](const ISerialization::SubstreamPath & path, const String & name, const ISerialization::SubstreamData & subcolumn_data)
+        {
+            if (!result && name == subcolumn_name)
+                result = ORCSubcolumnInfo{subcolumn_data, path};
+        },
+        data);
+    return result;
+}
+
 /// True when `path` is a named tuple element at every level, so it is a file leaf with its own
 /// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
 /// which is what rejects Map/Variant/JSON/Dynamic and `.null`, `.size0`, `.keys`, `.values`.
@@ -237,7 +259,7 @@ static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
         const auto * column = header.findByName(String(column_name), ignore_case);
         if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
             continue;
-        if (auto subcolumn = column->type->tryGetSubcolumnInfo(subcolumn_name))
+        if (auto subcolumn = tryGetORCSubcolumnInfo(*column->type, subcolumn_name))
         {
             const auto & path = subcolumn->substreams_path;
             chassert(!path.empty() && path.back().data.type);
@@ -973,21 +995,6 @@ static void buildORCSearchArgumentImpl(
 
             break;
         }
-        case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
-        {
-            /// Each atom approximates the whole predicate leaf, so ORC may skip the data that any of the
-            /// atoms rules out, which is what their conjunction does.
-            auto atoms = std::move(rpn_stack.back().group_atoms);
-            rpn_stack.pop_back();
-            builder.startAnd();
-            for (auto & atom : atoms)
-            {
-                rpn_stack.push_back(std::move(atom));
-                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            }
-            builder.end();
-            break;
-        }
         /// There is no optimization with space-filling curves for ORC.
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.
@@ -1200,8 +1207,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             if (array_type)
             {
                 updateIncludeTypeIds(array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
+                return;
             }
-            return;
+            break;
         }
         case ORC::MAP: {
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
@@ -1209,8 +1217,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             {
                 updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids);
                 updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids);
+                return;
             }
-            return;
+            break;
         }
         case ORC::STRUCT: {
             /// To make sure tuple field pruning work fine, we should include only the fields of ORC struct type which are also contained in CH tuple types, instead of all fields of ORC struct type.
@@ -1234,8 +1243,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
                         updateIncludeTypeIds(tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
                 }
+                return;
             }
-            return;
+            break;
         }
         case ORC::UNION: {
             /// ORC union maps to the ClickHouse Variant type. A branch that gets a forced type hint
@@ -1262,6 +1272,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
         default:
             return;
     }
+
+    /// A requested type of another kind reads the whole node, and the cast to the requested type converts it or throws.
+    include_typeids.insert(orc_type->getColumnId());
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
@@ -1937,9 +1950,6 @@ static ColumnWithTypeAndName readColumnWithDateData(
     bool check_date32_range = false;
     bool check_date_range = false;
     bool check_datetime_range = false;
-    bool check_datetime64_range = false;
-    Int32 datetime64_min_day = 0;
-    Int32 datetime64_max_day = 0;
 
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
     if (!type_hint || isDate32(*type_hint))
@@ -1965,19 +1975,6 @@ static ColumnWithTypeAndName readColumnWithDateData(
         internal_type = std::make_shared<DataTypeDate32>();
         check_datetime_range = true;
     }
-    else if (isDateTime64(*type_hint))
-    {
-        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
-        /// of that day instead of reading it as raw DateTime64 ticks. The cast is context-less and
-        /// therefore clamps whole seconds that do not fit the target scale, so validate the day
-        /// number here against what the scale can represent - at scale 9 that is only up to
-        /// `2262-04-11`, far below the Date32 upper bound.
-        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
-        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
-        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
-        internal_type = std::make_shared<DataTypeDate32>();
-        check_datetime64_range = true;
-    }
     else
     {
         internal_type = std::make_shared<DataTypeInt32>();
@@ -1996,17 +1993,17 @@ static ColumnWithTypeAndName readColumnWithDateData(
             /// Range-check the original Int64 day count before narrowing to Int32,
             /// otherwise a malformed value could wrap into an apparently valid date.
             Int64 days_num = orc_int_data[i];
-            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM))
+            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < (-DAYNUM_OFFSET_EPOCH)))
             {
                 if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                    days_num = (days_num < (-DAYNUM_OFFSET_EPOCH)) ? (-DAYNUM_OFFSET_EPOCH) : DATE_LUT_MAX_EXTEND_DAY_NUM;
                 else
                     throw Exception(
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
                         days_num,
                         column_name,
-                        DATE_LUT_MIN_EXTEND_DAY_NUM,
+                        (-DAYNUM_OFFSET_EPOCH),
                         DATE_LUT_MAX_EXTEND_DAY_NUM);
             }
 
@@ -2021,21 +2018,6 @@ static ColumnWithTypeAndName readColumnWithDateData(
                         days_num,
                         column_name,
                         DATE_LUT_MAX_DAY_NUM);
-            }
-
-            if (check_datetime64_range && (days_num > datetime64_max_day || days_num < datetime64_min_day))
-            {
-                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    days_num = (days_num < datetime64_min_day) ? datetime64_min_day : datetime64_max_day;
-                else
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Input value {} of a column \"{}\" exceeds the day range representable by type {}, which is [{}, {}]",
-                        days_num,
-                        column_name,
-                        type_hint->getName(),
-                        datetime64_min_day,
-                        datetime64_max_day);
             }
 
             if (check_datetime_range && (days_num > MAX_DATETIME_DAY_NUM || days_num < 0))
@@ -2441,6 +2423,77 @@ static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const Da
     return branch_hints;
 }
 
+/// Strips Nullable from a Nullable(Tuple) and propagates the struct null map into its elements.
+static ColumnWithTypeAndName unwrapORCNullableTuple(const ColumnWithTypeAndName & column)
+{
+    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(column.type.get());
+    if (!type_nullable)
+        return column;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type_nullable->getNestedType().get());
+    if (!tuple_type)
+        return column;
+
+    const auto & col_nullable = assert_cast<const ColumnNullable &>(*column.column);
+
+    const auto & null_map_data = col_nullable.getNullMapData();
+    bool has_nulls = !memoryIsZero(null_map_data.data(), 0, null_map_data.size());
+
+    if (!has_nulls)
+    {
+        /// No actual nulls — just strip the Nullable wrapper.
+        return {col_nullable.getNestedColumnPtr(), type_nullable->getNestedType(), column.name};
+    }
+
+    /// Propagate the struct null map to each Tuple element.
+    const auto & inner_tuple = assert_cast<const ColumnTuple &>(col_nullable.getNestedColumn());
+    const auto & null_map_ptr = col_nullable.getNullMapColumnPtr();
+    Columns new_elements;
+    DataTypes new_types;
+    for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+    {
+        auto elem_col = inner_tuple.getColumnPtr(i);
+        auto elem_type = tuple_type->getElement(i);
+        if (elem_type->isNullable())
+        {
+            /// Element already Nullable — merge null maps (struct null OR element null).
+            const auto & existing = assert_cast<const ColumnNullable &>(*elem_col);
+            auto merged = ColumnUInt8::create(null_map_ptr->size());
+            const auto & s = assert_cast<const ColumnUInt8 &>(*null_map_ptr).getData();
+            const auto & e = existing.getNullMapData();
+            auto & m = merged->getData();
+            for (size_t j = 0; j < s.size(); ++j)
+                m[j] = s[j] | e[j];
+            new_elements.push_back(ColumnNullable::create(existing.getNestedColumnPtr(), std::move(merged)));
+            new_types.push_back(elem_type);
+        }
+        else if (elem_type->canBeInsideNullable())
+        {
+            new_elements.push_back(ColumnNullable::create(elem_col, null_map_ptr));
+            new_types.push_back(std::make_shared<DataTypeNullable>(elem_type));
+        }
+        else
+        {
+            /// Array, Map, etc. — replace values at null positions with type defaults.
+            const auto & nm = col_nullable.getNullMapData();
+            auto mutable_col = elem_col->cloneEmpty();
+            for (size_t j = 0; j < elem_col->size(); ++j)
+            {
+                if (nm[j])
+                    mutable_col->insertDefault();
+                else
+                    mutable_col->insertFrom(*elem_col, j);
+            }
+            new_elements.push_back(std::move(mutable_col));
+            new_types.push_back(elem_type);
+        }
+    }
+
+    auto result_type = tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(std::move(new_types), tuple_type->getElementNames())
+                                                      : std::make_shared<DataTypeTuple>(std::move(new_types));
+    return {ColumnTuple::create(std::move(new_elements)), result_type, column.name};
+}
+
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const ORC::ColumnVectorBatch * orc_column,
     const ORC::Type * orc_type,
@@ -2792,6 +2845,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_value_type = orc_type->getSubtype(1);
 
             auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
+            /// A map key cannot be Nullable.
+            if (!key_type_hint && !DataTypeMap::isValidKeyType(key_column.type))
+                key_type_hint = removeNullableOrLowCardinalityNullable(key_column.type);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen
@@ -2836,7 +2892,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 : nullptr;
             if (tuple_type)
             {
-                auto unwrapped = Nested::unwrapNullableTuple({array_data_column, nested_column.type, column_name});
+                auto unwrapped = unwrapORCNullableTuple({array_data_column, nested_column.type, column_name});
                 array_data_column = unwrapped.column;
                 const auto & result_tuple = assert_cast<const DataTypeTuple &>(*unwrapped.type);
                 array_type = createNested(result_tuple.getElements(), result_tuple.getElementNames());
@@ -3023,117 +3079,13 @@ void registerInputFormatORC(FormatFactory & factory)
         {
             const bool has_file_size = isBufferWithFileSize(buf);
             auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
-            const bool use_prefetch = is_remote_fs && read_settings.remote_fs_settings.prefetch && has_file_size && seekable_in
+            const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
                 && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
-            const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
+            const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
             return std::make_shared<NativeORCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
         });
     factory.markFormatSupportsSubsetOfColumns("ORC");
-
-    factory.setDocumentation("ORC", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✔     | ✔      |       |
-
-## Description {#description}
-
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widely used in the [Hadoop](https://hadoop.apache.org/) ecosystem.
-
-## Data types matching {#data-types-matching-orc}
-
-The table below compares supported ORC data types and their corresponding ClickHouse [data types](/reference/data-types) in `INSERT` and `SELECT` queries.
-
-| ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
-|---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [Bool](/reference/data-types/boolean)                                                              | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/reference/data-types/int-uint)/[Enum8](/reference/data-types/enum)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/reference/data-types/int-uint)                                                     | `Int`                    |
-| `Bigint`                              | [Int64/UInt64](/reference/data-types/int-uint)                                                     | `Bigint`                 |
-| `Float`                               | [Float32](/reference/data-types/float)                                                             | `Float`                  |
-| `Double`                              | [Float64](/reference/data-types/float)                                                             | `Double`                 |
-| `Decimal`                             | [Decimal](/reference/data-types/decimal)                                                           | `Decimal`                |
-| `Date`                                | [Date32](/reference/data-types/date32)                                                             | `Date`                   |
-| `Timestamp`                           | [DateTime64](/reference/data-types/datetime64)                                                     | `Timestamp`              |
-| `String`, `Varchar`, `Binary`         | [String](/reference/data-types/string)                                                             | `String`                 |
-| `Char`                                | [FixedString](/reference/data-types/fixedstring)                                                   | `String`                 |
-| `List`                                | [Array](/reference/data-types/array)                                                               | `List`                   |
-| `Struct`                              | [Tuple](/reference/data-types/tuple)                                                               | `Struct`                 |
-| `Map`                                 | [Map](/reference/data-types/map)                                                                   | `Map`                    |
-| `Int`                                 | [IPv4](/reference/data-types/int-uint)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/reference/data-types/ipv6)                                                                 | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                                    | `Binary`                 |
-| `Binary`                              | [Decimal256](/reference/data-types/decimal)                                                        | `Binary`                 |
-| `Union`                               | [Variant](/reference/data-types/variant)                                                           | `Union`                  |
-
-- Other types are not supported.
-- An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
-- Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
-
-## Example usage {#example-usage}
-
-### Inserting data {#inserting-data}
-
-Using an ORC file with the following data, named as `football.orc`:
-
-```text
-    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
- 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
- 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
- 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
- 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
- 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
- 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
- 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
- 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
- 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
-10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
-11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
-12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
-13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
-14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
-15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
-16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
-17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
-    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
-```
-
-Insert the data:
-
-```sql
-INSERT INTO football FROM INFILE 'football.orc' FORMAT ORC;
-```
-
-### Reading data {#reading-data}
-
-Read data using the `ORC` format:
-
-```sql
-SELECT *
-FROM football
-INTO OUTFILE 'football.orc'
-FORMAT ORC
-```
-
-<Tip>
-ORC is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output ORC files.
-</Tip>
-
-## Format settings {#format-settings}
-
-| Setting                                                                                                                                                                                                      | Description                                                                            | Default |
-|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|---------|
-| [`output_format_orc_string_as_string`](/reference/settings/formats/output-format#output_format_orc_string_as_string)                                                                                 | Use ORC String type instead of Binary for String columns.                              | `true`  |
-| [`output_format_orc_compression_method`](/reference/settings/formats/output-format#output_format_orc_compression_method)                                                                             | Compression method used in output ORC format. Default value                            | `zstd`  |
-| [`input_format_orc_case_insensitive_column_matching`](/reference/settings/formats/input-format#input_format_orc_case_insensitive_column_matching)                                                   | Ignore case when matching ORC columns with ClickHouse columns.                         | `false` |
-| [`input_format_orc_allow_missing_columns`](/reference/settings/formats/input-format#input_format_orc_allow_missing_columns)                                                                         | Allow missing columns while reading ORC data.                                          | `true`  |
-| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference)     | Allow skipping columns with unsupported types while schema inference for ORC format.   | `false` |
-
-To exchange data with Hadoop, you can use [HDFS table engine](/reference/engines/table-engines/integrations/hdfs).
-)DOCS_MD"});
 }
 
 void registerORCSchemaReader(FormatFactory & factory);

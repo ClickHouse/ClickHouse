@@ -50,8 +50,7 @@ for sym in "$@"; do
 done
 
 # Localize all symbols except the public ones, then strip unneeded locals
-# Drop .llvm_addrsig: after ld -r and objcopy its sh_link is 0, so lld --icf=safe ignores it with a warning
-"$OBJCOPY" $KEEP_FLAGS --strip-unneeded --remove-section=.llvm_addrsig "$WORK_DIR/combined.o" "$WORK_DIR/stripped.o"
+"$OBJCOPY" $KEEP_FLAGS --strip-unneeded "$WORK_DIR/combined.o" "$WORK_DIR/stripped.o"
 
 # Repackage as .a (replace original)
 rm -f "$LIB_PATH"

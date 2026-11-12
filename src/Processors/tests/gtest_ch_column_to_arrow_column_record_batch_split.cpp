@@ -22,8 +22,8 @@
 /// to rebase those offsets against the row before it. Reaching the real limit needs more than 2 GiB of
 /// data, so these tests lower it.
 ///
-/// `CHColumnToArrowColumn` is the Apache Arrow library writer, used by `ArrowFlight`,
-/// `StorageArrowFlight` and Delta Lake writes rather than by the `Arrow` output format.
+/// `CHColumnToArrowColumn` is the Apache Arrow library writer, used by the `Arrow` output format,
+/// `ArrowFlight`, `StorageArrowFlight` and Delta Lake writes.
 
 namespace DB
 {

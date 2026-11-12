@@ -1,7 +1,4 @@
--- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- add_minmax_index_for_numeric_columns=0: Different plan
-SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (
@@ -11,7 +8,14 @@ CREATE TABLE test_table
 
 INSERT INTO test_table SELECT number, number FROM numbers(10);
 
-SET optimize_move_to_prewhere = 1;
+set enable_analyzer = 0;
+
+EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT 5);
+EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT '5');
+EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT toUInt8(number) FROM numbers(5));
+EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT toString(number) FROM numbers(5));
+
+set enable_analyzer = 1;
 
 EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT 5);
 EXPLAIN indexes = 1, description=0 SELECT id FROM test_table WHERE id <= 10 AND value IN (SELECT '5');

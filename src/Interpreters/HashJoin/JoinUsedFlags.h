@@ -1,19 +1,12 @@
 #pragma once
-#include <algorithm>
-#include <atomic>
-#include <utility>
 #include <vector>
+#include <atomic>
+#include <unordered_map>
 #include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 namespace JoinStuff
 {
 
@@ -21,112 +14,61 @@ namespace JoinStuff
 class JoinUsedFlags
 {
 public:
+    using RawColumnsPtr = const Columns *;
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
-    using PendingPerRowFlags = std::vector<std::pair<UInt32, UsedFlagsForColumns>>;
-
-    /// Per-row flags filled during the build phase: (block_no, flags) for each stored block.
-    /// One list per build stream, so that appending needs no synchronization.
-    std::vector<PendingPerRowFlags> pending_per_build_stream;
-
-    /// Call before the build starts: resizing later would race with the appends.
-    void setNumBuildStreams(size_t num_build_streams) { pending_per_build_stream.resize(num_build_streams); }
-
-    /// Dense flags indexed by block_no, built from `pending_per_build_stream` when the build finishes.
-    /// The probe and non-joined phases read and write only this.
-    std::vector<UsedFlagsForColumns> per_row_flags;
+    /// For multiple disjuncts each entry in hashmap stores flags for particular block
+    std::unordered_map<RawColumnsPtr, UsedFlagsForColumns> per_row_flags;
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
     /// Index is the offset in FindResult
-    /// While the probe runs, accessed only through `offsetFlag` (`std::atomic_ref`).
-    std::vector<UInt8> per_offset_flags;
+    UsedFlagsForColumns per_offset_flags;
 
-    std::atomic_ref<UInt8> offsetFlag(size_t offset) const
-    {
-        return std::atomic_ref<UInt8>(const_cast<UInt8 &>(per_offset_flags[offset]));
-    }
-
-    bool need_flags{};
+    bool need_flags;
 
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
     void reinit(size_t size)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            chassert(per_offset_flags.size() <= size);
+            assert(per_offset_flags.size() <= size);
             need_flags = true;
             // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
             // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.
             // So we reinit only when the hash table is rehashed to a larger size.
             if (per_offset_flags.size() < size) [[unlikely]]
-                per_offset_flags = std::vector<UInt8>(size);
+                per_offset_flags = std::vector<std::atomic_bool>(size);
         }
     }
 
-    /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
-    /// Must be called only before using this structure.
-    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
-    void reinitAllowShrinking(size_t size)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    void reinit(const Columns * columns, const ScatteredBlock::Selector & selector)
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
+        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
+            assert(per_row_flags[columns].size() <= columns->at(0)->size());
             need_flags = true;
-            per_offset_flags = std::vector<UInt8>(size);
+            per_row_flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
+
+            /// Mark all rows outside of selector as used.
+            /// We should not emit them in RIGHT/FULL JOIN result,
+            /// since they belongs to another shard, which will handle flags for these rows
+            for (auto & flag : per_row_flags[columns])
+                flag.store(true);
+            for (size_t index : selector)
+                per_row_flags[columns][index].store(false);
         }
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, JoinMapsKind maps_kind>
-    void reinit(size_t stream, UInt32 block_no, size_t rows)
+    bool getUsedSafe(size_t i) const { return per_offset_flags[i].load(); }
+
+    bool getUsedSafe(const Columns * columns, size_t row_idx) const
     {
-        if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
-        {
-            chassert(stream < pending_per_build_stream.size());
-            pending_per_build_stream[stream].emplace_back(block_no, UsedFlagsForColumns(rows));
-        }
-    }
-
-    /// Initialize the dense per-row flags for blocks of the given row counts, indexed by their
-    /// position. For users outside of the hash-join map dispatch (the templated `reinit`
-    /// overloads above), such as the INNER ANY claim-once flags of `MergeJoin`.
-    void reinitPerRowFlags(const std::vector<size_t> & rows_per_block)
-    {
-        need_flags = true;
-        per_row_flags = std::vector<UsedFlagsForColumns>(rows_per_block.size());
-        for (size_t block_no = 0; block_no < rows_per_block.size(); ++block_no)
-            per_row_flags[block_no] = UsedFlagsForColumns(rows_per_block[block_no]);
-    }
-
-    /// Call once no build stream can still be appending.
-    void finalizePerRowFlags(size_t num_blocks)
-    {
-        if (std::ranges::all_of(pending_per_build_stream, [](const auto & pending) { return pending.empty(); }))
-            return;
-
-        need_flags = true;
-        if (per_row_flags.size() < num_blocks)
-            per_row_flags.resize(num_blocks);
-
-        for (auto & pending : pending_per_build_stream)
-        {
-            for (auto & [block_no, flags] : pending)
-            {
-                if (block_no >= per_row_flags.size() || !per_row_flags[block_no].empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinUsedFlags: unexpected per-row flags for block {}", block_no);
-                per_row_flags[block_no] = std::move(flags);
-            }
-            pending.clear();
-        }
-    }
-
-    bool getUsedSafe(size_t i) const { return offsetFlag(i).load() != 0; }
-
-    bool getUsedSafe(UInt32 block_no, size_t row_idx) const
-    {
-        if (block_no < per_row_flags.size() && !per_row_flags[block_no].empty())
-            return per_row_flags[block_no][row_idx].load();
+        if (auto it = per_row_flags.find(columns); it != per_row_flags.end())
+            return it->second[row_idx].load();
         return !need_flags;
     }
 
@@ -142,30 +84,30 @@ public:
             auto & mapped = f.getMapped();
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
-                for (const UInt64 ref_word : refsOf(mapped.word))
+                for (auto it = mapped.begin(); it.ok(); ++it)
                 {
-                    auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
+                    auto & flag = per_row_flags[&it->columns_info->columns][it->row_num];
                     if (!flag.load(std::memory_order_relaxed))
                         flag.store(true, std::memory_order_relaxed);
                 }
             }
             else
             {
-                auto & flag = headRowFlag(mapped);
+                auto & flag = per_row_flags[&mapped.columns_info->columns][mapped.row_num];
                 if (!flag.load(std::memory_order_relaxed))
                     flag.store(true, std::memory_order_relaxed);
             }
         }
         else
         {
-            auto flag = offsetFlag(f.getOffset());
+            auto & flag = per_offset_flags[f.getOffset()];
             if (!flag.load(std::memory_order_relaxed))
-                flag.store(1, std::memory_order_relaxed);
+                flag.store(true, std::memory_order_relaxed);
         }
     }
 
     template <bool use_flags, bool flag_per_row>
-    void setUsed(UInt32 block_no, size_t row_num, size_t offset)
+    void setUsed(const Columns * columns, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return;
@@ -173,28 +115,16 @@ public:
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
-            auto & flag = per_row_flags[block_no][row_num];
+            auto & flag = per_row_flags[columns][row_num];
             if (!flag.load(std::memory_order_relaxed))
                 flag.store(true, std::memory_order_relaxed);
         }
         else
         {
-            auto flag = offsetFlag(offset);
+            auto & flag = per_offset_flags[offset];
             if (!flag.load(std::memory_order_relaxed))
-                flag.store(1, std::memory_order_relaxed);
+                flag.store(true, std::memory_order_relaxed);
         }
-    }
-
-    /// The flag of the key's FIRST row: for RowRefList this preserves the semantics of the
-    /// old RowRefList, whose head row fields were used through the RowRef base class.
-    template <typename Mapped>
-    std::atomic_bool & headRowFlag(const Mapped & mapped)
-    {
-        /// firstRefWord dispatches on Mapped exactly as needed: RowRefList -> firstWord (the head
-        /// row of the key), RowRef -> encode. refWordBlockNo/refWordRowNo of that word equal
-        /// blockNo()/rowNo() for a RowRef (same 8-byte layout), so this is one uniform decode.
-        const UInt64 ref_word = firstRefWord(mapped);
-        return per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
@@ -205,11 +135,12 @@ public:
 
         if constexpr (flag_per_row)
         {
-            return headRowFlag(f.getMapped()).load();
+            auto & mapped = f.getMapped();
+            return per_row_flags[&mapped.columns_info->columns][mapped.row_num].load();
         }
         else
         {
-            return offsetFlag(f.getOffset()).load() != 0;
+            return per_offset_flags[f.getOffset()].load();
         }
     }
 
@@ -221,57 +152,62 @@ public:
 
         if constexpr (flag_per_row)
         {
-            auto & flag = headRowFlag(f.getMapped());
+            auto & mapped = f.getMapped();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
+            if (per_row_flags[&mapped.columns_info->columns][mapped.row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flag.compare_exchange_strong(expected, true);
+            return per_row_flags[&mapped.columns_info->columns][mapped.row_num].compare_exchange_strong(expected, true);
         }
         else
         {
-            auto flag = offsetFlag(f.getOffset());
+            auto off = f.getOffset();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
+            if (per_offset_flags[off].load(std::memory_order_relaxed))
                 return false;
 
-            UInt8 expected = 0;
-            return flag.compare_exchange_strong(expected, 1);
+            bool expected = false;
+            return per_offset_flags[off].compare_exchange_strong(expected, true);
         }
 
     }
 
     template <bool use_flags, bool flag_per_row>
-    bool setUsedOnce(UInt32 block_no, size_t row_num, size_t offset)
+    bool setUsedOnce(const Columns * columns, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return true;
 
         if constexpr (flag_per_row)
         {
-            auto & flag = per_row_flags[block_no][row_num];
-
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
+            if (per_row_flags[columns][row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flag.compare_exchange_strong(expected, true);
+            return per_row_flags[columns][row_num].compare_exchange_strong(expected, true);
         }
         else
         {
-            auto flag = offsetFlag(offset);
-
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
+            if (per_offset_flags[offset].load(std::memory_order_relaxed))
                 return false;
 
-            UInt8 expected = 0;
-            return flag.compare_exchange_strong(expected, 1);
+            bool expected = false;
+            return per_offset_flags[offset].compare_exchange_strong(expected, true);
         }
+    }
+
+    /// Are all offset flags set? (index 0 is skipped as it is a service index)
+    bool allOffsetFlagsSet() const noexcept
+    {
+        for (const auto & per_offset_flag : per_offset_flags)
+            if (!per_offset_flag.load(std::memory_order_relaxed))
+                return false;
+        return true;
     }
 };
 

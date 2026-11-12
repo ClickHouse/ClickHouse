@@ -42,14 +42,12 @@ public:
     ///         - For regular tables: "table `<database>`.`<table_name>`" (or "Table ..." if first_upper)
     static String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_upper);
 
-    /// Throws an exception if the query was cancelled.
-    void checkIsQueryCancelled() const;
-
 protected:
     BackupMetadataFinder(
         const RestoreSettings & restore_settings_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
+        const ContextPtr & query_context_,
         ThreadPool & thread_pool_);
 
     /// Finds root paths in the backup considering shard/replica configuration.
@@ -82,6 +80,9 @@ protected:
     /// Throws an exception if any of the tasks throws an exception.
     void waitFutures(bool throw_if_error = true);
 
+    /// Throws an exception if the query was cancelled.
+    void checkIsQueryCancelled() const;
+
     /// Apply custom storage policy to a CREATE query (can be overridden by derived classes).
     virtual void applyCustomStoragePolicy(ASTPtr query_ptr);
 
@@ -113,6 +114,7 @@ protected:
     const RestoreSettings restore_settings;
     BackupPtr backup;
     ContextMutablePtr context;
+    ContextPtr query_context;
     QueryStatusPtr process_list_element;
     LoggerPtr log;
 

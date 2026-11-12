@@ -1,7 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
 
-#include <memory>
-
 namespace DB
 {
 
@@ -30,19 +28,19 @@ bool isInInterval(const std::vector<T> & array, const T * const point)
 
 bool sanityCheck(const PartsRanges & uncovered_ranges, RangesIterator range_it, PartsIterator range_begin, PartsIterator range_end)
 {
-    if (!isInInterval(uncovered_ranges, std::to_address(range_it)))
+    if (!isInInterval(uncovered_ranges, range_it.base()))
         return false;
 
-    if (!isInInterval(*range_it, std::to_address(range_begin)))
+    if (!isInInterval(*range_it, range_begin.base()))
         return false;
 
-    if (!isInSegment(*range_it, std::to_address(range_end)))
+    if (!isInSegment(*range_it, range_end.base()))
         return false;
 
     if (range_begin == range_end)
         return false;
 
-    if (std::to_address(range_begin) >= std::to_address(range_end))
+    if (range_begin.base() >= range_end.base())
         return false;
 
     return true;
@@ -104,7 +102,7 @@ bool DisjointPartsRangesSet::isCovered(RangesIterator range_it, PartsIterator pa
 {
     chassert(sanityCheck(uncovered_ranges, range_it, part_it, range_it->end()));
 
-    auto sorted_ranges_it = disjoint.find(std::to_address(range_it));
+    auto sorted_ranges_it = disjoint.find(range_it.base());
     if (sorted_ranges_it == disjoint.end())
         return false;
 
@@ -116,7 +114,7 @@ bool DisjointPartsRangesSet::addRangeIfPossible(RangesIterator range_it, PartsIt
 {
     chassert(sanityCheck(uncovered_ranges, range_it, range_begin, range_end));
 
-    auto & sorted_ranges = disjoint[std::to_address(range_it)];
+    auto & sorted_ranges = disjoint[range_it.base()];
     PartsRangeBoundaries range_boundaries{std::move(range_begin), std::move(range_end)};
 
     if (!isDisjoint(range_boundaries, sorted_ranges))

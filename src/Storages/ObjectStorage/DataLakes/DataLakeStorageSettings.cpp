@@ -10,8 +10,22 @@
 namespace DB
 {
 
-DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, DataLakeStorageSettings, DataLakeStorageSetting)
+DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS)
+
+struct DataLakeStorageSettingsImpl : public BaseSettings<DataLakeStorageSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    DataLakeStorageSettings##TYPE NAME = &DataLakeStorageSettingsImpl ::NAME;
+
+namespace DataLakeStorageSetting
+{
+LIST_OF_DATA_LAKE_STORAGE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 DataLakeStorageSettings::DataLakeStorageSettings() : impl(std::make_unique<DataLakeStorageSettingsImpl>())
 {
@@ -22,7 +36,10 @@ DataLakeStorageSettings::DataLakeStorageSettings(const DataLakeStorageSettings &
 {
 }
 
-DataLakeStorageSettings::DataLakeStorageSettings(DataLakeStorageSettings && settings) noexcept = default;
+DataLakeStorageSettings::DataLakeStorageSettings(DataLakeStorageSettings && settings) noexcept
+    : impl(std::make_unique<DataLakeStorageSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 
 DataLakeStorageSettings::~DataLakeStorageSettings() = default;
@@ -40,24 +57,14 @@ Field DataLakeStorageSettings::get(const std::string & name)
     return impl->get(name);
 }
 
-bool DataLakeStorageSettings::isChanged(std::string_view name) const
-{
-    return impl->isChanged(name);
-}
-
 bool DataLakeStorageSettings::hasBuiltin(std::string_view name)
 {
     return DataLakeStorageSettingsImpl::hasBuiltin(name);
 }
 
-std::string_view DataLakeStorageSettings::resolveName(std::string_view name)
-{
-    return DataLakeStorageSettingsTraits::resolveName(name);
-}
-
 void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)
 {
-    for (const auto & [name, value, _] : changes)
+    for (const auto & [name, value] : changes)
     {
         if (impl->has(name))
             impl->set(name, value);

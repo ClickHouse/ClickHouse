@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
+
 -- Tests that match() utilizes the text index
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
@@ -21,6 +21,16 @@ SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id;
 -- Required string: ' Hello '
 -- Alternatives: ' Hello ClickHouse ', ' Hello World '
 
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN indexes=1
+    SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 0;
 
 SELECT trim(explain)
 FROM
@@ -29,7 +39,9 @@ FROM
     SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 1;
 
 SELECT '---';
 
@@ -39,6 +51,16 @@ SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id;
 -- Required string: -
 -- Alternatives: ' ClickHouse ', ' World '
 
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 0;
 
 SELECT trim(explain)
 FROM
@@ -47,7 +69,9 @@ FROM
     SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 1;
 
 SELECT '---';
 
@@ -57,6 +81,16 @@ SELECT * FROM tab WHERE match(str, ' OLAP .*') ORDER BY id;
 -- Required string: ' OLAP '
 -- Alternatives: -
 
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 0;
 
 SELECT trim(explain)
 FROM
@@ -65,6 +99,8 @@ FROM
     SELECT * FROM tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 1;
 
 DROP TABLE tab;

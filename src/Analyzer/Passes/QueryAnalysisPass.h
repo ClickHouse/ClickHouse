@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
 
 
@@ -71,16 +70,14 @@ class QueryAnalysisPass final : public IQueryTreePass
 public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
-      * `replaced_storage` is the view source that the interpreter swaps into the query tree after the passes.
       */
-    explicit QueryAnalysisPass(
-        bool only_analyze_ = false, bool positional_arguments_already_resolved_ = false, StoragePtr replaced_storage_ = nullptr);
+    explicit QueryAnalysisPass(bool only_analyze_ = false);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
       * Table expression node must have query, union, table, table function type.
       */
-    explicit QueryAnalysisPass(TableExpressionNodePtr table_expression_, bool only_analyze_ = false);
+    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_ = false);
 
     String getName() override
     {
@@ -95,10 +92,8 @@ public:
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 private:
-    TableExpressionNodePtr table_expression;
+    QueryTreeNodePtr table_expression;
     const bool only_analyze;
-    const bool positional_arguments_already_resolved = false;
-    const StoragePtr replaced_storage;
 };
 
 }

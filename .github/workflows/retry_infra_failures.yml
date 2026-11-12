@@ -23,115 +23,34 @@ jobs:
           MAX_RERUNS=10
           rerun_count=0
           cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          # A run awaiting approval expires after 30 days, so no attempt starts later than
-          # that after its run was created; the spare day covers clock skew.
-          LOOKBACK_DAYS=31
-          # The busiest single day observed holds ~480 failed runs, half the ceiling below.
-          PARTITION_HOURS=24
-          # The API caps a filtered search at 1000 results, so a partition returning that many
-          # was truncated. Raising this cannot lift the cap, only hide the truncation.
-          PAGE_LIMIT=1000
 
           echo "Looking for failed PR workflow runs since $cutoff..."
           echo ""
 
-          # Get recent failed runs for the PR workflow that have not been retried yet.
-          # A fork PR's first attempt to run jobs is 2, so the loop below filters further.
-          # startedAt, not createdAt: a gated run's createdAt stays pinned to attempt 1.
+          # Get recent failed runs for the PR workflow that have not been retried yet
+          run_ids=$(gh run list \
+            --repo "$GH_REPO" \
+            --workflow pull_request.yml \
+            --status failure \
+            --limit 50 \
+            --json databaseId,attempt,createdAt \
+            --jq ".[] | select(.attempt == 1 and .createdAt >= \"$cutoff\") | .databaseId")
 
-          # The listing is ordered by createdAt, so a gated run sits arbitrarily deeper in it
-          # than its startedAt window implies: no row cap and no fixed bound exhausts it.
-          run_entries=""
-          hour=0
-          while [ "$hour" -lt $((LOOKBACK_DAYS * 24)) ]; do
-            # Timestamps, not bare dates: both endpoints of a bare-date range are inclusive
-            # whole days, so `D..D+1` spans two of them and no partition width is honoured.
-            from=$(date -u -d "$((hour + PARTITION_HOURS)) hours ago" +%Y-%m-%dT%H:%M:%SZ)
-            to=$(date -u -d "$hour hours ago" +%Y-%m-%dT%H:%M:%SZ)
-
-            # The walk makes ~140 API calls, so a single transient 502 would otherwise abort
-            # the whole tick under `set -e` and skip every remaining partition.
-            page=""
-            for attempt_no in 1 2 3; do
-              if page=$(gh run list \
-                  --repo "$GH_REPO" \
-                  --workflow pull_request.yml \
-                  --status failure \
-                  --created "$from..$to" \
-                  --limit "$PAGE_LIMIT" \
-                  --json databaseId,attempt,startedAt); then
-                break
-              fi
-              page=""
-              sleep $((attempt_no * 5))
-            done
-            # Failing closed: a partition that never answered leaves candidates unexamined,
-            # which is the blind spot this walk exists to close.
-            if [ -z "$page" ]; then
-              echo "::error::createdAt partition $from..$to could not be listed after 3 tries."
-              exit 1
-            fi
-
-            # A saturated partition is truncated silently, reopening the blind spot.
-            page_rows=$(echo "$page" | jq 'length')
-            if [ "$page_rows" -ge "$PAGE_LIMIT" ]; then
-              echo "::error::createdAt partition $from..$to returned $page_rows rows," \
-                   "at the $PAGE_LIMIT per-query ceiling: candidates may be truncated." \
-                   "Reduce PARTITION_HOURS."
-              exit 1
-            fi
-
-            matches=$(echo "$page" | jq -r \
-              ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.startedAt) \(.databaseId):\(.attempt)\"")
-            if [ -n "$matches" ]; then
-              run_entries=$(printf '%s\n%s' "$run_entries" "$matches")
-            fi
-
-            hour=$((hour + PARTITION_HOURS))
-          done
-          # Both range endpoints are inclusive, so a run on a boundary is listed twice and
-          # would consume two of MAX_RERUNS. Sorting on the leading startedAt (ISO-8601 sorts
-          # chronologically) spends MAX_RERUNS nearest the 6 hour edge, where this tick is a
-          # candidate's last; the key is dropped once the order is fixed.
-          run_entries=$(echo "$run_entries" | grep -v '^$' | sort -u | awk '{print $2}' || true)
-
-          if [ -z "$run_entries" ]; then
+          if [ -z "$run_ids" ]; then
             echo "No recent failed runs found."
             exit 0
           fi
 
-          for run_entry in $run_entries; do
+          for run_id in $run_ids; do
             if [ "$rerun_count" -ge "$MAX_RERUNS" ]; then
               echo "Reached maximum of $MAX_RERUNS reruns, stopping."
               break
-            fi
-
-            run_id="${run_entry%%:*}"
-            run_attempt="${run_entry##*:}"
-
-            # Eligible = exactly one attempt executed. A fork PR's approval gate
-            # concludes attempt 1 as "action_required" with zero jobs, so attempt 2 is
-            # still its first real run; any other attempt-1 conclusion means a retry.
-            if [ "$run_attempt" != "1" ]; then
-              attempt1_conclusion=$(gh api \
-                "repos/$GH_REPO/actions/runs/$run_id/attempts/1" --jq '.conclusion' \
-                2>/dev/null || echo "")
-              if [ "$attempt1_conclusion" != "action_required" ]; then
-                # An empty conclusion means the probe went unanswered, not that a retry was
-                # seen, and a fault skipping every fork candidate is invisible on a green run.
-                echo "::warning::Skipping run $run_id: attempt 1 conclusion '$attempt1_conclusion' is not the approval gate (empty = unreadable)."
-                continue
-              fi
             fi
 
             run_url="https://github.com/$GH_REPO/actions/runs/$run_id"
             echo "Checking run $run_url ..."
 
             should_rerun=false
-            consistent=false
-            infra_count=0
-            infra_id=""
-            infra_name=""
 
             # Fetch all job data once (reused for multiple checks below)
             jobs_raw=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" --paginate)
@@ -143,8 +62,6 @@ jobs:
             #   not actual tests — always treated as infrastructure failure), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
-            # - the "Run" step produced no conclusion at all (GitHub finalized the job
-            #   while its main step was still unreported), or
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
             #   a setup/download issue (e.g. missing S3 credentials) rather than a real
             #   test failure
@@ -155,7 +72,6 @@ jobs:
                 [.steps[] | select(.name == "Run")] |
                 if length == 0 then true
                 elif .[0].conclusion == "skipped" then true
-                elif .[0].conclusion == null then true
                 elif .[0].conclusion == "failure" then
                   ((.[0].completed_at | fromdateiso8601) -
                    (.[0].started_at | fromdateiso8601)) < 120
@@ -166,17 +82,7 @@ jobs:
 
             # Infrastructure failure = at least one failed job, and all of them are infra
             if [ -z "$verdicts" ]; then
-              # The run failed, yet every listed job passed or never started: GitHub dropped
-              # or never ran the jobs that failed it. The listing is the latest attempt, so it
-              # must still be the failed attempt listed above, or this matches a green rerun.
-              if echo "$jobs_raw" | jq -s -e '[.[].jobs[]] | length > 0 and
-                  all(.conclusion == null or .conclusion == "success" or
-                      .conclusion == "skipped" or .conclusion == "neutral")' > /dev/null &&
-                 [ "$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
-                      --jq '"\(.run_attempt):\(.conclusion)"')" = "$run_attempt:failure" ]; then
-                should_rerun=true
-                echo "  Infrastructure failure detected (failed jobs never ran)."
-              fi
+              :
             elif echo "$verdicts" | grep -q "false"; then
               :
             else
@@ -185,118 +91,51 @@ jobs:
             fi
 
             # Fetch run metadata once for all checks below
-            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id")
-            run_sha=$(echo "$run_data" | jq -r '.head_sha')
-            run_head_branch=$(echo "$run_data" | jq -r '.head_branch // ""')
-            run_head_repo=$(echo "$run_data" | jq -r '.head_repository.full_name // ""')
-            run_head_repo_id=$(echo "$run_data" | jq -r '.head_repository.id // ""')
+            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
+              --jq '{pr: .pull_requests[0].number, sha: .head_sha}')
+            pr_number=$(echo "$run_data" | jq -r '.pr // empty')
+            run_sha=$(echo "$run_data" | jq -r '.sha')
 
-            # Resolve the PR of the run the same way as rerun_on_review_threads.yml.
-            # Several open PRs can share the head commit of a run, so `.pull_requests[0]`
-            # may name another PR; match the candidates against the run's own head branch
-            # and repository instead. `.pull_requests` is empty for fork PRs, so then look
-            # the PRs up through the head commit. An ambiguous or unresolved run gets no PR
-            # number and is skipped below, so no PR-scoped artifact or marker is read for it.
-            pr_candidates=$(echo "$run_data" | jq -c \
-              --arg ref "$run_head_branch" --arg repo_id "$run_head_repo_id" '
-              [(.pull_requests // [])[] |
-               select(.head.ref == $ref and (.head.repo.id | tostring) == $repo_id) |
-               .number] | unique
-            ')
-            if [ "$(echo "$pr_candidates" | jq 'length')" -eq 0 ]; then
-              # Failing closed: without the PR lookup the run cannot be attributed, so
-              # do not rerun it on this tick; the next one re-examines it.
-              if ! commit_pulls=$(gh api "repos/$GH_REPO/commits/$run_sha/pulls"); then
-                echo "::warning::Skipping run $run_id: the PRs of commit $run_sha could not be listed."
-                continue
-              fi
-              pr_candidates=$(echo "$commit_pulls" | jq -c \
-                --arg ref "$run_head_branch" --arg repo "$run_head_repo" '
-                [.[] |
-                 select(.state == "open" and .head.ref == $ref and .head.repo.full_name == $repo) |
-                 .number] | unique
-              ')
-            fi
-            pr_number=""
-            if [ "$(echo "$pr_candidates" | jq 'length')" -eq 1 ]; then
-              pr_number=$(echo "$pr_candidates" | jq -r '.[0]')
-            elif [ "$(echo "$pr_candidates" | jq 'length')" -gt 1 ]; then
-              echo "  Run belongs to several PRs ($pr_candidates) - not using a PR number."
-            fi
-
-            if [ -z "$pr_number" ]; then
-              echo "  Cannot resolve the pull request for this run, skipping."
-              continue
-            fi
-
-            pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
-              --jq '{sha: .head.sha, updated: .updated_at}' 2>/dev/null || true)
-            pr_sha=$(echo "$pr_data" | jq -r '.sha // empty')
-            pr_updated=$(echo "$pr_data" | jq -r '.updated // empty')
-
-            # "Mergeable Check" is a commit status and a rerun keeps the original head
-            # commit, so a run whose commit is no longer the head of the pull request
-            # cannot unblock it however it is rerun.
-            if [ -z "$pr_sha" ] || [ "$run_sha" != "$pr_sha" ]; then
-              echo "  Run commit is not the head of PR #$pr_number, skipping."
-              continue
-            fi
-
-            # If the job-level heuristic didn't trigger, classify each failed job from the
-            # Praktika results on S3. The workflow-level result is the same artifact
-            # "Finish Workflow" reads for "Mergeable Check", so the two cannot disagree.
-            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ]; then
-              result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_pr.json"
-              result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
-
-              failed_jobs=$(echo "$jobs_raw" | jq -r '
+            # If the job-level heuristic didn't trigger, check Praktika result JSONs
+            # on S3 for failures at the "Checkout Submodules" sub-step (e.g. transient
+            # DNS failures cloning git submodules).
+            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
+              # Get names of failed jobs (excluding pipeline plumbing)
+              failed_job_names=$(echo "$jobs_raw" | jq -r '
                 .jobs[] | select(.conclusion == "failure") |
                 select(.name != "Config Workflow" and .name != "Finish Workflow") |
-                "\(.id)\t\(.name)"
+                .name
               ')
 
-              real_failure=false
-              if [ -n "$result_json" ] && [ -n "$failed_jobs" ]; then
-                consistent=true
-                while IFS=$'\t' read -r job_id job_name; do
-                  [ -z "$job_name" ] && continue
-                  # The S3 key names a pull request and a commit but no run, so two runs
-                  # at one commit share this file: an entry describes this job only when
-                  # its own "run_url" points at it. Anything else is unclassifiable.
-                  verdict=$(echo "$result_json" | jq -r \
-                    --arg name "$job_name" --arg job_url "$run_url/job/$job_id" '
-                    [.results[]? | select(.name == $name)] | .[0] as $r |
-                    if $r == null then "foreign"
-                    elif ($r.ext.run_url // "") != $job_url then "foreign"
-                    elif (["FAIL", "ERROR", "UNKNOWN", "XPASS", "DROPPED"]
-                          | index($r.status)) == null then "foreign"
-                    elif (($r.ext.labels // [])
-                          | any((if type == "object" then .name else . end) == "infra"))
-                      then "infra"
-                    elif (($r.results // []) | length) > 0
-                         and all($r.results[]; .name == "Checkout Submodules") then "infra"
-                    else "real"
-                    end
-                  ')
-                  case "$verdict" in
-                    infra)
-                      infra_count=$((infra_count + 1))
-                      infra_id="$job_id"
-                      infra_name="$job_name"
-                      ;;
-                    real) real_failure=true ;;
-                    *)
-                      consistent=false
-                      echo "  Praktika results do not describe job '$job_name' of this run."
-                      break
-                      ;;
-                  esac
-                done <<< "$failed_jobs"
-              fi
+              all_checkout_failures=true
+              while IFS= read -r job_name; do
+                [ -z "$job_name" ] && continue
+                # Normalize job name to match Praktika result file naming:
+                # lowercase, replace non-alphanumeric chars with underscore, collapse runs
+                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
+                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
+                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
 
-              if [ "$consistent" = "true" ] && [ "$infra_count" -gt 0 ] && [ "$real_failure" = "false" ]; then
+                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
+                if [ -z "$result_json" ]; then
+                  all_checkout_failures=false
+                  break
+                fi
+
+                # Check: all failed sub-results must be "Checkout Submodules"
+                has_non_checkout_failure=$(echo "$result_json" | jq -r '
+                  [.results[] | select(.status == "failure" or .status == "error") |
+                   .name] | map(select(. != "Checkout Submodules")) | length > 0
+                ')
+                if [ "$has_non_checkout_failure" = "true" ]; then
+                  all_checkout_failures=false
+                  break
+                fi
+              done <<< "$failed_job_names"
+
+              if [ "$all_checkout_failures" = "true" ] && [ -n "$failed_job_names" ]; then
                 should_rerun=true
-                echo "  Infrastructure failure detected (Praktika results indicate infra issue)."
+                echo "  Infrastructure failure detected (submodule checkout failure in Praktika results)."
               fi
             fi
 
@@ -313,91 +152,25 @@ jobs:
                 ] | first // empty
               ')
 
-              if [ -n "$config_failed_at" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
-                should_rerun=true
-                echo "  Config Workflow failed but PR #$pr_number was updated after, rerunning."
-              fi
-            fi
+              if [ -n "$config_failed_at" ] && [ -n "$pr_number" ]; then
+                pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
+                  --jq '{sha: .head.sha, updated: .updated_at}')
+                pr_sha=$(echo "$pr_data" | jq -r '.sha')
+                pr_updated=$(echo "$pr_data" | jq -r '.updated')
 
-            # A red "Finish Workflow" caused by the unresolved-review-threads
-            # merge gate (the "Review Threads" commit status, see
-            # ci/jobs/scripts/workflow_hooks/review_threads.py) is an expected
-            # policy failure, not an infrastructure error. A rerun would end
-            # red again; rerun_on_review_threads.yml re-runs it once the
-            # threads are resolved.
-            if [ "$should_rerun" = "true" ] && [ -n "$run_sha" ]; then
-              # Every job of the run that did not end green, not only the
-              # `failure` ones: a lane that ended `timed_out` or `cancelled`
-              # alongside the gate is an infrastructure flake that must still
-              # be retried, so it has to break the "only Finish Workflow"
-              # equality below.
-              failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
-                .jobs[] |
-                select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") |
-                .name
-              ')
-              # A red "Review Threads" status alone does not prove that the
-              # gate was the only reason: "Finish Workflow" aggregates every
-              # PR post-hook, so the gate may have posted its status and then
-              # another post-hook failed for infrastructure reasons - such a
-              # run must still be retried. The run-scoped proof is the
-              # aggregate "Mergeable Check" status: ci/praktika/native_jobs.py
-              # writes the description "Failed: review threads only" only when
-              # the dedicated `can_be_merged.py --review-threads` post-hook was
-              # the sole failure of the whole workflow (any other failed job or
-              # post-hook yields "Failed: <jobs>" instead), and no other writer
-              # uses that description. The marker must also come from the
-              # failed attempt itself: only a status created within the failed
-              # "Finish Workflow" job's own time window belongs to it. A status
-              # created later (e.g. by rerun_on_review_threads.yml handling a
-              # label event) says nothing about why this run failed.
-              # And it must come from this PR: another open PR can share the
-              # commit, so the marker is posted with the Praktika report URL of
-              # its PR (`?PR=<n>&`).
-              finish_window=$(echo "$jobs_raw" | jq -r '
-                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
-                first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
-              ')
-              finish_started_at=$(echo "$finish_window" | cut -f1)
-              finish_completed_at=$(echo "$finish_window" | cut -f2)
-              marker_state=""
-              if [ -n "$finish_started_at" ] && [ -n "$finish_completed_at" ]; then
-                statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
-                  | jq -s 'add // []') || statuses="[]"
-                marker_state=$(echo "$statuses" | jq -r \
-                  --arg from "$finish_started_at" --arg to "$finish_completed_at" \
-                  --arg pr "$pr_number" '
-                  [.[] | select(.context == "Mergeable Check") |
-                   select(.description == "Failed: review threads only") |
-                   select($pr != "" and ((.target_url // "") | contains("?PR=" + $pr + "&"))) |
-                   select(.created_at >= $from and .created_at <= $to)] |
-                  first // {} | .state // empty
-                ')
-              fi
-              if { [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; } \
-                && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
-                should_rerun=false
-                echo "  Skipping: only Finish Workflow failed due to the unresolved-review-threads merge gate."
+                if [ "$run_sha" = "$pr_sha" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
+                  should_rerun=true
+                  echo "  Config Workflow failed but PR #$pr_number was updated after — rerunning."
+                fi
               fi
             fi
 
             if [ "$should_rerun" = "true" ]; then
               if gh run rerun "$run_id" --repo "$GH_REPO"; then
                 rerun_count=$((rerun_count + 1))
-                echo "  Triggered rerun: $run_url/attempts/$((run_attempt + 1))"
+                echo "  Triggered rerun: $run_url/attempts/2"
               else
                 echo "  Failed to trigger rerun (may already be rerunning)"
-              fi
-            elif [ "$consistent" = "true" ] && [ "$infra_count" -eq 1 ]; then
-              # Rerunning a whole run that also failed for real is pointless, so rerun the
-              # one infrastructure job. That also reruns its dependents, which its own
-              # failure had skipped, and "Finish Workflow", which reposts "Mergeable
-              # Check". One job per run: a rerun stales every other job id of this attempt.
-              if gh run rerun --job "$infra_id" --repo "$GH_REPO"; then
-                rerun_count=$((rerun_count + 1))
-                echo "  Triggered rerun of infrastructure job '$infra_name': $run_url"
-              else
-                echo "  Failed to trigger rerun of '$infra_name'"
               fi
             else
               echo "  Not an infrastructure failure, skipping."

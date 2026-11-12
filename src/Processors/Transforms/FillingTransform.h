@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/InterpolateDescription.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/FillingRow.h>
 #include <Processors/ISimpleTransform.h>
@@ -13,14 +12,11 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-
 /** Implements modifier WITH FILL of ORDER BY clause.
  *  It fills gaps in data stream by rows with missing values in columns with set WITH FILL and default values in other columns.
  *  Optionally FROM, TO and STEP values can be specified.
  */
-class FillingTransform final : public ISimpleTransform
+class FillingTransform : public ISimpleTransform
 {
 public:
     FillingTransform(
@@ -28,8 +24,7 @@ public:
         const SortDescription & sort_description_,
         const SortDescription & fill_description_,
         InterpolateDescriptionPtr interpolate_description_,
-        bool use_with_fill_by_sorting_prefix_,
-        QueryStatusPtr process_list_element_);
+        bool use_with_fill_by_sorting_prefix_);
 
     String getName() const override { return "FillingTransform"; }
 
@@ -38,13 +33,10 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
-    void onCancel() noexcept override;
     void transform(Chunk & chunk) override;
 
 private:
-    void transformImpl(Chunk & chunk);
-
-    using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn *>;
+    using MutableColumnRawPtrs = std::vector<IColumn *>;
     void transformRange(
         const Columns & input_fill_columns,
         const Columns & input_interpolate_columns,
@@ -60,11 +52,6 @@ private:
 
     void saveLastRow(const MutableColumns & result_columns);
     void interpolate(const MutableColumns & result_columns, Block & interpolate_block);
-
-    /// Whether filling-row generation should stop: true if the query was cancelled or a break-mode
-    /// timeout was reached. Throws TIMEOUT_EXCEEDED / QUERY_WAS_CANCELLED when max_execution_time is
-    /// exceeded (throw mode) or the query was killed.
-    bool isCancelledOrTimeLimitExceeded();
 
     void initColumns(
         const Columns & input_columns,
@@ -102,29 +89,20 @@ private:
     FillingRow next_row; /// Row to which we need to generate filling rows.
     bool filling_row_inserted = false;
 
-    using Positions = VectorWithMemoryTracking<size_t>;
+    using Positions = std::vector<size_t>;
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;
     Positions sort_prefix_positions;
-    VectorWithMemoryTracking<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
+    std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;
     Columns last_range_sort_prefix;
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
     const bool use_with_fill_by_sorting_prefix;
-
-    /// Used to enforce max_execution_time (and observe KILL QUERY) while generating filling rows,
-    /// because a single WITH FILL range can expand into billions of rows within one transform() call
-    /// and the executor only checks the time limit between calls.
-    QueryStatusPtr process_list_element;
-
-    /// Latched once a `timeout_overflow_mode = 'break'` soft timeout fires, so both the inner and the
-    /// outer generation loops stop and the transform returns a partial result.
-    bool time_limit_exceeded = false;
 };
 
-class FillingNoopTransform final : public ISimpleTransform
+class FillingNoopTransform : public ISimpleTransform
 {
 public:
     FillingNoopTransform(SharedHeader header, const SortDescription & sort_description_)

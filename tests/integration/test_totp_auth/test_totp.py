@@ -8,7 +8,6 @@ import struct
 import time
 import xml.etree.ElementTree as ET
 
-import psycopg2
 import pymysql
 import pytest
 
@@ -30,28 +29,13 @@ MYSQL_USERS = {
     "totuser_mysql_double_sha1": "abacaba",
 }
 
-# With `totp_track_used_codes_in_keeper` the accepted codes are shared through Keeper under
-# this path (`totp_used_codes_keeper_path` in config/totp_used_codes_in_keeper.xml, set there
-# with a trailing slash).
-USED_CODES_KEEPER_PATH = "/clickhouse/test_totp_auth/one_time_passwords"
-
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["config/mysql.xml", "config/postgresql.xml"],
+    main_configs=["config/mysql.xml"],
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
-keeper_nodes = [
-    cluster.add_instance(
-        f"keeper_node{i}",
-        main_configs=["config/totp_used_codes_in_keeper.xml"],
-        user_configs=["config/users.xml"],
-        with_zookeeper=True,
-        stay_alive=True,
-    )
-    for i in (1, 2)
-]
 
 
 @pytest.fixture(scope="module")
@@ -71,21 +55,6 @@ def fresh_server(started_cluster):
     node.restart_clickhouse()
 
 
-@pytest.fixture
-def fresh_keeper_servers(started_cluster):
-    # With `totp_track_used_codes_in_keeper` the used codes are kept in Keeper and survive
-    # restarts: drop them there, and restart the servers to drop their local copies too.
-    zk = started_cluster.get_kazoo_client("zoo1")
-    try:
-        if zk.exists(USED_CODES_KEEPER_PATH):
-            zk.delete(USED_CODES_KEEPER_PATH, recursive=True)
-    finally:
-        zk.stop()
-        zk.close()
-    for keeper_node in keeper_nodes:
-        keeper_node.restart_clickhouse()
-
-
 def get_one_time_password(
     secret, interval=30, digits=6, sha_version=hashlib.sha1, timepoint=None
 ):
@@ -99,10 +68,9 @@ def get_one_time_password(
     return f"{otp:0{digits}d}"
 
 
-def get_otp(user, offset_steps=0, now=None):
-    """The code of the user for the time step of `now` (default: the current time)
-    shifted by `offset_steps`, with the TOTP parameters of the user from the users config.
-    """
+def get_otp(user, offset_steps=0):
+    """The code of the user for the current time step shifted by `offset_steps`,
+    computed with the TOTP parameters of the user from the users config."""
     params = ET.parse(USERS_CONFIG).find(f"./users/{user}/time_based_one_time_password")
     period = int(params.findtext("period", default="30"))
     return get_one_time_password(
@@ -112,7 +80,7 @@ def get_otp(user, offset_steps=0, now=None):
         sha_version=getattr(
             hashlib, params.findtext("algorithm", default="SHA1").lower()
         ),
-        timepoint=(now or time.time()) + offset_steps * period,
+        timepoint=time.time() + offset_steps * period,
     )
 
 
@@ -217,7 +185,7 @@ def test_interactive_totp_authentication(started_cluster):
     with client(command=f"{client_command(user1)}") as c:
         # Enter password when prompted first
         c.expect("Password.*:")
-        c.send("aa+bb", eol="\r")
+        c.send(f"aa+bb", eol="\r")
 
         # Then enter TOTP when prompted
         c.expect("TOTP.*:")
@@ -241,7 +209,7 @@ def test_interactive_totp_authentication(started_cluster):
     ) as c:
         # Enter only password, TOTP is provided in command line arguments
         c.expect("Password.*:")
-        c.send("aa+bb", eol="\r")
+        c.send(f"aa+bb", eol="\r")
         c.expect(prompt)
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect(f"{user2}42")
@@ -252,7 +220,7 @@ def test_interactive_totp_authentication(started_cluster):
 
     with client(command=f"{client_command(user0)}") as c:
         c.expect("Password.*:")
-        c.send("aa+bb", eol="\r")
+        c.send(f"aa+bb", eol="\r")
 
         # Then enter wrong TOTP when prompted
         c.expect("TOTP.*:")
@@ -312,13 +280,10 @@ def test_mysql_protocol_requires_totp(started_cluster):
 
 
 def test_mysql_protocol_fail_close_on_unverifiable_methods(started_cluster):
-    """`IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same
-    password is accepted by several methods, the session expires at the earliest of their
-    `VALID UNTIL` and is limited to the intersection of their `GRANTS`. The `mysql_native_password`
-    auth response can only be re-checked against `plaintext_password` and `double_sha1_password`
-    methods, so a `scram_sha256_password` or `bcrypt_password` method that narrows the session
-    would silently drop out of that combination. Such users are switched to the `sha256_password`
-    plugin, which transmits the actual password, so every method takes part in the check.
+    """The `mysql_native_password` auth response can be re-checked only against `plaintext_password`
+    and `double_sha1_password` methods, so `IAccessStorage::authenticateImpl` rejects it for a user
+    who also has a `scram_sha256_password` or `bcrypt_password` method. Such users are switched to
+    the `sha256_password` plugin, which transmits the actual password, so they can still log in.
     """
 
     for user, other_method in (
@@ -327,21 +292,9 @@ def test_mysql_protocol_fail_close_on_unverifiable_methods(started_cluster):
     ):
         node.query(
             f"CREATE USER {user} IDENTIFIED WITH double_sha1_password BY 'pw', "
-            f"{other_method} BY 'pw' VALID UNTIL '2000-01-01 00:00:00'"
+            f"{other_method} BY 'pw'"
         )
         try:
-            # The native protocol rejects the shared password as expired ...
-            assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
-                "SELECT 1", user=user, password="pw"
-            )
-            # ... and so must the MySQL protocol.
-            with pytest.raises(pymysql.err.MySQLError, match="Authentication failed"):
-                mysql_connect(user, "pw")
-
-            # Without the narrowing method the user is served by `mysql_native_password` again.
-            node.query(
-                f"ALTER USER {user} IDENTIFIED WITH double_sha1_password BY 'pw'"
-            )
             conn = mysql_connect(user, "pw")
             try:
                 cursor = conn.cursor()
@@ -439,47 +392,6 @@ def test_mysql_protocol_user_altered_during_authentication(started_cluster):
         node.query(f"DROP USER IF EXISTS {user}")
 
 
-def test_postgresql_protocol_requires_totp(started_cluster):
-    """The PostgreSQL protocol must enforce TOTP. A SCRAM proof is derived from the password
-    alone and cannot carry a one-time password, so the server refuses the SCRAM exchange for
-    a `scram_sha256_password` user with TOTP. For cleartext password authentication the client
-    appends the TOTP to the password."""
-
-    def connect(user, password):
-        return psycopg2.connect(
-            host=node.ip_address,
-            port=9005,
-            user=user,
-            password=password,
-            dbname="default",
-        )
-
-    # A SCRAM user with TOTP must be refused: the exchange cannot verify the second factor.
-    scram_user = "totuser_postgresql_scram"
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, "abacaba")
-
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, f"abacaba+{get_otp(scram_user)}")
-
-    # Cleartext password authentication enforces the second factor.
-    # The message is intentionally generic and does not reveal the reason.
-    user = "totuser_postgresql_plaintext"
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb")
-
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb+000000000")
-
-    conn = connect(user, f"aa+bb+{get_otp(user)}")
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT currentUser()")
-        assert cursor.fetchall() == [(user,)]
-    finally:
-        conn.close()
-
-
 def test_one_time_only_no_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     user0, user1 = NO_PASSWORD_USERS
@@ -572,80 +484,4 @@ def test_code_single_use(started_cluster):
     )
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user, password=f"pw+{next_code}"
-    )
-
-
-def test_secret_rotation_on_reload(started_cluster):
-    """A changed secret in the users config applies on `SYSTEM RELOAD USERS`."""
-    query_text = "SELECT currentUser() || toString(42)"
-    user = "totuser_rotation"
-    config_path = "/etc/clickhouse-server/users.d/users.xml"
-    old_secret = "MFRGGZDFMZTWQ2LK"
-    new_secret = "QTUD6Q3PJBFU2OMU"
-
-    node.replace_in_config(config_path, old_secret, new_secret)
-    try:
-        node.query("SYSTEM RELOAD USERS")
-
-        assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
-            query_text, user=user, password=f"pw+{get_otp(user)}"
-        )
-        assert f"{user}42\n" == node.query(
-            query_text, user=user, password=f"pw+{get_one_time_password(new_secret)}"
-        )
-    finally:
-        node.replace_in_config(config_path, new_secret, old_secret)
-        node.query("SYSTEM RELOAD USERS")
-
-
-def test_used_codes_in_keeper_single_use_across_servers(
-    started_cluster, fresh_keeper_servers
-):
-    """With `totp_track_used_codes_in_keeper` the accepted codes are shared through Keeper:
-    a code accepted by one server is rejected by the others and after a restart, and codes
-    for earlier time steps are rejected everywhere."""
-    query_text = "SELECT currentUser() || toString(42)"
-    user = "totuser_keeper"
-    node1, node2 = keeper_nodes
-
-    # All codes are derived from one timepoint so that they belong to consecutive time steps
-    now = time.time()
-    prev_code, code, next_code = (
-        get_otp(user, offset_steps=i, now=now) for i in (-1, 0, 1)
-    )
-
-    # A failed attempt (wrong password with a valid code) does not consume the code
-    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
-        query_text, user=user, password=f"wrongpwd+{code}"
-    )
-    assert f"{user}42\n" == node1.query(query_text, user=user, password=f"pw+{code}")
-
-    # The code is rejected on every server, and so is any code for an earlier time step
-    for n in (node2, node1):
-        assert "AUTHENTICATION_FAILED" in n.query_and_get_error(
-            query_text, user=user, password=f"pw+{code}"
-        )
-    assert "AUTHENTICATION_FAILED" in node2.query_and_get_error(
-        query_text, user=user, password=f"pw+{prev_code}"
-    )
-
-    # The code for the next time step is accepted once, on another server
-    assert f"{user}42\n" == node2.query(
-        query_text, user=user, password=f"pw+{next_code}"
-    )
-    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
-        query_text, user=user, password=f"pw+{next_code}"
-    )
-
-    # The state lives in Keeper, so it survives a restart
-    node1.restart_clickhouse()
-    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
-        query_text, user=user, password=f"pw+{next_code}"
-    )
-    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
-        query_text, user=user, password=f"pw+{code}"
-    )
-    # One node per user, named by the SHA-256 hash of the user name
-    assert "1\n" == node1.query(
-        f"SELECT name = hex(SHA256('{user}')) FROM system.zookeeper WHERE path = '{USED_CODES_KEEPER_PATH}'"
     )

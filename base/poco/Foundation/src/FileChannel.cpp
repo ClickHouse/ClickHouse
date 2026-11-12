@@ -25,6 +25,7 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
+#include <utility>
 
 
 namespace Poco {
@@ -111,15 +112,7 @@ void FileChannel::log(const Message& msg)
 
 	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile))
 	{
-		try
-		{
-			_pFile = _pArchiveStrategy->archive(_pFile, _streamCompress);
-			purge();
-		}
-		catch (...)
-		{
-			_pFile = newLogFile();
-		}
+		unsafeRotate();
 		// we must call mustRotate() again to give the
 		// RotateByIntervalStrategy a chance to write its timestamp
 		// to the new file.
@@ -340,23 +333,28 @@ void FileChannel::unsafeOpen()
 	{
 		_pFile = newLogFile();
 		if (_rotateOnOpen && _pFile->size() > 0)
-		{
-			try
-			{
-				_pFile = _pArchiveStrategy->archive(_pFile, _streamCompress);
-				purge();
-			}
-			catch (...)
-			{
-				_pFile = newLogFile();
-			}
-		}
+			unsafeRotate();
 	}
 }
 
 
-namespace
+void FileChannel::unsafeRotate()
 {
+	/// `archive` deletes the current file, so `_pFile` must not dangle if opening the new one fails.
+	/// The raw pointer is intentional: `archive` owns `pFile` and deletes it, so it must not be deleted here.
+	LogFile * pFile = std::exchange(_pFile, nullptr);
+	try
+	{
+		_pFile = _pArchiveStrategy->archive(pFile, _streamCompress);
+		purge();
+	}
+	catch (...)
+	{
+		_pFile = newLogFile();
+	}
+}
+
+
 void archiveByNumber(const std::string& basePath)
 	/// A monotonic increasing number is appended to the
 	/// log file name. The most recent archived file
@@ -403,7 +401,6 @@ void archiveByNumber(const std::string& basePath)
 			f.renameTo(newPath);
 		--n;
 	}
-}
 }
 
 

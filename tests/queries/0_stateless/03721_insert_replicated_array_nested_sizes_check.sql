@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 
 drop table if exists test;
 create table test (a Array(UInt64)) engine=MergeTree order by tuple();
