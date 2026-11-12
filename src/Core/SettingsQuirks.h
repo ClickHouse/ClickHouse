@@ -4,10 +4,14 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <functional>
+#include <string_view>
+
 namespace DB
 {
 
 struct Settings;
+class Field;
 
 /// A read buffer never needs to be larger than this. An out-of-range value would be passed
 /// straight to the allocator when constructing a read buffer, tripping its size guard with a
@@ -28,12 +32,14 @@ UInt64 clampTemporaryFilesBufferSize(UInt64 buffer_size);
 /// Update some settings defaults to avoid some known issues.
 void applySettingsQuirks(Settings & settings, LoggerPtr log = nullptr);
 
-/// Derive make_distributed_plan from distributed_plan_workers_num unless it is set explicitly, then,
-/// when it is enabled, adjust the settings that control features distributed query plans do not
-/// support yet. Applied whenever settings changes are applied to a context, so that every context
-/// driving analysis, planning or task execution sees the adjusted values.
-/// `derivation_allowed = false` vetoes the derivation (e.g. a constraint forbids enabling it).
-void adjustSettingsForMakeDistributedPlan(Settings & settings, bool derivation_allowed);
+/// Derive make_distributed_plan from distributed_plan_workers_num or distributed_plan_worker_cluster
+/// unless it is set explicitly, then, when it is enabled, adjust the settings that control features
+/// distributed query plans do not support yet. Applied whenever settings changes are applied to a
+/// context, so that every context driving analysis, planning or task execution sees the adjusted
+/// values. `is_allowed(name, value)` is the current settings constraints' verdict on a value for a
+/// setting; a false verdict for `make_distributed_plan = true` vetoes the derivation, and for an
+/// adjusted setting's remembered value drops the restore to that setting's default instead.
+void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::function<bool(std::string_view, const Field &)> & is_allowed);
 
 /// Verify that some settings have sane values. Alters the value to a reasonable one if not
 void doSettingsSanityCheckClamp(Settings & settings, LoggerPtr log);

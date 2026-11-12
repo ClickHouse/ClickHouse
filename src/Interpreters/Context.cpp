@@ -4032,10 +4032,12 @@ void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex>
     if (getApplicationType() == ApplicationType::CLIENT)
         return;
 
-    /// A constraint that forbids enabling `make_distributed_plan` also vetoes the derived value.
-    const bool derivation_allowed = getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.allowsValue("make_distributed_plan", Field(true));
-
-    adjustSettingsForMakeDistributedPlan(*settings, derivation_allowed);
+    /// The same verdict vetoes deriving `make_distributed_plan` and restoring a remembered
+    /// adjustment the current constraints disallow.
+    auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
+    const auto & constraints = constraints_and_profiles->constraints;
+    adjustSettingsForMakeDistributedPlan(
+        *settings, [&](std::string_view name, const Field & value) { return constraints.allowsValue(name, value); });
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)

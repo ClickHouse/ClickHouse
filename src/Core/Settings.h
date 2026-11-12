@@ -179,7 +179,11 @@ struct Settings
     /// a key past the call and must point to static storage, such as the setting-name literals
     /// the adjustment passes.
     void rememberBeforeDistributedPlanAdjustment(std::string_view name);
-    void restoreDistributedPlanAdjustments();
+
+    /// Restore every remembered pre-adjustment value, except one `is_allowed` refuses: that setting
+    /// is reset to its default instead, like a `compatibility`-derived value the current constraints
+    /// disallow.
+    void restoreDistributedPlanAdjustments(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
     bool hasSettingsChangedByCompatibility() const;

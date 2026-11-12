@@ -320,11 +320,11 @@ TEST(Context, GetReadSettingsRace)
 /// Test for a data race on the Settings block between Context::setDefaultProfiles() and a
 /// concurrent settings write.
 ///
-/// `setDefaultProfiles` re-applies `applySettingsQuirks`, `adjustSettingsForMakeDistributedPlan`
-/// and `doSettingsSanityCheckClamp` to `*settings` after `setCurrentProfile` has released
-/// Context::mutex. `setCurrentProfile` already ran all three under the lock, so in a resolved
-/// profile the trailing pass changes nothing and only *reads* the settings it inspects -- which is
-/// why the concurrent thread here is a writer holding the mutex, not another reader.
+/// `setDefaultProfiles` re-applies `applySettingsQuirks` and `doSettingsSanityCheckClamp` to
+/// `*settings` after `setCurrentProfile` has released Context::mutex. `setCurrentProfile` already
+/// ran both under the lock (as part of finalizing the profile's settings), so in a resolved profile
+/// the trailing pass changes nothing and only *reads* the settings it inspects -- which is why the
+/// concurrent thread here is a writer holding the mutex, not another reader.
 ///
 /// `setCurrentProfile` orders this thread after every earlier writer, so the race window is the
 /// interval between that release and `makeBackgroundContext` taking the mutex again. The writer

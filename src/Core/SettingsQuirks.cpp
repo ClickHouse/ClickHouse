@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <IO/preadNoWait.h>
@@ -52,6 +53,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 distributed_plan_workers_num;
+    extern const SettingsString distributed_plan_worker_cluster;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -153,19 +155,26 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
 /// distributed plans support the corresponding feature - e.g. for the text index direct read,
 /// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-void adjustSettingsForMakeDistributedPlan(Settings & settings, bool derivation_allowed)
+void adjustSettingsForMakeDistributedPlan(Settings & settings, const std::function<bool(std::string_view, const Field &)> & is_allowed)
 {
-    /// Stateless Workers only run the stages of a distributed plan, so asking for Workers implies
-    /// asking for the plan. Deriving instead of assigning keeps a later zero count from pinning it on.
+    /// Stateless Workers only run the stages of a distributed plan, so asking for Workers or naming
+    /// their cluster implies asking for the plan. Deriving instead of assigning keeps a later reset
+    /// of either from pinning it on.
     const bool derived = !settings[Setting::make_distributed_plan].changed;
     if (derived)
-        settings[Setting::make_distributed_plan].value = derivation_allowed && settings[Setting::distributed_plan_workers_num] != 0;
+    {
+        const bool requested = settings[Setting::distributed_plan_workers_num] != 0
+            || !settings[Setting::distributed_plan_worker_cluster].value.empty();
+        settings[Setting::make_distributed_plan].value = requested && is_allowed("make_distributed_plan", Field(true));
+    }
 
     if (!settings[Setting::make_distributed_plan])
     {
         /// A derived plan must leave no trace once it is off; an explicitly enabled plan never
-        /// remembers, so its adjustments stay, as they always have.
-        settings.restoreDistributedPlanAdjustments();
+        /// remembers, so its adjustments stay, as they always have. A remembered value the current
+        /// constraints forbid is dropped to its default instead of restored, like a disallowed
+        /// `compatibility`-derived value.
+        settings.restoreDistributedPlanAdjustments(is_allowed);
         return;
     }
 
