@@ -2886,6 +2886,26 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
 }
 
 
+/// `type` with each `Nothing` replaced by the type at the same place of `target_type`: no cast to `Nothing` exists,
+/// and a `Nothing`, as in `[]`, `map()` or `NULL`, holds no value.
+static DataTypePtr replaceNothingByTargetType(const DataTypePtr & type, const DataTypePtr & target_type)
+{
+    if (isNothing(type))
+        return target_type;
+    /// The common type may wrap a type of the constant in `Nullable`.
+    if (!type->isNullable() && target_type->isNullable())
+        return replaceNothingByTargetType(type, removeNullable(target_type));
+    if (type->getTypeId() != target_type->getTypeId() || type->getNumberOfChildren() != target_type->getNumberOfChildren()
+        || !anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
+        return type;
+
+    DataTypes children;
+    children.reserve(type->getNumberOfChildren());
+    for (size_t i = 0; i < type->getNumberOfChildren(); ++i)
+        children.push_back(replaceNothingByTargetType(type->getChild(i), target_type->getChild(i)));
+    return type->cloneWithChildren(children);
+}
+
 /// Converts a `Tuple`, `Array` or `Map` constant into `target_type` the way the comparison does, with a cast of its
 /// column; a `Field` conversion converts the elements without their types. The bound is read back from the
 /// cast column so that every element has the carrier of the key's values. Returns `Null` when the cast does
@@ -2898,11 +2918,7 @@ static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr &
     try
     {
         const ColumnPtr cast_column = castColumn({column, type, ""}, target_type);
-        /// An empty `Array` or `Map` casts exactly, and `[]` of type `Array(Nothing)` has no cast back.
-        const Field value = (*column)[0];
-        const bool is_empty_collection = (value.getType() == Field::Types::Array && value.safeGet<Array>().empty())
-            || (value.getType() == Field::Types::Map && value.safeGet<Map>().empty());
-        if (!is_empty_collection && (*castColumn({cast_column, target_type, ""}, type))[0] != value)
+        if ((*castColumn({cast_column, target_type, ""}, replaceNothingByTargetType(type, target_type)))[0] != (*column)[0])
             return {};
         return (*cast_column)[0];
     }

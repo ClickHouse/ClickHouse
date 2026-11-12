@@ -3,6 +3,7 @@
 DROP TABLE IF EXISTS t_tuple;
 DROP TABLE IF EXISTS t_array;
 DROP TABLE IF EXISTS t_map;
+DROP TABLE IF EXISTS t_nested_empty;
 DROP TABLE IF EXISTS t_enum;
 DROP TABLE IF EXISTS t_fixed_string;
 DROP TABLE IF EXISTS t_fixed_string_nested;
@@ -36,6 +37,12 @@ INSERT INTO t_map SELECT map('k', toDateTime('2018-01-01 00:00:00', 'UTC') + num
 
 SELECT count() FROM t_map WHERE a = map('k', toDate('2018-01-05'));
 SELECT count() FROM t_map WHERE a >= map('k', toDate('2018-01-05'));
+
+CREATE TABLE t_nested_empty (a Tuple(Array(Array(String)), Map(String, Array(String)))) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_nested_empty SELECT tuple([[toString(number)]], map('k', [toString(number)])) FROM numbers(4);
+
+SELECT count() FROM t_nested_empty WHERE a >= tuple([[]], map('k', []));
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT * FROM t_nested_empty WHERE a >= tuple([[]], map('k', []))) WHERE explain ILIKE '%Condition: (a in %';
 
 CREATE TABLE t_enum (a Tuple(String, Int32)) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_enum VALUES (('x', 1));
@@ -95,6 +102,7 @@ SELECT count() FROM t_partition_reverse WHERE e >= tuple('z');
 DROP TABLE t_tuple;
 DROP TABLE t_array;
 DROP TABLE t_map;
+DROP TABLE t_nested_empty;
 DROP TABLE t_enum;
 DROP TABLE t_fixed_string;
 DROP TABLE t_fixed_string_nested;
