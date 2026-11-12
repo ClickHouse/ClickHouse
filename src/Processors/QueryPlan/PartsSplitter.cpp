@@ -378,6 +378,8 @@ public:
         std::vector<HeldIndex> not_copied;
         size_t not_copied_bytes = 0;
         size_t checked_bytes = 0;
+        const MergeTreeData * last_storage = nullptr;
+        bool is_cache_used = false;
         auto copy_evicted = [&]
         {
             for (const auto & evicted : removeEvicted(not_copied))
@@ -388,13 +390,20 @@ public:
             checked_bytes = not_copied_bytes;
         };
 
-        if (!parts.empty())
-            index_cache = parts.front().data_part->storage.getPrimaryIndexCache();
-
         indices.reserve(parts.size());
         for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         {
             const auto & part = parts[part_index];
+
+            /// The parts can be of several tables. Without the cache, they keep their indexes.
+            if (const auto & storage = part.data_part->storage; &storage != last_storage)
+            {
+                last_storage = &storage;
+                auto cache = storage.getPrimaryIndexCache();
+                is_cache_used = cache != nullptr;
+                if (cache)
+                    index_cache = std::move(cache);
+            }
 
             /// A part can be there twice, with different ranges.
             PartIndexAccessPtr index;
@@ -409,7 +418,7 @@ public:
                 index = std::make_shared<PartIndexAccess>(*part.data_part);
 
             indices.push_back(index);
-            if (index->isCopy())
+            if (index->isCopy() || !is_cache_used)
                 continue;
 
             not_copied.push_back({part_index, PrimaryIndexWeightFunction{}(*index->getIndex())});
@@ -463,8 +472,7 @@ private:
     /// Removes those indexes that neither the cache nor the part keeps, and returns them.
     std::vector<HeldIndex> removeEvicted(std::vector<HeldIndex> & held) const
     {
-        /// Without the cache, the parts keep their indexes.
-        if (held.empty() || !index_cache)
+        if (held.empty())
             return {};
 
         std::vector<UInt128> keys;

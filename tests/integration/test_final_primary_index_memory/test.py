@@ -60,6 +60,38 @@ def test_only_needed_values_of_indexes_are_kept():
     assert node.query(f"SELECT sum(v) FROM t FINAL WHERE s = 5 SETTINGS {SETTINGS}") == "5\n"
 
 
+def test_several_tables():
+    # The first table does not use the cache.
+    node.query(
+        """
+        CREATE TABLE IF NOT EXISTS n (k String, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS use_primary_key_cache = 0;
+        TRUNCATE TABLE n;
+        INSERT INTO n SELECT leftPad(toString(number * 100000), 80, '0'), number FROM numbers(10000);
+        """
+    )
+
+    def query(max_memory_usage):
+        return f"""EXPLAIN PIPELINE SELECT count() FROM n JOIN t ON n.k = t.k
+            SETTINGS query_plan_join_shard_by_pk_ranges = 1, join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0,
+                max_threads = 4, max_memory_usage = '{max_memory_usage}'"""
+
+    error = node.query_and_get_error(query("50M"))
+    assert "MEMORY_LIMIT_EXCEEDED" in error, error
+
+    assert "Join" in node.query(query("500M"))
+
+
+def test_index_in_result_is_accounted():
+    # The index of one part takes 9 MB, and the state of the aggregate function more than 15 MB. Memory that is freed, but was not accounted,
+    # must not be subtracted from it.
+    query = "SELECT uniqExact(k) FROM mergeTreeIndex(currentDatabase(), t) SETTINGS max_threads = 1, max_memory_usage = '{}'"
+
+    error = node.query_and_get_error(query.format("15M"))
+    assert "MEMORY_LIMIT_EXCEEDED" in error, error
+
+    assert node.query(query.format("200M")) == node.query("SELECT uniqExact(k) FROM t")
+
+
 CONDITIONS = [
     "s = 5",
     "s IN (5, 4999, 5000, 14999, 15000)",

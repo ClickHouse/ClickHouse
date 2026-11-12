@@ -842,7 +842,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             SerializationInfoByName(SerializationInfoSettings{}),
             projection.metadata->getMetadataVersion());
         part->index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
-        part->setIndex(index_columns);
+        part->setIndex(index_columns, /* is_accounted= */ true);
         return part;
     };
 

@@ -540,7 +540,8 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
-    void setIndex(Columns index_columns);
+    /// `is_accounted` means that the columns are accounted as memory usage of the query.
+    void setIndex(Columns index_columns, bool is_accounted = false);
     void unloadIndex();
     bool isIndexLoaded() const;
 

@@ -749,9 +749,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    /// The columns of a written part are not accounted as memory usage of a query, and a query can evict them.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
-    index_cache.set(getIndexCacheKey(), makeIndex(*index));
+    index_cache.set(getIndexCacheKey(), std::const_pointer_cast<Index>(index));
     index.reset();
 
     for (const auto & [_, projection] : projection_parts)
@@ -777,7 +775,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
-void IMergeTreeDataPart::setIndex(Columns index_columns)
+void IMergeTreeDataPart::setIndex(Columns index_columns, bool is_accounted)
 {
     std::scoped_lock lock(index_mutex);
     if (index)
@@ -789,7 +787,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
-    index = std::make_shared<Index>(std::move(index_columns));
+    index = is_accounted ? std::make_shared<Index>(std::move(index_columns)) : makeIndex(std::move(index_columns));
 }
 
 void IMergeTreeDataPart::unloadIndex()

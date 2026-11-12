@@ -126,7 +126,8 @@ protected:
                     if (!index_column_type->equals(*column_type))
                         index_column = recursiveLowCardinalityTypeConversion(index_column, index_column_type, column_type);
 
-                    result_columns[pos] = std::move(index_column);
+                    /// The columns of the index are not accounted as memory usage of the query, and must not be held longer than the index.
+                    result_columns[pos] = index_column->cloneResized(index_column->size());
                 }
                 else
                 {
