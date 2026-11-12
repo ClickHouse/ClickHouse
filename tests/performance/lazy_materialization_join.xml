@@ -8,7 +8,7 @@
     -->
     <settings>
         <join_algorithm>hash</join_algorithm>
-        <parallel_hash_join_threshold>18446744073709551615</parallel_hash_join_threshold>
+        <hash_join_layout>serial</hash_join_layout>
         <query_plan_join_swap_table>0</query_plan_join_swap_table>
         <query_plan_optimize_join_order_limit>0</query_plan_optimize_join_order_limit>
         <enable_join_runtime_filters>0</enable_join_runtime_filters>
@@ -52,11 +52,11 @@
          `parallel_hash` and `hash` because older versions pick the layout by the threshold only when both are listed.
          `query_plan_optimize_join_order_limit = 0` leaves both joins without a row estimate, so both hash tables are
          built in parallel. -->
-    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS join_algorithm = 'parallel_hash,hash', parallel_hash_join_threshold = 100000 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS join_algorithm = 'parallel_hash,hash', hash_join_layout = 'auto', parallel_hash_join_threshold = 100000 FORMAT Null</query>
 
     <!-- The same with `hash` alone. Older versions always build `hash` serially, so they run this query faster, by the
          cost of a parallel build of these small tables. -->
-    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS parallel_hash_join_threshold = 100000 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 100000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS lazy_join_facts</drop_query>
     <drop_query>DROP TABLE IF EXISTS lazy_join_dim</drop_query>

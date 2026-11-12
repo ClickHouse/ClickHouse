@@ -4,8 +4,8 @@
             <name>join_settings</name>
             <values>
                 <value>join_algorithm = 'grace_hash'</value>
-                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
-                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
+                <value>join_algorithm = 'hash', hash_join_layout = 'serial'</value>
+                <value>join_algorithm = 'parallel_hash', hash_join_layout = 'parallel'</value>
                 <value>join_algorithm = 'partial_merge'</value>
 <!--                <value>join_algorithm = 'direct'</value>-->
                 <value>join_algorithm = 'auto'</value>
