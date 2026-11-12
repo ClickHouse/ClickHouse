@@ -10131,7 +10131,8 @@ analyzer additionally:
   when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists.
   The current-database reading is not applied to SQL stored in definitions (view and materialized view
   bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
-  dictionary source queries), where `a.b` is always table `b` of database `a`;
+  `ClickHouse` dictionary source queries executed on the same server), where `a.b` is always table `b`
+  of database `a`, except in the query argument of a table function such as `view`;
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.
 )", EXPERIMENTAL, \

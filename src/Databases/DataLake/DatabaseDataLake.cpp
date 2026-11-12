@@ -2402,10 +2402,12 @@ You can also spell out every part with dots:
   always read `a.b` as database `a`, table `b`.
 - SQL stored in definitions (view and materialized view bodies, row policy
   conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS`
-  expressions, dictionary source queries) always reads `a.b` as database `a`,
-  table `b`; the query argument of a table function such as `view` keeps the
-  two-part rule. Reference a catalog table there as `` `ns.t` `` at creation
-  time (stored as ``catalog_name.`ns.t` ``) or as `catalog_name.ns.t`.
+  expressions, `ClickHouse` dictionary source queries executed on the same
+  server) always reads `a.b` as database `a`, table `b`; the query argument of
+  a table function such as `view` keeps the two-part rule. Reference a catalog
+  table in any stored definition as `catalog_name.ns.t`. In view bodies and
+  column expressions, `` `ns.t` `` also works: it is qualified at creation time
+  and stored as ``catalog_name.`ns.t` ``.
 
 ```sql
 -- Equivalent to catalog_name.`namespace.table`
