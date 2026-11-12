@@ -26,6 +26,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -170,7 +171,11 @@ BlockIO InterpreterDeleteQuery::execute()
         if (metadata_snapshot->hasProjections())
         {
             /// `MutateTask` treats THROW like DROP, so missing this check drops the projections.
-            if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
+            auto target_table = resolved_table;
+            if (const auto * alias = resolved_table->as<StorageAlias>())
+                if (auto chain = alias->getTargetChain(); !chain.empty())
+                    target_table = DatabaseCatalog::instance().tryGetTable(StorageID(chain.back().first, chain.back().second), getContext());
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(target_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because it has projections and its table-level "
