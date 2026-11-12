@@ -32,8 +32,9 @@ NORMAL_DATE	Nullable(DateTime64(6))
 SOME_VALUE	Nullable(Int32)					
 2022-01-01 00:00:00.000000	1
 2022-02-01 00:00:00.000000	2
--- table_with_edge_timestamps: INT96 timestamps beyond the DateTime64 range
-VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+-- table_with_edge_timestamps: INT96 timestamps beyond the nanosecond range read into DateTime64(6)
+9999-12-31 00:00:00.000000
+9999-12-30 00:00:00.000000
 -- simple_table_features: unknown reader feature
 DELTA_KERNEL_ERROR
 -- spark-variant-checkpoint: Variant column

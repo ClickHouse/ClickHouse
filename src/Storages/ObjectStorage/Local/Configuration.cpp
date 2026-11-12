@@ -119,7 +119,8 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
         .skip_empty_files = settings[Setting::engine_file_skip_empty_files],
         .list_object_keys_size = 0,
         .throw_on_zero_files_match = false,
-        .ignore_non_existent_file = false};
+        .ignore_non_existent_file = false,
+        .skip_hidden_files = false};
 }
 
 void StorageLocalConfiguration::initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments)
@@ -133,7 +134,7 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(parsed_arguments);
-    paths = {path};
+    setPaths({path});
 }
 void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
 {
@@ -154,6 +155,6 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(parsed_arguments);
-    paths = {path};
+    setPaths({path});
 }
 }
