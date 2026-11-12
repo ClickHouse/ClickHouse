@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Columns of PLAIN-encoded fixed-size Parquet pages read after PREWHERE steps, compared with the source table.
 -- No page index and no dictionary, so the row filter is applied while decoding; small pages that straddle
 -- the 1000-row blocks; value sizes 1, 2, 3, 4, 8, 16 and 32 bytes, with and without a type conversion.
