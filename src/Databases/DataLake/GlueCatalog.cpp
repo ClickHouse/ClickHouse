@@ -607,7 +607,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     if (storage->engine->arguments)
         args = storage->engine->arguments->children;
 
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
+    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : encodeLocationForURI(s3_location);
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
