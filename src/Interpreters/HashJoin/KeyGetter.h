@@ -4,6 +4,7 @@
 #include <Common/HashTable/Prefetching.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <base/PackedStringRef.h>
@@ -448,17 +449,33 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
     /// once.
     static constexpr bool has_cheap_key_calculation = true;
 
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
     HashedJoinKey key;
 
-    HashMethodHashedJoinKey(const ColumnRawPtrs & key_columns, const Sizes &, const ColumnsHashing::HashMethodContextPtr &)
+    /// The keys are hashed by their binary representation, so negative zeros are canonicalized in advance,
+    /// unless `rows.negative_zeros_canonicalized` says the caller has done it.
+    HashMethodHashedJoinKey(
+        const ColumnRawPtrs & key_columns,
+        const Sizes &,
+        const ColumnsHashing::HashMethodContextPtr &,
+        ColumnsHashing::RowRange rows = {})
         : PreparedJoinKeys<HashMethodHashedJoinKey>(key_columns.at(0)->size())
-        , key(key_columns)
+        , key(canonicalizeKeyColumns(key_columns, rows.negative_zeros_canonicalized, canonicalized_columns))
     {
     }
 
     ALWAYS_INLINE UInt128 buildKey(size_t row) const { return key.build(row); }
 
     void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) { key.buildRange(begin, end, keys, skip); }
+
+private:
+    static ColumnRawPtrs canonicalizeKeyColumns(ColumnRawPtrs key_columns, bool negative_zeros_canonicalized, Columns & holder)
+    {
+        if (!negative_zeros_canonicalized)
+            canonicalizeNegativeZeroInKeyColumns(key_columns, holder);
+        return key_columns;
+    }
 };
 
 /// The 16-byte key of a single `String` join key in the `key_packed_string` and `two_level_key_packed_string` maps.
