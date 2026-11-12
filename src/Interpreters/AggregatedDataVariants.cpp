@@ -647,11 +647,15 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
     }
 
     /// If fixed-width keys of 1, 2, 4, 8 or 16 bytes and one string key - will use a hash table keyed by the
-    /// fixed-width values packed into 32, 64 or 128 bits and a packed reference to the string, which keeps strings
-    /// of up to 15 bytes inline after 32 bits and of up to 11 bytes otherwise (see `KeysAndPackedString`). The
-    /// string key is the one with value size 0. The Aggregator may remap this to `prealloc_serialized` (see
-    /// `Params::enable_fixed_and_packed_string_keys`).
-    if (keys_size > 1 && !has_low_cardinality && num_fixed_contiguous_keys + 1 == keys_size && keys_bytes <= 16)
+    /// fixed-width values packed into 32, 64 or 128 bits and a packed reference to the string, which keeps
+    /// strings of up to 15 bytes inline after 32 bits and of up to 11 bytes otherwise (see
+    /// `KeysAndPackedString`). The string key is the one with value size 0. The Aggregator may remap this to
+    /// `prealloc_serialized` (see `Params::enable_fixed_and_packed_string_keys`). `LowCardinality` keys take
+    /// these methods as well (see `HashMethodKeysAndPackedString`): with another method, the shards of a
+    /// distributed query that store a column as `String` and as `LowCardinality(String)` would number the
+    /// two-level buckets differently and return a group once per numbering. A `LowCardinality(Nullable)` key
+    /// is nullable, so it took a nullable method above.
+    if (keys_size > 1 && num_fixed_contiguous_keys + 1 == keys_size && keys_bytes <= 16)
     {
         std::optional<size_t> string_key;
         bool fixed_sizes_are_powers_of_two = true;

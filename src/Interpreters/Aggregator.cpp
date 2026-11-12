@@ -2600,11 +2600,15 @@ bool Aggregator::executeOnBlock(Columns columns,
         if (!result.isLowCardinality())
         {
             /// Serialized methods read key columns through `IColumn` virtuals, so a non-nullable
-            /// `LowCardinality` key can be serialized from its dictionary without being copied into
-            /// a full column first. `LowCardinality(Nullable)` keys need the materialized
-            /// representation, which carries their null map, and so does an active top-K heap, whose
-            /// ranked columns are built from the key columns.
-            if (result.isSerialized() && !top_k_active)
+            /// `LowCardinality` key can be serialized from its dictionary without being copied into a full
+            /// column first. The methods of fixed-width keys and one `String` take non-nullable
+            /// `LowCardinality` keys as they are too, as in the merge: they read the string through its
+            /// dictionary and materialize a fixed-width key themselves (see `HashMethodKeysAndPackedString`).
+            /// `LowCardinality(Nullable)` keys need the materialized representation, which carries their null
+            /// map, and so does an active top-K heap, whose ranked columns are built from the key columns.
+            const bool reads_low_cardinality_in_place
+                = result.isSerialized() || AggregatedDataVariants::isKeysAndPackedString(result.type);
+            if (reads_low_cardinality_in_place && !top_k_active)
             {
                 const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
                 if (low_cardinality && !low_cardinality->getDictionary().nestedColumnIsNullable())

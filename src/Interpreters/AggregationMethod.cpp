@@ -195,8 +195,10 @@ void AggregationMethodKeysAndPackedString<TData>::insertKeyIntoColumns(
     {
         if (key_sizes[i] == 0)
         {
+            /// The column of a `LowCardinality(String)` key is a `ColumnLowCardinality`, which inserts the
+            /// string into its dictionary.
             const auto str = static_cast<std::string_view>(key.str);
-            assert_cast<ColumnString &>(*key_columns[i]).insertData(str.data(), str.size());
+            key_columns[i]->insertData(str.data(), str.size());
         }
         else
         {
