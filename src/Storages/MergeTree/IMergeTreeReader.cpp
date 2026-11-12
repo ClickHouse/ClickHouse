@@ -362,6 +362,32 @@ bool IMergeTreeReader::mayEvaluateMissingDefaults() const
     return *may_evaluate_missing_defaults;
 }
 
+/// The settings of the reading query that a default reading a table (`x IN table`) is evaluated with, in place of
+/// the settings of the storage context: those that restrict the access, and all the limits and the resources -
+/// the settings named `max_*` and `min_*` and the overflow modes of the limits. None of them changes the meaning of
+/// an expression, so a default reads a table the same way as the reading query would read it directly.
+static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressions()
+{
+    static const std::vector<std::string_view> names = []
+    {
+        static constexpr std::string_view other_names[] =
+        {
+            "readonly", "allow_ddl", "allow_introspection_functions",
+            "temporary_files_codec", "temporary_files_buffer_size",
+            "timeout_before_checking_execution_speed",
+        };
+
+        std::vector<std::string_view> result(std::begin(other_names), std::end(other_names));
+        for (std::string_view name : Settings().getAllRegisteredNames())
+        {
+            if (name.starts_with("max_") || name.starts_with("min_") || name.ends_with("_overflow_mode") || name.ends_with("_overflow_mode_leaf"))
+                result.push_back(name);
+        }
+        return result;
+    }();
+    return names;
+}
+
 ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 {
     auto storage_context = data_part_info_for_read->getContext();
@@ -370,27 +396,15 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     {
         /// A default may read other tables, as in `DEFAULT x IN table`. Do that on behalf of the query
         /// that reads the part: with the privileges and the row policies of its user, and with its query
-        /// status, so that the nested reading is cancelled together with the query. Keep the settings of
-        /// the storage context the defaults are evaluated with, except for those that restrict the access
-        /// and the resources of the reading query (including its parallelism), so that the limits of its user
-        /// also bound the set.
+        /// status, so that the nested reading is cancelled together with the query. The settings of the
+        /// storage context define what the defaults mean, but the settings that restrict the access and the
+        /// resources of the reading query are taken from it, so that the limits of its user also bound the
+        /// queries that build the sets, including the aggregations, sorts and joins of a view they read.
         context_copy = Context::createCopy(settings.read_context);
         auto default_expressions_settings = storage_context->getSettingsCopy();
-        static constexpr std::string_view reader_settings[] =
-        {
-            "readonly", "allow_ddl", "allow_introspection_functions",
-            "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
-            "max_bytes_before_external_set", "max_bytes_ratio_before_external_set",
-            "max_bytes_for_external_set_bloom_filter", "max_bytes_for_external_set_cache",
-            "min_free_disk_space_for_temporary_data", "temporary_files_codec", "temporary_files_buffer_size",
-            "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
-            "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
-            "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
-            "max_execution_time", "timeout_overflow_mode",
-            "max_threads", "max_final_threads", "max_streams_to_max_threads_ratio", "max_streams_for_merge_tree_reading",
-        };
-        for (std::string_view name : reader_settings)
-            default_expressions_settings.set(name, settings.read_context->getSettingsRef().get(name));
+        const auto & reader_settings = settings.read_context->getSettingsRef();
+        for (std::string_view name : getReaderSettingsForDefaultExpressions())
+            default_expressions_settings.set(name, reader_settings.get(name));
         context_copy->setSettings(default_expressions_settings);
         context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
     }
