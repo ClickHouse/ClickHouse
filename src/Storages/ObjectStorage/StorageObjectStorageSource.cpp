@@ -68,6 +68,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
@@ -215,7 +216,13 @@ namespace
                 auto client = object_storage.tryGetS3StorageClient();
                 if (!client)
                     return std::nullopt;
-                /// Anonymous credentials (`NOSIGN`) are empty, and all such readers share the same identity.
+                const auto & client_configuration = client->getClientConfiguration();
+                /// A client with its own HTTP client (`gcp_oauth`) authenticates requests outside of the AWS credentials
+                /// (with a bearer token), so the identity is not known.
+                if (!client_configuration.http_client.empty())
+                    return std::nullopt;
+                /// Anonymous credentials (`NOSIGN`) are empty, and all such readers share the same identity, unless they
+                /// authenticate with headers (`Authorization`, or a key of `SSE-C`), which are also part of the identity.
                 const auto credentials = client->getCredentials();
                 SipHash hash;
                 hash.update(credentials.GetAWSAccessKeyId());
@@ -224,6 +231,13 @@ namespace
                 hash.update('\0');
                 hash.update(credentials.GetSessionToken());
                 hash.update('\0');
+                for (const auto & header : client_configuration.extra_headers)
+                {
+                    hash.update(header.name);
+                    hash.update('\0');
+                    hash.update(header.value);
+                    hash.update('\0');
+                }
                 return toString(hash.get128());
 #else
                 return std::nullopt;
@@ -232,6 +246,17 @@ namespace
             default:
                 return std::nullopt;
         }
+    }
+
+    /// Whether `object_storage` reads a version of an object other than the current one (`?versionId=` of `S3`). Its
+    /// metadata, and so the ETag that keys the caches, is of the current version, so such a read must not use them.
+    bool readsExplicitObjectVersion([[maybe_unused]] const IObjectStorage & object_storage)
+    {
+#if USE_AWS_S3
+        if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+            return !s3_object_storage->getURI().version_id.empty();
+#endif
+        return false;
     }
 
     String getPageCachePathForObjectStorage(
@@ -2319,11 +2344,15 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
 
+    /// The caches are keyed on the ETag of the current version of an object, so a read of another version bypasses them.
+    const bool reads_explicit_object_version = readsExplicitObjectVersion(*object_storage);
+
     bool use_distributed_cache = false;
 #if ENABLE_DISTRIBUTED_CACHE
     /// `auto` follows the decision for the other reads (the server setting `enable_read_through_distributed_cache`,
     /// overridden by `force_read_through_distributed_cache`), resolved into `read_through_distributed_cache`.
-    if (settings[Setting::table_engine_read_through_distributed_cache].valueOr(effective_read_settings.read_through_distributed_cache)
+    if (!reads_explicit_object_version
+        && settings[Setting::table_engine_read_through_distributed_cache].valueOr(effective_read_settings.read_through_distributed_cache)
         && DistributedCache::Registry::instance().isReady(
             effective_read_settings.distributed_cache_settings.read_only_from_current_az)
         && DistributedCache::getConnectionInfo(*object_storage))
@@ -2337,7 +2366,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_distributed_cache)
     {
         filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-        use_filesystem_cache = effective_read_settings.enable_filesystem_cache
+        use_filesystem_cache = !reads_explicit_object_version
+            && effective_read_settings.enable_filesystem_cache
             && !filesystem_cache_name.empty()
             && (object_storage->getType() == ObjectStorageType::Azure
                 || object_storage->getType() == ObjectStorageType::S3);
@@ -2345,7 +2375,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// The page cache goes on top of the distributed cache as for `MergeTree` (with `use_page_cache_with_distributed_cache`),
     /// but not on top of the filesystem cache, which is local as well.
-    bool use_page_cache = allow_page_cache && !use_filesystem_cache
+    bool use_page_cache = allow_page_cache && !reads_explicit_object_version && !use_filesystem_cache
         && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage
         && (!use_distributed_cache || effective_read_settings.use_page_cache_with_distributed_cache);
 
