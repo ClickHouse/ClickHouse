@@ -10,6 +10,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/Context.h>
 
@@ -78,6 +79,7 @@ ElasticsearchClient::ElasticsearchClient(ElasticsearchConfiguration config_, Con
     {
         credentials.setUsername(config.user);
         credentials.setPassword(String(config.password));
+        context_->getHTTPHeaderFilter().checkBasicCredentials(credentials);
     }
     auth_headers = config.authorizationHeaders();
 }

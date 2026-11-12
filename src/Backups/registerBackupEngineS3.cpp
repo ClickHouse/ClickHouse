@@ -34,6 +34,7 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsSecretString google_adc_client_secret;
     extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 #endif
@@ -287,6 +288,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<SecretString>("google_adc_client_secret");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<SecretString>("google_adc_refresh_token");
+            auth[S3AuthSetting::google_service_account_key] = collection->getOrDefault<SecretString>("google_service_account_key");
 
         }
         else

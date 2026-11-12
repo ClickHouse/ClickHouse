@@ -152,9 +152,17 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
+void HTTPDictionarySource::checkCredentials() const
+{
+    /// Per request: a loaded source is kept and cloned across updates, and <http_forbid_headers> can change meanwhile.
+    if (configuration.created_from_ddl)
+        context->getHTTPHeaderFilter().checkBasicCredentials(credentials);
+}
+
 BlockIO HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
+    checkCredentials();
 
     Poco::URI uri(configuration.url);
 
@@ -174,6 +182,7 @@ BlockIO HTTPDictionarySource::loadAll()
 
 BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
+    checkCredentials();
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
     String masked_uri = uri.toString();
@@ -198,6 +207,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
 BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
+    checkCredentials();
 
     auto block = blockForIds(dict_struct, ids);
 
@@ -229,6 +239,7 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
 BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
+    checkCredentials();
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 

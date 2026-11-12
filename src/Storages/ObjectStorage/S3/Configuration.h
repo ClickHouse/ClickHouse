@@ -79,6 +79,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
 
     S3::URI url;
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
@@ -101,11 +102,13 @@ public:
 
     StorageS3Configuration() = default;
 
-    void setInitializationAsBigLake(const String & client_id_, std::string_view client_secret_, std::string_view refresh_token_)
+    void setInitializationAsBigLake(
+        const String & client_id_, std::string_view client_secret_, std::string_view refresh_token_, std::string_view service_account_key_)
     {
         biglake_adc_client_id = client_id_;
         biglake_adc_client_secret = client_secret_;
         biglake_adc_refresh_token = refresh_token_;
+        biglake_service_account_key = service_account_key_;
     }
 
     ObjectStorageType getType() const override { return type; }
@@ -117,6 +120,8 @@ public:
     bool supportsFullyQualifiedPaths() const override { return isDataLakeConfiguration(); }
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
+
+    std::map<String, String> getExplicitRequestSettings() const override { return explicit_request_settings; }
 
     Path getRawPath() const override { return url.key; }
     void setRawPath(const Path & path) override { url.key = path.path; }
@@ -151,6 +156,7 @@ public:
     Paths keys TSA_GUARDED_BY(paths_mutex);
 
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
@@ -161,6 +167,7 @@ public:
     String biglake_adc_client_id;
     SecretString biglake_adc_client_secret;
     SecretString biglake_adc_refresh_token;
+    SecretString biglake_service_account_key;
 
 protected:
     const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }

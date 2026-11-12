@@ -17,6 +17,7 @@
 #include <filesystem>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -85,6 +86,13 @@ public:
 private:
     ffi::EngineBuilder * builder = nullptr;
 };
+
+/// The kernel parses the location as a URL, where `#` would start a fragment.
+std::string escapeForKernelUrl(std::string path)
+{
+    boost::replace_all(path, "#", "%23");
+    return path;
+}
 
 }
 
@@ -237,7 +245,7 @@ private:
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {
-        return "s3://" + url.bucket + "/" + url.key;
+        return "s3://" + url.bucket + "/" + escapeForKernelUrl(url.key);
     }
 };
 
@@ -511,7 +519,7 @@ private:
         const auto & prefix = params.endpoint.prefix;
         std::string full_path = prefix.empty() ? path : (std::filesystem::path(prefix) / path).string();
 
-        return "az://" + params.endpoint.container_name + "/" + full_path;
+        return "az://" + params.endpoint.container_name + "/" + escapeForKernelUrl(full_path);
     }
 };
 #endif
@@ -559,7 +567,7 @@ private:
         std::string absolute_path = std::filesystem::absolute(resolved_path).lexically_normal().string();
         while (absolute_path.size() > 1 && absolute_path.ends_with('/'))
             absolute_path.pop_back();
-        return "file://" + absolute_path + "/";
+        return "file://" + escapeForKernelUrl(absolute_path) + "/";
     }
 };
 }

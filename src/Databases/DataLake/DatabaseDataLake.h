@@ -28,7 +28,10 @@ public:
         UUID uuid,
         bool allow_server_credentials_in_user_queries_,
         bool is_loading_from_existing_metadata_,
-        bool lazy_init);
+        /// The definition is replayed (`ATTACH DATABASE`, including server startup, or `RESTORE DATABASE`) rather than
+        /// written by this query: the catalog is built lazily, and a combination of settings that a new definition
+        /// refuses is accepted with a warning so that an existing database keeps loading.
+        bool is_existing_definition);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -131,7 +134,7 @@ private:
     /// load; `getCatalog` then throws this so every query against the database reports a clear error.
     mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
 
-    void validateSettings();
+    void validateSettings(bool is_existing_definition);
 
     /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
     /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),

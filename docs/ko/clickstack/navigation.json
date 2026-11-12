@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickStack",
   "pages": [
     "ko/clickstack/index",

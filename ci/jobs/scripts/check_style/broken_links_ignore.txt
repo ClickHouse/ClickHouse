@@ -3,3 +3,4 @@
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
 https://storage.azure.com
+https://oauth2.googleapis.com/token
