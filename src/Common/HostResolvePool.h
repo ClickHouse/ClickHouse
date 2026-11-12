@@ -3,7 +3,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Silk/FiberMutex.h>
 #include <Common/logger_useful.h>
 
 #include <base/defines.h>
@@ -262,7 +261,7 @@ public:
     /// deterministically.
     void injectResolverForTest(const String & host, HostResolver::Ptr resolver);
 private:
-    Silk::FiberMutex mutex;
+    std::mutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
 };
 

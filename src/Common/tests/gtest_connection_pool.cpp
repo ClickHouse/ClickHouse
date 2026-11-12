@@ -167,7 +167,7 @@ protected:
     void SetUp() override {
         timeouts = DB::ConnectionTimeouts();
         DB::HTTPConnectionPools::Limits def_limits{};
-        DB::HTTPConnectionPools::instance().setLimits(def_limits, def_limits, def_limits, def_limits);
+        DB::HTTPConnectionPools::instance().setLimits(def_limits, def_limits, def_limits);
 
         options->set(RequestOptions());
 
@@ -748,7 +748,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoClearedWhenReconnectFails)
     /// connect attempt is made. The store limit of zero keeps the pool empty, so there is no stored
     /// connection to be reused instead.
     DB::HTTPConnectionPools::Limits limits {0, 0, 0, 1};
-    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
 
     auto pool = getPool();
 
@@ -1280,7 +1280,7 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 TEST_F(ConnectionPoolTest, StoreLimit)
 {
     DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};
-    DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits, zero_limits);
+    DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits);
 
     auto pool = getPool();
     auto metrics = pool->getMetrics();
@@ -1304,7 +1304,7 @@ TEST_F(ConnectionPoolTest, StoreLimit)
 TEST_F(ConnectionPoolTest, StoreLimitCountsOnlyStoredConnections)
 {
     DB::HTTPConnectionPools::Limits limits {100, 1000, 2, 0};
-    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
 
     auto pool = getPool();
     auto metrics = pool->getMetrics();
@@ -1358,7 +1358,7 @@ TEST_F(ConnectionPoolTest, StoreLimitCountsOnlyStoredConnections)
 TEST_F(ConnectionPoolTest, HardLimit)
 {
     DB::HTTPConnectionPools::Limits limits {0, 0, 1, 1};
-    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
 
     auto pool = getPool();
     auto metrics = pool->getMetrics();
@@ -1382,7 +1382,7 @@ TEST_F(ConnectionPoolTest, HardLimit)
 TEST_F(ConnectionPoolTest, SoftLimitReached)
 {
     DB::HTTPConnectionPools::Limits limits {2, 1000, 10, 0};
-    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
 
     auto pool = getPool();
     ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));

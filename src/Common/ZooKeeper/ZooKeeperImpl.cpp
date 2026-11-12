@@ -36,9 +36,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
-#if USE_SILK
-#include <silk/util/tsc.h>
-#endif
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -110,7 +107,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -547,9 +543,6 @@ ZooKeeper::ZooKeeper(
         std::chrono::duration_cast<std::chrono::microseconds>(
             clock::now().time_since_epoch()).count(),
         std::memory_order_relaxed);
-#if USE_SILK
-    last_received_cycles.store(silk::Tsc::getCycles(), std::memory_order_relaxed);
-#endif
 
     try
     {
@@ -1179,9 +1172,6 @@ void ZooKeeper::receiveThread()
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         clock::now().time_since_epoch()).count(),
                     std::memory_order_relaxed);
-#if USE_SILK
-                last_received_cycles.store(silk::Tsc::getCycles(), std::memory_order_relaxed);
-#endif
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived,
@@ -1538,15 +1528,6 @@ void ZooKeeper::logDeferredExceptions() noexcept
 }
 
 
-silk::FiberEvent & ZooKeeper::getExpiredEvent()
-{
-#if USE_SILK
-    return expired_event;
-#else
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Waiting for the session to expire requires the silk runtime");
-#endif
-}
-
 void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
@@ -1575,9 +1556,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             active_session_metric_increment.destroy();
             /// Notify all subscribers (ReplicatedMergeTree tables) about expired session
             EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
-#if USE_SILK
-            expired_event.set();
-#endif
         }
     };
 
