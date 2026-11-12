@@ -907,6 +907,13 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `while loading statistics` + `ILLEGAL_STATISTICS` appears when the statistics file format version changes between
 #       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
 #       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
+# `hash of uncompressed files doesn't match` + `is not byte-identical to data on another replicas` is expected while
+#       replicas run different versions (docs/guides/oss/update.mdx): the upgraded server redoes a merge or mutation that
+#       the other replica committed under the previous release, uncompressed part files such as `statistics.packed` change
+#       format between releases, and the replica then fetches the part. Filtered only when it is the sole mismatch, so
+#       divergent data of the part's own columns (`uncompressed hash of compressed files`), a different number of files
+#       and the KILL MUTATION `different columns hash` case still fail this job. Each projection is one uncompressed
+#       `<name>.proj` entry of the parent part's checksums, so divergent projection data is not detected here.
 # `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
 #       broker is unavailable during upgrade (several tests point at a deliberately unreachable broker). Filtered
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
@@ -1105,6 +1112,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
+    | grep -av -e "(\(Merge\|Mutate\)FromLogEntryTask): Code: 40\. DB::Exception: Checksums of parts don't match: hash of uncompressed files doesn't match ([0-9a-f]* vs [0-9a-f]*)\. (CHECKSUM_DOESNT_MATCH) (version .*)\. Data after \(merge\|mutation\) is not byte-identical to data on another replicas\." \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
