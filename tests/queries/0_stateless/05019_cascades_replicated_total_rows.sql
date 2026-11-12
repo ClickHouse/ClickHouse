@@ -32,13 +32,19 @@ SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k SET
 -- query runs without the optimizer, which refuses to read an `EXPLAIN`.
 SET param__internal_cascades_cost_config = '{"exchange_fixed_overhead":1}';
 
+-- Not `make_distributed_plan = 0` here: with distributed_plan_workers_num still explicit from
+-- above, that would conflict with it and zeroing the worker count along with it would size the
+-- inner EXPLAIN's own plan from this (outer) query context instead of the inner SETTINGS. Left to
+-- derive, make_distributed_plan comes back on for a query that only reads an EXPLAIN pseudo-table,
+-- which distributed_plan_fallback_to_local_execution (on by default) runs locally instead of
+-- rejecting.
 SELECT countIf(explain LIKE '%ParallelRead%' OR explain LIKE '%ReplicatedRead%') > 0
 FROM (
     EXPLAIN
     SELECT count() FROM t_cascades_repl
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1
 )
-SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
+SETTINGS enable_cascades_optimizer = 0;
 
 SELECT countIf(explain LIKE '%ParallelRead%' OR explain LIKE '%ReplicatedRead%') > 0
 FROM (
@@ -46,6 +52,6 @@ FROM (
     SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, use_statistics = 0
 )
-SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
+SETTINGS enable_cascades_optimizer = 0;
 
 DROP TABLE t_cascades_repl SYNC;

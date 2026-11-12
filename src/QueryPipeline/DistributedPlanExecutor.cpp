@@ -1418,19 +1418,28 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     const auto & settings = query_context->getSettingsRef();
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
 
-    /// Local execution runs in-process, not bound to a cluster or its client: use the requested
-    /// count (zero included), and let the caller (Optimizer::buildContext) give its own, more
-    /// specific error for zero instead of this function faulting the client for it.
-    if (settings[Setting::distributed_plan_execute_locally])
+    /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
+    /// A zero count falls through: with the client enabled, the cluster it configures still gives
+    /// a real node count for Cascades to plan against even though execution stays local.
+    if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
-    /// A plan that needs workers cannot serve any selection, named or default, without the client:
-    /// reject it instead of silently planning zero nodes and running on the initiator alone.
     const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+    {
+        /// Local execution needs no client at all; let a zero count through for the caller
+        /// (Optimizer::buildContext) to give its own, more specific error for it, instead of this
+        /// function faulting the client for a count execution was never going to ask it for.
+        if (settings[Setting::distributed_plan_execute_locally])
+            return requested_workers;
+
+        /// A plan that needs workers cannot serve any selection, named or default, without the
+        /// client: reject it instead of silently planning zero nodes and running on the initiator
+        /// alone.
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled; cannot run a distributed query plan{}",
             worker_cluster.empty() ? "" : fmt::format(" on worker cluster '{}'", worker_cluster));
+    }
 
     /// Size the plan from the provider the query executes on; an unusable selection throws here.
     return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
