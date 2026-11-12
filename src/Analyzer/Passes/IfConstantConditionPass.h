@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class QueryNode;
+
 /** Convert `if` with constant condition or `multiIf` with single constant condition into true condition argument value
   * or false condition argument value.
   *
@@ -24,5 +26,9 @@ public:
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
+
+/// Whether `IfConstantConditionPass` leaves the expressions of `query_node` unfolded, because folding them would merge
+/// ROLLUP, CUBE or GROUPING SETS keys of different grouping sets.
+bool ifConstantConditionFoldingMergesGroupingKeys(const QueryNode & query_node, const ContextPtr & context);
 
 }

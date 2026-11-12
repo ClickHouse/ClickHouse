@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickStack",
   "pages": [
     "pt-BR/clickstack/index",
@@ -112,6 +111,8 @@
                 {
                   "group": "Setembro",
                   "pages": [
+                    "pt-BR/clickstack/demo-days/2026/2026-09-24",
+                    "pt-BR/clickstack/demo-days/2026/2026-09-17",
                     "pt-BR/clickstack/demo-days/2026/2026-09-10",
                     "pt-BR/clickstack/demo-days/2026/2026-09-04"
                   ]

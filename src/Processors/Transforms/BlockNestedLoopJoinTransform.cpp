@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -34,7 +35,6 @@ BlockNestedLoopBuildTransform::BlockNestedLoopBuildTransform(
     , finish_counter(std::move(finish_counter_))
     , stream_index(stream_index_)
 {
-    spillable = data->canSpill();
 }
 
 InputPort * BlockNestedLoopBuildTransform::addTotalsPort()
@@ -127,22 +127,6 @@ void BlockNestedLoopBuildTransform::work()
         data->setBuildSideTotals(std::move(block));
     else
         stop_reading = !data->addBlock(std::move(block), num_rows, stream_index);
-}
-
-ProcessorMemoryStats BlockNestedLoopBuildTransform::getMemoryStats()
-{
-    ProcessorMemoryStats stats;
-    stats.spillable_memory_bytes = data->getInMemoryBytes();
-    /// The blocks are written out one at a time, so what the spill needs on top of what it frees is
-    /// the largest of them, counted uncompressed - once as the block it decompresses into, once as
-    /// the buffer the temporary stream writes it through.
-    stats.need_reserved_memory_bytes = 2 * data->getMaxInMemoryBlockBytes();
-    return stats;
-}
-
-bool BlockNestedLoopBuildTransform::spillOnSize(size_t bytes)
-{
-    return data->spillInMemoryBlocks(bytes, stream_index);
 }
 
 void BlockNestedLoopBuildTransform::finishBuild()
@@ -256,6 +240,7 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     for (const auto & required_column : predicate.actions->getRequiredColumnsWithTypes())
         predicate_input_header.insert(ColumnWithTypeAndName(nullptr, required_column.type, required_column.name));
     predicate_input_positions = predicate.actions->getInputPositions(predicate_input_header);
+    set_spillables.add(predicate.actions->getActionsDAG());
 }
 
 IProcessor::Status BlockNestedLoopProbeTransform::prepare()
@@ -690,8 +675,8 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     /// its own block and the pieces are concatenated. A single group is the common case and needs
     /// no concatenation. The gather indexes of a group are the same for every column of its block,
     /// so they are built once here rather than per column.
-    std::vector<BuildRun> emitted_runs;
-    std::vector<ColumnPtr> emitted_run_indexes;
+    VectorWithMemoryTracking<BuildRun> emitted_runs;
+    VectorWithMemoryTracking<ColumnPtr> emitted_run_indexes;
     for (size_t rest = num_rows, offset = 0; rest != 0;)
     {
         const auto & run = walk.build_runs.at(emitted_runs.size());

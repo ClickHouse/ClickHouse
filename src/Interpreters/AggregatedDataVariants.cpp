@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Poco/Logger.h>
 #include <Common/HashTable/HashTableTraits.h>
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -180,6 +181,21 @@ size_t AggregatedDataVariants::allocatedBytes() const
     return res;
 }
 
+size_t AggregatedDataVariants::usedArenaBytes() const
+{
+    size_t res = 0;
+    for (const auto & pool : aggregates_pools)
+        res += pool->usedBytes();
+    return res;
+}
+
+size_t AggregatedDataVariants::memoryUsage() const
+{
+    if (memory_tracker)
+        return std::max<Int64>(memory_tracker->get(), 0);
+    return allocatedBytes();
+}
+
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
 {
     switch (type)
@@ -249,6 +265,26 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     #undef M
         default:
         return false;
+    }
+}
+
+void AggregatedDataVariants::resetToSingleLevel()
+{
+    chassert(!hasData());
+    switch (type)
+    {
+#define M(NAME) \
+        case Type::NAME ## _two_level: \
+            init(Type::NAME); \
+            (NAME ## _two_level).reset(); \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
     }
 }
 

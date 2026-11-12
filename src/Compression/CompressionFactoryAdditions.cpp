@@ -6,6 +6,7 @@
 
 #include <Compression/CompressionFactory.h>
 
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/ICompressionCodec.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -55,6 +56,30 @@ void CompressionCodecFactory::checkCodecIsNotColumnLevelOnly(const String & fami
 namespace
 {
 
+bool isCodecCombinator(const String & name)
+{
+    return equalsCaseInsensitive(name, FIRST_APPLICABLE_CODEC_NAME) || equalsCaseInsensitive(name, "Multiple");
+}
+
+/// Calls `check` with the family name of every codec in the list of codecs `codecs`, including the alternatives of
+/// `FirstApplicable` and the codecs of `Multiple`.
+template <typename Check>
+void forEachCodecFamilyNameInList(const ASTs & codecs, Check && check)
+{
+    for (const auto & inner_codec_ast : codecs)
+    {
+        if (const auto * identifier = inner_codec_ast->as<ASTIdentifier>())
+            check(identifier->name());
+        else if (const auto * inner_func = inner_codec_ast->as<ASTFunction>())
+        {
+            if (isCodecCombinator(inner_func->name) && inner_func->arguments)
+                forEachCodecFamilyNameInList(inner_func->arguments->children, check);
+            else
+                check(inner_func->name);
+        }
+    }
+}
+
 /// Calls `check` with the family name of every codec of the chain in `ast`.
 template <typename Check>
 void forEachCodecFamilyNameInChain(const ASTPtr & ast, Check && check)
@@ -63,13 +88,7 @@ void forEachCodecFamilyNameInChain(const ASTPtr & ast, Check && check)
     if (!func || !func->arguments)
         return;
 
-    for (const auto & inner_codec_ast : func->arguments->children)
-    {
-        if (const auto * identifier = inner_codec_ast->as<ASTIdentifier>())
-            check(identifier->name());
-        else if (const auto * inner_func = inner_codec_ast->as<ASTFunction>())
-            check(inner_func->name);
-    }
+    forEachCodecFamilyNameInList(func->arguments->children, check);
 }
 
 }
@@ -141,24 +160,130 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
     return false;
 }
 
+/// Whether a value of the type contains, or may contain, a `Map`. All the statically nested types are traversed
+/// (including the alternatives of a `Variant`), and a type with dynamic subcolumns (`Dynamic`, `JSON`) may hold a
+/// `Map` whose streams become known only at insertion time, after the metadata has been validated.
 bool typeContainsMap(const DataTypePtr & type)
 {
     if (typeid_cast<const DataTypeMap *>(type.get()))
         return true;
-    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return typeContainsMap(type_nullable->getNestedType());
-    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        return typeContainsMap(type_array->getNestedType());
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        for (const auto & subtype : type_tuple->getElements())
-            if (typeContainsMap(subtype))
-                return true;
-        return false;
-    }
+    if (type->hasDynamicSubcolumnsData())
+        return true;
+    const size_t num_children = type->getNumberOfChildren();
+    for (size_t i = 0; i < num_children; ++i)
+        if (typeContainsMap(type->getChild(i)))
+            return true;
     return false;
 }
 
+}
+
+void CompressionCodecFactory::checkCodecIsEnabled(const String & family_name, const Settings * settings)
+{
+    if (!settings)
+        return;
+
+    const String gate_setting_name = getGateSettingName(family_name);
+    const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name);
+    if (!tier || settings->get(gate_setting_name).safeGet<bool>())
+        return;
+
+    std::string_view reason;
+    /// `getGateTier` maps OBSOLETE to nullopt (the codec is GA). Included for switch exhaustiveness.
+    switch (*tier)
+    {
+        case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
+        case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
+        case SettingsTierType::PRODUCTION:
+        case SettingsTierType::PRIVATE_PREVIEW:
+        case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
+    }
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Codec {} {}. You can enable it with the '{}' setting",
+        family_name,
+        reason,
+        gate_setting_name);
+}
+
+void CompressionCodecFactory::validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings, bool reject_lossy) const
+{
+    const auto [name, arguments] = getCodecNameAndArguments(element);
+
+    if (isCodecCombinator(name))
+    {
+        if (!arguments || arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec {} requires at least one codec as an argument", name);
+        for (const auto & codec : arguments->children)
+            validateFirstApplicableAlternative(codec, settings, reject_lossy);
+        return;
+    }
+
+    if (equalsCaseInsensitive(name, DEFAULT_CODEC_NAME))
+    {
+        if (arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
+        return;
+    }
+
+    if (isDeclarativeCodec(name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec {} cannot be used inside {}", name, FIRST_APPLICABLE_CODEC_NAME);
+
+    /// Only the codec name, its arguments and its gate setting. The checks that depend on the data type, or on the
+    /// other codecs of a chain, apply to the chains resolved for the data types.
+    const CompressionCodecPtr codec = getImpl(name, arguments, nullptr);
+    checkCodecIsEnabled(name, settings);
+
+    if (reject_lossy && codec->isLossyCompression())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Codec {} is lossy and cannot be an alternative of {} where the data type is unknown, e.g. as a default or "
+            "TTL recompression codec, or for a column with dynamic subcolumns (Dynamic, JSON): it would be selected for the type of every column, including the ones where lossy "
+            "compression is not allowed (a sorting key, the keys of a Map or a LowCardinality dictionary)",
+            name, FIRST_APPLICABLE_CODEC_NAME);
+}
+
+void CompressionCodecFactory::validateCodecWithFirstApplicable(
+    const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
+{
+    /// The combinator itself is validated as an alternative, so that all of its alternatives are.
+    for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
+    {
+        /// The streams of the dynamic subcolumns (of `Dynamic` or `JSON`) and their types become known only at
+        /// insertion time, after this validation, and may include a `Map` or a sorting key: the same as without a type.
+        if (CompressionCodecFirstApplicable::isFirstApplicable(element))
+            validateFirstApplicableAlternative(element, settings, /*reject_lossy=*/ !column_type || column_type->hasDynamicSubcolumns());
+    }
+
+    if (!column_type)
+    {
+        validateCodecAndGetPreprocessedASTImpl(CompressionCodecFirstApplicable::resolveInChain(ast, nullptr), {}, settings, sanity_check);
+        return;
+    }
+
+    /// Every substream is compressed with the chain resolved for its own data type.
+    bool has_substreams = false;
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+    {
+        if (!ISerialization::isSpecialCompressionAllowed(substream_path))
+            return;
+        has_substreams = true;
+
+        const auto & substream_type = substream_path.back().data.type;
+        const ASTPtr resolved = CompressionCodecFirstApplicable::resolveInChain(ast, substream_type.get());
+        validateCodecAndGetPreprocessedASTImpl(resolved, substream_type, settings, sanity_check);
+
+        /// See the same check in `validateCodecAndGetPreprocessedASTImpl`, which does not see the whole column here.
+        if (typeContainsMap(column_type) && get(resolved, substream_type.get())->isLossyCompression())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Codec {} selects a lossy codec, which cannot be applied to a column of type {} because it contains (or may contain) a Map, "
+                "whose keys would be corrupted by lossy compression",
+                ast->formatForErrorMessage(), column_type->getName());
+    };
+    column_type->getDefaultSerialization()->enumerateStreams(callback, column_type);
+
+    if (!has_substreams)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
@@ -171,6 +296,14 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
     const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
 {
+    /// `FirstApplicable` is kept as written, to be resolved for the data type of every substream when compressing,
+    /// so that it follows a change of the type of the column.
+    if (CompressionCodecFirstApplicable::isInChain(ast))
+    {
+        validateCodecWithFirstApplicable(ast, column_type, settings, sanity_check);
+        return ast;
+    }
+
     if (const auto * func = ast->as<ASTFunction>())
     {
         ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
@@ -268,30 +401,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (settings)
-                {
-                    const String gate_setting_name = getGateSettingName(codec_family_name);
-                    const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name);
-                    if (tier && !settings->get(gate_setting_name).safeGet<bool>())
-                    {
-                        std::string_view reason;
-                        /// `getGateTier` maps OBSOLETE to nullopt (the codec is GA). Included for switch exhaustiveness.
-                        switch (*tier)
-                        {
-                            case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
-                            case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
-                            case SettingsTierType::PRODUCTION:
-                            case SettingsTierType::PRIVATE_PREVIEW:
-                            case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
-                        }
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Codec {} {}. You can enable it with the '{}' setting",
-                            codec_family_name,
-                            reason,
-                            gate_setting_name);
-                    }
-                }
+                checkCodecIsEnabled(codec_family_name, settings);
 
                 /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
                 /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing
@@ -299,7 +409,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 /// lossy codec) is documented for Float*/Array(Float*) columns only, so reject Map entirely.
                 if (result_codec->isLossyCompression() && column_type && typeContainsMap(column_type))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains a Map, "
+                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains (or may contain) a Map, "
                         "whose keys would be corrupted by lossy compression",
                         codec_family_name, column_type->getName());
 
@@ -316,6 +426,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/"
                         "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
                         "codec, or in any other context where the column data type is unknown",
+                        codec_family_name);
+
+                /// A codec that needs the column type to compress (e.g. `PCO`) cannot be used where the codec is
+                /// resolved without one: the marks, primary key, default and TTL recompression codecs.
+                if (!column_type && result_codec->requiresColumnTypeToCompress())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} requires the column type to compress and can only be specified for a column",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());

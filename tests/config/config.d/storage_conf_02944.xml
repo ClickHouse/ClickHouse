@@ -3,7 +3,6 @@
         <disks>
             <s3_disk_02944>
                 <type>s3</type>
-                <path>s3_disk/</path>
                 <endpoint>http://localhost:11111/test/test_02944/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>

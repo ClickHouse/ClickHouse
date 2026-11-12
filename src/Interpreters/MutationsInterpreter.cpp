@@ -47,6 +47,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -83,13 +84,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool allow_statistics;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode except_default_mode;
@@ -231,6 +233,35 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
+NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metadata)
+{
+    NameSet res;
+    const auto & columns = metadata.getColumns();
+    auto add = [&](const TTLDescription & ttl)
+    {
+        for (const auto & column : ttl.expression_columns)
+            if (columns.hasPhysical(column.name))
+                res.insert(column.name);
+    };
+
+    if (metadata.hasRowsTTL())
+        add(metadata.getRowsTTL());
+    for (const auto & ttl : metadata.getRowsWhereTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getGroupByTTLs())
+        add(ttl);
+    for (const auto & [name, ttl] : metadata.getColumnTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getMoveTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getRecompressionTTLs())
+        add(ttl);
+
+    return res;
+}
+
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -257,8 +288,6 @@ ColumnDependencies getAllColumnDependencies(
     return dependencies;
 }
 
-}
-
 
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
@@ -266,7 +295,8 @@ IsStorageTouched isStorageTouchedByMutations(
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -334,6 +364,7 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    executor.setExceptionCallback(std::move(on_exception));
     /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
     executor.setCancelCallback(
         [&executor, &check_operation_is_not_cancelled]
@@ -521,6 +552,11 @@ bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) cons
     return part && part->hasBrokenProjection(name);
 }
 
+bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
+{
+    return part && part->hasUnloadedProjection(name);
+}
+
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -666,6 +702,13 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
+
+    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
+    for (const auto & key_column : key_columns)
+    {
+        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
+            key_storage_columns.insert(column->getNameInStorage());
+    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
@@ -1011,7 +1054,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name);
+            return source.hasProjection(name) || source.hasUnloadedProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1345,8 +1388,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// the submitting session's value is meaningful for that, so the gate lives at submission
+            /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
+            /// asked the background context that executes the mutation, which reads the server-default
+            /// profile rather than the session that submitted the statement, so a mutation accepted
+            /// with a session opt-in failed forever and wedged the table's mutation queue.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
@@ -1401,8 +1448,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// See MATERIALIZE_STATISTICS above: gated at submission time, not under the background
+            /// context that executes the mutation.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
@@ -1680,6 +1727,16 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
+    /// Without a TTL target the mutation only recalculates TTL infos (see `MutationHelpers::shouldExecuteTTL`),
+    /// and `TTLCalcTransform` evaluates every TTL rule, so it needs the inputs of all of them.
+    auto is_ttl_expression = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_EXPRESSION; };
+    auto is_ttl_target = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; };
+    if (std::ranges::any_of(dependencies, is_ttl_expression) && std::ranges::none_of(dependencies, is_ttl_target))
+    {
+        for (const auto & name : getColumnsRequiredToRecalculateTTL(*metadata_snapshot))
+            dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+    }
+
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1780,9 +1837,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
+                continue;
             }
 
-            continue;
+            if (!source.hasUnloadedProjection(projection.name))
+                continue;
         }
 
         /// Always rebuild broken projections.
@@ -1811,6 +1870,19 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (changed)
             materialized_projections.insert(projection.name);
+    }
+
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
     }
 
     /// Every column emitted by a non-readonly stage is written into the new part at its current
@@ -2410,7 +2482,7 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            false,
+            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
     }
@@ -2521,6 +2593,197 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     return pipeline;
 }
 
+namespace
+{
+
+/// Collects the names of the columns read from `table_node` in the resolved `node`, including the ones read
+/// by the definitions of `ALIAS` columns, which are computed on read. Subqueries are not entered: they are
+/// refused separately.
+void collectColumnsReadFromTable(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, NameSet & column_names)
+{
+    if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return;
+
+    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == table_node)
+        column_names.insert(column_node->getColumnName());
+
+    for (const auto & child : node->getChildren())
+        collectColumnsReadFromTable(child, table_node, column_names);
+}
+
+}
+
+/// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
+/// are constants on one server, but replicas of the same table may have different local names or
+/// disks, so a mutation that reads them would produce different parts on different replicas.
+/// The expressions of the mutation are resolved by the analyzer the same way they are when the mutation
+/// is executed, so a virtual column is found however it is reached: qualified with the table name, through
+/// an `ALIAS` column or its subcolumn, or through a `Nested` prefix assembled from `ALIAS` columns.
+std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
+    const StoragePtr & storage,
+    const MutationCommands & commands,
+    ContextPtr context,
+    StorageMetadataHandle metadata_snapshot)
+{
+    /// A real column with the same name shadows the virtual one and is deterministic.
+    /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
+    /// reaches a mutation, so there it is always 1 on every replica. `_part_index` and `_part_starting_offset`
+    /// depend on the set of parts read by a query, but a mutation reads every part on its own, so they are
+    /// always 0.
+    static const NameSet deterministic_in_mutations = {"_sample_factor", "_part_index", "_part_starting_offset"};
+
+    if (!metadata_snapshot)
+        metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    const auto & real_columns = metadata_snapshot->getColumns();
+    NameSet nondeterministic_virtual_columns;
+    for (const auto & virtual_column : metadata_snapshot->virtuals)
+    {
+        if (!virtual_column.deterministic && !deterministic_in_mutations.contains(virtual_column.name) && !real_columns.has(virtual_column.name))
+            nondeterministic_virtual_columns.insert(virtual_column.name);
+    }
+
+    if (nondeterministic_virtual_columns.empty())
+        return {};
+
+    /// A mutation builds or rebuilds projections: the one named in `MATERIALIZE PROJECTION`, but also the ones that
+    /// depend on the updated columns, the broken ones, or all of them with `lightweight_mutation_projection_mode =
+    /// 'rebuild'`. A projection is calculated from the block read by the mutation, which carries the virtual columns
+    /// as well, so a projection that reads a non-deterministic virtual column would differ between replicas. Which
+    /// projections are rebuilt depends on the state of each part, so every projection is checked, unless the
+    /// mutation only drops projections.
+    NameSet dropped_projections;
+    bool only_drops_projections = true;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::DROP_PROJECTION)
+            dropped_projections.insert(command.projection_name);
+        else
+            only_drops_projections = false;
+    }
+
+    if (!only_drops_projections)
+    {
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (dropped_projections.contains(projection.name))
+                continue;
+            for (const auto & column_name : projection.required_columns)
+                if (nondeterministic_virtual_columns.contains(column_name))
+                    return column_name;
+        }
+    }
+
+    /// Each command is resolved in its own scope, the same way the commands are analyzed in separate stages
+    /// when the mutation is executed, so an alias defined in one command cannot hide a virtual column read
+    /// in another one.
+    std::vector<ASTPtr> scopes;
+    for (const auto & command : commands)
+    {
+        /// `MATERIALIZE COLUMN` evaluates the default expression of the column (`DEFAULT`, `MATERIALIZED`,
+        /// or `EPHEMERAL`) inside the mutation and writes the result into the new part.
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            if (const auto * column = real_columns.tryGet(command.column_name); column && column->default_desc.expression)
+            {
+                ASTPtr expressions = make_intrusive<ASTExpressionList>();
+                expressions->children.push_back(column->default_desc.expression->clone());
+                scopes.push_back(std::move(expressions));
+            }
+            continue;
+        }
+
+        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+            continue;
+
+        ASTPtr expressions = make_intrusive<ASTExpressionList>();
+        auto alter = command.ast();
+        if (alter->predicate)
+            expressions->children.push_back(alter->predicate->clone());
+        if (command.type == MutationCommand::UPDATE && alter->update_assignments)
+            for (const auto & assignment : alter->update_assignments->children)
+                expressions->children.push_back(assignment->as<ASTAssignment &>().expression()->clone());
+
+        if (!expressions->children.empty())
+            scopes.push_back(std::move(expressions));
+    }
+
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+
+    /// How an identifier is resolved depends on the settings of name resolution: a compound identifier such as
+    /// `t._table` on `analyzer_compatibility_prefer_alias_over_subcolumn`, and a bare identifier that is both
+    /// an alias and a column (`UPDATE value = ('safe' AS _table) WHERE _table != ''`) on
+    /// `prefer_column_name_to_alias`. The mutation is validated with the settings of the query, but executed
+    /// with the settings of the background context, which may be different, so the interpretations of both
+    /// are checked. An interpretation which is not used by either of them is not required to be well-typed.
+    struct NameResolutionSettings
+    {
+        bool prefer_alias_over_subcolumn;
+        bool prefer_column_name_to_alias;
+
+        auto operator<=>(const NameResolutionSettings &) const = default;
+    };
+
+    auto get_name_resolution_settings = [](const ContextPtr & settings_context)
+    {
+        const auto & context_settings = settings_context->getSettingsRef();
+        return NameResolutionSettings{
+            .prefer_alias_over_subcolumn = context_settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
+            .prefer_column_name_to_alias = context_settings[Setting::prefer_column_name_to_alias]};
+    };
+
+    std::set<NameResolutionSettings> name_resolution_settings_variants = {
+        get_name_resolution_settings(context),
+        get_name_resolution_settings(context->getBackgroundContext())};
+
+    /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
+    /// as well (`e String EPHEMERAL _database`), so they are resolved in turn, each one in its own scope.
+    /// Column definitions cannot reference each other cyclically, and each one is resolved once.
+    NameSet followed_ephemeral_columns;
+    while (!scopes.empty())
+    {
+        NameSet read_columns;
+
+        for (const auto & expressions : scopes)
+        {
+            for (const auto & name_resolution_settings : name_resolution_settings_variants)
+            {
+                auto analysis_context = Context::createCopy(context);
+                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
+                analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
+
+                auto expression = buildQueryTree(expressions->clone(), analysis_context);
+                /// The expressions are only analyzed, nothing is read, so the table is not locked.
+                auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
+
+                QueryAnalyzer query_analyzer(/*only_analyze=*/ true);
+                query_analyzer.resolve(expression, table_node, analysis_context);
+
+                collectColumnsReadFromTable(expression, table_node, read_columns);
+            }
+        }
+
+        scopes.clear();
+        for (const auto & name : read_columns)
+        {
+            if (nondeterministic_virtual_columns.contains(name))
+                return name;
+
+            auto column = real_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ephemeral, name);
+            if (!column)
+                continue;
+            const auto * description = real_columns.tryGet(column->getNameInStorage());
+            if (description && description->default_desc.expression && followed_ephemeral_columns.insert(description->name).second)
+            {
+                ASTPtr expressions = make_intrusive<ASTExpressionList>();
+                expressions->children.push_back(description->default_desc.expression->clone());
+                scopes.push_back(std::move(expressions));
+            }
+        }
+    }
+
+    return {};
+}
+
 void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     const StoragePtr & storage,
     const MutationCommands & commands,
@@ -2543,6 +2806,12 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
     }
+
+    if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
+            "Virtual column '{}', read by the mutation or by a projection it may rebuild, is non-deterministic: "
+            "its value may differ between replicas, see allow_nondeterministic_mutations setting", *virtual_column_name);
 }
 
 void MutationsInterpreter::validate()
