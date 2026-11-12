@@ -1,0 +1,83 @@
+-- 1. GROUP BY the key, the setting is off: an exchange below the aggregation
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Limit (TopN merge Sorting for ORDER BY)
+      GatherExchange
+        Sorting
+          Expression ((Before ORDER BY + Projection))
+            MergingAggregated
+              ShuffleExchange
+                Aggregating
+                  Expression ((Before GROUP BY + Change column names to column identifiers))
+                    ReadFromMergeTree (ParallelRead default.t_coloc_agg)
+-- 2. GROUP BY the key, the setting is on: no exchange below the aggregation
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Limit (TopN merge Sorting for ORDER BY)
+      GatherExchange
+        Sorting
+          Expression ((Before ORDER BY + Projection))
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (PartitionedRead default.t_coloc_agg)
+1999	10	109990
+1998	10	109980
+1997	10	109970
+1999	10	109990
+1998	10	109980
+1997	10	109970
+-- 3. GROUP BY the key and one more column
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (PartitionedRead default.t_coloc_agg)
+2000	20000
+2000	20000
+-- 4. GROUP BY another column: the nodes send partial results, one row for each group
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (ParallelRead default.t_coloc_agg)
+a	5000	49990000
+b	5000	49995000
+c	5000	50000000
+d	5000	50005000
+a	5000	49990000
+b	5000	49995000
+c	5000	50000000
+d	5000	50005000
+-- 5. no GROUP BY: one row
+20000	199990000	2000
+20000	199990000	2000
+-- 6. a table partitioned by month, GROUP BY the date
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (PartitionedRead default.t_coloc_agg_monthly)
+240	287988000
+240	287988000
+-- 7. FINAL: the read is not split by partition value
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          MergingAggregated
+            ShuffleExchange
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_coloc_agg_replacing)
+4000	79980000
+4000	79980000

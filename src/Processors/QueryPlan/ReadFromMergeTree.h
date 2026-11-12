@@ -644,6 +644,14 @@ public:
     /// slices for a plain read, primary-key-range layers grouped into the buckets for `FINAL`. Returns
     /// the bucket count, or 0 (read serially) when a `FINAL` read cannot be split safely.
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
+    /// Puts the analyzed parts into `target_buckets` distributed-read buckets by the value that the partition
+    /// key component `component_index` has in each part. Rows with equal values of the component are then in
+    /// one bucket, and another table with the same component puts them into the bucket with the same number.
+    /// Returns the bucket count, or 0 when the read cannot be split this way.
+    size_t setupDistributedReadBucketsByPartitionValue(size_t component_index, size_t target_buckets);
+    /// The part of all marks of a distributed read that its largest bucket holds: 1/N for N equal buckets,
+    /// more when the buckets are not equal. 0 when the read is not distributed or has no marks.
+    Float64 getLargestDistributedReadBucketShare() const;
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
     /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
     std::vector<String> serializeDistributedReadBuckets() const;

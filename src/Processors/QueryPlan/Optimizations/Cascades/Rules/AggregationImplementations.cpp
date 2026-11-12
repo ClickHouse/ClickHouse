@@ -5,11 +5,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Core/SortDescription.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -60,6 +62,7 @@ public:
     void addLocalAggregation();
     void addShuffleAggregation(size_t node_count);
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
+    void addCoLocatedAggregations(size_t node_count);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
     bool isShuffleApplicable() const
@@ -215,6 +218,37 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
     }
 }
 
+/// Co-located - the input is read already divided by a function of some of the group keys, which the table
+/// stores as a partition key component. The rows of one group are then on one node, as after a shuffle by
+/// those keys, so each node produces final results and no exchange is necessary below the aggregation.
+void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregations(size_t node_count)
+{
+    const auto & keys = agg_step.getParams().keys;
+    for (const auto & layout : getDeliveredStorageLayouts(memo, expression->inputs[0].group_id))
+    {
+        DistributionDescription by_layout;
+        by_layout.node_count = node_count;
+        by_layout.layout_function = layout.function;
+
+        bool all_arguments_are_keys = true;
+        for (const auto & argument : layout.argument_columns)
+        {
+            auto key = std::ranges::find_if(keys, [&](const String & key_name) { return argument.contains(key_name); });
+            if (key == keys.end())
+            {
+                all_arguments_are_keys = false;
+                break;
+            }
+            by_layout.columns.push_back({*key});
+        }
+        if (!all_arguments_are_keys)
+            continue;
+
+        addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_layout, by_layout,
+            fmt::format("Co-located (by {}) {}", layout.function->dump(), agg_step.getStepDescription()));
+    }
+}
+
 std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
@@ -287,6 +321,12 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
         if (strategies.hasMultipleKeys())
             strategies.addSingleKeyShuffleAggregations(candidate_node_counts);
+
+        if (memo.getContext().distributed_plan_use_partition_key_layout)
+        {
+            for (size_t candidate_node_count : candidate_node_counts)
+                strategies.addCoLocatedAggregations(candidate_node_count);
+        }
     }
 
     return result;

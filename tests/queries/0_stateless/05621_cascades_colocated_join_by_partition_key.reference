@@ -1,0 +1,113 @@
+-- 1. two tables, the setting is off: no co-located join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_coloc_groups)
+-- 2. two tables, the setting is on: no exchange below the join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_groups)
+10000	104995000
+10000	104995000
+-- 3. self-join on the key and one more column
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8))  swapped)
+            Expression ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (PartitionedRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_events)
+4500	40491000
+4500	40491000
+-- 4. semi-join with a subquery on the right side
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_events)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (PartitionedRead default.t_coloc_groups)
+3330	34961670
+3330	34961670
+-- 5. the key column has another name in the right table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_groups_renamed)
+10000	104995000
+-- 6. another modulus in the right table: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_coloc_groups_mod4)
+10000	104995000
+-- 7. another key type in the right table: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_coloc_groups_u32)
+10000	104995000
+-- 8. the join is not on the key: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_coloc_events)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_coloc_groups)
+2000
+2000
+-- 9. a floating-point key: not co-located, because equal keys can be in different partitions
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_coloc_float_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_coloc_float_right)
+1999	1999000
+1999	1999000

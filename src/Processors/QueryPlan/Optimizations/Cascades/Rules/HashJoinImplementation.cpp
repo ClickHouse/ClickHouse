@@ -6,11 +6,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/TableJoin.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -53,6 +55,7 @@ public:
     void addBroadcastJoins(size_t node_count);
     void addShuffleJoin(size_t node_count);
     void addSingleKeyShuffleJoins(size_t node_count);
+    void addCoLocatedJoins(size_t node_count);
 
     bool hasEquiKeys() const { return !equi_keys.empty(); }
     bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
@@ -71,6 +74,11 @@ private:
     };
 
     void extractEquiJoinKeys();
+
+    /// The alternatives of `addCoLocatedJoins` that the layouts of one input give.
+    void addCoLocatedJoinsFromInput(size_t node_count, bool from_left);
+    /// The equi-join key whose column on the given side is one of `argument`, or nullptr.
+    const JoinKeyPair * findEquiKey(const NameSet & argument, bool on_left) const;
 
     /// Clones the logical join into a physical alternative with the given strategy and
     /// distributions and offers it to the memo.
@@ -106,19 +114,6 @@ static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_al
     return TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
-}
-
-/// A side is preserved when the join never emits rows with that side null/default-extended:
-/// its key columns are real values in every output row. Only a preserved side's key columns can
-/// be advertised as the output distribution of a shuffle join.
-static bool joinPreservesLeftSide(JoinKind kind)
-{
-    return kind == JoinKind::Inner || kind == JoinKind::Left || kind == JoinKind::Cross || kind == JoinKind::Comma;
-}
-
-static bool joinPreservesRightSide(JoinKind kind)
-{
-    return kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
 HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
@@ -432,6 +427,78 @@ void HashJoinImplementation::StrategyEnumerator::addSingleKeyShuffleJoins(size_t
     }
 }
 
+const HashJoinImplementation::StrategyEnumerator::JoinKeyPair * HashJoinImplementation::StrategyEnumerator::findEquiKey(
+    const NameSet & argument, bool on_left) const
+{
+    for (const auto & key : equi_keys)
+    {
+        /// A key that is cast before the comparison has another value than the one the table used.
+        if (key.hash_type_name.empty() && argument.contains(on_left ? key.left : key.right))
+            return &key;
+    }
+    return nullptr;
+}
+
+/// Co-located join - both inputs are read already divided by one function of the join keys, which the two
+/// tables store as a partition key component. Each node joins the parts of its bucket, with no exchange.
+/// A layout of one input gives the function and the argument columns of that input; the equi-join keys
+/// give the columns of the other input. The read of each input checks that its table has the function,
+/// so an input that cannot deliver it leaves the alternative without a plan.
+void HashJoinImplementation::StrategyEnumerator::addCoLocatedJoins(size_t node_count)
+{
+    addCoLocatedJoinsFromInput(node_count, /*from_left=*/ true);
+    addCoLocatedJoinsFromInput(node_count, /*from_left=*/ false);
+}
+
+void HashJoinImplementation::StrategyEnumerator::addCoLocatedJoinsFromInput(size_t node_count, bool from_left)
+{
+    for (const auto & layout : getDeliveredStorageLayouts(memo, expression->inputs[from_left ? 0 : 1].group_id))
+    {
+        DistributionDescription left_dist;
+        left_dist.node_count = node_count;
+        left_dist.layout_function = layout.function;
+
+        DistributionDescription right_dist = left_dist;
+        DistributionDescription output_dist = left_dist;
+
+        bool all_arguments_are_join_keys = true;
+        for (const auto & argument : layout.argument_columns)
+        {
+            const JoinKeyPair * key = findEquiKey(argument, from_left);
+            if (!key)
+            {
+                all_arguments_are_join_keys = false;
+                break;
+            }
+            left_dist.columns.push_back({key->left});
+            right_dist.columns.push_back({key->right});
+
+            /// Advertise the output layout only on the preserved side(s), as `addShuffleJoin` does. The input
+            /// that gives the layout can know more names of the argument (columns equal to it after joins
+            /// below), and a consumer above can use any of them.
+            NameSet output_key;
+            if (left_preserved)
+                output_key.insert(key->left);
+            if (right_preserved)
+                output_key.insert(key->right);
+            if (from_left ? left_preserved : right_preserved)
+                output_key.insert(argument.begin(), argument.end());
+            output_dist.columns.push_back(std::move(output_key));
+        }
+        if (!all_arguments_are_join_keys)
+            continue;
+
+        if (std::ranges::any_of(output_dist.columns, [](const NameSet & names) { return names.empty(); }))
+        {
+            output_dist.columns.clear();
+            output_dist.layout_function = nullptr;
+        }
+
+        addAlternative(strategySingleton<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist,
+            fmt::format("(co-located by {})", layout.function->dump()));
+    }
+}
+
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     chassert(typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()));
@@ -471,6 +538,9 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
         if (strategies.hasMultipleEquiKeys())
             strategies.addSingleKeyShuffleJoins(candidate_node_count);
+
+        if (strategies.hasEquiKeys() && memo.getContext().distributed_plan_use_partition_key_layout)
+            strategies.addCoLocatedJoins(candidate_node_count);
     }
 
     return result;

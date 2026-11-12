@@ -4,6 +4,7 @@
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <memory>
@@ -87,6 +88,11 @@ public:
     /// Statistics for this group - shared by all expressions in the group
     /// since they all represent the same logical result
     std::optional<ExpressionStatistics> statistics;
+
+    /// Layouts that the result of this group can have with no exchange, because a table read below already
+    /// divides its rows this way. Like the statistics, they describe the result and not one plan of it.
+    /// Filled on first use by `getDeliveredStorageLayouts`.
+    std::optional<StorageLayouts> storage_layouts;
 
 private:
     const GroupId group_id;

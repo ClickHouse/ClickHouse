@@ -277,10 +277,12 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 enforcers.addSortedGather();
         }
     }
-    else
+    else if (!required_properties.distribution.layout_function)
     {
         enforcers.addKeyedShuffle();
     }
+    /// Otherwise the rows must be divided by a function that a table stores. An exchange hashes with its
+    /// own function and cannot deliver that, so there is no enforcer: only a read can satisfy the requirement.
 
     return result;
 }
