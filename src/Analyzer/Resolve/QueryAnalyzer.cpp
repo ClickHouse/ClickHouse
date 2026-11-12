@@ -41,7 +41,6 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/quoteString.h>
 
 #include <Core/Settings.h>
@@ -5597,23 +5596,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
 
-    /// Evaluated lazily: loading the named collections is needed only when a `key = value` argument is present.
-    std::optional<bool> is_named_collection;
-    auto first_argument_is_named_collection = [&]
-    {
-        if (!is_named_collection)
-        {
-            const auto * collection_identifier = table_function_arguments.front()->as<IdentifierNode>();
-            is_named_collection = false;
-            if (collection_identifier)
-            {
-                NamedCollectionFactory::instance().loadIfNot();
-                is_named_collection = NamedCollectionFactory::instance().exists(collection_identifier->getIdentifier().getFullName());
-            }
-        }
-        return *is_named_collection;
-    };
-
     for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
     {
         auto & table_function_argument = table_function_arguments[table_function_argument_index];
@@ -5694,19 +5676,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
           */
         if (table_function_argument->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
         {
-            result_table_function_arguments.push_back(table_function_argument);
-            continue;
-        }
-
-        /// After a named collection, the key of a `key = value` argument names a parameter of the table function,
-        /// so it must not resolve to a column or an alias of the query. Elsewhere it is an ordinary comparison.
-        if (auto * key_value_argument = table_function_argument->as<FunctionNode>();
-            key_value_argument && key_value_argument->getFunctionName() == "equals"
-            && key_value_argument->getArguments().getNodes().size() == 2
-            && key_value_argument->getArguments().getNodes()[0]->as<IdentifierNode>()
-            && first_argument_is_named_collection())
-        {
-            skip_analysis_arguments_indexes.push_back(table_function_argument_index);
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }

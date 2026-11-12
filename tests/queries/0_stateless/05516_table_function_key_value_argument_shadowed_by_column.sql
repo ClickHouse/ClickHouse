@@ -31,4 +31,18 @@ WITH 1 AS x SELECT count() FROM numbers(x = 1);
 WITH 1 AS x SELECT * FROM values('v UInt8', x = 1);
 WITH 1 AS x SELECT * FROM (VALUES (x = 1));
 
+-- A table function that does not take `key = value` parameters (numbers) must resolve `x = 1` as an
+-- ordinary comparison even when the first positional argument happens to name an existing collection:
+-- collection existence must not change the meaning of positional expressions.
+DROP NAMED COLLECTION IF EXISTS c_05516;
+CREATE NAMED COLLECTION c_05516 AS k = 'v';
+WITH 0 AS c_05516, 1 AS x SELECT count() FROM numbers(c_05516, x = 1);
+DROP NAMED COLLECTION c_05516;
+
+-- Cluster variants take the cluster name first, so the named collection is the second argument; the
+-- `key = value` keys after it must still be treated as parameters, not resolved to a query column/alias.
+WITH 'x' AS format
+SELECT foo FROM s3Cluster('test_shard_localhost', s3_conn, filename = '05516_lookup.csv', format = 'CSV', structure = 'foo String')
+ORDER BY foo;
+
 DROP TABLE t_05516;

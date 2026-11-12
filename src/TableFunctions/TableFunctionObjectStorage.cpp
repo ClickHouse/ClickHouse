@@ -6,6 +6,7 @@
 #include <Core/SettingsEnums.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSetQuery.h>
@@ -149,7 +150,15 @@ VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configur
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
+        if (!function_node)
+            continue;
+        /// `headers(...)` and a `key = value` named argument are parameters of the table function, not
+        /// expressions of the query: the key must not resolve to a column or alias of the same name.
+        const auto & function_name = function_node->getFunctionName();
+        const auto & function_arguments = function_node->getArguments().getNodes();
+        bool is_key_value_argument = function_name == "equals" && function_arguments.size() == 2
+            && function_arguments[0]->as<IdentifierNode>();
+        if (function_name == "headers" || is_key_value_argument)
             result.push_back(i);
     }
     return result;
