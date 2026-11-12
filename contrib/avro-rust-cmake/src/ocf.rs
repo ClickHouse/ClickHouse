@@ -227,11 +227,12 @@ fn header_inner(buf: &[u8], limits: &OcfLimits) -> std::result::Result<(Header, 
             // The byte size that follows a negative count is not needed.
             w.long()?;
         }
-        // Each entry takes at least two bytes (two lengths).
-        if count as u64 > (limits.max_header_bytes as u64) / 2 {
+        // Each entry takes at least two bytes (two lengths). An incomplete
+        // input window is not a limit: let parsing request the missing bytes.
+        if limits.max_header_bytes != 0 && count as u64 > (limits.max_header_bytes / 2) as u64 {
             return Err(Stop::Fail(Error::new(
                 ErrorCode::HeaderTooLarge,
-                "Avro data file metadata has too many entries",
+                "Avro data file metadata has too many entries for the header bytes",
             )));
         }
         for _ in 0..count {
@@ -468,6 +469,36 @@ mod tests {
         let n = h.len();
         h.extend_from_slice(&[1, 2, 3]);
         assert_eq!(expect_header(&h).1, n);
+    }
+
+    #[test]
+    fn unlimited_header_accepts_partial_metadata_block() {
+        let h = header_bytes(
+            &[
+                (b"avro.schema", b"\"long\""),
+                (b"a", b"1"),
+                (b"b", b"2"),
+                (b"c", b"3"),
+                (b"d", b"4"),
+                (b"e", b"5"),
+            ],
+            false,
+        );
+        let limits = OcfLimits::default();
+        for cut in 0..h.len() {
+            assert!(matches!(
+                parse_header(&h[..cut], false, &limits).unwrap(),
+                Parsed::NeedMore { .. }
+            ));
+            assert_eq!(
+                parse_header(&h[..cut], true, &limits).unwrap_err().code,
+                ErrorCode::Eof
+            );
+        }
+        assert!(matches!(
+            parse_header(&h, true, &limits).unwrap(),
+            Parsed::Done { consumed, .. } if consumed == h.len()
+        ));
     }
 
     #[test]
