@@ -49,3 +49,16 @@ SELECT getSetting('make_distributed_plan'); -- { serverError INVALID_SETTING_VAL
 SELECT 'DEFAULT clears an explicit off, so the workers num derives it again';
 SET make_distributed_plan = DEFAULT;
 SELECT getSetting('make_distributed_plan');
+
+SELECT 'the derivation and its adjustments show up in query_log for that query only';
+-- Pinned explicitly, before the session-level workers num below: the harness randomizes this
+-- setting, and the point is to see it flip from the session's own value to the adjusted one.
+SET distributed_plan_workers_num = 0, make_distributed_plan = DEFAULT, compile_expressions = 1;
+SET distributed_plan_workers_num = 3;
+SELECT 1 SETTINGS log_comment = '05621_query_log_probe';
+SET distributed_plan_workers_num = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT Settings['make_distributed_plan'], Settings['compile_expressions']
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05621_query_log_probe'
+ORDER BY event_time_microseconds DESC LIMIT 1;
