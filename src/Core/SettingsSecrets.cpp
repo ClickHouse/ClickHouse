@@ -35,7 +35,8 @@ bool maskURLCredentials(String & value)
 
     /// `maskURIUserinfo` ends the authority where the RFC does, but the consumer of the value may read a
     /// wider userinfo, as the MongoDB driver does in `mongodb://u:1?pw@1@host`.
-    bool masked = maskURIPassword(value);
+    bool masked = maskURIUserinfo(value)
+    masked |= maskURIPassword(value);
     masked |= maskPresignedURLParameters(value);
     return masked;
 }
