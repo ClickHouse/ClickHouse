@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/ShuffleStep.h>
@@ -15,68 +14,6 @@
 
 namespace DB::QueryPlanOptimizations
 {
-
-/// Whether `columns` reach the output of the expression unchanged and no row is added or removed.
-static bool expressionKeepsColumns(const ExpressionStep & expression, const Names & columns)
-{
-    const auto & dag = expression.getExpression();
-    if (dag.hasArrayJoin())
-        return false;
-
-    for (const auto & column : columns)
-    {
-        const auto * output = dag.tryFindInOutputs(column);
-        if (!output || output->type != ActionsDAG::ActionType::INPUT || output->result_name != column)
-            return false;
-    }
-    return true;
-}
-
-/// The final DISTINCT needs only `hint` distinct rows, so a preliminary DISTINCT below it on the same columns
-/// can stop each of its streams at the same bound, if nothing between them removes rows or changes the columns.
-class UpdateLimitHintOfPreliminaryDistinctsVisitor : public QueryPlanVisitor<UpdateLimitHintOfPreliminaryDistinctsVisitor>
-{
-public:
-    UpdateLimitHintOfPreliminaryDistinctsVisitor(QueryPlan::Node * final_distinct_node, const Names & columns_, UInt64 hint_)
-        : QueryPlanVisitor<UpdateLimitHintOfPreliminaryDistinctsVisitor>(final_distinct_node)
-        , columns(columns_)
-        , hint(hint_)
-    {
-    }
-
-    bool visitTopDownImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
-    {
-        /// The final DISTINCT itself.
-        if (!parent_node)
-            return true;
-
-        auto * step = current_node->step.get();
-        bool descend = false;
-        if (auto * distinct = typeid_cast<DistinctStep *>(step))
-        {
-            if (distinct->isPreliminary() && distinct->getColumnNames() == columns)
-                distinct->updateLimitHint(hint);
-        }
-        else if (typeid_cast<const UnionStep *>(step))
-            descend = true;
-        else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
-            descend = expressionKeepsColumns(*expression, columns);
-
-        /// Do not go below a step through which the bound does not hold.
-        if (!descend)
-        {
-            auto & frame = stack.back();
-            frame.next_child = frame.node->children.size();
-        }
-        return true;
-    }
-
-    void visitBottomUpImpl(QueryPlan::Node *, QueryPlan::Node *) { }
-
-private:
-    const Names & columns;
-    const UInt64 hint;
-};
 
 /// If plan looks like Limit -> Sorting, update limit for Sorting
 static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
@@ -182,8 +119,6 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
             return 0;
 
         distinct->updateLimitHint(limit->getLimitForSorting());
-        if (!distinct->isPreliminary())
-            UpdateLimitHintOfPreliminaryDistinctsVisitor(child_node, distinct->getColumnNames(), limit->getLimitForSorting()).visit();
         return 0;
     }
 

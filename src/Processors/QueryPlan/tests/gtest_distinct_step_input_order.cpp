@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -22,8 +23,27 @@
 
 using namespace DB;
 
+namespace DB
+{
+void registerDistinctStep(QueryPlanStepRegistry & registry);
+}
+
 namespace
 {
+
+/// A registry holding just the steps under test, with the production version list. Not the process-wide
+/// instance: other tests in this binary populate that one, and a step cannot be registered twice.
+QueryPlanStepRegistry & stepRegistry()
+{
+    static QueryPlanStepRegistry registry;
+    static const bool registered = []
+    {
+        registerDistinctStep(registry);
+        return true;
+    }();
+    (void)registered;
+    return registry;
+}
 
 SharedHeader makeHeader()
 {
@@ -66,6 +86,7 @@ QueryPlanStepPtr roundTrip(DistinctStep & step)
     SerializedSetsRegistry serialized_sets;
     IQueryPlanStep::Serialization serialization{out, serialized_sets};
     serialization.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    serialization.step_version = stepRegistry().versionToWrite(step.getSerializationName(), serialization.version);
     step.serialize(serialization);
 
     QueryPlanSerializationSettings settings;
@@ -74,7 +95,8 @@ QueryPlanStepPtr roundTrip(DistinctStep & step)
     DeserializedSetsRegistry deserialized_sets;
     ContextPtr context = getContext().context;
     IQueryPlanStep::Deserialization deserialization{
-        in, deserialized_sets, {}, context, step.getInputHeaders(), step.getOutputHeader(), settings, 0, serialization.version, false};
+        in, deserialized_sets, {}, context, step.getInputHeaders(), step.getOutputHeader(), settings, 0, serialization.version,
+        serialization.step_version, false};
     auto restored = DistinctStep::deserialize(deserialization, step.isPreliminary());
     EXPECT_TRUE(in.eof());
     return restored;
@@ -170,4 +192,15 @@ TEST(DistinctStepInputOrder, OrderRequirementMergesStreamsWithoutScattering)
     step.preserveInputOrder();
     step.enableParallelDistinct();
     expectPipeline(step, 4, 1, 1, false);
+}
+
+TEST(DistinctStepSerialization, LimitHint)
+{
+    for (bool preliminary : {false, true})
+    {
+        SCOPED_TRACE(::testing::Message() << "preliminary=" << preliminary);
+        DistinctStep step(makeHeader(), DistinctStep::Settings{}, 5, Names{"k"}, preliminary);
+        auto restored = roundTrip(step);
+        EXPECT_EQ(static_cast<DistinctStep &>(*restored).getLimitHint(), 5u);
+    }
 }
