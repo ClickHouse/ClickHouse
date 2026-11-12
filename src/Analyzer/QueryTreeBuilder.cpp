@@ -286,6 +286,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     const auto & select_query_typed = select_query->as<ASTSelectQuery &>();
 
     auto updated_context = Context::createCopy(context);
+    if (select_query_typed.is_view_inner_query)
+        updated_context->setIsViewInnerQuery(true);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 

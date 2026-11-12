@@ -170,6 +170,13 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
+SelectQueryOptions buildSelectQueryOptions(const SelectQueryOptions & select_query_options, const ContextPtr & context, const StoragePtr & storage)
+{
+    auto result = select_query_options;
+    result.view_source_in_subqueries = (storage && storage == context->getViewSource()) || select_query_options.view_source_in_subqueries;
+    return result;
+}
+
 template <typename... Args>
 QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
@@ -297,6 +304,11 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+StoragePtr getViewSourceIfRead(const ContextPtr & context, bool reads_view_source)
+{
+    return reads_view_source && !context->isViewInnerQuery() ? context->getViewSource() : nullptr;
+}
+
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
 {
     for (const auto & node : extractAllTableReferences(query_tree))
@@ -321,7 +333,12 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+    /// Only this analysis swaps the view source in, so only it types the view source table by the view source.
+    addQueryTreePasses(
+        query_tree_pass_manager,
+        select_query_options.only_analyze,
+        storage && storage == context->getViewSource() ? storage : nullptr,
+        select_query_options.view_source_in_subqueries);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
@@ -347,7 +364,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ActionsDAG * post_filter_)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
+    , select_query_options(buildSelectQueryOptions(select_query_options_, context_, nullptr /*storage*/))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
@@ -366,7 +383,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
+    , select_query_options(buildSelectQueryOptions(select_query_options_, context_, storage_))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
