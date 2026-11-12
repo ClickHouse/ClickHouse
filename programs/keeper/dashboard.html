@@ -2087,7 +2087,6 @@
     }
 
     function showCompletionMatches(inputValue, matches) {
-        const container = document.getElementById("command-scrolling-container");
         /// Mirror keeper-client: echo the prompt line, then the match columns, then
         /// the live prompt below continues to show the same command.
         appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
@@ -2098,7 +2097,7 @@
         } else {
             appendToOutput(formatCompletionColumns(matches));
         }
-        container.scrollTop = container.scrollHeight;
+        scrollCommandOutputToBottom();
     }
 
     let tab_completion_in_progress = false;
@@ -2172,6 +2171,12 @@
         command_output.innerHTML += ansiToHtml(text);
     }
 
+    function scrollCommandOutputToBottom() {
+        const container = document.getElementById("command-scrolling-container");
+        if (container)
+            container.scrollTop = container.scrollHeight;
+    }
+
     function updateCwdDisplay() {
         document.getElementById("command-cwd").textContent = cli_cwd;
     }
@@ -2182,76 +2187,75 @@
         executeCommand(command);
     }
 
-    async function executeCommand(command, already_confirmed) {
-        let command_input = document.querySelector("#command");
-        let command_output = document.querySelector("#command-output");
-        let command_container = document.getElementById("command-scrolling-container");
+    async function executeCommand(command, already_confirmed = false) {
+        const command_input = document.querySelector("#command");
+        const command_output = document.querySelector("#command-output");
 
-        if (command.trim() === "") return;
+        if (command.trim() === "")
+            return;
 
-        if (cli_history.length === 0 || cli_history[cli_history.length - 1] !== command) {
+        if (cli_history.length === 0 || cli_history[cli_history.length - 1] !== command)
             cli_history.push(command);
-        }
         cli_history_index = cli_history.length;
+
         /// Mouse-triggered actions (quick-command buttons) bypass the keydown
         /// handler that dismisses y/n; clear pending state so the prompt is not
         /// left invisible under .pending-completion while the command runs.
         setPendingCompletionDisplay(null);
 
-        if (!already_confirmed && needsCommandConfirmation(command)) {
-            appendToOutput(`➜ ${cli_cwd} ${command}\n`);
-            appendToOutput(commandConfirmationPrompt(command) + " Continue?\n");
-            setPendingCommandConfirm(command);
-            command_container.scrollTop = command_container.scrollHeight;
-            return;
-        }
-        setPendingCommandConfirm(null);
-
         if (!already_confirmed)
             appendToOutput(`➜ ${cli_cwd} ${command}\n`);
-        command_container.scrollTop = command_container.scrollHeight;
 
+        if (!already_confirmed && needsCommandConfirmation(command)) {
+            appendToOutput(commandConfirmationPrompt(command) + " Continue?\n");
+            setPendingCommandConfirm(command);
+            scrollCommandOutputToBottom();
+            return;
+        }
+
+        setPendingCommandConfirm(null);
+        scrollCommandOutputToBottom();
+
+        /// `cd` is executed on the server so path resolution and existence
+        /// checks match `keeper-client` instead of a second JS implementation.
         command_input.disabled = true;
+        try {
+            const url = new URL(window.location);
+            url.pathname = "/api/v1/commands";
+            url.search = "?" + new URLSearchParams({
+                command: command,
+                cwd: cli_cwd,
+            }).toString();
 
-        const server_url = new URL(window.location);
-        server_url.pathname = "/api/v1/commands";
-        let url = server_url.toString();
-        fetch(url + "?" + new URLSearchParams({
-            command: command,
-            cwd: cli_cwd,
-        }).toString())
-            .then(response => response.json())
-            .then(data => {
-                if (data.cwd) {
-                    cli_cwd = data.cwd;
-                    updateCwdDisplay();
-                }
-                if (data.result !== undefined) {
-                    appendToOutput(data.result);
-                } else if (data.message !== undefined) {
-                    appendToOutput(data.message);
-                } else {
-                    appendToOutput("Unexpected error\n");
-                }
-                if (!command_output.textContent.endsWith("\n")) {
-                    appendToOutput("\n");
-                }
+            const response = await fetch(url.toString());
+            const data = await response.json();
 
-                command_input.disabled = false;
-                command_input.focus();
-                command_container.scrollTop = command_container.scrollHeight;
-            })
-            .catch(err => {
-                appendToOutput(`Unexpected error: ${err}\n`);
-                command_input.disabled = false;
-                command_input.focus();
-                command_container.scrollTop = command_container.scrollHeight;
-            });
+            if (data.cwd) {
+                cli_cwd = data.cwd;
+                updateCwdDisplay();
+            }
+            if (data.result !== undefined) {
+                appendToOutput(data.result);
+            } else if (data.message !== undefined) {
+                appendToOutput(data.message);
+            } else if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            } else {
+                appendToOutput("Unexpected error\n");
+            }
+            if (!command_output.textContent.endsWith("\n"))
+                appendToOutput("\n");
+        } catch (err) {
+            appendToOutput(`Unexpected error: ${err.message || err}\n`);
+        } finally {
+            command_input.disabled = false;
+            command_input.focus();
+            scrollCommandOutputToBottom();
+        }
     }
 
     function setupCommandLine() {
         let command_input = document.querySelector("#command");
-        let command_output = document.querySelector("#command-output");
         let command_container = document.getElementById("command-scrolling-container");
 
         command_container.addEventListener("mouseup", function (e) {
@@ -2262,10 +2266,6 @@
                 command_input.focus();
             }
         });
-
-        function scrollCommandOutputToBottom() {
-            command_container.scrollTop = command_container.scrollHeight;
-        }
 
         function handleCommandConfirmKeys(event) {
             if (pending_command_confirm === null)
