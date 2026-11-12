@@ -2,7 +2,9 @@
 
 #if USE_ARROW
 
+#include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 
@@ -40,6 +42,13 @@ Int32 readInt32LE(ReadBuffer & in)
     return DB::fromLittleEndian(value);
 }
 
+}
+
+void MessageReader::checkRecordBatchAlignment(const flatbuf::RecordBatch & batch)
+{
+    if (!isFlatBuffersVectorAligned8(batch.nodes()) || !isFlatBuffersVectorAligned8(batch.buffers())
+        || !isFlatBuffersVectorAligned8(batch.variadicBufferCounts()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow IPC message metadata: misaligned record batch vector");
 }
 
 bool MessageReader::readNextMessage(Message & out, Int64 expected_metadata_length)
@@ -118,6 +127,9 @@ bool MessageReader::readNextMessage(Message & out, Int64 expected_metadata_lengt
     /// covers all those call sites instead of each one dereferencing null.
     if (out.header->header_type() != flatbuf::MessageHeader_NONE && out.header->header() == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC message header type is set but its value is missing");
+
+    if (out.header->header_type() == flatbuf::MessageHeader_RecordBatch)
+        checkRecordBatchAlignment(*out.header->header_as_RecordBatch());
 
     out.body_length = out.header->bodyLength();
     if (out.body_length < 0)
@@ -271,6 +283,17 @@ void MessageReader::skipBody(Int64 body_length)
     /// on whether the count-only optimisation skipped the body or actually read it.
     if (body_length > 0 && in.tryIgnore(body_length) != static_cast<size_t>(body_length))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from the Arrow IPC message body");
+}
+
+std::unique_ptr<SeekableReadBuffer> InMemoryFile::getSeekableReadBuffer()
+{
+    auto res = std::make_unique<ConcatReadBufferFromFile>("");
+    for (auto it = chunk_list.begin(); it != chunk_list.end(); ++it)
+    {
+        size_t size = it == chunk_tail ? position() - it->begin() : it->size();
+        res->appendBuffer(std::make_unique<ReadBufferFromMemory>(it->begin(), size), size);
+    }
+    return res;
 }
 
 }

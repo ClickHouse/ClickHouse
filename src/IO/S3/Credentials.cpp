@@ -795,6 +795,14 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
+    /// The SDK resolver `EndpointResolver::EndpointSource` also falls back to the global `AWS_ENDPOINT_URL`.
+    /// On-prem setups sometimes point that at MinIO. So read only the STS-specific variable here.
+    if (auto sts_endpoint = Aws::Environment::GetEnv("AWS_ENDPOINT_URL_STS"); !sts_endpoint.empty())
+    {
+        LOG_INFO(logger, "Using STS endpoint {} from AWS_ENDPOINT_URL_STS", sts_endpoint);
+        aws_client_configuration.endpointOverride = std::move(sts_endpoint);
+    }
+
     /// Use ClickHouse's retry strategy so the STS web-identity client stays bounded and respects query
     /// cancellation / max_execution_time (its ShouldRetry checks isQueryCanceled), instead of the AWS SDK
     /// strategy which is not cancellation-aware.
@@ -1403,9 +1411,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         /// `gcp_oauth` mints a bearer token from an explicit ADC triple if given, otherwise from the server's
         /// GCP metadata service. Matched case-insensitively, the same as PocoHTTPClientFactory.
         const bool uses_gcp_oauth = boost::iequals(configuration.http_client, "gcp_oauth");
-        const bool has_explicit_gcp_adc = !configuration.google_adc_client_id.empty()
+        const bool has_explicit_gcp_adc = (!configuration.google_adc_client_id.empty()
             && !configuration.google_adc_client_secret.empty()
-            && !configuration.google_adc_refresh_token.empty();
+            && !configuration.google_adc_refresh_token.empty())
+            || !configuration.google_service_account_key.empty();
 
         /// `role_arn`-based STS assume-role stays allowed even under the restriction: the target role must
         /// explicitly trust the identity the server runs under, and only the assumed role's credentials ever
@@ -1425,7 +1434,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                         DB::ErrorCodes::ACCESS_DENIED,
                         "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
                         "explicit Google Application Default Credentials triple (google_adc_client_id, "
-                        "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
+                        "google_adc_client_secret, google_adc_refresh_token) or google_service_account_key, because it would otherwise mint a "
                         "token from the server's GCP metadata service. " S3_SERVER_CREDENTIALS_HINT);
             }
         }

@@ -22,6 +22,12 @@ cloud operator into the `system` database). Unlike the session setting, it is a 
 exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
 database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
 
+It applies to a dynamic `disk(type = azure_blob_storage, ...)` the same way: such a disk may use the server's own
+Azure identity (the AKS workload identity or the machine's managed identity) despite
+`s3_allow_server_credentials_in_user_queries`.
+
+Also available under the alias `allow_server_credentials_for_system_table_disks`, as it applies to Azure as well.
+
 ## s3_credentials_provider_max_cache_size {#s3_credentials_provider_max_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />The maximum number of S3 credentials providers that can be cached
@@ -42,8 +48,19 @@ permitted source again. It never silently regains the server's identity. This ke
 for example one created in an older version before the restriction existed, or one whose named collection was
 later re-bound to `use_environment_credentials = 1` — from aborting server startup.
 
+It applies to Azure the same way: a persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic
+`disk(type = azure_blob_storage, ...)`, whose definition would authenticate with the server's own Azure identity
+(the AKS workload identity or the machine's managed identity) is loaded at server startup with a client that carries
+no credentials. `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead. A table on
+such a dynamic Azure disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree` table
+with local metadata; a table with data parts, or a disk with `plain_rewritable` metadata, may still fail to load,
+because those requests are denied as well. A dynamic Azure disk created with
+`s3_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
+
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
+
+Also available under the alias `load_table_anonymously_if_credentials_restricted`, as it applies to Azure as well.
 
 ## s3_max_redirects {#s3_max_redirects}
 

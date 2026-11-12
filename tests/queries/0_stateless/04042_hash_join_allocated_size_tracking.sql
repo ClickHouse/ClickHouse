@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 CREATE TABLE test__fuzz_1 (`id` Nullable(UInt64), `d` Dynamic(max_types = 133)) ENGINE = Memory;
 

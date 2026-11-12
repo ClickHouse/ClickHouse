@@ -49,7 +49,7 @@ bool MySQLPacketPayloadReadBuffer::nextImpl()
     /// Don't return a buffer when no bytes available
     if (!in.hasPendingData())
         return false;
-    working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end());
+    working_buffer = in.buffer().subrange(in.position(), in.buffer().end());
     size_t count = std::min(in.available(), payload_length - offset);
     working_buffer.resize(count);
     in.ignore(count);

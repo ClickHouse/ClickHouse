@@ -418,6 +418,10 @@ public:
         /// server-internal table whose client was built restricted at metadata load) without detaching the table,
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
+
+        /// Request settings given as explicit arguments of the storage definition, by name. They take priority over the
+        /// server config and the endpoint settings, which are re-applied on every call.
+        std::map<String, String> explicit_request_settings = {};
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,
@@ -440,6 +444,11 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
+
+    /// Whether `writeObject` with `WriteSettings::object_storage_write_atomically` replaces an existing object atomically:
+    /// a concurrent reader sees either the previous complete object or the new complete one, and a failed write leaves
+    /// the previous object intact. Storages that create or truncate the destination before uploading the data do not.
+    virtual bool supportsAtomicWrite() const { return false; }
 
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches

@@ -1,0 +1,32 @@
+mt prewhere	2
+mt where	2
+mt rows	20
+mt rows	30
+memory prewhere	2
+memory plan	1
+memory default rows	20
+memory default rows	30
+memory default rows	5
+memory default plan	0
+final prewhere	2
+final prewhere, policy before final	2
+final order, policy after final	0
+final order, policy before final	1
+in prewhere	2
+alias prewhere	2
+alias subcolumn prewhere	2
+alias lambda argument rows	0
+alias over virtual rows	20
+alias over virtual rows	30
+alias over virtual rows	5
+both prewhere	2
+both where	2
+both rows	20
+both rows	30
+both rows with region	eu	20
+both rows with region	eu	30
+nested prewhere	2
+nested both rows	20
+nested both rows	30
+nested both rows	5
+nested both prewhere	2
