@@ -1,5 +1,5 @@
 -- the generated TTL of the inner samples table
-AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY (id, bucket) TTL toDateTime64(bucket, 0, \'UTC\') + toIntervalSecond(180) GROUP BY id, bucket SET samples = arrayFilter((s, i) -> ((i = length(timeSeriesGroupArray(samples))) OR (toStartOfInterval(toDateTime64((timeSeriesGroupArray(samples)[i + 1]).1, 3, \'UTC\'), toIntervalSecond(20)) != toStartOfInterval(toDateTime64(s.1, 3, \'UTC\'), toIntervalSecond(20)))), timeSeriesGroupArray(samples), arrayEnumerate(timeSeriesGroupArray(samples))), min_time = min(min_time), max_time = max(max_time), toDateTime64(bucket, 0, \'UTC\') + toIntervalSecond(3660) GROUP BY id, bucket SET samples = arrayFilter((s, i) -> ((i = length(timeSeriesGroupArray(samples))) OR (toStartOfInterval(toDateTime64((timeSeriesGroupArray(samples)[i + 1]).1, 3, \'UTC\'), toIntervalSecond(60)) != toStartOfInterval(toDateTime64(s.1, 3, \'UTC\'), toIntervalSecond(60)))), timeSeriesGroupArray(samples), arrayEnumerate(timeSeriesGroupArray(samples))), min_time = min(min_time), max_time = max(max_time) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
+AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY (id, bucket) TTL toDateTime64(bucket, 0, \'UTC\') + toIntervalSecond(180) GROUP BY id, bucket SET samples = arrayFilter((s, i) -> ((i = length(timeSeriesGroupArray(samples))) OR (toStartOfInterval((timeSeriesGroupArray(samples)[i + 1]).1, toIntervalSecond(20), \'UTC\') != toStartOfInterval(s.1, toIntervalSecond(20), \'UTC\'))), timeSeriesGroupArray(samples), arrayEnumerate(timeSeriesGroupArray(samples))), min_time = min(min_time), max_time = max(max_time), toDateTime64(bucket, 0, \'UTC\') + toIntervalSecond(3660) GROUP BY id, bucket SET samples = arrayFilter((s, i) -> ((i = length(timeSeriesGroupArray(samples))) OR (toStartOfInterval((timeSeriesGroupArray(samples)[i + 1]).1, toIntervalSecond(60), \'UTC\') != toStartOfInterval(s.1, toIntervalSecond(60), \'UTC\'))), timeSeriesGroupArray(samples), arrayEnumerate(timeSeriesGroupArray(samples))), min_time = min(min_time), max_time = max(max_time) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
 -- the stored definition is read back, a copy of the table generates the same TTL
 2
 -- a copy pinned to a version without buckets of samples does not inherit the setting
@@ -21,11 +21,15 @@ AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY
 [(19,19),(20,20),(59,59)]
 -- the intervals count from the Unix epoch for any type and timezone of the timestamps: the same offsets are kept
 [6,13,20,27,34,41,48,55,62,69]
+2
 [6,13,20,27,34,41,48,55,62,69]
 [6,13,20,27,34,41,48,55,62,69]
 -- the timestamps keep their full range: a bucket before 1970 is reduced on the epoch grid, a bucket after 2106 is not expired
 1969-12-31 23:59:00.000	3	[-41,-21,-1]
 2110-01-01 00:00:00.000	60	[4417977600,4417977601,4417977602]
+-- sub-millisecond timestamps on either side of an interval boundary both survive
+2	[1,2]
+2	[1,2]
 -- the recent samples table keeps every sample
 0
 5

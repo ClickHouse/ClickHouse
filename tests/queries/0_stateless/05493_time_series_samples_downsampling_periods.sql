@@ -27,6 +27,7 @@ SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LI
 SELECT create_table_query LIKE '%samples_downsampling_periods%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
 DROP TABLE ts_copy;
 
+
 SELECT '-- the rows past both offsets keep the last sample of each 60 second interval';
 
 INSERT INTO ts (metric_name, tags, samples) VALUES
@@ -66,6 +67,9 @@ SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, sampl
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toUInt32(i), toFloat64(i)), range(70));
 OPTIMIZE TABLE ts FINAL;
 SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
+CREATE TABLE ts_copy AS ts;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%' AND engine_full LIKE '%toStartOfInterval(toDateTime(%';
+DROP TABLE ts_copy;
 DROP TABLE ts;
 
 CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries
@@ -90,6 +94,24 @@ INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (to
 INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64('2110-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(i), toFloat64(i)), range(60));
 OPTIMIZE TABLE ts FINAL;
 SELECT bucket, length(samples), arrayMap(x -> toUnixTimestamp64Second(x.timestamp), arraySlice(samples, 1, 3)) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) ORDER BY bucket;
+DROP TABLE ts;
+
+SELECT '-- sub-millisecond timestamps on either side of an interval boundary both survive';
+
+CREATE TABLE ts (samples Array(Tuple(DateTime64(6, 'UTC'), Float64))) ENGINE = TimeSeries
+SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:20s';
+INSERT INTO ts (metric_name, tags, samples) VALUES
+    ('m', map(), [(toDateTime64(-20.000001, 6, 'UTC'), 1.), (toDateTime64(-19.999999, 6, 'UTC'), 2.)]);
+OPTIMIZE TABLE ts FINAL;
+SELECT length(samples), arrayMap(x -> x.value, samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
+DROP TABLE ts;
+
+CREATE TABLE ts (samples Array(Tuple(DateTime64(9, 'UTC'), Float64))) ENGINE = TimeSeries
+SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:20s';
+INSERT INTO ts (metric_name, tags, samples) VALUES
+    ('m', map(), [(toDateTime64(-20.000000001, 9, 'UTC'), 1.), (toDateTime64(-19.999999999, 9, 'UTC'), 2.)]);
+OPTIMIZE TABLE ts FINAL;
+SELECT length(samples), arrayMap(x -> x.value, samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 DROP TABLE ts;
 
 SELECT '-- the recent samples table keeps every sample';
