@@ -5,6 +5,9 @@ AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY
 -- a copy pinned to a version without buckets of samples does not inherit the setting
 1
 0
+-- a copy pinned to a version without the downsampling setting does not inherit it
+1
+0
 -- the rows past both offsets keep the last sample of each 60 second interval
 1970-01-01 00:00:00.000	[('1970-01-01 00:00:59.000',6)]
 1970-01-01 00:01:00.000	[('1970-01-01 00:01:30.000',8)]

@@ -27,6 +27,11 @@ SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LI
 SELECT create_table_query LIKE '%samples_downsampling_periods%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
 DROP TABLE ts_copy;
 
+SELECT '-- a copy pinned to a version without the downsampling setting does not inherit it';
+CREATE TABLE ts_copy AS ts SETTINGS version = 11;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%' AND engine_full LIKE '%GROUP BY%';
+SELECT create_table_query LIKE '%samples_downsampling_periods%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
+DROP TABLE ts_copy;
 
 SELECT '-- the rows past both offsets keep the last sample of each 60 second interval';
 
@@ -125,6 +130,7 @@ DROP TABLE ts;
 
 SELECT '-- invalid values';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 10, samples_downsampling_periods = '30d:5m'; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 11, samples_downsampling_periods = '30d:5m'; -- { serverError INVALID_SETTING_VALUE }
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_downsampling_periods = '30d'; -- { serverError INVALID_SETTING_VALUE }
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_downsampling_periods = '{__name__="m"}:30d:5m'; -- { serverError INVALID_SETTING_VALUE }
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_downsampling_periods = '30d:0s'; -- { serverError INVALID_SETTING_VALUE }
