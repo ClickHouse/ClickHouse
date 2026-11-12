@@ -1816,7 +1816,7 @@ public:
     void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
-    void clearVectorSimilarityIndexCache() const;
+    void clearVectorSimilarityIndexCache(const StorageID & table_id = StorageID::createEmpty()) const;
 
     void setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
