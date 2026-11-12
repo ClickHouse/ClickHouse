@@ -578,10 +578,11 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
                 /// the atom does not exclude. Map a NULL mask to `UNKNOWN_FIELD` (can be true or false).
                 if (isNullableOrLowCardinalityNullable(result_node->result_type))
                 {
-                    auto unknown_name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                    auto unknown_type = std::make_shared<DataTypeUInt8>();
-                    ColumnConstPtr unknown_column = unknown_type->createColumnConst(1, UNKNOWN_FIELD);
-                    const auto & unknown_node = result_dag.addColumn(std::move(unknown_column), std::move(unknown_type), std::move(unknown_name));
+                    ColumnWithTypeAndName unknown_field_column_with_type;
+                    unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                    unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
+                    unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
+                    const auto & unknown_node = result_dag.addColumn(unknown_field_column_with_type);
 
                     auto if_null_function = FunctionFactory::instance().get("ifNull", context);
                     result_node = &result_dag.addFunction(if_null_function, {result_node, &unknown_node}, {});
