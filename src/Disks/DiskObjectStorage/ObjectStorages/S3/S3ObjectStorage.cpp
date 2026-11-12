@@ -76,6 +76,7 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -832,13 +833,14 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    /// The client is shared by all sessions and a query uses it after this call, so a session may only make it
-    /// stricter (`s3_allow_server_credentials_in_user_queries`). If an opt-in session could switch it to the server's
-    /// credentials, a concurrent restricted query that already passed here would use them. Only a forced rebuild
-    /// (config reload, or a rebuild by the server itself) follows the given context. Server disks are never restricted.
+    /// The client is shared by all sessions and a query uses it after this call, so a session never changes its
+    /// restriction mode (`s3_allow_server_credentials_in_user_queries`): a restricted session may not use a client
+    /// built with the opt-in, and a client built restricted stays restricted. Only a forced rebuild (config reload,
+    /// or a rebuild by the server itself) follows the given context. Server disks are never restricted.
     const bool session_restricts = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
-    const bool restricts_now = session_restricts
-        || (!for_disk_s3 && !options.force_client_rebuild && client_restricts_server_credentials);
+    if (!options.force_client_rebuild)
+        checkSessionMayUseServerCredentials(context);
+    const bool restricts_now = options.force_client_rebuild ? session_restricts : (!for_disk_s3 && client_restricts_server_credentials);
     const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
 
     ContextPtr client_context = context;
@@ -856,8 +858,7 @@ void S3ObjectStorage::applyNewSettings(
     /// proxy resolver is re-created from the config on every call) reach the client only on a forced rebuild, which
     /// the config reload of a server disk requests (see `DiskObjectStorage::applyNewSettings`).
     ///
-    /// A restricted session on a client built with the opt-in forces a rebuild even for an otherwise static
-    /// configuration. The rebuild fails closed (getClient throws ACCESS_DENIED) and leaves the client as it was.
+    /// The restriction mode changes only on a forced rebuild, or once for a server disk, whose initial mode is restricted.
     if ((options.allow_client_change && current_settings->hasChangesAffectingClient(*modified_settings))
         || restriction_mode_changed
         || options.force_client_rebuild)
@@ -871,11 +872,13 @@ void S3ObjectStorage::applyNewSettings(
 
 void S3ObjectStorage::checkSessionMayUseServerCredentials(const ContextPtr & context) const
 {
-    if (for_disk_s3 || client_restricts_server_credentials || !context->shouldRestrictUserQueryS3Credentials())
-        return;
-
-    /// Building the client under the restricted context throws if the definition needs the server's credentials.
-    getClient(uri, *s3_settings.get(), context, for_disk_s3, disk_name);
+    /// The settings of such a client may hold server-derived material (a `role_arn`, headers) that only the parsing
+    /// of a restricted query drops, so it is refused as a whole.
+    if (!for_disk_s3 && !client_restricts_server_credentials && context->shouldRestrictUserQueryS3Credentials())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "This S3 storage was created with `s3_allow_server_credentials_in_user_queries` enabled, so it may use the "
+            "server's credentials, and the setting is disabled for this session");
 }
 
 ObjectStoragePtr S3ObjectStorage::cloneImpl() const

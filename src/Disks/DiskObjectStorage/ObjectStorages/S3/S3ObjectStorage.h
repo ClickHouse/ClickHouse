@@ -173,8 +173,8 @@ public:
 
     ObjectStoragePtr cloneImpl() const override;
 
-    /// Throws `ACCESS_DENIED` if the client was built with `s3_allow_server_credentials_in_user_queries`, the session of
-    /// `context` is restricted and its definition needs the server's credentials. Does not change the client.
+    /// Throws `ACCESS_DENIED` if the client was built with `s3_allow_server_credentials_in_user_queries` and the session
+    /// of `context` is restricted. Does not change the client.
     void checkSessionMayUseServerCredentials(const ContextPtr & context) const;
 
 private:
@@ -191,7 +191,7 @@ private:
     mutable MultiVersion<S3::Client> client;
     /// The user-query credential restriction mode the current `client` was built under (initialized by the
     /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
-    /// `false`). `applyNewSettings` may only make it stricter, except on a forced rebuild. Defaults to restricted
+    /// `false`). Only a forced rebuild in `applyNewSettings` changes it. Defaults to restricted
     /// (the server default) for callers that do not pass an explicit value.
     /// Atomic: `applyNewSettings` can run concurrently on a shared storage.
     mutable std::atomic<bool> client_restricts_server_credentials = true;
