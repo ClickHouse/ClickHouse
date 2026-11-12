@@ -258,6 +258,25 @@ Possible values:
 - Positive integer.
 - 0 — setting does not participate in block formation.
 )", 0) \
+    DECLARE(Double, insert_squashing_max_memory_ratio, 0.1125, R"(
+Caps `min_insert_block_size_bytes` by this fraction of the server's memory limit (`max_server_memory_usage`)
+in the squashing stages of an `INSERT`: the squashing for the target table, the squashing of the results of
+dependent materialized views, and the block size of the source of a trivial `INSERT ... SELECT`.
+
+A squashing stage does not hold one block of `min_insert_block_size_bytes` but several: it accumulates the
+next block while the previous one is concatenated, the concatenated block is alive in the sink, and blocks
+are measured by their logical size while the arrays behind them round their capacity up. On a server with
+little memory that can make an `INSERT` fail with `MEMORY_LIMIT_EXCEEDED`. With the default
+`min_insert_block_size_bytes` the default value binds only below about 2.2 GiB of memory limit; a lower
+value such as `0.0625` helps an `INSERT` into a wide table fit into the memory of a small server.
+
+The cap depends only on the memory limit and this setting, not on the number of materialized views or
+insert streams. Note that the memory limit can change at runtime (see `memory_worker_dynamic_hard_limit`),
+and when the cap binds, a retried `INSERT` may be split into blocks differently than the first attempt.
+
+Possible values: from `0` to `1`. Set to `0` to disable the cap.
+)", 0, \
+        {"26.11", 0.1125, 0.1125, "New setting. The cap of `min_insert_block_size_bytes` by the memory limit was hardcoded as 0.9 / 8 of the limit; it is now configurable."}) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, R"(
 Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](/reference/statements/create/view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
@@ -5255,6 +5274,10 @@ Note that it disables `read_in_order_use_buffering` optimization and preliminary
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 
+It also applies to a single `uniqExact` (or `count(DISTINCT)`) without `GROUP BY` over a table sorted by its argument: the distinct values are counted as they arrive in order, so they are not kept in memory. With several threads, the read is split into ranges of the sorting key that are counted in parallel; when it cannot be split (for example, for a floating-point argument or a function of the sorting key), the usual aggregation is used.
+
+Projections are chosen before the order of aggregation. If a [projection](/reference/engines/table-engines/mergetree-family/mergetree#projections) reads fewer granules than the table, it is used even when it is not sorted by the `GROUP BY` key, and the aggregation then keeps all the groups in memory instead of aggregating in order.
+
 Possible values:
 
 - 0 — `GROUP BY` optimization is disabled.
@@ -5283,9 +5306,9 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
     DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
-Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads thaw, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads thaw, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator. A query of the form `GROUP BY ... ORDER BY count() DESC LIMIT n` merges only the groups that can reach the top (top-K pruning). It remembers its verdict separately from the same aggregation without the `LIMIT`. If `count()` is its only aggregate, a thread also keeps its table frozen while the pruning is expected to discard most of the rows that the table stages.
 
-With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
+With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 )", 0, \
         {"26.11", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
@@ -9829,12 +9852,16 @@ Use Iceberg partition pruning for Iceberg tables
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
-    DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
-With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+    DECLARE(Bool, use_join_runtime_filters_for_iceberg_pruning, true, R"(
+Skip the Iceberg data files that cannot contain a key of a JOIN runtime filter applied to the read (see `enable_join_runtime_filters`). Once the build side of the join has finished, the key values recorded by the runtime filter (or their minimum/maximum range when the exact set was too large) are checked against the column bounds of each data file in its manifest file, in the same way as a query filter. Data files requested before then are read in full. Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). The Parquet row groups of the data files that are read are skipped the same way by their column statistics (requires [input_format_parquet_filter_push_down](#input_format_parquet_filter_push_down)).
 )", 0, \
-        {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
+        {"26.11", false, true, "New setting to prune Iceberg data files and Parquet row groups by JOIN runtime filters."}) \
+    DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
+With [`use_statistics`](#use_statistics) enabled, estimate a data lake read for join reordering from the table metadata, without reading data. Only Iceberg is supported: the estimate comes from the manifest files of its data files left after partition and min-max pruning by the query filter, the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+)", 0, \
+        {"26.11", false, false, "New setting to estimate the rows and column statistics of data lake reads (Iceberg for now) for join reordering from the table metadata."}) \
     DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
-With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
+With [`use_datalake_metadata_statistics`](#use_datalake_metadata_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
 )", 0, \
         {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
@@ -10761,6 +10788,26 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
+    DECLARE(Bool, enable_packed_string_keys_in_hash_join, true, R"(
+In `hash`, `parallel_hash` and `grace_hash` joins on a single `String` key, store each key in the hash table as a 16-byte value. This includes a join with `OR` whose every condition has a single `String` key. It also includes a `hash` or `parallel_hash` join after it is converted to `grace_hash` to spill to disk.
+
+A key of up to 15 bytes is stored inline and compared exactly. A key of 16 bytes or more is stored as its 128-bit `SipHash`. One bit of the hash marks the key as hashed, so two such keys are compared by their other 127 bits. In both cases the hash table keeps no separate copy of the string.
+
+Two different keys of 16 bytes or more whose hashes have the same 127 bits are matched as equal. For N distinct keys the probability of that is about N^2/2^128. Disable the setting to compare the keys exactly.
+
+The hash tables are smaller, so a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
+
+The setting does not apply to `FixedString` keys or to `LowCardinality(Nullable(String))` keys. A join on a non-nullable `LowCardinality(String)` key can use a hash table of the key's dictionary instead. This needs a join that has one condition, is not `ASOF` and builds its hash table as one part: a `grace_hash` join, or a `hash` join with the serial layout (see `parallel_hash_join_threshold` and `hash_join_layout`). Tables with the `Join` engine and `joinGet` keep exact keys. So does a join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join`.
+)", 0, \
+        {"26.11", false, true, "New setting to store the single `String` key of `hash`, `parallel_hash` and `grace_hash` joins in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys."}) \
+    DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
+The minimum number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. A join whose right side is estimated at fewer rows compares its `String` keys exactly. The hash table of a small right side stays in the CPU cache, so packed keys save little there. Hashing the keys of 16 bytes or more costs more than that.
+
+The estimate is the number of right rows seen in an earlier run of the same join, when `collect_hash_table_stats_during_joins` keeps such statistics. Otherwise it is the row estimate of the query optimizer. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate uses packed keys.
+
+0 means no minimum.
+)", 0, \
+        {"26.11", 0, 100'000, "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \
@@ -11511,6 +11558,8 @@ Prune granules on the probe side of a JOIN with the runtime filter collected fro
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
+
+For an Iceberg table, the setting also allows skipping whole data files and the Parquet row groups of the files that are read, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 

@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **Argumentos**
 
 * `s` — Cadena de entrada de la que se extrae. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
-* `regexp` — Expresión regular con la que se realiza la coincidencia. [`const String`](/es/reference/data-types/string) o [`const FixedString`](/es/reference/data-types/fixedstring)
+* `regexp` — Expresión regular con la que se realiza la coincidencia. Debe contener entre 1 y 127 grupos de captura. [`const String`](/es/reference/data-types/string) o [`const FixedString`](/es/reference/data-types/fixedstring)
 
 **Valor devuelto**
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **Argumentos**
 
 * `s` — Cadena de entrada de la que se extrae. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
-* `regexp` — Expresión regular. Debe contener al menos un grupo de captura. Constante. [`const String`](/es/reference/data-types/string) o [`const FixedString`](/es/reference/data-types/fixedstring)
+* `regexp` — Expresión regular. Debe contener entre 1 y 127 grupos de captura. Constante. [`const String`](/es/reference/data-types/string) o [`const FixedString`](/es/reference/data-types/fixedstring)
 
 **Valor devuelto**
 
@@ -449,15 +449,14 @@ Antes de realizar la búsqueda, la función tokeniza
   Si la columna no tiene definido ningún índice de texto, se usa en su lugar el tokenizador `splitByNonAlpha`.
   Si el argumento `needle` es de tipo [Array(String)](/es/reference/data-types/array), cada elemento del array se trata como un token; no se realiza ninguna tokenización adicional.
   Si el índice de texto tiene configurada una expresión de [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional), el preprocesador se aplica a needle (si se proporciona como `String`) antes de la tokenización.
-  Si el índice de texto tiene configurada una expresión de [postprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), el postprocesador se aplica a los tokens de needle y a los tokens de entrada (es decir, a ambos después de la tokenización).
+  Si el índice de texto tiene configurada una expresión de [posprocesamiento](/es/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), el posprocesamiento se aplica a los tokens de needle y a los tokens de entrada (es decir, a ambos después de la tokenización).
 
 Los tokens duplicados se ignoran.
 Por ejemplo, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] se trata igual que [&#39;ClickHouse&#39;].
 
 <Note>
   Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasAllTokens` lo aplica a `input` y, cuando `needles` es un [String](/es/reference/data-types/string), a `needles` antes de la tokenización. Cuando `needles` es un [Array(String)](/es/reference/data-types/array), sus elementos se pasan tal cual y no se les aplica el preprocesador.
-  El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
-  Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
+  El preprocesador forma parte de la definición del índice, por lo que se aplica allí donde se evalúe la función: en el filtro `WHERE`/`PREWHERE`, en la lista `SELECT` e independientemente de si se lee o no el índice (p. ej., `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Sintaxis**
@@ -480,7 +479,7 @@ Devuelve 1 si todos los needles coinciden. 0 en caso contrario. [`UInt8`](/es/re
 
 **Ejemplos**
 
-**Uso básico con una aguja de tipo cadena**
+**Uso básico con un needle de tipo cadena**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -676,7 +675,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 Introducido en: v25.10.0
 
-Devuelve 1 si al menos un token en la cadena o matriz `needle` coincide con la cadena `input`, y 0 en caso contrario. Si `input` es una columna, devuelve todas las filas que cumplan esta condición.
+Devuelve 1 si al menos un token en la cadena o array `needle` coincide con la cadena `input`, y 0 en caso contrario. Si `input` es una columna, devuelve todas las filas que cumplan esta condición.
 
 <Note>
   La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
@@ -698,8 +697,7 @@ Por ejemplo, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] se trata igual que [&#
 
 <Note>
   Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasAnyTokens` lo aplica a `input` y, cuando `needles` es un [String](/es/reference/data-types/string), a `needles` antes de la tokenización. Cuando `needles` es un [Array(String)](/es/reference/data-types/array), sus elementos se pasan tal cual y no se les aplica el preprocesador.
-  El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
-  Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
+  El preprocesador forma parte de la definición del índice, por lo que se aplica allí donde se evalúe la función: en el filtro `WHERE`/`PREWHERE`, en la lista `SELECT`, e independientemente de si se lee o no el índice (p. ej., `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Sintaxis**
@@ -708,7 +706,7 @@ Por ejemplo, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] se trata igual que [&#
 hasAnyTokens(input, needles[, tokenizer])
 ```
 
-**Aliases**: `hasAnyToken`
+**Alias**: `hasAnyToken`
 
 **Argumentos**
 
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Especifique las cadenas (needles) que se buscarán TAL CUAL (sin tokenización) en un array**
+**Especificar needles que se buscarán TAL CUAL (sin tokenización) en un array**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -923,8 +921,7 @@ incluyendo los duplicados. Los elementos vacíos de la frase se ignoran, ya que 
 
 <Note>
   Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasPhrase` lo aplica tanto a `input` como a `phrase` antes de la tokenización.
-  El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
-  Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
+  El preprocesador forma parte de la definición del índice, por lo que se aplica allí donde se evalúe la función: en el filtro `WHERE`/`PREWHERE`, en la lista `SELECT` e independientemente de si se lee o no el índice (p. ej., `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 A diferencia de [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) y [`hasAllTokens`](#hasAllTokens), `hasPhrase` requiere que los tokens aparezcan en el mismo orden
@@ -1549,7 +1546,7 @@ Sintaxis alternativa del operador: `haystack REGEXP pattern` o `haystack ~ patte
 match(haystack, pattern)
 ```
 
-**Alias**: `REGEXP_MATCHES`
+**Alias**: `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **Argumentos**
 
