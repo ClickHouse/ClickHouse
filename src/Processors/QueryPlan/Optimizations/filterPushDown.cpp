@@ -1254,6 +1254,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
+            /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
+            if (std::ranges::any_of(grouping_sets, [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); }))
+                return 0;
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
         }
