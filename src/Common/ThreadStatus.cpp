@@ -116,7 +116,10 @@ ThreadStatus::ThreadStatus()
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("Thread");
-    log = getLogger("ThreadStatus");
+    /// A `ThreadStatus` is created for every job of a thread pool, and `getLogger` locks the global mutex of the
+    /// registry of loggers, so all threads of the pools would contend on it.
+    static const LoggerPtr thread_status_log = getLogger("ThreadStatus");
+    log = thread_status_log;
 
     current_thread = this;
 

@@ -548,6 +548,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool hasBucketedMapSerialization() const override;
+
     bool supportsTTL() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }

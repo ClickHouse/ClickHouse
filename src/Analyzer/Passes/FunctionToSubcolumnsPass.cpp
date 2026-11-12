@@ -550,6 +550,10 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
         return {};
 
+    /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
+    if (function_node->getFunctionName() == "arrayElement" && isMap(column.type) && !storage->hasBucketedMapSerialization())
+        return {};
+
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
