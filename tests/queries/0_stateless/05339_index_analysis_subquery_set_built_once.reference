@@ -1,8 +1,13 @@
 16
 16
+16
 20
 10
 05339_primary_key	1
 05339_skip_index	1
+05339_skip_index_on_data_read	1
 05339_text_index_map	1
 05339_planned_set	1
+05339_primary_key	1
+05339_skip_index	1
+05339_skip_index_on_data_read	1

@@ -299,7 +299,7 @@ WhatIfCandidateResult evaluateIndex(
     MergeTreeIndexConditionPtr condition;
     try
     {
-        condition = index_helper->createIndexCondition(predicate, context, /*require_ready_sets=*/ false);
+        condition = index_helper->createIndexCondition(predicate, context);
     }
     catch (const Exception &)
     {

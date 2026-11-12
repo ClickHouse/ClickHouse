@@ -2,6 +2,7 @@
 #include <optional>
 #include <numeric>
 #include <DataTypes/DataTypeString.h>
+#include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
@@ -615,14 +616,14 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
     if (std::find(required_columns.begin(), required_columns.end(), "_part_offset") == required_columns.end())
         return nullptr;
 
-    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets) -> KeyCondition
+    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> KeyCondition
     {
         return KeyCondition{
             ActionsDAGWithInversionPushDown(predicate, context, /* boolean_context */ false),
             context,
             sample.getNames(),
             std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
-            /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
+            {}};
     };
 
     auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context, /* boolean_context */ true);
@@ -670,7 +671,7 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
     if (dag->getInputs().size() != 1)
         return nullptr;
 
-    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate, bool require_ready_sets) -> KeyCondition
+    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate) -> KeyCondition
     {
         chassert(specialized_dag);
         auto required_columns = specialized_dag->getRequiredColumns();
@@ -679,7 +680,7 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
             context,
             required_columns.getNames(),
             std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
-            /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
+            {}};
     };
 
     auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context, /* boolean_context */ true);
@@ -1464,6 +1465,37 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
         const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
+        const bool use_primary_key_for_parts = use_primary_key && (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition);
+
+        /// Generating a condition may execute an `IN` subquery: prepare the condition of every partition here,
+        /// so that `process_part` only looks them up.
+        {
+            Stopwatch watch;
+            for (const auto & ranges : parts_with_ranges)
+            {
+                if (query_status)
+                    query_status->checkTimeLimit();
+
+                const auto & part = ranges.data_part;
+                if (use_primary_key_for_parts)
+                {
+                    key_condition->prepareForPart(part);
+                    if (part_offset_condition)
+                        part_offset_condition->prepareForPart(part);
+                    if (total_offset_condition)
+                        total_offset_condition->prepareForPart(part);
+                }
+
+                /// Also the conditions the skip index reader uses at read time: by then the `IN` sets cannot be built in place.
+                if (use_skip_indexes_for_disjunctions_ && key_condition_rpn_template && !skip_indexes.empty())
+                    key_condition_rpn_template->prepareForPart(part);
+
+                for (const auto & index_and_condition : skip_indexes.useful_indices)
+                    index_and_condition.condition_template->prepareForPart(part);
+            }
+            LOG_TRACE(log, "Prepared the index conditions for {} parts in {} ms", parts_with_ranges.size(), watch.elapsedMilliseconds());
+        }
+
         auto process_part = [&](size_t part_index)
         {
             fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
@@ -1472,7 +1504,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
-            if (use_primary_key && (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition))
+            if (use_primary_key_for_parts)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
@@ -1485,9 +1517,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPart(ranges.data_part),
-                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
+                    key_condition->getForPart(ranges.data_part),
+                    part_offset_condition ? &part_offset_condition->getForPart(ranges.data_part) : nullptr,
+                    total_offset_condition ? &total_offset_condition->getForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
@@ -1557,7 +1589,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
                 const KeyCondition * rpn_template_for_part
-                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->generateForPart(ranges.data_part) : nullptr;
+                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->getForPart(ranges.data_part) : nullptr;
 
                 PartialDisjunctionResult partial_eval_results;
                 if (rpn_template_for_part)
@@ -1594,7 +1626,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition_template->generateForPart(ranges.data_part),
+                            index_and_condition.condition_template->getForPart(ranges.data_part),
                             rpn_template_for_part,
                             part_info_for_reader,
                             ranges.ranges,

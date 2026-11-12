@@ -200,19 +200,17 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context, bool require_ready_sets)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{
-        filter_dag, context, index.column_names, index.expression,
-        /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
+    return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }
 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context, bool require_ready_sets)
+    const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(buildCondition(index, filter_dag, context, require_ready_sets))
+    , condition(buildCondition(index, filter_dag, context))
 {
     /// The granule bound comes from `getExtremes`, which skips NaN.
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
@@ -257,10 +255,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const
+    const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
-    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context, require_ready_sets);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(

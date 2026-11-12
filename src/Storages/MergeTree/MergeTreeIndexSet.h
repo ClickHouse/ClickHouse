@@ -102,8 +102,7 @@ public:
         size_t max_rows_,
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
-        const IndexDescription & index_description,
-        bool require_ready_sets);
+        const IndexDescription & index_description);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -179,7 +178,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };

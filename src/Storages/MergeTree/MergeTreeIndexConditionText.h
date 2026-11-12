@@ -159,7 +159,6 @@ public:
         bool has_positions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_,
-        bool require_ready_sets_,
         TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -331,7 +330,6 @@ private:
     TextIndexAutomatonBudgetPtr automaton_budget;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
-    bool require_ready_sets = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

@@ -124,7 +124,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     IndexGranulesMap index_granules;
 
     /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
-    const KeyCondition * rpn_template_for_part = use_for_disjunctions ? &key_condition_rpn_template->generateForPart(*part_info) : nullptr;
+    const KeyCondition * rpn_template_for_part = use_for_disjunctions ? &key_condition_rpn_template->getForPart(*part_info) : nullptr;
 
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (rpn_template_for_part)
@@ -148,7 +148,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
-            index_and_condition.condition_template->generateForPart(*part_info),
+            index_and_condition.condition_template->getForPart(*part_info),
             rpn_template_for_part,
             part_info,
             ranges,
@@ -254,7 +254,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()); !can_use)
                     continue;
 
-                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context, /*require_ready_sets=*/ true);
+                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
                 if (!condition || condition->alwaysUnknownOrTrue())
                     continue;
 

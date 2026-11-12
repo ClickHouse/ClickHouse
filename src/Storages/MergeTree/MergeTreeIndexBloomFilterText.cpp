@@ -161,8 +161,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
-    JSONIndexArgumentTypes json_argument_types_,
-    bool require_ready_sets_)
+    JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
     , json_argument_types(std::move(json_argument_types_))
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
@@ -170,7 +169,6 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
-    , require_ready_sets(require_ready_sets_)
 {
     if (!predicate)
     {
@@ -971,8 +969,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     if (!future_set)
         return false;
 
-    auto prepared_set = require_ready_sets ? future_set->getOrderedSetIfAlreadyBuilt(right_argument.getContext())
-                                           : future_set->buildOrderedSetInplace(right_argument.getContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -1048,11 +1045,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
-        const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const
+        const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
-        require_ready_sets);
+        predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

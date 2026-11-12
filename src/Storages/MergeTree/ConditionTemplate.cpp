@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -87,6 +89,24 @@ void fillVirtualConstantsSubstitution(
     add_virtual(PartitionValueColumn::name, partition.value | std::ranges::to<Tuple>());
 }
 
+bool hasSubquerySets(const ActionsDAGWithInversionPushDown * dag)
+{
+    if (!dag || !dag->dag)
+        return false;
+
+    for (const auto & node : dag->dag->getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+            continue;
+
+        if (const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn()))
+            if (typeid_cast<FutureSetFromSubquery *>(column_set->getData().get()))
+                return true;
+    }
+
+    return false;
+}
+
 ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
     const MergeTreePartition & partition,
@@ -111,9 +131,9 @@ ActionsDAG substituteConstantInputs(
 }
 
 template <typename Cond>
-Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root, bool require_ready_sets) const
+Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root) const
 {
-    Cond condition = factory(substituted_dag, root, require_ready_sets);
+    Cond condition = factory(substituted_dag, root);
 
     for (const auto & transform : transformers)
         transform(condition);
@@ -176,10 +196,9 @@ ConditionTemplate<Cond>::ConditionTemplate(
     , metadata_snapshot(std::move(metadata_snapshot_))
     , context(std::move(context_))
     , skip_folding(skip_folding_)
+    , has_subquery_sets(hasSubquerySets(dag.get()))
 {
-    const ActionsDAG * unsubstituted_dag = dag && dag->dag.has_value() ? &dag->dag.value() : nullptr;
-    const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
-    setUnsubstituted(generate(unsubstituted_dag, predicate, /*require_ready_sets=*/ false));
+    generateUnsubstituted();
 }
 
 template <typename Cond>
@@ -190,7 +209,7 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 
     const ActionsDAG * unsubsituted = dag && dag->dag.has_value() ? &dag->dag.value() : nullptr;
     const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
-    Cond produced = generate(unsubsituted, predicate, /*require_ready_sets=*/ true);
+    Cond produced = generate(unsubsituted, predicate);
     return setUnsubstituted(std::move(produced));
 }
 
@@ -204,6 +223,41 @@ template <typename Cond>
 const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const
 {
     return generateForPartition(part_info.getPartition(), part_info.getPartInfo().getPartitionId(), part_info.isProjectionPart());
+}
+
+template <typename Cond>
+void ConditionTemplate<Cond>::prepareForPart(const MergeTreeDataPartPtr & part) const
+{
+    if (has_subquery_sets)
+        generateForPart(part);
+}
+
+template <typename Cond>
+const Cond & ConditionTemplate<Cond>::getForPart(const MergeTreeDataPartPtr & part) const
+{
+    return getForPartition(part->partition, part->info.getPartitionId(), part->isProjectionPart());
+}
+
+template <typename Cond>
+const Cond & ConditionTemplate<Cond>::getForPart(const IMergeTreeDataPartInfoForReader & part_info) const
+{
+    return getForPartition(part_info.getPartition(), part_info.getPartInfo().getPartitionId(), part_info.isProjectionPart());
+}
+
+template <typename Cond>
+const Cond & ConditionTemplate<Cond>::getForPartition(
+    const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const
+{
+    if (!has_subquery_sets)
+        return generateForPartition(partition, partition_id, is_projection_part);
+
+    if (!skip_folding && dag && dag->predicate && !is_projection_part)
+        if (const auto * cond = lookupSubstituted(partition_id))
+            return *cond;
+
+    const auto * cond = lookupUnsubstituted();
+    chassert(cond);
+    return *cond;
 }
 
 template <typename Cond>
@@ -223,7 +277,7 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
 
         /// Folding can turn an operand into a constant, so redo the first pass: every condition must see one canonical DAG.
         ActionsDAGWithInversionPushDown canonical(specialized.getOutputs().front(), context, /* boolean_context */ true);
-        Cond produced = generate(&*canonical.dag, canonical.predicate, /*require_ready_sets=*/ true);
+        Cond produced = generate(&*canonical.dag, canonical.predicate);
         return setSubstituted(partition_id, std::move(produced));
     }
     catch (const Exception &)
@@ -237,12 +291,17 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
 template <typename Cond>
 void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
 {
-    std::unique_lock lock(mutex);
+    {
+        std::unique_lock lock(mutex);
 
-    unsubstituted.reset();
-    cache.clear();
+        unsubstituted.reset();
+        cache.clear();
 
-    transformers.push_back(std::move(transformer_));
+        transformers.push_back(std::move(transformer_));
+    }
+
+    /// `getForPart` may not generate, so the unsubstituted condition must exist before the parts are analyzed.
+    generateUnsubstituted();
 }
 
 template class ConditionTemplate<KeyCondition>;

@@ -317,7 +317,7 @@ void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_
         if (!index_helper->isTextIndex())
             continue;
 
-        auto condition = index_helper->createIndexCondition(/*predicate=*/ nullptr, context, /*require_ready_sets=*/ false);
+        auto condition = index_helper->createIndexCondition(/*predicate=*/ nullptr, context);
         text_index_infos[index_description.name] = TextIndexReadInfo
         {
             .condition = std::move(condition),

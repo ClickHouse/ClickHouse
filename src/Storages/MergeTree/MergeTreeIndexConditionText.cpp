@@ -267,7 +267,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
     JSONIndexArgumentTypes json_argument_types_,
-    bool require_ready_sets_,
     TextIndexAutomatonBudgetPtr automaton_budget_)
     : WithContext(context_)
     , header(index_sample_block)
@@ -284,7 +283,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , automaton_budget(automaton_budget_ ? std::move(automaton_budget_) : std::make_shared<TextIndexAutomatonBudget>())
     , has_positions(has_positions_)
-    , require_ready_sets(require_ready_sets_)
 {
     if (!predicate)
     {
@@ -1954,7 +1952,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 /// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path
 /// makes the predicate false. That evaluation runs `FunctionIn`, which needs every `IN` set in the
 /// sub-DAG to exist, so build them here - but only sets index analysis is allowed to consult at all.
-static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, const ContextPtr & context, bool require_ready_sets)
+static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, const ContextPtr & context)
 {
     for (const auto & node : subdag.getNodes())
     {
@@ -1993,8 +1991,7 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
         /// Only the existence of the set matters: the evaluation needs `FunctionIn` to find a ready set,
         /// but never reads its elements. Requiring `hasExplicitSetElements` on top of that gave up on a
         /// set that exceeded `use_index_for_in_with_subqueries_max_values`.
-        if (!require_ready_sets)
-            future_set->buildOrderedSetInplace(context);
+        future_set->buildOrderedSetInplace(context);
         if (!future_set->get())
             return false;
     }
@@ -2109,7 +2106,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
-    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext(), require_ready_sets))
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
         return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
@@ -2209,8 +2206,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueSetNode(
     if (!future_set)
         return false;
 
-    auto prepared_set = require_ready_sets ? future_set->getOrderedSetIfAlreadyBuilt(rhs.getContext())
-                                           : future_set->buildOrderedSetInplace(rhs.getContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -2384,7 +2380,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     if (!subdag.getRequiredColumns().empty())
         return false;
 
-    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext(), require_ready_sets))
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
         return false;
 
     auto output_column_name = subdag.getOutputs().front()->result_name;
@@ -2435,7 +2431,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (!json_info)
         return false;
 
-    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext(), require_ready_sets))
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
         return false;
 
     /// Evaluate the function on a default column value.
@@ -2518,8 +2514,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!future_set)
         return false;
 
-    auto prepared_set = require_ready_sets ? future_set->getOrderedSetIfAlreadyBuilt(rhs.getContext())
-                                           : future_set->buildOrderedSetInplace(rhs.getContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

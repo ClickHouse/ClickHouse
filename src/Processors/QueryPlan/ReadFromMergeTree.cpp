@@ -3248,7 +3248,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
 
     if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets_for_this_condition)
+        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
@@ -3256,7 +3256,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning],
-                require_ready_sets || require_ready_sets_for_this_condition};
+                require_ready_sets};
             /// The part minmax bound comes from `getExtremes`, which skips NaN.
             condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
             return condition;
@@ -3301,10 +3301,10 @@ ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition
     const ContextPtr & query_context,
     bool skip_constant_folding)
 {
-    auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets)
+    auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
     {
         ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-        return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key], require_ready_sets};
+        return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
     };
     return std::make_shared<ConditionTemplate<KeyCondition>>(
         std::move(filter_dag), std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
@@ -3343,12 +3343,10 @@ void ReadFromMergeTree::buildIndexes(
     indexes.emplace(buildPrimaryKeyCondition(filter_dag_ptr, metadata_snapshot, query_context, skip_constant_folding));
 
     {
-        auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets)
+        auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{
-                wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{})),
-                /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
+            return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
         };
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
@@ -3403,7 +3401,7 @@ void ReadFromMergeTree::buildIndexes(
         if (index_helper->isVectorSimilarityIndex())
         {
 #if USE_USEARCH
-            factory = [index_helper, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate, bool /*require_ready_sets*/)
+            factory = [index_helper, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
                 const auto & vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity &>(*index_helper);
                 return vector_similarity_index.createIndexCondition(predicate, query_context, vector_search_parameters);
@@ -3412,11 +3410,11 @@ void ReadFromMergeTree::buildIndexes(
         }
         else
         {
-            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets) -> MergeTreeIndexConditionPtr
+            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
             {
                 if (!predicate)
                     return nullptr;
-                return index_helper->createIndexCondition(predicate, query_context, require_ready_sets);
+                return index_helper->createIndexCondition(predicate, query_context);
             };
         }
 
@@ -6069,6 +6067,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         if (!applicable_skip_indexes.empty())
         {
+            /// The reader runs on the read threads and only looks the conditions up.
+            for (const auto & ranges : result.parts_with_ranges)
+            {
+                if (indexes->use_skip_indexes_for_disjunctions && indexes->key_condition_rpn_template)
+                    indexes->key_condition_rpn_template->prepareForPart(ranges.data_part);
+                for (const auto & index_and_condition : applicable_skip_indexes.useful_indices)
+                    index_and_condition.condition_template->prepareForPart(ranges.data_part);
+            }
+
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
                 indexes->key_condition_rpn_template,
