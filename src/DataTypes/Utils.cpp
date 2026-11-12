@@ -284,8 +284,14 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
 {
     /// `Bool` is a `UInt8` with a custom name, so `equals` does not tell them apart, but casting to
-    /// `Bool` maps every non-zero value to `true`.
-    if (from.equals(to) && (to.getName() != "Bool" || from.getName() == "Bool"))
+    /// `Bool` maps every non-zero value to `true`. `Nullable` is looked through because its `equals`
+    /// only compares the nested types.
+    auto is_bool = [](const IDataType & type)
+    {
+        const auto * nullable = typeid_cast<const DataTypeNullable *>(&type);
+        return (nullable ? *nullable->getNestedType() : type).getName() == "Bool";
+    };
+    if (from.equals(to) && (!is_bool(to) || is_bool(from)))
         return true;
 
     const WhichDataType which_from(from);
