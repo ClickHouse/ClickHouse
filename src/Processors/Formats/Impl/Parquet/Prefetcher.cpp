@@ -55,36 +55,27 @@ Prefetcher::~Prefetcher()
     }));
 }
 
-void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options)
+bool Prefetcher::supportsRandomAccess(ReadBuffer & reader_, const ReadOptions & options)
 {
     /// `input_format_allow_seeks`. When seeks are disallowed we read the whole file sequentially
-    /// below instead of fetching the footer and the needed column ranges.
-    if (options.format.seekable_read)
-    {
-        bool has_file_size = isBufferWithFileSize(*reader_);
-        auto * seekable = dynamic_cast<SeekableReadBuffer *>(reader_);
-        if (has_file_size && seekable)
-        {
-            if (seekable->supportsReadAt())
-            {
-                reader = seekable;
-                read_mode = ReadMode::RandomRead;
-            }
-            else if (seekable->checkIfActuallySeekable())
-            {
-                reader = seekable;
-                read_mode = ReadMode::SeekAndRead;
-            }
+    /// instead of fetching the footer and the needed column ranges.
+    if (!options.format.seekable_read || !isBufferWithFileSize(reader_))
+        return false;
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(&reader_);
+    return seekable && (seekable->supportsReadAt() || seekable->checkIfActuallySeekable());
+}
 
-            if (reader)
-            {
-                file_size = getFileSizeFromReadBuffer(*seekable);
-                if (auto * file_buf = dynamic_cast<ReadBufferFromFileBase *>(seekable))
-                {
-                    size_t view_offset = 0;
-                    is_local_file = file_buf->isRegularLocalFile(&view_offset);
-                }
-            }
+void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options)
+{
+    if (supportsRandomAccess(*reader_, options))
+    {
+        reader = dynamic_cast<SeekableReadBuffer *>(reader_);
+        read_mode = reader->supportsReadAt() ? ReadMode::RandomRead : ReadMode::SeekAndRead;
+        file_size = getFileSizeFromReadBuffer(*reader);
+        if (auto * file_buf = dynamic_cast<ReadBufferFromFileBase *>(reader))
+        {
+            size_t view_offset = 0;
+            is_local_file = file_buf->isRegularLocalFile(&view_offset);
         }
     }
 
