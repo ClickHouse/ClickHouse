@@ -950,7 +950,7 @@ void generateManifestList(
                 contains_nan.selectBranch(1);
                 contains_nan.value<bool>() = true;
             }
-            /// A type whose bounds we cannot serialize (e.g. `Float`) leaves the bounds null, matching the data-file statistics path.
+            /// A type whose bounds we cannot serialize (e.g. `UUID`) leaves the bounds null, matching the data-file statistics path.
             if (!field_summary.bounds_unavailable && field_summary.lower_bound && field_summary.upper_bound)
             {
                 auto & lower = summary_record.field(Iceberg::f_lower_bound);
