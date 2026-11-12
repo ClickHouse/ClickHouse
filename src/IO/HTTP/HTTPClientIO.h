@@ -8,6 +8,7 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/HTTPResponseParser.h>
 
 #include <memory>
 
@@ -33,8 +34,9 @@ class HTTPRequestBodyWriteBuffer : public WriteBuffer
 {
 public:
     /// The body is sent while the connection is watched for a response (RFC 9112, 9.5). The response
-    /// is parsed into the session as it arrives, and `receiveHTTPResponse` finishes it: an error status
-    /// stops the body, and the rest of it is dropped; a success is finished after the body.
+    /// is given to the parser of the session as it arrives, and `receiveHTTPResponse` finishes it: an
+    /// error status stops the body, and the rest of it is dropped; a success is finished after the
+    /// body. A response that breaks the syntax or the limits makes the write throw.
     HTTPRequestBodyWriteBuffer(
         Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size);
 
@@ -50,7 +52,7 @@ protected:
 
 private:
     void writeBody(const char * data, size_t size);
-    /// Parses the response bytes that have arrived. Returns true for an error status.
+    /// Gives the response bytes that have arrived to the parser. Returns true for an error status.
     bool checkResponse();
 
     Poco::Net::HTTPClientSession & session;
@@ -59,7 +61,7 @@ private:
     UInt64 bytes_written = 0;
     /// The server answered with an error before the end of the body.
     bool stopped = false;
-    /// The header of a successful response is complete; the rest is read after the body.
+    /// A response that is not an error is complete; the rest of it is read after the body.
     bool response_header_complete = false;
 
     Memory<> memory;
@@ -129,18 +131,23 @@ private:
 /// without a body, finalizing it only checks that nothing was written. This is the replacement
 /// of `Poco::Net::HTTPClientSession::sendRequest`, which returns an `std::ostream` that copies
 /// the data through an 8 KiB buffer and sends it in 8 KiB pieces.
+///
+/// The header of the response is checked against `response_header_limits`. They are given here,
+/// because the response is parsed from the moment the body starts to be sent.
 std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPClientSession & session,
     Poco::Net::HTTPRequest & request,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     UInt64 * connect_time = nullptr,
-    UInt64 * first_byte_time = nullptr);
+    UInt64 * first_byte_time = nullptr,
+    const Poco::Net::HTTPHeaderLimits & response_header_limits = {});
 
 /// Reads and parses the response line and the headers into `response`, and returns a buffer for
-/// its body. `1xx` informational responses are skipped, as `Poco` does.
+/// its body. An interim `100 Continue` is skipped, as `Poco` does.
 ///
-/// A final response that the server sent while the request body was being sent is returned instead
-/// of reading one; if its status is a success, it throws, because the body was not fully sent.
+/// The parser of the session continues a response that started to arrive while the request body
+/// was being sent. The header is checked against the limits given to `sendHTTPRequest`; the limits
+/// set on `response` are not used.
 ///
 /// This is the replacement of `Poco::Net::HTTPClientSession::receiveResponse`. Throws the same
 /// exceptions `Poco` throws: `Poco::Net::NoMessageException` when the peer sent nothing at all

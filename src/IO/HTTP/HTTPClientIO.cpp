@@ -7,7 +7,6 @@
 #include <Common/Hex.h>
 #include <Common/Stopwatch.h>
 
-#include <Poco/Net/HTTPBasicStreamBuf.h>
 #include <Poco/Net/HTTPResponseParser.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
@@ -35,11 +34,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// The same limits `Poco::Net::HTTPResponse` applies when it parses a response line.
-constexpr size_t max_version_length = 8;
-constexpr size_t max_status_length = 3;
-constexpr size_t max_reason_length = 512;
 
 /// The same limit `Poco::Net::HTTPChunkedStreamBuf` applies to a chunk header line.
 constexpr size_t max_chunk_length_line = 4096;
@@ -72,28 +66,52 @@ bool isFiberSocket([[maybe_unused]] Poco::Net::SocketImpl & socket_impl)
 /// `std::iostream` path used for it.
 constexpr size_t scratch_buffer_size = 8192;
 
-Poco::Net::HTTPHeaderLimits headerLimitsOf(const Poco::Net::HTTPResponse & response)
+/// Drops a complete interim `100 Continue`, as `Poco` does: the final response follows it.
+/// Returns whether the parser holds a complete final response.
+bool finalResponseComplete(Poco::Net::HTTPResponseParser & parser)
 {
-    return {.fields = response.getFieldLimit(), .name_length = response.getNameLengthLimit(), .value_length = response.getValueLengthLimit()};
+    if (!parser.complete())
+        return false;
+    if (parser.response().getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
+        return true;
+    parser.reset();
+    return false;
 }
 
-/// Continues `parser` with the data the session has buffered, and then with blocking reads, until
-/// the response header is complete. The bytes after the header stay buffered for the body.
-void readHTTPResponseHeader(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponseParser & parser)
+/// Gives the data the session has buffered to its response parser, up to the end of the final
+/// response header. The bytes after it stay buffered for the body.
+void feedHTTPResponseParser(Poco::Net::HTTPClientSession & session)
 {
-    while (true)
+    auto & parser = session.responseParser();
+    while (session.buffered() > 0)
     {
-        if (session.buffered() > 0)
-            session.consumeBuffered(static_cast<int>(parser.feed(session.bufferedData(), static_cast<size_t>(session.buffered()))));
-        if (parser.complete())
+        session.consumeBuffered(static_cast<int>(parser.feed(session.bufferedData(), static_cast<size_t>(session.buffered()))));
+        if (finalResponseComplete(parser))
             return;
+    }
+}
 
+/// Continues the response parser of the session with blocking reads, until the final response
+/// header is complete.
+void readHTTPResponseHeader(Poco::Net::HTTPClientSession & session)
+{
+    auto & parser = session.responseParser();
+    feedHTTPResponseParser(session);
+    while (!parser.complete())
+    {
         /// The parser took all the buffered data, so the buffer has space.
         const int received = session.fillBuffer();
         if (received < 0)
+        {
             parser.feedEof();
+            /// The end of the data after a `100 Continue`: throws `NoMessageException`.
+            if (!finalResponseComplete(parser))
+                parser.feedEof();
+        }
         else if (received == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A blocking read of an HTTP response header returned no data");
+        else
+            feedHTTPResponseParser(session);
     }
 }
 
@@ -104,91 +122,6 @@ void copyHTTPResponseHeader(const Poco::Net::HTTPResponse & from, Poco::Net::HTT
     to.setStatusAndReason(from.getStatus(), from.getReason());
     for (const auto & [name, value] : from)
         to.add(name, value);
-}
-
-std::string_view trimHTTPSpaces(std::string_view value)
-{
-    while (!value.empty() && (value.front() == ' ' || value.front() == '\t'))
-        value.remove_prefix(1);
-    while (!value.empty() && (value.back() == ' ' || value.back() == '\t'))
-        value.remove_suffix(1);
-    return value;
-}
-
-void parseHTTPStatusLine(std::string_view line, Poco::Net::HTTPResponse & response)
-{
-    const auto version_end = line.find(' ');
-    if (version_end > max_version_length)
-        throw Poco::Net::MessageException("Invalid HTTP version string");
-    auto rest = trimHTTPSpaces(line.substr(version_end));
-    const auto status_end = std::min(rest.find(' '), rest.size());
-    if (status_end == 0 || status_end > max_status_length)
-        throw Poco::Net::MessageException("Invalid HTTP status code");
-    const auto reason = trimHTTPSpaces(rest.substr(status_end));
-    if (reason.size() > max_reason_length)
-        throw Poco::Net::MessageException("HTTP reason string too long");
-
-    const std::string version(line.substr(0, version_end));
-    const std::string status(rest.substr(0, status_end));
-    try
-    {
-        response.setVersion(version);
-        response.setStatus(status);
-        response.setReason(std::string(reason));
-    }
-    catch (const Poco::SyntaxException & e)
-    {
-        throw Poco::SyntaxException(e.message(), ", while reading HTTP response: version='" + version + "', status='" + status + "'");
-    }
-}
-
-/// Parses the complete lines of a response header that are in the read buffer of the session into
-/// `started`, consuming exactly them: the bytes after the header belong to the response body.
-void parseBufferedHTTPHeaderLines(Poco::Net::HTTPClientSession & session, Poco::Net::HTTPClientSession::StartedResponse & started)
-{
-    while (!started.complete)
-    {
-        const char * begin = session.bufferedData();
-        const auto size = static_cast<size_t>(session.buffered());
-        const auto * end_of_line = static_cast<const char *>(std::memchr(begin, '\n', size));
-        if (!end_of_line)
-            return;
-
-        std::string_view line(begin, end_of_line - begin);
-        if (!line.empty() && line.back() == '\r')
-            line.remove_suffix(1);
-
-        if (!started.status_line_read)
-        {
-            /// Empty lines before the status line are allowed.
-            if (!line.empty())
-            {
-                parseHTTPStatusLine(line, started.response);
-                started.status_line_read = true;
-            }
-        }
-        else if (line.empty())
-        {
-            started.complete = true;
-        }
-        else if (line.front() == ' ' || line.front() == '\t')
-        {
-            /// An obsolete folded line continues the value of the previous field.
-            if (started.last_field_name.empty())
-                throw Poco::Net::MessageException("Folded HTTP header line without a field");
-            const auto value = started.response.get(started.last_field_name) + " " + std::string(trimHTTPSpaces(line));
-            started.response.set(started.last_field_name, value);
-        }
-        else
-        {
-            const auto colon = line.find(':');
-            if (colon == std::string_view::npos)
-                throw Poco::Net::MessageException("Field name in HTTP header line without a colon");
-            started.last_field_name = std::string(trimHTTPSpaces(line.substr(0, colon)));
-            started.response.add(started.last_field_name, std::string(trimHTTPSpaces(line.substr(colon + 1))));
-        }
-        session.consumeBuffered(static_cast<int>(end_of_line - begin + 1));
-    }
 }
 
 }
@@ -221,33 +154,14 @@ HTTPRequestBodyWriteBuffer::~HTTPRequestBodyWriteBuffer()
 
 bool HTTPRequestBodyWriteBuffer::checkResponse()
 {
-    while (session.buffered() > 0)
-    {
-        auto & started = session.startResponse();
-        parseBufferedHTTPHeaderLines(session, started);
-        if (!started.status_line_read)
-            break;
+    feedHTTPResponseParser(session);
+    const auto & parser = session.responseParser();
+    if (parser.statusLineComplete() && parser.response().getStatus() >= Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+        return true;
 
-        const auto status = started.response.getStatus();
-        if (status >= Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
-            return true;
-
-        if (status >= Poco::Net::HTTPResponse::HTTP_OK)
-        {
-            /// The rest of a successful response comes after the body: stop reading it now.
-            if (started.complete)
-                response_header_complete = true;
-            break;
-        }
-
-        /// An informational response, such as a late `100 Continue`: the server wants the body.
-        if (!started.complete)
-            break;
-        session.takeStartedResponse();
-    }
-
-    if (!response_header_complete && static_cast<size_t>(session.buffered()) >= Poco::Net::HTTP_DEFAULT_BUFFER_SIZE)
-        throw Poco::Net::MessageException("HTTP response header line is too long");
+    /// The rest of a response that is not an error comes after the body: stop reading it now.
+    if (parser.complete())
+        response_header_complete = true;
     return false;
 }
 
@@ -689,9 +603,11 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPRequest & request,
     size_t buf_size,
     UInt64 * connect_time,
-    UInt64 * first_byte_time)
+    UInt64 * first_byte_time,
+    const Poco::Net::HTTPHeaderLimits & response_header_limits)
 {
     const auto body_info = session.sendRequestHeaders(request, connect_time, first_byte_time);
+    session.responseParser().reset(response_header_limits);
 
     /// A request that carries no body, or a body shorter than the buffer, needs no more memory
     /// than that. One byte is always kept, so that a write to a request without a body reaches
@@ -719,66 +635,9 @@ static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
 static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
 {
-    /// A response that started to arrive while the request body was being sent: finish it.
-    if (auto started = session.takeStartedResponse())
-    {
-        try
-        {
-            while (true)
-            {
-                parseBufferedHTTPHeaderLines(session, *started);
-                if (started->complete)
-                {
-                    if (started->response.getStatus() >= Poco::Net::HTTPResponse::HTTP_OK)
-                        break;
-                    /// An informational response: the final one follows.
-                    started = std::make_unique<Poco::Net::HTTPClientSession::StartedResponse>();
-                    continue;
-                }
-                if (static_cast<size_t>(session.buffered()) >= Poco::Net::HTTP_DEFAULT_BUFFER_SIZE)
-                    throw Poco::Net::MessageException("HTTP response header line is too long");
-                if (session.fillBuffer() < 0)
-                    throw Poco::Net::MessageException("HTTP response header ended prematurely");
-            }
-
-            /// The caller's limits apply to the header as a whole, as for a header read in one go.
-            const auto & parsed = started->response;
-            if (response.getFieldLimit() > 0 && parsed.size() > static_cast<size_t>(response.getFieldLimit()))
-                throw Poco::Net::MessageException("Too many header fields");
-            response.clear();
-            response.setVersion(parsed.getVersion());
-            response.setStatusAndReason(parsed.getStatus(), parsed.getReason());
-            for (const auto & [name, value] : parsed)
-            {
-                if (response.getNameLengthLimit() > 0 && name.size() > static_cast<size_t>(response.getNameLengthLimit()))
-                    throw Poco::Net::MessageException("Field name is too long");
-                if (response.getValueLengthLimit() > 0 && value.size() > static_cast<size_t>(response.getValueLengthLimit()))
-                    throw Poco::Net::MessageException("Field value is too long");
-                response.add(name, value);
-            }
-        }
-        catch (const Poco::Exception &)
-        {
-            /// Same cleanup as below.
-            session.reset();
-            if (const auto * network_exception = session.networkException())
-                network_exception->rethrow();
-            throw;
-        }
-        return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
-    }
-
-    Poco::Net::HTTPResponseParser parser(headerLimitsOf(response));
     try
     {
-        while (true)
-        {
-            readHTTPResponseHeader(session, parser);
-            /// An interim `100 Continue`: the final response follows, as in `Poco`.
-            if (parser.response().getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE)
-                break;
-            parser.reset();
-        }
+        readHTTPResponseHeader(session);
     }
     catch (const Poco::Exception &)
     {
@@ -791,7 +650,7 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
             network_exception->rethrow();
         throw;
     }
-    copyHTTPResponseHeader(parser.response(), response);
+    copyHTTPResponseHeader(session.responseParser().response(), response);
 
     return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
 }
