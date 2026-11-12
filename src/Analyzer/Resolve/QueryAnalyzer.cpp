@@ -2430,6 +2430,77 @@ static void checkSemiAntiJoinTableAccess(
     }
 }
 
+static bool scopeOwnsMatcherColumnSource(const IdentifierResolveScope & scope, const QueryTreeNodePtr & column_source)
+{
+    if (scope.table_expressions_in_resolve_process.contains(column_source.get()))
+        return true;
+
+    for (const auto & table_expression : scope.registered_table_expression_nodes)
+    {
+        if (table_expression == column_source || isFromJoinTree(column_source.get(), table_expression.get()))
+            return true;
+    }
+
+    return false;
+}
+
+static IdentifierResolveScope * findMatcherExpressionScope(const QueryTreeNodePtr & expression, IdentifierResolveScope & scope)
+{
+    IdentifierResolveScope * expression_scope = nullptr;
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            if (auto column_source = column->getColumnSourceOrNull())
+            {
+                for (auto * candidate_scope = &scope; candidate_scope; candidate_scope = candidate_scope->parent_scope)
+                {
+                    if (!scopeOwnsMatcherColumnSource(*candidate_scope, column_source))
+                        continue;
+
+                    if (expression_scope && expression_scope != candidate_scope)
+                        return &scope;
+                    expression_scope = candidate_scope;
+                    break;
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return expression_scope ? expression_scope : &scope;
+}
+
+static bool matcherExpressionUsesOtherScope(const QueryTreeNodePtr & expression, const IdentifierResolveScope & owner_scope)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            if (auto column_source = column->getColumnSourceOrNull();
+                column_source && !scopeOwnsMatcherColumnSource(owner_scope, column_source))
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return false;
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
@@ -2449,6 +2520,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
     expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
+    auto * expression_scope = expression_query_tree_node ? findMatcherExpressionScope(expression_query_tree_node, scope) : &scope;
 
     /// Try to resolve unqualified matcher for query expression.
 
@@ -2489,9 +2561,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
                 IdentifierResolveContext identifier_resolve_settings;
                 identifier_resolve_settings.allow_to_check_cte = false;
                 identifier_resolve_settings.allow_to_check_database_catalog = false;
+                identifier_resolve_settings.allow_to_check_parent_scopes = false;
 
                 auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr;
+                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, *expression_scope, identifier_resolve_settings).resolved_identifier != nullptr;
             }
 
             if (!prefer_table_expression)
@@ -2519,6 +2592,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
                     matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
                 }
 
+                matched_expression_scope = expression_scope;
                 return matched_expression_nodes_with_column_names;
             }
         }
@@ -3166,6 +3240,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
+            if (matcherExpressionUsesOtherScope(node, *group_by_keys_scope))
+                continue;
+
             auto it = group_by_keys_scope->nullable_group_by_keys.find(node);
             if (it != group_by_keys_scope->nullable_group_by_keys.end())
             {
