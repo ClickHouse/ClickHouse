@@ -2891,9 +2891,8 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
             continue;
         }
 
-        /// Replace keys expression with calculated inputs
-        /// We also could possibly remove some nodes from dag,
-        /// but they will simply remain unused when converting to a physical step
+        /// Replace keys expression with calculated inputs. The replaced expression and the inputs only it read stay
+        /// unused in the DAG; the unused-columns pass after the runtime filters prunes them and the columns they read.
         if (left_node->type != ActionsDAG::ActionType::INPUT ||
             right_node->type != ActionsDAG::ActionType::INPUT)
         {
