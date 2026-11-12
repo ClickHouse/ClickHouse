@@ -17,9 +17,7 @@ SELECT 'rejected once the const profile arrives';
 SET profile = 'profile_05623';
 SELECT getSetting('make_distributed_plan'); -- { serverError SETTING_CONSTRAINT_VIOLATION }
 
--- The constraint stays active and distributed_plan_workers_num is still explicitly 3 from above,
--- so every query - including a bare label - wants and is refused the plan at once; reset the
--- workers num first so the label itself does not throw, then set it again for the real assertion.
+-- Reset first: the label query would otherwise want and be refused too.
 SET distributed_plan_workers_num = 0;
 SELECT 'still rejected under the constraint';
 SET distributed_plan_workers_num = 5;
