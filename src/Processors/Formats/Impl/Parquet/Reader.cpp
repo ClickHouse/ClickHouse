@@ -13,6 +13,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
@@ -143,7 +144,10 @@ static size_t memoryLimitOfCurrentThread()
 /// dictionary and the indexes, which may be much smaller.
 /// Nothing, if the column has a `JSON` or a `Dynamic` column in it: their output is not bounded by their size, e.g.
 /// `toJSONString` repeats the names of the paths of `JSON` in every row, while the column holds each name once.
-static std::optional<size_t> maxByteSizeWithExpandedValues(const IColumn & column)
+/// The values of an `Enum` are stored as `Int8` or `Int16`, while their names are in the type, so each value of such
+/// a column in it is counted with `enum_bytes_per_value` more, see `maxEnumBytesPerValue`. The columns of `Int8` and
+/// `Int16` that are not of an `Enum` are counted so as well: it is not known from the column which they are.
+static std::optional<size_t> maxByteSizeWithExpandedValues(const IColumn & column, size_t enum_bytes_per_value)
 {
     if (typeid_cast<const ColumnObject *>(&column) || typeid_cast<const ColumnDynamic *>(&column))
         return std::nullopt;
@@ -158,17 +162,42 @@ static std::optional<size_t> maxByteSizeWithExpandedValues(const IColumn & colum
     }
     /// The subcolumns are counted with their values expanded, which is never less than their size.
     std::optional<size_t> res = column.byteSize();
+    if (enum_bytes_per_value && (typeid_cast<const ColumnInt8 *>(&column) || typeid_cast<const ColumnInt16 *>(&column)))
+        *res += column.size() * enum_bytes_per_value;
     column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn)
     {
         if (!res)
             return;
-        const std::optional<size_t> subcolumn_bytes = maxByteSizeWithExpandedValues(*subcolumn);
+        const std::optional<size_t> subcolumn_bytes = maxByteSizeWithExpandedValues(*subcolumn, enum_bytes_per_value);
         if (subcolumn_bytes)
             *res += *subcolumn_bytes - subcolumn->byteSize();
         else
             res.reset();
     });
     return res;
+}
+
+/// The memory that a value of an `Enum` in the type takes when it is converted to its name, e.g. by `toString`: the
+/// longest name, its terminating zero, and an offset of `ColumnString`. Zero if there is no `Enum` in the type. The
+/// column of an `Enum` takes only an integer per value, so this is not bounded by its size.
+static size_t maxEnumBytesPerValue(const IDataType & type)
+{
+    size_t max_name_bytes = 0;
+    bool has_enum = false;
+    auto add_names = [&](const auto & values)
+    {
+        has_enum = true;
+        for (const auto & [name, _] : values)
+            max_name_bytes = std::max(max_name_bytes, name.size());
+    };
+    forEachInTypeTree(type, [&](const IDataType & nested_type)
+    {
+        if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&nested_type))
+            add_names(enum8->getValues());
+        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&nested_type))
+            add_names(enum16->getValues());
+    });
+    return has_enum ? max_name_bytes + 1 + sizeof(UInt64) : 0;
 }
 
 template <typename E>
@@ -1262,8 +1291,14 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         {
             auto column = info.output_type->createColumn();
             column->insertDefault();
-            info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0));
+            info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0) + maxEnumBytesPerValue(*info.output_type));
         }
+        /// The names of the values of an `Enum`, which a query may take for each value, e.g. by `toString`. They are
+        /// charged to every primitive column under the type with an `Enum`, which is an upper bound.
+        if (const size_t enum_bytes_per_value = maxEnumBytesPerValue(*info.output_type))
+            for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                primitive_columns.at(i).enum_bytes_per_value
+                    = std::max(primitive_columns.at(i).enum_bytes_per_value, static_cast<double>(enum_bytes_per_value));
         if (!info.needs_cast || info.is_missing_column || info.primitive_start == info.primitive_end)
             continue;
         const DataTypePtr output_type = removeNullable(info.output_type);
@@ -3427,13 +3462,18 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         }
         /// A cached column is counted by its largest chunk, with the values of `LowCardinality` expanded: the cached
         /// chunk is compact, but the query may convert it whole, e.g. by `CAST` to `String`. The size of a cached
-        /// `JSON` or `Dynamic` column is unknown, as when it is assembled, see `count_assembled_column`.
-        for (const auto & chunks : row_group.cached_columns)
+        /// `JSON` or `Dynamic` column is unknown, as when it is assembled, see `count_assembled_column`. The names of the
+        /// values of an `Enum` are counted as well, see `maxEnumBytesPerValue`.
+        for (size_t idx = 0; idx < row_group.cached_columns.size(); ++idx)
         {
+            const auto & chunks = row_group.cached_columns[idx];
+            if (chunks.empty())
+                continue;
+            const size_t enum_bytes_per_value = maxEnumBytesPerValue(*extended_sample_block_data_types.at(idx));
             size_t max_chunk_bytes = 0;
             for (const auto & chunk : chunks)
             {
-                const std::optional<size_t> bytes = maxByteSizeWithExpandedValues(*chunk);
+                const std::optional<size_t> bytes = maxByteSizeWithExpandedValues(*chunk, enum_bytes_per_value);
                 if (bytes)
                     max_chunk_bytes = std::max(max_chunk_bytes, *bytes);
                 else
@@ -3782,7 +3822,7 @@ double Reader::estimateMaxColumnMemoryBytesOfChunk(
         /// The offsets of `ColumnString`.
         res = string_bytes.value_or(0) + 8. * num_values;
     }
-    res += column_info.cast_bytes_per_value * num_values;
+    res += (column_info.cast_bytes_per_value + column_info.enum_bytes_per_value) * num_values;
 
     /// Outer array offsets, and nested array offsets, at most one per value.
     if (rep > 0)

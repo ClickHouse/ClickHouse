@@ -195,6 +195,9 @@ struct Reader
         /// The memory per value that the output column takes after it is converted to a fixed-size type, see
         /// `OutputColumnInfo::needs_cast`. Charged to the first primitive column of the output column.
         double cast_bytes_per_value = 0;
+        /// The memory per value that the names of the values of an `Enum` in the output type take, e.g. after `toString`.
+        /// Counted in the bound of the size of a chunk, see `estimateMaxColumnMemoryBytesOfChunk`.
+        double enum_bytes_per_value = 0;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
         /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
         /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
