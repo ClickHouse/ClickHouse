@@ -47,8 +47,6 @@ struct QueryPlanStepDeserialization;
 
 struct ExplainFormatSettings;
 
-
-
 /// Single step of query plan.
 class IQueryPlanStep
 {

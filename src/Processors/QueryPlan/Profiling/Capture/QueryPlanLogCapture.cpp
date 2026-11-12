@@ -12,7 +12,7 @@
 #include <Common/JSONBuilder.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
-#include <Processors/QueryPlan/Profiling/Render/FlatJsonPlanRenderer.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>

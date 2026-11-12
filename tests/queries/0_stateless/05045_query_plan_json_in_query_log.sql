@@ -11,7 +11,7 @@
 --
 -- The plan is stored as a flat array: `{"Root": <id>, "ExecutionTimeNs": <ns>, "MaxThreads": <n>,
 -- "Output": [...], "Nodes": [...]}`, with each node naming its children by id. Anything a reader
--- can compute from those is not stored -- see FlatJsonPlanRenderer.
+-- can compute from those is not stored -- see FlatJSONPlanRenderer.
 
 SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 AND '05045_off' != '' FORMAT Null;

@@ -2789,7 +2789,7 @@ See also:
 - [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
 )", BETA, \
-        {"26.10", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
+        {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 

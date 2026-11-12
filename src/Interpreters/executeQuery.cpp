@@ -85,7 +85,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
-#include <Processors/QueryPlan/Profiling/Render/FlatJsonPlanRenderer.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
@@ -927,7 +927,7 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     try
     {
         WriteBufferFromString out(elem.query_plan);
-        FlatJsonPlanRenderer renderer;
+        FlatJSONPlanRenderer renderer;
         renderer.render(*captured, out);
         out.finalize();
     }
@@ -940,7 +940,7 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         try
         {
             WriteBufferFromString out(elem.query_plan);
-            FlatJsonPlanRenderer::renderError(getCurrentExceptionMessage(/*with_stacktrace=*/ false), out);
+            FlatJSONPlanRenderer::renderError(getCurrentExceptionMessage(/*with_stacktrace=*/ false), out);
             out.finalize();
         }
         catch (...)
