@@ -1450,11 +1450,11 @@ def test_kafka_virtual_columns_with_materialized_view(
             DROP TABLE IF EXISTS test.{kafka_table}_view;
             DROP TABLE IF EXISTS test.{kafka_table}_consumer;
             {create_query};
-            CREATE TABLE test.{kafka_table}_view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')))
+            CREATE TABLE test.{kafka_table}_view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')), table_name String)
                 ENGINE = MergeTree()
                 ORDER BY key;
             CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
-                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp FROM test.{kafka_table};
+                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp, _table as table_name FROM test.{kafka_table};
         """)
 
         messages = []
@@ -1471,6 +1471,10 @@ def test_kafka_virtual_columns_with_materialized_view(
         )
 
         k.kafka_check_result(result, True, "test_kafka_virtual2.reference")
+        assert (
+            instance.query(f"SELECT table_name, count() FROM test.{kafka_table}_view GROUP BY table_name")
+            == f"{kafka_table}\t50\n"
+        )
 
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;
