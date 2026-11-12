@@ -288,7 +288,6 @@ public:
     /// so the other parts are not pruned if `key_condition` leaves fewer than `min_marks_per_part_to_load_statistics`
     /// marks to read in them per part (see `getMinMarksToLoadStatistics` and `hasFewerMarksToReadThan`).
     /// If `deferred_parts` is not nullptr, the parts left unpruned for that reason are written to it.
-    /// `probe_cache` is passed to `hasFewerMarksToReadThan`.
     static RangesInDataParts filterPartsByStatistics(
         const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,

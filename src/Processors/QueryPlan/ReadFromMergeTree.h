@@ -69,8 +69,7 @@ struct SkipIndexOrderCache
 };
 using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
-/// Memoizes, per part, the number of marks the primary key probe of `MergeTreeDataSelectExecutor::hasFewerMarksToReadThan`
-/// leaves to read, for one `ReadFromMergeTree::Indexes` object (see `SkipIndexOrderCache`).
+/// Mark counts per part found by `hasFewerMarksToReadThan` with the key condition of one `ReadFromMergeTree::Indexes`.
 struct PrimaryKeyProbeCache
 {
     struct Entry
@@ -383,7 +382,6 @@ public:
         UsefulSkipIndexes skip_indexes;
         /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
         SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
-        /// Shared by every primary key probe of this step, see `PrimaryKeyProbeCache`.
         PrimaryKeyProbeCachePtr primary_key_probe_cache = std::make_shared<PrimaryKeyProbeCache>();
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;

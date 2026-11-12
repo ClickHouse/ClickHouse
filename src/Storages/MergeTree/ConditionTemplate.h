@@ -55,7 +55,6 @@ public:
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
 
-    /// Changes when `addTransformation` changes the generated conditions.
     size_t getNumTransformations() const;
 
 private:
