@@ -84,6 +84,6 @@ $CLICKHOUSE_CLIENT --user "$READER" --password p --query "
         countIf(position(message, '${CANARY}') > 0),
         countIf(logger_name = 'executeQuery' AND position(message, '[HIDDEN]') > 0) > 0
     FROM system.text_log
-    WHERE query_id = '${QUERY_ID}' AND event_date >= yesterday()
+    WHERE query_id = '${QUERY_ID}' AND event_date >= yesterday() AND event_time >= now() - 600
     SETTINGS enable_parallel_replicas = 0
 "
