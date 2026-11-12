@@ -1,0 +1,4 @@
+String key	1	1
+UInt64 key	1	1
+UInt64, String key	1	1
+Interleaved String key	1	1
