@@ -31,5 +31,26 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE initial_query_id = '${query_id}' AND type = 'QueryFinish' AND is_initial_query = 0 AND query LIKE '%${TABLE}%'
         AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND is_initial_query)"
 
+# A lambda conjunct is evaluated on the initiator only: its body is JIT-compiled while the initiator plans the query.
+# The replicas get only `t.id % 2 = 0`, so they return exactly the 15000 even ids.
+for LAMBDA in "x -> x > 1 AND x < 1000, [t.id]" "x -> x > 1 AND x < t.id, [29000, 29500]"; do
+    query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_lambda_${RANDOM}"
+    ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
+        SELECT count(), sum(t.id)
+        FROM ${CLUSTER_FN} AS t, (SELECT number AS k FROM numbers(30000)) AS n
+        WHERE t.id = n.k AND arrayExists(${LAMBDA}) AND t.id % 2 = 0
+        SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM ${TABLE} WHERE arrayExists(${LAMBDA//t.id/id}) AND id % 2 = 0"
+
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT
+            count() > 0 AND countIf(Settings['cluster_table_function_pushed_down_filter'] != '') = count() AS all_secondary_queries_have_filter,
+            sum(result_rows) = 15000 AS replicas_filtered_only_by_the_rest
+        FROM system.query_log
+        WHERE initial_query_id = '${query_id}' AND type = 'QueryFinish' AND is_initial_query = 0 AND query LIKE '%${TABLE}%'
+            AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND is_initial_query)"
+done
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 rm -rf "${TABLE_PATH}"

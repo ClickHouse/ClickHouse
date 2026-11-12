@@ -295,7 +295,8 @@ IsStorageTouched isStorageTouchedByMutations(
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -363,6 +364,7 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    executor.setExceptionCallback(std::move(on_exception));
     /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
     executor.setCancelCallback(
         [&executor, &check_operation_is_not_cancelled]
@@ -2467,7 +2469,7 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            false,
+            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
     }

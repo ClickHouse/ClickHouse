@@ -16,6 +16,9 @@ struct FilterDAGOutputPruningResult
     std::vector<size_t> unneeded_input_positions;
 };
 
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? See the definition.
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node);
+
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
 {

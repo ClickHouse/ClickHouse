@@ -90,6 +90,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -126,15 +127,20 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int FILE_ALREADY_EXISTS;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_metadata_prefetch_pause[];
 }
 
 namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsBool use_iceberg_manifest_statistics;
+extern const SettingsBool use_statistics;
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
@@ -145,7 +151,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
-extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
@@ -161,6 +166,7 @@ extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
 extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
+extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
 namespace
@@ -197,6 +203,31 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
 
+/// Source ids of the sort fields whose null order differs from ClickHouse's (NULLs last for ASC, first for DESC).
+std::vector<Int32> getSourceIdsWithMismatchedNullOrder(const Poco::JSON::Object::Ptr & metadata_object, Int64 sort_order_id)
+{
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+
+        std::vector<Int32> result;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            bool asc = field->getValue<String>(f_direction) == "asc";
+            bool nulls_first = field->getValue<String>(f_null_order) == "nulls-first";
+            if (asc == nulls_first)
+                result.push_back(field->getValue<Int32>(f_source_id));
+        }
+        return result;
+    }
+    return {};
+}
+
 }
 
 std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> IcebergMetadata::initializePersistentTableComponents(
@@ -211,29 +242,23 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
     const auto & [metadata_version, metadata_file_path, compression_method] = latest_metadata;
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_json_str = readMetadataJSONString(metadata_file_path, object_storage, cache_ptr != nullptr, context_, log, compression_method);
-    auto metadata_object = parseMetadataJSONString(metadata_json_str);
+    auto metadata_object = parseMetadataJSONString(metadata_json_str, metadata_file_path);
+    validateTableMetadata(*metadata_object, metadata_file_path);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     std::optional<String> table_uuid = std::nullopt;
     if (metadata_object->has(Iceberg::f_table_uuid))
-    {
         table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
-    }
-    else
-    {
-        if (format_version >= 2)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg table metadata file '{}' doesn't contain required field '{}'",
-                metadata_file_path,
-                Iceberg::f_table_uuid);
-        }
-    }
     if (cache_ptr && table_uuid)
         cache_ptr->getOrSetTableMetadata(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
-            [&]() { return std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, metadata_json_str.size()); });
+            [&]()
+            {
+                auto cell = std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, metadata_json_str.size());
+                /// The checks of getMetadataJSONObject; validateTableMetadata ran above.
+                std::call_once(cell->table_metadata_validated, [&] { IcebergSchemaProcessor::checkTableSchemas(*metadata_object); });
+                return cell;
+            });
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     PersistentTableComponents persistent_components{
@@ -367,6 +392,9 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 
     try
     {
+        /// Lets a test hold the refresher before it reads the latest metadata
+        FailPointInjection::pauseFailPoint(FailPoints::iceberg_metadata_prefetch_pause);
+
         if (!Context::getGlobalContextInstance())
         {
             /// Should never happen, but if seen, this is clear indicator that the task should be started/stopped via startup/shutdown mechanism (check TODOs above)
@@ -413,9 +441,6 @@ Int32 IcebergMetadata::parseTableSchema(const Poco::JSON::Object::Ptr & metadata
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-
     if (format_version > 3)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -439,8 +464,6 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -513,7 +536,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
+        metadata_object->getArray(f_statistics));
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
@@ -1087,7 +1111,7 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        std::vector<String> metadata_files = listFilesNonRecursive(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
         if (!metadata_files.empty())
         {
             if (if_not_exists)
@@ -1107,24 +1131,14 @@ void IcebergMetadata::createInitial(
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_format_version]);
-    auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
-    auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    const auto compression_method = setMetadataCompressionCodecProperty(metadata_content_object, local_context);
+    if (metadata_content_object->has("properties"))
+        metadata_content = stringifyJSON(metadata_content_object, 4);
 
     /// Use the Iceberg spec file extension (gzip -> "gz"), not the raw setting token.
     auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
-
-    if (!compression_method_str.empty())
-    {
-        /// A catalog that writes the first metadata file itself reads the codec from this property.
-        /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
-        const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("write.metadata.compression-codec", codec_name);
-        metadata_content_object->set("properties", properties);
-        metadata_content = stringifyJSON(metadata_content_object, 4);
-    }
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 
@@ -1145,10 +1159,7 @@ void IcebergMetadata::createInitial(
         }
         catch (const Exception & e)
         {
-            const bool precondition_failed
-                = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-                || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-            if (if_not_exists && precondition_failed)
+            if (if_not_exists && isConditionalWriteConflict(e))
                 return;
             throw;
         }
@@ -1547,6 +1558,13 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     if (!data_snapshot)
         return true;
 
+    auto metadata_object = getMetadataJSONObject(
+        table_state_snapshot->metadata_file_path, object_storage, persistent_components.metadata_cache, context, log,
+        persistent_components.metadata_compression_method, persistent_components.table_uuid);
+    /// Reading in order merges files with NULLs placed the ClickHouse way; files sorted with the other null order
+    /// are only in that order if they have no NULLs.
+    const auto mismatched_null_order_source_ids = getSourceIdsWithMismatchedNullOrder(metadata_object, *sorting_key.sort_order_id);
+
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
@@ -1554,6 +1572,16 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
+
+        for (const auto & file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            for (Int32 source_id : mismatched_null_order_source_ids)
+            {
+                auto info = file->parsed_entry->columns_infos.find(source_id);
+                if (info == file->parsed_entry->columns_infos.end() || info->second.nulls_count.value_or(1) != 0)
+                    return false;
+            }
+        }
     }
     return true;
 }
@@ -1654,12 +1682,72 @@ std::optional<UInt64> countDeletedRows(
     return deleted_rows;
 }
 
+/// An integer JSON value, std::nullopt for any other value. Poco keeps an integer above the `Int64` range as `UInt64`.
+std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
+{
+    if (!value.isInteger() || value.isBoolean())
+        return std::nullopt;
+    if (value.isSigned())
+        return value.convert<Int64>();
+    const auto unsigned_value = value.convert<UInt64>();
+    if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        return std::nullopt;
+    return static_cast<Int64>(unsigned_value);
+}
+
+/// Field id -> `ndv` of the one-column theta sketches in the first statistics file of snapshot `snapshot_id`; skips malformed
+/// entries and the blobs that the file keeps from an earlier snapshot.
+std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
+{
+    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
+
+    std::unordered_map<Int32, UInt64> distinct_values;
+    if (!statistics)
+        return distinct_values;
+
+    for (unsigned i = 0; i < statistics->size(); ++i)
+    {
+        const auto statistics_file = statistics->getObject(i);
+        if (!statistics_file || tryGetInt64(statistics_file->get(f_metadata_snapshot_id)) != snapshot_id)
+            continue;
+
+        const auto blobs = statistics_file->getArray(f_blob_metadata);
+        for (unsigned j = 0; blobs && j < blobs->size(); ++j)
+        {
+            const auto blob = blobs->getObject(j);
+            if (!blob)
+                continue;
+
+            const auto type = blob->get(f_type);
+            const auto fields = blob->getArray(f_fields);
+            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+                || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
+                continue;
+
+            const auto field_id = tryGetInt64(fields->get(0));
+            if (!field_id || *field_id < std::numeric_limits<Int32>::min() || *field_id > std::numeric_limits<Int32>::max())
+                continue;
+
+            const auto properties = blob->getObject(f_properties);
+            const auto ndv = properties ? properties->get(f_ndv) : Poco::Dynamic::Var{};
+            UInt64 num_distinct_values = 0;
+            if (ndv.isString() && tryParse(num_distinct_values, ndv.convert<String>()))
+                distinct_values[static_cast<Int32>(*field_id)] = num_distinct_values;
+        }
+        break;
+    }
+    return distinct_values;
+}
+
 }
 
 std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
     StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
 {
+    if (!context->getSettingsRef()[Setting::use_iceberg_manifest_statistics] || !context->getSettingsRef()[Setting::use_statistics])
+        return std::nullopt;
+
     auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     if (table_state_snapshot == nullptr)
     {
@@ -1679,11 +1767,29 @@ IcebergMetadata::estimateRead(
         return estimate;
     }
 
+    const auto & settings = context->getSettingsRef();
+
+    std::unordered_map<Int32, UInt64> table_distinct_values;
+    if (settings[Setting::use_iceberg_table_statistics_ndv])
+    {
+        table_distinct_values = readTableStatisticsDistinctValues(data_snapshot->statistics, data_snapshot->snapshot_id);
+        if (!table_distinct_values.empty())
+            LOG_TRACE(
+                log,
+                "Table statistics of snapshot {} give the numbers of distinct values of {} fields",
+                data_snapshot->snapshot_id,
+                table_distinct_values.size());
+    }
+
     ManifestColumnStatistics column_statistics(
-        column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id, context);
+        column_names,
+        storage_metadata_snapshot->getColumns(),
+        *persistent_components.schema_processor,
+        table_state_snapshot->schema_id,
+        context,
+        table_distinct_values);
 
     /// Prune as the read does (`IcebergIterator`), but never build an `IN` set: planning must not run a subquery.
-    const auto & settings = context->getSettingsRef();
     const ActionsDAG * pruning_filter = settings[Setting::use_iceberg_partition_pruning] ? filter : nullptr;
 
     std::unique_ptr<ManifestListPruner> manifest_list_pruner;
@@ -1744,6 +1850,7 @@ IcebergMetadata::estimateRead(
                         data_file->resolved_schema_id,
                         pruning_filter,
                         files_handle.getPartitionKeyDescription(),
+                        *data_file->common_partition_specification,
                         context,
                         /* require_ready_sets */ true);
 
@@ -2080,8 +2187,9 @@ void IcebergMetadata::addDeleteTransformers(
                 = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
             const ActionsDAG::Node * in_lhs_arg
                 = left_columns.size() == 1 ? left_columns.front() : &dag.addFunction(func_tuple_builder, std::move(left_columns), {});
-            /// we got the NOT IN function
-            auto func_not_in = FunctionFactory::instance().get("notIn", nullptr);
+            /// Iceberg compares equality-delete keys null-safely: a NULL key matches only a NULL delete value.
+            /// The set above keeps NULLs (transform_null_in), and `notNullIn` looks NULL keys up in it.
+            auto func_not_in = FunctionFactory::instance().get("notNullIn", nullptr);
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());

@@ -1,0 +1,105 @@
+--- Parquet: schema inference
+id	Nullable(Int32)					
+point	Point					
+linestring	LineString					
+polygon	Polygon					
+multipoint	MultiPoint					
+multilinestring	MultiLineString					
+multipolygon	MultiPolygon					
+--- Parquet: data
+Row 1:
+──────
+id:              1
+point:           (1,2)
+linestring:      [(1,2),(3,4)]
+polygon:         [[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+multipoint:      [(1,2),(3,4)]
+multilinestring: [[(1,2),(3,4)],[(5,6),(7,8)]]
+multipolygon:    [[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]],[[(20,20),(30,20),(30,30),(20,20)]]]
+
+Row 2:
+──────
+id:              2
+point:           (0,0)
+linestring:      []
+polygon:         []
+multipoint:      []
+multilinestring: []
+multipolygon:    []
+
+Row 3:
+──────
+id:              3
+point:           (-3.5,4.25)
+linestring:      [(5,6),(7,8),(9,10)]
+polygon:         [[(20,20),(30,20),(30,30),(20,20)]]
+multipoint:      [(5,6)]
+multilinestring: [[(0,0),(1,1)]]
+multipolygon:    [[[(20,20),(30,20),(30,30),(20,20)]]]
+--- Parquet: geo functions
+1	-100.5	-150.5	2.8284271247461903	1
+2	0	0	0	1
+3	-50	-50	5.656854249492381	0
+--- Parquet: a subset of columns
+[[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]],[[(20,20),(30,20),(30,30),(20,20)]]]	1
+[]	2
+[[[(20,20),(30,20),(30,30),(20,20)]]]	3
+--- Parquet: explicit Geometry type
+1	Point	(1,2)	Polygon	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+2	Point	(0,0)	Polygon	[]
+3	Point	(-3.5,4.25)	Polygon	[[(20,20),(30,20),(30,30),(20,20)]]
+--- Parquet: case-insensitive column matching
+1	Point	(1,2)	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+2	Point	(0,0)	[]
+3	Point	(-3.5,4.25)	[[(20,20),(30,20),(30,30),(20,20)]]
+--- Parquet: the parser of GeoParquet is disabled
+Nullable(Tuple(x Nullable(Float64), y Nullable(Float64)))	Array(Array(Nullable(Tuple(x Nullable(Float64), y Nullable(Float64)))))
+--- Arrow: schema inference
+id	Nullable(Int32)					
+point	Point					
+linestring	LineString					
+polygon	Polygon					
+multipoint	MultiPoint					
+multilinestring	MultiLineString					
+multipolygon	MultiPolygon					
+--- Arrow: data
+Row 1:
+──────
+id:              1
+point:           (1,2)
+linestring:      [(1,2),(3,4)]
+polygon:         [[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+multipoint:      [(1,2),(3,4)]
+multilinestring: [[(1,2),(3,4)],[(5,6),(7,8)]]
+multipolygon:    [[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]],[[(20,20),(30,20),(30,30),(20,20)]]]
+
+Row 2:
+──────
+id:              2
+point:           (0,0)
+linestring:      []
+polygon:         []
+multipoint:      []
+multilinestring: []
+multipolygon:    []
+
+Row 3:
+──────
+id:              3
+point:           (-3.5,4.25)
+linestring:      [(5,6),(7,8),(9,10)]
+polygon:         [[(20,20),(30,20),(30,30),(20,20)]]
+multipoint:      [(5,6)]
+multilinestring: [[(0,0),(1,1)]]
+multipolygon:    [[[(20,20),(30,20),(30,30),(20,20)]]]
+--- Arrow: explicit Geometry type
+1	Point	(1,2)	Polygon	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+2	Point	(0,0)	Polygon	[]
+3	Point	(-3.5,4.25)	Polygon	[[(20,20),(30,20),(30,30),(20,20)]]
+--- Arrow: case-insensitive column matching
+1	Point	(1,2)	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+2	Point	(0,0)	[]
+3	Point	(-3.5,4.25)	[[(20,20),(30,20),(30,30),(20,20)]]
+--- Round trip through Parquet with WKB
+0
+2

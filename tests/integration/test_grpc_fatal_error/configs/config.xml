@@ -1,0 +1,6 @@
+<clickhouse>
+    <grpc_port>9100</grpc_port>
+    <grpc replace="replace">
+        <verbose_logs>false</verbose_logs>
+    </grpc>
+</clickhouse>

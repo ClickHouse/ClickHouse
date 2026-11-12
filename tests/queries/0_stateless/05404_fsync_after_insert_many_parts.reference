@@ -1,0 +1,14 @@
+20000	199990000	199990000
+20000	199990000	199990000
+20000	199990000	199990000
+3	6
+3	6
+t_fsync_many_parts	1
+t_fsync_many_parts_no_defer	1
+t_fsync_many_parts_replicated	1
+t_fsync_many_parts	1
+t_fsync_many_parts_no_defer	1
+t_fsync_many_parts_replicated	1
+1
+t_fsync_dedup	1
+t_fsync_dedup_replicated	1

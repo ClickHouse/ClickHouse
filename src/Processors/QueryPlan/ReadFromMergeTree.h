@@ -374,7 +374,8 @@ public:
         std::optional<std::unordered_set<String>> part_values;
     };
 
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(
+        const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index = false);
     const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
     {
         return join_runtime_filters_for_index_analysis;
@@ -400,7 +401,8 @@ public:
         bool allow_query_condition_cache_,
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool check_row_limits,
+        bool skip_ranges_analysis);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -426,6 +428,9 @@ public:
     /// see filters whose value can change while that key stays the same: non-deterministic virtual
     /// columns (query-wide part numbering, catalog names, disk placement).
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
+
+    /// The query takes no row from this read, so `selectRangesToRead` does not analyze its ranges.
+    void setNoRowsNeeded() { no_rows_needed = true; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
@@ -499,6 +504,7 @@ public:
         query_info.filter_actions_dag = filter_actions_dag;
 
         limit = other.limit;
+        no_rows_needed = other.no_rows_needed;
 
         /// `FINAL` defers the row policy and `PREWHERE` past deduplication, and what does it is part of
         /// `applyFilters`, so a read of a plan optimized without that pass applies them during reading
@@ -569,8 +575,17 @@ public:
     void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+    struct PartsForPrewhere
+    {
+        RangesInDataParts parts;
+        /// Whether the read is large enough for statistics to pay off, see `min_marks_per_part_to_load_statistics`.
+        bool use_statistics = true;
+    };
+
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
-    RangesInDataParts getPartsForPrewhere() const;
+    /// `selectivity_estimator_columns` are the columns whose statistics would order the conditions,
+    /// or nullptr if statistics are not used for that.
+    PartsForPrewhere getPartsForPrewhere(const Names * selectivity_estimator_columns) const;
     IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
@@ -718,6 +733,7 @@ public:
 
     /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
+    bool canReadColumnsAhead(const Names & column_names, const RangesInDataParts & parts) const;
     bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
@@ -962,6 +978,7 @@ private:
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
     bool allow_spreading_small_read = true;
+    bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;

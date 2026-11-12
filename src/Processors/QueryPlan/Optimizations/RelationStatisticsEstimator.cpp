@@ -31,7 +31,6 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
-extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -314,11 +313,7 @@ RelationStats estimateReadRowsCount(
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        const auto & settings = reading->getContext()->getSettingsRef();
-        if (!settings[Setting::use_iceberg_manifest_statistics] || !settings[Setting::use_statistics])
-            return RelationStats{};
-
-        const auto estimate = reading->estimateReadFromDataLakeMetadata();
+        const auto estimate = reading->getOrCreateDataLakeReadEstimate();
         if (!estimate)
             return RelationStats{};
 
@@ -349,7 +344,8 @@ RelationStats estimateReadRowsCount(
             return stats;
         }
 
-        if (estimate->estimator)
+        /// With `for_runtime_filter_transport` the rows size a sent runtime filter, so they must be an upper bound, not a guess.
+        if (estimate->estimator && !for_runtime_filter_transport)
         {
             auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
             floorReadWithRows(filtered);
