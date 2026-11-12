@@ -1,0 +1,15 @@
+CAST
+x
+ALTER MODIFY COLUMN
+1	5	x
+1	(5,'x')
+INSERT SELECT
+x	1
+Array of Tuple
+[(5,'x'),(6,'x')]
+Enum without default zero member
+m
+Nested Tuple with Enum
+('x',NULL,'')
+Other element types keep their defaults
+(5,NULL,'',[],'1970-01-01 00:00:00.000')
