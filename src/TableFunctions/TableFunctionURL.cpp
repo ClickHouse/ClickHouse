@@ -3,7 +3,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Common/encodeSpacesInURI.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -166,6 +165,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
     filename = StorageURL::resolveURLBase(filename, url_base);
+    filename = StorageURL::encodeSpacesInHTTPURL(filename, context);
     configuration.url = filename;
 
     /// Dispatch to another backend based on the URL scheme (file://, s3://, az://, hdfs://, ...).
@@ -201,7 +201,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     {
         try
         {
-            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(encodeSpacesInURI(filename)).getPath()).value_or("auto");
+            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
         }
         catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -467,7 +467,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
             sample_path = getSamplePath(filename, context);
             columns = StorageURL::getTableStructureAndFormatFromData(
                 filename,
-                chooseCompressionMethod(Poco::URI(encodeSpacesInURI(filename)).getPath(), compression_method),
+                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
                 context).first;
@@ -477,7 +477,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
             sample_path = getSamplePath(filename, context);
             columns = StorageURL::getTableStructureFromData(format,
                 filename,
-                chooseCompressionMethod(Poco::URI(encodeSpacesInURI(filename)).getPath(), compression_method),
+                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
                 context);
@@ -504,7 +504,7 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
     /// the file name is not an error.
     try
     {
-        return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(encodeSpacesInURI(filename)).getPath());
+        return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
     }
     catch (const Poco::Exception &)
     {

@@ -32,6 +32,6 @@ SELECT 'URL engine';
 DROP TABLE IF EXISTS t_05407_url;
 CREATE TABLE t_05407_url (x UInt32) ENGINE = URL('http://localhost:11111/test/05407 dir/a b.csv', 'CSV');
 SELECT x FROM t_05407_url;
--- The URL is kept as written.
+-- The URL is stored with the spaces encoded, as the storage uses it.
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_05407_url';
 DROP TABLE t_05407_url;

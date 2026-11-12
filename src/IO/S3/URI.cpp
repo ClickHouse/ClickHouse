@@ -81,9 +81,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     else
         uri_str = uri_;
 
-    uri = Poco::URI(encodeSpacesInURI(uri_str));
+    /// `Poco::URI` rejects spaces, which are common in object keys. Encode them once, after the archive split,
+    /// whose ` :: ` separator holds spaces. `uri_str` is also the source-access URI, so it is encoded as well.
+    uri_str = encodeSpacesInURI(uri_str);
+
+    uri = Poco::URI(uri_str);
     /// Keep a copy of how Poco parsed the original string before any mapping
-    Poco::URI original_uri(encodeSpacesInURI(uri_str));
+    Poco::URI original_uri(uri_str);
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {

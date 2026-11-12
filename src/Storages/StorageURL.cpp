@@ -23,6 +23,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
 
@@ -102,6 +103,7 @@ namespace FailPoints
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool enable_url_encoding;
@@ -204,7 +206,7 @@ String getSamplePath(const String & uri, ContextPtr context)
             sample_uri = std::move(first_uri);
     }
     /// Parse as the reader does, or the inferred hive partition values differ from the read ones (`a b` vs `a%20b`).
-    return Poco::URI(encodeSpacesInURI(sample_uri), context->getSettingsRef()[Setting::enable_url_encoding]).getPath();
+    return Poco::URI(sample_uri, context->getSettingsRef()[Setting::enable_url_encoding]).getPath();
 }
 
 static bool maskURLCredentials(String & url);
@@ -230,7 +232,7 @@ IStorageURLBase::IStorageURLBase(
     bool distributed_processing_)
     : IStorage(table_id_)
     , uri(uri_)
-    , compression_method(chooseCompressionMethod(Poco::URI(encodeSpacesInURI(uri_)).getPath(), compression_method_))
+    , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
     , format_name(format_name_)
     , format_settings(format_settings_)
     , headers(headers_)
@@ -543,7 +545,7 @@ private:
         /// Parse the address exactly as the reader does, or the filter sees another `_path` / `_file`
         /// than the one the reader materializes and wrongly drops the address.
         for (const auto & uri : uris)
-            paths.push_back(Poco::URI(encodeSpacesInURI(uri), enable_url_encoding).getPath());
+            paths.push_back(Poco::URI(uri, enable_url_encoding).getPath());
 
         VirtualColumnUtils::filterByPathOrFile(
             uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
@@ -1255,7 +1257,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             return {};
 
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
-        auto request_uri = Poco::URI(encodeSpacesInURI(*option), context_->getSettingsRef()[Setting::enable_url_encoding]);
+        auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
@@ -1425,7 +1427,7 @@ void StorageURLSink::initBuffers()
     std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
-    auto poco_uri = Poco::URI(encodeSpacesInURI(uri));
+    auto poco_uri = Poco::URI(uri);
 
     auto write_buffer = BuilderWriteBufferFromHTTP(poco_uri)
         .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -1528,9 +1530,10 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+        /// The partition ID comes from the data, so it can hold spaces even though `uri` cannot.
+        std::string partition_path = encodeSpacesInURI(partition_strategy->getPathForWrite(uri, partition_id));
 
-        context->getRemoteHostFilter().checkURL(Poco::URI(encodeSpacesInURI(partition_path)));
+        context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
             partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
     }
@@ -1790,8 +1793,6 @@ namespace
             auto & schema_cache = StorageURL::getSchemaCache(getContext());
             for (const auto & url : urls)
             {
-                const String cache_url = Poco::URI(encodeSpacesInURI(url), context->getSettingsRef()[Setting::enable_url_encoding]).toString();
-
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
                     auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, context);
@@ -1805,7 +1806,7 @@ namespace
 
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(cache_url, *format, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context);
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -1816,7 +1817,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(cache_url, format_name, format_settings, context);
+                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             format = format_name;
@@ -1850,7 +1851,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    context->getRemoteHostFilter().checkURL(Poco::URI(encodeSpacesInURI(uri)));
+    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
@@ -2363,7 +2364,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 {
     const auto & settings = context->getSettingsRef();
 
-    auto uri = Poco::URI(encodeSpacesInURI(url));
+    auto uri = Poco::URI(url);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -2409,7 +2410,7 @@ StorageURL::StorageURL(
         distributed_processing_)
     , is_replayed_definition(is_replayed_definition_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(encodeSpacesInURI(uri)));
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
@@ -2427,7 +2428,7 @@ StorageURLWithFailover::StorageURLWithFailover(
 {
     for (const auto & uri_option : uri_options_)
     {
-        Poco::URI poco_uri(encodeSpacesInURI(uri_option));
+        Poco::URI poco_uri(uri_option);
         context_->getRemoteHostFilter().checkURL(poco_uri);
         LOG_DEBUG(getLogger("StorageURLDistributed"), "Adding URL option: {}", uri_option);
         uri_options.emplace_back(uri_option);
@@ -2665,6 +2666,21 @@ static bool urlHasUserInfo(const String & url)
     if (at_pos == String::npos)
         return false;
     return authority_end == String::npos || at_pos < authority_end;
+}
+
+String StorageURL::encodeSpacesInHTTPURL(const String & url, const ContextPtr & context)
+{
+    if (classifyURLScheme(url) != URLSchemeTarget::URL)
+        return url;
+
+    if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
+    {
+        /// `path_to_archive` is a prefix of `url`. The separator and the path inside the archive follow it verbatim.
+        const auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(url);
+        if (path_in_archive)
+            return encodeSpacesInURI(path_to_archive) + url.substr(path_to_archive.size());
+    }
+    return encodeSpacesInURI(url);
 }
 
 bool StorageURL::isAbsoluteURL(const String & url)
@@ -3057,6 +3073,7 @@ StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, cons
     /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     configuration.url = resolveURLBase(configuration.url, url_base);
+    configuration.url = encodeSpacesInHTTPURL(configuration.url, local_context);
 
     if (configuration.format == "auto")
     {
@@ -3064,7 +3081,7 @@ StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, cons
         /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
         try
         {
-            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(encodeSpacesInURI(configuration.url)).getPath()).value_or("auto");
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
         }
         catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
         {

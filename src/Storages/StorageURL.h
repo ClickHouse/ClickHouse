@@ -453,6 +453,12 @@ public:
     /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
     static bool isAbsoluteURL(const String & url);
 
+    /// `Poco::URI` rejects spaces, but they are common in object keys (e.g. `a b.csv`). Percent-encodes them
+    /// once, where the user URL enters the configuration, so every consumer sees the same valid URL.
+    /// URLs of other schemes are returned unchanged: they are handled by the backends they dispatch to.
+    /// The separator of the archive path syntax (` :: `) and the path inside the archive are kept as is.
+    static String encodeSpacesInHTTPURL(const String & url, const ContextPtr & context);
+
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.
     /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,

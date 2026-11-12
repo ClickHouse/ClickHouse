@@ -4,7 +4,8 @@
 # Tag no-replicated-database: creates a user
 
 # A filtered source grant matches a URL with spaces the same way, whether the spaces are written
-# literally or as `%20`.
+# literally or as `%20`. `url` sends the path as written, so a filtered `URL` grant never matches
+# a path with an escaped character, including `%20`: such a read needs the whole-source grant.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,8 +30,8 @@ ${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM s3('http://localhost:11
 ${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM s3('http://localhost:11111/test/05408%20denied/a%20b.csv', 'test', 'testtest', 'CSV', 'x UInt32') -- { serverError ACCESS_DENIED }"
 
 echo 'url'
-${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM url('http://localhost:11111/test/05408 allowed/a b.csv', 'CSV', 'x UInt32')"
-${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM url('http://localhost:11111/test/05408%20allowed/a%20b.csv', 'CSV', 'x UInt32')"
+${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM url('http://localhost:11111/test/05408 allowed/a b.csv', 'CSV', 'x UInt32') -- { serverError ACCESS_DENIED }"
+${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM url('http://localhost:11111/test/05408%20allowed/a%20b.csv', 'CSV', 'x UInt32') -- { serverError ACCESS_DENIED }"
 ${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM url('http://localhost:11111/test/05408 denied/a b.csv', 'CSV', 'x UInt32') -- { serverError ACCESS_DENIED }"
 ${CLICKHOUSE_CLIENT} --user $user --query "SELECT x FROM url('http://localhost:11111/test/05408%20denied/a%20b.csv', 'CSV', 'x UInt32') -- { serverError ACCESS_DENIED }"
 
