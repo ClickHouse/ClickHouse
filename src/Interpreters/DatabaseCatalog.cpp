@@ -2470,8 +2470,7 @@ void DatabaseCatalog::checkTablesWithReloadedStoragePolicies(const StoragePolicy
     {
         for (auto it = database->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
-            const auto table = it->table();
-            const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+            const auto merge_tree = castStorage<MergeTreeData>(it->table(), DeferredTable::Skip);
             if (!merge_tree)
                 continue;
 
