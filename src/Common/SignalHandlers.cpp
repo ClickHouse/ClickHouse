@@ -144,7 +144,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
     {
         saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
-        saved_fault_access_type.store(std::to_address(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)).begin()), std::memory_order_relaxed);
+        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)).data(), std::memory_order_relaxed); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
 
     if (sig != SIGTSTP)
