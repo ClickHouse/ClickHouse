@@ -42,9 +42,10 @@ USER_AGENT = (
     "Chrome/120.0 Safari/537.36"
 )
 
-# Test data and third-party code are full of fake or placeholder URLs.
-EXCLUDED_PATH_PREFIXES = ("contrib/", "tests/")
-EXCLUDED_PATH_PATTERNS = ("/tests/", "/gtest", "/examples/")
+# Test data and third-party code are full of fake or placeholder URLs. Vendored copies of
+# third-party libraries are kept identical to upstream, so their links cannot be fixed here.
+EXCLUDED_PATH_PREFIXES = ("contrib/", "tests/", "programs/server/js/")
+EXCLUDED_PATH_PATTERNS = ("/tests/", "/gtest", "/examples/", "/vendor/")
 
 # In documentation, bare URLs are mostly placeholders in code blocks; check only the actual links.
 DOCS_PATH_PREFIX = "docs/"
