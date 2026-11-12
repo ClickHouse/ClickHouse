@@ -1089,6 +1089,17 @@ void StorageABR::read(
     /// and they are kept alive only for the duration of the query.
     std::vector<SourceTable> source_tables = getSourceTables(candidate_intervals, retention, context);
 
+    /// Check that all source tables still share the same set of columns.
+    const NamesAndTypesList all_columns = columns.getAll();
+    for (const SourceTable & table : source_tables)
+    {
+        const auto table_metadata = table.storage->getInMemoryMetadataPtr(context, false);
+        if (table_metadata->getColumns().getAll() != all_columns)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Source table {} of {} does not have the same columns (names and types) as the first source table.",
+                table.storage->getStorageID().getNameForLogs(), getStorageID().getNameForLogs());
+    }
+
     Stopwatch choose_watch;
     auto abr_info = context->getABRQueryInfoPtr();
     const size_t chosen_table_idx = chooseBestTable(query_info, context, source_tables, retention);
@@ -1190,7 +1201,9 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 **Limitations**
 
 - `ABR` is read-only. `INSERT`, `ALTER` and mutations must target the source tables directly.
-- All source tables must share an identical column set.
+- All source tables must share an identical column set. It is checked when the `ABR` table is created, and on every query
+  for the source tables the query may be executed on: after a source table is altered so that its columns differ from those of
+  the finest source table, the queries that may use it fail with `BAD_ARGUMENTS` until the columns are the same again.
 - `ABR` does not support row policies on the `ABR` table, or on a table that reads from it such as an `Alias`. Define them on
   the source tables instead.
 - `ABR` does not support `additional_table_filters` for the `ABR` table, or for a table that reads from it. Add the condition
