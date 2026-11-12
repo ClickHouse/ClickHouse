@@ -1350,6 +1350,12 @@ mod tests {
             l(r#"{"type":"string","logicalType":"uuid"}"#).0,
             Logical::Uuid
         );
+        // `uuid` on `fixed` is ignored, as in the legacy C++ compiler: a fixed(16) field
+        // annotated with it reads as FixedString(16), not UUID, also inside Variant unions.
+        assert_eq!(
+            l(r#"{"type":"fixed","name":"U","size":16,"logicalType":"uuid"}"#).0,
+            Logical::None
+        );
         assert_eq!(l(r#"{"type":"int","logicalType":"date"}"#).0, Logical::Date);
         assert_eq!(
             l(r#"{"type":"int","logicalType":"time-millis"}"#).0,
