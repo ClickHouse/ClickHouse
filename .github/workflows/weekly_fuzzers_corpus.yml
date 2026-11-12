@@ -51,7 +51,8 @@ jobs:
 
   dockers_build_amd:
     runs-on: [self-hosted, amd-tiny]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
     outputs:
@@ -85,7 +86,8 @@ jobs:
 
   dockers_build_arm:
     runs-on: [self-hosted, arm-tiny]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
     outputs:
@@ -119,7 +121,10 @@ jobs:
 
   build_arm_fuzzers:
     runs-on: [self-hosted, arm-medium-cpu]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
     name: "Build (arm_fuzzers)"
     outputs:
@@ -153,7 +158,11 @@ jobs:
 
   libfuzzer_corpus_minimization:
     runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_arm_fuzzers
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bGliRnV6emVyIGNvcnB1cyBtaW5pbWl6YXRpb24=') }}
     name: "libFuzzer corpus minimization"
     outputs:
@@ -187,7 +196,12 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
-    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm, libfuzzer_corpus_minimization]
+    needs:
+    - build_arm_fuzzers
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - libfuzzer_corpus_minimization
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

@@ -650,8 +650,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
-            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`,
-            /// `LLVMContext`-interned types/constants accumulated across compiles) is reclaimed too.
+            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`) is reclaimed too.
             /// Each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`, so
             /// concurrent operations are not affected: the actual CHJIT survives until every user
             /// has released its handle. After the cache->clear() above, the only remaining

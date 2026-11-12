@@ -27,6 +27,7 @@ namespace DB
 {
 
 class AnalyzeStepsStats;
+struct ExplainFormatSettings;
 
 struct PrettyNames;
 struct PrettyNamesPerPlan;
@@ -361,6 +362,15 @@ struct QueryPlanAndSets
 };
 
 std::string debugExplainStep(IQueryPlanStep & step);
+
+/// The lines `EXPLAIN PLAN` prints under the line of a step, as chosen by `options`: the header, the input headers, the
+/// sorting, the actions, the indexes, the projections, the distributed plan and, with `steps_to_stats`, the measured
+/// statistics. Every line starts with `settings.detail_prefix` and ends with a newline.
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats = nullptr);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 /// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.

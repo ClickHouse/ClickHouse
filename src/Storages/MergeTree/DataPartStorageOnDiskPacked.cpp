@@ -777,8 +777,12 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         {
             auto inner_archive_buf = reader->readFile(
                 volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
-            auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
-            seedSkipIndicesPackedReader(inner_index);
+            auto index = readSkipIndicesPackedIndex(*inner_archive_buf, data_path + "/" + String(SKIP_INDICES_PACKED_FILENAME));
+            {
+                std::lock_guard lock(skip_indices_packed_mutex);
+                skip_indices_packed_unsupported = !index;
+            }
+            seedSkipIndicesPackedReader(index ? *index : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {

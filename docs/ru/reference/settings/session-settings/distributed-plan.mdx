@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -36,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Число бакетов по умолчанию для распределённого shuffle-hash-join.
 Используется распределённым планировщиком на основе правил. Оптимизатор на основе стоимости выбирает степень распараллеливания на основе оценочной стоимости и не использует эту настройку.
+
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "Новая настройка: при потоковом обмене в плане выполнения распределённого запроса данные сжимаются с помощью `LZ4`, а не кодека, заданного в `network_compression_method`."}]}]} />
+
+Кодек для сжатия пакетов при потоковом обмене между задачами плана выполнения распределённого запроса. При обмене через временные файлы используется кодек сервера по умолчанию.
+
+Возможные значения:
+
+* `''` — использовать кодек, заданный в [network&#95;compression&#95;method](/ru/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — без сжатия.
+* `LZ4` — использовать кодек LZ4.
+* `LZ4HC` — использовать кодек LZ4HC с уровнем по умолчанию 9. Сжимает во много раз медленнее, чем `LZ4`.
+* `ZSTD` — использовать кодек ZSTD с уровнем, заданным в [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ru/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка, задающая уровень сжатия ZSTD для потокового обмена в плане выполнения распределённого запроса."}]}]} />
+
+Уровень сжатия ZSTD для потокового обмена в плане выполнения распределённого запроса. Используется, только если настройка [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ru/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) имеет значение `ZSTD`.
+
+Возможные значения:
+
+* Целое число от 1 до 22. Чем выше уровень, тем сильнее сжатие, но тем медленнее оно выполняется.
 
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
@@ -63,13 +96,13 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "Новая экспериментальная настройка."}]}]} />
 
-Принудительно использовать указанный тип операторов Exchange между стадиями распределённого запроса.
+Принудительно использовать указанный тип операторов обменника между стадиями распределённого запроса.
 
 Возможные значения:
 
-* &#39;&#39; - не принудительно использовать какой-либо тип операторов Exchange, предоставить выбор оптимизатору,
+* &#39;&#39; - не принудительно использовать какой-либо тип операторов обменника, предоставить выбор оптимизатору,
 * &#39;Persisted&#39; - использовать временные файлы в Объектном хранилище,
-* &#39;Streaming&#39; - передавать данные Exchange по сети.
+* &#39;Streaming&#39; - передавать данные обменника по сети.
 
 ## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
@@ -81,6 +114,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Используйте стратегию агрегации Shuffle вместо PartialAggregation + Merge в распределённом плане запроса.
 Игнорируется в случаях, когда стратегия Shuffle не может дать корректный результат, например для `GROUPING SETS` или когда агрегация должна выдавать результаты в порядке бакетов.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая экспериментальная настройка."}]}]} />
+
+При использовании `make_distributed_plan` фильтры JOIN времени выполнения, построенные на одной стадии, передаются на стадии, читающие проверяемую сторону, чтобы те отфильтровывали строки до их отправки. Если фильтр не поступил, строки передаются без фильтрации. Требуется включённая настройка `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 
@@ -111,6 +154,18 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Убирает лишние обмены данными в распределённом плане запроса. Отключите эту настройку для отладки.
 
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая экспериментальная настройка: при распределённой агрегации перераспределяются промежуточные состояния агрегации вместо входных строк."}]}]} />
+
+Выполняет частичную агрегацию на узлах, читающих данные, до того как распределённая агрегация перераспределит их по ключам `GROUP BY`. Благодаря этому при перераспределении каждый узел передаёт одно состояние агрегации на группу, а не все входные строки, и каждый бакет выполняет слияние состояний своих ключей.
+Планировщик на основе правил по-прежнему перераспределяет входные строки, если статистика столбцов показывает, что частичная агрегация не сократит объём данных хотя бы вдвое. При включённой настройке `enable_cascades_optimizer` данная настройка позволяет оптимизатору выбирать такое слияние для каждого бакета на основе стоимости.
+Действует только вместе с `make_distributed_plan = 1` и не действует при включённой настройке `distributed_plan_force_shuffle_aggregation`, которая перераспределяет входные строки.
+
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <PrivatePreviewBadge />
@@ -132,6 +187,14 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 Разрешает оптимизацию чтения в порядке сортировки для `ORDER BY` в распределённом плане запроса, чтобы отсортированное чтение по ключу сортировки таблицы могло пропустить сортировку и завершиться раньше вместо сканирования и сортировки.
 
 По умолчанию отключено: преобразование, распределяющее сортировку, предполагает, что оборачиваемая им сортировка не зависит от того, что её входные данные уже упорядочены. Однако сортировка, которая от этого зависит, может получать строки через EXCHANGE, не сохраняющий порядок. В настоящее время безопасны только структуры, в которых между чтением и сортировкой нет EXCHANGE.
+
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Новая настройка для выбора кластера воркеров без сохранения состояния, на котором выполняется распределённый план выполнения."}]}]} />
+
+Имя кластера stateless-worker, на котором выполняется распределённый план выполнения данного запроса. Если значение пустое (по умолчанию), используется предварительно настроенный кластер по умолчанию; другие кластеры задаются в `stateless_worker_client.clusters`.
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
