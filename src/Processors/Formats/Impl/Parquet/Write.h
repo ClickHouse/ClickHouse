@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/Defines.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
@@ -29,6 +30,8 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
+    bool json_type_escape_dots_in_keys = false;
+    size_t max_variant_json_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:

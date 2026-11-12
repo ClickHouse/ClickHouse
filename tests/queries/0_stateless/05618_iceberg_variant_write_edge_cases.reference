@@ -1,0 +1,30 @@
+--- Timestamps are instants
+1	DateTime64(6, \'UTC\')	1704193200000000000
+2	DateTime64(6, \'UTC\')	1704193200123456000
+3	DateTime64(9, \'UTC\')	1704193200123456789
+--- Nanosecond range
+1	DateTime64(9, \'UTC\')	2262-04-11 00:00:00.000000000
+2	DateTime64(9, \'UTC\')	2262-04-11 00:00:00.000000000
+it is out of the range of a variant timestamp with 9 digits of fractional seconds
+it is out of the range of a variant timestamp with 9 digits of fractional seconds
+--- Bytes that are not UTF-8
+1	String	FF
+2	String	78787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878FF
+3	String	D182D0B5D0BAD181D182
+the keys of a variant object must be valid UTF-8
+--- Escaped dots in JSON keys
+1	JSON	{"a":{"b":1},"c":{"d":2}}
+--- Deep JSON path
+TOO_DEEP_RECURSION
+--- Variants need format version 3
+the Iceberg type `variant` requires format version 3
+the Iceberg type `variant` requires format version 3
+--- Adding a variant column
+1	None	\N
+2	String	x
+1	None	\N
+2	String	x
+--- Null counts of a required variant
+1	None	\N
+2	Int64	3
+2	[(1,0),(2,0)]

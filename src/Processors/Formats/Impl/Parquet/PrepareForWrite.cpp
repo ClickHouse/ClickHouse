@@ -951,7 +951,9 @@ void prepareColumnVariant(
     auto metadata = ColumnString::create();
     auto value = ColumnString::create();
     NullMap null_map;
-    encodeVariantColumn(*column, type, name, *metadata, *value, required ? nullptr : &null_map);
+    encodeVariantColumn(
+        *column, type, name, options.json_type_escape_dots_in_keys, options.max_variant_json_depth, *metadata, *value,
+        required ? nullptr : &null_map);
 
     auto & variant_schema = schemas.emplace_back();
     variant_schema.__set_repetition_type(required ? parq::FieldRepetitionType::REQUIRED : parq::FieldRepetitionType::OPTIONAL);

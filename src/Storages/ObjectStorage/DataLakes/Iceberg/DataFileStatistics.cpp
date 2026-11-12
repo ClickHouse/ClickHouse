@@ -25,6 +25,8 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
         auto field = schema_->getObject(i);
         size_t field_id = field->getValue<size_t>(Iceberg::f_id);
         field_ids[i] =  field_id;
+        if (field->getValue<bool>(Iceberg::f_required))
+            required_field_ids.insert(field_id);
     }
 }
 
@@ -74,7 +76,7 @@ void DataFileStatistics::update(const Chunk & chunk)
             for (UInt8 v : nullable_col->getNullMapData())
                 null_counts[i] += v;
         }
-        else if (const auto * variant_col = getVariantColumn(*col))
+        else if (const auto * variant_col = getVariantColumn(*col); variant_col && !required_field_ids.contains(field_ids[i]))
         {
             for (auto discriminator : variant_col->getLocalDiscriminators())
                 null_counts[i] += discriminator == ColumnVariant::NULL_DISCRIMINATOR;

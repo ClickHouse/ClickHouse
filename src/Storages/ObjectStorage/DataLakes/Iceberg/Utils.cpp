@@ -1179,6 +1179,38 @@ bool isIcebergVariantType(const DataTypePtr & type)
     return type->getTypeId() == TypeIndex::Dynamic || (type->getTypeId() == TypeIndex::Variant && !type->getCustomName());
 }
 
+static bool icebergTypeContainsVariant(const Poco::Dynamic::Var & type)
+{
+    if (type.isString())
+        return type.extract<String>() == Iceberg::f_variant;
+
+    const auto object = type.extract<Poco::JSON::Object::Ptr>();
+    const auto kind = object->getValue<String>(Iceberg::f_type);
+    if (kind == "struct")
+    {
+        const auto fields = object->getArray(Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+            if (icebergTypeContainsVariant(fields->getObject(i)->get(Iceberg::f_type)))
+                return true;
+        return false;
+    }
+    if (kind == "list")
+        return icebergTypeContainsVariant(object->get(Iceberg::f_element));
+    if (kind == "map")
+        return icebergTypeContainsVariant(object->get(Iceberg::f_key)) || icebergTypeContainsVariant(object->get(Iceberg::f_value));
+    return false;
+}
+
+void checkIcebergTypeSupportedByFormatVersion(const Poco::Dynamic::Var & type, Int64 format_version, const String & column_name)
+{
+    if (format_version < 3 && icebergTypeContainsVariant(type))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot store the column {} in an Iceberg table of format version {}: the Iceberg type `variant` requires format "
+            "version 3",
+            column_name, format_version);
+}
+
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
@@ -1591,6 +1623,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
         auto type = getIcebergType(column.type, iter);
+        checkIcebergTypeSupportedByFormatVersion(type.first, format_version, column.name);
         field->set(Iceberg::f_required, type.second);
         field->set(Iceberg::f_type, type.first);
         column_name_to_source_id[column.name] = iter_for_initial_columns;

@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -38,7 +39,9 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/isValidUTF8.h>
 #include <Common/re2.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
@@ -789,7 +792,10 @@ struct JSONNode
 class VariantEncoder
 {
 public:
-    explicit VariantEncoder(const String & column_name_) : column_name(column_name_) {}
+    VariantEncoder(const String & column_name_, bool escape_dots_in_json_keys_, size_t max_json_depth_)
+        : column_name(column_name_), escape_dots_in_json_keys(escape_dots_in_json_keys_), max_json_depth(max_json_depth_)
+    {
+    }
 
     void reset()
     {
@@ -914,28 +920,23 @@ public:
                 writeFixed<Int32>(out, assert_cast<const ColumnDate32 &>(column).getData()[row]);
                 return;
             case TypeIndex::DateTime:
-            {
-                const bool with_time_zone = assert_cast<const DataTypeDateTime &>(type).hasExplicitTimeZone();
-                writePrimitiveHeader(out, with_time_zone ? PrimitiveType::TimestampTZ : PrimitiveType::TimestampNTZ);
+                writePrimitiveHeader(out, PrimitiveType::TimestampTZ);
                 writeFixed<Int64>(out, Int64(assert_cast<const ColumnDateTime &>(column).getData()[row]) * 1'000'000);
                 return;
-            }
             case TypeIndex::DateTime64:
             {
-                const auto & datetime_type = assert_cast<const DataTypeDateTime64 &>(type);
-                const UInt32 scale = datetime_type.getScale();
-                const bool with_time_zone = datetime_type.hasExplicitTimeZone();
+                const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(type).getScale();
                 const Int64 value = assert_cast<const ColumnDateTime64 &>(column).getData()[row].value;
-                if (scale <= 6)
-                {
-                    writePrimitiveHeader(out, with_time_zone ? PrimitiveType::TimestampTZ : PrimitiveType::TimestampNTZ);
-                    writeFixed<Int64>(out, value * DecimalUtils::scaleMultiplier<Int64>(6 - scale));
-                }
-                else
-                {
-                    writePrimitiveHeader(out, with_time_zone ? PrimitiveType::TimestampNanosTZ : PrimitiveType::TimestampNanosNTZ);
-                    writeFixed<Int64>(out, value * DecimalUtils::scaleMultiplier<Int64>(9 - scale));
-                }
+                const UInt32 target_scale = scale <= 6 ? 6 : 9;
+                Int64 scaled;
+                if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int64>(target_scale - scale), scaled))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot write the value {} of type {} into the Parquet variant column '{}': it is out of the range of a "
+                        "variant timestamp with {} digits of fractional seconds",
+                        value, type.getName(), column_name, target_scale);
+                writePrimitiveHeader(out, scale <= 6 ? PrimitiveType::TimestampTZ : PrimitiveType::TimestampNanosTZ);
+                writeFixed<Int64>(out, scaled);
                 return;
             }
             case TypeIndex::Time:
@@ -1102,6 +1103,12 @@ private:
 
     UInt32 keyId(std::string_view key)
     {
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(key.data()), key.size()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write the object key '{}' into the Parquet variant column '{}': the keys of a variant object must be "
+                "valid UTF-8",
+                key, column_name);
         auto [it, inserted] = key_ids.try_emplace(String(key), static_cast<UInt32>(keys.size()));
         if (inserted)
             keys.push_back(it->first);
@@ -1130,6 +1137,13 @@ private:
 
     static void encodeString(std::string_view value, String & out)
     {
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        {
+            writePrimitiveHeader(out, PrimitiveType::Binary);
+            writeFixed<UInt32>(out, static_cast<UInt32>(value.size()));
+            out.append(value);
+            return;
+        }
         if (value.size() < 64)
         {
             writeContainerHeader(out, BasicType::ShortString, static_cast<UInt8>(value.size()));
@@ -1205,6 +1219,12 @@ private:
             if (path_info.column->isNullAt(path_info.row))
                 continue;
 
+            if (static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= max_json_depth)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is nested deeper than {} levels",
+                    column_name, path_info.path, max_json_depth);
+
             JSONNode * node = &root;
             size_t begin = 0;
             while (true)
@@ -1212,7 +1232,10 @@ private:
                 if (node->value)
                     throwJSONPathConflict(path_info.path);
                 const size_t end = path_info.path.find('.', begin);
-                auto & child = node->children[String(path_info.path.substr(begin, end == std::string_view::npos ? end : end - begin))];
+                String key(path_info.path.substr(begin, end == std::string_view::npos ? end : end - begin));
+                if (escape_dots_in_json_keys)
+                    key = unescapeDotInJSONKey(key);
+                auto & child = node->children[std::move(key)];
                 if (!child)
                     child = std::make_unique<JSONNode>();
                 node = child.get();
@@ -1234,6 +1257,7 @@ private:
 
     void writeJSONNode(const JSONNode & node, String & out)
     {
+        checkStackSize();
         if (node.value)
         {
             out.append(*node.value);
@@ -1261,6 +1285,8 @@ private:
     }
 
     const String & column_name;
+    const bool escape_dots_in_json_keys;
+    const size_t max_json_depth;
     UnorderedMapWithMemoryTracking<String, UInt32> key_ids;
     VectorWithMemoryTracking<std::string_view> keys;
 };
@@ -1366,6 +1392,8 @@ void encodeVariantColumn(
     const IColumn & column,
     const DataTypePtr & type,
     const String & column_name,
+    bool escape_dots_in_json_keys,
+    size_t max_json_depth,
     ColumnString & metadata,
     ColumnString & value,
     PaddedPODArray<UInt8> * null_map)
@@ -1377,7 +1405,7 @@ void encodeVariantColumn(
     metadata.reserve(num_rows);
     value.reserve(num_rows);
 
-    VariantEncoder encoder(column_name);
+    VariantEncoder encoder(column_name, escape_dots_in_json_keys, max_json_depth);
     String metadata_blob;
     String value_blob;
     for (size_t row = 0; row < num_rows; ++row)

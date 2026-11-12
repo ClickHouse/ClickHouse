@@ -120,8 +120,9 @@ String randomScalarTypeName(Entropy & e, bool & exact)
         case 15:
         {
             const UInt64 scale = e.uniform(10);
-            exact = exact && (scale == 6 || scale == 9);
-            return e.oneIn(2) ? fmt::format("DateTime64({})", scale) : fmt::format("DateTime64({}, 'UTC')", scale);
+            const bool with_time_zone = e.oneIn(2);
+            exact = exact && with_time_zone && (scale == 6 || scale == 9);
+            return with_time_zone ? fmt::format("DateTime64({}, 'UTC')", scale) : fmt::format("DateTime64({})", scale);
         }
         case 16:
         {
@@ -388,7 +389,7 @@ Encoded encode(const IColumn & column, const DataTypePtr & type, bool mark_nulls
     Encoded result;
     PaddedPODArray<UInt8> null_map;
     Parquet::encodeVariantColumn(
-        column, type, "v", assert_cast<ColumnString &>(*result.metadata), assert_cast<ColumnString &>(*result.value),
+        column, type, "v", /*escape_dots_in_json_keys=*/false, DBMS_DEFAULT_MAX_PARSER_DEPTH, assert_cast<ColumnString &>(*result.metadata), assert_cast<ColumnString &>(*result.value),
         mark_nulls ? &null_map : nullptr);
     return result;
 }

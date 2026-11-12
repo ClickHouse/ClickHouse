@@ -51,6 +51,8 @@ void encodeVariantColumn(
     const IColumn & column,
     const DataTypePtr & type,
     const String & column_name,
+    bool escape_dots_in_json_keys,
+    size_t max_json_depth,
     ColumnString & metadata,
     ColumnString & value,
     PaddedPODArray<UInt8> * null_map);

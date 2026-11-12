@@ -529,6 +529,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     Int32 new_field_id = getLastAssignedFieldId(metadata_object) + 1;
     Int32 iter = new_field_id;
     auto new_type = Iceberg::getIcebergType(type, iter);
+    Iceberg::checkIcebergTypeSupportedByFormatVersion(new_type.first, metadata_object->getValue<Int32>(Iceberg::f_format_version), column_name);
     metadata_object->set(Iceberg::f_last_column_id, iter);
 
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
@@ -564,6 +565,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
+    Iceberg::checkIcebergTypeSupportedByFormatVersion(new_type.first, metadata_object->getValue<Int32>(Iceberg::f_format_version), column_name);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
     bool found = false;
