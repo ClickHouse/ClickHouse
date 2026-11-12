@@ -465,8 +465,11 @@ extern template struct BigEndianDecimalStringConverter<Int256>;
 
 struct Int96Converter : public FixedSizeConverter
 {
-    /// A value that does not fit into Int64 nanoseconds is clamped to the `DateTime64(9)` range with Saturate, otherwise throws.
+    /// Output is `DateTime64(scale)` ticks, rounded toward zero, or down if `round_down`. A value outside the range
+    /// that type holds is clamped to it with Saturate, otherwise throws.
     FormatSettings::DateTimeOverflowBehavior overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+    UInt32 scale = 9;
+    bool round_down = false;
 
     Int96Converter();
 

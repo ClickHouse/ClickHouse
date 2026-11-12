@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -2086,6 +2087,12 @@ AccessType getDropAccessType(const IStorage & table)
     return AccessType::DROP_TABLE;
 }
 
+/// A stub ATTACH has no definition of its own, the table is attached from its stored metadata.
+bool isStubAttach(const ASTCreateQuery & create)
+{
+    return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+}
+
 /// The query-scoped snapshot cache keeps every table the query has read alive until the query ends.
 void releaseQueryStorageSnapshots(const ContextPtr & context)
 {
@@ -2138,7 +2145,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    if (isStubAttach(create))
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
@@ -4126,6 +4133,17 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// In Cloud, a user query can attach a detached table, but cannot create a table from a definition.
+    /// Checked here because ON CLUSTER can send the query to other hosts before `createTable` runs.
+    if (!is_create_database && create.attach && !isStubAttach(create)
+        && !internal && !getContext()->isDDLOrOnClusterInternal()
+        && getContext()->getSettingsRef()[Setting::cloud_mode])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ATTACH TABLE with a full table definition is not supported. "
+            "Use ATTACH TABLE {} to reattach an existing detached table.",
+            create.getTable());
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
