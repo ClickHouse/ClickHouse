@@ -121,6 +121,10 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (info.formatReadsHivePartitionColumns())
         return false;
 
+    /// A column of `format_header` with the name of a column read under another name is another column.
+    if (info.columns_read_under_other_names.contains(sort_column.name))
+        return false;
+
     /// The output header is broader than what the format reads: Hive partition columns (from the
     /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
     /// produced its chunk, so the reader could never compare them against the threshold.
