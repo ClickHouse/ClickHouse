@@ -2456,7 +2456,7 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublished
         "WHERE p.pubname = {}",
         quoted_name, quoted_name))};
     std::set<std::pair<String, String>> tables;
-    for (const auto & row : result)
+    for (const auto row : result)
     {
         tables.emplace(row[0].as<std::string>(), row[1].as<std::string>());
     }
@@ -2474,7 +2474,7 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchExplicitP
         "WHERE p.pubname = {}",
         quoteStringPostgreSQL(publication_name)))};
     std::set<std::pair<String, String>> tables;
-    for (const auto & row : result)
+    for (const auto row : result)
         tables.emplace(row[0].as<std::string>(), row[1].as<std::string>());
     return tables;
 }
@@ -2529,7 +2529,7 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
         "JOIN pg_namespace n ON n.oid = c.relnamespace "
         "JOIN pg_attribute a ON a.attrelid = r.prrelid AND a.attnum = ANY(r.prattrs) "
         "WHERE p.pubname = {} AND r.prattrs IS NOT NULL", quoted_name))};
-    for (const auto & row : column_lists)
+    for (const auto row : column_lists)
         published_column_lists[{row[0].as<String>(), row[1].as<String>()}].insert(row[2].as<String>());
 
     std::map<std::pair<String, String>, std::set<String>> resolved_column_lists;
