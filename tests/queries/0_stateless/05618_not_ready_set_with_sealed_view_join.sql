@@ -74,7 +74,7 @@ SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 -- deferred build also reads the subquery once more.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_rows FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05618\\_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_clone', '05618_clone_recovered', '05618_runtime_filters', '05618_partial_merge')
 ORDER BY event_time_microseconds;
 
 DROP VIEW v_sealed_join;
