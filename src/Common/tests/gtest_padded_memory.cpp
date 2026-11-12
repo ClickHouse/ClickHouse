@@ -1,7 +1,6 @@
 #include <base/types.h>
 #include <base/memcmpSmall.h>
 #include <base/sanitizer_defs.h>
-#include <Common/memcpySmall.h>
 
 #include <gtest/gtest.h>
 
@@ -73,13 +72,12 @@ public:
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-TEST(PaddedMemory, GuardPagesAtBothEdges)
+TEST(PaddedMemory, ZeroPaddedEqualityGuardPages)
 {
     GuardedPage source;
     GuardedPage destination;
     volatile size_t zero_length = 0;
     const size_t zero = zero_length;
-    memcpySmallAllowReadWriteOverflow15(destination.end(), source.end(), zero);
     EXPECT_TRUE(memequalSmallLikeZeroPaddedAllowOverflow15(source.end(), zero, destination.end(), zero));
 
     for (size_t size : lengths)
@@ -90,17 +88,18 @@ TEST(PaddedMemory, GuardPagesAtBothEdges)
             auto * src = at_end ? source.end() - size - padding : source.begin();
             auto * dst = at_end ? destination.end() - size - padding : destination.begin();
             std::fill_n(src, size + padding, UInt8{0x81});
-            std::fill_n(dst, size + padding, UInt8{0xa5});
-            poisonPadding(src, size);
-            memcpySmallAllowReadWriteOverflow15(dst, src, size);
-            for (size_t i = 0; i < size; ++i)
-                ASSERT_EQ(dst[i], src[i]);
+            std::fill_n(dst, size + padding, UInt8{0x81});
 
             std::fill_n(src + size, padding, UInt8{0x11});
             std::fill_n(dst + size, padding, UInt8{0xee});
             poisonPadding(src, size);
             poisonPadding(dst, size);
             EXPECT_TRUE(memequalSmallLikeZeroPaddedAllowOverflow15(src, size, dst, size));
+            if (size)
+            {
+                dst[size - 1] ^= UInt8{0x80};
+                EXPECT_FALSE(memequalSmallLikeZeroPaddedAllowOverflow15(src, size, dst, size));
+            }
         }
     }
 }

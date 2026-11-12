@@ -795,8 +795,7 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_
     return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_size, b, b_size);
 }
 
-#if (defined(__x86_64__) && defined(__SSE2__)) \
-    || (defined(__aarch64__) && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#if defined(__x86_64__) && defined(__SSE2__)
 /// Compare the common prefix of `UInt8` columns without ordering mismatching characters.
 inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const UInt8 * a, size_t a_size, const UInt8 * b, size_t b_size)
 {
@@ -813,20 +812,11 @@ inline bool memequalSmallLikeZeroPaddedAllowOverflow15(const UInt8 * a, size_t a
         __builtin_memcpy(&y, b + offset, sizeof(Bytes));
         const auto different = x != y;
 
-#if defined(__aarch64__)
-        /// Narrow each pair of bytes to two nibbles, matching `getNibbleMask`.
-        using Words = UInt16 __attribute__((ext_vector_type(8)));
-        using HalfBytes = UInt8 __attribute__((ext_vector_type(8)));
-        const UInt64 mask = std::bit_cast<UInt64>(__builtin_convertvector(std::bit_cast<Words>(different) >> 4, HalfBytes));
-        constexpr size_t bits_per_byte = 4;
-#else
         using Bits = bool __attribute__((ext_vector_type(16)));
         const UInt32 mask = std::bit_cast<UInt16>(__builtin_convertvector(different, Bits));
-        constexpr size_t bits_per_byte = 1;
-#endif
         if (mask)
         {
-            if (offset + std::countr_zero(mask) / bits_per_byte < min_size)
+            if (offset + std::countr_zero(mask) < min_size)
                 return false;
             break;
         }

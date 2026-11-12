@@ -9,6 +9,11 @@
 #    include <emmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 /** memcpy function could work suboptimal if all the following conditions are met:
   * 1. Size of memory region is relatively small (approximately, under 50 bytes).
   * 2. Size of memory region is not known at compile-time.
@@ -66,22 +71,17 @@ namespace detail
 inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
 {
     __msan_unpoison_overflow_15(src, n);
-    if (n <= 0)
-        return;
-    __builtin_memcpy(dst, src, 16);
-    if (n <= 16)
-        return;
-
-    size_t offset = 16;
-    while (offset + 16 < static_cast<size_t>(n))
+    while (n > 0)
     {
-        __builtin_memcpy(dst + offset, src + offset, 32);
-        offset += 32;
-        /// Avoid the loop-idiom optimization replacing the vector stores with `memcpy`.
+        vst1q_s8(reinterpret_cast<signed char *>(dst), vld1q_s8(reinterpret_cast<const signed char *>(src)));
+
+        dst += 16;
+        src += 16;
+        n -= 16;
+
+        /// Avoid clang loop-idiom optimization, which transforms vst1q_s8 to built-in memcpy
         __asm__ __volatile__("" : : : "memory");
     }
-    if (offset < static_cast<size_t>(n))
-        __builtin_memcpy(dst + offset, src + offset, 16);
 }
 }
 
