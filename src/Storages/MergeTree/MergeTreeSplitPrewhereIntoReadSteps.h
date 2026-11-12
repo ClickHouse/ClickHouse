@@ -31,8 +31,11 @@ bool tryBuildPrewhereSteps(
 /// predicate reports nothing; see `PrewhereExprStep::is_query_prewhere`.
 bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node);
 
-/// Whether the PREWHERE actions evaluate at least one user query-predicate conjunct, as opposed to only
-/// synthesized dynamic filters. `filter_column_name` is the PREWHERE result column (the conjunction root).
-bool prewhereEvaluatesQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name);
+/// Whether every conjunct of the PREWHERE actions is a user query predicate, i.e. none is a synthesized
+/// dynamic filter. `filter_column_name` is the PREWHERE result column (the conjunction root). A single fused
+/// step (used when the step splitter is disabled or inapplicable) evaluates all its conjuncts together, so a
+/// step mixing a user predicate with a dynamic filter cannot separate their rejections and is not attributed
+/// to PREWHERE; only an entirely user-predicate step is.
+bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name);
 
 }

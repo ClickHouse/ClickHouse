@@ -459,10 +459,11 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .perform_alter_conversions = true,
             .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
-            /// A single fused step cannot separate the user predicate from a synthesized dynamic filter,
-            /// so count it only when it carries a user query-predicate conjunct; a step that is solely
-            /// `ORDER BY ... LIMIT` top-K or a join runtime filter reports nothing.
-            .is_query_prewhere = prewhereEvaluatesQueryPredicate(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name),
+            /// A single fused step cannot separate the user predicate from a synthesized dynamic filter, so it
+            /// is counted only when it is entirely a user query predicate. A step that carries a dynamic filter
+            /// -- solely (`ORDER BY ... LIMIT` top-K or a join runtime filter) or mixed with a user predicate --
+            /// reports nothing, rather than attributing the dynamic filter's rejections to PREWHERE.
+            .is_query_prewhere = prewhereIsEntirelyQueryPredicate(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name),
         };
 
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));

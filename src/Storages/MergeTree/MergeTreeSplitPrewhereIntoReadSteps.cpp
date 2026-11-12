@@ -270,11 +270,11 @@ bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node)
     return false;
 }
 
-bool prewhereEvaluatesQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name)
+bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name)
 {
     ActionsDAG::NodeRawConstPtrs atoms;
     flattenConjunction(&prewhere_actions.findInOutputs(filter_column_name), atoms);
-    return std::ranges::any_of(atoms, [](const auto * node) { return !isDynamicRuntimePrewhereFilter(node); });
+    return std::ranges::none_of(atoms, [](const auto * node) { return isDynamicRuntimePrewhereFilter(node); });
 }
 
 /// We want to build a sequence of steps that will compute parts of the prewhere condition.
@@ -522,11 +522,13 @@ bool tryBuildPrewhereSteps(
                 && std::ranges::all_of(condition_groups[next], canBeMovedToTheFrontOfAndChain)
                 && (next + 1 < steps.size() || std::ranges::all_of(outputs_computed_in_last_step, canBeMovedToTheFrontOfAndChain));
 
-            /// Count the step toward the PREWHERE-effectiveness events only when it evaluates a user query
-            /// predicate. A step whose conditions are solely synthesized dynamic filters (`ORDER BY ... LIMIT`
-            /// top-K, a join runtime filter) is not the user's PREWHERE and must not be attributed to it.
-            const bool step_is_query_prewhere = std::ranges::any_of(
-                condition_groups[step_index], [](const auto * node) { return !isDynamicRuntimePrewhereFilter(node); });
+            /// Count the step toward the PREWHERE-effectiveness events only when every one of its conditions is
+            /// a user query predicate. A step that carries any synthesized dynamic filter (`ORDER BY ... LIMIT`
+            /// top-K, a join runtime filter) is not attributed to PREWHERE: its conditions are evaluated together
+            /// on the same block, so a mixed step's rejections cannot be split between the user predicate and the
+            /// dynamic filter, and counting it would attribute the dynamic filter's rejections to PREWHERE.
+            const bool step_is_query_prewhere = std::ranges::none_of(
+                condition_groups[step_index], [](const auto * node) { return isDynamicRuntimePrewhereFilter(node); });
 
             PrewhereExprStep new_step
             {

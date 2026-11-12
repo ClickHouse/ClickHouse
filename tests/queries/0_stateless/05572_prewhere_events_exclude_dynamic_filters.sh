@@ -57,14 +57,37 @@ qid_pw="${CLICKHOUSE_DATABASE}_pw_$RANDOM$RANDOM"
 ${CLICKHOUSE_CLIENT} --max_threads 1 --use_query_condition_cache 0 \
   --query_id "$qid_pw" -q "SELECT a FROM t_facts PREWHERE b < 8192 FORMAT Null"
 
+# -------- A join runtime filter after a user predicate is not counted, but the user predicate still is --------
+# With the user condition in WHERE, `optimizePrewhere` moves both it and `__applyFilter` into PREWHERE as two
+# steps: the user `c % 2 = 0` first, the runtime filter second. The runtime filter empties almost every granule,
+# but the granules it drops must not be attributed to PREWHERE. `c % 2 = 0` keeps half of every granule, so the
+# user predicate drops no granule and half the rows: 25 read, 0 dropped, 100000 rows dropped.
+qid_rf_mixed="${CLICKHOUSE_DATABASE}_rf_mixed_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --enable_join_runtime_filters 1 --enable_join_runtime_filters_index_analysis 0 \
+  --optimize_move_to_prewhere 1 --query_plan_join_swap_table 0 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --use_query_condition_cache 0 \
+  --query_id "$qid_rf_mixed" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x WHERE t.c % 2 = 0 FORMAT Null"
+
+# -------- A fused step mixing a user predicate with top-K is not counted --------
+# With step splitting disabled the user `c % 2 = 0` and the top-K `__topKFilter` share one fused step whose
+# rejections cannot be separated, so nothing is attributed to PREWHERE rather than counting top-K's rejections.
+qid_topk_fused="${CLICKHOUSE_DATABASE}_topk_fused_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --use_top_k_dynamic_filtering 1 --enable_multiple_prewhere_read_steps 0 \
+  --max_threads 1 --use_query_condition_cache 0 \
+  --query_id "$qid_topk_fused" -q "SELECT a FROM t_facts PREWHERE c % 2 = 0 ORDER BY b LIMIT 10 FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # granules read / granules dropped / rows dropped by PREWHERE.
-#   top-K:     0, 0, 0        (dynamic threshold filter, no user predicate)
-#   join RF:   0, 0, 0        (dynamic join runtime filter, no user predicate)
-#   prewhere: 25, 24, 191808
+#   top-K:          0, 0, 0          (dynamic threshold filter, no user predicate)
+#   join RF:        0, 0, 0          (dynamic join runtime filter, no user predicate)
+#   prewhere:      25, 24, 191808
+#   RF after user: 25, 0, 100000     (runtime filter's granule drops excluded; user predicate counted)
+#   topK fused:     0, 0, 0          (mixed fused step not separable, not attributed)
 dump_events "$qid_topk"
 dump_events "$qid_rf"
 dump_events "$qid_pw"
+dump_events "$qid_rf_mixed"
+dump_events "$qid_topk_fused"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim"
