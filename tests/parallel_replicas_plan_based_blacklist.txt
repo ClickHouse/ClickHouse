@@ -67,17 +67,8 @@
     https://github.com/ClickHouse/ClickHouse/issues/128542
 05350_comparison_tuple_elimination_shared_alias
 
-    Three plan optimizations are switched off for every query, not only for steps that are shipped
+    Lazy materialization for joins and the trivial `count()` from a text index are switched off for every query, not only for steps that are shipped
     https://github.com/ClickHouse/ClickHouse/issues/128546
-01655_plan_optimizations
-04669_fuse_filter_into_array_join
-05042_fuse_filter_array_join_left_distributed
-05044_lower_array_join_function
-05137_fuse_row_conditions_into_array_join
-05243_array_join_element_filter_block_boundary
-05385_fuse_filter_array_join_lift_row_actions
-05397_fuse_filter_into_left_array_join
-05399_additional_result_filter_extremes
 05405_lazy_materialization_for_join_object_storage_default_dependency
 
     `DISTINCT` and `LIMIT` are not shipped with the plan fragment, so replicas return every row they read
