@@ -4,6 +4,7 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <optional>
 #include <boost/core/noncopyable.hpp>
 #include <Common/setThreadName.h>
 
@@ -20,36 +21,34 @@ class ThreadStatus;
 ThreadGroupPtr getCurrentThreadGroup();
 
 /**
- * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
+ * RAII wrapper that switches the thread group and the thread name for the duration of a scope.
  *
  * Typically used for inheriting thread group when scheduling tasks on a thread pool:
  *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
  *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
+ *           ThreadGroupSwitcher switcher(thread_group, ThreadName::MY_THREAD);
  *           ...
  *       });
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
+    /// thread_group_: nullptr or the current group means no group switch.
+    /// thread_name: UNKNOWN means no rename.
     /// allow_existing_group:
     ///  * If false, asserts that the thread is not already attached to a different group.
     ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and thread name and restores them in destructor.
-    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
+    ///  * If true, remembers the current group and restores it in the destructor.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:
+    void restorePrevThreadName() noexcept;
+
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
-    /// Name of a borrowed thread (allow_existing_group=true), saved before renaming and restored in the
-    /// destructor. A separate bool gates the restore because UNKNOWN is a valid saved name, not a sentinel.
-    ThreadName prev_thread_name = ThreadName::UNKNOWN;
-    bool should_restore_prev_thread_name = false;
+    std::optional<ThreadNamePair> prev_thread_name;
 };
-
 
 }

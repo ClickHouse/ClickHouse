@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#if defined(OS_LINUX)
+#include <sys/prctl.h>
+#endif
+
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -30,7 +34,7 @@ namespace FailPoints
 
 /// After a failed ThreadGroupSwitcher construction the thread must be left in the
 /// state it was in before construction started (detached or attached to the original
-/// group), so the next switcher on the same thread can attach cleanly.
+/// group, and with its original name), so the next switcher on the same thread can attach cleanly.
 TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
 {
     /// Run in a dedicated thread so current_thread starts as nullptr, independent of
@@ -44,70 +48,44 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
 
         /// attach_to_group_failure throws inside attachToGroupImpl (the attach is rolled
         /// back there); post_attach_failure throws after attachToGroup already succeeded.
-        /// Both must leave the thread in its pre-construction state.
-
-        /// --- Starting detached: every failed switch must end detached. ---
-        FailPointInjection::enableFailPoint(FailPoints::attach_to_group_failure);
+        /// Both must leave the thread in its pre-construction state. The name is renamed before
+        /// the group part, so it must be put back right away, not only in the destructor: the scope
+        /// body must not run under the name of a switch that did not happen.
+        for (const char * fail_point : {FailPoints::attach_to_group_failure, FailPoints::thread_group_switcher_post_attach_failure})
         {
-            ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
-            EXPECT_EQ(getCurrentThreadGroup(), nullptr)
-                << "Failed attach from detached state must leave the thread detached";
-        }
+            /// --- Starting detached: must end detached. ---
+            setThreadName(ThreadName::TCP_HANDLER);
+            FailPointInjection::enableFailPoint(fail_point);
+            {
+                ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+                EXPECT_EQ(getCurrentThreadGroup(), nullptr) << fail_point;
+                EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER) << fail_point;
+            }
+            EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER) << fail_point;
 
-        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
-        {
-            ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
-            EXPECT_EQ(getCurrentThreadGroup(), nullptr)
-                << "Post-attach failure from detached state must leave the thread detached";
+            /// --- Starting attached to G0 (borrowed with allow_existing_group): must restore G0 and the
+            /// name, including UNKNOWN, which is a valid previous name and not a "nothing to restore" sentinel. ---
+            for (auto prev_name : {ThreadName::TCP_HANDLER, ThreadName::UNKNOWN})
+            {
+                setThreadName(prev_name); /// setThreadName(UNKNOWN) writes "Unknown" to the OS name
+                CurrentThread::attachToGroupIfDetached(G0);
+                FailPointInjection::enableFailPoint(fail_point);
+                {
+                    ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+                    EXPECT_EQ(getCurrentThreadGroup(), G0) << fail_point;
+                    EXPECT_EQ(getThreadName(), prev_name) << fail_point;
+                }
+                EXPECT_EQ(getCurrentThreadGroup(), G0) << fail_point;
+                EXPECT_EQ(getThreadName(), prev_name) << fail_point;
+                CurrentThread::detachFromGroupIfNotDetached();
+            }
         }
-
-        /// --- Starting attached to G0 and named: every failed allow_existing_group switch must
-        /// restore both G0 and the original name (post_attach_failure throws after setThreadName
-        /// has already renamed the thread, so the catch block must put the name back too). ---
-        setThreadName(ThreadName::TCP_HANDLER);
-        CurrentThread::attachToGroupIfDetached(G0);
-
-        FailPointInjection::enableFailPoint(FailPoints::attach_to_group_failure);
-        {
-            ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-            EXPECT_EQ(getCurrentThreadGroup(), G0)
-                << "Failed allow_existing_group attach must restore the original group";
-        }
-        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
-            << "Failed allow_existing_group attach must restore the original name";
-
-        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
-        {
-            ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-            EXPECT_EQ(getCurrentThreadGroup(), G0)
-                << "Post-attach failure must detach the target group and restore the original";
-        }
-        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
-            << "Post-attach failure must restore the original name after setThreadName renamed the thread";
-
-        /// --- Same post-attach failure, but the borrowed thread starts UNKNOWN (initially unnamed).
-        /// UNKNOWN is a valid previous name, not a "nothing to restore" sentinel, so the catch must
-        /// still put it back rather than leave the thread renamed to MERGE_MUTATE. ---
-        setThreadName(ThreadName::UNKNOWN); /// writes "Unknown" to the OS name; getThreadName() now reports UNKNOWN
-        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
-        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
-        {
-            ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-            EXPECT_EQ(getCurrentThreadGroup(), G0)
-                << "Post-attach failure must restore the original group for an initially-unnamed borrowed thread";
-        }
-        EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
-            << "Post-attach failure must restore an UNKNOWN previous name; the restore is gated by a bool, not by the name value";
-        CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();
 }
 
-/// The destructor borrow path (allow_existing_group=true on a group-owning thread) must restore the
-/// borrowed thread's NAME, not just its group. master's DroppedSynchronouslyWhileAttachedToAnotherGroup
-/// covers the group restore and the no-abort, but never checks the name -- which is what this PR adds.
-/// Both a real previous name and UNKNOWN (initially unnamed) must be restored: UNKNOWN is a valid
-/// previous name, not a "nothing to restore" sentinel, so the restore is gated by a bool, not the value.
+/// Borrowing a group-owning thread (allow_existing_group=true) must restore its name together with
+/// the group, else it keeps the async-pool name and misattributes later logs, traces and profiles.
 TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
 {
     std::thread t([&]
@@ -119,22 +97,112 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
 
         for (auto prev_name : {ThreadName::TCP_HANDLER, ThreadName::UNKNOWN})
         {
-            /// setThreadName(UNKNOWN) writes "Unknown" to the OS name so getThreadName() reports UNKNOWN.
             setThreadName(prev_name);
             CurrentThread::attachToGroupIfDetached(G0);
-            ASSERT_EQ(getThreadName(), prev_name);
-
             {
-                /// Borrows the group-owning thread and renames it to the async-pool name.
                 ThreadGroupSwitcher switcher(G1, ThreadName::S3_COPY_POOL, /*allow_existing_group*/ true);
                 EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL);
-            } /// ~ThreadGroupSwitcher must put both the group and the name back.
-
+                EXPECT_EQ(getCurrentThreadGroup(), G1);
+            }
             EXPECT_EQ(getCurrentThreadGroup(), G0);
-            EXPECT_EQ(getThreadName(), prev_name)
-                << "borrowed thread's name must be restored, not left as the async-pool name";
+            EXPECT_EQ(getThreadName(), prev_name);
             CurrentThread::detachFromGroupIfNotDetached();
         }
+    });
+    t.join();
+}
+
+/// The name is switched (and restored) even when the group part does nothing: no group to attach
+/// to, or already attached to the target group.
+TEST(ThreadGroupSwitcher, SwitchesNameIndependentlyOfGroup)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto G0 = std::make_shared<ThreadGroup>(getContext().context, 0);
+        setThreadName(ThreadName::TCP_HANDLER);
+
+        {
+            ThreadGroupSwitcher switcher(nullptr, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getCurrentThreadGroup(), nullptr);
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
+
+        CurrentThread::attachToGroupIfDetached(G0);
+        {
+            ThreadGroupSwitcher switcher(G0, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getCurrentThreadGroup(), G0);
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
+        EXPECT_EQ(getCurrentThreadGroup(), G0);
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    t.join();
+}
+
+/// After a successful attach from a detached thread (a pool worker running a job) the name stays:
+/// ThreadPoolImpl::worker reads it after the job to name the tracing span, and renames the thread
+/// back itself. Restoring it here would make tracing fall back to demangled lambda names.
+TEST(ThreadGroupSwitcher, KeepsNameAfterAttachFromDetachedThread)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto G1 = std::make_shared<ThreadGroup>(getContext().context, 0);
+        setThreadName(ThreadName::DEFAULT_THREAD_POOL);
+
+        {
+            ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE);
+            EXPECT_EQ(getThreadName(), ThreadName::MERGE_MUTATE);
+            EXPECT_EQ(getCurrentThreadGroup(), G1);
+        }
+        EXPECT_EQ(getCurrentThreadGroup(), nullptr);
+        EXPECT_EQ(getThreadName(), ThreadName::MERGE_MUTATE);
+    });
+    t.join();
+}
+
+#if defined(OS_LINUX)
+/// A thread that was never renamed carries the binary name as its OS comm ("clickhouse" for the
+/// server's main thread), which has no ThreadName value. It must be restored verbatim: restoring
+/// through the enum would write "Unknown", after which `pkill clickhouse` and `ps -C clickhouse`
+/// (how integration tests restart the server) no longer match.
+TEST(ThreadGroupSwitcher, RestoresNameAbsentFromEnum)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        /// Not pthread_setname_np/pthread_getname_np: glibc-compatibility stubs them out.
+        ASSERT_EQ(prctl(PR_SET_NAME, "clickhouse", 0, 0, 0), 0);
+        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
+
+        {
+            ThreadGroupSwitcher switcher(nullptr, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL);
+        }
+
+        char comm[16] = {};
+        ASSERT_EQ(prctl(PR_GET_NAME, comm, 0, 0, 0), 0);
+        EXPECT_STREQ(comm, "clickhouse");
+        EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN);
+    });
+    t.join();
+}
+#endif
+
+/// Where the OS comm cannot be read (FreeBSD, illumos, WASM, a sandbox blocking `prctl(PR_GET_NAME)`)
+/// the snapshot falls back to the cached ThreadName, which is what the logs and traces report, so the
+/// restore must still move it back.
+TEST(ThreadGroupSwitcher, RestoresFromCachedNameWhenCommUnavailable)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        setThreadName(ThreadName::S3_COPY_POOL);
+        restoreThreadName(ThreadNamePair{.comm = "", .cached = ThreadName::TCP_HANDLER});
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
     });
     t.join();
 }
