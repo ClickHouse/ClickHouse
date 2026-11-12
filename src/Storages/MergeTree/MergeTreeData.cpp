@@ -6452,26 +6452,43 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             /// A stored column may not newly take the name of a subcolumn of another stored column (`a.size0` of an
             /// `Array` column `a`, `t.x` of a `Tuple` column `t`, or any `j.x` of a `JSON` column `j`). The existing parts
-            /// do not hold such a column and read its default, while their keys, skip indices, projections, statistics
-            /// and TTL infos may have been computed from the subcolumn that had this name before. An `ALIAS` column is
-            /// not stored, and a column that was already stored under its name keeps it.
+            /// do not hold one of the two columns, or hold the other column with a type that has no such subcolumn, so the
+            /// name would be read from a different source, while their keys, skip indices, projections, statistics and TTL
+            /// infos were computed from the old one. Such a pair of columns may appear from either side: by adding or
+            /// renaming the column with the dotted name, by adding or renaming its prefix column, or by changing the type
+            /// of the prefix column. So every pair after the `ALTER` is checked, and a pair is allowed only if both columns
+            /// were stored before under the same names and the old type of the prefix column had this subcolumn. An
+            /// `ALIAS` column is not stored.
+            auto was_stored_as_is = [&](const String & name) -> std::optional<NameAndTypePair>
+            {
+                auto it = old_names.find(name);
+                if (it == old_names.end() || it->second != name)
+                    return std::nullopt;
+                return old_metadata.columns.tryGetPhysical(name);
+            };
+
             const auto & new_columns = new_metadata.getColumns();
             for (const auto & column : new_columns.getAllPhysical())
             {
-                auto it = old_names.find(column.name);
-                if (it != old_names.end() && it->second == column.name && old_metadata.columns.hasPhysical(column.name))
-                    continue;
-
                 for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(column.name))
                 {
                     auto other_column = new_columns.tryGetPhysical(String(prefix));
-                    if (other_column && other_column->type->tryGetSubcolumnType(subcolumn))
-                        throw Exception(
-                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "Cannot add column {}: its name is the name of a subcolumn of column {}. "
-                            "Use another name or an ALIAS column",
-                            backQuoteIfNeed(column.name),
-                            backQuoteIfNeed(other_column->name));
+                    if (!other_column || !other_column->type->tryGetSubcolumnType(subcolumn))
+                        continue;
+
+                    if (was_stored_as_is(column.name))
+                    {
+                        auto old_other_column = was_stored_as_is(other_column->name);
+                        if (old_other_column && old_other_column->type->tryGetSubcolumnType(subcolumn))
+                            continue;
+                    }
+
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot alter the table: the name of column {} would be the name of a subcolumn of column {}. "
+                        "Use another name or an ALIAS column",
+                        backQuoteIfNeed(column.name),
+                        backQuoteIfNeed(other_column->name));
                 }
             }
         }

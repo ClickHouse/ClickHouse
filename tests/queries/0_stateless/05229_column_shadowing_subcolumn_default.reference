@@ -1,17 +1,24 @@
 ALTER that gives a stored column the name of a subcolumn is refused
 an ALIAS column and an unrelated dotted name keep working
 202	8	[0]	6
+ALTER that gives a stored column a prefix column with such a subcolumn is refused
+{"x":{"y":33}}	11	(0)	1	2	3
+a pair of columns created together survives other ALTERs
+{"x":1}	2	[1,2,3]	4	5
 a part that does not hold the column reads its default
 Wide
-1	[10,20,30]	7	3
+1
+1	[10,20,30]	0	3
 2	[40]	5	1
 1
 Compact
-1	[10,20,30]	7	3
+1
+1	[10,20,30]	0	3
 2	[40]	5	1
 1
 the same for a column named like a path of a JSON column, and its subcolumns
-1	(7)	7
+1
+1	(0)	0
 2	(8)	8
 a projection stores the column itself
 1	[1,2,3]	5
