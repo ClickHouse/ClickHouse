@@ -1453,13 +1453,13 @@ void applyDistributedPlanSettings(ContextMutablePtr context)
     const auto & worker_cluster = settings[Setting::distributed_plan_worker_cluster];
 
     Strings wants;
-    if (make_plan.changed && make_plan.value)
+    if (make_plan.value)
         wants.emplace_back("`make_distributed_plan = 1`");
 
-    if (workers_num.changed && workers_num.value > 0)
+    if (workers_num.value > 0)
         wants.emplace_back(fmt::format("`distributed_plan_workers_num = {}`", workers_num.value));
 
-    if (worker_cluster.changed && !worker_cluster.value.empty())
+    if (!worker_cluster.value.empty())
         wants.emplace_back(fmt::format("`distributed_plan_worker_cluster = '{}'`", worker_cluster.value));
 
     if (wants.empty())
