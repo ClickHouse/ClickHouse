@@ -108,6 +108,8 @@ python3 -c "import json, sys; p = sys.argv[1]; m = json.load(open(p)); m['curren
 VERSION_BEFORE=$(latest_version "${T5}")
 ${OPTIMIZE} --query "OPTIMIZE TABLE t5" 2>&1
 echo "new versions: $(( $(latest_version "${T5}") - VERSION_BEFORE ))"
+${OPTIMIZE} --query "OPTIMIZE TABLE t5 MANIFEST SETTINGS iceberg_manifest_min_count_to_compact = 1" 2>&1
+echo "new versions: $(( $(latest_version "${T5}") - VERSION_BEFORE ))"
 
 echo '--- stale version hint'
 T3="${BASE}/t3"

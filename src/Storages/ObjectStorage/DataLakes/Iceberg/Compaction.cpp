@@ -79,6 +79,14 @@ static constexpr size_t MAX_COMPACTION_RETRIES = 100;
 
 using namespace DB;
 
+/// Negative when there is no current snapshot, which the metadata can also express with an absent or JSON null field.
+static Int64 getCurrentSnapshotId(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
+        return -1;
+    return metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+}
+
 /// Cheap pre-check for `compactIcebergManifests`: read just the current manifest list and report whether its entry count exceeds `threshold`.
 static bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
@@ -89,9 +97,7 @@ static bool isCurrentManifestListAboveThreshold(
 {
     LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
-        return false;
-    Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    const Int64 current_snapshot_id = getCurrentSnapshotId(metadata_object);
     if (current_snapshot_id < 0)
         return false;
 
@@ -749,19 +755,13 @@ static bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
-    {
-        LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
-        return true;
-    }
-    Int64 current_snapshot_id_val = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
-    if (current_snapshot_id_val < 0)
+    const Int64 current_snapshot_id = getCurrentSnapshotId(metadata_object);
+    if (current_snapshot_id < 0)
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
     }
 
-    Int64 current_snapshot_id = current_snapshot_id_val;
     String current_manifest_list_path;
 
     {
@@ -1315,10 +1315,7 @@ void compactIcebergTable(
             /// Without the snapshot -> schema bindings an entry would fall back to its manifest's schema header.
             registerIcebergMetadataSchemas(metadata_object, schema_processor);
 
-            const Int64 current_snapshot_id
-                = metadata_object->has(Iceberg::f_current_snapshot_id) && !metadata_object->isNull(Iceberg::f_current_snapshot_id)
-                ? metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id)
-                : -1;
+            const Int64 current_snapshot_id = getCurrentSnapshotId(metadata_object);
             Poco::JSON::Object::Ptr current_snapshot;
             if (current_snapshot_id >= 0)
             {
