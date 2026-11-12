@@ -1090,13 +1090,39 @@ void generateManifestList(
                             if (old_entry.hasField(field))
                                 new_entry.field(field) = old_entry.field(field);
                         };
-                        add_field_to_datum(Iceberg::f_added_files_count);
-                        add_field_to_datum(Iceberg::f_existing_files_count);
-                        add_field_to_datum(Iceberg::f_deleted_files_count);
+                        /// v1 lists hold the counts as `["null", T]` unions and avro-cpp encodes a datum by its own union-ness, so each
+                        /// count is rebuilt in the new list's shape. Iceberg Java < 1.5 names the file counts `added_data_files_count` etc.
+                        auto copy_count = [&](const String & field, const char * old_name, avro::Type type)
+                        {
+                            String source = field;
+                            if (!old_entry.hasField(source) && old_name)
+                                source = old_name;
+                            if (!old_entry.hasField(source) || old_entry.field(source).type() == avro::AVRO_NULL)
+                            {
+                                if (version > 1)
+                                    throw Exception(
+                                        ErrorCodes::NOT_IMPLEMENTED,
+                                        "Cannot carry manifest {} of manifest list {} over into a format-version {} manifest list: it has "
+                                        "no '{}', and recomputing it from the manifest is not supported",
+                                        old_manifest_path.value<std::string>(),
+                                        resolved_manifest_list_path,
+                                        version,
+                                        field);
+                                return;
+                            }
+                            const avro::GenericDatum & value = validate_field_type(source, type);
+                            if (type == avro::AVRO_INT)
+                                setVersionedField(new_entry, value.value<Int32>(), field);
+                            else
+                                setVersionedField(new_entry, value.value<Int64>(), field);
+                        };
+                        copy_count(Iceberg::f_added_files_count, Iceberg::f_added_data_files_count, avro::AVRO_INT);
+                        copy_count(Iceberg::f_existing_files_count, Iceberg::f_existing_data_files_count, avro::AVRO_INT);
+                        copy_count(Iceberg::f_deleted_files_count, Iceberg::f_deleted_data_files_count, avro::AVRO_INT);
+                        copy_count(Iceberg::f_added_rows_count, nullptr, avro::AVRO_LONG);
+                        copy_count(Iceberg::f_existing_rows_count, nullptr, avro::AVRO_LONG);
+                        copy_count(Iceberg::f_deleted_rows_count, nullptr, avro::AVRO_LONG);
                         add_field_to_datum(Iceberg::f_partitions);
-                        add_field_to_datum(Iceberg::f_added_rows_count);
-                        add_field_to_datum(Iceberg::f_existing_rows_count);
-                        add_field_to_datum(Iceberg::f_deleted_rows_count);
                         add_field_to_datum(Iceberg::f_key_metadata);
                         if (version > 1)
                         {
@@ -1288,9 +1314,9 @@ IcebergStorageSink::IcebergStorageSink(
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
-        (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
+        /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
 
-    filename_generator.setVersion(last_version + 1);
+    filename_generator.setBaseMetadataFile(last_version, metadata_path);
 
     if (metadata->has(Iceberg::f_properties))
     {
@@ -1613,7 +1639,7 @@ bool IcebergStorageSink::initializeMetadata()
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
             metadata_compression_method = compression_method;
-            filename_generator.setVersion(last_version + 1);
+            filename_generator.setBaseMetadataFile(last_version, metadata_path);
 
             metadata = deepCopy(getMetadataJSONObject(
                 metadata_path,
