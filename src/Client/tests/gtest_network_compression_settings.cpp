@@ -9,7 +9,7 @@
 using namespace DB;
 
 /// The client sends its own helper queries (autocomplete, the `help` command, the AI metadata query)
-/// with only the settings selecting the network codec, so that the rest of the session does not leak
+/// with only the settings controlling network compression, so that the rest of the session does not leak
 /// into them, plus an explicit `dialect = 'clickhouse'` override: the queries are written in ClickHouse
 /// SQL, and dropping the session `dialect` is not enough, because the server would then take the parser
 /// from the effective `dialect` of the authenticated user.
@@ -99,6 +99,53 @@ TEST(NetworkCompressionSettings, KeepsAnExplicitOverrideOfACompatibilityDerivedV
     EXPECT_FALSE(result.isChanged("network_zstd_compression_level"));
     EXPECT_TRUE(result.isChanged("compatibility"));
     EXPECT_TRUE(result.isChanged("dialect"));
+}
+
+TEST(NetworkCompressionSettings, KeepsAnExplicitSmallFrameThreshold)
+{
+    for (UInt64 threshold : {0u, 256u})
+    {
+        Settings settings;
+        settings.set("network_compression_min_bytes", threshold);
+        settings.set("max_threads", 3);
+
+        const Settings result = networkCompressionSettings(settings);
+
+        EXPECT_TRUE(result.isChanged("network_compression_min_bytes"));
+        EXPECT_EQ(result.get("network_compression_min_bytes").safeGet<UInt64>(), threshold);
+        EXPECT_FALSE(result.isChanged("max_threads"));
+    }
+}
+
+TEST(NetworkCompressionSettings, CompatibilityDerivedSmallFrameThresholdIsNotSerialized)
+{
+    Settings settings;
+    settings.set("compatibility", "26.10");
+    ASSERT_TRUE(settings.isChanged("network_compression_min_bytes"));
+    ASSERT_EQ(settings.get("network_compression_min_bytes").safeGet<UInt64>(), 0u);
+
+    const Settings result = networkCompressionSettings(settings);
+
+    EXPECT_FALSE(result.isChanged("network_compression_min_bytes"));
+    EXPECT_EQ(result.get("network_compression_min_bytes").safeGet<UInt64>(), 0u);
+    EXPECT_TRUE(result.isChanged("compatibility"));
+    EXPECT_TRUE(result.isChanged("dialect"));
+    EXPECT_EQ(result.changes().size(), 2u);
+}
+
+TEST(NetworkCompressionSettings, ExplicitSmallFrameThresholdOverridesCompatibility)
+{
+    Settings settings;
+    settings.set("compatibility", "26.10");
+    settings.set("network_compression_min_bytes", 256u);
+
+    const Settings result = networkCompressionSettings(settings);
+
+    EXPECT_TRUE(result.isChanged("network_compression_min_bytes"));
+    EXPECT_EQ(result.get("network_compression_min_bytes").safeGet<UInt64>(), 256u);
+    EXPECT_TRUE(result.isChanged("compatibility"));
+    EXPECT_TRUE(result.isChanged("dialect"));
+    EXPECT_EQ(result.changes().size(), 3u);
 }
 
 /// The other half of the contract: `Connection::sendQuery` picks the codec for the compressed packets

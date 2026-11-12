@@ -44,6 +44,12 @@ public:
 
     void setCodec(CompressionCodecPtr codec_);
 
+    /// Emit smaller frames with `NONE`, retaining framing and checksums. Requires a compatible receiver.
+    void setMinBytesToCompress(size_t min_bytes_to_compress_)
+    {
+        min_bytes_to_compress = min_bytes_to_compress_;
+    }
+
     /// Blocks that the codec does not compress well are written with codec `NONE`,
     /// so reading them does not pay for decompression. Must not be used with an encrypting codec.
     void storeIncompressibleBlocksUncompressed();
@@ -63,6 +69,7 @@ private:
     WriteBuffer & out;
     CompressionCodecPtr codec;
     CompressionStatePtr codec_state;
+    size_t min_bytes_to_compress = 0;
     /// Codec `NONE` if `storeIncompressibleBlocksUncompressed` was called.
     CompressionCodecPtr uncompressed_codec;
 

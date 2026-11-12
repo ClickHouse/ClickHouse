@@ -35,8 +35,14 @@ namespace Setting
 
 Settings networkCompressionSettings(const Settings & settings)
 {
-    static constexpr std::string_view compression_setting_names[]
-        = {"network_compression_method", "network_zstd_compression_level", "allow_suspicious_codecs", "allow_experimental_codecs"};
+    static constexpr std::string_view compression_setting_names[] =
+    {
+        "network_compression_method",
+        "network_compression_min_bytes",
+        "network_zstd_compression_level",
+        "allow_suspicious_codecs",
+        "allow_experimental_codecs"
+    };
 
     /// The server re-derives the settings that `compatibility` changed, and a profile may pin them as
     /// read-only, so an explicitly serialized compatibility-derived value would make the helper query fail
