@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# - no-fasttest: writes and reads Parquet files
 
 # `min` / `max` answered from Parquet statistics read rows built from the statistics instead of the rows of the
 # file. Their number must not be cached as the number of rows in the file, which `count()` then answers from.
