@@ -62,6 +62,7 @@
               "pages": [
                 "products/cloud/reference/service-uptime",
                 "products/cloud/reference/data-resiliency",
+                "products/cloud/guides/deletion-protection",
                 "products/cloud/features/admin-features/upgrades"
               ]
             },

@@ -58,7 +58,7 @@ struct DynamicS3DiskCredentialInfo
     bool ast_has_explicit_key_pair = false;                 /// literal `access_key_id` + `secret_access_key`
     bool ast_has_no_sign_request = false;                   /// literal `no_sign_request`
     bool ast_has_use_environment_credentials_off = false;   /// literal `use_environment_credentials = 0`, no `role_arn`
-    bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple
+    bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple or service account key
 
     bool for_system_database = false;                       /// server-internal disk, exempt like the AST-level GCS checks
     /// For the post-`include` GCS re-check (`validateResolvedGCSDiskCredentials`): the literal value the AST
