@@ -18,7 +18,11 @@ CREATE TABLE t_dp_workers_explain (id UInt64, v UInt64) ENGINE = MergeTree ORDER
 INSERT INTO t_dp_workers_explain SELECT number, number FROM numbers(100000);
 "
 
-COUNT=$(${CLICKHOUSE_CLIENT} -q "EXPLAIN PIPELINE SELECT sum(v) FROM t_dp_workers_explain SETTINGS distributed_plan_execute_locally = 1, distributed_plan_workers_num = 3" \
+# max_rows_to_group_by = 0: a global GROUP BY limit cannot be enforced once aggregation is split
+# per bucket, and the test harness's randomized profile may set a non-zero one, which would make
+# the plan fall back to local execution (distributed_plan_fallback_to_local_execution, on by
+# default) with no error - silently defeating this test's own assertion.
+COUNT=$(${CLICKHOUSE_CLIENT} -q "EXPLAIN PIPELINE SELECT sum(v) FROM t_dp_workers_explain SETTINGS distributed_plan_execute_locally = 1, distributed_plan_workers_num = 3, max_rows_to_group_by = 0" \
     | grep -c "ReadFromDistributedPlanSource")
 if [ "${COUNT}" -gt 0 ]; then echo "distributed"; else echo "not distributed"; fi
 

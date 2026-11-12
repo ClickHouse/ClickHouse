@@ -9,7 +9,6 @@ true
 off again when the workers num goes back to zero
 false
 an explicit make_distributed_plan = 0 conflicts with a non-zero workers num
-
 DEFAULT clears an explicit off, so the workers num derives it again
 true
 the derivation and its adjustments show up in query_log for that query only
