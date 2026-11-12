@@ -328,7 +328,17 @@ void loadFromConfig(
 {
     if (!params.collection_name.empty())
     {
-        loadNamedCollectionConfig(kafka_config, params.collection_name, config_prefix);
+        const auto & collection = NamedCollectionFactory::instance().get(params.collection_name);
+        for (const auto & key : collection->getKeys(-1, config_prefix))
+        {
+            const auto param_name = key.substr(config_prefix.size() + 1);
+            const auto tag = param_name.substr(0, param_name.find('.'));
+            /// Skip the same sections as in the server configuration below.
+            if (tag == KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG || tag == KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG
+                || tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TAG))
+                continue;
+            setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
+        }
         return;
     }
 
