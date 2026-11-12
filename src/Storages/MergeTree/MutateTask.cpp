@@ -3943,7 +3943,7 @@ private:
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings(),
+            getWriteSettingsForMergeOrMutation(ctx->context->getWriteSettings(), ctx->data->supportsReplication()),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
             /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
             ctx->stream_base_manifest);
@@ -4703,6 +4703,8 @@ bool MutateTask::execute()
 
 void MutateTask::cancel() noexcept
 {
+    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+
     if (task)
         task->cancel();
 
@@ -5001,8 +5003,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
 
+        /// An unsupported archive cannot be updated, so it would keep granules of the old data.
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
-            || (source_has_archive && writer_can_open_archive);
+            || (source_has_archive && writer_can_open_archive)
+            || source_disk_storage->hasUnsupportedSkipIndicesPackedArchive();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
@@ -5193,7 +5197,8 @@ bool MutateTask::prepare()
         ctx->metadata_snapshot,
         *commands_for_execution,
         context_for_reading,
-        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
+        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); },
+        [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); }
     );
 
     ctx->changes_storage_type = ctx->source_part->getDataPartStorage().getType() != ctx->future_part->part_format.storage_type;

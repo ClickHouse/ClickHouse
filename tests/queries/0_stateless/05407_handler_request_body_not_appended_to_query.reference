@@ -1,0 +1,24 @@
+=== _request_body is bound from the body ===
+Welcome, Alice
+=== _request_body cannot be passed in the URL ===
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+=== _request_body bound from a URL capture group: the body is not appended to the query ===
+Welcome, bob
+=== _request_body bound from a URL capture group does not read the body: GET is allowed, no Content-Length needed ===
+Welcome, carol
+Welcome, dave
+=== _request_body bound from a URL capture group cannot be passed in the URL query string either ===
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+=== the body is still the data of an INSERT ===
+hello
+world
+=== the body is the data of an INSERT ... SELECT from input ===
+1
+2
+=== the body is never parsed as SQL, even without a literal FORMAT in the query ===
+UNKNOWN_FORMAT
+0
+=== _request_body left in a named session is not used: it is bound from the current body ===
+Welcome, Alice

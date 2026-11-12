@@ -86,8 +86,11 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsBool enable_packed_string_keys_in_hash_join;
+    extern const SettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
 }
 
 namespace QueryPlanSerializationSetting
@@ -143,8 +146,11 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
     extern const QueryPlanSerializationSettingsBool enable_join_key_only_hash_tables;
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_hash_join;
+    extern const QueryPlanSerializationSettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
     extern const QueryPlanSerializationSettingsBool enable_hash_join_row_store;
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const QueryPlanSerializationSettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
 }
 
 bool JoinSettings::hasDefaultJoinAlgorithms() const
@@ -213,8 +219,11 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = query_settings[Setting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
+    enable_packed_string_keys_in_hash_join = query_settings[Setting::enable_packed_string_keys_in_hash_join];
+    min_rows_for_packed_string_keys_in_hash_join = query_settings[Setting::min_rows_for_packed_string_keys_in_hash_join];
     enable_hash_join_row_store = query_settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
+    min_string_column_bytes_for_hash_join_row_store = query_settings[Setting::min_string_column_bytes_for_hash_join_row_store];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
@@ -279,8 +288,11 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
+    enable_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join];
+    min_rows_for_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join];
     enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
+    min_string_column_bytes_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store];
 }
 
 /// `join_algorithm` is an ordered preference list, and these entries produce a join for any step that reaches
@@ -461,8 +473,8 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
-    /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so the name goes on
+    /// the wire only towards a peer that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
         settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -515,8 +527,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
-    /// towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
+    /// Before version 21 a reader of `QueryPlanSerializationSettings` threw on an unknown name, so this name may
+    /// go on the wire only towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
     /// a peer below that version keeps the old contract for the settings it does know, so a plan that
     /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
@@ -535,8 +547,12 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
+    settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join] = enable_packed_string_keys_in_hash_join;
+    settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join] = min_rows_for_packed_string_keys_in_hash_join;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES)
+        settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store] = min_string_column_bytes_for_hash_join_row_store;
 }
 
 bool JoinSettings::canRunGraceHash() const
