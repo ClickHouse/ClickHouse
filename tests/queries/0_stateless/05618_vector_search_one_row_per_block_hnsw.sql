@@ -17,6 +17,7 @@ SET vector_search_index_fetch_multiplier = 100;
 SET hnsw_candidate_list_size_for_search = 2048;
 
 DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab_readded;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab
@@ -60,12 +61,40 @@ WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- A column dropped by a pending mutation and added again is still in the part, but it is computed from its default
+-- expression as well, so the vectors are read as usual then.
+CREATE TABLE tab_readded
+(
+    id UInt32,
+    d UInt64,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
+
+SYSTEM STOP MERGES tab_readded;
+INSERT INTO tab_readded SELECT id, 999, vec FROM tab;
+ALTER TABLE tab_readded DROP COLUMN d SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE tab_readded ADD COLUMN d UInt64 DEFAULT intDiv(64, length(vec)) SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'added again, setting on';
+WITH (SELECT vec FROM tab_readded WHERE id = 123) AS ref
+SELECT id, d FROM tab_readded ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_readded_on';
+
+SELECT 'added again, setting off';
+WITH (SELECT vec FROM tab_readded WHERE id = 123) AS ref
+SELECT id, d FROM tab_readded ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;
+DROP TABLE tab_readded;

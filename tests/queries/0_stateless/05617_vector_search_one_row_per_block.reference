@@ -78,7 +78,20 @@ other block sizes, setting off
 389	38900
 181	18100
 298	29800
+compressed, setting on
+1785	6	256
+390	6	256
+389	6	256
+181	6	256
+298	6	256
+compressed, setting off
+1785	6	256
+390	6	256
+389	6	256
+181	6	256
+298	6	256
 codes in few blocks	1
+05617_lz4_on	0
 05617_one_part_off	0
 05617_one_part_on	100
 05617_same_sizes_on	3

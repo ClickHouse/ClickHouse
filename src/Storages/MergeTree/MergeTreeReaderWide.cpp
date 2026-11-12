@@ -325,11 +325,13 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 
     const auto & metadata = *storage_snapshot->metadata;
 
-    /// A column that is missing from the part is computed from its default expression before the filter, and the
-    /// expression could use the placeholder values of the columns read here.
+    /// A column that is not read from the part - missing, partly missing, or dropped by a pending mutation - can be
+    /// computed from its default expression before the filter, and the expression could use the placeholder values
+    /// of the columns read here.
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
     {
-        if (isColumnAbsentFromPart(pos) && metadata.getColumns().hasDefault(columns_to_read[pos].getNameInStorage()))
+        const bool not_read_from_part = isColumnAbsentFromPart(pos) || isColumnPartiallyRead(pos) || isColumnSkipped(pos);
+        if (not_read_from_part && mayLeaveColumnToMissingDefaults(storage_snapshot, columns_to_read[pos]))
             return;
     }
 

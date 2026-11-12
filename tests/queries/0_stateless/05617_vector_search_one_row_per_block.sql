@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS tab_one_row_per_block;
 DROP TABLE IF EXISTS tab_several_rows_per_block;
 DROP TABLE IF EXISTS tab_sizes;
 DROP TABLE IF EXISTS tab_other_block_sizes;
+DROP TABLE IF EXISTS tab_lz4;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab_one_row_per_block
@@ -127,6 +128,26 @@ SELECT 'other block sizes, setting off';
 SELECT id, vec[1] FROM tab_other_block_sizes ORDER BY sipHash64(id) LIMIT 5
 SETTINGS merge_tree_use_one_row_per_block_layout = 0;
 
+-- A codec that compresses is not supported, even when every compressed block happens to have the size of a row,
+-- as with these values and `LZ4`: the file then has the sizes of one block per row stored without compression.
+CREATE TABLE tab_lz4
+(
+    id UInt32,
+    vec Array(Int8) CODEC(LZ4) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_lz4 SELECT number, CAST([6,-16,57,-55,72,6,-16,57,-55,72,75,16,31,69,118,-27,-45,104,47,60,10,-50,-82,101,105,-87,-56,-70,126,107,111,-43,30,26,92,-74,68,104,75,-64,15,44,-32,111,106,-35,-68,99,-87,112,-10,21,-122,-84,-106,-85,-54,-10,-95,109,48,-100,90,-105,47,88,98,14,-65,48,-52,-111,-100,100,58,-24,103,-86,-29,-50,24,60,-119,50,61,99,102,-85,83,77,-13,29,-1,-114,-66,-5,19,57,-8,70,-2,12,-126,-6,-16,-78,121,5,49,-64,-112,-28,90,23,67,63,25,105,98,-104,94,-24,-51,116,99,-20,-99,-17,-90,68,-66,63,-79,98,-107,-62,85,21,60,-39,106,72,125,-62,-99,104,-39,-99,124,-119,19,16,-15,-116,-124,103,-34,-70,107,-51,17,-29,-60,101,122,109,-92,-80,-104,-68,57,110,33,127,-11,-1,-25,-114,92,-43,17,34,-9,78,-104,-14,2,0,-115,-62,-117,-111,-103,125,-99,-50,119,122,72,-93,49,96,10,-65,-4,-100,-16,-124,-98,-58,-53,109,113,-46,24,124,122,24,-46,-91,-117,55,31,-89,127,-5,-38,72,24,-98,-96,22,-47,115,-31,72,39,11,-4,-14,-31,-117,-11,-12,1,-83,120,86,45,-18,-73,29,-56,-92,-57,103], 'Array(Int8)') FROM numbers(2000);
+
+SELECT 'compressed, setting on';
+SELECT id, vec[1], length(vec) FROM tab_lz4 ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05617_lz4_on';
+
+SELECT 'compressed, setting off';
+SELECT id, vec[1], length(vec) FROM tab_lz4 ORDER BY sipHash64(id) LIMIT 5
+SETTINGS merge_tree_use_one_row_per_block_layout = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'codes in few blocks', ProfileEvents['CompressedReadBufferBlocks'] < 10
@@ -139,10 +160,11 @@ SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] AS rows_rea
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05617_one_part_on', '05617_one_part_off', '05617_two_parts_on', '05617_two_parts_off', '05617_several_rows_per_block_on',
-        '05617_sizes_on', '05617_sizes_off', '05617_same_sizes_on')
+        '05617_sizes_on', '05617_sizes_off', '05617_same_sizes_on', '05617_lz4_on')
 ORDER BY log_comment;
 
 DROP TABLE tab_one_row_per_block;
 DROP TABLE tab_several_rows_per_block;
 DROP TABLE tab_sizes;
 DROP TABLE tab_other_block_sizes;
+DROP TABLE tab_lz4;

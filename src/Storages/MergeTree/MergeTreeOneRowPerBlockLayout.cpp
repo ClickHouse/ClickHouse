@@ -6,7 +6,10 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/StringUtils.h>
 #include <base/unaligned.h>
 
 #include <city.h>
@@ -31,6 +34,28 @@ std::optional<UInt64> getUInt64ColumnSetting(const ColumnDescription & column_de
     if (!setting)
         return std::nullopt;
     return setting->safeGet<UInt64>();
+}
+
+/// Whether every codec of the declared codec of a column stores the data verbatim: `NONE`, or `Quantized`, which only adds
+/// another stream. A column without a declared codec uses the default codec, which compresses.
+bool declaredCodecStoresDataVerbatim(const ASTPtr & codec_desc)
+{
+    const auto * codec_func = codec_desc ? codec_desc->as<ASTFunction>() : nullptr;
+    if (!codec_func || !codec_func->arguments || codec_func->arguments->children.empty())
+        return false;
+
+    for (const auto & codec : codec_func->arguments->children)
+    {
+        String name;
+        if (const auto * identifier = codec->as<ASTIdentifier>())
+            name = identifier->name();
+        else if (const auto * function = codec->as<ASTFunction>())
+            name = function->name;
+
+        if (!equalsCaseInsensitive(name, "NONE") && !equalsCaseInsensitive(name, "Quantized"))
+            return false;
+    }
+    return true;
 }
 
 std::optional<String> getStreamFileName(const IMergeTreeDataPart & part, const NameAndTypePair & column, ISerialization::Substream::Type substream)
@@ -68,6 +93,11 @@ std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
 
     const ColumnDescription * column_description = metadata.getColumns().tryGet(column.getNameInStorage());
     if (!column_description)
+        return std::nullopt;
+
+    /// The sizes of the file below match those of blocks stored without compression also for a codec that compresses
+    /// to exactly the same size, so the codec is checked first.
+    if (!declaredCodecStoresDataVerbatim(column_description->codec))
         return std::nullopt;
 
     /// The writer reads these column-level settings for every stream of the column, see `MergeTreeDataPartWriterWide`.
