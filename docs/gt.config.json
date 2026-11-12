@@ -31,6 +31,7 @@
     "experimentalLocalizeRelativeAssets": true,
     "docsHideDefaultLocaleImport": true,
     "experimentalHideDefaultLocale": true,
+    "saveLocal": true,
     "experimentalAddHeaderAnchorIds": "mintlify"
   },
   "files": {
