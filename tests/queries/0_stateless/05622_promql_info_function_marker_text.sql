@@ -13,8 +13,11 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
     ('target_info', map('instance', 'a', 'job', '1', 'data', '@@instance@@'), [(toDateTime64(0, 3), 1)]),
     ('target_info', map('instance', 'a', 'job', '1', 'data', 'a'), [(toDateTime64(0, 3), 1)]);
 
+SELECT '-- the label value is the text, not the instance';
 SELECT * FROM prometheusQuery(ts, 'info(metric, {data="@@instance@@"})', 0) ORDER BY ALL;
+SELECT '-- no series has this value';
 SELECT * FROM prometheusQuery(ts, 'info(metric, {data="@@job@@"})', 0) ORDER BY ALL;
+SELECT '-- a regexp matcher';
 SELECT * FROM prometheusQuery(ts, 'info(metric, {data=~"@@.*"})', 0) ORDER BY ALL;
 
 DROP TABLE ts;

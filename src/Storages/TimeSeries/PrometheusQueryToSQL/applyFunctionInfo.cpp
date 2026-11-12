@@ -373,9 +373,11 @@ SQLQueryPiece applyFunctionInfo(
     /// The selector of the info series is the user's matchers followed by the identifying labels of `v`, so that the other info series
     /// aren't read. The user's text is only concatenated, never searched.
     const String info_selector_text = info_selector.toString(*context.promql_tree);
-    chassert(info_selector_text.ends_with('}'));
+    /// The text is either `name{matchers}` or just `name`.
+    const bool has_braces = info_selector_text.ends_with('}');
     ASTs selector_parts;
-    selector_parts.push_back(lit(info_selector_text.substr(0, info_selector_text.size() - 1)));
+    selector_parts.push_back(lit(has_braces ? info_selector_text.substr(0, info_selector_text.size() - 1) : info_selector_text + "{"));
+    bool first_label = !has_braces;
     for (const char * label : {"instance", "job"})
     {
         String alternatives = addSubquery(
@@ -388,9 +390,10 @@ SQLQueryPiece applyFunctionInfo(
             }(),
             SQLSubqueryType::SCALAR,
             context);
-        selector_parts.push_back(lit(String(",") + label + "=~\""));
+        selector_parts.push_back(lit(String(first_label ? "" : ",") + label + "=~\""));
         selector_parts.push_back(col(alternatives));
         selector_parts.push_back(lit("\""));
+        first_label = false;
     }
     selector_parts.push_back(lit("}"));
     ASTPtr selector_argument = makeFunction("concat", std::move(selector_parts));
