@@ -1,7 +1,11 @@
 #include <Storages/prepareReadingFromFormat.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -15,7 +19,11 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <base/scope_guard.h>
+#include <Common/assert_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/typeid_cast.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <unordered_map>
 
@@ -172,54 +180,51 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
         ///  is a dynamic subcolumn.)
         auto & column_info = columns_info[idx];
-        bool found_full_path = false;
         column_info.type = column_to_read.getTypeInStorage();
 
         if (column_to_read.isSubcolumn())
         {
-            /// Do subcolumn lookup similar to getColumnFromBlock.
-
+            /// Element names may contain dots, so an element whose name prefixes the subcolumn name need not be on its path.
+            /// Follow the substreams of the subcolumn the name resolves to, as getColumnFromBlock does.
             auto type = column_to_read.getTypeInStorage();
-            auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
-            auto subcolumn_name = column_to_read.getSubcolumnName();
-
-            ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
+            if (auto resolved = type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName()))
             {
-                if (found_full_path)
-                    return;
+                const auto & resolved_path = resolved->substreams_path;
+                auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
 
-                for (size_t i = 0; i < subpath.size(); ++i)
+                ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
                 {
-                    /// Allow `a.x` where `a` is array of tuples.
-                    if (subpath[i].type == ISerialization::Substream::ArrayElements)
-                        continue;
+                    DataTypePtr step_type = type;
+                    for (size_t i = 0; i < subpath.size() && i < resolved_path.size(); ++i)
+                    {
+                        if (subpath[i].type != resolved_path[i].type || subpath[i].name_of_substream != resolved_path[i].name_of_substream)
+                            break;
 
-                    if (subpath[i].type != ISerialization::Substream::TupleElement)
-                        break;
+                        /// Allow `a.x` where `a` is array of tuples. A `Map` is serialized as `Array(Tuple(keys, values))`,
+                        /// but `keys` and `values` are not tuple elements, so the whole map is read.
+                        if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                        {
+                            const auto * array_type = typeid_cast<const DataTypeArray *>(step_type.get());
+                            if (!array_type)
+                                break;
+                            step_type = array_type->getNestedType();
+                            continue;
+                        }
 
-                    if (subpath[i].visited)
-                        continue;
-                    subpath[i].visited = true;
-                    size_t prefix_len = i + 1;
-                    if (prefix_len <= column_info.path.size())
-                        continue;
+                        if (subpath[i].type != ISerialization::Substream::TupleElement)
+                            break;
+                        step_type = subpath[i].data.type;
 
-                    auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                    if (name == subcolumn_name)
-                        found_full_path = true;
-                    else if (!subcolumn_name.starts_with(name + "."))
-                        continue;
+                        if (i + 1 > column_info.path.size())
+                            column_info.path.assign(subpath.begin(), subpath.begin() + i + 1);
+                    }
+                };
 
-                    column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
-                    if (found_full_path)
-                        break;
-                }
-            };
-
-            ISerialization::EnumerateStreamsSettings settings;
-            settings.position_independent_encoding = false;
-            settings.enumerate_dynamic_streams = false;
-            data.serialization->enumerateStreams(settings, callback_with_data, data);
+                ISerialization::EnumerateStreamsSettings settings;
+                settings.position_independent_encoding = false;
+                settings.enumerate_dynamic_streams = false;
+                data.serialization->enumerateStreams(settings, callback_with_data, data);
+            }
 
             if (!column_info.path.empty())
                 column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
@@ -293,9 +298,32 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// The row-level filter is not applied, see the comment for `ReadFromFormatInfo::prewhere_info`.
     new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, /*row_level_filter=*/ nullptr, prewhere_info);
 
-    /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
-    /// don't need to replace subcolumns with their nested columns etc.
-    new_info.source_header = new_info.format_header;
+    /// `requested_columns` can hold subcolumns (`n.null`) that the format reads through their whole column.
+    Block requested_header;
+    for (const auto & column : info.requested_columns)
+        requested_header.insert({column.type->createColumn(), column.type, column.name});
+    new_info.source_header = SourceStepWithFilter::applyPrewhereActions(std::move(requested_header), /*row_level_filter=*/ nullptr, prewhere_info);
+
+    std::unordered_map<std::string_view, const NameAndTypePair *> requested_column_by_name;
+    for (const auto & column : info.requested_columns)
+        requested_column_by_name.emplace(column.name, &column);
+
+    for (const auto & col : new_info.source_header)
+    {
+        auto it = requested_column_by_name.find(col.name);
+        if (it == requested_column_by_name.end())
+        {
+            /// Column produced by prewhere expression.
+            new_info.requested_columns.emplace_back(col.name, col.type);
+            continue;
+        }
+
+        new_info.requested_columns.push_back(*it->second);
+        /// An explicit PREWHERE can consume the column that a requested subcolumn is extracted from.
+        String name_in_storage = it->second->getNameInStorage();
+        if (!new_info.format_header.has(name_in_storage))
+            new_info.format_header.insert(info.format_header.getByName(name_in_storage));
+    }
 
     /// Hive partition columns come from the file path, not the data file, so prewhere column
     /// pruning above does not concern them. Carry them over and keep their position before the
@@ -311,7 +339,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 
     for (const auto & col : new_info.format_header)
     {
-        new_info.requested_columns.emplace_back(col.name, col.type);
         if (info.format_header.has(col.name))
         {
             /// Column read from file.
@@ -363,11 +390,62 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
+{
+    if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
+        return filter_actions_dag;
+    if (formatReadsHivePartitionColumns())
+        return nullptr;
+
+    auto is_added_after_format = [&](const String & name)
+    {
+        return hive_partition_columns_to_read_from_file_path.contains(name) || requested_virtual_columns.contains(name);
+    };
+
+    auto reads_added_column = [&](const ActionsDAG::Node * atom)
+    {
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        std::vector<const ActionsDAG::Node *> stack{atom};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (node->type == ActionsDAG::ActionType::INPUT && is_added_after_format(node->result_name))
+                return true;
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+            /// `indexHint` keeps its arguments in its own DAG, not in `children`, and the format uses them for pruning.
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "indexHint")
+            {
+                const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node->function_base);
+                for (const auto & inner : assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions().getNodes())
+                    stack.push_back(&inner);
+            }
+        }
+        return false;
+    };
+
+    auto atoms = ActionsDAG::extractConjunctionAtoms(filter_actions_dag->getOutputs().at(0));
+    ActionsDAG::NodeRawConstPtrs kept;
+    for (const auto * atom : atoms)
+        if (!reads_added_column(atom))
+            kept.push_back(atom);
+
+    if (kept.size() == atoms.size())
+        return filter_actions_dag;
+    if (kept.empty())
+        return nullptr;
+    auto dag = ActionsDAG::buildFilterActionsDAG(kept);
+    return std::make_shared<const ActionsDAG>(std::move(*dag));
+}
+
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(false), ctx.out);
+    /// The reader needs only names, types and defaults.
+    writeStringBinary(columns_description.toString(/* include_comments = */ false, /* include_codecs = */ false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);
@@ -435,6 +513,13 @@ Block buildAllowedFilterInputs(
         if (!base.has(col.name))
             base.insert(col);
     return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
+}
+
+bool formatNeedsEagerKeyConditionSets(const String & format_name)
+{
+    return boost::iequals(format_name, "Parquet")
+        || boost::iequals(format_name, "ORC")
+        || boost::iequals(format_name, "Vortex");
 }
 
 void prepareEagerKeyConditionSets(

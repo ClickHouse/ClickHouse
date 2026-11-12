@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -108,6 +109,7 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
         return;
     }
 
+    options.explicit_request_settings = getExplicitRequestSettings();
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
@@ -174,9 +176,9 @@ void StorageObjectStorageConfiguration::initialize(
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
     {
-        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
-            ? storage_settings[DataLakeStorageSetting::disk].value
+        const auto storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = (*storage_settings)[DataLakeStorageSetting::disk].changed
+            ? (*storage_settings)[DataLakeStorageSetting::disk].value
             : "";
     }
     if (engine_args.empty() && table_id)
@@ -193,7 +195,8 @@ void StorageObjectStorageConfiguration::initialize(
 
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                 engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, configuration_to_initialize.is_replayed_definition))
     {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
 
@@ -205,7 +208,11 @@ void StorageObjectStorageConfiguration::initialize(
         /// out of the persisted arguments.
         if (!configuration_to_initialize.url_overridden_by_base_setting.empty())
             StorageURL::overrideURLInEngineArgs(
-                engine_args, configuration_to_initialize.url_overridden_by_base_setting, local_context, /*skip_userinfo=*/ true);
+                engine_args,
+                configuration_to_initialize.url_overridden_by_base_setting,
+                local_context,
+                /*skip_userinfo=*/ true,
+                configuration_to_initialize.is_replayed_definition);
     }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -261,6 +268,28 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     auto columns_str = columns.getAllPhysical().toString();
     hash.update(columns_str.data(), columns_str.size());
     return getSipHash128AsHexString(hash);
+}
+
+StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
+{
+    SharedLockGuard lock(paths_mutex);
+    return getPathsImpl();
+}
+
+void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
+{
+    std::lock_guard lock(paths_mutex);
+    setPathsImpl(paths);
+}
+
+void StorageObjectStorageConfiguration::addPath(const Path & path)
+{
+    std::lock_guard lock(paths_mutex);
+    auto paths = getPathsImpl();
+    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
+        return;
+    paths.push_back(path);
+    setPathsImpl(paths);
 }
 
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)

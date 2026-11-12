@@ -55,14 +55,15 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = cur
 GROUP BY ev, partition ORDER BY ev;
 DROP TABLE mod_merge;
 
--- `use_skip_indexes = 0` skips the part-level minmax analysis but not the partition pruner, so here
--- the pruner is what excludes a partition, and it renders the value of the partition it excluded.
-CREATE TABLE mod_prune (c1 Int32, c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c1, CAST(37528, 'UInt64') % c0);
-INSERT INTO mod_prune VALUES (1, 167682982);
-INSERT INTO mod_prune VALUES (2, 167682982);
-SELECT 'pruned read', c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0;
+-- The part-level minmax analysis cannot exclude a part whose `c1` range covers the value searched, but
+-- the partition pruner can, so here the pruner is what excludes a partition, and it renders the value
+-- of the partition it excluded.
+CREATE TABLE mod_prune (c1 Int32, c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c1 % 2, CAST(37528, 'UInt64') % c0);
+INSERT INTO mod_prune VALUES (1, 167682982), (3, 167682982);
+INSERT INTO mod_prune VALUES (0, 167682982), (2, 167682982);
+SELECT 'pruned read', c1 FROM mod_prune WHERE c1 = 2;
 SELECT 'pruned plan', countIf(explain LIKE '%Parts: 2/2%') = 1 AND countIf(explain LIKE '%Parts: 1/2%') = 1
-FROM (EXPLAIN indexes = 1 SELECT c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0);
+FROM (EXPLAIN indexes = 1 SELECT c1 FROM mod_prune WHERE c1 = 2);
 DROP TABLE mod_prune;
 
 -- A value outside the range of the partition key type addresses no partition and is rejected.

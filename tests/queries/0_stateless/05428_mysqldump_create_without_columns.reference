@@ -1,0 +1,51 @@
+LIKE `t0`
+c1	Nullable(Int64)					
+c2	Nullable(String)					
+1	a
+2	b
+(KEY `k` (`x`)) ENGINE=InnoDB
+c1	Nullable(Int64)					
+c2	Nullable(String)					
+1	a
+2	b
+(CONSTRAINT `c` CHECK (`x` > 0)) ENGINE=InnoDB
+c1	Nullable(Int64)					
+c2	Nullable(String)					
+1	a
+2	b
+LIKE `t0`
+1	a
+2	b
+1	a
+2	b
+3	c
+1	a
+2	b
+3	c
+(KEY `k` (`x`)) ENGINE=InnoDB
+1	a
+2	b
+1	a
+2	b
+3	c
+1	a
+2	b
+3	c
+(CONSTRAINT `c` CHECK (`x` > 0)) ENGINE=InnoDB
+1	a
+2	b
+1	a
+2	b
+3	c
+1	a
+2	b
+3	c
+(`x` int, `y` varchar(10)) ENGINE=InnoDB
+1	a
+2	b
+1	a
+2	b
+3	c
+1	a
+2	b
+3	c

@@ -30,3 +30,13 @@
 3	Another	302
 4	Another	402
 -----------
+1	Some string
+2	Some other string
+3	Bulk inserted string
+-----------
+1	Another
+2	Some other string
+3	Bulk inserted string
+-----------
+1	Another
+3	Bulk inserted string

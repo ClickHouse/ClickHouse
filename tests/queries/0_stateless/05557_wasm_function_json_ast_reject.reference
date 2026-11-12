@@ -1,0 +1,2 @@
+CREATE FUNCTION wf LANGUAGE WASM ARGUMENTS (x UInt32) RETURNS UInt64 FROM \'mod\' :: \'fn\' ABI plain DETERMINISTIC SHA256_HASH \'hash\' SETTINGS max_fuel = 7, serialization_format = \'json\'
+1

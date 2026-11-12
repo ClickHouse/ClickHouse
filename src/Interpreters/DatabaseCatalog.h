@@ -224,6 +224,11 @@ public:
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+    /// Replaces `old_table` with `new_table` in the mapping of `uuid`, but only if the mapping holds
+    /// `old_table` and nobody holds it apart from the mapping and the caller, who holds one reference.
+    /// Returns whether the mapping was replaced. For a lazily loaded table, see
+    /// `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
+    bool replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table);
     /// This method adds empty mapping (with database and storage equal to nullptr).
     /// It's required to "lock" some UUIDs and protect us from collision.
     /// Collisions of random 122-bit integers are very unlikely to happen,
@@ -267,6 +272,7 @@ public:
     void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
     void checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     void checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2);
+    void checkDatabaseCanBeRenamedWithNoCyclicDependencies(const String & old_database_name, const String & new_database_name, const Strings & tables_in_database);
 
     struct TableMarkedAsDropped
     {
@@ -304,6 +310,8 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+    void checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
+        const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const TSA_REQUIRES(databases_mutex);
 
     /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
     /// Always returns a guard, check `ownsTableLock` for the outcome.

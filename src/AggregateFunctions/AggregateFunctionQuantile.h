@@ -71,6 +71,10 @@ class AggregateFunctionQuantile final
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>;
+
+    static constexpr bool has_add_many = std::is_same_v<SecondArgumentType, void>
+        && requires(Data & data, const Value * values) { data.addMany(values, size_t{}); };
 
     static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
@@ -229,11 +233,6 @@ public:
             params);
     }
 
-    /// The level may be any numeric Field. A Decimal or wide-integer one prints as a quoted string,
-    /// which reparses as a String that the level check rejects, so the printed state type name needs
-    /// ::Type suffixes to name the parameters it was printed from.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -256,6 +255,57 @@ public:
             this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if constexpr (has_add_many)
+        {
+            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
+            if (if_argument_pos >= 0)
+            {
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
+                this->data(place).template addManyFiltered<true>(values, row_end - row_begin, if_flags);
+            }
+            else
+                this->data(place).addMany(values, row_end - row_begin);
+        }
+        else
+            Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if constexpr (has_add_many)
+        {
+            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
+            const size_t count = row_end - row_begin;
+            if (if_argument_pos >= 0)
+            {
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
+                auto keep = std::make_unique_for_overwrite<UInt8[]>(count);
+                for (size_t i = 0; i < count; ++i)
+                    keep[i] = !null_map[row_begin + i] & !!if_flags[i];
+                this->data(place).template addManyFiltered<true>(values, count, keep.get());
+            }
+            else
+                this->data(place).template addManyFiltered<false>(values, count, null_map + row_begin);
+        }
+        else
+            Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

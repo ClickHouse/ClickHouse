@@ -11,7 +11,9 @@ doc_type: 'reference'
 
 ### InsertContexts {#insertcontexts}
 
-ClickHouse Connect는 Native 형식 삽입 작업과 `insert`, `insert_df` 메서드를 `InsertContext` 내에서 실행합니다. `insert_arrow`, `insert_df_arrow`, `raw_insert` 메서드는 payload를 직접 전송하며 `InsertContext`를 사용하지 않습니다. `InsertContext`에는 클라이언트 `insert` 메서드에 인수로 전달되는 모든 값이 포함됩니다. 또한 `InsertContext`가 처음 생성될 때 ClickHouse Connect는 효율적인 Native 형식 삽입에 필요한 대상 컬럼의 데이터 타입을 가져옵니다. 여러 번의 삽입에 `InsertContext`를 재사용하면 이러한 &quot;사전 쿼리&quot;를 수행하지 않아도 되므로, 삽입을 더 빠르고 효율적으로 실행할 수 있습니다.
+ClickHouse Connect는 네이티브 형식 삽입 작업과 `insert`, `insert_df` 메서드를 `InsertContext` 내에서 실행합니다. `insert_arrow`, `insert_df_arrow`, `raw_insert` 메서드는 payload를 직접 전송하며 `InsertContext`를 사용하지 않습니다. `InsertContext`에는 클라이언트 `insert` 메서드에 인수로 전달되는 모든 값이 포함됩니다. 또한 `InsertContext`가 처음 생성될 때 ClickHouse Connect는 효율적인 네이티브 형식 삽입에 필요한 대상 컬럼의 데이터 타입을 가져옵니다. 여러 번의 삽입에 `InsertContext`를 재사용하면 이러한 &quot;사전 쿼리&quot;를 수행하지 않아도 되므로, 삽입을 더 빠르고 효율적으로 실행할 수 있습니다.
+
+내부적으로 실행되는 `DESCRIBE TABLE`은 서버가 생성한 자체 쿼리 ID를 사용하는 반면, `INSERT`는 삽입별 설정이나 클라이언트 기본값에 지정된 `query_id`를 그대로 사용합니다.
 
 `InsertContext`는 클라이언트 `create_insert_context` 메서드로 가져올 수 있습니다. 이 메서드는 `context` 자체를 제외하고 `insert` 함수와 동일한 인수를 받습니다. 재사용 시에는 `InsertContext`의 `data` 속성만 수정해야 합니다. 이는 동일한 테이블에 새 데이터를 반복적으로 삽입할 때 재사용 가능한 객체를 제공하려는 목적에 부합합니다.
 
@@ -30,6 +32,16 @@ assert qr.first_row[0] == 113
 ```
 
 `InsertContext`s에는 삽입 과정에서 갱신되는 가변 상태가 포함되어 있으므로 스레드에 안전하지 않습니다.
+
+### 삽입 재시도와 중복 제거 {#insert-retries-and-deduplication}
+
+두 HTTP 클라이언트 모두 특정 원격 연결 종료가 발생하면 `insert`와 `insert_df`를 한 번 재시도할 수 있습니다. 클라이언트는 재시도를 위해 네이티브 삽입 데이터를 다시 생성합니다. `raw_insert`에 전달된 문자열 또는 bytes payload도 동일하게 재시도 대상이 됩니다. 제너레이터나 열린 파일은 다시 전송되지 않습니다. 이러한 삽입 재시도에는 `query_retries`가 사용되지 않으며, HTTP 429, 503, 504 응답에는 적용되지 않습니다.
+
+삽입 재시도는 최소 1회(at-least-once) 의미 체계를 따릅니다. 첫 번째 시도가 커밋되었으나 응답이 유실되면, 재시도 과정에서 동일한 행이 다시 삽입될 수 있습니다. 또한 첫 번째 시도가 커밋된 후에 예외가 발생할 수도 있습니다. 클라이언트는 정확히 1회(exactly-once) 삽입을 보장하지 않습니다.
+
+중복 제거 동작은 테이블 엔진, 서버 버전, 설정에 따라 달라집니다. 일반 MergeTree 테이블에서는 테이블 설정 `non_replicated_deduplication_window`를 재시도를 충분히 포괄할 수 있는 0이 아닌 값으로 설정하십시오. 기본값 `0`에서는 중복 제거가 비활성화됩니다. Replicated 및 Shared MergeTree는 삽입 중복 제거를 지원하지만, 이를 활용하기 전에 실제 적용되는 설정을 확인하십시오. 특히 ClickHouse 26.2 이전 버전이거나 이전 compatibility 설정을 사용하는 경우, 서버 측 비동기 삽입은 기본적으로 중복 제거를 수행하지 않습니다. 중복 제거는 구성된 중복 제거 윈도우 내의 삽입에만 적용됩니다.
+
+query 또는 command 메서드를 통해 전송되는 SQL `INSERT` 문은 별도의 [HTTP 재시도 정책](/ko/integrations/language-clients/python/driver-api#http-retries)을 따릅니다.
 
 ### 쓰기 포맷 {#write-formats}
 

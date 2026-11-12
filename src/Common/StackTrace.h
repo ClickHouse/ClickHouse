@@ -29,6 +29,12 @@
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
+#endif
+
+#if defined(OS_DARWIN)
+#include <pthread.h>
+#include <sys/_types/_mach_port_t.h> /// not <mach/port.h>: its TRUE/FALSE macros leak into every includer
+#endif
 
 #if defined(OS_SUNOS)
 /** illumos regset.h includes unprefixed macros for i386 gregset_t indices. These macros aren't used
@@ -36,7 +42,6 @@
   */
 #undef ERR
 #undef FS
-#endif
 #endif
 
 /** The stack trace of the throw that created an exception, recorded inside the `std::exception`
@@ -104,6 +109,49 @@ public:
 
     StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_ = 0);
 
+#if defined(OS_DARWIN) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
+    /// What SuspendedThread needs to know about a thread, gathered while the thread runs. libpthread
+    /// guards its thread list with a lock, taken by `pthread_from_mach_thread_np`, by
+    /// `pthread_get_stackaddr_np` for a foreign thread and by thread creation and exit; a stopped
+    /// thread may hold it, so none of these lookups may happen after the thread is stopped.
+    struct ThreadHandle
+    {
+        mach_port_t mach_thread = 0;
+        pthread_t thread = nullptr;
+        uintptr_t stack_lo = 0;
+        uintptr_t stack_hi = 0;
+
+        /// The calling thread.
+        static ThreadHandle current();
+        /// A thread by a port from `task_threads`; empty if it has already exited.
+        static std::optional<ThreadHandle> fromMachThread(mach_port_t mach_thread);
+    };
+
+    /// Stops another thread of this process with `thread_suspend` for the lifetime of the object, so
+    /// its registers, stack and thread-local state can be read without interrupting it with a signal
+    /// (a signal makes a thread waiting on a Darwin psynch lock lose its wakeup, Apple FB24027930).
+    /// While the object exists only Mach calls and plain memory reads are allowed on the calling side:
+    /// the stopped thread may hold any lock, malloc's and libpthread's included. Suspending the
+    /// calling thread itself is refused, since nothing would ever resume it.
+    class SuspendedThread
+    {
+    public:
+        explicit SuspendedThread(const ThreadHandle & handle_);
+        ~SuspendedThread();
+        SuspendedThread(const SuspendedThread &) = delete;
+        SuspendedThread & operator=(const SuspendedThread &) = delete;
+
+        bool isSuspended() const { return suspended; }
+
+        /// Frame-pointer walk from the stopped thread's registers. Empty if the registers cannot be read.
+        StackTrace captureStackTrace() const;
+
+    private:
+        ThreadHandle handle;
+        bool suspended = false;
+    };
+#endif
+
     constexpr size_t getSize() const { return size; }
     constexpr size_t getOffset() const { return offset; }
     const FramePointers & getFramePointers() const { return frame_pointers; }
@@ -126,7 +174,7 @@ public:
     {
         MainObject,     /// Offset inside the main executable.
         OtherObject,    /// Offset inside the loaded object named by `object`.
-        UnknownMapping, /// No loaded object contains the address, so it is the runtime address.
+        UnknownMapping, /// No loaded object is known to contain the address. The runtime address is not published, so it is null.
         Unsupported,    /// The platform keeps runtime addresses, so it is the argument unchanged.
     };
 
@@ -143,14 +191,17 @@ public:
     /// symbolized trace lines use, so that it can be fed to `addr2line` or `llvm-symbolizer`.
     static ResolvedAddress resolveAddress(const void * virtual_addr);
 
-    /// The same as `resolveAddress`, but never builds the symbol index: returns nothing when it has
-    /// not been built yet. For the fatal signal handler, whose first bare dump of addresses must not
-    /// depend on the machinery the symbolized trace after it may fail or block on.
-    static std::optional<ResolvedAddress> tryResolveAddress(const void * virtual_addr);
+    /// The same as `resolveAddress`, but never builds the symbol index: when it has not been built
+    /// yet, only addresses in the main executable are resolved, and any other one is `UnknownMapping`.
+    /// For the fatal signal handler, whose first bare dump of addresses must not depend on the
+    /// machinery the symbolized trace after it may fail or block on.
+    static ResolvedAddress tryResolveAddress(const void * virtual_addr);
 
     /// The form to store an address in a bare integer column: an address in the main executable
     /// becomes its file offset, which stays valid across restarts and hosts, while any other address
-    /// is kept as is, because a stored offset into a library reads as a main executable one.
+    /// becomes 0: an offset into a library would read as a main executable one, and the runtime
+    /// address must not be published. The slot is kept, so frame positions do not change.
+    /// Raw runtime addresses must never leave the process (tables, logs, network): convert them with this function first.
     static UInt64 resolveAddressForStorage(const void * virtual_addr);
 
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;

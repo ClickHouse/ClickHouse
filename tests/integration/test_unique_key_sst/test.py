@@ -17,10 +17,34 @@ node = cluster.add_instance(
     # UNIQUE KEY reads and writes both open a transaction, and `TransactionLog` loads from
     # Keeper, so every query here needs one.
     with_zookeeper=True,
+    # Transactions refuse to start unless Keeper advertises these.
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+        "check_stat",
+    ],
     # The tests operate on local part/metadata files directly; with the remote
     # database disk ("db disk" CI flavor) the table metadata .sql lives in S3
     # and the metadata edit below would have nothing to sed.
     with_remote_database_disk=False,
+)
+
+# The default `storage_policy` has a disk without append support, so `RESET SETTING storage_policy` switches to it.
+node_plain_rewritable_default = cluster.add_instance(
+    "node_plain_rewritable_default",
+    main_configs=[
+        "configs/config.d/storage_policy.xml",
+        "configs/config.d/merge_tree_default_policy.xml",
+    ],
+    with_minio=True,
+    with_zookeeper=True,
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+        "check_stat",
+    ],
 )
 
 UK_SETTINGS = {"enable_unique_key": "1"}
@@ -174,6 +198,64 @@ def test_unique_key_switch_policy_to_s3(started_cluster):
     assert node.query("SELECT id, v FROM uk_local ORDER BY id") == "10\ta\n20\tb\n30\tc\n40\td\n"
 
     node.query("DROP TABLE uk_local SYNC")
+
+
+def test_unique_key_switch_policy_to_plain_rewritable_is_rejected(started_cluster):
+    # A `plain_rewritable` disk does not support writing with append, which a UNIQUE KEY table
+    # needs, so a policy that adds one is rejected like a CREATE on that disk.
+    node.query("DROP TABLE IF EXISTS uk_local_pr SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_local_pr (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+                 max_bytes_to_merge_at_max_space_in_pool = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query(
+        "INSERT INTO uk_local_pr VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        "ALTER TABLE uk_local_pr MODIFY SETTING storage_policy = 'plain_rewritable_extending'",
+        settings=UK_SETTINGS,
+    )
+
+    assert node.query("SELECT id, v FROM uk_local_pr ORDER BY id") == EXPECTED_ROWS
+
+    node.query("DROP TABLE uk_local_pr SYNC")
+
+
+def test_unique_key_reset_policy_to_plain_rewritable_is_rejected(started_cluster):
+    n = node_plain_rewritable_default
+    n.query("DROP TABLE IF EXISTS uk_reset_pr SYNC")
+    n.query(
+        """
+        CREATE TABLE uk_reset_pr (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS storage_policy = 'default'
+        """,
+        settings=UK_SETTINGS,
+    )
+    n.query(
+        "INSERT INTO uk_reset_pr VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+
+    assert "SUPPORT_IS_DISABLED" in n.query_and_get_error(
+        "ALTER TABLE uk_reset_pr RESET SETTING storage_policy",
+        settings=UK_SETTINGS,
+    )
+
+    assert n.query("SELECT id, v FROM uk_reset_pr ORDER BY id") == EXPECTED_ROWS
+
+    n.query("DROP TABLE uk_reset_pr SYNC")
 
 
 def test_unique_key_sst_checksums(started_cluster):
@@ -348,6 +430,50 @@ def test_unique_key_sst_checksums(started_cluster):
 
     node.query("ALTER TABLE uk_sst_ro MODIFY SETTING table_readonly = 0")
     node.query("DROP TABLE uk_sst_ro SYNC")
+
+
+def test_unique_key_check_detects_a_corrupt_bitmap(started_cluster):
+    # CHECK TABLE re-hashes a delete bitmap through its `checksums.txt` entry: the bitmap is listed,
+    # CHECK passes, then fails once a byte of the bitmap is flipped.
+    node.query("DROP TABLE IF EXISTS uk_bitmap_check SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_bitmap_check (k UInt64, v UInt64)
+        ENGINE = MergeTree ORDER BY k UNIQUE KEY (k)
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query("INSERT INTO uk_bitmap_check SELECT number, 0 FROM numbers(8)")
+    # The second INSERT overwrites four keys, so all_2_2_0 holds a bitmap for all_1_1_0.
+    node.query("INSERT INTO uk_bitmap_check SELECT number, 1 FROM numbers(4)")
+
+    holder = node.query(
+        "SELECT path FROM system.parts WHERE database = 'default' AND table = 'uk_bitmap_check'"
+        " AND active AND name = 'all_2_2_0'"
+    ).strip()
+    bitmaps = bash(node, f"find {shlex.quote(holder)} -maxdepth 1 -name 'delete_bitmap_*.rbm'").split()
+
+    # bitmap_written
+    assert len(bitmaps) == 1, f"Expected one bitmap in {holder}, got {bitmaps}"
+    bitmap = bitmaps[0]
+
+    # check_before: red if the bitmap is not listed in `checksums.txt` (an unlisted file fails CHECK)
+    check_settings = {"check_query_single_value_result": 1, "send_logs_level": "none"}
+    assert node.query("CHECK TABLE uk_bitmap_check", settings=check_settings) == "1\n"
+
+    # Flip the last byte, covered by the trailing CRC and by the checksum entry.
+    size = file_size(node, bitmap)
+    bash(node, f"printf '\\xff' | dd of={shlex.quote(bitmap)} bs=1 seek={size - 1} count=1 conv=notrunc status=none")
+
+    node.query("DETACH TABLE uk_bitmap_check")
+    node.query("ATTACH TABLE uk_bitmap_check")
+
+    # corrupt_detected
+    answer, error = node.query_and_get_answer_with_error("CHECK TABLE uk_bitmap_check", settings=check_settings)
+    assert answer == "0\n" or "CHECKSUM_DOESNT_MATCH" in error or "BAD_SIZE_OF_FILE" in error, (answer, error)
+
+    node.query("DROP TABLE uk_bitmap_check SYNC")
 
 
 def test_unique_key_on_a_non_plain_engine_still_loads(started_cluster):

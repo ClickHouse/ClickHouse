@@ -1,0 +1,15 @@
+-- the renamed column is pushed down into both data files
+100
+2	0
+100
+-- the new column is pushed down only into the data file that has it
+1	1005
+1	1
+1	1005
+-- a condition on both columns
+9
+3	1
+9
+-- both data files read under the current names
+5	5	\N
+1005	1005	1005

@@ -25,6 +25,6 @@ INSERT INTO test_71288 VALUES (0), (1000);
 SELECT count()
 FROM remote('127.0.0.{1,2}', currentDatabase(), test_71288)
 WHERE r IN (toDateTime64('1970-01-01 00:00:00.000', 3))
-SETTINGS allow_experimental_analyzer = 1, session_timezone = 'UTC';
+SETTINGS session_timezone = 'UTC';
 
 DROP TABLE test_71288;
