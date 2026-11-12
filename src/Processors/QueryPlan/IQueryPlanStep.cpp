@@ -565,9 +565,9 @@ StepAnalyzer IQueryPlanStep::makeAnalyzer() const
 {
     StepAnalyzer analyzer;
 
-    analyzer.groups = getStepGroups();
-    for (size_t group : analyzer.groups)
-        analyzer.group_names[group] = getStepGroupName(group);
+    analyzer.groups.clear();
+    for (size_t group : getStepGroups())
+        analyzer.groups.push_back({group, getStepGroupName(group)});
 
     /// No reporter: a step reports no metrics of its own unless it overrides this.
     analyzer.finish = [](const StepStatsContext & context, StepAnalysisReport report)

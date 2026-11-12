@@ -421,14 +421,13 @@ StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const St
     context.execution_query_time_ns = execution_query_time_ns;
     context.max_num_threads_per_query = max_num_threads_per_query;
     context.groups = analyzer.groups;
-    context.group_names = analyzer.group_names;
 
     if (const auto step_stats_it = stats_by_step.find(step_id); step_stats_it != stats_by_step.end())
         context.io = step_stats_it->second;
 
-    for (size_t group : context.groups)
-        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group)); group_stats_it != stats_by_step_group.end())
-            context.group_stats[group] = group_stats_it->second;
+    for (const auto & group : context.groups)
+        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group.id)); group_stats_it != stats_by_step_group.end())
+            context.group_stats[group.id] = group_stats_it->second;
 
     if (interval_timings)
         context.time_and_conc_stats = interval_timings->findTiming(step_id);

@@ -3,7 +3,6 @@
 #include <functional>
 #include <optional>
 #include <span>
-#include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
@@ -22,6 +21,15 @@ using StepProcessors = std::span<IProcessor * const>;
 using StepReporter = std::function<StepAnalysisReport(StepProcessors)>;
 
 struct StepStatsContext;
+
+/// One stage of a step's execution, as `getStepGroups` numbers them and `getStepGroupName` names
+/// them. Most steps have the single unnamed stage; a join has a build and a probe. The id and the
+/// name travel together so that a step cannot declare one without the other.
+struct StepGroup
+{
+    size_t id = 0;
+    String name;
+};
 
 /// Shapes a step's raw report into its analysis, adding what the step itself knows -- a join's
 /// estimation and input columns, for instance -- to what was measured.
@@ -59,8 +67,7 @@ struct StepAnalyzer
     bool is_creating_set = false;
 
     /// Every step has at least the one unnamed stage.
-    std::vector<size_t> groups{0};
-    std::unordered_map<size_t, String> group_names;
+    std::vector<StepGroup> groups{{}};
 
     /// Empty when the step has nothing to report of its own.
     StepReporter reporter;

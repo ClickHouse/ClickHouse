@@ -14,8 +14,7 @@ class IQueryPlanStep;
 struct StepStatsContext
 {
     /// The stages of the step, as the analyzer captured them.
-    std::vector<size_t> groups{0};
-    std::unordered_map<size_t, String> group_names;
+    std::vector<StepGroup> groups{{}};
     StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;

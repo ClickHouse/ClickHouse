@@ -13,8 +13,8 @@ StepWallClocks collectWallClocksForPlanSteps(const PlanAnalysisSnapshot & plan_s
     StepWallClocks clocks;
 
     for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
-        for (size_t group : analyzer.groups)
-            clocks.try_emplace(std::make_pair(step_id, group), std::make_unique<StepWallClock>());
+        for (const auto & group : analyzer.groups)
+            clocks.try_emplace(std::make_pair(step_id, group.id), std::make_unique<StepWallClock>());
 
     return clocks;
 }
