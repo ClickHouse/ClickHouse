@@ -1590,8 +1590,7 @@ public:
     static ExpressionActionsPtr getMinMaxExpr(const StorageInMemoryMetadata & metadata,
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
-    /// Get the columns covered by the part-level min-max index. `_block_number` and `_block_offset` are included only
-    /// when `metadata` has them, so a projection that does not store them gets no slots for them.
+    /// Get the columns covered by the part-level min-max index.
     static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
     static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings);
 

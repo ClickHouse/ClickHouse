@@ -120,3 +120,66 @@ SELECT 'minmax commit_order', count() FROM proj_minmax_commit_order WHERE id = 1
 
 DROP TABLE proj_minmax_plain;
 DROP TABLE proj_minmax_commit_order;
+
+-- A projection that stores only `_block_number`: it provides that column, but neither `_block_offset` nor part min-max index slots for block columns.
+DROP TABLE IF EXISTS proj_partial;
+
+CREATE TABLE proj_partial (id UInt64, v String, PROJECTION p (SELECT *, _block_number ORDER BY id))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    allow_commit_order_projection = 1,
+    part_minmax_index_columns = 'with_block_number_offset',
+    index_granularity = 4;
+
+INSERT INTO proj_partial SELECT number, toString(number) FROM numbers(10);
+INSERT INTO proj_partial SELECT number + 10, toString(number) FROM numbers(10);
+OPTIMIZE TABLE proj_partial FINAL;
+
+SELECT 'partial number read', id, _block_number FROM proj_partial WHERE id = 15 SETTINGS force_optimize_projection_name = 'p';
+SELECT 'partial number filter', count() FROM proj_partial WHERE id = 15 AND _block_number = 2;
+SELECT 'partial offset filter', count() FROM proj_partial WHERE id = 15 AND _block_offset = 5;
+
+DROP TABLE proj_partial;
+
+-- Incremental refresh over a source whose projection stores the block columns: the projection may be used and nothing is lost.
+DROP TABLE IF EXISTS proj_stored_mv;
+DROP TABLE IF EXISTS proj_stored_tgt;
+DROP TABLE IF EXISTS proj_stored_src;
+
+CREATE TABLE proj_stored_src (id UInt64, ts DateTime, v String, PROJECTION by_id (SELECT *, _block_number, _block_offset ORDER BY id))
+ENGINE = MergeTree ORDER BY ts
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    allow_commit_order_projection = 1,
+    part_minmax_index_columns = 'with_block_number_offset',
+    index_granularity = 4;
+
+CREATE TABLE proj_stored_tgt (id UInt64, ts DateTime, v String) ENGINE = MergeTree ORDER BY id;
+
+CREATE MATERIALIZED VIEW proj_stored_mv
+    REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+    TO proj_stored_tgt EMPTY
+    AS SELECT id, ts, v FROM proj_stored_src WHERE id > 12 AND id < 28;
+
+INSERT INTO proj_stored_src SELECT number, toDateTime('2026-01-01 00:00:00') - number, toString(number) FROM numbers(10);
+SYSTEM REFRESH VIEW proj_stored_mv;
+SYSTEM WAIT VIEW proj_stored_mv;
+SELECT 'stored round1', count() FROM proj_stored_tgt;
+
+INSERT INTO proj_stored_src SELECT number + 10, toDateTime('2026-01-01 00:00:00') - number, toString(number) FROM numbers(10);
+INSERT INTO proj_stored_src SELECT number + 20, toDateTime('2026-01-01 00:00:00') - number, toString(number) FROM numbers(10);
+OPTIMIZE TABLE proj_stored_src FINAL;
+SYSTEM REFRESH VIEW proj_stored_mv;
+SYSTEM WAIT VIEW proj_stored_mv;
+SELECT 'stored round2', count(), min(id), max(id) FROM proj_stored_tgt;
+
+SYSTEM REFRESH VIEW proj_stored_mv;
+SYSTEM WAIT VIEW proj_stored_mv;
+SELECT 'stored round3', count() FROM proj_stored_tgt;
+
+DROP TABLE proj_stored_mv;
+DROP TABLE proj_stored_tgt;
+DROP TABLE proj_stored_src;

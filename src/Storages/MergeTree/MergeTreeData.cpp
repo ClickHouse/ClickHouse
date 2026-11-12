@@ -2091,7 +2091,13 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata 
     const auto & partition_key = metadata.getPartitionKey();
 
     const MergeTreePartMinMaxIndexColumns setting_level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
-    const auto level = std::min(setting_level, up_to);
+    auto level = std::min(setting_level, up_to);
+
+    /// A level applies only if the metadata has all its columns, and each level extends the previous one.
+    auto has_column = [&](const String & name) { return metadata.getColumns().has(name) || metadata.virtuals.has(name); };
+    if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET
+        && !(has_column(BlockNumberColumn::name) && has_column(BlockOffsetColumn::name)))
+        level = MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY;
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
@@ -2104,10 +2110,8 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata 
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
-        /// A projection has these only when its query selects them.
-        for (const auto & [name, type] : {std::pair{BlockNumberColumn::name, BlockNumberColumn::type}, std::pair{BlockOffsetColumn::name, BlockOffsetColumn::type}})
-            if (metadata.getColumns().has(name) || metadata.virtuals.has(name))
-                columns.emplace_back(name, type);
+        columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
+        columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
     return columns;
