@@ -378,8 +378,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -896,8 +897,6 @@ add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINT
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
-    add_subdirectory (rust)
-
     # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.

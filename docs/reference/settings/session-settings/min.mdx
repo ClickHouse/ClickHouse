@@ -17,9 +17,6 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
-- Type: unsigned int
-- Default value: 1 MiB
-
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## min_compress_block_size {#min_compress_block_size}
@@ -119,6 +116,14 @@ To disable the split of `Resize` nodes, set this setting to 0. This will prevent
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "Lowered the minimum estimated ratio of join output rows to build-side rows that enables the hash join row store."}]}]}/>
 
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
+
+## min_string_column_bytes_for_hash_join_row_store {#min_string_column_bytes_for_hash_join_row_store}
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8388608"},{"label": "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}]}]}/>
+
+Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.
 
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 

@@ -217,8 +217,10 @@ public:
         return *this;
     }
 
-    /// The hash that `emplace` and `find` compute for the key, to be saved and passed back to them.
-    size_t ALWAYS_INLINE hash(const Key & key) const
+    /// The hash that `emplace` and `find` compute for the key, to be saved and passed back to them. It depends on the
+    /// key alone, so the staged records of the adaptive aggregator restore it without a table (see
+    /// `StagedKeysAndPackedStringRecord`).
+    static size_t ALWAYS_INLINE hash(const Key & key)
     {
         return key.str.isEmpty() ? KeysHash{}(key.keys) : KeysAndPackedStringHash{}(key);
     }

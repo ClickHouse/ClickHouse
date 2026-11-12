@@ -1523,6 +1523,24 @@ Possible values:
 - 1 - always enabled
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
+    DECLARE(Float, max_memory_ratio_to_activate_adaptive_write_buffer, 1.f / 32, R"(
+Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
+fraction of the server's memory limit (`max_server_memory_usage`), regardless of
+`min_columns_to_activate_adaptive_write_buffer`.
+
+A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
+buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
+before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
+server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
+`MEMORY_LIMIT_EXCEEDED`.
+
+It applies to inserts and to merges and mutations of non-replicated tables. Merges and mutations of replicated
+tables ignore it: adaptive write buffers change the offsets stored in the marks, and replicas compare the checksums
+of the parts they merge, so the buffers must not depend on the memory limit of a replica.
+
+Set to `0` to disable this trigger and select adaptive write buffers by column count only.
+)", 0, \
+        {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
@@ -3006,7 +3024,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -3026,14 +3044,15 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (storage_def.settings)
     {
         try
         {
             auto changes = storage_def.settings->changes;
-            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 
             if (checkMergeTreeDiskSettings(changes, context, is_loading_from_existing_metadata) && has("storage_policy"))
                 resetToDefault("storage_policy");
@@ -3487,9 +3506,10 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

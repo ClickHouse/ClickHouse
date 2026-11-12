@@ -42,9 +42,9 @@ public:
 
     static constexpr size_t getInitialLookAheadValue() { return min_look_ahead_value; }
 
-    static constexpr size_t iterationsToMeasure() { return iterations_to_measure; }
-
     static constexpr size_t getMaxLookAheadValue() { return max_look_ahead_value; }
+
+    static constexpr size_t iterationsToMeasure() { return iterations_to_measure; }
 
 private:
     static constexpr size_t iterations_to_measure = 100;
