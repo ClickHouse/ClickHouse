@@ -857,8 +857,11 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
     /// - the parent reading's `selected_marks` becomes zero, or
     /// - the projection's sort order matches the query's ORDER BY,
+    ///
+    /// A parent read over the row limits throws, so it cannot beat the projection whatever its mark count.
+    const bool compare_with_parent = !relax_projection_checks && parent_reading_select_result->isUsable();
     bool best_rejected = false;
-    if (!relax_projection_checks && best_candidate->sum_marks > parent_reading_marks)
+    if (compare_with_parent && best_candidate->sum_marks > parent_reading_marks)
     {
         auto message = PreformattedMessage::create(
             "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -871,7 +874,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         best_rejected = true;
     }
     else if (best_candidate->sum_marks == parent_reading_marks && parent_reading_marks > 0
-        && !relax_projection_checks && !best_sort_order_helps)
+        && compare_with_parent && !best_sort_order_helps)
     {
         auto message = PreformattedMessage::create(
             "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",

@@ -31,3 +31,14 @@ INSERT INTO t_partial_projection SELECT number + 10000, number % 1000 FROM numbe
 SELECT count() FROM t_partial_projection WHERE v = 7 SETTINGS max_rows_to_read = 15000;
 
 DROP TABLE t_partial_projection;
+
+-- A projection with finer granules than the table can read more marks than the over-limit table read and still stay under the limit.
+DROP TABLE IF EXISTS t_fine_projection;
+CREATE TABLE t_fine_projection (key UInt64, tok UInt64) ENGINE = MergeTree ORDER BY key
+SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
+ALTER TABLE t_fine_projection ADD PROJECTION p (SELECT * ORDER BY tok) WITH SETTINGS (index_granularity = 10);
+INSERT INTO t_fine_projection SELECT number, number % 200 FROM numbers(100000);
+
+SELECT count() FROM t_fine_projection WHERE key < 30000 AND tok = 5 SETTINGS max_rows_to_read = 10000, force_optimize_projection = 0, prefer_optimize_projection = 0;
+
+DROP TABLE t_fine_projection;
