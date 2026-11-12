@@ -27,7 +27,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 الاستعلامات التي تعمل ببطء، أو حالات انتهاء المهلة، أو ظهور رسائل خطأ محددة مثل &quot;Memory limit exceeded&quot; أو &quot;Connection refused.&quot;
 
 <Accordion title="عرض حلول الأداء والأخطاء">
-  ### أداء الاستعلامات {#query-performance}
+  ### أداء الاستعلامات
 
   * [تعرّف على الاستعلامات التي تستهلك أكبر قدر من الموارد](/ar/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
   * [الدليل الكامل لتحسين الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/query-optimization)
@@ -36,14 +36,14 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### أداء إدراج البيانات {#data-insertion-performance}
+  ### أداء إدراج البيانات
 
   * [سرّع إدراج البيانات](/ar/concepts/features/operations/insert/bulkinserts)
   * [أعِدّ عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts)
 
   <br />
 
-  ### أدوات التحليل المتقدمة {#advanced-analysis-tools}
+  ### أدوات التحليل المتقدمة
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
 
@@ -52,7 +52,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### رسائل الخطأ {#error-messages}
+  ### رسائل الخطأ
 
   * **&quot;Memory limit exceeded&quot;** → [شخّص أخطاء تجاوز حد الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * **&quot;Connection refused&quot;** → [أصلِح مشكلات الاتصال](#connections-and-authentication)
@@ -68,7 +68,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 ارتفاع استهلاك الذاكرة، أو الأعطال الناتجة عن نفادها، أو الحاجة إلى مساعدة في تحديد الحجم المناسب لنشر ClickHouse.
 
 <Accordion title="عرض حلول الذاكرة">
-  ### تصحيح أخطاء الذاكرة ومراقبتها: {#memory-debugging-and-monitoring}
+  ### تصحيح أخطاء الذاكرة ومراقبتها:
 
   * [تحديد ما يستهلك الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * [التحقق من استهلاك الذاكرة الحالي](/ar/reference/system-tables/processes)
@@ -77,7 +77,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### إعدادات الذاكرة: {#memory-configuration}
+  ### إعدادات الذاكرة:
 
   * [ضبط حدود الذاكرة](/ar/concepts/features/configuration/settings/memory-overcommit)
   * [إعدادات ذاكرة الخادم](/ar/reference/settings/server-settings/settings)
@@ -85,7 +85,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### التوسيع وتحديد الحجم: {#scaling-and-sizing}
+  ### التوسيع وتحديد الحجم:
 
   * [حدّد الحجم المناسب لخدمتك](/ar/guides/oss/best-practices/tips)
   * [ضبط التوسيع التلقائي](/ar/products/cloud/features/autoscaling/overview)
@@ -96,7 +96,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 تعذّر الاتصال بـ ClickHouse، أو حدثت حالات فشل في المصادقة، أو ظهرت أخطاء في شهادة SSL، أو كانت هناك مشكلات في إعداد العميل.
 
 <Accordion title="عرض حلول الاتصال">
-  ### مشكلات الاتصال الأساسية {#basic-connection-issues}
+  ### مشكلات الاتصال الأساسية
 
   * [إصلاح مشكلات واجهة HTTP](/ar/concepts/features/interfaces/http)
   * [معالجة مشكلات شهادة SSL](/ar/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
@@ -104,7 +104,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### واجهات العميل {#client-interfaces}
+  ### واجهات العميل
 
   * [عملاء ClickHouse الأصليون](/ar/concepts/features/interfaces/native-clients-interfaces-index)
   * [مشكلات واجهة MySQL](/ar/concepts/features/interfaces/mysql)
@@ -114,7 +114,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### الشبكة والبيانات {#network-and-data}
+  ### الشبكة والبيانات
 
   * [إعدادات أمان الشبكة](/ar/reference/settings/server-settings/settings)
   * [مشكلات تحليل تنسيق البيانات](/ar/reference/formats/index)
@@ -125,7 +125,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 التثبيت الأولي، تهيئة الخادم، إنشاء قاعدة البيانات، مشكلات إدخال البيانات، أو إعداد النسخ المتماثل.
 
 <Accordion title="عرض حلول الإعداد والتهيئة">
-  ### الإعداد الأولي {#initial-setup}
+  ### الإعداد الأولي
 
   * [تهيئة إعدادات الخادم](/ar/reference/settings/server-settings/settings)
   * [إعداد الأمان والتحكم في الوصول](/ar/concepts/features/security/access-rights)
@@ -133,7 +133,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### إدارة قواعد البيانات {#database-management}
+  ### إدارة قواعد البيانات
 
   * [إنشاء قواعد البيانات وإدارتها](/ar/reference/statements/create/database)
   * [اختيار محرك الجدول المناسب](/ar/reference/engines/table-engines/index)
@@ -142,7 +142,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### عمليات البيانات {#data-operations}
+  ### عمليات البيانات
 
   * [تحسين الإدراج المجمّع للبيانات](/ar/concepts/features/operations/insert/bulkinserts)
   * [معالجة مشكلات تنسيق البيانات](/ar/reference/formats/index)
@@ -151,7 +151,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### التهيئة المتقدمة {#advanced-configuration}
+  ### التهيئة المتقدمة
 
   * [إعداد النسخ المتماثل للبيانات](/ar/reference/engines/table-engines/mergetree-family/replication)
   * [تهيئة الجداول الموزعة](/ar/reference/engines/table-engines/special/distributed)

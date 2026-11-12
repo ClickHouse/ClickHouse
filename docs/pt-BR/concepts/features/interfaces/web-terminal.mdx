@@ -11,7 +11,7 @@ O terminal web é uma interface no navegador que fornece uma sessão interativa 
 Navegue até `/webterminal` em qualquer porta HTTP do ClickHouse (por exemplo, `http://localhost:8123/webterminal`) para abrir o terminal.
 
 <div id="enabling-the-feature">
-  ## Habilitando e desabilitando a funcionalidade {#enabling-the-feature}
+  ## Habilitando e desabilitando a funcionalidade
 </div>
 
 O endpoint `/webterminal` vem habilitado por padrão e é controlado pela configuração do servidor `enable_webterminal`. Para desabilitá-lo, defina a configuração como `false`; as requisições para `/webterminal` passarão a retornar o status HTTP `403 Forbidden`.
@@ -41,7 +41,7 @@ Isso evita colocar credenciais em parâmetros de consulta da URL ou em cabeçalh
 Credenciais inválidas fazem o servidor fechar o WebSocket com o código `1008`; a interface do navegador solicita as credenciais novamente.
 
 <div id="session">
-  ## Como funciona a sessão {#session}
+  ## Como funciona a sessão
 </div>
 
 Após a autenticação, o servidor executa o `clickhouse-client` conectado a um pseudoterminal e encaminha sua entrada e saída via WebSocket. A sessão oferece a experiência completa do `clickhouse-client`, incluindo:
@@ -54,13 +54,13 @@ Após a autenticação, o servidor executa o `clickhouse-client` conectado a um 
 O terminal usa [xterm.js](https://xtermjs.org/) para renderização. Todos os recursos são fornecidos pelo próprio binário do ClickHouse — nenhum CDN de terceiros é carregado.
 
 <div id="play-integration">
-  ## Integração com `/play` {#play-integration}
+  ## Integração com `/play`
 </div>
 
 A interface Web SQL [`/play`](/pt-BR/concepts/features/interfaces/http) incorpora o terminal web como um painel acoplável. Ative-o pelo ícone de terminal na barra lateral ou pressione a tecla `~` quando o editor de consulta estiver vazio. A página `/play` detecta a disponibilidade de `/webterminal` ao carregar e oculta os controles do terminal quando o endpoint não está disponível (por exemplo, quando `enable_webterminal` está definido como `false`).
 
 <div id="docs-integration">
-  ## Integração com o site de documentação {#docs-integration}
+  ## Integração com o site de documentação
 </div>
 
 Este site de documentação incorpora o mesmo terminal em uma barra estreita para desenvolvedores na parte inferior da página, conectado ao [ClickHouse playground](https://play.clickhouse.com) como o usuário `play`, somente leitura, para que seja possível testar os exemplos de qualquer página sem sair dela. A barra fixa reserva um espaço correspondente no fim da página para não ocultar os controles do rodapé. Enquanto o terminal está aberto, a página de documentação fica bloqueada e sua barra de rolagem é ocultada. A rolagem sobre o terminal fica restrita ao seu histórico e não move a página de documentação por trás dele. Clique na barra &quot;ClickHouse terminal&quot; ou pressione a tecla `~` para abrir o painel com preenchimento acima da barra. Clique novamente na barra, use o chevron, pressione `~` ou `Escape`, ou arraste a borda superior do painel para baixo para recolhê-lo; essa borda também permite redimensioná-lo. Encerrar a sessão — `exit` ou `Ctrl+D` — também recolhe o painel.
@@ -70,7 +70,7 @@ Ao fechar o painel, a sessão e seu histórico são mantidos: ao reabrir o termi
 A barra do terminal faz parte do layout para desktop do site e não está disponível em viewports estreitos.
 
 <div id="security">
-  ## Considerações de segurança {#security}
+  ## Considerações de segurança
 </div>
 
 O terminal web expõe uma sessão interativa semelhante a um shell para qualquer pessoa que consiga se autenticar no endpoint HTTP do ClickHouse, portanto as mesmas ressalvas aplicáveis ao protocolo HTTP também se aplicam aqui:
@@ -95,7 +95,7 @@ As sessões também contam para o limite global do servidor [`max_connections`](
 O handler também garante a conformidade com o protocolo WebSocket, conforme a RFC 6455: quadros do cliente sem máscara, opcodes reservados, quadros de controle grandes demais ou fragmentados e bits RSV reservados são rejeitados com códigos de fechamento de erro de protocolo.
 
 <div id="platform">
-  ## Disponibilidade da plataforma {#platform}
+  ## Disponibilidade da plataforma
 </div>
 
 O handler é compilado em todas as plataformas suportadas pelo ClickHouse. A camada de pseudoterminal usada pelo executor integrado do `clickhouse-client` é implementada com base em primitivas POSIX portáveis (`posix_openpt`/`grantpt`/`unlockpt`), com uma implementação específica para Linux que usa o `ptsname_r`, que é seguro para threads. Os links para `/webterminal` na página inicial do ClickHouse e em `/play` ficam ocultos automaticamente quando o endpoint não está disponível (por exemplo, quando `enable_webterminal` está definido como `false`).

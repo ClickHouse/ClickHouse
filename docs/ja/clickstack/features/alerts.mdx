@@ -16,7 +16,7 @@ ClickStack にはアラート機能が標準で備わっており、チームは
 アラート機能は ClickStack 上のデータ全体でシームレスに機能し、システムヘルスの追跡、パフォーマンス低下の検出、重要なビジネスイベントの監視に役立ちます。
 
 <div id="types-of-alerts">
-  ## アラートの種類 {#types-of-alerts}
+  ## アラートの種類
 </div>
 
 ClickStack では、アラートを作成する方法として、互いを補完する 2 つの方式 **検索アラート** と **ダッシュボードチャートアラート** をサポートしています。アラートを作成すると、そのアラートは検索またはチャートのいずれかに紐付けられます。
@@ -118,7 +118,7 @@ webhook 名は必須で、説明は任意です。そのほかに必要な設定
 利用できるサービス種別は、ClickStack Open Source と ClickStack Cloud とで異なる点に注意してください。詳細は[サービス種別のインテグレーション](#integrations)を参照してください。
 
 <div id="integrations">
-  ### サービス種別別インテグレーション {#integrations}
+  ### サービス種別別インテグレーション
 </div>
 
 ClickStack の alerts は、標準で次のサービス種別と連携できます。
@@ -182,13 +182,13 @@ ClickStack の alerts は、標準で次のサービス種別と連携できま�
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="チャートのアラートの削除" size="lg" />
 
 <div id="sql-based-alerts">
-  ## SQLベースのチャートアラート {#sql-based-alerts}
+  ## SQLベースのチャートアラート
 </div>
 
 SQLベースのチャートアラートでは、任意の ClickHouse SQL を記述してアラート条件を定義できます。これにより、フィルタリング、集計、計算を含め、あらゆる処理を完全に制御できます。つまり、SQL で表現できるものはすべてアラートにできます。
 
 <div id="supported-chart-types">
-  ### サポートされているチャートタイプ {#supported-chart-types}
+  ### サポートされているチャートタイプ
 </div>
 
 SQL ベースのアラートは、次の 3 つのチャート表示タイプでサポートされています。
@@ -237,7 +237,7 @@ SQLベースのチャートにアラートを作成するには、次の手順�
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### クエリ結果の解釈方法 {#sql-result-interpretation}
+  ### クエリ結果の解釈方法
 </div>
 
 アラートシステムは、しきい値と比較する対象を判断するために、SQLクエリが返すカラムを確認します。
@@ -247,13 +247,13 @@ SQLベースのチャートにアラートを作成するには、次の手順�
 * **グループカラム**: 数値カラムでもタイムスタンプカラムでもないカラム (例: `ServiceName`, `Environment`) は、グループ化の次元として扱われます。グループが存在する場合、グループ値の一意な組み合わせごとに個別に追跡され、それぞれに対してアラートが生成されます。ClickStack は、設定されたしきい値を超えた値を持つ各グループごとにアラートを送信します。グループは時系列チャートでのみ利用できます。
 
 <div id="query-params">
-  ### クエリパラメータとマクロ {#query-params}
+  ### クエリパラメータとマクロ
 </div>
 
 SQL アラートクエリでは、評価時に自動的に置き換えられるテンプレートパラメータとマクロをサポートしています。これらは、[SQL ベースのチャートを作成する](/ja/clickstack/features/dashboards/sql-visualizations)際に使用できるパラメータやマクロと同じものです。
 
 <div id="required-alert-parameters">
-  #### 必須および推奨パラメータ {#required-alert-parameters}
+  #### 必須および推奨パラメータ
 </div>
 
 Line グラフまたは Stacked Bar グラフのアラートに使用するクエリには、**必ず**インターバルパラメータまたはマクロ (`{intervalSeconds:Int64}`、`{intervalMilliseconds:Int64}`、`$__timeInterval(col)`、または `$__timeInterval_ms(col)`) を含める必要があります。アラートの実行時には、これらはアラートに設定された期間に置き換えられます。
@@ -267,11 +267,11 @@ Line グラフまたは Stacked Bar グラフのアラートに使用するク�
 </Warning>
 
 <div id="example-queries">
-  ### アラートクエリの例 {#example-queries}
+  ### アラートクエリの例
 </div>
 
 <div id="example-error-rate">
-  #### サービスごとのエラー率 (時系列) {#example-error-rate}
+  #### サービスごとのエラー率 (時系列)
 </div>
 
 いずれかのサービスのエラー率が 5% を超えた場合にアラートを発報します。また、トラフィックの少ないサービスでノイズの多いアラートが発生するのを避けるため、アラート期間内のリクエスト数が少なくとも 10 件あることを条件とします。
@@ -355,7 +355,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 このクエリは、ローリングウィンドウ計算を初期化するために、日付範囲の開始*前*の30インターバルを取得し、その後、最終出力を評価ウィンドウのみに絞り込みます。
 
 <div id="common-alert-scenarios">
-  ## 一般的なアラートのシナリオ {#common-alert-scenarios}
+  ## 一般的なアラートのシナリオ
 </div>
 
 HyperDX で活用できる、一般的なアラートのシナリオをいくつか紹介します。

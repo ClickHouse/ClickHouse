@@ -24,7 +24,7 @@ Postgres 내부에서 정규화되며, 리터럴은 제거되고 플레이스홀
 쿼리한 정확한 값은 텔레메트리 스트림에 들어가지 않습니다.
 
 <div id="open">
-  ## 쿼리 인사이트 열기 {#open}
+  ## 쿼리 인사이트 열기
 </div>
 
 Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 사이드바에서
@@ -91,7 +91,7 @@ Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 �
 <Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Database, User, Operation, Calls, Errors, Avg latency, P95, Max latency, Total runtime, Rows returned, Cache hit 컬럼과 함께 정규화된 쿼리별로 한 행씩 표시되는 느린 쿼리 패턴 테이블" size="lg" border />
 
 <div id="sort">
-  ### 의심되는 항목을 기준으로 정렬하기 {#sort}
+  ### 의심되는 항목을 기준으로 정렬하기
 </div>
 
 이 테이블은 기본적으로 **Total runtime** 내림차순으로 정렬됩니다. 이렇게
@@ -116,7 +116,7 @@ Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 �
 포함해 총 19개의 컬럼을 제공합니다.
 
 <div id="filters">
-  ### 테이블 범위 좁히기 {#filters}
+  ### 테이블 범위 좁히기
 </div>
 
 조사 중인 워크로드의 원하는 범위만 보이도록 테이블을
@@ -194,7 +194,7 @@ Application, Blks hit, CPU user, CPU sys, PID를 볼 수 있습니다. 이
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="쿼리 세부 정보 플라이아웃의 다음 화면으로, 데이터베이스, 사용자, 작업, 애플리케이션이 있는 쿼리 컨텍스트 섹션과 timestamp, OK 상태, server role, host id, duration, 행 수, 캐시 적중, CPU, 공유 block 읽기 수, 공유 block 적중 수에 대한 실행별 카운터가 있는 최근 실행 내역 카드를 보여 줍니다" size="md" border />
 
 <div id="counters">
-  ### 실행별 카운터 {#counters}
+  ### 실행별 카운터
 </div>
 
 최근 실행을 펼치면 시간이 어디에 쓰였는지 정확히 짚어주는
@@ -226,11 +226,11 @@ SQL 문별 텔레메트리는
 최근 실행 내역을 함께 반환합니다.
 
 <div id="how-it-works">
-  ## 동작 방식 {#how-it-works}
+  ## 동작 방식
 </div>
 
 <div id="how-normalized">
-  ### Postgres에서 정규화되며, 전송 전에 {#how-normalized}
+  ### Postgres에서 정규화되며, 전송 전에
 </div>
 
 `pg_stat_ch`는 parse-analyze 단계를 가로채 각 리터럴을
@@ -240,7 +240,7 @@ SQL 문별 텔레메트리는
 나가지 않습니다.
 
 <div id="how-overhead">
-  ### 데이터베이스에 부담을 최소화 {#how-overhead}
+  ### 데이터베이스에 부담을 최소화
 </div>
 
 프로듀서는 statement당 약 3%의 오버헤드를 추가합니다. enqueue 경로는
@@ -256,7 +256,7 @@ SQL 문별 텔레메트리는
 지속적인 대기와 잠금 경합(lock contention)을 파악하는 데 가장 유용합니다.
 
 <div id="how-raw-events">
-  ### 집계가 아닌 원시 이벤트 {#how-raw-events}
+  ### 집계가 아닌 원시 이벤트
 </div>
 
 `pg_stat_ch`는 샘플링이 적용된 상태에서 실행된 각 SQL 문(최상위 및
@@ -264,7 +264,7 @@ SQL 문별 텔레메트리는
 분석은 이 이벤트 스트림을 바탕으로 ClickHouse에서 계산됩니다.
 
 <div id="how-engine">
-  ### 고객이 사용하는 것과 동일한 엔진 {#how-engine}
+  ### 고객이 사용하는 것과 동일한 엔진
 </div>
 
 Insights 백엔드는 [ClickHouse Cloud](/ko/products/cloud/getting-started/intro)입니다.
@@ -274,7 +274,7 @@ Insights 백엔드는 [ClickHouse Cloud](/ko/products/cloud/getting-started/intr
 1주일 또는 1개월 범위로 분석하더라도 UI를 즉각적으로 사용할 수 있습니다.
 
 <div id="how-open-source">
-  ### 오픈 소스 {#how-open-source}
+  ### 오픈 소스
 </div>
 
 `pg_stat_ch`는 Apache 2.0 라이선스로 제공됩니다. 어떤 Postgres에서든 실행할 수 있고, 어떤

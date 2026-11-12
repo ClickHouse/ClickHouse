@@ -16,7 +16,7 @@ ClickStack 内置告警支持，使团队能够针对日志、指标和链路追
 告警功能可在整个 ClickStack 数据范围内无缝运行，帮助你跟踪系统健康状况、发现性能回退，并监控关键业务事件。
 
 <div id="types-of-alerts">
-  ## 告警类型 {#types-of-alerts}
+  ## 告警类型
 </div>
 
 ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表板图表告警**。告警创建后，会关联到相应的搜索或图表。
@@ -118,7 +118,7 @@ webhook 名称为必填项，描述为可选项。其他需要填写的设置取
 请注意，ClickStack 开源版与 ClickStack Cloud 提供的服务类型有所不同。请参阅[服务类型集成](#integrations)。
 
 <div id="integrations">
-  ### 服务类型集成 {#integrations}
+  ### 服务类型集成
 </div>
 
 ClickStack 告警可开箱即用地集成以下服务类型：
@@ -182,13 +182,13 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="删除图表告警" size="lg" />
 
 <div id="sql-based-alerts">
-  ## 基于 SQL 的图表告警 {#sql-based-alerts}
+  ## 基于 SQL 的图表告警
 </div>
 
 基于 SQL 的图表告警允许你编写任意 ClickHouse SQL 来定义告警条件。这样你就能完全控制过滤、聚合和计算——凡是能够用 SQL 表达的内容，都可以设置为告警。
 
 <div id="supported-chart-types">
-  ### 支持的图表类型 {#supported-chart-types}
+  ### 支持的图表类型
 </div>
 
 基于 SQL 的告警支持以下三种图表类型：
@@ -237,7 +237,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### 如何解读查询结果 {#sql-result-interpretation}
+  ### 如何解读查询结果
 </div>
 
 告警系统会检查 SQL 查询返回的列，以确定应将哪个值与阈值进行比较。
@@ -247,13 +247,13 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 * **分组列**：任何非数值、非时间戳列 (例如 `ServiceName`、`Environment`) 都会被视为分组维度。存在分组时，系统会分别跟踪每个唯一的分组值组合，并单独触发告警。对于每个值超过已配置阈值的分组，ClickStack 都会发送一条告警。分组仅适用于时间序列图表。
 
 <div id="query-params">
-  ### 查询参数和宏 {#query-params}
+  ### 查询参数和宏
 </div>
 
 SQL 告警查询支持模板参数和宏，它们会在评估时自动替换。这些参数和宏与[构建基于 SQL 的图表](/zh/clickstack/features/dashboards/sql-visualizations)时可用的完全相同。
 
 <div id="required-alert-parameters">
-  #### 必需参数与推荐参数 {#required-alert-parameters}
+  #### 必需参数与推荐参数
 </div>
 
 用于折线图或堆叠条形图告警的查询**必须**包含时间间隔参数或宏 (`{intervalSeconds:Int64}`、`{intervalMilliseconds:Int64}`、`$__timeInterval(col)` 或 `$__timeInterval_ms(col)`) 。告警执行时，该参数会被替换为告警配置的周期。
@@ -267,11 +267,11 @@ SQL 告警查询支持模板参数和宏，它们会在评估时自动替换。�
 </Warning>
 
 <div id="example-queries">
-  ### 告警查询示例 {#example-queries}
+  ### 告警查询示例
 </div>
 
 <div id="example-error-rate">
-  #### 每个服务的错误率 (时间序列) {#example-error-rate}
+  #### 每个服务的错误率 (时间序列)
 </div>
 
 当任一服务的错误率超过 5% 时触发告警；为避免低流量服务产生噪声告警，告警周期内的请求数至少需达到 10 个。
@@ -355,7 +355,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 请注意，该查询会在日期范围开始前拉取 30 个时间间隔的数据，为滚动窗口计算提供初始值，然后再将最终输出过滤为仅包含评估窗口的数据。
 
 <div id="common-alert-scenarios">
-  ## 常见告警场景 {#common-alert-scenarios}
+  ## 常见告警场景
 </div>
 
 以下是一些可在 HyperDX 中使用的常见告警场景：

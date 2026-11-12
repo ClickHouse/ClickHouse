@@ -18,7 +18,7 @@ Para empezar, [genere una API key](/es/products/cloud/features/admin-features/ap
 Si busca el endpoint equivalente para los servicios de [ClickHouse Managed Postgres](/es/products/managed-postgres/overview), consulte el [endpoint de Prometheus de ClickHouse Managed Postgres](/es/products/managed-postgres/monitoring/prometheus).
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## API del endpoint de Prometheus para obtener métricas de ClickHouse Cloud {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
+  ## API del endpoint de Prometheus para obtener métricas de ClickHouse Cloud
 </div>
 
 ### Referencia de la API {#api-reference}
@@ -44,7 +44,7 @@ Si busca el endpoint equivalente para los servicios de [ClickHouse Managed Postg
 Los esquemas completos de solicitud y respuesta para estos endpoints están disponibles en la [referencia de Cloud API](/es/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
-  ### Autenticación {#authentication}
+  ### Autenticación
 </div>
 
 Utiliza tu API key de ClickHouse Cloud para la autenticación básica:
@@ -66,7 +66,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### Respuesta de ejemplo {#sample-response}
+  ### Respuesta de ejemplo
 </div>
 
 ```response
@@ -130,7 +130,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### Etiquetas de métricas {#metric-labels}
+  ### Etiquetas de métricas
 </div>
 
 Todas las métricas tienen las siguientes etiquetas:
@@ -150,7 +150,7 @@ En ClickPipes, las métricas también tendrán las siguientes etiquetas:
 | clickpipe&#95;source | Tipo de origen de ClickPipe |
 
 <div id="information-metrics">
-  ### Métricas de información {#information-metrics}
+  ### Métricas de información
 </div>
 
 ClickHouse Cloud proporciona una métrica especial `ClickHouse_ServiceInfo`, que es un `gauge` y siempre tiene el valor `1`. Esta métrica contiene todas las **Etiquetas de métricas**, así como las siguientes etiquetas:
@@ -260,7 +260,7 @@ Cada destino también incluye la región, el proveedor de nube y las etiquetas d
 Los destinos detectados se recopilan con `filtered_metrics=true`. Para detectar destinos que recopilan el conjunto completo de métricas, añada `?filtered_metrics=false` a la URL de discovery. La especificación completa del endpoint está disponible en la [referencia de Cloud API](/es/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
-  ## Integración con Grafana {#integrating-with-grafana}
+  ## Integración con Grafana
 </div>
 
 Los usuarios disponen de dos formas principales de integrarse con Grafana:
@@ -270,7 +270,7 @@ Los usuarios disponen de dos formas principales de integrarse con Grafana:
 
 A continuación, proporcionamos instrucciones para usar estas opciones, centrándonos en los detalles específicos del endpoint de Prometheus de ClickHouse Cloud.
 
-### Grafana Cloud con endpoint de métricas {#grafana-cloud-with-metrics-endpoint}
+### Grafana Cloud con endpoint de métricas
 
 * Inicia sesión en tu cuenta de Grafana Cloud
 * Añade una nueva conexión seleccionando el **endpoint de métricas**
@@ -289,7 +289,7 @@ Una vez configurado, deberías ver las métricas en el menú desplegable, que pu
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Gráfico del explorador de métricas de Grafana" border />
 
-### Grafana Cloud con Alloy {#grafana-cloud-with-alloy}
+### Grafana Cloud con Alloy
 
 Si usas Grafana Cloud, puedes instalar Alloy desde el menú Alloy en Grafana siguiendo las instrucciones en pantalla:
 
@@ -340,7 +340,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Tenga en cuenta que el parámetro de configuración `honor_labels` debe establecerse en `true` para que la etiqueta de instancia se rellene correctamente.
 
-### Grafana autogestionado con Alloy {#grafana-self-managed-with-alloy}
+### Grafana autogestionado con Alloy
 
 Los usuarios de Grafana autogestionado pueden encontrar las instrucciones para instalar el agente Alloy [aquí](https://grafana.com/docs/alloy/latest/get-started/install/). Suponemos que los usuarios han configurado Alloy para enviar métricas de Prometheus al destino deseado. El componente `prometheus.scrape` que aparece a continuación hace que Alloy recopile métricas del Endpoint de ClickHouse Cloud. Suponemos que `prometheus.remote_write` recibe las métricas recopiladas. Ajuste la clave `forward_to` para que apunte al destino de destino si esta no existe.
 
@@ -378,7 +378,7 @@ Una vez configurado, deberías ver las métricas relacionadas con ClickHouse en 
 
 Ten en cuenta que el parámetro de configuración `honor_labels` debe establecerse en `true` para que la etiqueta de instancia se rellene correctamente.
 
-## Integración con Datadog {#integrating-with-datadog}
+## Integración con Datadog
 
 Puedes usar el [Agent](https://docs.datadoghq.com/agent/?tab=Linux) de Datadog y la [integración de OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) para recopilar métricas desde el Endpoint de ClickHouse Cloud. A continuación se muestra un ejemplo sencillo de configuración para este agente y esta integración. No obstante, ten en cuenta que quizá te convenga seleccionar solo las métricas que más te interesen. El ejemplo genérico que aparece a continuación exportará muchos miles de combinaciones de métricas e instancias que Datadog tratará como métricas personalizadas.
 
@@ -398,7 +398,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Integración de Datadog con Prometheus" />
 
-## Páginas relacionadas {#related}
+## Páginas relacionadas
 
 * [Resumen de monitorización](/es/products/cloud/features/monitoring/overview) — Compare todos los enfoques de monitorización para ClickHouse Cloud
 * [Monitorización en Cloud Console](/es/products/cloud/features/monitoring/cloud-console) — Dashboards integrados que no requieren herramientas externas

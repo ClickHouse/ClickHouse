@@ -104,11 +104,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها {#troubleshooting}
+  ### استكشاف الأخطاء وإصلاحها
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### لا يُجري HTTP Sink تجميعًا للرسائل على دفعات {#http-sink-doesnt-batch-messages}
+  #### لا يُجري HTTP Sink تجميعًا للرسائل على دفعات
 </div>
 
 وفقًا لـ [وثائق Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -119,11 +119,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. عند إضافة معلمات إلى عنوان URL الخاص بواجهة برمجة تطبيقات HTTP، قد ينتج عن كل سجل عنوان URL فريد. ولهذا السبب، يُعطَّل التجميع على دفعات عند استخدام معلمات URL إضافية.
 
 <div id="400-bad-request">
-  #### 400 طلب غير صالح {#400-bad-request}
+  #### 400 طلب غير صالح
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
+  ##### CANNOT_PARSE_QUOTED_STRING
 </div>
 
 إذا تعذّر HTTP Sink وظهرت الرسالة التالية عند إدراج كائن JSON في عمود `String`:
@@ -135,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 اضبط الإعداد `input_format_json_read_objects_as_strings=1` في عنوان URL كسلسلة مُرمَّزة `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### تحميل مجموعة بيانات GitHub (اختياري) {#load-the-github-dataset-optional}
+  ### تحميل مجموعة بيانات GitHub (اختياري)
 </div>
 
 لاحظ أن هذا المثال يحافظ على الحقول من النوع Array في مجموعة بيانات GitHub. نفترض أن لديك topic فارغًا باسم `github` في الأمثلة، ونستخدم [kcat](https://github.com/edenhill/kcat) لإدراج الرسائل في Kafka.

@@ -16,7 +16,7 @@ Las alertas pueden crearse directamente en la interfaz de HyperDX e integrarse c
 Las alertas funcionan de forma fluida con todos los datos de ClickStack, lo que le ayuda a supervisar el estado del sistema, detectar regresiones de rendimiento y monitorear eventos empresariales clave.
 
 <div id="types-of-alerts">
-  ## Tipos de alertas {#types-of-alerts}
+  ## Tipos de alertas
 </div>
 
 ClickStack admite dos formas complementarias de crear alertas: **Alertas de búsqueda** y **Alertas de gráficos del dashboard**. Una vez creada, la alerta se asocia a la búsqueda o al gráfico.
@@ -118,7 +118,7 @@ Se requiere un nombre para el webhook, mientras que las descripciones son opcion
 Tenga en cuenta que los tipos de servicio disponibles difieren entre ClickStack Open Source y ClickStack Cloud. Consulte [Integraciones de tipos de servicio](#integrations).
 
 <div id="integrations">
-  ### Integraciones por tipo de servicio {#integrations}
+  ### Integraciones por tipo de servicio
 </div>
 
 Las alertas de ClickStack incluyen integraciones listas para usar con los siguientes tipos de servicio:
@@ -154,7 +154,7 @@ Según el tipo de servicio, deberás proporcionar información diferente. En con
 * Cuerpo del webhook (opcional). Actualmente, el cuerpo admite las variables de plantilla `{{title}}`, `{{body}}` y `{{link}}`.
 
 <div id="managing-alerts">
-  ## Gestión de alertas {#managing-alerts}
+  ## Gestión de alertas
 </div>
 
 Las alertas se pueden gestionar de forma centralizada desde el panel de alertas situado en el lado izquierdo de HyperDX.
@@ -184,13 +184,13 @@ En el ejemplo siguiente, el botón `Remove Alert` eliminará la alerta del gráf
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Eliminar alerta del gráfico" size="lg" />
 
 <div id="sql-based-alerts">
-  ## Alertas de gráficos basadas en SQL {#sql-based-alerts}
+  ## Alertas de gráficos basadas en SQL
 </div>
 
 Las alertas de gráficos basadas en SQL te permiten escribir consultas arbitrarias en ClickHouse SQL para definir las condiciones de alerta. Esto te da control total sobre el filtrado, la agregación y los cálculos: cualquier cosa que puedas expresar en SQL puede convertirse en una alerta.
 
 <div id="supported-chart-types">
-  ### Tipos de gráficos compatibles {#supported-chart-types}
+  ### Tipos de gráficos compatibles
 </div>
 
 Las alertas basadas en SQL se admiten en tres tipos de visualización de gráficos:
@@ -239,7 +239,7 @@ Para crear una alerta en un gráfico basado en SQL:
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### Cómo se interpretan los resultados de la consulta {#sql-result-interpretation}
+  ### Cómo se interpretan los resultados de la consulta
 </div>
 
 El sistema de alertas inspecciona las columnas que devuelve su consulta SQL para determinar qué debe compararse con el umbral.
@@ -249,13 +249,13 @@ El sistema de alertas inspecciona las columnas que devuelve su consulta SQL para
 * **Columnas de grupo**: Cualquier columna que no sea numérica ni de timestamp (p. ej., `ServiceName`, `Environment`) se trata como una dimensión de agrupación. Cuando hay grupos, cada combinación única de valores de grupo se rastrea y genera alertas por separado. ClickStack enviará una alerta para cada grupo cuyo valor supere el umbral configurado. Los grupos solo están disponibles para los gráficos de series temporales.
 
 <div id="query-params">
-  ### Parámetros de consulta y macros {#query-params}
+  ### Parámetros de consulta y macros
 </div>
 
 Las consultas SQL de alertas admiten parámetros de plantilla y macros que se sustituyen automáticamente durante la evaluación. Son los mismos parámetros y macros disponibles al [crear un gráfico basado en SQL](/es/clickstack/features/dashboards/sql-visualizations).
 
 <div id="required-alert-parameters">
-  #### Parámetros obligatorios y recomendados {#required-alert-parameters}
+  #### Parámetros obligatorios y recomendados
 </div>
 
 Las consultas que se usan para alertas de gráficos de líneas o de barras apiladas **deben** incluir un parámetro o una macro de intervalo (`{intervalSeconds:Int64}`, `{intervalMilliseconds:Int64}`, `$__timeInterval(col)`, o `$__timeInterval_ms(col)`). Durante la ejecución de la alerta, se reemplazará por el período configurado para la alerta.
@@ -269,11 +269,11 @@ Las consultas que se usan para alertas **deberían** incluir un filtro de rango 
 </Warning>
 
 <div id="example-queries">
-  ### Consultas de ejemplo para alertas {#example-queries}
+  ### Consultas de ejemplo para alertas
 </div>
 
 <div id="example-error-rate">
-  #### Tasa de errores por servicio (serie temporal) {#example-error-rate}
+  #### Tasa de errores por servicio (serie temporal)
 </div>
 
 Genera una alerta cuando algún servicio tenga una tasa de errores superior al 5 %, con al menos 10 solicitudes en el período de alerta para evitar alertas innecesarias en servicios con poco tráfico.
@@ -357,7 +357,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 Ten en cuenta que la consulta obtiene 30 intervalos *antes* del inicio del rango de fechas para inicializar los cálculos de la ventana móvil y luego filtra la salida final para mostrar solo la ventana de evaluación.
 
 <div id="common-alert-scenarios">
-  ## Escenarios comunes de alertas {#common-alert-scenarios}
+  ## Escenarios comunes de alertas
 </div>
 
 Aquí tienes algunos escenarios comunes de alertas para los que puedes usar HyperDX:

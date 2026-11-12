@@ -18,7 +18,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스에 해당하는 엔드포인트를 찾고 있다면 [ClickHouse Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)를 참조하십시오.
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## ClickHouse Cloud 메트릭을 조회하기 위한 Prometheus 엔드포인트 API {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
+  ## ClickHouse Cloud 메트릭을 조회하기 위한 Prometheus 엔드포인트 API
 </div>
 
 ### API 참조 {#api-reference}
@@ -44,7 +44,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이러한 엔드포인트의 전체 요청 및 응답 스키마는 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus)에서 확인할 수 있습니다.
 
 <div id="authentication">
-  ### 인증 {#authentication}
+  ### 인증
 </div>
 
 기본 인증에는 ClickHouse Cloud API Key를 사용하십시오:
@@ -66,7 +66,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### 응답 예시 {#sample-response}
+  ### 응답 예시
 </div>
 
 ```response
@@ -130,7 +130,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### 메트릭 레이블 {#metric-labels}
+  ### 메트릭 레이블
 </div>
 
 모든 메트릭에는 다음 레이블이 포함됩니다:
@@ -150,7 +150,7 @@ ClickPipes의 경우 메트릭에 다음 레이블도 포함됩니다:
 | clickpipe&#95;source | ClickPipe 소스 유형 |
 
 <div id="information-metrics">
-  ### 정보 메트릭 {#information-metrics}
+  ### 정보 메트릭
 </div>
 
 ClickHouse Cloud는 값이 항상 `1`인 `gauge` 타입의 특수 메트릭 `ClickHouse_ServiceInfo`를 제공합니다. 이 메트릭에는 모든 **메트릭 레이블**과 함께 다음 레이블이 포함됩니다:
@@ -260,7 +260,7 @@ scrape_configs:
 디스커버리를 통해 발견된 대상은 `filtered_metrics=true`로 스크레이프됩니다. 전체 메트릭 세트를 스크레이프하는 대상을 발견하려면 디스커버리 URL에 `?filtered_metrics=false`를 추가하십시오. 전체 엔드포인트 사양은 [Cloud API 참조](/ko/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)에서 확인할 수 있습니다.
 
 <div id="integrating-with-grafana">
-  ## Grafana와 통합하기 {#integrating-with-grafana}
+  ## Grafana와 통합하기
 </div>
 
 Grafana와 통합하는 주요 방법은 두 가지입니다.
@@ -270,7 +270,7 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 아래에서는 이러한 옵션을 사용하는 방법을 설명하며, ClickHouse Cloud Prometheus 엔드포인트와 관련된 세부 사항을 중심으로 다룹니다.
 
-### Grafana Cloud와 메트릭 엔드포인트 {#grafana-cloud-with-metrics-endpoint}
+### Grafana Cloud와 메트릭 엔드포인트
 
 * Grafana Cloud 계정에 로그인하세요
 * **메트릭 엔드포인트**를 선택하여 새 연결을 추가하세요
@@ -289,7 +289,7 @@ Grafana와 통합하는 주요 방법은 두 가지입니다.
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 메트릭 탐색기 차트" border />
 
-### Alloy를 사용하는 Grafana Cloud {#grafana-cloud-with-alloy}
+### Alloy를 사용하는 Grafana Cloud
 
 Grafana Cloud를 사용 중이라면 Grafana에서 Alloy 메뉴로 이동한 후, 화면의 안내에 따라 Alloy를 설치할 수 있습니다:
 
@@ -340,7 +340,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
-### Alloy를 사용하는 자가 관리형 Grafana {#grafana-self-managed-with-alloy}
+### Alloy를 사용하는 자가 관리형 Grafana
 
 자가 관리형 Grafana 사용자는 Alloy 에이전트 설치 지침을 [여기](https://grafana.com/docs/alloy/latest/get-started/install/)에서 확인할 수 있습니다. Alloy가 Prometheus 메트릭을 원하는 대상으로 전송하도록 이미 구성되어 있다고 가정합니다. 아래의 `prometheus.scrape` 컴포넌트는 Alloy가 ClickHouse Cloud 엔드포인트를 스크레이프하게 합니다. `prometheus.remote_write`가 스크레이프된 메트릭을 수신한다고 가정합니다. 이 구성이 없다면 `forward_to key`를 대상에 맞게 조정하십시오.
 
@@ -378,7 +378,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 인스턴스 레이블이 올바르게 채워지려면 `honor_labels` 구성 매개변수를 `true`로 설정해야 합니다.
 
-## Datadog와 통합하기 {#integrating-with-datadog}
+## Datadog와 통합하기
 
 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux)와 [OpenMetrics 통합](https://docs.datadoghq.com/integrations/openmetrics/)을 사용해 ClickHouse Cloud 엔드포인트에서 메트릭을 수집할 수 있습니다. 아래에는 이 Agent와 통합에 대한 간단한 예시 구성이 나와 있습니다. 다만, 실제로는 가장 필요한 메트릭만 선별하는 것이 좋습니다. 아래의 일괄 예시는 수천 개의 메트릭-인스턴스 조합을 내보내며, Datadog는 이를 커스텀 메트릭으로 처리합니다.
 
@@ -398,7 +398,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus Datadog 통합" />
 
-## 관련 페이지 {#related}
+## 관련 페이지
 
 * [모니터링 개요](/ko/products/cloud/features/monitoring/overview) — ClickHouse Cloud의 모든 모니터링 방법을 비교합니다
 * [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 외부 도구 없이 사용할 수 있는 기본 제공 대시보드

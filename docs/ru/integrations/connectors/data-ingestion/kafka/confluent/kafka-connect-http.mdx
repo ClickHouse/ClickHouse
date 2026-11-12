@@ -104,11 +104,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Steps>
 
 <div id="troubleshooting">
-  ### Устранение неполадок {#troubleshooting}
+  ### Устранение неполадок
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink не выполняет батчинг сообщений {#http-sink-doesnt-batch-messages}
+  #### HTTP Sink не выполняет батчинг сообщений
 </div>
 
 Из [документации по Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -119,11 +119,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 2. При добавлении параметров в URL HTTP API для каждой записи может формироваться уникальный URL. По этой причине батчинг отключается при использовании дополнительных параметров URL.
 
 <div id="400-bad-request">
-  #### 400 Некорректный запрос {#400-bad-request}
+  #### 400 Некорректный запрос
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
+  ##### CANNOT_PARSE_QUOTED_STRING
 </div>
 
 Если при вставке объекта JSON в столбец `String` в HTTP Sink возникает следующая ошибка:
@@ -135,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Установите параметр `input_format_json_read_objects_as_strings=1` в URL в виде закодированной строки `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Загрузите набор данных GitHub (необязательно) {#load-the-github-dataset-optional}
+  ### Загрузите набор данных GitHub (необязательно)
 </div>
 
 Обратите внимание: в этом примере сохраняются поля типа Array из набора данных GitHub. Мы предполагаем, что в примерах у вас есть пустой топик github, и для вставки сообщений в Kafka используем [kcat](https://github.com/edenhill/kcat).

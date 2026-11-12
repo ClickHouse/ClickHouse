@@ -23,7 +23,7 @@ UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION
 تَقصُر عبارة `IN PARTITION` التحديثَ على التقسيمات المُدرجة. وبدونها، في جداول عائلة `ReplicatedMergeTree`، وعندما يكون الإعداد [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ar/reference/settings/session-settings/optimize) مُفعَّلًا (وهو الوضع الافتراضي)، يكتشف ClickHouse تلقائيًا شروط مفتاح التقسيم في `filter_expr` ويحدّث التقسيمات المتأثرة فقط. أما في جداول `MergeTree` غير المنسوخة، فاستخدم عبارة `IN PARTITION` صريحة لقصر التحديث على تقسيمات محددة.
 
 <div id="examples">
-  ## أمثلة {#examples}
+  ## أمثلة
 </div>
 
 ```sql
@@ -57,7 +57,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 يمكن تنفيذ استعلام [`DELETE` خفيف الوزن](/ar/reference/statements/delete) باعتباره `UPDATE` خفيفًا بدلًا من عملية mutation من نوع `ALTER UPDATE`. ويُتحكَّم في آلية تنفيذ `DELETE` خفيف الوزن من خلال الإعداد [`lightweight_delete_mode`](/ar/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## اعتبارات الأداء {#performance-considerations}
+  ## اعتبارات الأداء
 </div>
 
 **مزايا التحديثات خفيفة الوزن:**
@@ -80,7 +80,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ويُتحكَّم في اتساق التحديثات خفيفة الوزن المتزامنة من خلال الإعدادات [`update_sequential_consistency`](/ar/reference/settings/session-settings/update#update_sequential_consistency) و[`update_parallel_mode`](/ar/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## أذونات `UPDATE` {#update-permissions}
+  ## أذونات `UPDATE`
 </div>
 
 يتطلب `UPDATE` امتياز `ALTER UPDATE`. لتمكين عبارات `UPDATE` على جدول محدد لمستخدم معيّن، شغّل:
@@ -90,7 +90,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## تفاصيل التنفيذ {#details-of-the-implementation}
+  ## تفاصيل التنفيذ
 </div>
 
 أجزاء التصحيح هي نفسها الأجزاء العادية، لكنها لا تحتوي إلا على الأعمدة المحدَّثة وعدة أعمدة خاصة بالنظام:
@@ -129,7 +129,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 ويكون وضع join أبطأ ويتطلب ذاكرة أكبر من وضع merge، لكنه يُستخدم بوتيرة أقل.
 
-## محتوى ذي صلة {#related-content}
+## محتوى ذي صلة
 
 * [`ALTER UPDATE`](/ar/reference/statements/alter/update) - عمليات `UPDATE` الثقيلة
 * [`DELETE` خفيف الوزن](/ar/reference/statements/delete) - عمليات `DELETE` خفيفة الوزن

@@ -16,7 +16,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/ar/clickpipes/_cloudsql_iam
 هذا دليل إرشادي خطوة بخطوة لتهيئة مثيل Cloud SQL for MySQL لديك لنسخ بياناته عبر MySQL ClickPipe.
 
 <div id="enable-binlog-retention-gcp">
-  ## تمكين الاحتفاظ بـ binlog {#enable-binlog-retention-gcp}
+  ## تمكين الاحتفاظ بـ binlog
 </div>
 
 إن binlog عبارة عن مجموعة من ملفات السجل التي تحتوي على معلومات عن تعديلات البيانات التي أُجريت على مثيل خادم MySQL، كما أن ملفات binlog مطلوبة لعملية النسخ المتماثل.
@@ -44,7 +44,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/ar/clickpipes/_cloudsql_iam
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="ضبط علامات binlog في GCP" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## تكوين مستخدم لقاعدة البيانات {#configure-database-user-gcp}
+  ## تكوين مستخدم لقاعدة البيانات
 </div>
 
 اتصل بمثيل Cloud SQL MySQL الخاص بك باستخدام المستخدم الجذر، ثم نفّذ الأوامر التالية:
@@ -73,7 +73,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/ar/clickpipes/_cloudsql_iam
 <CloudSQLIAMAuthentication engine="mysql" />
 
 <div id="configure-network-access-gcp-mysql">
-  ## تهيئة الوصول إلى الشبكة {#configure-network-access-gcp-mysql}
+  ## تهيئة الوصول إلى الشبكة
 </div>
 
 إذا كنت تريد تقييد حركة المرور إلى مثيل Cloud SQL الخاص بك، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/networking/static-ips) إلى قائمة عناوين IP المسموح بها لمثيل Cloud SQL MySQL الخاص بك.

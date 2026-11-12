@@ -23,7 +23,7 @@ UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION
 Секция `IN PARTITION` ограничивает обновление перечисленными партициями. Без неё в таблицах семейства `ReplicatedMergeTree`, когда включена настройка [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ru/reference/settings/session-settings/optimize) (по умолчанию), ClickHouse автоматически определяет условия ключа партиционирования в `filter_expr` и обновляет только затронутые партиции. В нереплицируемых таблицах `MergeTree` используйте явную секцию `IN PARTITION`, чтобы ограничить обновление конкретными партициями.
 
 <div id="examples">
-  ## Примеры {#examples}
+  ## Примеры
 </div>
 
 ```sql
@@ -57,7 +57,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 Запрос [легковесного `DELETE`](/ru/reference/statements/delete) можно выполнить как легковесный `UPDATE`, а не как мутацию `ALTER UPDATE`. Реализация легковесного `DELETE` управляется настройкой [`lightweight_delete_mode`](/ru/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Особенности производительности {#performance-considerations}
+  ## Особенности производительности
 </div>
 
 **Преимущества легковесных обновлений:**
@@ -80,7 +80,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 Согласованность параллельных легковесных обновлений определяется настройками [`update_sequential_consistency`](/ru/reference/settings/session-settings/update#update_sequential_consistency) и [`update_parallel_mode`](/ru/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Разрешения для UPDATE {#update-permissions}
+  ## Разрешения для UPDATE
 </div>
 
 Для `UPDATE` требуется привилегия `ALTER UPDATE`. Чтобы разрешить команды `UPDATE` для конкретной таблицы указанному пользователю, выполните:
@@ -90,7 +90,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Детали реализации {#details-of-the-implementation}
+  ## Детали реализации
 </div>
 
 Патч-части — это обычные части, но они содержат только обновлённые столбцы и несколько системных столбцов:
@@ -129,7 +129,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 Режим JOIN медленнее и требует больше памяти, чем режим слияния, но используется реже.
 
-## Связанные материалы {#related-content}
+## Связанные материалы
 
 * [`ALTER UPDATE`](/ru/reference/statements/alter/update) — тяжёлые операции `UPDATE`
 * [Легковесный `DELETE`](/ru/reference/statements/delete) — операции легковесного `DELETE`

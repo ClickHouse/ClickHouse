@@ -104,11 +104,11 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
 </Steps>
 
 <div id="troubleshooting">
-  ### Solução de problemas {#troubleshooting}
+  ### Solução de problemas
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### O HTTP Sink não agrupa mensagens em lote {#http-sink-doesnt-batch-messages}
+  #### O HTTP Sink não agrupa mensagens em lote
 </div>
 
 Da [documentação do Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -119,11 +119,11 @@ Da [documentação do Sink](https://docs.confluent.io/kafka-connectors/http/curr
 2. Ao adicionar parâmetros à URL da API HTTP, cada registro pode resultar em uma URL exclusiva. Por esse motivo, o agrupamento em lote é desativado ao usar parâmetros de URL adicionais.
 
 <div id="400-bad-request">
-  #### 400 requisição inválida {#400-bad-request}
+  #### 400 requisição inválida
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
+  ##### CANNOT_PARSE_QUOTED_STRING
 </div>
 
 Se o HTTP Sink falhar e exibir a seguinte mensagem ao inserir um objeto JSON em uma coluna `String`:
@@ -135,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Defina a configuração `input_format_json_read_objects_as_strings=1` na URL como uma string codificada `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Carregue o conjunto de dados do GitHub (opcional) {#load-the-github-dataset-optional}
+  ### Carregue o conjunto de dados do GitHub (opcional)
 </div>
 
 Observe que este exemplo preserva os campos `Array` do conjunto de dados do GitHub. Pressupomos que, nos exemplos, você tenha um tópico `github` vazio e use o [kcat](https://github.com/edenhill/kcat) para inserir mensagens no Kafka.

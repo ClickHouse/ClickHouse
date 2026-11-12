@@ -16,7 +16,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/fr/clickpipes/_cloudsql_iam
 Voici un guide pas à pas pour configurer votre instance Cloud SQL for MySQL afin de répliquer ses données via le MySQL ClickPipe.
 
 <div id="enable-binlog-retention-gcp">
-  ## Activer la conservation du journal binaire {#enable-binlog-retention-gcp}
+  ## Activer la conservation du journal binaire
 </div>
 
 Le journal binaire est un ensemble de fichiers de log contenant des informations sur les modifications de données apportées à une instance de serveur MySQL, et ces fichiers sont nécessaires à la réplication.
@@ -44,7 +44,7 @@ Faites ensuite défiler la page jusqu’à la section `Flags`, puis ajoutez les 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="Définition des flags binlog dans GCP" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## Configurer un utilisateur de base de données {#configure-database-user-gcp}
+  ## Configurer un utilisateur de base de données
 </div>
 
 Connectez-vous à votre instance MySQL Cloud SQL en tant qu&#39;utilisateur root et exécutez les commandes suivantes :

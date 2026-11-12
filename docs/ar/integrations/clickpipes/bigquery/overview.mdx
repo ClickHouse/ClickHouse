@@ -13,7 +13,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## الميزات {#features}
+  ## الميزات
 </div>
 
 ### التحميل الأولي {#initial-load}
@@ -49,7 +49,7 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 </Note>
 
 <div id="data-type-mapping">
-  ## تعيين أنواع البيانات {#data-type-mapping}
+  ## تعيين أنواع البيانات
 </div>
 
 [أنواع بيانات BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -76,28 +76,28 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 | `STRUCT` (RECORD)   | `String`              |                                                                 |
 
 <div id="access-control">
-  ## التحكم في الوصول {#access-control}
+  ## التحكم في الوصول
 </div>
 
 <div id="authentication">
-  ### المصادقة {#authentication}
+  ### المصادقة
 </div>
 
-#### بيانات اعتماد حساب الخدمة {#service-account-credentials}
+#### بيانات اعتماد حساب الخدمة
 
 يُجري ClickPipes المصادقة على مشروعك في Google Cloud باستخدام [مفتاح حساب الخدمة](https://docs.cloud.google.com/iam/docs/keys-create-delete). نوصي بإنشاء حساب الخدمة مخصّص بأقل مجموعة مطلوبة من [الأذونات](#permissions) للسماح لـ ClickPipes بتصدير البيانات من BigQuery، وتحميلها إلى حاوية GCS مرحلية، ثم قراءتها إلى ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="إنشاء مفتاح حساب خدمة بأذونات BigQuery وCloud Storage" size="lg" border />
 
-#### Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
+#### Workload Identity في GCP (تجريبي)
 
 اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب [أدوار BigQuery وGCS](#permissions) الموضحة أدناه، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. لا تقدّم بيانات اعتماد حساب الخدمة عند استخدام طريقة المصادقة هذه.
 
 <div id="permissions">
-  ### الأذونات {#permissions}
+  ### الأذونات
 </div>
 
-#### BigQuery {#bigquery}
+#### BigQuery
 
 يحتاج حساب الخدمة الذي تستخدمه ClickPipes، سواء قدّمته بنفسك أو كان مُدارًا عبر Workload Identity، إلى أدوار BigQuery التالية:
 
@@ -113,7 +113,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage {#cloud-storage}
+  #### Cloud Storage
 </div>
 
 يجب أن يكون لدى حساب الخدمة أدوار Cloud Storage التالية:

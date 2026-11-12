@@ -45,7 +45,7 @@ de 5 minutes pour le dernier jour, et d&#39;1 heure pour la dernière semaine ou
 graphiques restent réactifs.
 
 <div id="overview">
-  ## Vue d’ensemble {#overview}
+  ## Vue d’ensemble
 </div>
 
 La vue d’ensemble se présente sous la forme d’une grille 3×3 de neuf panneaux. Les deux premières lignes couvrent
@@ -94,7 +94,7 @@ sur une seule et même ligne.
 <Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Table des requêtes lentes récurrentes montrant une ligne par requête normalisée avec les colonnes Database, User, Operation, Calls, Errors, Avg latency, P95, Max latency, Total runtime, Rows returned et Cache hit" size="lg" border />
 
 <div id="sort">
-  ### Trier selon ce que vous soupçonnez {#sort}
+  ### Trier selon ce que vous soupçonnez
 </div>
 
 Le tableau est trié par défaut par **Durée d’exécution totale** par ordre décroissant — de cette
@@ -119,7 +119,7 @@ Le tableau des patterns expose 19 colonnes au total, y compris la ventilation
 par percentile, le taux de réussite du cache et le temps CPU par pattern.
 
 <div id="filters">
-  ### Affiner la table {#filters}
+  ### Affiner la table
 </div>
 
 Filtrez la table en fonction de la partie de votre charge de travail que vous
@@ -173,7 +173,7 @@ Pour une description de chaque événement, consultez la
 [référence des événements d&#39;attente de Postgres](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE).
 
 <div id="detail">
-  ## Volet de détail {#detail}
+  ## Volet de détail
 </div>
 
 Cliquez sur n’importe quelle ligne du tableau des patterns ou des requêtes récentes pour ouvrir à droite le volet **Détail de la
@@ -200,7 +200,7 @@ Le volet se présente sous la forme d’une vue unique à défilement comportant
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Suite du volet de détail de la requête, montrant la section Contexte de la requête avec la base de données, l’utilisateur, l’opération et l’application, ainsi qu’une carte Exécutions récentes avec l’horodatage, le statut OK, le rôle du serveur, l’identifiant de l’hôte et des compteurs par exécution pour la durée, les lignes, les accès au cache réussis, le CPU, les blocs partagés lus et les blocs partagés touchés" size="md" border />
 
 <div id="counters">
-  ### Compteurs par exécution {#counters}
+  ### Compteurs par exécution
 </div>
 
 Développez une exécution récente pour afficher les compteurs qui
@@ -232,11 +232,11 @@ qui renvoie les métriques agrégées d’un modèle ainsi que ses
 exécutions récentes.
 
 <div id="how-it-works">
-  ## Fonctionnement {#how-it-works}
+  ## Fonctionnement
 </div>
 
 <div id="how-normalized">
-  ### Normalisée dans Postgres, avant le wire {#how-normalized}
+  ### Normalisée dans Postgres, avant le wire
 </div>
 
 `pg_stat_ch` intercepte la phase parse-analyze, remplace chaque littéral par un
@@ -246,7 +246,7 @@ l&#39;instruction, c&#39;est ce pattern mis en cache qui est associé à l&#39;�
 exacte avec ses valeurs ne quitte jamais la base de données.
 
 <div id="how-overhead">
-  ### Sans impacter la base de données {#how-overhead}
+  ### Sans impacter la base de données
 </div>
 
 Le producteur ajoute environ 3 % de surcharge par instruction. Le chemin de mise en file d’attente
@@ -262,7 +262,7 @@ entièrement entre deux échantillons et ne pas apparaître : ces vues sont donc
 utiles pour repérer les attentes prolongées et la contention de verrou.
 
 <div id="how-raw-events">
-  ### Événements bruts, non agrégés {#how-raw-events}
+  ### Événements bruts, non agrégés
 </div>
 
 `pg_stat_ch` émet un événement brut par statement exécuté (principal ou
@@ -270,7 +270,7 @@ imbriqué), selon l’échantillonnage appliqué. Les percentiles, classements e
 ventilations des requêtes sont calculés dans ClickHouse à partir de ce flux d’événements.
 
 <div id="how-engine">
-  ### Le même moteur que celui de nos clients {#how-engine}
+  ### Le même moteur que celui de nos clients
 </div>
 
 Le backend d’Insights, c’est [ClickHouse Cloud](/fr/products/cloud/getting-started/intro).
@@ -280,7 +280,7 @@ et des agrégations en moins d’une seconde sur des milliards de lignes maintie
 l’UI réactive lorsque vous explorez les données sur une semaine ou un mois.
 
 <div id="how-open-source">
-  ### Open source {#how-open-source}
+  ### Open source
 </div>
 
 `pg_stat_ch` est sous licence Apache 2.0. Utilisez-le avec n’importe quel Postgres et envoyez les données vers n’importe quel

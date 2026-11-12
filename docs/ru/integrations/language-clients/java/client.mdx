@@ -18,7 +18,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   Клиентская библиотека Java для взаимодействия с сервером базы данных через его протоколы. Текущая реализация поддерживает только [HTTP-интерфейс](/ru/concepts/features/interfaces/http).
   Библиотека предоставляет собственный API для отправки запросов на сервер. Также библиотека содержит инструменты для работы с различными бинарными форматами данных (RowBinary* &amp; Native*).
 
-  ## Setup {#setup}
+  ## Setup
 
   * Maven Central (веб-страница проекта): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * Ночные сборки (ссылка на репозиторий): https://central.sonatype.com/repository/maven-snapshots/
@@ -53,7 +53,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Инициализация {#initialization}
+  ## Инициализация
 
   Объект Client инициализируется с помощью `com.clickhouse.client.api.Client.Builder#build()`. Каждый клиент имеет собственный контекст, и между клиентами не разделяются объекты.
   Builder предоставляет методы конфигурации для удобной настройки.
@@ -70,7 +70,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   `Client` реализует `AutoCloseable` и должен быть закрыт, когда больше не нужен.
 
-  ### Аутентификация {#authentication}
+  ### Аутентификация
 
   Аутентификация настраивается для каждого клиента на этапе инициализации. Поддерживаются три метода аутентификации: по паролю, по токену доступа, по SSL-сертификату клиента.
 
@@ -114,7 +114,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       * убедиться, что в базе данных задано то же значение: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (запрос выведет `auth_params` с чем-то вроде ` {"common_names":["some_user"]}`)
   </Note>
 
-  ### Пул соединений {#connection-pooling}
+  ### Пул соединений
 
   `Client` использует Apache HttpClient 5 с внутренним пулом HTTP-соединений. Каждая операция берёт соединение из пула, отправляет запрос, получает ответ в потоковом режиме и возвращает соединение в пул.
 
@@ -129,7 +129,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | Стратегия повторного использования | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO`                           | Стратегия выделения соединений из пула (`FIFO` или `LIFO`).                                                     |
   | Пул соединений                     | `enableConnectionPool(boolean enable)`                         | `true`                           | Включить или отключить пулинг HTTP-соединений.                                                                  |
 
-  #### Рекомендуемая конфигурация пула соединений {#recommended-connection-pool-configuration}
+  #### Рекомендуемая конфигурация пула соединений
 
   ```java showLineNumbers
   Client client = new Client.Builder()
@@ -143,14 +143,14 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
           .build();
   ```
 
-  ## Конфигурация {#configuration}
+  ## Конфигурация
 
   Все настройки определяются методами экземпляра (они же методы конфигурации), которые чётко задают область видимости и контекст каждого значения.
   Основные параметры конфигурации определяются в одной области видимости (клиента или операции) и не переопределяют друг друга.
 
   Конфигурация задаётся при создании клиента. См. `com.clickhouse.client.api.Client.Builder`.
 
-  ## Конфигурация клиента {#client-configuration}
+  ## Конфигурация клиента
 
   <Tabs>
     <Tab title="Подключение & конечные точки">
@@ -273,7 +273,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   <br />
 
-  ### Идентификация клиента {#client-identification}
+  ### Идентификация клиента
 
   В журнале запросов есть два поля, по которым можно определить приложение, из которого был отправлен запрос: `client_name` и `http_user_agent`. Нативный TCP-протокол использует
   `client_name` для идентификации приложения. HTTP-протокол использует `http_user_agent` для идентификации приложения. В билдере клиента есть метод `setClientName`, который задаёт корректные значения
@@ -295,7 +295,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Приложение может задать собственный HTTP-заголовок `User-Agent` для идентификации. При этом строка `clickhouse-java-v2/0.9.6-SNAPSHOT` будет добавлена в конец заголовка.
 
-  ### Идентификация операции {#operation-identification}
+  ### Идентификация операции
 
   Log запросов содержит ещё два поля — `query_id` и `log_comment`, — которые можно использовать для идентификации операции и добавления дополнительных сведений в log запросов.
 
@@ -313,7 +313,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   querySettings.logComment("some-comment");
   ```
 
-  ### Настройки сервера {#server-settings}
+  ### Настройки сервера
 
   Настройки на стороне сервера можно задать на уровне клиента один раз при создании (см. метод `serverSetting` класса `Builder`) и на уровне операции (см. `serverSetting` для класса настроек операции).
 
@@ -340,7 +340,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ⚠️ Если параметры задаются через метод `setOption` (будь то `Client.Builder` или класс настроек операции), имя настройки сервера должно иметь префикс `clickhouse_setting_`. В этом случае может пригодиться `com.clickhouse.client.api.ClientConfigProperties#serverSetting()`.
 
-  ### Пользовательские HTTP-заголовки {#custom-http-headers}
+  ### Пользовательские HTTP-заголовки
 
   Пользовательские HTTP-заголовки можно задать для всех операций (на уровне клиента) или для отдельной операции (на уровне операции). Настройки операции переопределяют одноимённые заголовки, заданные на уровне клиента.
 
@@ -368,11 +368,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
   ```
 
-  ## Возможности ClickHouse Cloud {#clickhouse-cloud-features}
+  ## Возможности ClickHouse Cloud
 
   Возможности, доступные при подключении к [ClickHouse Cloud](https://clickhouse.com/cloud).
 
-  ### Маршрутизация с учётом реплик (CLOUD) {#replica-aware-routing}
+  ### Маршрутизация с учётом реплик (CLOUD)
 
   ClickHouse Cloud может закреплять связанные HTTP-запросы за одной репликой. Передайте заголовок `X-ClickHouse-Replica-Tag`, и прокси Cloud будет направлять все запросы с одинаковой меткой на одну и ту же реплику. Это полезно для объектов уровня сеанса, например временных таблиц, для повторного использования локального кэша реплики, а также для обеспечения согласованности чтения после записи.
   Подробнее: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
@@ -394,11 +394,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Чтобы настроить заголовок для отдельной операции, задайте его в `QuerySettings`, `InsertSettings` или `CommandSettings`, а не в построителе клиента.
 
-  ### JWT-аутентификация (CLOUD) {#jwt-authentication}
+  ### JWT-аутентификация (CLOUD)
 
   [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt) позволяет аутентифицировать пользователей с помощью JSON Web Tokens (JWT) в ClickHouse Cloud. Вместо заранее созданных пользователей базы данных ClickHouse динамически создаёт **эфемерных пользователей** на основе утверждений, встроенных в каждый токен.
 
-  #### Начальная настройка {#initial-configuration}
+  #### Начальная настройка
 
   Чтобы настроить начальную JWT-аутентификацию на клиенте, используйте `useBearerTokenAuth(token)` (метод автоматически добавляет префикс `Bearer_`.
   (см. [документацию по HTTP-интерфейсу](/ru/concepts/features/security/external-authenticators/jwt#http-interface) ) при создании экземпляра `Client`:
@@ -418,7 +418,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     `useBearerTokenAuth(token)` автоматически добавляет префикс `Bearer ` к значению HTTP-заголовка `Authorization`.
   </Note>
 
-  #### Обновление токена во время выполнения {#updating-token-at-runtime}
+  #### Обновление токена во время выполнения
 
   Поскольку JWT недолговечны, а эфемерные пользователи существуют лишь в течение времени жизни токена, новые JWT-токены следует задавать **до** истечения срока действия текущего токена, чтобы ни одна операция не завершилась ошибкой.
 
@@ -435,9 +435,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Все последующие запросы через экземпляр `Client` будут использовать обновлённый JWT-токен.
 
-  ## Общие определения {#common-definitions}
+  ## Общие определения
 
-  ### ClickHouseFormat {#clickhouseformat}
+  ### ClickHouseFormat
 
   Перечисление [поддерживаемых форматов](/ru/reference/formats/index). Включает все форматы, поддерживаемые ClickHouse.
 
@@ -531,9 +531,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | [Markdown](/ru/reference/formats/Markdown)                                                                          |   -  |  raw  |
   | [Form](/ru/reference/formats/Form)                                                                                  |  raw |   -   |
 
-  ## API вставки {#insert-api}
+  ## API вставки
 
-  ### insert(String tableName, InputStream data, ClickHouseFormat format) {#insertstring-tablename-inputstream-data-clickhouseformat-format}
+  ### insert(String tableName, InputStream data, ClickHouseFormat format)
 
   Принимает данные в виде `InputStream` байтов в указанном формате. Предполагается, что `data` закодированы в формате `format`.
 
@@ -574,7 +574,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ```
 
-  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings) {#insertstring-tablename-listlt-data-insertsettings-settings}
+  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
 
   Отправляет запрос на запись в базу данных. Список объектов преобразуется в эффективный формат и затем отправляется на сервер. Класс элементов списка должен быть заранее зарегистрирован с помощью метода `register(Class, TableSchema)`.
 
@@ -610,7 +610,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### InsertSettings {#insertsettings}
+  ### InsertSettings
 
   Параметры для операций вставки.
 
@@ -629,7 +629,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                                           |
   | `setOption(String option, Object value)`        | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                                                     |
 
-  ### InsertResponse {#insertresponse}
+  ### InsertResponse
 
   Объект ответа, содержащий результат операции вставки. Доступен только в том случае, если клиент получил ответ от сервера.
 
@@ -642,7 +642,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `OperationMetrics getMetrics()` | Возвращает объект с метриками операции.                                                        |
   | `String getQueryId()`           | Возвращает Query id, назначенный операции приложением (через настройки операции) или сервером. |
 
-  ## API запросов {#query-api}
+  ## API запросов
 
   **Выбор формата**
 
@@ -662,7 +662,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * Начиная с версии `0.11.0`, клиент задаёт значение `format` по умолчанию на уровне клиента, а не на уровне операции. Благодаря этому существующий код
     работает без изменений, а в новом коде можно использовать предложение `FORMAT`, установив для `format` на уровне клиента значение `null`.
 
-  ### query(String sqlQuery) {#querystring-sqlquery}
+  ### query(String sqlQuery)
 
   Отправляет `sqlQuery` как есть. Формат ответа задаётся настройками запроса. `QueryResponse` будет содержать ссылку на поток ответа, который должен быть прочитан (consumed) ридер-ом для поддерживаемого формата.
 
@@ -711,7 +711,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   // put business logic outside of the reading block to release http connection asap.
   ```
 
-  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings) {#querystring-sqlquery-mapltstring-object-queryparams-querysettings-settings}
+  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
 
   Отправляет `sqlQuery` без изменений. Также отправляет параметры запроса, чтобы сервер мог скомпилировать SQL-выражение.
 
@@ -759,7 +759,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   ```
 
-  ### queryAll(String sqlQuery) {#queryallstring-sqlquery}
+  ### queryAll(String sqlQuery)
 
   Запрашивает данные в формате `RowBinaryWithNamesAndTypes`. Возвращает результат в виде коллекции. Производительность чтения аналогична reader, однако для хранения всего набора данных требуется больше памяти.
 
@@ -797,7 +797,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### QuerySettings {#querysettings}
+  ### QuerySettings
 
   Параметры конфигурации для операций с запросами.
 
@@ -819,7 +819,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                  | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                 |
   | `setOption(String option, Object value)`          | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                           |
 
-  ### QueryResponse {#queryresponse}
+  ### QueryResponse
 
   Объект ответа, содержащий результат выполнения запроса. Доступен только в том случае, если клиент получил ответ от сервера.
 
@@ -835,14 +835,14 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `String getQueryId()`           | Возвращает Query id, назначенный операции приложением (через настройки операции) или сервером.    |
   | `TimeZone getTimeZone()`        | Возвращает часовой пояс, который следует использовать для обработки типов Date/DateTime в ответе. |
 
-  ### Примеры {#examples}
+  ### Примеры
 
   * Пример кода доступен в [репозитории](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)
   * Справочник по Spring Service [реализации](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service)
 
-  ## Общий API {#common-api}
+  ## Общий API
 
-  ### getTableSchema(String table) {#gettableschemastring-table}
+  ### getTableSchema(String table)
 
   Загружает схему таблицы для `table`.
 
@@ -863,7 +863,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Возвращает объект `TableSchema` со списком столбцов таблицы.
 
-  ### getTableSchemaFromQuery(String sql) {#gettableschemafromquerystring-sql}
+  ### getTableSchemaFromQuery(String sql)
 
   Извлекает схему из SQL-оператора.
 
@@ -881,9 +881,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Возвращает объект `TableSchema` со столбцами, соответствующими выражению `sql`.
 
-  ### TableSchema {#tableschema}
+  ### TableSchema
 
-  ### register(Class&lt;?&gt; clazz, TableSchema schema) {#registerclasslt-clazz-tableschema-schema}
+  ### register(Class&lt;?&gt; clazz, TableSchema schema)
 
   Компилирует слой сериализации и десериализации для Java-класса, используемого при записи/чтении данных с помощью `schema`. Метод создаёт сериализатор и десериализатор для пары геттер/сеттер и соответствующего столбца.
   Соответствие столбца определяется путём извлечения его имени из имени метода. Например, `getFirstName` будет соответствовать столбцу `first_name` или `firstname`.
@@ -906,7 +906,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
   ```
 
-  ## Примеры использования {#usage-examples}
+  ## Примеры использования
 
   Полный код примеров хранится в репозитории в [папке](https://github.com/ClickHouse/clickhouse-java/tree/main/examples) &#39;example&#96;:
 
@@ -914,7 +914,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) — пример использования клиента в приложении Spring Boot.
   * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) — пример использования клиента в приложении на Ktor (Kotlin).
 
-  ## Чтение данных {#reading-data}
+  ## Чтение данных
 
   Есть два распространённых способа чтения данных:
 
@@ -926,7 +926,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Примечание:** стриминговый подход требует быстрого чтения данных, иначе может возникнуть тайм-аут записи на сервере, так как данные считываются напрямую из сетевого потока.
 
-  ### Чтение массивов {#reading-arrays}
+  ### Чтение массивов
 
   **Методы `ClickHouseBinaryFormatReader`**
 
@@ -978,13 +978,13 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Обсервабилити и мониторинг {#v2-o11y}
+  ## Обсервабилити и мониторинг
 
   Java-клиент ClickHouse (V2) предоставляет встроенные возможности обсервабилити, основанные на семантических соглашениях OpenTelemetry и метриках Micrometer. Клиент позволяет отслеживать длительность операций, пропускную способность, повторные попытки, статистику выполнения на сервере, состояние пула соединений и спаны распределённой трассировки.
 
   Полноценный пример приложения Spring Boot, построенного по принципам продакшн-приложений и демонстрирующего конфигурацию Клиента V2, использование пула соединений, передачу контекста трассировки через границы `@Async` и полную интеграцию телеметрии, см. в модуле `examples/demo-spring-service` этого репозитория.
 
-  ### API обсервабилити в Client Builder {#v2-o11y-builder-api}
+  ### API обсервабилити в Client Builder
 
   `Client.Builder` предоставляет три основных метода для настройки обсервабилити и сбора метрик:
 
@@ -1041,9 +1041,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Отправляемые метрики {#v2-o11y-metrics}
+  ### Отправляемые метрики
 
-  #### Операционные метрики {#operational-metrics}
+  #### Операционные метрики
 
   Метрики, экспортируемые через `MetricsRecorder`, соответствуют семантическим соглашениям OpenTelemetry для метрик клиентов баз данных (`MetricName` и `MetricAttribute`):
 
@@ -1054,7 +1054,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `clickhouse.client.operation.count`                  | Counter (`{operation}`) | Общее количество завершённых операций клиента с группировкой по результату.                                                                            |
   | `clickhouse.client.operation.retries`                | Counter (`{retry}`)     | Количество повторных попыток выполнения операций клиента.                                                                                              |
 
-  #### Атрибуты / метки метрик {#metric-attributes-tags}
+  #### Атрибуты / метки метрик
 
   Счётчики (meters), создаваемые `MicrometerMetricsRecorder`, содержат метки с низкой мощностью (`MetricAttribute`):
 
@@ -1067,7 +1067,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `db.response.status_code` | Код ошибки сервера ClickHouse при сбое.                              | `60`                                        |
   | `error.type`              | Имя класса исключения при ошибке или `none` при успешном выполнении. | `com.clickhouse.client.api.ServerException` |
 
-  #### Метрики пула соединений {#connection-pool-metrics}
+  #### Метрики пула соединений
 
   При вызове `registerClientMetrics(meterRegistry, "groupName")` в Micrometer регистрируются метрики типа Gauge для пула HTTP-соединений:
 
@@ -1077,7 +1077,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * `httpcomponents.httpclient.pool.route.max.default`: настроенное по умолчанию максимальное количество соединений на маршрут.
   * `httpcomponents.httpclient.connect.time`: скользящее среднее время установления соединения.
 
-  #### API метрик ответа {#response-metrics-api}
+  #### API метрик ответа
 
   Помимо средств записи метрик, подробная статистика выполнения доступна непосредственно в объектах ответа (`QueryResponse`, `InsertResponse`) через `OperationMetrics`:
 
@@ -1098,14 +1098,14 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Регистрируемые спаны {#v2-o11y-spans}
+  ### Регистрируемые спаны
 
   Трассировка в Клиенте V2 создаёт спаны двух типов, организованные в иерархию «родитель — дочерний элемент»:
 
   1. **Спан операции**: представляет высокоуровневую операцию клиента (`QUERY <database>` или `INSERT <database>.<table_name>`). Запускается в контексте трассировки текущего потока (`Context.current()`), благодаря чему операции с базой данных встраиваются в активный спан трассировки вызывающего кода.
   2. **Спан транспортного запроса**: представляет отдельную попытку выполнения транспортного HTTP-запроса (`POST`). Создаётся как дочерний спан соответствующего спана операции. При каждой повторной попытке внутри спана операции создаётся новый спан транспортного запроса.
 
-  #### Атрибуты спана {#v2-o11y-span-attributes}
+  #### Атрибуты спана
 
   Спаны содержат стандартные атрибуты OpenTelemetry (`SpanAttribute`):
 
@@ -1150,7 +1150,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     ```
   </Note>
 
-  ### Разработка пользовательских рекордеров {#v2-o11y-custom-recorders}
+  ### Разработка пользовательских рекордеров
 
   Приложения, использующие собственные системы обсервабилити, могут реализовать пользовательские рекордеры, расширив `DefaultMetricsRecorder` (для метрик) или `DefaultSpanRecorder` (для трассировки).
 
@@ -1162,7 +1162,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (интеграция с OpenTelemetry для трассировки)
   * `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (интеграция с Micrometer для метрик)
 
-  ## Руководство по миграции {#migration_guide}
+  ## Руководство по миграции
 
   Старый клиент (V1) использовал `com.clickhouse.client.ClickHouseClient#builder` в качестве точки входа. Новый клиент (V2) использует аналогичный подход с `com.clickhouse.client.api.Client.Builder`. Основные
   отличия:
@@ -1171,7 +1171,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * меньше источников конфигурации: один передаётся билдеру, а другой — через настройки операции (`QuerySettings`, `InsertSettings`). В предыдущей версии конфигурация задавалась для каждого узла, а в некоторых случаях также загружались
     переменные окружения.
 
-  ### Соответствие параметров конфигурации {#migration_from_v1_config}
+  ### Соответствие параметров конфигурации
 
   В V1 есть 3 класса enum, связанных с конфигурацией:
 
@@ -1370,14 +1370,14 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ### Общие различия {#general-differences}
+  ### Общие различия
 
   * Клиент V2 использует меньше проприетарных классов, что повышает переносимость. Например, V2 работает с любой реализацией `java.io.InputStream` для
     записи данных на сервер.
   * Настройка `async` в Client V2 по умолчанию имеет значение `off`. Это означает отсутствие дополнительных потоков и больший контроль приложения над клиентом. Для большинства сценариев использования эта настройка должна оставаться `off`. При включении `async` для запроса создаётся отдельный поток. Это имеет смысл только при использовании исполнителя, управляемого приложением
     (см. `com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor`)
 
-  ### Запись данных {#writing-data}
+  ### Запись данных
 
   * используйте любую реализацию `java.io.InputStream`. V1 `com.clickhouse.data.ClickHouseInputStream` поддерживается, но использовать её НЕ рекомендуется.
   * Как только обнаруживается конец входного потока, он обрабатывается соответствующим образом. Перед этим необходимо закрыть выходной поток запроса.
@@ -1429,7 +1429,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * Доступен новый низкоуровневый API `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)`. `com.clickhouse.client.api.DataStreamWriter` предназначен для реализации пользовательской логики записи данных. Например, для чтения данных из
     очереди.
 
-  ### Чтение данных {#reading-data-2}
+  ### Чтение данных
 
   * По умолчанию данные читаются в формате `RowBinaryWithNamesAndTypes`. Сейчас при необходимости привязки данных поддерживается только этот формат.
   * Данные можно считать как набор записей с помощью метода `List<GenericRecord> com.clickhouse.client.api.Client#queryAll(java.lang.String)`. Он считывает данные в память и закрывает соединение. Никакой дополнительной обработки не требуется. `GenericRecord` предоставляет доступ к данным и поддерживает некоторые преобразования.
@@ -1454,7 +1454,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     Эта библиотека скоро устареет. Для новых проектов используйте актуальный [Java-клиент](/ru/integrations/language-clients/java/client)
   </Warning>
 
-  ## Настройка {#v1-setup}
+  ## Настройка
 
   <Tabs>
     <Tab title="Maven">
@@ -1512,7 +1512,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## Инициализация {#v1-initialization}
+  ## Инициализация
 
   Формат URL-адреса подключения: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`, например:
 
@@ -1533,7 +1533,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
   ```
 
-  ## API запросов {#v1-query-api}
+  ## API запросов
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1547,7 +1547,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## API стриминговых запросов {#v1-streaming-query-api}
+  ## API стриминговых запросов
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1567,7 +1567,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   См. [полный пример кода](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73) в [репозитории](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client).
 
-  ## API вставки {#v1-insert-api}
+  ## API вставки
 
   ```java showLineNumbers
 
@@ -1590,9 +1590,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Пример [кода](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622) приведён здесь.
 
-  ## Возможности {#v1-features}
+  ## Возможности
 
-  ### Сжатие {#v1-compression}
+  ### Сжатие
 
   По умолчанию клиент будет использовать сжатие LZ4, для которого требуется следующая зависимость:
 
@@ -1639,7 +1639,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Подробнее о различных вариантах сжатия см. в [документации по сжатию](/ru/guides/clickhouse/data-modelling/compression/compression-modes).
 
-  ### Несколько запросов {#v1-multiple-queries}
+  ### Несколько запросов
 
   Выполнять несколько запросов в потоке-воркере подряд в рамках одного и того же сеанса:
 
@@ -1655,7 +1655,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   List<ClickHouseResponseSummary> results = future.get();
   ```
 
-  ### Именованные параметры {#v1-named-parameters}
+  ### Именованные параметры
 
   Параметры можно передавать по имени, не полагаясь исключительно на их позицию в списке параметров. Эта возможность доступна с помощью функции `params`.
 
@@ -1707,7 +1707,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     Другие типы, такие как `Integer`, `UUID`, `Array` и `Enum`, будут автоматически преобразованы в `params`.
   </Info>
 
-  ## Обнаружение узлов {#v1-node-discovery}
+  ## Обнаружение узлов
 
   Java-клиент поддерживает автоматическое обнаружение узлов ClickHouse. По умолчанию эта функция отключена. Чтобы включить её вручную, задайте для `auto_discovery` значение `true`:
 
@@ -1731,7 +1731,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | node&#95;discovery&#95;interval | `0`          | Интервал обнаружения узлов в миллисекундах; нулевое или отрицательное значение означает однократное обнаружение.                          |
   | node&#95;discovery&#95;limit    | `100`        | Максимальное число узлов, которые можно обнаружить за один раз; нулевое или отрицательное значение означает, что ограничение отсутствует. |
 
-  ### Балансировка нагрузки {#v1-load-balancing}
+  ### Балансировка нагрузки
 
   Java-клиент выбирает узел ClickHouse для отправки запросов согласно политике балансировки нагрузки. В общем случае политика балансировки нагрузки отвечает за следующее:
 
@@ -1750,7 +1750,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | node&#95;check&#95;interval   | `0`                                      | Интервал проверки узла в миллисекундах; отрицательное число считается равным нулю. Состояние узла проверяется, если с момента последней проверки прошло указанное количество времени.<br />Разница между `health_check_interval` и `node_check_interval` заключается в том, что параметр `health_check_interval` планирует фоновую задачу, которая проверяет состояние списка узлов (всех или неисправных), а `node_check_interval` задаёт, сколько времени должно пройти с момента последней проверки конкретного узла                                   |
   | check&#95;all&#95;nodes       | `false`                                  | Выполнять ли проверку состояния для всех узлов или только для неисправных.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-  ### Переключение при отказе и повторные попытки {#v1-failover-and-retry}
+  ### Переключение при отказе и повторные попытки
 
   Java-клиент предоставляет параметры конфигурации для настройки поведения failover и retry при сбоях запросов:
 
@@ -1760,7 +1760,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | retry                              | `0`          | Максимальное количество повторных попыток для запроса. Нулевое или отрицательное значение означает, что повторные попытки не выполняются. Повторная попытка отправляет запрос на тот же узел и выполняется только в том случае, если ClickHouse server возвращает код ошибки `NETWORK_ERROR`                                       |
   | repeat&#95;on&#95;session&#95;lock | `true`       | Следует ли повторять выполнение, пока сеанс заблокирован, до истечения тайм-аута (согласно `session_timeout` или `connect_timeout`). Неудачный запрос повторяется, если ClickHouse server возвращает код ошибки `SESSION_IS_LOCKED`                                                                                                |
 
-  ### Добавление пользовательских HTTP-заголовков {#v1-adding-custom-http-headers}
+  ### Добавление пользовательских HTTP-заголовков
 
   HTTP-транспорт принимает дополнительные заголовки запроса через свойство `custom_http_headers` (`ClickHouseHttpOption.CUSTOM_HEADERS`). Каждый заголовок задаётся в формате `Name=Value`. Несколько заголовков перечисляются через запятую. Запятую внутри значения экранируйте как `\,`. Символ `=` внутри значения считается частью значения.
 
@@ -1787,11 +1787,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
           .executeAndWait();
   ```
 
-  ## Возможности ClickHouse Cloud {#v1-clickhouse-cloud-features}
+  ## Возможности ClickHouse Cloud
 
   Возможности, доступные при подключении к [ClickHouse Cloud](https://clickhouse.com/cloud).
 
-  ### Маршрутизация с учётом реплик (CLOUD) {#v1-replica-aware-routing}
+  ### Маршрутизация с учётом реплик (CLOUD)
 
   ClickHouse Cloud может закреплять связанные HTTP-запросы за одной репликой. Передавайте заголовок `X-ClickHouse-Replica-Tag`, чтобы прокси Cloud направлял все запросы с одинаковой меткой на одну и ту же реплику. Это полезно для объектов уровня сеанса, таких как временные таблицы, для повторного использования локального кэша реплики, а также для обеспечения согласованности чтения после записи.
   Подробнее: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.

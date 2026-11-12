@@ -45,7 +45,7 @@ intervalos de agregação se ajusta automaticamente — intervalos de 1 minuto p
 para a última semana ou o último mês — para que os gráficos continuem responsivos.
 
 <div id="overview">
-  ## Visão geral {#overview}
+  ## Visão geral
 </div>
 
 A visão geral é uma grade 3×3 com nove painéis. As duas primeiras linhas abrangem
@@ -94,7 +94,7 @@ se consolidem na mesma linha.
 <Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Tabela de padrões de consultas lentas mostrando uma linha por consulta normalizada, com colunas de Banco de dados, Usuário, Operação, Chamadas, Erros, Latência média, P95, Latência máxima, Tempo total de execução, Linhas retornadas e Acerto no cache" size="lg" border />
 
 <div id="sort">
-  ### Ordene pelo que você suspeita {#sort}
+  ### Ordene pelo que você suspeita
 </div>
 
 A tabela usa por padrão **Tempo total de execução** em ordem decrescente — quando você ordena dessa
@@ -119,7 +119,7 @@ A tabela de padrões expõe 19 colunas no total, incluindo a
 distribuição por percentil, a taxa de acerto do cache e o tempo de CPU por padrão.
 
 <div id="filters">
-  ### Restrinja a tabela {#filters}
+  ### Restrinja a tabela
 </div>
 
 Filtre a tabela para o recorte da sua carga de trabalho que você está
@@ -194,7 +194,7 @@ O painel lateral tem um layout único com rolagem e cinco seções:
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Continuação do painel lateral de detalhes da consulta, mostrando a seção Contexto da consulta com banco de dados, usuário, operação e aplicação, e um cartão de Execuções recentes com timestamp, status OK, função do servidor, ID do host e contadores por execução para duração, linhas, acerto de cache, CPU, blocos compartilhados lidos e blocos compartilhados atendidos pelo cache" size="md" border />
 
 <div id="counters">
-  ### Contadores por execução {#counters}
+  ### Contadores por execução
 </div>
 
 Expanda uma execução recente para ver os contadores que mostram exatamente onde
@@ -225,11 +225,11 @@ que retorna as métricas agregadas de um padrão junto com suas
 execuções recentes.
 
 <div id="how-it-works">
-  ## Como funciona {#how-it-works}
+  ## Como funciona
 </div>
 
 <div id="how-normalized">
-  ### Normalizado no Postgres, antes de sair pela rede {#how-normalized}
+  ### Normalizado no Postgres, antes de sair pela rede
 </div>
 
 `pg_stat_ch` intercepta a fase de parse/análise, substitui cada literal por um
@@ -239,7 +239,7 @@ instrução, é esse padrão em cache que é associado ao evento. A
 instrução exata com valores nunca sai do banco de dados.
 
 <div id="how-overhead">
-  ### Sem atrapalhar o banco de dados {#how-overhead}
+  ### Sem atrapalhar o banco de dados
 </div>
 
 O produtor adiciona cerca de 3% de sobrecarga por instrução. O fluxo de enfileiramento
@@ -255,7 +255,7 @@ inteiramente no intervalo entre duas amostras e não aparecer, por isso essas vi
 úteis para identificar Waits prolongadas e contenção de bloqueio.
 
 <div id="how-raw-events">
-  ### Eventos brutos, não agregados {#how-raw-events}
+  ### Eventos brutos, não agregados
 </div>
 
 `pg_stat_ch` emite um evento bruto para cada instrução executada (de nível superior e
@@ -263,7 +263,7 @@ aninhada), sujeito à amostragem. Percentis de consultas, classificações e
 detalhamentos são calculados no ClickHouse a partir desse fluxo de eventos.
 
 <div id="how-engine">
-  ### O mesmo engine que nossos clientes usam {#how-engine}
+  ### O mesmo engine que nossos clientes usam
 </div>
 
 O backend do Insights é o [ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro).
@@ -273,7 +273,7 @@ e agregações em menos de um segundo sobre bilhões de linhas mantêm a
 UI interativa enquanto você explora uma semana ou um mês de dados.
 
 <div id="how-open-source">
-  ### Código aberto {#how-open-source}
+  ### Código aberto
 </div>
 
 `pg_stat_ch` é licenciado sob a Apache 2.0. Execute-o em qualquer Postgres e envie para qualquer

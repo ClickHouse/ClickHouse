@@ -13,7 +13,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## Funcionalidades {#features}
+  ## Funcionalidades
 </div>
 
 ### Carga inicial {#initial-load}
@@ -49,7 +49,7 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 </Note>
 
 <div id="data-type-mapping">
-  ## Mapeamento de tipos de dados {#data-type-mapping}
+  ## Mapeamento de tipos de dados
 </div>
 
 [Tipos de dados do BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -76,28 +76,28 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 | `STRUCT` (RECORD)        | `String`                   |                                                                              |
 
 <div id="access-control">
-  ## Controle de acesso {#access-control}
+  ## Controle de acesso
 </div>
 
 <div id="authentication">
-  ### Autenticação {#authentication}
+  ### Autenticação
 </div>
 
-#### Credenciais da conta de serviço {#service-account-credentials}
+#### Credenciais da conta de serviço
 
 O ClickPipes se autentica no seu projeto do Google Cloud usando uma [chave de conta de serviço](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos criar uma conta de serviço dedicada com o conjunto mínimo de [permissões](#permissions) necessárias para permitir que o ClickPipes exporte dados do BigQuery, carregue-os no bucket de staging do GCS e os leia no ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Criando uma chave de conta de serviço com permissões do BigQuery e do Cloud Storage" size="lg" border />
 
-#### Workload Identity do GCP (Beta) {#gcp-workload-identity}
+#### Workload Identity do GCP (Beta)
 
 Siga o [guia de Workload Identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter a service account gerenciada no contexto do serviço ClickPipes. Conceda a ela as [Funções do BigQuery e do GCS](#permissions) listadas abaixo e crie o pipe com a autenticação `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Não forneça credenciais de service account ao usar este método de autenticação.
 
 <div id="permissions">
-  ### Permissões {#permissions}
+  ### Permissões
 </div>
 
-#### BigQuery {#bigquery}
+#### BigQuery
 
 A service account usada pelo ClickPipes, seja fornecida por você ou gerenciada por meio de Workload Identity, precisa destas funções do BigQuery:
 
@@ -113,7 +113,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage {#cloud-storage}
+  #### Cloud Storage
 </div>
 
 A conta de serviço deve ter os seguintes papéis do Cloud Storage:

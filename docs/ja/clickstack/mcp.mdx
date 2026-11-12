@@ -18,7 +18,7 @@ ClickStack には、AIアシスタントがオブザーバビリティデータ�
 </Frame>
 
 <div id="availability">
-  ## 提供状況 {#availability}
+  ## 提供状況
 </div>
 
 MCPサーバーは、以下の ClickStack のデプロイ形態で利用できます。
@@ -37,20 +37,20 @@ MCPサーバーは、以下の ClickStack のデプロイ形態で利用でき�
 </Info>
 
 <div id="managed-clickstack">
-  ## ClickStack on ClickHouse Cloud {#managed-clickstack}
+  ## ClickStack on ClickHouse Cloud
 </div>
 
 ClickStack on ClickHouse Cloud は、Cloud MCP エンドポイント `https://mcp.clickhouse.cloud/clickstack` 経由で接続し、OAuth 2.0 で認証します。このエンドポイントでは API key 認証はサポートされていません。
 
 <div id="managed-prerequisites">
-  ### 前提条件 {#managed-prerequisites}
+  ### 前提条件
 </div>
 
 * [ClickStack が有効になっている](/ja/clickstack/deployment/managed)稼働中の ClickHouse Cloud サービス
 * サービスで [MCP を有効にする](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) — Cloud コンソールを開き、**Connect** をクリックして **Connect with MCP** を選択し、トグルをオンにします
 
 <div id="managed-endpoint">
-  ### エンドポイント {#managed-endpoint}
+  ### エンドポイント
 </div>
 
 ```text
@@ -60,7 +60,7 @@ https://mcp.clickhouse.cloud/clickstack
 認証には OAuth 2.0 を使用します。MCP client が初めて接続する際に、ClickHouse Cloud の認証情報でサインインするためのブラウザウィンドウが開きます。API key は必要ありません。
 
 <div id="managed-connecting-a-client">
-  ### MCP client の接続 {#managed-connecting-a-client}
+  ### MCP client の接続
 </div>
 
 各クライアントは、初回接続時に OAuth フローを自動的に処理します。
@@ -137,13 +137,13 @@ https://mcp.clickhouse.cloud/clickstack
 </Tabs>
 
 <div id="managed-service-override">
-  ### 特定のサービスを指定する {#managed-service-override}
+  ### 特定のサービスを指定する
 </div>
 
 `x-service-id` ヘッダーがない場合、リクエストの送信先は、アカウントで最初にプロビジョニングされ使用されている ClickStack サービスにデフォルト設定されます。別のサービスを指定するには、MCP client の設定で `x-service-id: <YOUR_SERVICE_ID>` をヘッダーとして渡してください。
 
 <div id="oss-byoc">
-  ## Open Source と BYOC {#oss-byoc}
+  ## Open Source と BYOC
 </div>
 
 Open Source および BYOC のデプロイメントでは、ClickStack インスタンスに組み込まれた MCP エンドポイントを Bearer トークン認証で使用します。
@@ -160,7 +160,7 @@ Open Source および BYOC のデプロイメントでは、ClickStack インス
 </Note>
 
 <div id="managed-endpoint">
-  ### エンドポイント {#oss-endpoint}
+  ### エンドポイント
 </div>
 
 MCPサーバーは、ClickStack のフロントエンドURLの `/api/mcp` パスで利用できます。たとえば、デフォルトのローカルデプロイメントでは、URLは `http://localhost:8080/api/mcp` です。デフォルト設定を変更している場合は、`localhost:8080` をご利用のインスタンスのホスト名とポートに置き換えてください。
@@ -172,7 +172,7 @@ MCPサーバーは、ClickStack のフロントエンドURLの `/api/mcp` パス
 MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランスポートを使用します。
 
 <div id="managed-connecting-a-client">
-  ### MCP client の接続 {#oss-connecting-a-client}
+  ### MCP client の接続
 </div>
 
 `<YOUR_CLICKSTACK_URL>` はインスタンス URL (例: `http://localhost:8080`) に、`<YOUR_API_KEY>` は Personal API Access Key に置き換えてください。
@@ -261,7 +261,7 @@ MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランス
 </Tabs>
 
 <div id="capabilities">
-  ## MCP でできること {#capabilities}
+  ## MCP でできること
 </div>
 
 接続すると、AIアシスタントは ClickStack の主要な領域にわたるさまざまなツールを利用できるようになります。具体的には次のとおりです。
@@ -277,7 +277,7 @@ MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランス
 利用できるツールの内容は、今後拡張される可能性があります。MCP client は接続時に利用可能なツールを自動的に検出します。
 
 <div id="multi-team">
-  ## 複数チームでの利用 (OSS/BYOC) {#multi-team}
+  ## 複数チームでの利用 (OSS/BYOC)
 </div>
 
 これは Open Source と BYOC のデプロイメントにのみ適用されます。ClickStack on ClickHouse Cloud については、[特定のサービスを対象にする](#managed-service-override) を参照してください。
@@ -287,11 +287,11 @@ MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランス
 アクセス可能なチームと現在アクティブなチームを確認するには、MCP client のチーム一覧ツールを使用してください。
 
 <div id="troubleshooting">
-  ## トラブルシューティング {#troubleshooting}
+  ## トラブルシューティング
 </div>
 
 <div id="troubleshooting-managed">
-  ### ClickStack on ClickHouse Cloud {#troubleshooting-managed}
+  ### ClickStack on ClickHouse Cloud
 </div>
 
 <Accordion title="OAuth フローが完了しない">
@@ -310,7 +310,7 @@ MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランス
 </Accordion>
 
 <div id="troubleshooting-oss">
-  ### Open Source と BYOC {#troubleshooting-oss}
+  ### Open Source と BYOC
 </div>
 
 <Accordion title="403 の authentication error が発生する">

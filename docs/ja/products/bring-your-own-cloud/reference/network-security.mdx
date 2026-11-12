@@ -45,13 +45,13 @@ GCP では、`container.googleapis.com` を制限する VPC Service Controls の
 次のセクションでは、**Tailscale** プライベートネットワーク をトラブルシューティングおよび任意の管理アクセスに使用する方法について説明します。
 
 <div id="tailscale-private-network">
-  ## Tailscale Private Network {#tailscale-private-network}
+  ## Tailscale Private Network
 </div>
 
 Tailscale は、ClickHouse Cloud の管理サービスとお客様の BYOC デプロイメント間を結ぶ、ゼロトラストのプライベートネットワーク接続を提供します。このセキュアなチャネルにより、ClickHouse エンジニアは、インバウンドのパブリックネットワークアクセスや複雑な VPN 構成を必要とせずに、トラブルシューティングや管理操作を実施できます。エージェント自体はアウトバウンド専用の接続を確立し、Tailscale 協調サービスに到達するにはアウトバウンドのインターネットアクセスが必要です。
 
 <div id="tailscale-overview">
-  ### 概要 {#tailscale-overview}
+  ### 概要
 </div>
 
 Tailscale は、ClickHouse のコントロールプレーン (ClickHouse の VPC 内) とお客様の BYOC データプレーン (お客様の VPC 内) の間に、暗号化されたプライベートネットワークトンネルを確立します。この接続は、以下の用途にのみ使用されます。
@@ -65,7 +65,7 @@ Tailscale は、ClickHouse のコントロールプレーン (ClickHouse の VPC
 </Warning>
 
 <div id="how-tailscale-works">
-  ### BYOC における Tailscale の仕組み {#how-tailscale-works}
+  ### BYOC における Tailscale の仕組み
 </div>
 
 <Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
@@ -84,7 +84,7 @@ Tailscale 経由でアクセスする必要がある各サービスまたはエ�
    * Kubernetes クラスター内の適切な IP へのトラフィックのルーティング
 
 <div id="tailscale-connection-process">
-  ### ネットワーク接続プロセス {#tailscale-connection-process}
+  ### ネットワーク接続プロセス
 </div>
 
 Tailscale での接続確立は、次の手順で行われます。

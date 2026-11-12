@@ -16,7 +16,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/pt-BR/clickpipes/_cloudsql_
 Este é um guia passo a passo sobre como configurar sua instância do Cloud SQL for MySQL para replicar os dados por meio do ClickPipe para MySQL.
 
 <div id="enable-binlog-retention-gcp">
-  ## Habilite a retenção do log binário {#enable-binlog-retention-gcp}
+  ## Habilite a retenção do log binário
 </div>
 
 O log binário é um conjunto de arquivos de log que contém informações sobre modificações de dados feitas em uma instância de servidor MySQL, e os arquivos de log binário são necessários para a replicação.
@@ -44,7 +44,7 @@ Em seguida, role a página até a seção `Flags` e adicione as flags acima.
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="Definindo as flags do binlog no GCP" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## Configure um usuário do banco de dados {#configure-database-user-gcp}
+  ## Configure um usuário do banco de dados
 </div>
 
 Conecte-se à sua instância do Cloud SQL MySQL como usuário root e execute os seguintes comandos:
@@ -80,7 +80,7 @@ Isso pode ser feito editando a instância ou acessando a guia `Connections` na b
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="Lista de permissões de IP no GCP MySQL" size="lg" border />
 
 <div id="download-root-ca-certificate-gcp-mysql">
-  ## Baixe e use o certificado raiz da CA {#download-root-ca-certificate-gcp-mysql}
+  ## Baixe e use o certificado raiz da CA
 </div>
 
 Para se conectar à sua instância do Cloud SQL, você precisa baixar o certificado raiz da CA.

@@ -16,7 +16,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/es/clickpipes/_cloudsql_iam
 Esta es una guía paso a paso sobre cómo configurar su instancia de Cloud SQL for MySQL para replicar sus datos mediante la ClickPipe para MySQL.
 
 <div id="enable-binlog-retention-gcp">
-  ## Habilitar la retención del registro binario {#enable-binlog-retention-gcp}
+  ## Habilitar la retención del registro binario
 </div>
 
 El registro binario es un conjunto de archivos de registro que contienen información sobre las modificaciones de datos realizadas en una instancia del servidor MySQL, y estos archivos son necesarios para la replicación.
@@ -44,7 +44,7 @@ Luego, desplácese hasta la sección `Flags` y agregue las flags anteriores.
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="Configuración de las flags de binlog en GCP" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## Configurar un usuario de base de datos {#configure-database-user-gcp}
+  ## Configurar un usuario de base de datos
 </div>
 
 Conéctese a su instancia de Cloud SQL para MySQL como usuario root y ejecute los siguientes comandos:

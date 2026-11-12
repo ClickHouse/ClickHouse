@@ -27,7 +27,7 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 쿼리 실행이 느리거나, 시간 초과가 발생하거나, &quot;Memory limit exceeded&quot;, &quot;Connection refused&quot;와 같은 특정 오류 메시지가 표시되는 경우입니다.
 
 <Accordion title="성능 및 오류 해결 방법 보기">
-  ### 쿼리 성능 {#query-performance}
+  ### 쿼리 성능
 
   * [가장 많은 리소스를 사용하는 쿼리 찾기](/ko/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
   * [쿼리 최적화 종합 가이드](/ko/guides/clickhouse/performance-and-monitoring/query-optimization)
@@ -36,14 +36,14 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  ### 데이터 삽입 성능 {#data-insertion-performance}
+  ### 데이터 삽입 성능
 
   * [데이터 삽입 속도 높이기](/ko/concepts/features/operations/insert/bulkinserts)
   * [비동기 삽입 설정](/ko/concepts/features/operations/insert/asyncinserts)
 
   <br />
 
-  ### 고급 분석 도구 {#advanced-analysis-tools}
+  ### 고급 분석 도구
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
 
@@ -52,7 +52,7 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  ### 오류 메시지 {#error-messages}
+  ### 오류 메시지
 
   * **&quot;Memory limit exceeded&quot;** → [메모리 한도 오류 디버깅](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * **&quot;Connection refused&quot;** → [연결 문제 해결](#connections-and-authentication)
@@ -68,7 +68,7 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 메모리 사용량이 높거나, 메모리 부족으로 충돌이 발생하거나, ClickHouse 배포 규모 산정에 도움이 필요한 경우
 
 <Accordion title="메모리 해결 방법 보기">
-  ### 메모리 디버깅 및 모니터링: {#memory-debugging-and-monitoring}
+  ### 메모리 디버깅 및 모니터링:
 
   * [메모리를 사용하는 항목 식별](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * [현재 메모리 사용량 확인](/ko/reference/system-tables/processes)
@@ -77,7 +77,7 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  ### 메모리 구성: {#memory-configuration}
+  ### 메모리 구성:
 
   * [메모리 제한 설정](/ko/concepts/features/configuration/settings/memory-overcommit)
   * [서버 메모리 설정](/ko/reference/settings/server-settings/settings)
@@ -85,7 +85,7 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  ### 스케일링 및 크기 산정: {#scaling-and-sizing}
+  ### 스케일링 및 크기 산정:
 
   * [서비스 규모를 적절히 조정](/ko/guides/oss/best-practices/tips)
   * [자동 스케일링 설정](/ko/products/cloud/features/autoscaling/overview)
@@ -96,7 +96,7 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증서 오류가 발생하는 경우, 또는 클라이언트 설정에 문제가 있는 경우입니다.
 
 <Accordion title="연결 문제 해결 방법 보기">
-  ### 기본 연결 문제 {#basic-connection-issues}
+  ### 기본 연결 문제
 
   * [HTTP 인터페이스 문제 해결](/ko/concepts/features/interfaces/http)
   * [SSL 인증서 문제 해결](/ko/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
@@ -104,7 +104,7 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  ### 클라이언트 인터페이스 {#client-interfaces}
+  ### 클라이언트 인터페이스
 
   * [네이티브 ClickHouse 클라이언트](/ko/concepts/features/interfaces/native-clients-interfaces-index)
   * [MySQL 인터페이스 문제](/ko/concepts/features/interfaces/mysql)
@@ -114,7 +114,7 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  ### 네트워크 및 데이터 {#network-and-data}
+  ### 네트워크 및 데이터
 
   * [네트워크 보안 설정](/ko/reference/settings/server-settings/settings)
   * [데이터 포맷 파싱 문제](/ko/reference/formats/index)
@@ -125,7 +125,7 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 초기 설치, 서버 구성, 데이터베이스 생성, 데이터 수집 문제 또는 복제 설정.
 
 <Accordion title="설치 및 구성 해결 방법 보기">
-  ### 초기 설정 {#initial-setup}
+  ### 초기 설정
 
   * [서버 설정 구성하기](/ko/reference/settings/server-settings/settings)
   * [보안 및 접근 제어 설정하기](/ko/concepts/features/security/access-rights)
@@ -133,7 +133,7 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  ### 데이터베이스 관리 {#database-management}
+  ### 데이터베이스 관리
 
   * [데이터베이스 생성 및 관리](/ko/reference/statements/create/database)
   * [적절한 테이블 엔진 선택하기](/ko/reference/engines/table-engines/index)
@@ -142,7 +142,7 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  ### 데이터 작업 {#data-operations}
+  ### 데이터 작업
 
   * [대량 데이터 삽입 최적화](/ko/concepts/features/operations/insert/bulkinserts)
   * [데이터 포맷 문제 해결](/ko/reference/formats/index)
@@ -151,7 +151,7 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  ### 고급 구성 {#advanced-configuration}
+  ### 고급 구성
 
   * [데이터 복제 설정하기](/ko/reference/engines/table-engines/mergetree-family/replication)
   * [분산 테이블 구성하기](/ko/reference/engines/table-engines/special/distributed)

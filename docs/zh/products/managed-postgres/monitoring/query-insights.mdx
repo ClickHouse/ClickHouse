@@ -85,7 +85,7 @@ time** 不断上升，则可能表明存在持续的锁争用。点击任意等�
 <Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="慢查询模式表，显示每个归一化查询模式各占一行，并包含 Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned 和 Cache hit 列" size="lg" border />
 
 <div id="sort">
-  ### 按你怀疑的因素排序 {#sort}
+  ### 按你怀疑的因素排序
 </div>
 
 该表默认按 **总运行时间** 降序排序——按这种方式排序时，排在最前面的模式通常就是“什么最耗资源？”这个问题的答案。它不一定是单独来看最慢的模式。一个每天运行八百万次、每次耗时十二毫秒的查询，可能比一个只运行过一次、耗时三秒的查询影响更大。
@@ -105,7 +105,7 @@ time** 不断上升，则可能表明存在持续的锁争用。点击任意等�
 缓存命中率以及每个模式的 CPU 时间。
 
 <div id="filters">
-  ### 缩小表的筛选范围 {#filters}
+  ### 缩小表的筛选范围
 </div>
 
 按你要排查的工作负载范围筛选表：
@@ -179,7 +179,7 @@ CPU time 排序。
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="查询详情弹出面板的后续部分，展示了包含数据库、用户、操作和应用程序的查询上下文部分，以及一个最近执行卡片，其中包含时间戳、OK 状态、服务器角色、主机 ID，以及每次执行的耗时、行数、缓存命中、CPU、共享读取块数和共享命中块数等计数器" size="md" border />
 
 <div id="counters">
-  ### 单次执行计数器 {#counters}
+  ### 单次执行计数器
 </div>
 
 展开最近一次执行后，你就能看到精确指出
@@ -211,11 +211,11 @@ CPU time 排序。
 最近执行记录。
 
 <div id="how-it-works">
-  ## 工作原理 {#how-it-works}
+  ## 工作原理
 </div>
 
 <div id="how-normalized">
-  ### 在 Postgres 中完成归一化，在传输出去之前 {#how-normalized}
+  ### 在 Postgres 中完成归一化，在传输出去之前
 </div>
 
 `pg_stat_ch` 会挂接到 parse-analyze 阶段，把每个字面量替换为
@@ -224,7 +224,7 @@ CPU time 排序。
 缓存的模式。包含具体值的原始语句永远不会离开数据库。
 
 <div id="how-overhead">
-  ### 尽量不影响数据库 {#how-overhead}
+  ### 尽量不影响数据库
 </div>
 
 生产端每条 语句 仅增加约 3% 的开销。入队路径
@@ -239,7 +239,7 @@ CPU time 排序。
 所以这些视图最适合用于识别持续性等待和锁争用。
 
 <div id="how-raw-events">
-  ### 原始事件，而非聚合数据 {#how-raw-events}
+  ### 原始事件，而非聚合数据
 </div>
 
 `pg_stat_ch` 会为每条已执行的语句 (包括顶层和
@@ -247,7 +247,7 @@ CPU time 排序。
 细分统计均由 ClickHouse 基于该事件流计算得出。
 
 <div id="how-engine">
-  ### 与客户使用的相同引擎 {#how-engine}
+  ### 与客户使用的相同引擎
 </div>
 
 Insights 后端采用 [ClickHouse Cloud](/zh/products/cloud/getting-started/intro)。
@@ -256,7 +256,7 @@ Insights 后端采用 [ClickHouse Cloud](/zh/products/cloud/getting-started/intr
 而在数十亿行数据上进行亚秒级聚合，则让 UI 在按一周或一个月切片分析时仍保持流畅交互。
 
 <div id="how-open-source">
-  ### 开源 {#how-open-source}
+  ### 开源
 </div>
 
 `pg_stat_ch` 采用 Apache 2.0 许可证。可在任何 Postgres 上运行，并将数据发送到任何
@@ -264,7 +264,7 @@ ClickHouse。源代码和问题跟踪见
 [github.com/clickhouse/pg&#95;stat&#95;ch](https://github.com/clickhouse/pg_stat_ch)。
 
 <div id="related">
-  ## 相关页面 {#related}
+  ## 相关页面
 </div>
 
 * [监控仪表板](/zh/products/managed-postgres/monitoring/dashboard) — 内置资源与活动图表

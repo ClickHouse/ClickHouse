@@ -18,11 +18,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Если вам нужна аналогичная конечная точка для сервисов [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview), см. раздел [ClickHouse Managed Postgres конечная точка Prometheus](/ru/products/managed-postgres/monitoring/prometheus).
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## API конечной точки Prometheus для получения метрик из ClickHouse Cloud {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
+  ## API конечной точки Prometheus для получения метрик из ClickHouse Cloud
 </div>
 
 <div id="api-reference">
-  ### Справочник по API {#api-reference}
+  ### Справочник по API
 </div>
 
 | Метод | Путь                                                                                                                            | Описание                                                                                                                                                              |
@@ -46,7 +46,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Полные схемы запросов и ответов для этих конечных точек доступны в [справочнике Cloud API](/ru/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
-  ### Аутентификация {#authentication}
+  ### Аутентификация
 </div>
 
 Используйте API-ключ ClickHouse Cloud для базовой аутентификации:
@@ -68,7 +68,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### Пример ответа {#sample-response}
+  ### Пример ответа
 </div>
 
 ```response
@@ -132,7 +132,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### Метки метрик {#metric-labels}
+  ### Метки метрик
 </div>
 
 Все метрики содержат следующие метки:
@@ -152,7 +152,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 | clickpipe&#95;source | Тип источника ClickPipe |
 
 <div id="information-metrics">
-  ### Информационные метрики {#information-metrics}
+  ### Информационные метрики
 </div>
 
 ClickHouse Cloud предоставляет специальную метрику `ClickHouse_ServiceInfo` — это `gauge`, который всегда имеет значение `1`. Эта метрика содержит все **метки метрик**, а также следующие метки:
@@ -262,7 +262,7 @@ scrape_configs:
 Обнаруженные цели собирают метрики с параметром `filtered_metrics=true`. Чтобы обнаружить цели, собирающие полный набор метрик, добавьте `?filtered_metrics=false` к URL обнаружения. Полная спецификация конечной точки доступна в [справочнике Cloud API](/ru/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
-  ## Интеграция с Grafana {#integrating-with-grafana}
+  ## Интеграция с Grafana
 </div>
 
 У пользователей есть два основных способа интеграции с Grafana:
@@ -272,7 +272,7 @@ scrape_configs:
 
 Ниже приведены инструкции по использованию этих вариантов с акцентом на детали, относящиеся именно к конечной точке Prometheus ClickHouse Cloud.
 
-### Grafana Cloud с конечной точкой метрик {#grafana-cloud-with-metrics-endpoint}
+### Grafana Cloud с конечной точкой метрик
 
 * Войдите в свою учетную запись Grafana Cloud
 * Добавьте новое подключение, выбрав **конечную точку метрик**
@@ -291,7 +291,7 @@ scrape_configs:
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Диаграмма в обозревателе метрик Grafana" border />
 
-### Grafana Cloud с Alloy {#grafana-cloud-with-alloy}
+### Grafana Cloud с Alloy
 
 Если вы используете Grafana Cloud, Alloy можно установить, открыв меню Alloy в Grafana и следуя инструкциям на экране:
 
@@ -342,7 +342,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Обратите внимание: чтобы метка `instance` заполнялась корректно, параметр конфигурации `honor_labels` должен быть установлен в `true`.
 
-### Самоуправляемая Grafana с Alloy {#grafana-self-managed-with-alloy}
+### Самоуправляемая Grafana с Alloy
 
 Пользователи самоуправляемой версии Grafana могут найти инструкции по установке агента Alloy [здесь](https://grafana.com/docs/alloy/latest/get-started/install/). Мы исходим из того, что Alloy уже настроен на отправку метрик Prometheus в нужный пункт назначения. Приведённый ниже компонент `prometheus.scrape` заставляет Alloy опрашивать конечную точку ClickHouse Cloud. Мы также предполагаем, что `prometheus.remote_write` принимает собранные метрики. Если `forward_to key` отсутствует, укажите в нём целевой пункт назначения.
 
@@ -380,7 +380,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Обратите внимание: для корректного заполнения метки instance параметру конфигурации `honor_labels` нужно задать значение `true`.
 
-## Интеграция с Datadog {#integrating-with-datadog}
+## Интеграция с Datadog
 
 Вы можете использовать [агент Datadog](https://docs.datadoghq.com/agent/?tab=Linux) и [интеграцию OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) для сбора метрик с конечной точки ClickHouse Cloud. Ниже приведен простой пример конфигурации для этого агента и интеграции. Однако обратите внимание: возможно, стоит выбрать только те метрики, которые для вас наиболее важны. Приведенный ниже универсальный пример будет экспортировать многие тысячи комбинаций метрик и экземпляров, которые Datadog будет считать пользовательскими метриками.
 
@@ -400,7 +400,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Интеграция Prometheus с Datadog" />
 
-## Связанные страницы {#related}
+## Связанные страницы
 
 * [Обзор мониторинга](/ru/products/cloud/features/monitoring/overview) — Сравните все подходы к мониторингу в ClickHouse Cloud
 * [Мониторинг в Cloud Console](/ru/products/cloud/features/monitoring/cloud-console) — Встроенные панели мониторинга, не требующие внешних инструментов

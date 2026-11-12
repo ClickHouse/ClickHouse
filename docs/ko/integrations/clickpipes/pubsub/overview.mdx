@@ -19,7 +19,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관리할 수 있으며, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi) 및 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포하고 관리할 수 있습니다.
 
 <div id="prerequisite">
-  ## 사전 요구 사항 {#prerequisite}
+  ## 사전 요구 사항
 </div>
 
 [ClickPipes 소개](/ko/integrations/clickpipes/home)를 숙지했으며, 수집할 토픽이 포함된 GCP 프로젝트에 액세스할 수 있고, ClickPipes가 사용하는 서비스 계정에 적절한 Pub/Sub 권한을 부여할 수 있어야 합니다. 인증 옵션과 필요한 정확한 권한 집합은 [Pub/Sub IAM 권한 가이드](/ko/integrations/clickpipes/pubsub/auth)에서 확인하십시오.
@@ -89,7 +89,7 @@ Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
 10. **축하합니다!** 첫 번째 Pub/Sub ClickPipe를 성공적으로 설정했습니다. 이제 이 ClickPipe는 계속 실행되며, Pub/Sub 토픽의 데이터를 ClickHouse Cloud 서비스로 실시간으로 수집합니다.
 
 <div id="managed-subscriptions">
-  ## 관리형 subscription {#managed-subscriptions}
+  ## 관리형 subscription
 </div>
 
 Pub/Sub 메시지는 토픽에서 직접 소비되지 않고 subscription을 통해 소비됩니다. ClickPipes는 각 파이프마다 전용 subscription을 생성하고 관리하므로, 토픽만 선택하면 됩니다.
@@ -103,7 +103,7 @@ Pub/Sub 메시지는 토픽에서 직접 소비되지 않고 subscription을 통
 따라서 제공한 서비스 계정에는 subscription을 소비하는 권한 외에도, 프로젝트에서 subscription을 생성하고 삭제할 수 있는 권한이 있어야 합니다. 전체 목록은 [Pub/Sub IAM permissions guide](/ko/integrations/clickpipes/pubsub/auth)를 참조하십시오.
 
 <div id="supported-data-formats">
-  ## 지원되는 데이터 포맷 {#supported-data-formats}
+  ## 지원되는 데이터 포맷
 </div>
 
 지원되는 포맷은 다음과 같습니다:
@@ -115,7 +115,7 @@ Pub/Sub 메시지는 토픽에서 직접 소비되지 않고 subscription을 통
 Avro와 Protobuf의 경우, 스키마는 토픽의 Pub/Sub 스키마 레지스트리에서 조회됩니다. 파이프는 항상 토픽 스키마의 최신 리비전을 사용하며, UI의 스키마 셀렉터는 설계상 읽기 전용입니다.
 
 <div id="compression">
-  ## 압축 {#compression}
+  ## 압축
 </div>
 
 Pub/Sub용 ClickPipes는 압축된 메시지를 자동으로 감지해 압축을 해제합니다. Pub/Sub 클라이언트는 원시 바이트를 전달하며, 별도 구성 없이 ClickPipes가 압축 해제를 처리합니다.
@@ -134,11 +134,11 @@ Pub/Sub용 ClickPipes는 압축된 메시지를 자동으로 감지해 압축을
 </Note>
 
 <div id="supported-data-types">
-  ## 지원되는 데이터 타입 {#supported-data-types}
+  ## 지원되는 데이터 타입
 </div>
 
 <div id="standard-types-support">
-  ### 표준 타입 지원 {#standard-types-support}
+  ### 표준 타입 지원
 </div>
 
 현재 ClickPipes는 다음 ClickHouse 데이터 타입을 지원합니다:
@@ -161,7 +161,7 @@ Pub/Sub용 ClickPipes는 압축된 메시지를 자동으로 감지해 압축을
 * SimpleAggregateFunction 타입(AggregatingMergeTree 또는 SummingMergeTree 대상용)
 
 <div id="variant-type-support">
-  ### Variant 유형 지원 {#variant-type-support}
+  ### Variant 유형 지원
 </div>
 
 소스 데이터 스트림의 모든 JSON 필드에 대해 Variant 유형(예: `Variant(String, Int64, DateTime)`)을 수동으로 지정할 수 있습니다.
@@ -169,14 +169,14 @@ ClickPipes가 사용할 올바른 variant subtype을 판별하는 방식상, Var
 예를 들어 `Variant(Int64, UInt32)`는 지원되지 않습니다.
 
 <div id="json-type-support">
-  ### JSON 타입 지원 {#json-type-support}
+  ### JSON 타입 지원
 </div>
 
 항상 JSON 객체인 JSON 필드는 JSON 대상 컬럼에 할당할 수 있습니다. 고정되거나 건너뛴 경로를 포함해, 대상
 컬럼은 원하는 JSON 타입으로 수동으로 변경해야 합니다.
 
 <div id="pubsub-virtual-columns">
-  ## Pub/Sub 가상 컬럼 {#pubsub-virtual-columns}
+  ## Pub/Sub 가상 컬럼
 </div>
 
 다음 가상 컬럼은 Pub/Sub 토픽에서 지원됩니다. 새 대상 테이블을 만들 때 `Add Column` 버튼을 사용해 가상 컬럼을 추가할 수 있습니다.
@@ -192,7 +192,7 @@ ClickPipes가 사용할 올바른 variant subtype을 판별하는 방식상, Var
 `_raw_message` 필드는 전체 Pub/Sub 메시지 페이로드만 필요한 경우에 사용할 수 있습니다(예: ClickHouse [`JsonExtract*`](/ko/reference/functions/regular-functions/json-functions#jsonextract-functions) 함수를 사용해 후속 materialized view를 채우는 경우). 이러한 파이프의 경우 &quot;non-virtual&quot; 컬럼을 모두 삭제하면 ClickPipes 성능이 향상될 수 있습니다.
 
 <div id="limitations">
-  ## 제한 사항 {#limitations}
+  ## 제한 사항
 </div>
 
 * [DEFAULT](/ko/reference/statements/create/table#default)는 지원되지 않습니다.
@@ -201,11 +201,11 @@ ClickPipes가 사용할 올바른 variant subtype을 판별하는 방식상, Var
 * 필터는 메시지 페이로드가 아니라 메시지 속성에만 적용됩니다.
 
 <div id="performance">
-  ## 성능 {#performance}
+  ## 성능
 </div>
 
 <div id="batching">
-  ### 배칭 {#batching}
+  ### 배칭
 </div>
 
 ClickPipes는 데이터를 배치로 묶어 ClickHouse에 삽입합니다. 이는 데이터베이스에 파트가 과도하게 생성되는 것을 방지하기 위한 것으로, 그렇지 않으면 클러스터 성능 문제가 발생할 수 있습니다.
@@ -216,7 +216,7 @@ ClickPipes는 데이터를 배치로 묶어 ClickHouse에 삽입합니다. 이�
 * 배치가 최대 시간(5초) 동안 열려 있었던 경우
 
 <div id="latency">
-  ### 지연 시간 {#latency}
+  ### 지연 시간
 </div>
 
 지연 시간(즉, Pub/Sub 메시지가 게시된 시점부터 해당 메시지를 ClickHouse에서 사용할 수 있게 될 때까지 걸리는 시간)은 여러 요인(게시자 지연 시간, 네트워크 지연 시간, 메시지 크기/포맷)에 따라 달라집니다. 위 섹션에서 설명한 [배칭](#batching) 역시 지연 시간에 영향을 줍니다. 예상되는 지연 시간을 정확히 파악하려면 실제 사용 사례에 맞춰 테스트해 볼 것을 항상 권장합니다.
@@ -224,7 +224,7 @@ ClickPipes는 데이터를 배치로 묶어 ClickHouse에 삽입합니다. 이�
 낮은 지연 시간에 대한 구체적인 요구 사항이 있다면 [문의해 주십시오](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="ordering-keys">
-  ### 순서 지정 키 {#ordering-keys}
+  ### 순서 지정 키
 </div>
 
 Pub/Sub는 동일한 [순서 지정 키](https://cloud.google.com/pubsub/docs/ordering)를 공유하는 메시지가 하나의 구독자에게 게시된 순서대로 전달되도록 보장합니다. ClickPipes는 관리형 구독에서 기본적으로 순서 지정을 활성화합니다. 따라서 메시지에 순서 지정 키가 있으면 구독자는 해당 메시지를 순서대로 수신하며, 순서 지정 키가 없으면 동작은 달라지지 않습니다.
@@ -232,7 +232,7 @@ Pub/Sub는 동일한 [순서 지정 키](https://cloud.google.com/pubsub/docs/or
 프로듀서가 모든 메시지를 소수의 순서 지정 키(또는 단일 키)로 게시하면, Pub/Sub는 해당 메시지를 소수의 구독자에게 집중시켜 전달하므로 수평 처리량이 제한될 수 있습니다. 순서가 필요하지 않다면 순서 지정 키를 생략하거나, 카디널리티가 높은 순서 지정 키를 사용할 것을 권장합니다.
 
 <div id="scaling">
-  ### 스케일링 {#scaling}
+  ### 스케일링
 </div>
 
 Pub/Sub용 ClickPipes는 수평 및 수직으로 모두 스케일링할 수 있도록 설계되었습니다. 각 파이프는 단일 관리형 Pub/Sub subscription을 사용하며, 이는 구성할 수 없습니다. 기본적으로 하나의 컨슈머가 해당 subscription에서 데이터를 가져오며, ClickPipe 생성 시 또는 **설정** -&gt; **고급 설정** -&gt; **스케일링**에서 언제든지 컨슈머 수를 늘릴 수 있습니다. ClickPipes는 subscription의 메시지를 실행 중인 컨슈머에 자동으로 분산하므로 별도의 조정은 필요하지 않습니다.
@@ -242,7 +242,7 @@ ClickPipes는 가용 영역에 분산된 아키텍처를 통해 고가용성을 
 실행 중인 컨슈머 수와 관계없이 장애 허용은 설계상 기본적으로 제공됩니다. 컨슈머 또는 기반 인프라에 장애가 발생하면 ClickPipes가 해당 컨슈머를 자동으로 다시 시작하고 메시지 처리를 계속합니다.
 
 <div id="delivery-semantics">
-  ### 전달 보장 방식 {#delivery-semantics}
+  ### 전달 보장 방식
 </div>
 
 Pub/Sub용 ClickPipes는 **at-least-once** 전달을 제공합니다. Pub/Sub 메시지는 해당 행이 ClickHouse에 삽입된 후에만(또는 형식이 잘못된 레코드의 경우 오류 테이블에 기록된 후에만) ack됩니다. 무한 재전달을 방지하기 위해, 오류 테이블로 라우팅된 잘못된 레코드를 포함해 모든 메시지는 처리되면 ack됩니다. 레플리카가 삽입 후 Pub/Sub에 ack가 도달하기 전에 장애로 중단되면, 메시지는 ack deadline이 지난 뒤 다시 전달되고 다시 삽입되므로 다운스트림 consumer는 중복을 허용할 수 있어야 합니다. 정확히 한 번 처리 의미 체계가 필요하다면 `_message_id` 가상 컬럼을 사용해 다운스트림에서 중복을 제거하십시오(Pub/Sub의 각 메시지 ID는 토픽 내에서 고유합니다).

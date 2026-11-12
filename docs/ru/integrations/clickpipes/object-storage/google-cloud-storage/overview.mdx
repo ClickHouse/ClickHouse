@@ -13,7 +13,7 @@ GCS ClickPipe предоставляет полностью управляемы
 GCS ClickPipes можно развёртывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="supported-formats">
-  ## Поддерживаемые форматы {#supported-formats}
+  ## Поддерживаемые форматы
 </div>
 
 * [JSON](/ru/reference/formats/JSON/JSON)
@@ -23,17 +23,17 @@ GCS ClickPipes можно развёртывать и настраивать в�
 * [Avro](/ru/reference/formats/Avro/Avro)
 
 <div id="features">
-  ## Возможности {#features}
+  ## Возможности
 </div>
 
 <div id="one-time-ingestion">
-  ### Одноразовая ингестия {#one-time-ingestion}
+  ### Одноразовая ингестия
 </div>
 
 По умолчанию GCS ClickPipe загружает в целевую таблицу ClickHouse все файлы из указанного бакета, соответствующие шаблону, за одну батч-операцию. После завершения задачи ингестии ClickPipe автоматически останавливается. Этот режим одноразовой ингестии обеспечивает семантику «ровно один раз», то есть каждый файл обрабатывается надёжно и без дубликатов.
 
 <div id="continuous-ingestion">
-  ### Непрерывная ингестия {#continuous-ingestion}
+  ### Непрерывная ингестия
 </div>
 
 Когда включена непрерывная ингестия, ClickPipes непрерывно принимает данные из указанного пути. Для определения порядка ингестии GCS ClickPipe по умолчанию использует неявный [лексикографический порядок](#continuous-ingestion-lexicographical-order) файлов. Его также можно настроить на ингестию файлов [в любом порядке](#continuous-ingestion-any-order) с помощью подписки [Google Cloud Pub/Sub](https://cloud.google.com/pubsub), [настроенной для отправки уведомлений для бакета](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line).
@@ -59,13 +59,13 @@ GCS ClickPipe предполагает, что файлы добавляются
 В этом режиме GCS ClickPipe выполняет начальную загрузку **всех файлов** по выбранному пути, а затем отслеживает уведомления `OBJECT_FINALIZE` через подписку Pub/Sub, соответствующие указанному пути. Любые сообщения о ранее обнаруженном файле, файле, не соответствующем пути, или событии другого типа будут **игнорироваться**. Чтобы принимать только файлы, доставленные через подписку, включите **Пропустить первоначальную загрузку**. При включении этой опции ClickPipes пропускает начальное сканирование существующих файлов по выбранному пути и обрабатывает только файлы, доставленные через подписку Pub/Sub.
 
 <div id="file-pattern-matching">
-  ### Сопоставление имён файлов по шаблону {#file-pattern-matching}
+  ### Сопоставление имён файлов по шаблону
 </div>
 
 ClickPipes для объектного хранилища используют стандарт POSIX для сопоставления имён файлов по шаблону. Все шаблоны **чувствительны к регистру** и применяются к **полному пути** после имени бакета. Для лучшей производительности используйте максимально конкретный шаблон (например, `data-2024-*.csv` вместо `*.csv`).
 
 <div id="supported-patterns">
-  #### Поддерживаемые шаблоны {#supported-patterns}
+  #### Поддерживаемые шаблоны
 </div>
 
 | Шаблон                  | Описание                                                                                            | Пример              | Совпадения                                                        |
@@ -82,7 +82,7 @@ ClickPipes для объектного хранилища используют �
 * `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
 
 <div id="unsupported-patterns">
-  #### Неподдерживаемые шаблоны {#unsupported-patterns}
+  #### Неподдерживаемые шаблоны
 </div>
 
 | Шаблон      | Описание                                | Пример                 | Альтернативы                                    |
@@ -97,29 +97,29 @@ ClickPipes для объектного хранилища используют �
 * `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
 
 <div id="exactly-once-semantics">
-  ### Семантика «ровно один раз» {#exactly-once-semantics}
+  ### Семантика «ровно один раз»
 </div>
 
 При ингестии больших наборов данных возможны различные сбои, которые могут приводить к неполной вставке или дублированию данных. ClickPipes для объектного хранилища устойчивы к сбоям при вставке и обеспечивают семантику «ровно один раз». Это достигается за счёт использования временных staging-таблиц. Сначала данные вставляются в staging-таблицы. Если во время этой вставки что-то пойдёт не так, staging-таблицу можно очистить с помощью `TRUNCATE`, а затем повторить вставку с чистого состояния. Только после того, как вставка успешно завершена, партиции из staging-таблицы перемещаются в целевую таблицу. Подробнее об этой стратегии читайте [в этой статье блога](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 
 <div id="virtual-columns">
-  ### Виртуальные столбцы {#virtual-columns}
+  ### Виртуальные столбцы
 </div>
 
 Чтобы отслеживать, какие файлы были обработаны, включите виртуальный столбец `_file` в список сопоставления столбцов. Виртуальный столбец `_file` содержит имя файла исходного объекта, которое можно использовать в запросах, чтобы определить, какие файлы уже были обработаны.
 
 <div id="access-control">
-  ## Управление доступом {#access-control}
+  ## Управление доступом
 </div>
 
 <div id="permissions">
-  ### Разрешения {#permissions}
+  ### Разрешения
 </div>
 
 ClickPipe для GCS поддерживает публичные и приватные бакеты. Бакеты [Requester Pays](https://docs.cloud.google.com/storage/docs/requester-pays) **не поддерживаются**.
 
 <div id="gcs-bucket">
-  #### GCS-бакет {#gcs-bucket}
+  #### GCS-бакет
 </div>
 
 Сервисный аккаунт, используемый ClickPipes, должен иметь следующие разрешения на уровне бакета:
@@ -129,7 +129,7 @@ ClickPipe для GCS поддерживает публичные и приват
 Эта роль включает IAM-разрешения [`storage.objects.list`](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/list) и [&#96;storage.objects.get](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get#required-permissions), которые позволяют ClickPipes просматривать список объектов и получать объекты в указанном бакете.
 
 <div id="pubsub-subscription">
-  #### Подписка Pub/Sub {#pubsub-subscription}
+  #### Подписка Pub/Sub
 </div>
 
 При использовании [неупорядоченного режима](#continuous-ingestion-any-order) сервисный аккаунт должен иметь следующие роли в подписке Pub/Sub:
@@ -138,11 +138,11 @@ ClickPipe для GCS поддерживает публичные и приват
 * [`roles/pubsub.viewer`](https://cloud.google.com/pubsub/docs/access-control#roles) — для просмотра метаданных подписки.
 
 <div id="authentication">
-  ### Аутентификация {#authentication}
+  ### Аутентификация
 </div>
 
 <div id="service-account">
-  #### Сервисный аккаунт {#service-account}
+  #### Сервисный аккаунт
 </div>
 
 При использовании [неупорядоченного режима](#continuous-ingestion-any-order) с уведомлениями Pub/Sub требуется аутентификация через сервисный аккаунт. Выберите **Service Account** в качестве метода аутентификации и загрузите JSON‑файл ключа сервисного аккаунта.
@@ -151,7 +151,7 @@ ClickPipe для GCS поддерживает публичные и приват
 
 Следуйте [руководству по идентификации рабочих нагрузок GCP](/ru/integrations/clickpipes/security/gcp-workload-identity), чтобы получить управляемую служебную учётную запись из контекста сервиса ClickPipes. Назначьте ей роль `roles/storage.objectViewer` для исходного бакета и создайте пайп с типом аутентификации `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Для неупорядоченной ингестии дополнительно назначьте ей роли `roles/pubsub.subscriber` и `roles/pubsub.viewer` для существующей подписки на уведомления и укажите полное имя этой подписки: `projects/<project-id>/subscriptions/<subscription-id>`.
 
-#### Учетные данные HMAC {#hmac-credentials}
+#### Учетные данные HMAC
 
 Чтобы использовать [HMAC-ключи](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) для аутентификации, при настройке подключения ClickPipe выберите `Credentials` в разделе **метод аутентификации**. Затем укажите ключ доступа (например, `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) и секретный ключ (например, `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) в полях `Access key` и `Secret key` соответственно.
 
@@ -159,7 +159,7 @@ ClickPipe для GCS поддерживает публичные и приват
 
 Следуйте [этому руководству](/ru/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret), чтобы создать сервисный аккаунт с HMAC-ключом.
 
-### Сетевой доступ {#network-access}
+### Сетевой доступ
 
 GCS ClickPipes используют два разных сетевых маршрута для обнаружения метаданных и ингестии данных: сервис ClickPipes и сервис ClickHouse Cloud соответственно. Если вы хотите настроить дополнительный уровень сетевой безопасности (например, в целях соответствия требованиям), сетевой доступ **должен быть настроен для обоих маршрутов**.
 
@@ -170,7 +170,7 @@ GCS ClickPipes используют два разных сетевых марш�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-## Расширенные настройки {#advanced-settings}
+## Расширенные настройки
 
 ClickPipes предоставляет разумные значения по умолчанию, которые подходят для большинства сценариев использования. Если вашему сценарию требуется более тонкая настройка, вы можете изменить следующие параметры:
 
@@ -192,7 +192,7 @@ ClickPipes предоставляет разумные значения по у�
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
 
 <div id="scaling">
-  ### Масштабирование {#scaling}
+  ### Масштабирование
 </div>
 
 ClickPipes для объектного хранилища масштабируются исходя из минимального размера сервиса ClickHouse, определяемого [настроенными параметрами вертикального автомасштабирования](/ru/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). Размер ClickPipe определяется при создании пайпа. Последующие изменения настроек сервиса ClickHouse не повлияют на размер ClickPipe.
@@ -200,23 +200,23 @@ ClickPipes для объектного хранилища масштабирую
 Чтобы увеличить пропускную способность при выполнении крупных задач по приёму данных, мы рекомендуем масштабировать сервис ClickHouse до создания ClickPipe.
 
 <div id="known-limitations">
-  ## Известные ограничения {#known-limitations}
+  ## Известные ограничения
 </div>
 
 <div id="file-size">
-  ### Размер файла {#file-size}
+  ### Размер файла
 </div>
 
 ClickPipes будет пытаться обработать только объекты размером **10 ГБ или меньше**. Если размер файла превышает 10 ГБ, запись об ошибке будет добавлена в специальную таблицу ошибок ClickPipes.
 
 <div id="compatibility">
-  ### Совместимость {#compatibility}
+  ### Совместимость
 </div>
 
 GCS ClickPipe использует [XML API](https://docs.cloud.google.com/storage/docs/interoperability) Cloud Storage для совместимости, поэтому необходимо использовать префикс бакета `https://storage.googleapis.com/` (вместо `gs://`) и [HMAC-ключи](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) для аутентификации.
 
 <div id="view-support">
-  ### Поддержка представлений {#view-support}
+  ### Поддержка представлений
 </div>
 
 Также поддерживаются materialized view для целевой таблицы. ClickPipes создаёт staging-таблицы не только для целевой таблицы, но и для всех зависящих от неё materialized view.

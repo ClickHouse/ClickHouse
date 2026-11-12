@@ -87,7 +87,7 @@ Além disso, há controles para remover o ClickPipe e exibir um resumo do job de
 10. **Parabéns!** Você configurou com sucesso seu primeiro ClickPipe do Pub/Sub. Ele ficará em execução contínua, fazendo ingestão de dados em tempo real do seu tópico do Pub/Sub para seu serviço no ClickHouse Cloud.
 
 <div id="managed-subscriptions">
-  ## Assinaturas gerenciadas {#managed-subscriptions}
+  ## Assinaturas gerenciadas
 </div>
 
 As mensagens do Pub/Sub são consumidas por meio de assinaturas, não diretamente dos tópicos. O ClickPipes cria e gerencia uma assinatura dedicada para cada pipe — você só escolhe um tópico.
@@ -101,7 +101,7 @@ As mensagens do Pub/Sub são consumidas por meio de assinaturas, não diretament
 Portanto, a conta de serviço fornecida por você também deve ter permissão para criar e excluir assinaturas no projeto, além de consumi-las. Consulte o [guia de permissões do IAM do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth) para ver a lista completa.
 
 <div id="supported-data-formats">
-  ## Formatos de dados compatíveis {#supported-data-formats}
+  ## Formatos de dados compatíveis
 </div>
 
 Os formatos compatíveis são:
@@ -113,7 +113,7 @@ Os formatos compatíveis são:
 Para Avro e Protobuf, o esquema é obtido do registro de esquemas do Pub/Sub para o tópico. O pipe sempre usa a revisão mais recente do esquema do tópico; o seletor de esquema na UI é somente leitura por design.
 
 <div id="compression">
-  ## Compressão {#compression}
+  ## Compressão
 </div>
 
 O ClickPipes para Pub/Sub detecta e descomprime automaticamente mensagens comprimidas. O cliente do Pub/Sub entrega bytes brutos — o ClickPipes cuida da descompressão para você, sem exigir nenhuma configuração.
@@ -132,11 +132,11 @@ A compressão é detectada automaticamente por meio de bytes mágicos em cada me
 </Note>
 
 <div id="supported-data-types">
-  ## Tipos de dados suportados {#supported-data-types}
+  ## Tipos de dados suportados
 </div>
 
 <div id="standard-types-support">
-  ### Suporte a tipos padrão {#standard-types-support}
+  ### Suporte a tipos padrão
 </div>
 
 Atualmente, os seguintes tipos de dados do ClickHouse têm suporte no ClickPipes:
@@ -159,7 +159,7 @@ Atualmente, os seguintes tipos de dados do ClickHouse têm suporte no ClickPipes
 * tipos SimpleAggregateFunction (para destinos AggregatingMergeTree ou SummingMergeTree)
 
 <div id="variant-type-support">
-  ### Suporte ao tipo Variant {#variant-type-support}
+  ### Suporte ao tipo Variant
 </div>
 
 Você pode especificar manualmente um tipo Variant (como `Variant(String, Int64, DateTime)`) para qualquer campo JSON
@@ -167,14 +167,14 @@ no fluxo de dados de origem. Devido à forma como o ClickPipes determina qual su
 pode ser usado na definição de Variant — por exemplo, `Variant(Int64, UInt32)` não é compatível.
 
 <div id="json-type-support">
-  ### Suporte ao tipo JSON {#json-type-support}
+  ### Suporte ao tipo JSON
 </div>
 
 Campos JSON que são sempre um objeto JSON podem ser atribuídos a uma coluna de destino do tipo JSON. Você terá que alterar manualmente a
 coluna de destino para o tipo JSON desejado, incluindo quaisquer caminhos fixos ou ignorados.
 
 <div id="pubsub-virtual-columns">
-  ## Colunas virtuais do Pub/Sub {#pubsub-virtual-columns}
+  ## Colunas virtuais do Pub/Sub
 </div>
 
 As colunas virtuais a seguir têm suporte para tópicos do Pub/Sub. Ao criar uma nova tabela de destino, é possível adicionar colunas virtuais usando o botão `Add Column`.
@@ -190,7 +190,7 @@ As colunas virtuais a seguir têm suporte para tópicos do Pub/Sub. Ao criar uma
 O campo `_raw_message` pode ser usado nos casos em que apenas o payload completo da mensagem do Pub/Sub é necessário (como ao usar as funções [`JsonExtract*`](/pt-BR/reference/functions/regular-functions/json-functions#jsonextract-functions) do ClickHouse para preencher uma visão materializada). Para esses pipes, remover todas as colunas &quot;não virtuais&quot; pode melhorar o desempenho do ClickPipes.
 
 <div id="limitations">
-  ## Limitações {#limitations}
+  ## Limitações
 </div>
 
 * [DEFAULT](/pt-BR/reference/statements/create/table#default) não tem suporte.
@@ -199,11 +199,11 @@ O campo `_raw_message` pode ser usado nos casos em que apenas o payload completo
 * Os filtros se aplicam apenas aos atributos da mensagem, não ao payload da mensagem.
 
 <div id="performance">
-  ## Desempenho {#performance}
+  ## Desempenho
 </div>
 
 <div id="batching">
-  ### Processamento em lotes {#batching}
+  ### Processamento em lotes
 </div>
 
 O ClickPipes insere dados no ClickHouse em lotes. Isso evita a criação de um número excessivo de partes no banco de dados, o que pode levar a problemas de desempenho no cluster.
@@ -214,7 +214,7 @@ Os lotes são inseridos quando um dos seguintes critérios é atendido:
 * O lote permaneceu aberto pelo tempo máximo permitido (5 segundos)
 
 <div id="latency">
-  ### Latência {#latency}
+  ### Latência
 </div>
 
 A latência (definida como o tempo entre a publicação de uma mensagem no Pub/Sub e sua disponibilidade no ClickHouse) dependerá de vários fatores (latência do publicador, latência da rede, tamanho/formato da mensagem). O [agrupamento em lotes](#batching) descrito na seção acima também afetará a latência. Recomendamos sempre testar seu caso de uso específico para entender a latência esperada.
@@ -222,7 +222,7 @@ A latência (definida como o tempo entre a publicação de uma mensagem no Pub/S
 Se você tiver requisitos específicos de baixa latência, [entre em contato conosco](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="ordering-keys">
-  ### Chaves de ordenação {#ordering-keys}
+  ### Chaves de ordenação
 </div>
 
 O Pub/Sub garante que mensagens com a mesma [chave de ordenação](https://cloud.google.com/pubsub/docs/ordering) sejam entregues a um único assinante na ordem de publicação. O ClickPipes habilita a ordenação em suas assinaturas gerenciadas por padrão — quando as mensagens incluem chaves de ordenação, os assinantes as recebem em ordem; quando não incluem, o comportamento permanece inalterado.
@@ -230,7 +230,7 @@ O Pub/Sub garante que mensagens com a mesma [chave de ordenação](https://cloud
 Se o seu produtor publicar todas as mensagens com um número pequeno de chaves de ordenação (ou com uma única chave), o Pub/Sub encaminhará essas mensagens para um número pequeno de assinantes, o que pode limitar o throughput horizontal. Recomendamos omitir as chaves de ordenação quando a ordenação não for necessária ou usar uma chave de ordenação de alta cardinalidade.
 
 <div id="scaling">
-  ### Escalonamento {#scaling}
+  ### Escalonamento
 </div>
 
 O ClickPipes para Pub/Sub foi projetado para escalar tanto horizontalmente quanto verticalmente. Cada pipe usa uma única assinatura gerenciada do Pub/Sub — isso não pode ser configurado. Por padrão, um consumidor lê dessa assinatura; você pode aumentar o número de consumidores durante a criação do ClickPipe ou a qualquer momento em **Configurações** -&gt; **Configurações avançadas** -&gt; **Escalonamento**. O ClickPipes distribui automaticamente as mensagens da assinatura entre os consumidores em execução — nenhuma coordenação adicional é necessária.
@@ -240,7 +240,7 @@ O ClickPipes oferece alta disponibilidade com uma arquitetura distribuída entre
 Independentemente do número de consumidores em execução, a tolerância a falhas está disponível por padrão. Se um consumidor ou a infraestrutura subjacente falhar, o ClickPipes reiniciará automaticamente o consumidor e continuará processando as mensagens.
 
 <div id="delivery-semantics">
-  ### Semântica de entrega {#delivery-semantics}
+  ### Semântica de entrega
 </div>
 
 O ClickPipes para Pub/Sub oferece entrega **at-least-once**. Uma mensagem do Pub/Sub só é confirmada depois que a linha correspondente é inserida no ClickHouse (ou gravada na tabela de erro, no caso de registros malformados); todas as mensagens são confirmadas depois de processadas — incluindo registros inválidos encaminhados para a tabela de erro — para evitar reentrega infinita. Se uma réplica falhar após a inserção, mas antes de o ack chegar ao Pub/Sub, a mensagem será reenviada após o ack deadline e inserida novamente, portanto os consumidores downstream devem tolerar duplicatas. Se você precisar de semântica de exactly-once, faça a deduplicação downstream usando a coluna virtual `_message_id` (cada ID de mensagem do Pub/Sub é exclusivo dentro de um tópico).

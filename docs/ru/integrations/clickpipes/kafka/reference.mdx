@@ -42,12 +42,12 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Область действия ACL для групп потребителей можно ограничить префиксом `clickpipes-`. Для workload identity требуется TLS; этот способ поддерживается только для типа источника Google Managed Kafka (`gcmk`).
 
-## Уровень изоляции {#isolation-level}
+## Уровень изоляции
 
 Уровень изоляции consumer Kafka определяет, будет ли ClickPipe читать и вставлять только сообщения, зафиксированные в транзакции Kafka. Включите настройку `kafka_read_committed`, чтобы использовать `read_committed` и пропускать сообщения из отменённых транзакций Kafka. Отключите её, чтобы использовать `read_uncommitted` и читать все сообщения. Эту настройку можно задать в разделе **Расширенные настройки**.
 
 <div id="supported-data-formats">
-  ## Поддерживаемые форматы данных {#supported-data-formats}
+  ## Поддерживаемые форматы данных
 </div>
 
 Поддерживаются следующие форматы:
@@ -57,11 +57,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * [Protobuf](/ru/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## Поддерживаемые типы данных {#supported-data-types}
+  ## Поддерживаемые типы данных
 </div>
 
 <div id="standard-types-support">
-  ### Стандартные типы {#standard-types-support}
+  ### Стандартные типы
 </div>
 
 В настоящее время ClickPipes поддерживает следующие стандартные типы данных ClickHouse:
@@ -85,7 +85,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * Tuple и Array, где элементы используют любой из перечисленных выше типов (включая Nullable; только один уровень вложенности)
 * типы SimpleAggregateFunction (для пунктов назначения AggregatingMergeTree или SummingMergeTree)
 
-### Поддержка типа Variant {#variant-type-support}
+### Поддержка типа Variant
 
 ClickPipes поддерживает тип Variant в следующих случаях:
 
@@ -93,7 +93,7 @@ ClickPipes поддерживает тип Variant в следующих слу�
 * Поля JSON. Вы можете вручную указать тип Variant (например, `Variant(String, Int64, DateTime)`) для любого поля JSON в исходном потоке данных. Сложные подтипы (arrays/maps/tuples) не поддерживаются. Кроме того, из-за особенностей того, как ClickPipes определяет нужный подтип варианта, в определении Variant можно использовать только один целочисленный тип или тип datetime — например, `Variant(Int64, UInt32)` не поддерживается.
 
 <div id="json-type-support">
-  ### Поддержка JSON-типа {#json-type-support}
+  ### Поддержка JSON-типа
 </div>
 
 ClickPipes поддерживает JSON-тип в следующих случаях:
@@ -106,15 +106,15 @@ ClickPipes поддерживает JSON-тип в следующих случа
 Обратите внимание, что вам потребуется вручную изменить целевой столбец на нужный JSON-тип, включая все фиксированные или пропущенные пути.
 
 <div id="avro">
-  ### Avro {#avro}
+  ### Avro
 </div>
 
-#### Поддерживаемые типы данных Avro {#supported-avro-data-types}
+#### Поддерживаемые типы данных Avro
 
 ClickPipes поддерживает все примитивные и составные типы Avro, а также все логические типы Avro, кроме `local-timestamp-millis` и `local_timestamp-micros`. Типы Avro `record` преобразуются в Tuple, типы `array` — в Array, а `map` — в Map (только со строковыми ключами). В общем случае доступны преобразования, перечисленные [здесь](/ru/concepts/features/interfaces/schema-inference#avro). Мы рекомендуем использовать точное соответствие типов для числовых типов Avro, поскольку ClickPipes не проверяет переполнение или потерю точности при преобразовании типов. Также все типы Avro можно вставить в столбец `String`; в этом случае они будут представлены как корректная JSON-строка.
 
 <div id="nullable-types-and-avro-unions">
-  #### Типы Nullable и union в Avro {#nullable-types-and-avro-unions}
+  #### Типы Nullable и union в Avro
 </div>
 
 Типы Nullable в Avro определяются с помощью схемы Union вида `(T, null)` или `(null, T)`, где T — базовый тип Avro. Во время определения схемы такие union будут сопоставляться со столбцом ClickHouse &quot;Nullable&quot;. Обратите внимание, что ClickHouse не поддерживает типы
@@ -125,10 +125,10 @@ ClickPipes поддерживает все примитивные и соста�
 * именованный Tuple со всеми значениями по умолчанию/нулевыми значениями для null-Record Avro
 
 <div id="protobuf">
-  ### Protobuf {#protobuf}
+  ### Protobuf
 </div>
 
-#### Поддерживаемые типы данных Protobuf {#supported-protobuf-data-types}
+#### Поддерживаемые типы данных Protobuf
 
 ClickPipes поддерживает все типы Protobuf 2 и 3, за исключением давно устаревшего типа `group` из proto2. Для базовых преобразований типов используются следующие сопоставления:
 
@@ -169,17 +169,17 @@ ClickPipes поддерживает все типы Protobuf 2 и 3, за иск
 | `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
-#### Protobuf `oneof` {#protobuf-one-ofs}
+#### Protobuf `oneof`
 
 При определении схемы поля Protobuf `oneof` по умолчанию сопоставляются с именованным `Tuple`, в котором не более одного поля содержит значение, отличное от значения по умолчанию. Эти поля также могут автоматически сопоставляться со столбцом `Variant`, где активное значение принимает тип того входящего поля, которое задано. Кроме того, каждое входящее поле можно вручную сопоставить с отдельным столбцом ClickHouse; поскольку поля `oneof` взаимоисключают друг друга, в каждой записи будет заполнен только один столбец.
 
 <div id="protobuf-message-lists">
-  #### Списки сообщений {#protobuf-message-lists}
+  #### Списки сообщений
 </div>
 
 Если схема Protobuf верхнего уровня, заданная для ClickPipe, содержит одно повторяющееся поле, которое само является сообщением Protobuf, то определение схемы и сопоставление столбцов будут выполняться на основе «вложенного» поля Message. Сообщение Kafka будет обрабатываться как список таких сообщений, и одно сообщение Kafka будет разворачиваться в несколько строк ClickHouse.
 
-## Виртуальные столбцы Kafka {#kafka-virtual-columns}
+## Виртуальные столбцы Kafka
 
 Для совместимых с Kafka стриминговых источников данных поддерживаются следующие виртуальные столбцы. При создании нового пункта назначения виртуальные столбцы можно добавить в целевую таблицу с помощью кнопки `Add Column`.
 
@@ -202,7 +202,7 @@ ClickPipes поддерживает все типы Protobuf 2 и 3, за иск
 Столбец `_is_deleted` доступен, если для обработки маркеров удаления выбрано мягкое удаление.
 Для маркеров удаления Kafka его значение — `true`, а для обычных сообщений — `false`.
 
-### Структурированные ключи сообщений {#structured-message-keys}
+### Структурированные ключи сообщений
 
 Сопоставление `_key` со столбцом типа `String` сохраняет исходный ключ сообщения Kafka. Такое сопоставление выполняется без декодирования ключа и поиска схемы. Чтобы извлечь поля из структурированного ключа, сопоставьте поля источника, начинающиеся с `_key.`. Например, для ключа JSON `{"customer":{"id":42}}` сопоставьте `_key.customer.id` с целевым столбцом, например `customer_id`.
 

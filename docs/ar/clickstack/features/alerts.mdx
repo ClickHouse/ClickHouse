@@ -16,7 +16,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تعمل التنبيهات بسلاسة على مستوى بيانات ClickStack، مما يساعدك على تتبع حالة النظام، واكتشاف تراجعات الأداء، ومراقبة أحداث الأعمال الرئيسية.
 
 <div id="types-of-alerts">
-  ## أنواع التنبيهات {#types-of-alerts}
+  ## أنواع التنبيهات
 </div>
 
 يدعم ClickStack طريقتين متكاملتين لإنشاء التنبيهات: **تنبيهات البحث** و**تنبيهات مخططات لوحة المعلومات**. بعد إنشاء التنبيه، يُرفَق إما بعملية البحث أو بالمخطط.
@@ -118,7 +118,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لاحظ أن أنواع الخدمات المتاحة تختلف بين ClickStack Open Source وClickStack Cloud. راجع [تكاملات أنواع الخدمات](#integrations).
 
 <div id="integrations">
-  ### تكاملات أنواع الخدمات {#integrations}
+  ### تكاملات أنواع الخدمات
 </div>
 
 تتكامل تنبيهات ClickStack تلقائيًا مع أنواع الخدمات التالية:
@@ -154,7 +154,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * محتوى Webhook (اختياري). يدعم المحتوى حاليًا متغيرات القالب `{{title}}` و`{{body}}` و`{{link}}`.
 
 <div id="managing-alerts">
-  ## إدارة التنبيهات {#managing-alerts}
+  ## إدارة التنبيهات
 </div>
 
 يمكن إدارة التنبيهات مركزيًا من خلال لوحة التنبيهات على الجانب الأيسر من HyperDX.
@@ -177,7 +177,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يؤدي النقر على تنبيه إلى نقلك إلى المخطط أو صفحة Search المرتبط بها التنبيه.
 
 <div id="deleting-alerts">
-  ### حذف تنبيه {#deleting-alerts}
+  ### حذف تنبيه
 </div>
 
 لإزالة تنبيه، افتح مربع حوار التعديل لصفحة البحث أو المخطط المرتبط، ثم اختر **إزالة التنبيه**.
@@ -186,13 +186,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="إزالة تنبيه من المخطط" size="lg" />
 
 <div id="sql-based-alerts">
-  ## تنبيهات المخططات المستندة إلى SQL {#sql-based-alerts}
+  ## تنبيهات المخططات المستندة إلى SQL
 </div>
 
 تتيح لك تنبيهات المخططات المستندة إلى SQL كتابة استعلامات ClickHouse SQL مخصّصة لتحديد شروط التنبيه. ويمنحك ذلك تحكمًا كاملًا في التصفية والتجميع والعمليات الحسابية — فأي شيء يمكنك التعبير عنه في SQL يمكن أن يتحول إلى تنبيه.
 
 <div id="supported-chart-types">
-  ### أنواع المخططات المدعومة {#supported-chart-types}
+  ### أنواع المخططات المدعومة
 </div>
 
 تدعم التنبيهات المستندة إلى SQL ثلاثة أنواع من عرض المخططات:
@@ -241,7 +241,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### كيفية تفسير نتائج الاستعلام {#sql-result-interpretation}
+  ### كيفية تفسير نتائج الاستعلام
 </div>
 
 يفحص نظام التنبيهات الأعمدة التي يعيدها استعلام SQL لتحديد ما يجب مقارنته بالعتبة.
@@ -251,13 +251,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **أعمدة التجميع**: تُعامَل أي أعمدة غير رقمية وغير خاصة بالطابع الزمني (مثلًا، `ServiceName` و`Environment`) على أنها أبعاد تجميع. وعند وجود مجموعات، يُتتبَّع كل تركيب فريد من قيم المجموعات ويُرسَل له تنبيه بشكل منفصل. سيرسل ClickStack تنبيهًا لكل مجموعة تحتوي على قيمة تتجاوز العتبة المُعدَّة. لا تتوفر المجموعات إلا لمخططات السلاسل الزمنية.
 
 <div id="query-params">
-  ### معلمات الاستعلام ووحدات الماكرو {#query-params}
+  ### معلمات الاستعلام ووحدات الماكرو
 </div>
 
 تدعم استعلامات تنبيهات SQL معلمات القوالب ووحدات الماكرو التي تُستبدل تلقائيًا عند التقييم. وهذه هي نفس المعلمات ووحدات الماكرو المتاحة عند [إنشاء مخطط مستند إلى SQL](/ar/clickstack/features/dashboards/sql-visualizations).
 
 <div id="required-alert-parameters">
-  #### المعلمات المطلوبة والموصى بها {#required-alert-parameters}
+  #### المعلمات المطلوبة والموصى بها
 </div>
 
 الاستعلامات المستخدمة لتنبيهات المخططات الخطية أو مخططات الأعمدة المتراكمة **يجب** أن تتضمن معلمة الفاصل الزمني أو macro (`{intervalSeconds:Int64}` أو `{intervalMilliseconds:Int64}` أو `$__timeInterval(col)` أو `$__timeInterval_ms(col)`). أثناء تنفيذ التنبيه، سيُستبدل بها الفترة المُعدّة للتنبيه.
@@ -271,11 +271,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Warning>
 
 <div id="example-queries">
-  ### أمثلة على استعلامات التنبيهات {#example-queries}
+  ### أمثلة على استعلامات التنبيهات
 </div>
 
 <div id="example-error-rate">
-  #### معدل الأخطاء لكل خدمة (زمنيًا) {#example-error-rate}
+  #### معدل الأخطاء لكل خدمة (زمنيًا)
 </div>
 
 أرسل تنبيهًا إذا تجاوز معدل الأخطاء في أي خدمة 5%، بشرط وجود ما لا يقل عن 10 طلبات خلال فترة التنبيه لتفادي التنبيهات المزعجة للخدمات منخفضة الزيارات.
@@ -359,7 +359,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 لاحظ أن الاستعلام يجلب 30 فترة *قبل* بداية نطاق التاريخ لتهيئة حسابات النافذة المتحركة، ثم يُصفّي الناتج النهائي ليقتصر على نافذة التقييم.
 
 <div id="common-alert-scenarios">
-  ## سيناريوهات التنبيهات الشائعة {#common-alert-scenarios}
+  ## سيناريوهات التنبيهات الشائعة
 </div>
 
 فيما يلي بعض سيناريوهات التنبيهات الشائعة التي يمكنك استخدام HyperDX فيها:

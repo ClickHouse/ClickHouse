@@ -45,13 +45,13 @@ Sur GCP, un périmètre VPC Service Controls qui restreint `container.googleapis
 La section suivante explique comment le réseau privé **Tailscale** est utilisé pour le dépannage et l’accès de gestion facultatif.
 
 <div id="tailscale-private-network">
-  ## Réseau privé Tailscale {#tailscale-private-network}
+  ## Réseau privé Tailscale
 </div>
 
 Tailscale fournit une connexion réseau privée de type zero trust entre les services de gestion de ClickHouse Cloud et votre déploiement BYOC. Ce canal sécurisé permet aux ingénieurs ClickHouse d’effectuer des opérations de dépannage et de gestion sans nécessiter d’accès entrant au réseau public ni de configurations VPN complexes ; les agents eux-mêmes établissent uniquement des connexions sortantes et nécessitent un accès Internet sortant pour atteindre le service de coordination Tailscale.
 
 <div id="tailscale-overview">
-  ### Vue d’ensemble {#tailscale-overview}
+  ### Vue d’ensemble
 </div>
 
 Tailscale crée un tunnel réseau privé et chiffré entre le plan de contrôle de ClickHouse (dans le VPC de ClickHouse) et votre plan de données BYOC (dans votre VPC). Cette connexion est utilisée exclusivement pour :
@@ -82,7 +82,7 @@ Pour chaque service ou point de terminaison qui doit être accessible via Tailsc
    * Achemine le trafic vers les adresses IP appropriées au sein de votre cluster Kubernetes
 
 <div id="tailscale-connection-process">
-  ### Processus de connexion réseau {#tailscale-connection-process}
+  ### Processus de connexion réseau
 </div>
 
 L’établissement de la connexion Tailscale suit les étapes suivantes :

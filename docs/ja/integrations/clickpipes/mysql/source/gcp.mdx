@@ -16,7 +16,7 @@ import { CloudSQLIAMAuthentication } from "/snippets/ja/clickpipes/_cloudsql_iam
 これは、MySQL ClickPipe を使用して Cloud SQL for MySQL インスタンスのデータをレプリケートするための設定手順ガイドです。
 
 <div id="enable-binlog-retention-gcp">
-  ## バイナリログの保持を有効にする {#enable-binlog-retention-gcp}
+  ## バイナリログの保持を有効にする
 </div>
 
 バイナリログは、MySQL serverインスタンスで行われたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションにはバイナリログファイルが必要です。
@@ -44,7 +44,7 @@ PITR 機能によって、Google Cloud 上の MySQL でバイナリログを有�
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="GCP で binlog フラグを設定" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## データベースユーザーを設定する {#configure-database-user-gcp}
+  ## データベースユーザーを設定する
 </div>
 
 root ユーザーとして Cloud SQL MySQL インスタンスに接続し、次のコマンドを実行します。

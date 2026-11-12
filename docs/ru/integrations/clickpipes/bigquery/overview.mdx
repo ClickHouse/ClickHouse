@@ -13,7 +13,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## Возможности {#features}
+  ## Возможности
 </div>
 
 ### Первоначальная загрузка {#initial-load}
@@ -49,7 +49,7 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 </Note>
 
 <div id="data-type-mapping">
-  ## Сопоставление типов данных {#data-type-mapping}
+  ## Сопоставление типов данных
 </div>
 
 [Типы данных BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -76,28 +76,28 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 | `STRUCT` (RECORD)   | `String`              |                                                                |
 
 <div id="access-control">
-  ## Управление доступом {#access-control}
+  ## Управление доступом
 </div>
 
 <div id="authentication">
-  ### Аутентификация {#authentication}
+  ### Аутентификация
 </div>
 
-#### Учетные данные сервисного аккаунта {#service-account-credentials}
+#### Учетные данные сервисного аккаунта
 
 ClickPipes аутентифицируется в вашем проекте Google Cloud с помощью [ключа сервисного аккаунта](https://docs.cloud.google.com/iam/docs/keys-create-delete). Мы рекомендуем создать отдельный сервисный аккаунт с минимально необходимым набором [разрешений](#permissions), чтобы ClickPipes мог экспортировать данные из BigQuery, загружать их в промежуточный GCS-бакет и считывать в ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Создание ключа сервисного аккаунта с разрешениями для BigQuery и Cloud Storage" size="lg" border />
 
-#### GCP Workload Identity (бета) {#gcp-workload-identity}
+#### GCP Workload Identity (бета)
 
 Следуя [руководству по GCP Workload Identity](/ru/integrations/clickpipes/security/gcp-workload-identity), получите управляемую служебную учётную запись из контекста сервиса ClickPipes. Назначьте ей перечисленные ниже [роли BigQuery и GCS](#permissions) и создайте пайп с методом аутентификации `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. При использовании этого метода аутентификации не указывайте учётные данные служебной учётной записи.
 
 <div id="permissions">
-  ### Разрешения {#permissions}
+  ### Разрешения
 </div>
 
-#### BigQuery {#bigquery}
+#### BigQuery
 
 Служебной учётной записи, которую использует ClickPipes (предоставленной вами или управляемой через workload identity), нужны следующие роли BigQuery:
 
@@ -113,7 +113,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage {#cloud-storage}
+  #### Cloud Storage
 </div>
 
 Сервисный аккаунт должен иметь следующие роли Cloud Storage:

@@ -18,7 +18,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 如果您要查找 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务的对应端点，请参阅 [ClickHouse Managed Postgres Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus)。
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## 用于获取 ClickHouse Cloud 指标的 Prometheus 端点 API {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
+  ## 用于获取 ClickHouse Cloud 指标的 Prometheus 端点 API
 </div>
 
 ### API 参考文档 {#api-reference}
@@ -44,7 +44,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 这些端点的完整请求和响应 schema 可在 [Cloud API 参考文档](/zh/products/cloud/api-reference/prometheus)中查看。
 
 <div id="authentication">
-  ### 身份验证 {#authentication}
+  ### 身份验证
 </div>
 
 使用您的 ClickHouse Cloud API key 进行基本身份验证：
@@ -66,7 +66,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### 响应示例 {#sample-response}
+  ### 响应示例
 </div>
 
 ```response
@@ -130,7 +130,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### 指标标签 {#metric-labels}
+  ### 指标标签
 </div>
 
 所有指标都带有以下标签：
@@ -150,7 +150,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 | clickpipe&#95;source | ClickPipe 源类型 |
 
 <div id="information-metrics">
-  ### 信息指标 {#information-metrics}
+  ### 信息指标
 </div>
 
 ClickHouse Cloud 提供了一个特殊指标 `ClickHouse_ServiceInfo`，它是一个值始终为 `1` 的 `gauge`。该指标除包含所有**指标标签**外，还包含以下标签：
@@ -260,7 +260,7 @@ scrape_configs:
 已发现的目标会使用 `filtered_metrics=true` 抓取指标。若要发现抓取完整指标集的目标，请在服务发现 URL 中添加 `?filtered_metrics=false`。完整端点规范请参阅 [Cloud API 参考文档](/zh/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)。
 
 <div id="integrating-with-grafana">
-  ## 与 Grafana 集成 {#integrating-with-grafana}
+  ## 与 Grafana 集成
 </div>
 
 与 Grafana 集成主要有两种方式：
@@ -270,7 +270,7 @@ scrape_configs:
 
 下面我们将提供这些选项的使用说明，重点说明 ClickHouse Cloud Prometheus 端点相关的特定细节。
 
-### 使用 指标端点 接入 Grafana Cloud {#grafana-cloud-with-metrics-endpoint}
+### 使用 指标端点 接入 Grafana Cloud
 
 * 登录你的 Grafana Cloud 账户
 * 选择 **指标端点**，添加新连接
@@ -289,7 +289,7 @@ scrape_configs:
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 指标浏览器图表" border />
 
-### 通过 Alloy 使用 Grafana Cloud {#grafana-cloud-with-alloy}
+### 通过 Alloy 使用 Grafana Cloud
 
 如果你使用的是 Grafana Cloud，可以在 Grafana 中打开 Alloy 菜单，并按照屏幕上的说明安装 Alloy：
 
@@ -340,7 +340,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 请注意，必须将 `honor_labels` 配置参数设为 `true`，`instance` 标签才能被正确填充。
 
-### 使用 Alloy 的 Grafana 自管理版本 {#grafana-self-managed-with-alloy}
+### 使用 Alloy 的 Grafana 自管理版本
 
 使用 Grafana 自管理版本的用户可在[这里](https://grafana.com/docs/alloy/latest/get-started/install/)找到安装 Alloy agent 的说明。我们假定用户已将 Alloy 配置为把 Prometheus 指标发送到所需的目标端。下面的 `prometheus.scrape` 组件会让 Alloy 抓取 ClickHouse Cloud 端点。我们假定 `prometheus.remote_write` 会接收抓取到的指标。如果未配置该项，请将 `forward_to key` 调整为目标端。
 
@@ -378,7 +378,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 请注意，必须将 `honor_labels` 配置参数设为 `true`，标签才能正确填充。
 
-## 与 Datadog 集成 {#integrating-with-datadog}
+## 与 Datadog 集成
 
 你可以使用 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) 和 [OpenMetrics 集成](https://docs.datadoghq.com/integrations/openmetrics/)，从 ClickHouse Cloud 端点收集指标。下面是该 agent 和集成的一个简单配置示例。不过请注意，你可能只需要选择自己最关心的那些指标。下面这个兜底示例会导出成千上万个“指标-实例”组合，Datadog 会将其视为自定义指标。
 
@@ -398,7 +398,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus 与 Datadog 集成" />
 
-## 相关页面 {#related}
+## 相关页面
 
 * [监控概览](/zh/products/cloud/features/monitoring/overview) — 比较 ClickHouse Cloud 的所有监控方式
 * [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 内置仪表盘，无需外部工具

@@ -23,7 +23,7 @@ Los valores se convierten al tipo de la columna mediante el operador `CAST`. No 
 La cláusula `IN PARTITION` limita la actualización a las particiones indicadas. Sin ella, en las tablas de la familia `ReplicatedMergeTree`, cuando el ajuste [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/es/reference/settings/session-settings/optimize) está habilitado (valor predeterminado), ClickHouse detecta automáticamente las condiciones sobre la clave de partición en `filter_expr` y solo actualiza las particiones afectadas. En tablas `MergeTree` no replicadas, usa una cláusula `IN PARTITION` explícita para limitar una actualización a particiones concretas.
 
 <div id="examples">
-  ## Ejemplos {#examples}
+  ## Ejemplos
 </div>
 
 ```sql
@@ -57,7 +57,7 @@ Para usar actualizaciones ligeras, la materialización de las columnas `_block_n
 Una consulta de [eliminación ligera `DELETE`](/es/reference/statements/delete) puede ejecutarse como una actualización ligera `UPDATE` en lugar de una mutación `ALTER UPDATE`. La implementación de la eliminación ligera `DELETE` se controla mediante el ajuste [`lightweight_delete_mode`](/es/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Consideraciones de rendimiento {#performance-considerations}
+  ## Consideraciones de rendimiento
 </div>
 
 **Ventajas de las actualizaciones ligeras:**
@@ -80,7 +80,7 @@ Las actualizaciones ligeras, a diferencia de las mutaciones tradicionales, no es
 La consistencia de las actualizaciones ligeras concurrentes se controla mediante la configuración [`update_sequential_consistency`](/es/reference/settings/session-settings/update#update_sequential_consistency) y [`update_parallel_mode`](/es/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Actualizar permisos {#update-permissions}
+  ## Actualizar permisos
 </div>
 
 `UPDATE` requiere el privilegio `ALTER UPDATE`. Para habilitar las sentencias `UPDATE` en una tabla específica para un usuario concreto, ejecute:
@@ -90,7 +90,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Detalles de la implementación {#details-of-the-implementation}
+  ## Detalles de la implementación
 </div>
 
 Las partes de parche son iguales que las partes normales, pero contienen solo las columnas actualizadas y varias columnas del sistema:
@@ -129,7 +129,7 @@ Para estos dos casos, respectivamente, hay dos formas de aplicar partes de parch
 
 El modo join es más lento y requiere más memoria que el modo de fusión, pero se usa con menos frecuencia.
 
-## Contenido relacionado {#related-content}
+## Contenido relacionado
 
 * [`ALTER UPDATE`](/es/reference/statements/alter/update) - Operaciones `UPDATE` de alto costo
 * [eliminación ligera](/es/reference/statements/delete) - Operaciones de eliminación ligera con `DELETE`

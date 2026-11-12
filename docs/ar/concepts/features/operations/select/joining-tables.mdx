@@ -11,7 +11,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدعم ClickHouse مجموعة واسعة من خوارزميات الربط التي توازن بين سرعة التنفيذ واستهلاك الذاكرة. للاطلاع على صيغة `JOIN` ودلالاتها، راجع [مرجع عبارة `JOIN`](/ar/reference/statements/select/join). وللاطلاع على إرشادات عملية للتحسين وأمثلة تطبيقية مفصّلة، راجع [تقليل عمليات JOIN وتحسينها](/ar/concepts/best-practices/minimize-optimize-joins).
 
 <div id="choosing-a-join-algorithm">
-  ## اختيار خوارزمية JOIN {#choosing-a-join-algorithm}
+  ## اختيار خوارزمية JOIN
 </div>
 
 يدعم ClickHouse عددًا من [خوارزميات JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1). وعادةً ما تنطوي هذه الخوارزميات على مفاضلة بين استخدام الذاكرة والأداء. يقدّم ما يلي نظرة عامة على خوارزميات JOIN في ClickHouse استنادًا إلى استهلاكها النسبي للذاكرة ووقت التنفيذ:

@@ -18,7 +18,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   مكتبة Java client للتواصل مع خادم DB عبر بروتوكولاته. يدعم التطبيق الحالي واجهة [HTTP interface](/ar/concepts/features/interfaces/http) فحسب.
   توفر المكتبة واجهة برمجة تطبيقات خاصة بها لإرسال الطلبات إلى الخادم، كما توفر أدوات للعمل مع تنسيقات البيانات الثنائية المختلفة (RowBinary* &amp; Native*).
 
-  ## الإعداد {#setup}
+  ## الإعداد
 
   * Maven Central (صفحة المشروع على الويب): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * إصدارات البناء الليلية (رابط المستودع): https://central.sonatype.com/repository/maven-snapshots/
@@ -53,7 +53,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## التهيئة {#initialization}
+  ## التهيئة
 
   يتم تهيئة كائن Client بواسطة `com.clickhouse.client.api.Client.Builder#build()`. يمتلك كل عميل سياقه الخاص ولا تُشارَك أي كائنات بينهما.
   يوفر الـ Builder طرق تكوين لتسهيل الإعداد.
@@ -70,7 +70,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   `Client` هو `AutoCloseable` ويجب إغلاقه عند انتهاء الحاجة إليه.
 
-  ### المصادقة {#authentication}
+  ### المصادقة
 
   تُهيَّأ المصادقة لكل عميل في مرحلة التهيئة. وتتوفر ثلاث طرق مصادقة مدعومة: بكلمة المرور، أو برمز الوصول، أو بشهادة SSL للعميل.
 
@@ -114,7 +114,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
       * التحقق من ضبط القيمة نفسها في قاعدة البيانات `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (سيُظهر الاستعلام `auth_params` بشيء مثل ` {"common_names":["some_user"]}`)
   </Note>
 
-  ### تجميع الاتصالات {#connection-pooling}
+  ### تجميع الاتصالات
 
   يستخدم `Client` مكتبة Apache HttpClient 5 مع مجمّع اتصالات HTTP داخلي. تستعير كل عملية اتصالًا من المجمّع، ثم ترسل الطلب، وتستقبل الاستجابة بشكل متدفق، وتعيد الاتصال إلى المجمّع.
 
@@ -129,7 +129,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | استراتيجية إعادة الاستخدام | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO`                   | استراتيجية تخصيص الاتصالات في مجمّع الاتصالات (`FIFO` أو `LIFO`).             |
   | تجميع الاتصالات            | `enableConnectionPool(boolean enable)`                         | `true`                   | تمكين تجميع اتصالات HTTP أو تعطيله.                                           |
 
-  #### الإعدادات الموصى بها لمجمّع الاتصالات {#recommended-connection-pool-configuration}
+  #### الإعدادات الموصى بها لمجمّع الاتصالات
 
   ```java showLineNumbers
   Client client = new Client.Builder()
@@ -143,14 +143,14 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
           .build();
   ```
 
-  ## التهيئة {#configuration}
+  ## التهيئة
 
   يتم تعريف جميع الإعدادات بواسطة طرق المثيل (المعروفة أيضاً بطرق التهيئة)، مما يوضح نطاق وسياق كل قيمة.
   تُعرَّف معاملات التهيئة الرئيسية في نطاق واحد (العميل أو العملية) ولا تتجاوز بعضها البعض.
 
   يتم تحديد الإعداد أثناء إنشاء الـ client. راجع `com.clickhouse.client.api.Client.Builder`.
 
-  ## إعداد العميل {#client-configuration}
+  ## إعداد العميل
 
   <Tabs>
     <Tab title="الاتصال ونقاط النهاية">
@@ -273,7 +273,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   <br />
 
-  ### تعريف العميل {#client-identification}
+  ### تعريف العميل
 
   يوجد حقلان في سجل الاستعلام يُحدِّدان التطبيق الذي أنشأ الطلب: `client_name` و`http_user_agent`. يستخدم بروتوكول native TCP الحقلَ
   `client_name` لتعريف التطبيق، بينما يستخدم بروتوكول HTTP الحقلَ `http_user_agent` لهذا الغرض. يوفر الـ Client builder الأسلوبَ `setClientName` لضبط القيم الصحيحة
@@ -295,7 +295,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   يمكن للتطبيق تعيين رأس HTTP الخاص به `User-Agent` للتعريف عن نفسه. غير أن الجزء `clickhouse-java-v2/0.9.6-SNAPSHOT` سيُلحَق بنهاية الرأس.
 
-  ### تحديد العملية {#operation-identification}
+  ### تحديد العملية
 
   يتضمن سجل الاستعلام حقلين إضافيين هما `query_id` و`log_comment`، يمكن استخدامهما لتحديد عملية معينة وإضافة معلومات إضافية إلى سجل الاستعلام.
 
@@ -313,7 +313,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   querySettings.logComment("some-comment");
   ```
 
-  ### إعدادات الخادم {#server-settings}
+  ### إعدادات الخادم
 
   يمكن تعيين إعدادات جانب الخادم على مستوى العميل مرةً واحدة أثناء الإنشاء (راجع الدالة `serverSetting` في `Builder`)، وعلى مستوى العملية (راجع `serverSetting` في class إعدادات العملية).
 
@@ -340,7 +340,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ⚠️ عند تعيين الخيارات عبر طريقة `setOption` (سواء في `Client.Builder` أو في فئة إعدادات العملية)، يجب أن يُسبَق اسم إعداد الخادم بالبادئة `clickhouse_setting_`. قد يكون `com.clickhouse.client.api.ClientConfigProperties#serverSetting()` مفيدًا في هذه الحالة.
 
-  ### ترويسات HTTP مخصصة {#custom-http-headers}
+  ### ترويسات HTTP مخصصة
 
   يمكن تعيين HTTP headers مخصصة لجميع العمليات (على مستوى العميل) أو لعملية واحدة فقط (على مستوى العملية). وتتجاوز إعدادات العملية الترويسات المعيّنة على مستوى العميل التي تحمل الاسم نفسه.
 
@@ -368,11 +368,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
   ```
 
-  ## ميزات ClickHouse Cloud {#clickhouse-cloud-features}
+  ## ميزات ClickHouse Cloud
 
   الميزات المتاحة عند الاتصال بـ [ClickHouse Cloud](https://clickhouse.com/cloud).
 
-  ### التوجيه المراعي للنسخ المتماثلة (CLOUD) {#replica-aware-routing}
+  ### التوجيه المراعي للنسخ المتماثلة (CLOUD)
 
   يمكن لـ ClickHouse Cloud تثبيت طلبات HTTP المترابطة على النسخة المتماثلة نفسها. أرسل ترويسة `X-ClickHouse-Replica-Tag` ليوجّه وكيل Cloud كل طلب يحمل الوسم نفسه إلى نسخة متماثلة واحدة. استخدم ذلك للكائنات المقيّدة بنطاق session مثل الجداول المؤقتة، أو لإعادة استخدام ذاكرة التخزين المؤقت المحلية للنسخة المتماثلة، أو لتحقيق اتساق القراءة بعد الكتابة.
   اقرأ المزيد: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
@@ -394,11 +394,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   لتهيئة الترويسة لكل عملية على حدة، اضبطها على `QuerySettings` أو `InsertSettings` أو `CommandSettings` بدلاً من منشئ العميل.
 
-  ### المصادقة باستخدام JWT (CLOUD) {#jwt-authentication}
+  ### المصادقة باستخدام JWT (CLOUD)
 
   تتيح [المصادقة باستخدام JWT](/ar/concepts/features/security/external-authenticators/jwt) مصادقة المستخدمين باستخدام رموز JSON Web Tokens ‏(JWTs) في ClickHouse Cloud. فبدلاً من الاعتماد على مستخدمي قاعدة بيانات موجودين مسبقًا، يُنشئ ClickHouse ديناميكيًا **مستخدمين مؤقتين** مستمدّين من المطالبات المُضمَّنة في كل رمز.
 
-  #### الإعدادات الأولية {#initial-configuration}
+  #### الإعدادات الأولية
 
   لتهيئة المصادقة الأولية باستخدام JWT على العميل، استخدم `useBearerTokenAuth(token)` (تُضاف البادئة `Bearer_` تلقائيًا.
   (راجع [مستندات واجهة HTTP](/ar/concepts/features/security/external-authenticators/jwt#http-interface) ) عند إنشاء مثيل `Client`:
@@ -418,7 +418,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     تُضيف `useBearerTokenAuth(token)` البادئة `Bearer ` تلقائيًا إلى بداية ترويسة HTTP ‏`Authorization`.
   </Note>
 
-  #### تحديث الرمز المميز أثناء التشغيل {#updating-token-at-runtime}
+  #### تحديث الرمز المميز أثناء التشغيل
 
   نظرًا لأن رموز JWT قصيرة الأجل، ولأن المستخدمين المؤقتين لا يوجدون إلا طوال مدة حياة الرمز، ينبغي تعيين رموز JWT جديدة **قبل** انتهاء صلاحية الرمز الحالي، تجنبًا لفشل أي عمليات.
 
@@ -435,9 +435,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ستستخدم جميع الطلبات اللاحقة على مثيل `Client` رمز JWT المُحدَّث.
 
-  ## التعريفات الشائعة {#common-definitions}
+  ## التعريفات الشائعة
 
-  ### ClickHouseFormat {#clickhouseformat}
+  ### ClickHouseFormat
 
   تعداد [الصيغ المدعومة](/ar/reference/formats/index). يتضمن جميع الصيغ التي يدعمها ClickHouse.
 
@@ -531,9 +531,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | [Markdown](/ar/reference/formats/Markdown)                                                                          |    -    |   خام   |
   | [Form](/ar/reference/formats/Form)                                                                                  |   خام   |    -    |
 
-  ## واجهة برمجة تطبيقات الإدراج {#insert-api}
+  ## واجهة برمجة تطبيقات الإدراج
 
-  ### insert(String tableName, InputStream data, ClickHouseFormat format) {#insertstring-tablename-inputstream-data-clickhouseformat-format}
+  ### insert(String tableName, InputStream data, ClickHouseFormat format)
 
   يقبل البيانات على شكل `InputStream` من البايتات بالتنسيق المحدد. ومن المتوقع أن تكون `data` مُرمَّزةً وفق `format`.
 
@@ -574,7 +574,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ```
 
-  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings) {#insertstring-tablename-listlt-data-insertsettings-settings}
+  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
 
   يُرسل طلب كتابة إلى قاعدة البيانات. يتم تحويل قائمة الكائنات إلى تنسيق فعّال ثم إرسالها إلى الخادم. يجب تسجيل الفئة الخاصة بعناصر القائمة مسبقًا باستخدام الطريقة `register(Class, TableSchema)`.
 
@@ -610,7 +610,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### InsertSettings {#insertsettings}
+  ### InsertSettings
 
   خيارات الإعداد لعمليات الإدراج.
 
@@ -629,7 +629,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                | يعيّن أدوار قاعدة البيانات المراد تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                                             |
   | `setOption(String option, Object value)`        | يضبط خيار تهيئة بتنسيقه الخام. وهذا ليس إعداد خادم.                                                                                                        |
 
-  ### InsertResponse {#insertresponse}
+  ### InsertResponse
 
   كائن Response يحتوي على نتيجة عملية الإدراج. لا يكون متاحاً إلا إذا تلقّى الـ Client استجابةً من الـ server.
 
@@ -642,7 +642,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `OperationMetrics getMetrics()` | يعيد كائنًا يتضمن مقاييس العملية.                                                              |
   | `String getQueryId()`           | يعيد معرّف الاستعلام المخصَّص للعملية من قِبل التطبيق (عبر إعدادات العملية) أو من قِبل الخادم. |
 
-  ## واجهة برمجة تطبيقات الاستعلام {#query-api}
+  ## واجهة برمجة تطبيقات الاستعلام
 
   **اختيار الصيغة**
 
@@ -662,7 +662,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * بدءًا من الإصدار `0.11.0`، يضبط الـ Client قيمة `format` الافتراضية على مستوى العميل لا على مستوى العملية. يتيح ذلك للشيفرة الحالية
     أن تعمل دون أي تعديلات، كما يتيح للشيفرة الجديدة استخدام بند `FORMAT` عبر ضبط `format` على مستوى العميل إلى `null`.
 
-  ### query(String sqlQuery) {#querystring-sqlquery}
+  ### query(String sqlQuery)
 
   يُرسل `sqlQuery` كما هو. يُحدَّد تنسيق الاستجابة من خلال إعدادات الاستعلام. سيحتفظ `QueryResponse` بمرجع إلى تدفق الاستجابة الذي يجب أن يستهلكه قارئ يدعم التنسيق المحدد.
 
@@ -711,7 +711,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   // put business logic outside of the reading block to release http connection asap.
   ```
 
-  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings) {#querystring-sqlquery-mapltstring-object-queryparams-querysettings-settings}
+  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
 
   يُرسل `sqlQuery` كما هو. كما يُرسل معاملات الاستعلام لكي يتمكن الخادم من تجميع تعبير SQL.
 
@@ -759,7 +759,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ```
 
-  ### queryAll(String sqlQuery) {#queryallstring-sqlquery}
+  ### queryAll(String sqlQuery)
 
   يُرسل استعلامات للبيانات بتنسيق `RowBinaryWithNamesAndTypes`. يُعيد النتيجة على شكل مجموعة. أداء القراءة مماثل لأداء القارئ، إلا أنه يتطلب ذاكرة أكبر لاستيعاب مجموعة البيانات بالكامل.
 
@@ -797,7 +797,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### QuerySettings {#querysettings}
+  ### QuerySettings
 
   خيارات التهيئة لعمليات الاستعلام.
 
@@ -819,7 +819,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                  | يعيّن أدوار قاعدة البيانات المراد تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                      |
   | `setOption(String option, Object value)`          | يضبط خيار تهيئة بتنسيق خام. هذا ليس إعدادًا على مستوى الخادم.                                                                       |
 
-  ### QueryResponse {#queryresponse}
+  ### QueryResponse
 
   كائن الاستجابة الذي يحتوي على نتيجة تنفيذ الاستعلام. لا يكون متاحاً إلا إذا تلقّى الـ client استجابةً من الـ server.
 
@@ -835,14 +835,14 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `String getQueryId()`           | يعيد معرّف الاستعلام الذي عيّنه التطبيق للعملية (عبر إعدادات العملية أو بواسطة الخادم). |
   | `TimeZone getTimeZone()`        | يعيد المنطقة الزمنية التي يجب استخدامها لمعالجة النوعين Date وDateTime في الاستجابة.    |
 
-  ### أمثلة {#examples}
+  ### أمثلة
 
   * شيفرة المثال متاحة في [المستودع](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)
   * التنفيذ المرجعي لخدمة Spring متاح في [implementation](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service)
 
-  ## واجهة برمجة التطبيقات المشتركة {#common-api}
+  ## واجهة برمجة التطبيقات المشتركة
 
-  ### getTableSchema(String table) {#gettableschemastring-table}
+  ### getTableSchema(String table)
 
   يجلب مخطط الجدول لـ `table`.
 
@@ -863,7 +863,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   يُعيد كائن `TableSchema` يحتوي على قائمة بأعمدة الجدول.
 
-  ### getTableSchemaFromQuery(String sql) {#gettableschemafromquerystring-sql}
+  ### getTableSchemaFromQuery(String sql)
 
   يسترجع المخطط من عبارة SQL.
 
@@ -881,9 +881,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   يُعيد كائن `TableSchema` يحتوي على أعمدة تتطابق مع تعبير `sql`.
 
-  ### TableSchema {#tableschema}
+  ### TableSchema
 
-  ### register(Class&lt;?&gt; clazz, TableSchema schema) {#registerclasslt-clazz-tableschema-schema}
+  ### register(Class&lt;?&gt; clazz, TableSchema schema)
 
   يُجمِّع طبقة التسلسل وإلغاء التسلسل لـ Java Class لاستخدامها في كتابة/قراءة البيانات باستخدام `schema`. ستُنشئ هذه الدالة مُسلسِلاً ومُفككَ تسلسل لزوج getter/setter والعمود المقابل.
   يُحدَّد تطابق العمود باستخراج اسمه من اسم الدالة. على سبيل المثال، سيرتبط `getFirstName` بالعمود `first_name` أو `firstname`.
@@ -906,7 +906,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
   ```
 
-  ## أمثلة الاستخدام {#usage-examples}
+  ## أمثلة الاستخدام
 
   تجد شيفرة الأمثلة الكاملة في المستودع داخل [مجلد](https://github.com/ClickHouse/clickhouse-java/tree/main/examples) &#39;example&#96;:
 
@@ -914,7 +914,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) - مثال على كيفية استخدام العميل في تطبيق Spring Boot.
   * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) - مثال على كيفية استخدام العميل في تطبيق Ktor ‏(Kotlin).
 
-  ## قراءة البيانات {#reading-data}
+  ## قراءة البيانات
 
   ثمة طريقتان شائعتان لقراءة البيانات:
 
@@ -926,7 +926,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **ملاحظة:** يستلزم أسلوب البث قراءةً سريعة، وإلا قد يتسبب في انتهاء مهلة الكتابة على الخادم، إذ تُقرأ البيانات مباشرةً من تدفق الشبكة.
 
-  ### قراءة المصفوفات {#reading-arrays}
+  ### قراءة المصفوفات
 
   **طرق `ClickHouseBinaryFormatReader`**
 
@@ -978,13 +978,13 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## إمكانية المراقبة والمراقبة {#v2-o11y}
+  ## إمكانية المراقبة والمراقبة
 
   يوفّر ClickHouse Java Client ‏(V2) ميزات مدمجة لإمكانية المراقبة، مصمَّمة وفق الاصطلاحات الدلالية لـ OpenTelemetry ومقاييس Micrometer. ويتيح العميل مراقبة مدد العمليات، ومعدل النقل، ومرات إعادة المحاولة، وإحصاءات التنفيذ على الخادم، وحالة مجمّع الاتصالات، ومقاطع التتبع ضمن التتبّع الموزّع.
 
   للاطلاع على تطبيق Spring Boot متكامل مُعدّ على غرار بيئة الإنتاج، يوضّح تهيئة العميل V2، وتجميع الاتصالات، ونشر سياق التتبّع عبر حدود `@Async`، والتكامل الكامل مع بيانات القياس عن بُعد، راجع الوحدة `examples/demo-spring-service` في هذا المستودع.
 
-  ### واجهة برمجة تطبيقات إمكانية المراقبة في Client Builder {#v2-o11y-builder-api}
+  ### واجهة برمجة تطبيقات إمكانية المراقبة في Client Builder
 
   يوفّر `Client.Builder` ثلاث طرق أساسية لتهيئة إمكانية المراقبة وجمع المقاييس:
 
@@ -1041,9 +1041,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### المقاييس المُبلَغ عنها {#v2-o11y-metrics}
+  ### المقاييس المُبلَغ عنها
 
-  #### المقاييس التشغيلية {#operational-metrics}
+  #### المقاييس التشغيلية
 
   تتبع المقاييس المُصدَّرة عبر `MetricsRecorder` الاصطلاحاتِ الدلالية لـ OpenTelemetry الخاصة بمقاييس عميل قاعدة البيانات (`MetricName` و`MetricAttribute`):
 
@@ -1054,7 +1054,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `clickhouse.client.operation.count`                  | عداد (`{operation}`) | العدد الإجمالي لعمليات العميل المكتملة، مجمّعة حسب النتيجة.                                            |
   | `clickhouse.client.operation.retries`                | عداد (`{retry}`)     | عدد مرات إعادة المحاولة في جميع عمليات العميل.                                                         |
 
-  #### سمات المقياس / الوسوم {#metric-attributes-tags}
+  #### سمات المقياس / الوسوم
 
   تحمل العدّادات (Meters) التي ينشئها `MicrometerMetricsRecorder` وسومًا منخفضة عدد العناصر (`MetricAttribute`):
 
@@ -1067,7 +1067,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `db.response.status_code` | رمز الخطأ الصادر عن خادم ClickHouse عند الفشل.       | `60`                                        |
   | `error.type`              | اسم صنف الاستثناء عند الإخفاق، أو `none` عند النجاح. | `com.clickhouse.client.api.ServerException` |
 
-  #### مقاييس مجمّع الاتصالات {#connection-pool-metrics}
+  #### مقاييس مجمّع الاتصالات
 
   عند استدعاء `registerClientMetrics(meterRegistry, "groupName")`، تُسجَّل مقاييس مجمّع اتصالات HTTP في Micrometer:
 
@@ -1077,7 +1077,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `httpcomponents.httpclient.pool.route.max.default`: الحد الأقصى الافتراضي المُهيَّأ لعدد الاتصالات لكل مسار.
   * `httpcomponents.httpclient.connect.time`: المتوسط المتحرك لزمن إنشاء الاتصال.
 
-  #### واجهة برمجة تطبيقات مقاييس الاستجابة {#response-metrics-api}
+  #### واجهة برمجة تطبيقات مقاييس الاستجابة
 
   إلى جانب مسجّلات المقاييس، يمكن الوصول إلى إحصاءات التنفيذ التفصيلية مباشرةً من كائنات الاستجابة (`QueryResponse`، `InsertResponse`) عبر `OperationMetrics`:
 
@@ -1098,14 +1098,14 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### مقاطع التتبع المُرسَلة {#v2-o11y-spans}
+  ### مقاطع التتبع المُرسَلة
 
   يُنتج التتبّع في العميل V2 نوعين من مقاطع التتبع، مرتّبَين في تسلسل هرمي بين أصل وفرع:
 
   1. **Operation Span**: يمثّل عملية عميل عالية المستوى (`QUERY <database>` أو `INSERT <database>.<table_name>`). يبدأ ضمن سياق التتبّع الخاص بخيط التنفيذ الحالي (`Context.current()`)، بحيث تنضمّ عمليات قاعدة البيانات إلى مقطع التتبّع النشط لدى المُستدعي.
   2. **Transport Request Span**: يمثّل محاولة واحدة لطلب نقل عبر HTTP ‏(`POST`). يُنشأ بوصفه span فرعيًا تابعًا لـ span العملية المقابل، وتُنشئ كل إعادة محاولة span جديدًا لطلب النقل ضمن span العملية.
 
-  #### سمات span {#v2-o11y-span-attributes}
+  #### سمات span
 
   تُعبَّأ مقاطع التتبع بالسمات القياسية لـ OpenTelemetry ‏(`SpanAttribute`):
 
@@ -1150,7 +1150,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     ```
   </Note>
 
-  ### تطوير مُسجِّلات مخصصة {#v2-o11y-custom-recorders}
+  ### تطوير مُسجِّلات مخصصة
 
   يمكن للتطبيقات التي تعتمد أنظمة خلفية مخصّصة لإمكانية المراقبة تنفيذ مسجّلات مخصّصة عن طريق توسيع `DefaultMetricsRecorder` (للمقاييس) أو `DefaultSpanRecorder` (للتتبّع).
 
@@ -1162,7 +1162,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (التكامل مع التتبّع عبر OpenTelemetry)
   * `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (التكامل مع مقاييس Micrometer)
 
-  ## دليل الترحيل {#migration_guide}
+  ## دليل الترحيل
 
   كان العميل القديم (V1) يستخدم `com.clickhouse.client.ClickHouseClient#builder` كنقطة انطلاق. أما العميل الجديد (V2) فيعتمد نمطًا مشابهًا عبر `com.clickhouse.client.api.Client.Builder`. وأبرز
   الفروقات هي:
@@ -1171,7 +1171,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * عدد مصادر التهيئة أقل: يُمرَّر أحدها إلى الـ builder، ويكون الآخر ضمن إعدادات العملية (`QuerySettings`، `InsertSettings`). كان الإصدار السابق يتضمّن تهيئة لكل عقدة، وكان يقرأ
     متغيرات البيئة في بعض الحالات.
 
-  ### تطابق معاملات الإعداد {#migration_from_v1_config}
+  ### تطابق معاملات الإعداد
 
   توجد 3 فئات enum مرتبطة بالتهيئة في V1:
 
@@ -1370,14 +1370,14 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ### الفروق العامة {#general-differences}
+  ### الفروق العامة
 
   * يستخدم Client V2 عددًا أقل من الفئات الخاصة لزيادة قابلية النقل. على سبيل المثال، يعمل V2 مع أي تنفيذ لـ `java.io.InputStream` من أجل
     كتابة البيانات إلى الخادم.
   * يكون إعداد `async` في Client V2 مضبوطًا على `off` افتراضيًا. وهذا يعني عدم وجود مؤشرات ترابط إضافية وتحكمًا أكبر من التطبيق في العميل. ينبغي أن يكون هذا الإعداد `off` في معظم حالات الاستخدام. سيؤدي تمكين `async` إلى إنشاء مؤشر ترابط منفصل لكل طلب. ولا يكون ذلك منطقيًا إلا عند استخدام
     منفّذ يتحكم فيه التطبيق (انظر `com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor`)
 
-  ### كتابة البيانات {#writing-data}
+  ### كتابة البيانات
 
   * استخدم أي تنفيذ لـ `java.io.InputStream`. الإصدار V1 `com.clickhouse.data.ClickHouseInputStream` مدعوم، لكنه غير مستحسن.
   * بمجرد اكتشاف نهاية مجرى الإدخال، ستتم معالجتها وفقًا لذلك. في السابق، كان يجب إغلاق مجرى الإخراج الخاص بالطلب.
@@ -1429,7 +1429,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * تتوفر واجهة برمجة تطبيقات جديدة منخفضة المستوى `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)`. صُمِّم `com.clickhouse.client.api.DataStreamWriter` لتطبيق منطق مخصص لكتابة البيانات. على سبيل المثال، لقراءة البيانات من
     قائمة انتظار.
 
-  ### قراءة البيانات {#reading-data-2}
+  ### قراءة البيانات
 
   * تُقرأ البيانات بتنسيق `RowBinaryWithNamesAndTypes` افتراضيًا. وحاليًا لا يُدعَم عند الحاجة إلى ربط البيانات سوى هذا التنسيق.
   * يمكن قراءة البيانات كمجموعة من السجلات باستخدام الأسلوب `List<GenericRecord> com.clickhouse.client.api.Client#queryAll(java.lang.String)`. يقرأ هذا الأسلوب البيانات إلى الذاكرة ثم يحرّر الاتصال. ولا حاجة إلى أي معالجة إضافية. يتيح `GenericRecord` الوصول إلى البيانات، ويجري بعض التحويلات.
@@ -1454,7 +1454,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     ستُصبح هذه المكتبة مهملة قريبًا. استخدم أحدث [Java Client](/ar/integrations/language-clients/java/client) في المشاريع الجديدة
   </Warning>
 
-  ## الإعداد {#v1-setup}
+  ## الإعداد
 
   <Tabs>
     <Tab title="Maven">
@@ -1512,7 +1512,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## التهيئة {#v1-initialization}
+  ## التهيئة
 
   صيغة URL للاتصال: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`، مثال:
 
@@ -1533,7 +1533,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
       + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
   ```
 
-  ## واجهة برمجة تطبيقات الاستعلام {#v1-query-api}
+  ## واجهة برمجة تطبيقات الاستعلام
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1547,7 +1547,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## واجهة برمجة تطبيقات الاستعلام المتدفق {#v1-streaming-query-api}
+  ## واجهة برمجة تطبيقات الاستعلام المتدفق
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1567,7 +1567,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   اطّلع على [مثال الشيفرة الكامل](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73) في [المستودع](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client).
 
-  ## واجهة برمجة تطبيقات الإدراج {#v1-insert-api}
+  ## واجهة برمجة تطبيقات الإدراج
 
   ```java showLineNumbers
 
@@ -1590,9 +1590,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   يمكن الاطلاع على [مثال للشيفرة](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622).
 
-  ## الميزات {#v1-features}
+  ## الميزات
 
-  ### الضغط {#v1-compression}
+  ### الضغط
 
   سيستخدم الـ client افتراضياً ضغط LZ4، مما يستلزم هذه التبعية:
 
@@ -1639,7 +1639,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   راجع [وثائق الضغط](/ar/guides/clickhouse/data-modelling/compression/compression-modes) للاطلاع على مزيد من المعلومات حول خيارات الضغط المختلفة.
 
-  ### استعلامات متعددة {#v1-multiple-queries}
+  ### استعلامات متعددة
 
   تنفيذ استعلامات متعددة في خيط عامل واحدًا تلو الآخر ضمن نفس الجلسة:
 
@@ -1655,7 +1655,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   List<ClickHouseResponseSummary> results = future.get();
   ```
 
-  ### المعاملات المسماة {#v1-named-parameters}
+  ### المعاملات المسماة
 
   يمكنك تمرير المعاملات بالاسم بدلاً من الاعتماد على موضعها في قائمة المعاملات فحسب. تتوفر هذه الإمكانية باستخدام دالة `params`.
 
@@ -1707,7 +1707,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     أما الأنواع الأخرى، مثل `Integer` و`UUID` و`Array` و`Enum`، فستُحوَّل تلقائيًا داخل `params`.
   </Info>
 
-  ## اكتشاف العقد {#v1-node-discovery}
+  ## اكتشاف العقد
 
   يوفر Java client إمكانية اكتشاف عقد ClickHouse تلقائيًا. يكون الاكتشاف التلقائي معطّلًا افتراضيًا. لتفعيله يدويًا، اضبط `auto_discovery` على `true`:
 
@@ -1731,7 +1731,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | node&#95;discovery&#95;interval | `0`               | الفاصل الزمني لاكتشاف العقد، بالمللي ثانية. وتعني القيمة صفر أو أي قيمة سالبة أن الاكتشاف يتم لمرة واحدة. |
   | node&#95;discovery&#95;limit    | `100`             | الحد الأقصى لعدد العقد التي يمكن اكتشافها في وقت واحد؛ وتشير القيمة صفر أو أي قيمة سالبة إلى عدم وجود حد. |
 
-  ### موازنة الحمل {#v1-load-balancing}
+  ### موازنة الحمل
 
   يختار Java client عقدةً في ClickHouse لإرسال الطلبات إليها وفقًا لسياسة موازنة الحمل. بوجهٍ عام، تكون سياسة موازنة الحمل مسؤولةً عن الأمور التالية:
 
@@ -1750,7 +1750,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | node&#95;check&#95;interval   | `0`                                      | فاصل التحقق من العقدة بالميلي ثانية، ويُعامَل الرقم السالب على أنه صفر. تُفحَص حالة العقدة إذا انقضت المدة المحددة منذ آخر تحقق.<br />الفرق بين `health_check_interval` و `node_check_interval` هو أن الخيار `health_check_interval` يُجدول مهمةً تعمل في الخلفية وتتحقق من حالة قائمة العقد (كلها أو المعطوبة فقط)، بينما يحدد `node_check_interval` مقدار الوقت المنقضي منذ آخر تحقق لتلك العقدة بعينها                                                                       |
   | check&#95;all&#95;nodes       | `false`                                  | ما إذا كان سيتم إجراء فحص السلامة على جميع العقد أم على العقد المعطلة فقط.                                                                                                                                                                                                                                                                                                                                                                                                      |
 
-  ### التحويل التلقائي وإعادة المحاولة {#v1-failover-and-retry}
+  ### التحويل التلقائي وإعادة المحاولة
 
   يوفر Java client خيارات التهيئة اللازمة لضبط سلوك الـ failover والـ retry للاستعلامات الفاشلة:
 
@@ -1760,7 +1760,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | retry                              | `0`               | الحد الأقصى لعدد مرات إعادة المحاولة للطلب. تعني القيمة صفر أو أي قيمة سالبة عدم إجراء أي إعادة محاولة. تُرسِل إعادة المحاولة طلبًا إلى العقدة نفسها، وذلك فقط إذا أعاد خادم ClickHouse رمز الخطأ `NETWORK_ERROR`      |
   | repeat&#95;on&#95;session&#95;lock | `true`            | ما إذا كان ينبغي إعادة تنفيذ العملية عندما تكون الجلسة مقفلة إلى أن تنقضي المهلة (وفقًا لـ `session_timeout` أو `connect_timeout`). ويُعاد الطلب الذي فشل إذا أعاد خادم ClickHouse رمز الخطأ `SESSION_IS_LOCKED`       |
 
-  ### إضافة ترويسات HTTP مخصصة {#v1-adding-custom-http-headers}
+  ### إضافة ترويسات HTTP مخصصة
 
   تقبل طبقة نقل HTTP ترويسات طلب إضافية عبر الخاصية `custom_http_headers` (`ClickHouseHttpOption.CUSTOM_HEADERS`). تكون كل ترويسة بالصيغة `Name=Value`. افصل بين الترويسات المتعددة بفاصلة. ولإفلات فاصلة داخل قيمة، اكتبها بالصيغة `\,`. أما علامة `=` داخل القيمة فتُعامَل على أنها جزء من القيمة.
 
@@ -1787,11 +1787,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
           .executeAndWait();
   ```
 
-  ## ميزات ClickHouse Cloud {#v1-clickhouse-cloud-features}
+  ## ميزات ClickHouse Cloud
 
   الميزات المتاحة عند الاتصال بـ [ClickHouse Cloud](https://clickhouse.com/cloud).
 
-  ### التوجيه المراعي للنسخ المتماثلة (CLOUD) {#v1-replica-aware-routing}
+  ### التوجيه المراعي للنسخ المتماثلة (CLOUD)
 
   يتيح ClickHouse Cloud تثبيت طلبات HTTP المترابطة على النسخة المتماثلة نفسها. أرسل الترويسة `X-ClickHouse-Replica-Tag` ليوجّه وكيل Cloud جميع الطلبات التي تحمل الوسم نفسه إلى نسخة متماثلة واحدة. استخدم ذلك مع الكائنات المرتبطة بنطاق الـ session، مثل الجداول المؤقتة، أو لإعادة استخدام ذاكرة التخزين المؤقت المحلية للنسخة المتماثلة، أو لضمان اتساق القراءة بعد الكتابة.
   اقرأ المزيد: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
