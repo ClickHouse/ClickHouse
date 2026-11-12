@@ -59,6 +59,21 @@ ColumnPtr castRowsNotInNullMap(
     return converted->index(*indexes, 0);
 }
 
+/// Whether the tuples differ at most in `Nullable` elements of `from` that `to` requests without `Nullable`.
+bool differsOnlyInNullableElements(const IDataType & from, const IDataType & to)
+{
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(&from);
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(&to);
+    if (!from_tuple || !to_tuple || from_tuple->getElementNames() != to_tuple->getElementNames())
+        return false;
+    const auto & from_elements = from_tuple->getElements();
+    const auto & to_elements = to_tuple->getElements();
+    for (size_t i = 0; i < from_elements.size(); ++i)
+        if (!from_elements[i]->equals(*to_elements[i]) && !removeNullable(from_elements[i])->equals(*to_elements[i]))
+            return false;
+    return true;
+}
+
 /// Prepares the elements of named tuples that are requested, recursively; the cast that follows matches them by name.
 /// A Nullable tuple of another type is converted with its NULL rows excluded, before applying the requested
 /// nullability. Top-level NULL defaults also populate `block_missing_values` for column `DEFAULT` expressions.
@@ -84,7 +99,10 @@ ColumnWithTypeAndName prepareNullableTuplesForCast(
             const auto & null_map = from_null_column.getNullMapData();
             const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
             const bool strip_nullable = !to->isNullable() && (settings.null_as_default || settings.null_tuple_as_default);
-            if (has_nulls && !nested.type->equals(*to_nested))
+            /// Removing the `Nullable` of elements for `null_as_default` converts no value of a NULL row.
+            const bool same_values = nested.type->equals(*to_nested)
+                || (settings.null_as_default && differsOnlyInNullableElements(*nested.type, *to_nested));
+            if (has_nulls && !same_values)
             {
                 nested.column = castRowsNotInNullMap(nested, to_nested, null_map, settings);
                 nested.type = to_nested;
@@ -213,11 +231,11 @@ void castImpl(
     column.type = requested_type;
 }
 
-void addConversionMessage(Exception & e, const ColumnWithTypeAndName & column, const DataTypePtr & requested_type)
+void addConversionMessage(Exception & e, const String & column_name, const DataTypePtr & read_type, const DataTypePtr & requested_type)
 {
     e.addMessage(fmt::format(
         "while converting column {} from type {} to type {}",
-        backQuote(column.name), column.type->getName(), requested_type->getName()));
+        backQuote(column_name), read_type->getName(), requested_type->getName()));
 }
 
 }
@@ -232,13 +250,14 @@ void castColumnToRequestedType(
     if (column.type->equals(*requested_type))
         return;
 
+    const DataTypePtr read_type = column.type;
     try
     {
         castImpl(column, requested_type, settings, column_i, block_missing_values);
     }
     catch (Exception & e)
     {
-        addConversionMessage(e, column, requested_type);
+        addConversionMessage(e, column.name, read_type, requested_type);
         throw;
     }
 }
@@ -252,6 +271,7 @@ void castColumnToRequestedType(
     if (column.type->equals(*requested_type))
         return;
 
+    const DataTypePtr read_type = column.type;
     try
     {
         column.column = castRowsNotInNullMap(column, requested_type, null_map, settings);
@@ -259,7 +279,7 @@ void castColumnToRequestedType(
     }
     catch (Exception & e)
     {
-        addConversionMessage(e, column, requested_type);
+        addConversionMessage(e, column.name, read_type, requested_type);
         throw;
     }
 }

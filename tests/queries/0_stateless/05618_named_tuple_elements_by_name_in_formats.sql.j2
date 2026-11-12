@@ -15,7 +15,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05618.{{ format }}', '{{ format
     map(CAST(tuple(toInt32(number)), 'Tuple(a Int32)'), 'v') AS mk,
     [(1, 'p'), (3, 'r')]::Array(Tuple(x Int32, y String)) AS n,
     map(CAST(tuple(if(number = 0, tuple(1), NULL)), 'Tuple(b Nullable(Tuple(a Int32)))'), 'v') AS mb,
-    if(number = 0, CAST(tuple('5'), 'Tuple(s String)'), NULL)::Nullable(Tuple(s String)) AS p
+    [CAST(tuple('5'), 'Tuple(s Nullable(String))'), NULL][number + 1] AS p
 FROM numbers(2);
 
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, t Tuple(q Nullable(Int32)), z Enum8(\'x\' = 5, \'y\' = 7), mk Map(Tuple(z Nullable(Int32)), String), n Nested(y String, q Nullable(Int32))') ORDER BY id SETTINGS flatten_nested = 0;
@@ -26,6 +26,7 @@ SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', '
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, mb Map(Tuple(b Tuple(q Int32)), String)') ORDER BY id SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, l Array(Tuple(q Nullable(Int32)))') ORDER BY id;
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, p Tuple(s Int32)') ORDER BY id SETTINGS input_format_null_as_default = 1;
+SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, p Nullable(Tuple(s String))') ORDER BY id SETTINGS input_format_null_as_default = 0;
 {% endif -%}
 {% if format != 'Vortex' -%}
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, T Tuple(A Int32)') ORDER BY id SETTINGS {{ ci }};
