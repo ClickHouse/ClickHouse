@@ -63,7 +63,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         }
         else
         {
-            result_column->insertManyDefaults(block.rows());
+            column_with_type.type->insertManyDefaultsInto(*result_column, block.rows());
         }
 
         column_with_type.column = std::move(result_column);
@@ -104,7 +104,7 @@ void TTLColumnAlgorithm::execute(Block & block)
             if (default_column)
                 result_column->insertFrom(*default_column, i);
             else
-                result_column->insertDefault();
+                column_with_type.type->insertDefaultInto(*result_column);
         }
         else
         {
