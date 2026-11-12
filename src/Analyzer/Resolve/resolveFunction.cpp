@@ -1330,9 +1330,9 @@ static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & right_argument,
     const ContextPtr & context)
 {
-    auto equality = std::make_shared<FunctionNode>("equals");
+    auto equality = std::make_shared<FunctionNode>(NameExactNumericEquals::name);
     equality->getArguments().getNodes() = {left_argument, right_argument};
-    equality->resolveAsFunction(createExactNumericEqualityFunction(context));
+    equality->resolveAsFunction(FunctionFactory::instance().get(NameExactNumericEquals::name, context));
     return equality;
 }
 

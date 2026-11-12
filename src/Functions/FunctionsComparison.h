@@ -1125,7 +1125,13 @@ class FunctionComparison final : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        ComparisonParams params = context ? ComparisonParams(context) : ComparisonParams();
+        if constexpr (std::is_same_v<Name, NameExactNumericEquals>)
+            params.exact_decimal_numeric_equality = true;
+        return std::make_shared<FunctionComparison>(std::move(params));
+    }
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -2072,7 +2078,7 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameNotEquals::name))
+        if ((name == NameEquals::name || name == NameExactNumericEquals::name || name == NameNotEquals::name))
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
@@ -2133,7 +2139,7 @@ public:
 
                     /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
                     /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
-                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+                    const bool is_equality = (name == NameEquals::name || name == NameExactNumericEquals::name || name == NameNotEquals::name);
                     const bool element_result_ok
                         = WhichDataType(element_result_type.get()).isUInt8()
                         || (is_equality && element_result_type->isNullable()
@@ -2362,7 +2368,7 @@ public:
                     right_type->getName());
             /// Row-dependent heterogeneous numeric `IN` lists need exact equality without
             /// narrowing integers into the Decimal's native width or rounding through `Float64`.
-            if constexpr (std::is_same_v<Name, NameEquals>)
+            if constexpr (std::is_same_v<Name, NameEquals> || std::is_same_v<Name, NameExactNumericEquals>)
             {
                 if (params.exact_decimal_numeric_equality)
                 {
@@ -2545,9 +2551,5 @@ public:
     }
 #endif
 };
-
-/// Creates an equality resolver used internally by row-dependent numeric `IN` rewrites.
-/// The returned function is bound directly, so scoped aliases cannot replace it.
-FunctionOverloadResolverPtr createExactNumericEqualityFunction(const ContextPtr & context);
 
 }

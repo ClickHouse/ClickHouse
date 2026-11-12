@@ -187,3 +187,10 @@ FROM values('d Decimal(18,1), x Int64', (1.5,1));
 SELECT count()
 FROM numbers(1000000)
 WHERE toDecimal64(number, 0) IN (materialize(toFloat64(number)));
+
+-- Exact membership and ordinary equality must keep separate function identities in either order.
+SELECT d = materialize(x), d IN (materialize(x)), d NOT IN (materialize(x))
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.));
+
+SELECT d IN (materialize(x)), d = materialize(x), d NOT IN (materialize(x))
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.));
