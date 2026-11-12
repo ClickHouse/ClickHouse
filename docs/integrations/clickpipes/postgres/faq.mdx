@@ -186,11 +186,12 @@ In summary, while sync and normalize processes are terminated during a pause, it
 
 ### Why is the `_peerdb_raw_mirror_*` table so large, and how do I limit it? {#raw-mirror-table-retention}
 
-A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mirror_<pipe id>` in the destination database, then normalizes them into the target tables. ClickPipes doesn't truncate this table. Depending on when the pipe was created, the table may have no TTL and keep every event. Check with `SHOW CREATE TABLE`, and add or change the TTL with:
+A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mirror_<pipe id>` in the destination database, then normalizes them into the target tables. ClickPipes doesn't truncate this table. New raw tables are created with a default TTL. Raw tables of older pipes may have no TTL and keep every event. Check which applies with `SHOW CREATE TABLE`, and add or change the TTL with:
 
 ```sql
 ALTER TABLE <db>._peerdb_raw_mirror_<id>
-    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 90 DAY
+    SETTINGS ttl_only_drop_parts = 1;
 ```
 
 If the raw table has no partition key, the first TTL pass rewrites existing parts and can cause noticeable background I/O on a large table. Follow its progress in `system.mutations`.
