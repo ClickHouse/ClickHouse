@@ -1,0 +1,15 @@
+\N
+--
+a	UInt64
+b	Nullable(UInt64)
+--
+1
+1
+a
+--
+5
+99
+\N
+--
+a	Nullable(UInt64)
+b	Nullable(UInt64)

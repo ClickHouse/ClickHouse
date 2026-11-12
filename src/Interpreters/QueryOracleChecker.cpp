@@ -72,6 +72,7 @@ namespace Setting
 extern const SettingsBool ast_fuzzer_oracle;
 extern const SettingsBool enable_global_with_statement;
 extern const SettingsJoinStrictness join_default_strictness;
+extern const SettingsBool make_distributed_plan;
 extern const SettingsUInt64 max_expanded_ast_elements;
 extern const SettingsUInt64 max_parser_backtracks;
 extern const SettingsUInt64 max_parser_depth;
@@ -919,6 +920,24 @@ bool hasWithTotalsAnywhere(const ASTPtr & ast)
     return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
 }
 
+/// True if any SELECT keeps a subset of its rows chosen by position.
+bool hasRowLimitAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->limitLength() || select->limitOffset() || select->limitBy() || select->limitAfter() || select->limitUntil())
+            return true;
+    return anyChild(ast, [](const ASTPtr & child) { return hasRowLimitAnywhere(child); });
+}
+
+/// A distributed plan feeds a `LIMIT` one stream per source task, so the rows it keeps can change with the query
+/// around it, and the oracle's rewritten reads of the same subquery can keep different rows.
+bool hasRowLimitInDistributedPlan(const ASTPtr & ast, const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::make_distributed_plan] && hasRowLimitAnywhere(ast);
+}
+
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
 /// global over the table's row versions and is NOT distributive over a WHERE
 /// predicate: the TLP rewrites split rows into `p` / `NOT p` / `p IS NULL`
@@ -1192,6 +1211,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasWithTotalsAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesDistributedTableAnywhere(definition, context)
+                        || hasRowLimitInDistributedPlan(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
                         return true;
             }
@@ -2965,6 +2985,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasWithTotalsAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: WITH TOTALS (the totals row is not distributive over WHERE partitions)");
+        return false;
+    }
+
+    if (hasRowLimitInDistributedPlan(query_ast, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: LIMIT/OFFSET in a query run as a distributed plan");
         return false;
     }
 
