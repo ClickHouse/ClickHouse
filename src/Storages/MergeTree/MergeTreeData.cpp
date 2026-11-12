@@ -3350,6 +3350,27 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
+    /// The directory can also be removed or replaced while it is being loaded: a follower does not protect the
+    /// leader's `Outdated` source parts, so the leader may clean one up, and the next disk refresh of the follower
+    /// drops its mapping, at any point below. Any failure of a load that was queued with an identity is then
+    /// checked against the current identity of the directory: if it changed (or the directory is gone), the request
+    /// is stale, like above, instead of a broken part or a fatal error. A directory with an unchanged identity keeps
+    /// the usual handling of the failure.
+    auto is_stale_request = [&]
+    {
+        if (!expected_shared_storage_incarnation)
+            return false;
+
+        if (getPartSharedStorageIncarnation(*res.part) == *expected_shared_storage_incarnation)
+            return false;
+
+        LOG_INFO(log, "Part {} in directory {} was removed or replaced by another directory with the same name while it "
+            "was loading, skipping it. Error: {}", part_name, res.part->getDataPartStorage().getFullPath(),
+            getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+        res.is_replaced_directory = true;
+        return true;
+    };
+
     try
     {
         fiu_do_on(FailPoints::merge_tree_load_part_io_error,
@@ -3360,6 +3381,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
     catch (...)
     {
+        if (is_stale_request())
+            return res;
+
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
         if (should_rethrow(std::current_exception()))
@@ -3369,8 +3393,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
-    res.part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
-    res.part->version->loadAndUpdateMetadata();
+    try
+    {
+        res.part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
+        res.part->version->loadAndUpdateMetadata();
+    }
+    catch (...)
+    {
+        if (is_stale_request())
+            return res;
+        throw;
+    }
 
     if (res.part->wasInvolvedInTransaction())
     {
@@ -3390,6 +3423,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
     catch (...)
     {
+        if (is_stale_request())
+            return res;
+
         if (should_rethrow(std::current_exception()))
             throw;
 
