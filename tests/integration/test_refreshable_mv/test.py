@@ -4,7 +4,7 @@ from random import randint
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -817,3 +817,79 @@ def test_system_view_refreshes_on_not_running_replica(started_cluster):
             pass
         for node in nodes:
             node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_attach_while_keeper_is_unreachable(started_cluster, cleanup):
+    node1.query(
+        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}')"
+    )
+    for i in [1, 2]:
+        node1.query(
+            f"create table re.t{i} (x UInt64) engine ReplicatedMergeTree order by x;"
+            f"create materialized view re.mv{i} refresh every 1 year append to re.t{i} as select number as x from numbers(10);"
+            f"system wait view re.mv{i}"
+        )
+        assert node1.query(f"select count() from re.t{i}") == "10\n"
+
+    # mv2 loses its coordination znodes, so they must be created once Keeper is reachable.
+    uuid = node1.query(
+        "select uuid from system.tables where database = 're' and name = 'mv2'"
+    ).strip()
+    node1.stop_clickhouse()
+    zk = cluster.get_kazoo_client("zoo1")
+    children = zk.get_children(f"/clickhouse/tables/{uuid}")
+    assert len(children) == 1
+    path = f"/clickhouse/tables/{uuid}/{children[0]}"
+    assert "replicas" in zk.get_children(path)
+    zk.delete(path, recursive=True)
+    zk.stop()
+    zk.close()
+
+    zk_nodes = ["zoo1", "zoo2", "zoo3"]
+    cluster.stop_zookeeper_nodes(zk_nodes)
+    try:
+        node1.start_clickhouse()
+        assert_eq_with_retry(
+            node1,
+            "select count() from system.view_refreshes where database = 're'",
+            "2\n",
+            retry_count=120,
+        )
+        assert (
+            node1.query(
+                "select job, status, exception from system.asynchronous_loader "
+                "where status in ('FAILED', 'CANCELED') and job like '% re.%'"
+            )
+            == ""
+        )
+    finally:
+        cluster.start_zookeeper_nodes(zk_nodes)
+        cluster.wait_zookeeper_nodes_to_start(zk_nodes)
+
+    # A refresh fails while its target table is still initializing.
+    assert_eq_with_retry(
+        node1,
+        "select count() from system.replicas where database = 're' and not is_readonly",
+        "2\n",
+        retry_count=240,
+    )
+    for i in [1, 2]:
+        exec_query_with_retry(
+            node1, f"system refresh view re.mv{i}", retry_count=120, sleep_time=1
+        )
+        node1.query(f"system wait view re.mv{i}")
+    assert node1.query("select count() from re.t1") == "20\n"
+    assert int(node1.query("select count() from re.t2")) >= 20
+
+    exec_query_with_retry(
+        node1, "system sync database replica re", retry_count=120, sleep_time=1
+    )
+    node1.query(
+        "create table re.after_keeper (x UInt64) engine ReplicatedMergeTree order by x",
+        settings={"database_replicated_initial_query_timeout_sec": 60},
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    assert zk.exists(f"{path}/replicas/1")
+    zk.stop()
+    zk.close()

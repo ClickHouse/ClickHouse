@@ -23,19 +23,11 @@ if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DAR
     # unlike the host ld which may not support the target architecture.
     ch_find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     if (_LLD_FOR_STRIP)
-        set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
-        add_custom_target(strip_prql_symbols
-            COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                "${_prql_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                prql_to_sql prql_free_pointer
-            DEPENDS cargo-build__ch_rust_prql
+        clickhouse_postprocess_rust_lib(_ch_rust_prql
+            STEP strip_rust_symbols
+            SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+            ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" prql_to_sql prql_free_pointer
             COMMENT "Stripping internal symbols from PRQL library"
-            VERBATIM
         )
-        add_dependencies(_ch_rust_prql strip_prql_symbols)
-        # Ensure localize runs before strip (they both modify the same .a)
-        if (TARGET localize_rust_c__ch_rust_prql)
-            add_dependencies(strip_prql_symbols localize_rust_c__ch_rust_prql)
-        endif()
     endif ()
 endif ()
