@@ -4,7 +4,12 @@
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
-SET distributed_plan_workers_num = 4;
+-- The query parameter, not `distributed_plan_workers_num`: this file never leases a real Stateless
+-- Worker (`distributed_plan_execute_locally` above keeps every fragment local), it only needs
+-- Cascades to cost the read as if it had this many nodes to split across, and the parameter sizes
+-- that without an explicit `make_distributed_plan = 0` on the EXPLAIN wrapper queries below
+-- conflicting with the session's own explicit `make_distributed_plan = 1`.
+SET param__internal_cascades_cluster_node_count = 4;
 SET enable_parallel_replicas = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so the functional-test
 -- profile's non-zero limit would leave a single-node local aggregation and no distributed read.
@@ -32,19 +37,13 @@ SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k SET
 -- query runs without the optimizer, which refuses to read an `EXPLAIN`.
 SET param__internal_cascades_cost_config = '{"exchange_fixed_overhead":1}';
 
--- Not `make_distributed_plan = 0` here: with distributed_plan_workers_num still explicit from
--- above, that would conflict with it and zeroing the worker count along with it would size the
--- inner EXPLAIN's own plan from this (outer) query context instead of the inner SETTINGS. Left to
--- derive, make_distributed_plan comes back on for a query that only reads an EXPLAIN pseudo-table,
--- which distributed_plan_fallback_to_local_execution (on by default) runs locally instead of
--- rejecting.
 SELECT countIf(explain LIKE '%ParallelRead%' OR explain LIKE '%ReplicatedRead%') > 0
 FROM (
     EXPLAIN
     SELECT count() FROM t_cascades_repl
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1
 )
-SETTINGS enable_cascades_optimizer = 0;
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 SELECT countIf(explain LIKE '%ParallelRead%' OR explain LIKE '%ReplicatedRead%') > 0
 FROM (
@@ -52,6 +51,6 @@ FROM (
     SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, use_statistics = 0
 )
-SETTINGS enable_cascades_optimizer = 0;
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 DROP TABLE t_cascades_repl SYNC;
