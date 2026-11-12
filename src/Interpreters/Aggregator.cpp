@@ -1,6 +1,7 @@
-#include <Common/ListWithMemoryTracking.h>
+#include <numeric>
 #include <optional>
 #include <unordered_map>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -14,9 +15,11 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Common/memcpySmall.h>
 #include <bit>
 #include <unordered_set>
@@ -921,6 +924,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+
+    if (params.enable_adaptive_aggregator)
+        adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
@@ -2216,6 +2222,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 #endif
 
+    /// Functions of the same `LowCardinality` argument share its used values.
+    std::vector<std::pair<const IColumn *, ColumnPtr>> low_cardinality_values;
+
     /// Adding values
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
@@ -2224,7 +2233,23 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
+        if (inst->has_low_cardinality_argument)
+        {
+            const IColumn * argument = inst->batch_arguments[0];
+            auto it = std::find_if(
+                low_cardinality_values.begin(), low_cardinality_values.end(), [&](const auto & entry) { return entry.first == argument; });
+            if (it == low_cardinality_values.end())
+                it = low_cardinality_values.emplace(
+                    low_cardinality_values.end(),
+                    argument,
+                    assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin));
+
+            /// The used values in the order of their first occurrence: the state is the same as after adding every row.
+            const IColumn * values = it->second.get();
+            inst->batch_that->addBatchSinglePlace(0, values->size(), res + inst->state_offset, &values, arena);
+        }
+        else
+            addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
     }
 }
 
@@ -2352,6 +2377,9 @@ void Aggregator::prepareAggregateInstructions(
     {
         bool allow_sparse_arguments = aggregate_columns[i].size() == 1;
         bool has_sparse_arguments = false;
+        const bool allow_low_cardinality_argument
+            = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
+        bool has_low_cardinality_argument = false;
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
@@ -2380,7 +2408,16 @@ void Aggregator::prepareAggregateInstructions(
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
-            full_column = recursiveRemoveLowCardinality(full_column);
+            /// Mapping the indexes pays off only for strings and for blocks that repeat their values.
+            const auto * low_cardinality
+                = allow_low_cardinality_argument ? typeid_cast<const ColumnLowCardinality *>(full_column.get()) : nullptr;
+            const IColumn * dictionary_values = low_cardinality ? low_cardinality->getDictionary().getNestedNotNullableColumn().get() : nullptr;
+            if (dictionary_values && (typeid_cast<const ColumnString *>(dictionary_values) || typeid_cast<const ColumnFixedString *>(dictionary_values))
+                && low_cardinality->getDictionary().size() * 2 <= low_cardinality->size())
+                has_low_cardinality_argument = true;
+            else
+                full_column = recursiveRemoveLowCardinality(full_column);
+
             if (full_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.emplace_back(std::move(full_column));
@@ -2392,6 +2429,7 @@ void Aggregator::prepareAggregateInstructions(
         }
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
+        aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
     }
 }
 
@@ -2681,7 +2719,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -2723,7 +2761,7 @@ MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, 
     return tracker;
 }
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size, bool capture_kept_keys_seed) const
 {
     if (!tmp_data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
@@ -2743,7 +2781,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, out_stream);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, out_stream, capture_kept_keys_seed);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2797,7 +2835,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     size_t before = data_variants.memoryUsage();
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
-    writeToTemporaryFile(data_variants, before + params.min_free_disk_space);
+    writeToTemporaryFile(data_variants, before + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
     reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
@@ -3451,7 +3489,8 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    TemporaryBlockStreamHolder & out) const
+    TemporaryBlockStreamHolder & out,
+    bool capture_kept_keys_seed) const
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -3480,10 +3519,25 @@ void Aggregator::writeToTemporaryFileImpl(
         return block;
     };
 
+    /// The keys of the buckets, with empty aggregate states, in the mergeable block layout.
+    /// Taken from the blocks the write materializes anyway, so it costs one copy of the key
+    /// columns; the overflow row is deliberately left out of it.
+    MutableColumns seed_columns;
+    if (capture_kept_keys_seed)
+        seed_columns = header.cloneEmptyColumns();
+
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
+        if (capture_kept_keys_seed)
+        {
+            const size_t block_rows = block.rows();
+            for (size_t i = 0; i < params.keys_size; ++i)
+                seed_columns[i]->insertRangeFrom(*block.getByPosition(i).column, 0, block_rows);
+            for (size_t i = params.keys_size; i < seed_columns.size(); ++i)
+                seed_columns[i]->insertManyDefaults(block_rows);
+        }
         out->write(block);
         update_max_sizes(block);
     }
@@ -3496,6 +3550,13 @@ void Aggregator::writeToTemporaryFileImpl(
         update_max_sizes(block);
     }
 
+    if (capture_kept_keys_seed)
+    {
+        Block seed = header.cloneEmpty();
+        seed.setColumns(std::move(seed_columns));
+        data_variants.kept_keys_seed = std::make_shared<const Block>(std::move(seed));
+    }
+
     /// Pass ownership of the aggregate functions states:
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
@@ -3506,15 +3567,15 @@ void Aggregator::writeToTemporaryFileImpl(
 
 bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const
 {
-    if (!params.shared_kept_keys_control)
-        return true;
-
     /// A rebuild or a re-seed of the kept keys is in flight: those merges re-insert data the
     /// table already held, so flushing it in the middle of them would drop the rest of the
-    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). The cutoff must not be
-    /// abandoned here either — the kept keys are already frozen.
+    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). With the shared cutoff
+    /// it must not be abandoned here either — the kept keys are already frozen.
     if (result.kept_keys_rebuild_in_progress)
         return false;
+
+    if (!params.shared_kept_keys_control)
+        return true;
 
     /// This stream has already stopped admitting keys. Its table may be flushed only once it has
     /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and it is
@@ -3533,23 +3594,23 @@ bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const Aggreg
 
 void Aggregator::reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const
 {
-    if (!result.restricted_to_kept_keys || !result.kept_keys_seed)
+    if (!result.kept_keys_seed)
         return;
 
-    /// The flush emptied the table while the stream keeps rejecting new keys, so re-insert the
-    /// kept keys with empty aggregate states. Merging an empty state into another is a no-op, so
-    /// the flushed partial states and the ones accumulated from here on add up exactly.
+    /// The flush emptied the table, so re-insert the keys it wrote out with empty aggregate
+    /// states. Merging an empty state into another is a no-op, so the flushed partial states and
+    /// the ones accumulated from here on add up exactly.
     /// A copy: `mergeOnBlock` below takes `result` by reference.
     const ConstBlockPtr seed = result.kept_keys_seed;
-    chassert(seed);
 
+    /// `mergeOnBlock` inserts the whole block before it looks at the limits, so a cleared flag
+    /// re-seeds every key even once the set is over `max_rows_to_group_by`. The flag it returns
+    /// is discarded - the caller's own one decides whether the table still admits new keys.
     bool reseed_no_more_keys = false;
     std::atomic<bool> is_cancelled = false;
     result.kept_keys_rebuild_in_progress = true;
     SCOPE_EXIT({ result.kept_keys_rebuild_in_progress = false; });
     mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, result, reseed_no_more_keys, is_cancelled);
-    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
-    chassert(!reseed_no_more_keys);
 
     ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysSpillReseeds);
 }
@@ -6162,7 +6223,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
         reseedKeptKeysAfterSpill(result);
     }
 
