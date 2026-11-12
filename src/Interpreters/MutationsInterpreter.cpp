@@ -2743,6 +2743,8 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
             for (const auto & name_resolution_settings : name_resolution_settings_variants)
             {
                 auto analysis_context = Context::createCopy(context);
+                /// Read table names in the mutation as written, like its execution does.
+                analysis_context->setAllowCompoundTableIdentifierQualification(false);
                 analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
                 analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
 
