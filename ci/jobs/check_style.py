@@ -1145,6 +1145,107 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
+# Third-party JavaScript and CSS loaded from CDNs. A compromised or hijacked CDN runs its code in the
+# origin of the page - for the Web UI pages of the server that is the ClickHouse HTTP origin, which
+# handles the credentials of the user.
+_CDN_HOSTS = (
+    "jsdelivr.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com",
+    "cdn.skypack.dev",
+    "esm.sh",
+    "jspm.io",
+    "esm.run",
+    "d3js.org",
+    "bootstrapcdn.com",
+    "code.jquery.com",
+    "ajax.googleapis.com",
+    "cdn.plot.ly",
+    "rawgit.com",
+    "githack.com",
+    "statically.io",
+)
+_CDN_URL = re.compile(
+    r"(?:https?:)?//(?:[\w-]+\.)*(?:" + "|".join(re.escape(h) for h in _CDN_HOSTS) + r")\b[^\s\"'`)]*"
+)
+_EXTERNAL_URL = r"""["']?(?:https?:)?//[^\s"'>]+"""
+# `<script src=...>` and `<link rel="stylesheet|preload|modulepreload" href=...>` with an external URL.
+_EXTERNAL_TAG = re.compile(
+    r"<script\b[^>]*\bsrc\s*=\s*" + _EXTERNAL_URL + r"[^>]*>"
+    r"|<link\b(?=[^>]*\brel\s*=\s*[\"']?[^\"'>]*\b(?:stylesheet|preload|modulepreload)\b)[^>]*\bhref\s*=\s*" + _EXTERNAL_URL + r"[^>]*>",
+    re.IGNORECASE,
+)
+_SRI_HASH = re.compile(r"\bsha(?:256|384|512)-[A-Za-z0-9+/]{43,}={0,2}")
+_INTEGRITY_ATTRIBUTE = re.compile(r"\bintegrity\s*=\s*[\"']sha(?:256|384|512)-", re.IGNORECASE)
+# ES modules imported by URL: browsers cannot check their integrity, so they must be vendored.
+_URL_IMPORT = re.compile(
+    r"""\bimport\b(?:[^;'"`]*?\bfrom)?\s*\(?\s*["'`](?:https?:)?//[^"'`]+""", re.MULTILINE
+)
+# Hosts that may be loaded without an integrity hash (see the reasons).
+_ALLOWED_WITHOUT_INTEGRITY = {
+    # Google Fonts generates the CSS depending on the browser, so it cannot have an integrity hash.
+    # The CSS only references font files.
+    "fonts.googleapis.com",
+}
+# Copies of third-party libraries; they mention CDN URLs in their banners.
+_VENDORED_PATHS = ("/vendor/", "./programs/server/js/", "./utils/trace-visualizer/js/", "./utils/trace-visualizer/css/")
+
+
+def check_external_web_assets(files) -> str:
+    """JavaScript and CSS from third-party hosts must be vendored into the repository.
+
+    Vendoring is preferred: copy the file next to the page (e.g. to a `vendor` directory) and load it by
+    a relative URL. An external `<script>` or stylesheet that remains must have subresource integrity
+    (an `integrity` attribute), and so must any other reference to a CDN (e.g. a dynamically created
+    `<script>`, with the hash following the URL). ES modules imported by URL cannot be checked by the
+    browser, so they are not allowed at all.
+    """
+    violations = []
+    for file_path in files:
+        if any(v in file_path for v in _VENDORED_PATHS):
+            continue
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+
+        def line_of(pos):
+            return text.count("\n", 0, pos) + 1
+
+        allowed_spans = []
+        for m in _EXTERNAL_TAG.finditer(text):
+            tag = m.group(0)
+            if _INTEGRITY_ATTRIBUTE.search(tag):
+                allowed_spans.append((m.start(), m.end()))
+            elif not any(h in tag for h in _ALLOWED_WITHOUT_INTEGRITY):
+                violations.append(
+                    f"{file_path}:{line_of(m.start())}: external resource without subresource integrity: "
+                    f"{' '.join(tag.split())[:200]}. Vendor the file into the repository "
+                    "(preferred), or at least add an `integrity` attribute with its hash."
+                )
+                allowed_spans.append((m.start(), m.end()))  # Reported already.
+
+        for m in _URL_IMPORT.finditer(text):
+            violations.append(
+                f"{file_path}:{line_of(m.start())}: ES module imported by URL: {m.group(0)[:200]}. "
+                "Its integrity cannot be checked; vendor the module into the repository."
+            )
+            allowed_spans.append((m.start(), m.end()))
+
+        for m in _CDN_URL.finditer(text):
+            if any(begin <= m.start() < end for begin, end in allowed_spans):
+                continue
+            if _SRI_HASH.search(text, m.end(), m.end() + 300):
+                continue
+            violations.append(
+                f"{file_path}:{line_of(m.start())}: reference to a CDN without subresource integrity: "
+                f"{m.group(0)[:200]}. Vendor the file into the repository (preferred), "
+                "or at least check its integrity hash."
+            )
+    return "\n".join(violations)
+
+
 # Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
 # taken from `DatabaseCatalog` may be the proxy rather than the engine.
 DEFERRABLE_STORAGE_CLASSES = (
@@ -1573,6 +1674,14 @@ if __name__ == "__main__":
         file_suffixes=[".yml", ".yaml"],
     )
 
+    # `docs` is excluded: it is the source of the documentation website, which is hosted by a
+    # third-party service and embeds its widgets, and it contains snippets for the users to copy.
+    web_files = Utils.traverse_paths(
+        include_paths=["./programs", "./src", "./utils", "./ci", "./tests", "./base", "./.claude"],
+        exclude_paths=[],
+        file_suffixes=[".html", ".htm", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".css", ".vue", ".svelte"],
+    )
+
     testname = "whitespace_check"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -1681,6 +1790,15 @@ if __name__ == "__main__":
                 check_name=testname,
                 check_function=check_storage_casts,
                 files=cpp_files,
+            )
+        )
+    testname = "external_web_assets"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_external_web_assets,
+                files=web_files,
             )
         )
     testname = "compose_images_from_dockerhub"
