@@ -55,6 +55,14 @@ namespace PostgreSQLProtocol
 namespace Messaging
 {
 
+/** Upper bound for the declared length of a message that is parsed before the client is authenticated.
+ *  The payload of such a message is bounded by its declared length, but that length is chosen by an
+ *  unauthenticated client, so the length itself must be bounded as well. Otherwise a client declares
+ *  the Int32 maximum and makes the server buffer up to 2 GiB of payload before it gives up.
+ *  PostgreSQL uses the same limit for its startup packet.
+ */
+constexpr Int32 max_unauthenticated_message_size = 10000;
+
 enum class FrontMessageType : Int32
 {
 // first message types
@@ -307,14 +315,26 @@ public:
     virtual void deserialize(ReadBuffer & in) = 0;
 
 protected:
+    /** Parses the payload of a message inside a buffer that ends at the declared length.
+     *  `max_size` bounds the declared length itself. Pass it for every message that is parsed before the
+     *  client is authenticated, because that client chooses the length. A frame rejected by `max_size` is
+     *  left unread in the stream, so only a caller whose error closes the connection may pass a limit.
+     */
     template <typename F>
-    static void deserializePayload(ReadBuffer & in, std::string_view message_name, F && deserialize_payload)
+    static void deserializePayload(
+        ReadBuffer & in,
+        std::string_view message_name,
+        F && deserialize_payload,
+        Int32 max_size = std::numeric_limits<Int32>::max())
     {
         Int32 size = 0;
         readBinaryBigEndian(size, in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                             "Wrong message length {} in {}, it must be at least 4", size, message_name);
+        if (size > max_size)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in {}, it must not exceed {}", size, message_name, max_size);
 
         const size_t payload_size = static_cast<size_t>(size - 4);
         LimitReadBuffer payload_in(in, {.read_no_less = payload_size, .read_no_more = payload_size});
@@ -598,7 +618,7 @@ public:
                                 "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
             if (size_sasl_mechanism > 0)
                 readStringOfDeclaredSize(sasl_mechanism, size_sasl_mechanism, payload_in);
-        });
+        }, max_unauthenticated_message_size);
     }
 
     MessageType getMessageType() const override
@@ -646,7 +666,7 @@ public:
         deserializePayload(in, "SASLResponse message", [this](ReadBuffer & payload_in)
         {
             readStringUntilEOF(sasl_mechanism, payload_in);
-        });
+        }, max_unauthenticated_message_size);
     }
 
     MessageType getMessageType() const override
@@ -687,7 +707,7 @@ public:
         deserializePayload(in, "PasswordMessage", [this](ReadBuffer & payload_in)
         {
             readNullTerminated(password, payload_in);
-        });
+        }, max_unauthenticated_message_size);
     }
 
     MessageType getMessageType() const override
