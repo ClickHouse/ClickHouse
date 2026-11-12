@@ -1,6 +1,8 @@
 #include <IO/HTTP/HTTPClientIO.h>
 #include <IO/ScopedNonBlocking.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
 #include <Common/Hex.h>
 #include <Common/Stopwatch.h>
@@ -15,6 +17,13 @@
 #include <limits>
 #include <cstring>
 #include <poll.h>
+
+#if USE_SILK
+#include <IO/SilkFiberStreamSocketImpl.h>
+#if USE_SSL
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
+#endif
+#endif
 
 
 namespace DB
@@ -43,6 +52,20 @@ constexpr size_t max_transfer_at_once = 1UL << 30;
 /// The chunk header is `<size in hex>\r\n`, at most 16 hex digits for a 64 bit size.
 constexpr size_t chunk_header_reserve = 18;
 constexpr size_t chunk_footer_size = 2;
+
+/// A Silk fiber socket waits by suspending its fiber, and it has no non-blocking mode.
+bool isFiberSocket([[maybe_unused]] Poco::Net::SocketImpl & socket_impl)
+{
+#if USE_SILK
+    if (dynamic_cast<Silk::FiberStreamSocketImpl *>(&socket_impl))
+        return true;
+#if USE_SSL
+    if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        return true;
+#endif
+#endif
+    return false;
+}
 
 /// The scratch buffer a response is read into when the caller provided no memory: in the
 /// external buffer mode the memory arrives with `set()` before every read, but the body of an
@@ -366,6 +389,16 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         return;
 
     auto & socket = session.socket();
+
+    /// The watching needs a non-blocking socket and a `poll` of its descriptor. A fiber socket has
+    /// no non-blocking mode, and a `poll` would block the thread of the fiber scheduler, not the
+    /// fiber. Such a body is sent as before the watching: a response is read only after the body.
+    if (isFiberSocket(*socket.impl()))
+    {
+        session.writeAllRaw(data, static_cast<std::streamsize>(size));
+        return;
+    }
+
     const Int64 send_timeout_ms = session.getSendTimeout().totalMilliseconds();
 
     /// Set when the server closed the connection without a response.
