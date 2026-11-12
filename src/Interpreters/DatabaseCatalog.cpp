@@ -381,7 +381,8 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             {
                 /// Only user databases: enumerating a predefined one can materialize a lazily created
                 /// system table during shutdown, and none of them holds a `Buffer` table anyway.
-                if (isPredefinedDatabase(database.first))
+                /// Not external ones either: listing them asks the remote side, and they hold no `Buffer` table or background writer.
+                if (isPredefinedDatabase(database.first) || database.second->isExternal())
                     continue;
 
                 try
@@ -398,29 +399,37 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             return tables;
         };
 
-        auto prepare_for_shutdown = [this](const StoragePtr & table, bool only_background_writes)
-        {
-            try
-            {
-                if (!only_background_writes || table->hasBackgroundWrites())
-                    table->flushAndPrepareForShutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
-            }
-        };
-
         /// Background writers do not depend on each other, so they stop concurrently, and all of them before returning.
         auto stop_background_writes = [&](const std::vector<StoragePtr> & tables)
         {
             for (const auto & table : tables)
-                if (table)
-                    run_concurrently([prepare_for_shutdown, table]
+            {
+                bool has_background_writes = false;
+                try
+                {
+                    has_background_writes = table && table->hasBackgroundWrites();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to check whether a table writes in the background");
+                }
+
+                if (!has_background_writes)
+                    continue;
+
+                run_concurrently([this, table]
+                {
+                    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
+                    try
                     {
-                        auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
-                        prepare_for_shutdown(table, /*only_background_writes=*/ true);
-                    });
+                        table->stopBackgroundWrites();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to stop background writes of table {}", table->getStorageID().getNameForLogs()));
+                    }
+                });
+            }
             wait_for_concurrent_work();
         };
 
@@ -478,8 +487,19 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         stop_background_writes(user_tables);
         drain_buffers(user_tables);
         for (const auto & table : user_tables)
-            if (table)
-                prepare_for_shutdown(table, /*only_background_writes=*/ false);
+        {
+            if (!table)
+                continue;
+
+            try
+            {
+                table->flushAndPrepareForShutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
+            }
+        }
     }
 
     /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).

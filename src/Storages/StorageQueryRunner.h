@@ -32,7 +32,7 @@ public:
 
     void shutdown(bool is_drop) override;
     /// Discards the queued jobs, cancels the running cluster ones and waits for the running local ones.
-    void flushAndPrepareForShutdown() override;
+    void stopBackgroundWrites() override;
     bool hasBackgroundWrites() const override { return true; }
     void drop() override;
 

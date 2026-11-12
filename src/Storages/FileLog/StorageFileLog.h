@@ -55,7 +55,7 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
     /// Stops reading, which is all that the shutdown does.
-    void flushAndPrepareForShutdown() override;
+    void stopBackgroundWrites() override;
     bool hasBackgroundWrites() const override { return true; }
 
     void read(

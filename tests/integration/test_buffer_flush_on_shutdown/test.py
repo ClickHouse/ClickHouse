@@ -1,8 +1,8 @@
 """A graceful shutdown must hand a `Buffer` table's rows over to its destination.
 
-Databases shut down one at a time in name order, so a destination in an earlier-sorting database is
-already gone when the `Buffer` prepares for shutdown, and a chain of `Buffer` tables moves rows at
-most one link per pass. Both losses are silent: the client saw the `INSERT` succeed.
+Databases shut down concurrently, so a destination in another database can already be gone when the
+`Buffer` prepares for shutdown, and a chain of `Buffer` tables moves rows at most one link per pass.
+Both losses are silent: the client saw the `INSERT` succeed.
 """
 
 import pytest
@@ -26,7 +26,7 @@ def started_cluster():
 
 
 def test_buffer_destination_in_another_database(started_cluster):
-    # `za` sorts before `zb`, so `za` is shut down (and its tables released) first.
+    # The destination is in another database, which can be shut down (and its tables released) first.
     node.query("CREATE DATABASE IF NOT EXISTS za")
     node.query("CREATE DATABASE IF NOT EXISTS zb")
     node.query("CREATE TABLE za.mt (x UInt64) ENGINE = MergeTree ORDER BY x")

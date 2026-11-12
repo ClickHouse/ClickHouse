@@ -258,15 +258,15 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 
 void StorageMaterializedPostgreSQL::shutdown(bool)
 {
-    if (replication_handler)
-        replication_handler->shutdown();
+    stopBackgroundWrites();
     auto nested = tryGetNested();
     if (nested)
         nested->shutdown();
 }
 
-void StorageMaterializedPostgreSQL::flushAndPrepareForShutdown()
+void StorageMaterializedPostgreSQL::stopBackgroundWrites()
 {
+    std::lock_guard lock(replication_handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();
 }
@@ -279,8 +279,11 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
     if (is_materialized_postgresql_database)
         return;
 
-    replication_handler->shutdownFinal();
-    replication_handler.reset();
+    {
+        std::lock_guard lock(replication_handler_mutex);
+        replication_handler->shutdownFinal();
+        replication_handler.reset();
+    }
 
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)

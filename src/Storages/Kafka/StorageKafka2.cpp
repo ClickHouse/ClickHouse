@@ -634,9 +634,9 @@ void StorageKafka2::shutdown(bool)
     LOG_TRACE(log, "Consumers closed");
 }
 
-void StorageKafka2::flushAndPrepareForShutdown()
+void StorageKafka2::stopBackgroundWrites()
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::flushAndPrepareForShutdown");
+    auto component_guard = Coordination::setCurrentComponent("StorageKafka2::stopBackgroundWrites");
     activating_task->deactivate();
     partialShutdown();
 }

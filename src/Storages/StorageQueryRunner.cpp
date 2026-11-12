@@ -822,7 +822,7 @@ void StorageQueryRunner::shutdown(bool /*is_drop*/)
     dispatcher->shutdown();
 }
 
-void StorageQueryRunner::flushAndPrepareForShutdown()
+void StorageQueryRunner::stopBackgroundWrites()
 {
     dispatcher->shutdown();
 }

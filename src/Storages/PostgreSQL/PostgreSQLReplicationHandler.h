@@ -167,9 +167,6 @@ private:
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
 
-    /// Preparing the table for shutdown, its shutdown and `DROP` can run `shutdown` concurrently.
-    std::mutex shutdown_mutex;
-
     BackgroundSchedulePoolTaskHolder startup_task;
     BackgroundSchedulePoolTaskHolder consumer_task;
     BackgroundSchedulePoolTaskHolder cleanup_task;

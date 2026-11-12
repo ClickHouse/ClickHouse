@@ -49,7 +49,7 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
     /// Stops consuming but keeps `shutdown_called` unset and the event loop running, so inserts into the table still publish.
-    void flushAndPrepareForShutdown() override;
+    void stopBackgroundWrites() override;
     bool hasBackgroundWrites() const override { return true; }
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -111,10 +111,10 @@ private:
 
     std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
+    /// Stops the consumers, unlike `shutdown_called`, which also stops the producers. Declared before them, as they keep a reference.
+    std::atomic<bool> consumers_stopped{false};
     std::mutex consumers_mutex;
     std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
-    /// Stops the consumers, unlike `shutdown_called`, which also stops the producers.
-    std::atomic<bool> consumers_stopped{false};
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages

@@ -773,7 +773,7 @@ ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
 }
 
 
-void StorageNATS::flushAndPrepareForShutdown()
+void StorageNATS::stopBackgroundWrites()
 {
     /// The consumers initialization task activates streaming, so it stops first.
     deactivateTask(initialize_consumers_task);

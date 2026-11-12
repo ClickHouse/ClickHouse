@@ -560,10 +560,10 @@ void StorageFileLog::startup()
 
 void StorageFileLog::shutdown(bool)
 {
-    flushAndPrepareForShutdown();
+    stopBackgroundWrites();
 }
 
-void StorageFileLog::flushAndPrepareForShutdown()
+void StorageFileLog::stopBackgroundWrites()
 {
     if (task)
     {
