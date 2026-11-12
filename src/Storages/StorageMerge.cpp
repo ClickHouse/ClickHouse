@@ -1641,6 +1641,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage);
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.view_source_in_subqueries
+            = modified_query_info.planner_context && modified_query_info.planner_context->isViewSourceInSubqueries();
 
         if (use_analyzer)
         {
@@ -1651,10 +1653,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
             auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
             if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-            {
-                modified_context->clearViewSource();
                 view_source = nullptr;
-            }
             InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
                 child_select_query_options,
