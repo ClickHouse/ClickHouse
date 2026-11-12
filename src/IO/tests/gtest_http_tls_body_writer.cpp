@@ -97,6 +97,61 @@ private:
 };
 
 
+/// A TLS 1.2 server that reads the request header, sends `answer` with one `SSL_write`, and then
+/// stops: it reads neither the body nor anything else.
+class EarlyAnswerServer
+{
+public:
+    explicit EarlyAnswerServer(std::string answer_)
+        : answer(std::move(answer_))
+    {
+        SSL_CTX_set_max_proto_version(server_context->sslContext(), TLS1_2_VERSION);
+        thread = std::thread([this] { run(); });
+    }
+
+    ~EarlyAnswerServer()
+    {
+        stop.set_value();
+        thread.join();
+    }
+
+    uint16_t port() const { return listener.address().port(); }
+    Poco::Net::Context::Ptr clientContext() const { return client_context; }
+
+private:
+    void run()
+    {
+        Poco::Net::StreamSocket peer;
+        try
+        {
+            if (listener.poll(Poco::Timespan(10, 0), Poco::Net::Socket::SELECT_READ))
+            {
+                peer = listener.acceptConnection();
+                std::string header;
+                char ch = 0;
+                while (!header.ends_with("\r\n\r\n") && peer.receiveBytes(&ch, 1) == 1)
+                    header += ch;
+                EXPECT_EQ(peer.sendBytes(answer.data(), static_cast<int>(answer.size())), static_cast<int>(answer.size()));
+            }
+        }
+        catch (const Poco::Exception & e)
+        {
+            ADD_FAILURE() << e.displayText();
+        }
+        stop_future.wait();
+    }
+
+    const std::string answer;
+    EphemeralCert cert;
+    Poco::Net::Context::Ptr server_context = cert.makeContext(Poco::Net::Context::SERVER_USE);
+    Poco::Net::Context::Ptr client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
+    Poco::Net::SecureServerSocket listener{Poco::Net::SocketAddress("127.0.0.1", 0), 64, server_context};
+    std::promise<void> stop;
+    std::future<void> stop_future = stop.get_future();
+    std::thread thread;
+};
+
+
 /// Reports the first send that would block: a TLS socket has a record write pending then.
 struct FirstBlockedSend : public Poco::Net::IHTTPSessionDataHooks
 {
@@ -246,6 +301,36 @@ TEST(HTTPTLSBodyWriter, RenegotiationDuringPendingWrite)
     Poco::Net::HTTPResponse response;
     auto response_body = DB::receiveHTTPResponse(session, response);
     EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+/// `SSL_read` takes a whole TLS record from the socket, and keeps what does not fit into the read
+/// buffer of the session: `poll` does not see these bytes. Here an interim response longer than the
+/// buffer and the final error come in one record.
+TEST(HTTPTLSBodyWriter, ErrorAfterLongInterimResponseInOneRecord)
+{
+    std::string answer = "HTTP/1.1 100 Continue\r\n";
+    for (size_t i = 0; i < 60; ++i)
+        answer += "X-Pad-" + std::to_string(i) + ": " + std::string(180, 'p') + "\r\n";
+    answer += "\r\nHTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+    ASSERT_GT(answer.size(), 8192);
+    ASSERT_LT(answer.size(), 16384);
+
+    EarlyAnswerServer server(answer);
+    Poco::Net::HTTPSClientSession session("127.0.0.1", server.port(), server.clientContext());
+    session.setTimeout(Poco::Timespan(5, 0), Poco::Timespan(2, 0), Poco::Timespan(5, 0));
+
+    const std::string body(16 << 20, 'x');
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+    request.setContentLength(body.size());
+    auto request_body = DB::sendHTTPRequest(session, request);
+    ASSERT_TRUE(session.socket().poll(Poco::Timespan(5, 0), Poco::Net::Socket::SELECT_READ));
+
+    DB::writeString(body, *request_body);
+    request_body->finalize();
+
+    Poco::Net::HTTPResponse response;
+    auto response_body = DB::receiveHTTPResponse(session, response);
+    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
 }
 
 #endif

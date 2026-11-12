@@ -209,25 +209,35 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
             events |= POLLIN;
         pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
 
+        /// Response bytes that OpenSSL already holds, from a record that `SSL_read` or `SSL_write`
+        /// took from the socket, make it readable without `poll`.
         int res = 0;
-        while (true)
+        if (watch_response && socket.secure() && socket.impl()->available() > 0)
         {
-            int timeout_ms = -1;
-            if (send_timeout_us > 0)
+            fd.revents = POLLIN;
+            res = 1;
+        }
+        else
+        {
+            while (true)
             {
-                const Int64 remaining_us = send_timeout_us - waited_us;
-                if (remaining_us <= 0)
+                int timeout_ms = -1;
+                if (send_timeout_us > 0)
                 {
-                    res = 0;
-                    break;
+                    const Int64 remaining_us = send_timeout_us - waited_us;
+                    if (remaining_us <= 0)
+                    {
+                        res = 0;
+                        break;
+                    }
+                    timeout_ms = static_cast<int>(std::min<Int64>((remaining_us + 999) / 1000, std::numeric_limits<int>::max()));
                 }
-                timeout_ms = static_cast<int>(std::min<Int64>((remaining_us + 999) / 1000, std::numeric_limits<int>::max()));
+                const Stopwatch watch;
+                res = ::poll(&fd, 1, timeout_ms);
+                waited_us += static_cast<Int64>(watch.elapsedMicroseconds());
+                if (res >= 0 || errno != EINTR)
+                    break;
             }
-            const Stopwatch watch;
-            res = ::poll(&fd, 1, timeout_ms);
-            waited_us += static_cast<Int64>(watch.elapsedMicroseconds());
-            if (res >= 0 || errno != EINTR)
-                break;
         }
 
         if (res < 0)
@@ -243,21 +253,25 @@ void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
         /// written. See `ssl3_send_alert`, `ssl3_write_bytes` and `ssl3_renegotiate_check`.
         if (watch_response && readable)
         {
-            int received = 0;
+            /// Read all that has arrived: `SSL_read` takes a whole record from the socket and keeps
+            /// what does not fit into the buffer, and `poll` does not see these bytes.
+            ScopedNonBlocking non_blocking(*socket.impl());
+            while (true)
             {
                 /// For TLS this goes through `SSL_read`: a session ticket or `KeyUpdate` gives no data.
-                ScopedNonBlocking non_blocking(*socket.impl());
-                received = session.fillBuffer();
-            }
+                const int received = session.fillBuffer();
 
-            /// The next write reports how the connection ended, as without the watching.
-            if (received < 0)
-                peer_closed = true;
+                /// The next write reports how the connection ended, as without the watching.
+                if (received < 0)
+                    peer_closed = true;
 
-            if (checkResponse())
-            {
-                stopped = true;
-                return;
+                if (checkResponse())
+                {
+                    stopped = true;
+                    return;
+                }
+                if (received <= 0 || response_header_complete)
+                    break;
             }
         }
 
