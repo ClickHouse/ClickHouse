@@ -5,7 +5,6 @@
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Common/Exception.h>
@@ -126,14 +125,12 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsBool use_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
-    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
@@ -144,7 +141,6 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
@@ -169,37 +165,15 @@ namespace Setting
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_adaptive_aggregator;
-    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
-    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
-    extern const SettingsBool adaptive_aggregator_disable_thaw;
-    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
-    extern const SettingsBool enable_parallel_single_level_merge;
-    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
-    extern const SettingsString temporary_files_codec;
-    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
 namespace ErrorCodes

@@ -116,6 +116,7 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+
     return Aggregator::Params(
         keys,
         aggregates,
