@@ -2996,8 +2996,12 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
-        if (has_runtime_filters)
+        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate.
+        if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
+            && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
             optimizer_flags |= 8;
+        if (has_runtime_filters)
+            optimizer_flags |= 16;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3074,7 +3078,9 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
-        step->has_runtime_filters = bool(optimizer_flags & 8);
+        if (optimizer_flags & 8)
+            step->join_settings.enable_packed_string_keys_in_hash_join = false;
+        step->has_runtime_filters = bool(optimizer_flags & 16);
     }
     return step;
 }
