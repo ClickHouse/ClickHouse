@@ -409,7 +409,7 @@ bool CSVFormatReader::readField(
 
         if (!keep_empty_value)
         {
-            column.insertDefault();
+            type->insertDefaultInto(column);
             return false;
         }
     }
@@ -459,7 +459,7 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
 
     if (column.size() == col_size + 1)
         column.popBack(1);
-    column.insertDefault();
+    type->insertDefaultInto(column);
     return false;
 }
 

@@ -262,7 +262,7 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                                 "Cannot insert NULL value into a column type '{}' at index {}",
                                 data_types[*rem_column_index]->getName(),
                                 *rem_column_index);
-                        columns[*rem_column_index]->insertDefault();
+                        data_types[*rem_column_index]->insertDefaultInto(*columns[*rem_column_index]);
                     }
                     ++file_column;
                 }
