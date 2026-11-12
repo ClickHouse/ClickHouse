@@ -127,10 +127,6 @@ bool analyzeProjectionCandidate(
     const ContextPtr & context,
     const HypotheticalProjection * hypothetical_projection = nullptr);
 
-/// Whether `column` is a persistent virtual column of the parent table (e.g. `_block_number`) that the projection does not
-/// store: a projection part synthesizes it from its own part info and row order, not the parent's per-row values.
-bool projectionLacksPersistentVirtual(const ProjectionDescription & projection, const StorageMetadataPtr & parent_metadata, const String & column);
-
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
 void filterPartsAndCollectProjectionCandidates(

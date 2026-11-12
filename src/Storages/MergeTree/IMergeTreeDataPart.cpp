@@ -169,13 +169,12 @@ namespace FailPoints
 void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 {
     const auto metadata_snapshot = part.getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
 
     const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
     const bool fill_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1 && part_info.level == 0 && part_info.mutation == 0;
 
-    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
+    for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
     {
         const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
         const bool synth_block_offset = (fill_virtuals || part.isSystemColumnInvalidated(BlockOffsetColumn::name)) && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name;
@@ -239,7 +238,7 @@ Range MergeTreePartMinMaxIndex::readRange(const IDataType & type, ReadBuffer & i
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
 {
-    return store(MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings), part_storage, out_checksums, storage_settings);
+    return store(MergeTreeData::getMinMaxColumns(*metadata_snapshot, storage_settings), part_storage, out_checksums, storage_settings);
 }
 
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
@@ -405,7 +404,7 @@ void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataP
     if (!initialized || source_part.isProjectionPart() || source_info.isPatch())
         return;
 
-    const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), source_part.storage.getSettings());
+    const auto columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, source_part.storage.getSettings());
 
     /// The inherited index may be narrower than the current set of minmax columns: the block columns are
     /// appended to the set when `part_minmax_index_columns` is widened, and changing the setting does not
@@ -441,13 +440,12 @@ Names MergeTreePartMinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart
         return {};
 
     const auto metadata_snapshot = part.getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = part.storage.getSettings();
     const auto & data_part_storage = part.getDataPartStorage();
 
     /// The hyperrectangle may hold more columns than the current setting prescribes (a wider index that
     /// has not been re-materialized yet), so clamp to what `store` actually writes: its leading prefix.
-    auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings);
+    auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings);
     if (minmax_columns.size() > hyperrectangle.size())
         minmax_columns.resize(hyperrectangle.size());
 

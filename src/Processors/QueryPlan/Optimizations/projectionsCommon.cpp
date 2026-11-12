@@ -544,12 +544,6 @@ void recordHypotheticalOutcome(
     outcome.forced = outcome.forced && outcome.chosen;
 }
 
-bool projectionLacksPersistentVirtual(const ProjectionDescription & projection, const StorageMetadataPtr & parent_metadata, const String & column)
-{
-    return parent_metadata->virtuals.tryGetDescription(column, VirtualsKind::Persistent, VirtualsMaterializationPlace::All)
-        && !projection.sample_block.findColumnOrSubcolumnByName(column);
-}
-
 void filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
@@ -574,10 +568,6 @@ void filterPartsAndCollectProjectionCandidates(
     {
         for (const auto & name : projection_query_info.filter_actions_dag->getRequiredColumnsNames())
         {
-            /// The projection's indexes would evaluate the filter on synthesized values and prune the wrong parent parts.
-            if (projectionLacksPersistentVirtual(projection, parent_metadata, name))
-                return;
-
             if (projection.sample_block.has(name))
                 filter_required_columns.push_back(name);
         }

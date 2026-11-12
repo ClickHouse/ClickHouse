@@ -1587,12 +1587,13 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get expression on columns for which part-level min-max index will be calculated.
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
+    static ExpressionActionsPtr getMinMaxExpr(const StorageInMemoryMetadata & metadata,
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
-    /// Get the columns covered by the part-level min-max index.
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    /// Get the columns covered by the part-level min-max index. `_block_number` and `_block_offset` are included only
+    /// when `metadata` has them, so a projection that does not store them gets no slots for them.
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
@@ -2074,7 +2075,7 @@ protected:
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
-    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
+    void checkPartitionKeyAndInitMinMax(const StorageInMemoryMetadata & new_metadata);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 

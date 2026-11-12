@@ -175,7 +175,7 @@ std::vector<std::optional<size_t>> MergeTreeDataSelectExecutor::buildPrimaryKeyT
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto minmax_names = MergeTreeData::getMinMaxColumns(
-        metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+        *metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
 
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
@@ -781,7 +781,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     DataTypes minmax_columns_types;
 
     if (minmax_idx_condition)
-        minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
+        minmax_columns_types = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data.getSettings()).getTypes();
 
     if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
