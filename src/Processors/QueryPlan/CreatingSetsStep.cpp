@@ -309,10 +309,6 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
 {
     std::vector<std::unique_ptr<QueryPlan>> plans;
 
-    auto subquery_optimization_settings = optimization_settings;
-    if (optimization_settings.optimize_plan_for_sets.has_value())
-        subquery_optimization_settings.optimize_plan = *optimization_settings.optimize_plan_for_sets;
-
     for (auto & future_set : step.subqueries)
     {
         if (future_set->get())
@@ -349,6 +345,9 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         /// `buildSetInplace` / `buildOrderedSetInplace` consumers.
         removeAllDelayedMaterializingCTEsStep(*plan);
 
+        auto subquery_optimization_settings = optimization_settings;
+        if (auto optimize_plan = future_set->getOptimizePlanOnBuild())
+            subquery_optimization_settings.optimize_plan = *optimize_plan;
         plan->optimize(subquery_optimization_settings);
         plans.emplace_back(std::move(plan));
     }

@@ -2325,6 +2325,9 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         /// The set source is kept aside, so its contexts must follow this plan's distributed-plan decision.
         query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        /// The mutation plan keeps the shape of its stages with `optimize_plan = false`. A set subquery is an
+        /// ordinary read and needs the full optimization, e.g. to move its filter to `PREWHERE`.
+        subquery->setOptimizePlanOnBuild(QueryPlanOptimizationSettings(context_).optimize_plan);
     }
 
     const auto & settings = context_->getSettingsRef();
@@ -2518,9 +2521,6 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
-    /// Only the mutation stages need to keep their original plan shape. Their set subqueries are
-    /// ordinary reads and need the first optimization pass to expose filters for `PREWHERE`.
-    do_not_optimize_plan_settings.optimize_plan_for_sets = do_not_optimize_plan_settings.optimize_plan;
     do_not_optimize_plan_settings.optimize_plan = false;
 
     auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
