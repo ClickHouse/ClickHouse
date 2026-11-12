@@ -33,8 +33,8 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
-        /// A read of a distributed plan has only the marks of its bucket. Reading by layers takes the
-        /// layers from all parts of the table; without this check every task would read all rows.
+        /// A bucketed read of a distributed plan reads only the marks pinned to its bucket. Splitting
+        /// into layers takes the ranges of the whole table, so every bucket would read all rows.
         if (reading->getDistributedReadBucketCount() > 0)
             return nullptr;
 

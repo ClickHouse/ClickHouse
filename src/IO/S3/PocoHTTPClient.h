@@ -116,6 +116,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
+    /// Throws on inconsistent delays and clamps `jitter_factor` into [0, 1].
+    void validateRetryStrategy();
 
     /// `remote_host_filter` is a reference, so it must not be bound to a temporary.
     PocoHTTPClientConfiguration(
