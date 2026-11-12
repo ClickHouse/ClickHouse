@@ -4011,6 +4011,14 @@ Possible values:
 
 - Any positive integer, starting from 2.
 )", 0) \
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
+Initial number of grace hash join buckets
+)", 0, \
+        {"26.11", 1, 1, "The setting is no longer experimental. The default is unchanged."}) \
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
+Limit on the number of grace hash join buckets
+)", 0, \
+        {"26.11", 1024, 1024, "The setting is no longer experimental. The default is unchanged."}) \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, R"(
 Maximal size of the set to filter joined tables by each other's row sets before joining.
 
@@ -9126,12 +9134,6 @@ Wait for committed changes to become actually visible in the latest snapshot
 )", EXPERIMENTAL) \
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
