@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-tsan
+-- no-tsan: the queries run in a single thread, so TSan has nothing to check, and they are too slow under it
 -- Large two-level hash tables switch to the Robin Hood mode with a higher load factor.
 -- Check that aggregation, `uniqExact` and `JOIN` stay correct with millions of keys.
 
