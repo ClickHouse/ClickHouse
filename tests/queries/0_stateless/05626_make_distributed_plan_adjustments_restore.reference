@@ -1,5 +1,5 @@
-the derived plan adjusts an explicitly set value, unless pinned const
-1
+the derived plan adjusts an explicitly set value
+false
 the explicitly set value returns when the workers num goes back to zero
 true
 and no other setting keeps a trace of the derived window

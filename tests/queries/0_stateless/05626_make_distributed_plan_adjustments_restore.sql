@@ -4,9 +4,7 @@
 -- A derived distributed plan force-adjusts the settings it does not support. Turning the
 -- workers num back to zero must undo those adjustments: a session that briefly asked for
 -- Workers must not keep degraded settings for its later ordinary queries. The assertions
--- compare snapshots instead of fixed values, so they hold under randomized harness settings
--- and under an ambient const pin on `make_distributed_plan` (ClickHouse Cloud), where the
--- derivation never fires and nothing moves at all.
+-- compare snapshots instead of fixed values, so they hold under randomized harness settings.
 
 SET compile_expressions = 1;
 
@@ -14,8 +12,8 @@ CREATE TEMPORARY TABLE settings_before AS SELECT name, value, changed FROM syste
 
 SET distributed_plan_workers_num = 3;
 
-SELECT 'the derived plan adjusts an explicitly set value, unless pinned const';
-SELECT getSetting('compile_expressions') = (SELECT readonly != 0 FROM system.settings WHERE name = 'make_distributed_plan');
+SELECT 'the derived plan adjusts an explicitly set value';
+SELECT getSetting('compile_expressions');
 
 SET distributed_plan_workers_num = 0;
 

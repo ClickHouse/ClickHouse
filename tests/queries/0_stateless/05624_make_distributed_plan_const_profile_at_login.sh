@@ -14,6 +14,13 @@
 # client to not deriving at all - a client context has no constraints, and its adjustments
 # would ride back to the server as explicit changes when it applies the pushed session
 # settings.
+#
+# For the pinned user, every query - including the probe queries below - wants the plan via the
+# profile's own `distributed_plan_workers_num`, and that want conflicts with the pin: querying
+# for the pinned user's settings would itself be rejected at query start. Each probe therefore
+# first resets `distributed_plan_workers_num` to 0 in the same multi-statement connection, which
+# is not itself checked (it only changes what a later query would want), before reading the
+# setting a later, now-unconflicted query sees.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -57,7 +64,17 @@ check()
     if [ "${actual}" == "${expected}" ]; then echo "OK"; else echo "FAIL: got ${actual}, expected ${expected}"; fi
 }
 
+check_vetoed()
+{
+    local label=$1 user=$2 setting=$3 expected=$4
+    local actual
+    actual=$(${CLICKHOUSE_CLIENT_BINARY} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --user "${user}" --multiquery \
+        -q "SET distributed_plan_workers_num = 0; SELECT getSetting('${setting}')")
+    echo "${label}"
+    if [ "${actual}" == "${expected}" ]; then echo "OK"; else echo "FAIL: got ${actual}, expected ${expected}"; fi
+}
+
 check "derived at login without the constraint" "${FREE_USER}" make_distributed_plan "${EXPECTED_DERIVED}"
-check "vetoed at login by the const constraint" "${PINNED_USER}" make_distributed_plan "false"
-check "the vetoed plan does not latch its adjustments" "${PINNED_USER}" compile_expressions "true"
+check_vetoed "vetoed at login by the const constraint" "${PINNED_USER}" make_distributed_plan "false"
+check_vetoed "the vetoed plan does not latch its adjustments" "${PINNED_USER}" compile_expressions "true"
 check "still derived in a readonly session" "${READONLY_USER}" make_distributed_plan "${EXPECTED_DERIVED}"

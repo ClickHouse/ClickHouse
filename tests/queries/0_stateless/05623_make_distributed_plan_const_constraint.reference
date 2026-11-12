@@ -1,6 +1,4 @@
 derived while not pinned const
-1
-dropped when the const profile arrives
-false
-not derived under the constraint
-false
+true
+rejected once the const profile arrives
+still rejected under the constraint
