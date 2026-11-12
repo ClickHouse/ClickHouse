@@ -63,10 +63,11 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive merge.");
     }
 
-    /// The key holder (see `keyHolderGetKey`) of a staged key that its record format read back (see `readStagedKey`). A
-    /// string-like key points into its record, which the merge frees only after converting the unit. With `copy_keys`,
-    /// the record is in a block read back from a spill, which the next block overwrites, so the holder copies the key
-    /// into `arena` when a table keeps it.
+    /// The key holder (see `keyHolderGetKey`) of a staged key that its record format read back (see
+    /// `readStagedKey` and `StagedKeysAndPackedStringKey::readKey`). A string-like key points into its
+    /// record, which the merge frees only after converting the unit. With `copy_keys`, the record is in a
+    /// block read back from a spill, which the next block overwrites, so the holder copies the key into
+    /// `arena` when a table keeps it.
     template <bool copy_keys, typename Key>
     auto ALWAYS_INLINE stagedKeyHolder(const Key & key, [[maybe_unused]] DB::Arena * arena)
     {
@@ -100,19 +101,22 @@ namespace
             table.emplace(key, it, inserted, hash);
     }
 
-    /// Prefetches the table slot of a staged record ahead of its emplace: hash-organized tables
-    /// by the routing hash, string tables from the key bytes and the hash, and a table of fixed-width
-    /// values and a string by the hash and by whether the string is empty, which the size of the
-    /// staged key tells.
-    template <typename Key, typename Table>
-    void ALWAYS_INLINE prefetchStagedKey(Table & table, const char * key_pos, size_t key_size, size_t routing_hash)
+    /// Prefetches the table slot of a staged record of `format` ahead of its emplace: hash-organized
+    /// tables by the routing hash, string tables from the key bytes and the hash, and a table of
+    /// fixed-width values and a string by the hash and by whether the string is empty, which the
+    /// record tells.
+    template <typename Key, typename Table, typename Format>
+    void ALWAYS_INLINE prefetchStagedKey(Table & table, const Format & format, const char * record, size_t routing_hash)
     {
         if constexpr (requires { table.prefetchByHash(routing_hash); })
             table.prefetchByHash(routing_hash);
         else if constexpr (std::is_same_v<Key, std::string_view>)
+        {
+            const auto [key_pos, key_size] = format.key(record);
             table.prefetch(std::string_view(key_pos, key_size), routing_hash);
+        }
         else if constexpr (is_keys_and_packed_string<Key>)
-            table.prefetchByHash(routing_hash, /*empty_string=*/ key_size == sizeof(Key::keys));
+            table.prefetchByHash(routing_hash, /*empty_string=*/ !format.hasString(record));
     }
 
     /// Whether a walk over staged records prefetches the table slots of the records ahead: into a table that has outgrown
@@ -213,10 +217,7 @@ namespace
                 }
                 const UInt64 hash = format.hash(table, ahead);
                 if (filter.takes(hash))
-                {
-                    const auto [key_pos, key_size] = format.key(ahead);
-                    prefetchStagedKey<Key>(table, key_pos, key_size, hash);
-                }
+                    prefetchStagedKey<Key>(table, format, ahead, hash);
                 ahead += format.bytes(ahead);
             };
             if constexpr (with_prefetch)

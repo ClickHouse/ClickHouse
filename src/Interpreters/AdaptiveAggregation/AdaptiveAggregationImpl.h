@@ -285,7 +285,8 @@ struct AdaptiveMergeTask
 /// of a constant key: building the key again would serialize it a second time. The kernel stages such a batch whenever
 /// the kept bytes reach `adaptive_miss_batch_max_key_bytes`. A fixed-width key is kept as its value, which the kernel
 /// has at hand, while reading it back from the key columns would pack it a second time. A key of fixed-width
-/// values and a string is kept as its staged size, and the writer reads both parts from the key state.
+/// values and a string is kept as its size, `sizeof(Keys)` plus the size of the string, from which the record
+/// format takes the size it stores, and the writer reads both parts from the key state.
 /// The arrays are cleared after every staging but keep their capacity.
 class AdaptiveMissBatch
 {
@@ -356,8 +357,9 @@ private:
     {
         if constexpr (is_keys_and_packed_string<RecordKey>)
         {
-            /// The state reads the packed values and the string in place, so the batch keeps only the staged
-            /// size.
+            /// The state reads the packed values and the string in place, so the batch keeps only the size of
+            /// the key, which the record format turns into the size it stores (see
+            /// `StagedKeysAndPackedStringKey`).
             key_sizes.push_back(sizeof(key.keys) + static_cast<std::string_view>(key.str).size());
         }
         else if constexpr (adaptive_key_stages_bytes<RecordKey>)

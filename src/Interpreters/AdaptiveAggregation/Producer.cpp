@@ -18,7 +18,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <Common/memcpySmall.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <base/sort.h>
@@ -76,23 +75,10 @@ namespace
         return keep_key_bytes && misses.getKeys().size() >= adaptive_miss_batch_max_key_bytes;
     }
 
-    /// Copies the bytes of a string-like key into a staged record from a buffer that keeps padding past them: the
-    /// block's key column, or the bytes that the batch of misses kept. The overflow-tolerant small copy reads and
-    /// writes up to 15 bytes past the end. The records are appended in increasing byte order with every chunk ending in
-    /// unused padding, so the scribble lands in space that the next append overwrites or that no record uses.
-    void ALWAYS_INLINE copyPaddedKeyBytes(const char * data, size_t size, char * staged)
-    {
-        if (size <= 64)
-            memcpySmallAllowReadWriteOverflow15(staged, data, size);
-        else
-            memcpy(staged, data, size);
-    }
-
-    /// Copies a string-like key of the block into a staged record. A state that exposes its padded column
-    /// buffers is read directly, with `copyPaddedKeyBytes`; a key of fixed-width values and a string stages
-    /// the packed values followed by the string. Another state's key holder may own the bytes in an
-    /// exact-size allocation or roll its scratch-arena allocation back on discard, so its bytes are copied
-    /// exactly, while the holder is alive.
+    /// Copies a string-like key of the block into a staged record. A state that exposes its padded column buffers is
+    /// read directly, with `copyPaddedKeyBytes`. Another state's key holder may own the bytes in an exact-size
+    /// allocation or roll its scratch-arena allocation back on discard, so its bytes are copied exactly, while the
+    /// holder is alive.
     template <typename State>
     void ALWAYS_INLINE copyStagedKeyBytes(State & state, size_t row, size_t size, DB::Arena & scratch, char * staged)
     {
@@ -102,13 +88,6 @@ namespace
         {
             const char * data = state.getKeyBytes(row).data();
             copyPaddedKeyBytes(data, size, staged);
-        }
-        else if constexpr (requires { state.getKeyParts(row); })
-        {
-            const auto [keys, str] = state.getKeyParts(row);
-            chassert(sizeof(keys) + str.size() == size);
-            unalignedStore<std::decay_t<decltype(keys)>>(staged, keys);
-            copyPaddedKeyBytes(str.data(), str.size(), staged + sizeof(keys));
         }
         else
         {
@@ -757,9 +736,17 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     /// the next record or the chunk's padding go, as the overflow of `copyPaddedKeyBytes` does.
     const auto batch_keeps_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     const char * kept_key_bytes = staged_keys;
-    const auto write_key = [&](size_t record, size_t key_size, char * to) ALWAYS_INLINE
+    const auto write_key = [&](size_t record, size_t key_size, char * to, [[maybe_unused]] const auto & format) ALWAYS_INLINE
     {
-        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// The state reads the packed values and the string in place, and the format writes them (see
+            /// `StagedKeysAndPackedStringKey::writeKey`).
+            const auto [keys, str] = local_find_state.getKeyParts(key_row_of(record));
+            chassert(sizeof(keys) + str.size() == key_size);
+            format.writeKey(to, keys, str);
+        }
+        else if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
             if (batch_keeps_key_bytes)
             {
@@ -805,7 +792,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const size_t bytes = format.bytesForKey(key_size, count);
             char * record = partitions.append(partition, bytes);
             char * const stored_key = format.writeHeader(record, hash, key_size, count);
-            write_key(i, key_size, stored_key);
+            write_key(i, key_size, stored_key, format);
             const size_t stored_key_size = format.keyBytes(key_size);
             check_record(format, record, i, hash);
             key_bytes += stored_key_size;
@@ -946,7 +933,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                 /// The key goes before the variable-size arguments, which overwrite whatever its copy scribbled past
                 /// it.
                 char * key = format.writeHeader(record, hash, key_size, bytes);
-                write_key(i, key_size, key);
+                write_key(i, key_size, key, format);
                 const size_t stored_key_size = format.keyBytes(key_size);
 
                 if constexpr (Record::with_variable_arguments)
