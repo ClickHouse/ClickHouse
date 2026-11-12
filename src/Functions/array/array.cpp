@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -321,21 +320,47 @@ private:
 
     bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        /// Instead of a virtual `insertFrom` call per element, concatenate the arguments and interleave them
-        /// with one `index` call.
-        const size_t num_columns = columns.size();
-        auto concatenated = out_data.cloneEmpty();
-        concatenated->reserve(input_rows_count * num_columns);
-        for (const auto * column : columns)
-            concatenated->insertRangeFrom(*column, 0, input_rows_count);
+        if (executeArrays(columns, out_data, input_rows_count))
+            return true;
 
-        auto indexes_column = ColumnUInt64::create(input_rows_count * num_columns);
-        auto & indexes = indexes_column->getData();
         for (size_t i = 0; i < input_rows_count; ++i)
-            for (size_t j = 0; j < num_columns; ++j)
-                indexes[i * num_columns + j] = j * input_rows_count + i;
+            for (const auto * column : columns)
+                out_data.insertFrom(*column, i);
+        return true;
+    }
 
-        out_data.insertRangeFrom(*concatenated->index(*indexes_column, 0), 0, input_rows_count * num_columns);
+    /// Elements that are arrays: fill the offsets directly and copy the nested data by ranges, with one virtual
+    /// call per element instead of two (`ColumnArray::insertFrom` and the `insertRangeFrom` of its data).
+    static bool executeArrays(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count)
+    {
+        auto * out_array = typeid_cast<ColumnArray *>(&out_data);
+        if (!out_array)
+            return false;
+
+        std::vector<const ColumnArray *> arrays;
+        arrays.reserve(columns.size());
+        for (const auto * column : columns)
+        {
+            const auto * array = typeid_cast<const ColumnArray *>(column);
+            if (!array)
+                return false;
+            arrays.push_back(array);
+        }
+
+        auto & out_offsets = out_array->getOffsets();
+        auto & out_nested = out_array->getData();
+        out_offsets.reserve(out_offsets.size() + input_rows_count * arrays.size());
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            for (const auto * array : arrays)
+            {
+                const auto & offsets = array->getOffsets();
+                const size_t offset = offsets[ssize_t(i) - 1];
+                const size_t size = offsets[i] - offset;
+                out_nested.insertRangeFrom(array->getData(), offset, size);
+                out_offsets.push_back(out_offsets.back() + size);
+            }
+        }
         return true;
     }
 
