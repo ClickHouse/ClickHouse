@@ -1,0 +1,32 @@
+-- a date held by a Dynamic in $add and $subtract
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"s":4,"t":2,"u":6}
+-- a decimal held by a Dynamic in $divide
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"q":1.5}
+{"id":2}
+-- $pow of a Dynamic
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"p":27,"q":8}
+{"p":15.625,"q":5.656854249492381}
+-- zero to a negative exponent
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"a":null,"b":null,"c":0.5,"d":0,"e":1}
+-- a constant as the argument of $not
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+{"id":1}
+{"id":1,"x":1}
+{"id":2,"x":2}
+-- an update of a temporary table with a namesake in the current database
+1	2
+(ACCESS_DENIED)
+1	1

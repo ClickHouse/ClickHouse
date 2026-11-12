@@ -191,6 +191,25 @@ ASTPtr parseFieldOperator(
 
     if (name == "$not")
     {
+        /** Mongo takes only a document of operators or a regular expression as the argument of
+          * `$not`, and rejects a constant, which the general field parser below would take as an
+          * equality: `{"x": {"$not": 1}}` would match every document whose `x` is not `1`. A
+          * constant written in Extended JSON, such as `{"$numberLong": "1"}`, is a document of a
+          * single `$` member, so it is checked for separately.
+          */
+        bool is_operator_document = argument.IsObject() && argument.MemberCount() != 0;
+        if (is_operator_document && !isOnlyRegularExpression(argument))
+        {
+            for (auto it = argument.MemberBegin(); it != argument.MemberEnd(); ++it)
+                if (!stringView(it->name).starts_with('$'))
+                    is_operator_document = false;
+            if (is_operator_document && tryParseMongoConstant(argument))
+                is_operator_document = false;
+        }
+        if (!is_operator_document)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The argument of '$not' must be a document of operators or a regular expression");
+
         ASTPtr negated;
         if (!MongoIdentityFunction(copyValue(argument, metadata->getAllocator()), metadata, field).parseImpl(negated))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the argument of '$not'");

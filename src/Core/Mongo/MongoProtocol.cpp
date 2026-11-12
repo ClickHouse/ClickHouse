@@ -243,6 +243,27 @@ String QueryExecutor::execute(const String & query, const SettingsChanges & extr
     query_context->setSetting("offset", Float64(0));
     query_context->setSetting("page", Float64(0));
 
+    /** The limits of a profile still bound the generated statements, but a limit that is reached
+      * must fail the command instead of cutting its result short: with `result_overflow_mode =
+      * 'break'` and `max_result_rows`, a `find` would return the first rows with a cursor that
+      * says there are no more, and `group_by_overflow_mode = 'any'` or `set_overflow_mode =
+      * 'break'` would change which documents a command matches. A Mongo client has no way to tell
+      * such a result from a complete one, so every limit throws.
+      */
+    for (const char * overflow_mode : {
+             "read_overflow_mode",
+             "read_overflow_mode_leaf",
+             "group_by_overflow_mode",
+             "sort_overflow_mode",
+             "result_overflow_mode",
+             "timeout_overflow_mode",
+             "timeout_overflow_mode_leaf",
+             "set_overflow_mode",
+             "join_overflow_mode",
+             "transfer_overflow_mode",
+             "distinct_overflow_mode"})
+        query_context->setSetting(overflow_mode, String("throw"));
+
     for (const auto & change : extra_settings)
         query_context->setSetting(change.name, change.value);
 

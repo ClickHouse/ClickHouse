@@ -366,6 +366,25 @@ ASTPtr makeIsRuntimeDate(const ASTPtr & value)
         "match", makeRuntimeTypeName(value), makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(Date|DateTime))"))));
 }
 
+/** Whether `value` is a `Dynamic` that holds a date in the row. `false` for any other type, whose
+  * dates are told by `makeIsDate` when the query is analyzed.
+  */
+ASTPtr makeIsDynamicHoldingDate(const ASTPtr & value)
+{
+    return makeASTFunction("and", makeIsDynamic(value), makeIsRuntimeDate(value));
+}
+
+/** Whether `value` is a `Dynamic` that holds a decimal in the row. `false` for any other type, whose
+  * decimals are told by the constant `toTypeName`.
+  */
+ASTPtr makeIsDynamicHoldingDecimal(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "and",
+        makeIsDynamic(value),
+        makeASTFunction("match", makeRuntimeTypeName(value), makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*Decimal)")))));
+}
+
 /** `value` as a `DateTime64(3, 'UTC')`, or the epoch when it is not a date. It never throws, so it can
   * be the branch of a dispatch on `makeIsRuntimeDate` that is evaluated for the values that are not
   * dates too: with the old analyzer and `short_circuit_function_evaluation = 'disable'`, or for the
@@ -1231,7 +1250,46 @@ ASTPtr makePower(const ASTPtr & base_argument, const ASTPtr & exponent_argument)
                         makeASTFunction("greaterOrEquals", makeASTFunction("abs", floating->clone()), makeLiteral(Field(Float64(9007199254740992.0))))),
                     "The result of '$pow' of integers is too large to be computed exactly: use a constant exponent");
             }
-            return withGuard(std::move(result), std::move(is_decimal), "'$pow' of a decimal is not supported");
+            result = withGuard(std::move(result), std::move(is_decimal), "'$pow' of a decimal is not supported");
+
+            /** The type of the value of a `Dynamic` operand is only known in each row, while the
+              * lowering above is chosen by the types of the operands, so the power of a `Dynamic` is
+              * computed by `pow`. A decimal held by it is rejected, as a decimal operand is, and so
+              * is a power of integers held by it that a `Float64` may not hold exactly.
+              */
+            constexpr auto runtime_integer_pattern = R"(^(Nullable\(|LowCardinality\()*U?Int\d+\)*$)";
+            auto has_dynamic = makeASTFunction("or", makeIsDynamic(base), makeIsDynamic(exponent));
+            auto runtime_integers = makeASTFunction(
+                "and",
+                std::move(has_dynamic),
+                makeASTFunction("match", makeRuntimeTypeName(base), makeLiteral(Field(String(runtime_integer_pattern)))),
+                makeASTFunction("match", makeRuntimeTypeName(exponent), makeLiteral(Field(String(runtime_integer_pattern)))));
+            result = withRowGuard(
+                std::move(result),
+                makeASTFunction("or", makeIsDynamicHoldingDecimal(base), makeIsDynamicHoldingDecimal(exponent)),
+                "'$pow' of a decimal is not supported");
+            result = withRowGuard(
+                std::move(result),
+                makeASTFunction(
+                    "and",
+                    std::move(runtime_integers),
+                    makeASTFunction(
+                        "greaterOrEquals",
+                        makeASTFunction("abs", makeASTFunction("pow", base->clone(), exponent->clone())),
+                        makeLiteral(Field(Float64(9007199254740992.0))))),
+                "The result of '$pow' of integers held by a field of values of different types is too large to be computed exactly");
+
+            /// Mongo rejects zero raised to a negative exponent, for which `pow` returns an
+            /// infinity. A `null` operand makes the result `null` first, see `withRowGuard`.
+            if (constant_exponent)
+                return result;
+            return withRowGuard(
+                std::move(result),
+                makeASTFunction(
+                    "and",
+                    makeASTFunction("equals", base->clone(), makeLiteral(Field(UInt64(0)))),
+                    makeASTFunction("less", exponent->clone(), makeLiteral(Field(UInt64(0))))),
+                "'$pow' cannot raise zero to a negative exponent");
         });
     });
 }
@@ -1287,13 +1345,20 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
                     dividend->clone()),
                 makeASTFunction("if", std::move(has_decimal), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(2)))));
             /// Mongo returns `null` when either operand is `null`, before it looks at the divisor.
-            return withRowGuard(
+            auto quotient = withRowGuard(
                 makeASTFunction("divide", std::move(widened_dividend), divisor->clone()),
                 makeASTFunction(
                     "and",
                     makeASTFunction("isNotNull", dividend->clone()),
                     makeASTFunction("equals", divisor->clone(), makeLiteral(Field(UInt64(0))))),
                 "'$divide' cannot divide by zero");
+            /// The type of a decimal held by a `Dynamic` is only known in each row, while the
+            /// widening above is chosen by the type of the operand, so such a quotient would keep
+            /// the scale of the dividend. It is rejected instead.
+            return withRowGuard(
+                std::move(quotient),
+                makeASTFunction("or", makeIsDynamicHoldingDecimal(dividend), makeIsDynamicHoldingDecimal(divisor)),
+                "'$divide' of a decimal held by a field of values of different types is not supported");
         });
     }
 
@@ -1446,7 +1511,15 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             if (name != "$add")
                 return checked;
             /// The sum is a date exactly when one of the operands is, see `date_arithmetic_message`.
-            return withGuard(std::move(checked), makeIsDate(exact), date_arithmetic_message);
+            /// A date held by a `Dynamic` operand makes a `Dynamic` sum, so it is checked in each row.
+            std::vector<ASTPtr> runtime_dates;
+            runtime_dates.reserve(operands.size());
+            for (const auto & operand : operands)
+                runtime_dates.push_back(makeIsDynamicHoldingDate(operand));
+            return withRowGuard(
+                withGuard(std::move(checked), makeIsDate(exact), date_arithmetic_message),
+                runtime_dates.size() == 1 ? runtime_dates.front() : makeFunction("or", std::move(runtime_dates)),
+                date_arithmetic_message);
         });
     }
 
@@ -1458,12 +1531,17 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         {
             return withValue(arguments[1], [&](const ASTPtr & subtrahend)
             {
-                return withGuard(
+                auto checked = withGuard(
                     withIntegerOverflowCheck(
                         makeASTFunction("minus", minuend->clone(), subtrahend->clone()),
                         makeASTFunction(
                             "minus", makeASTFunction("toFloat64", minuend->clone()), makeASTFunction("toFloat64", subtrahend->clone()))),
                     makeASTFunction("or", makeIsDate(minuend), makeIsDate(subtrahend)),
+                    date_arithmetic_message);
+                /// A date held by a `Dynamic` operand is only known in each row.
+                return withRowGuard(
+                    std::move(checked),
+                    makeASTFunction("or", makeIsDynamicHoldingDate(minuend), makeIsDynamicHoldingDate(subtrahend)),
                     date_arithmetic_message);
             });
         });
@@ -2116,11 +2194,14 @@ ASTPtr makeIsAccumulatedNumber(const ASTPtr & value)
         makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int\d+|B?Float\d+|Decimal\d*\(.*\))\)*$)"))));
 }
 
-/// Whether `value` is a decimal, also a `Nullable` one. A constant, as `makeIsAccumulatedNumber`.
+/// Whether `value` is a decimal, also a `Nullable` or a `LowCardinality` one, which
+/// `makeIsAccumulatedNumber` accepts too. A constant, as `makeIsAccumulatedNumber`.
 ASTPtr makeIsDecimal(const ASTPtr & value)
 {
     return makeASTFunction(
-        "match", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String(R"(^(Nullable\()*Decimal)"))));
+        "match",
+        makeASTFunction("toTypeName", value->clone()),
+        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*Decimal)"))));
 }
 
 /// The element `if(condition, 1, 2)` of the tuple of `first` and `second`: as `condition` is a

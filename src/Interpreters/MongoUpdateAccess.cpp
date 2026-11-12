@@ -45,6 +45,19 @@ void expandMongoSubtreeAssignmentsCheckingAccess(ASTPtr & ast, const std::vector
     const String table = alter->getTable();
     const auto access = context->getAccess();
 
+    /// The access is checked on the table the columns were read from, see
+    /// `getMongoCollectionColumns`: an unqualified name of a temporary table of the session
+    /// resolves to it, which is accessible to the session, rather than to a namesake in the current
+    /// database. A name that does not resolve is checked as it is written, and the update fails
+    /// with an unknown table anyway.
+    String checked_database = database;
+    String checked_table = table;
+    if (auto table_id = context->tryResolveStorageID(StorageID(alter->getDatabase(), table)))
+    {
+        checked_database = table_id.database_name;
+        checked_table = table_id.table_name;
+    }
+
     Mongo::expandMongoSubtreeAssignments(
         ast,
         columns,
@@ -52,8 +65,8 @@ void expandMongoSubtreeAssignmentsCheckingAccess(ASTPtr & ast, const std::vector
         {
             for (const auto & column : written)
             {
-                if (access->isGranted(AccessType::ALTER_UPDATE, database, table, column)
-                    || access->isGranted(AccessType::SHOW_COLUMNS, database, table, column))
+                if (access->isGranted(AccessType::ALTER_UPDATE, checked_database, checked_table, column)
+                    || access->isGranted(AccessType::SHOW_COLUMNS, checked_database, checked_table, column))
                     continue;
                 throw Exception(
                     ErrorCodes::ACCESS_DENIED,

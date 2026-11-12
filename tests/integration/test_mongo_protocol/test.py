@@ -2627,6 +2627,34 @@ def test_parser_limits_come_from_the_user_profile(started_cluster):
     node.query("DROP USER mongo_small_queries", password="123")
 
 
+def test_profile_limits_fail_instead_of_cutting_the_result(started_cluster):
+    """A limit of the profile of the user that is reached fails the command, even when the profile
+    asks to stop reading instead: the cursor of a `find` has no more batches, so a client cannot
+    tell a cut result from a complete one."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_result_rows", password="123")
+    node.query(
+        "CREATE USER mongo_result_rows IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS max_result_rows = 1, result_overflow_mode = 'break', max_block_size = 1, max_threads = 1",
+        password="123",
+    )
+    node.query("GRANT SELECT, SHOW ON db.* TO mongo_result_rows", password="123")
+
+    collection = make_client()["db"]["profile_result_rows"]
+    collection.drop()
+    collection.insert_many([{"id": i} for i in range(10)])
+
+    limited = make_client(user="mongo_result_rows", password="mongo_pass", database="db")["db"]["profile_result_rows"]
+    with pytest.raises(pymongo.errors.OperationFailure, match="[Ll]imit for result exceeded"):
+        list(limited.find({}))
+    with pytest.raises(pymongo.errors.OperationFailure, match="[Ll]imit for result exceeded"):
+        list(limited.aggregate([{"$match": {}}]))
+    assert len(list(collection.find({}))) == 10
+
+    collection.drop()
+    node.query("DROP USER mongo_result_rows", password="123")
+
+
 def test_list_collections_needs_a_database_grant_and_reports_views(started_cluster):
     """`listCollections` needs a grant on the whole database, unless it asks only for the names of
     the collections the user has a grant on. A view is listed as a read-only view. `listDatabases`
