@@ -17,6 +17,7 @@
 #include <Core/Names.h>
 #include <base/unit.h>
 #include <IO/ReadSettings.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
@@ -73,6 +74,7 @@ struct FormatSettings;
 class ASTSelectQuery;
 
 class SystemLogs;
+class DirectoryWatchReactor;
 
 class ColumnsDescription;
 struct ContextSharedPart;
@@ -699,6 +701,10 @@ protected:
     /// Group of the query this query context is a part of, see `setParentSchedulingGroup`.
     QuerySchedulingGroupPtr parent_scheduling_group;
 
+    /// The query changes only metadata (see `isMetadataQuery`), so it is exempt from workload scheduling.
+    /// Copied to child contexts, so the sub-queries it runs are exempt too.
+    bool is_metadata_query = false;
+
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
@@ -1080,6 +1086,9 @@ public:
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
     /// The group set by `setParentSchedulingGroup`, or `nullptr` if this query context is not a part of another query.
     QuerySchedulingGroupPtr getParentSchedulingGroup() const;
+    /// Marks the query as a metadata query (see `is_metadata_query`).
+    /// Must be called before the workload classifier is first acquired.
+    void setMetadataQuery();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
@@ -1397,6 +1406,14 @@ public:
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
+    /// Applies the `SETTINGS` clause of a nested (sub)query - `changes` and the `SETTINGS name = DEFAULT`
+    /// resets - clamped to the settings constraints instead of throwing, as for other settings crossing
+    /// execution contexts; an unknown name or an uncastable value throws, as for a top-level clause.
+    /// Changes are applied one at a time, each clamped against the settings the preceding ones left, so
+    /// that the clause reads last-wins. A change that keeps the value is still applied, so that an explicit
+    /// assignment is not overridden by a `compatibility` in the same clause. Returns the effective changes:
+    /// the ones that survive, with their clamped values.
+    SettingsChanges applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
@@ -1750,6 +1767,11 @@ public:
     void setGPU(const ServerSettings & server_settings);
     /// Throws when `enable_gpu` is not set.
     GPU::GPUDevice & getGPU() const;
+    /// Applies the limits of the cache of the kernels compiled for expressions from the reloaded `server_settings`.
+    /// Without a GPU there is no cache to resize, as `enable_gpu` takes effect only at the start of the server.
+    void updateGPUKernelCacheConfiguration(const ServerSettings & server_settings);
+    /// The limits of that cache, in bytes and in kernels, or zeros without a GPU.
+    std::pair<size_t, size_t> getGPUKernelCacheLimits() const;
 #endif
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
@@ -1912,6 +1934,12 @@ public:
     BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
     BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
     BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The one thread that watches the directories of all `FileLog` tables, created on the first call. Returns a
+    /// `shared_ptr` that the watchers keep, so that the reactor outlives all of them even if `shutdown` runs first.
+    std::shared_ptr<DirectoryWatchReactor> getDirectoryWatchReactor() const;
+#endif
 
     /// Return the pool only if it has already been created, null otherwise, so that reading
     /// `system.background_schedule_pool` does not instantiate one.
@@ -2173,7 +2201,7 @@ public:
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
-    /// Doesn't do anything if not in DatabaseReplicated.
+    /// A CREATE with a parent table re-creates the view's inner table from its stored definition.
     void setParentTable(UUID uuid);
     std::optional<UUID> getParentTable() const;
     /// Allows cancelling DDL query in DatabaseReplicated. Usage:
