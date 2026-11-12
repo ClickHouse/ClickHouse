@@ -130,6 +130,5 @@ vector_binary_serialization.xml                          # AggregateFunction col
 wide_integer_add_sub.xml                                 # Int128 widened to Decimal
 wide_integer_comparison.xml                              # UInt128 widened to Decimal
 wide_integer_division.xml                                # UInt256 widened to Decimal
-wide_part_many_substreams.xml                            # MergeTree wide-part reader; the index that makes one-granule ranges is dropped
 window_transform.xml                                     # type UInt64 in CREATE ... AS SELECT
 workload_cpu_scheduling.xml                              # assertion on the CPU slots of a MergeTree read

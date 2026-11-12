@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!--
         Per-granule, per-substream bookkeeping of `MergeTreeReaderWide`: the callbacks it hands to the serialization
         (stream getter, mark seeks, value size hints) run for every substream of every read. With empty arrays and
