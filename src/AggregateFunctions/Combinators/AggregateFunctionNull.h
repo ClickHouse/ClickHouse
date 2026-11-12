@@ -832,6 +832,9 @@ private:
 
     bool hasInternalNull(const IColumn ** columns, size_t row_begin, size_t row_end) const
     {
+        if (row_begin == row_end)
+            return false;
+
         for (size_t argument = 0; argument < number_of_arguments; ++argument)
         {
             if (!has_internal_nulls[argument])
