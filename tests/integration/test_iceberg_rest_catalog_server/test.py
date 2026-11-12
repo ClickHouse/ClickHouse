@@ -54,7 +54,7 @@ DEFAULT_AUTH = ("default", "")
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
 KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
+FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 2"
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
 
@@ -210,6 +210,16 @@ def drop_table(ns, table, expected_code=204, auth=None):
     )
 
 
+def rename_table(source_ns, source, dest_ns, dest, expected_code=204, auth=None):
+    body = {
+        "source": {"namespace": source_ns, "name": source},
+        "destination": {"namespace": dest_ns, "name": dest},
+    }
+    return catalog_request(
+        "POST", "/v1/my_warehouse/tables/rename", json=body, expected_code=expected_code, auth=auth
+    )
+
+
 def metadata_key(metadata_location):
     prefix = f"s3://{BUCKET}/"
     assert metadata_location.startswith(prefix), metadata_location
@@ -299,6 +309,7 @@ def test_config(started_cluster):
     assert result["defaults"] == {}
     assert result["endpoints"] == [
         "GET /v1/config",
+        "POST /v1/{prefix}/tables/rename",
         "GET /v1/{prefix}/namespaces",
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
@@ -310,6 +321,7 @@ def test_config(started_cluster):
         "HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+        "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics",
     ]
 
     response = catalog_request("GET", "/v1/config", expected_code=400)
@@ -480,11 +492,6 @@ def test_malformed_create_namespace(started_cluster):
 
 def test_not_implemented(started_cluster):
     response = catalog_request(
-        "POST", "/v1/my_warehouse/tables/rename", expected_code=406
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
-
-    response = catalog_request(
         "POST", "/v1/my_warehouse/namespaces/sales/register", expected_code=406
     )
     assert_error_shape(response, "UnsupportedOperationException")
@@ -522,7 +529,7 @@ def test_error_response_keeps_connection_usable(started_cluster):
     try:
         for path, expected_code in [
             ("/v1/other_warehouse/namespaces/ns/tables", 404),
-            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+            ("/v1/my_warehouse/namespaces/ns/register", 406),
         ]:
             connection.request(
                 "POST", path, body=body, headers={"Content-Type": "application/json"}
@@ -657,6 +664,8 @@ def test_table_ddl_rejects_readonly(started_cluster):
         response = create_table(ns, "forbidden", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
         response = drop_table(ns, "existing", auth=auth, expected_code=403)
+        assert_error_shape(response, "ForbiddenException")
+        response = rename_table([ns], "existing", [ns], "renamed", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
 
     response = commit_table(ns, "existing", [], [], auth=("readonly_user", ""), expected_code=403)
@@ -829,13 +838,13 @@ def test_keeper_layout(started_cluster):
     assert zk.get(parent_path)[0] == b"{}"
     assert zk.get(child_path)[0] == b'{"owner":"asya"}'
 
-    # The uuid is in the path, so a commit cannot target a table re-created under the same name.
+    # The guard child binds the name to the uuid, so a drop or rename cannot act on a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
     table_uuid = result["metadata"]["table-uuid"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
     assert zk.get(table_path)[0] == table_uuid.encode()
     assert zk.get_children(table_path) == [table_uuid]
-    assert zk.get(f"{table_path}/{table_uuid}")[0] == result["metadata-location"].encode()
+    assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -1053,6 +1062,105 @@ def test_malformed_create_table(started_cluster):
     assert_error_shape(response, "NoSuchNamespaceException")
 
 
+def test_rename_table(started_cluster):
+    ns = f"rename_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_namespace([ns, "other"])
+    other = f"{ns}\x1fother"
+    created = create_table(ns, "a").json()
+    table_uuid = created["metadata"]["table-uuid"]
+
+    # The uuid and the metadata location do not change. Nothing is written to S3.
+    rename_table([ns], "a", [ns], "b")
+    assert not table_exists(ns, "a")
+    loaded = catalog_request("GET", tables_url(ns, "b")).json()
+    assert loaded["metadata-location"] == created["metadata-location"]
+    assert loaded["metadata"]["table-uuid"] == table_uuid
+    assert list_metadata_files(created["metadata"]["location"]) == [
+        metadata_key(created["metadata-location"])
+    ]
+
+    rename_table([ns], "b", [ns, "other"], "c")
+    assert list_tables(ns) == []
+    assert list_tables(other) == ["c"]
+
+    # The moved table still accepts commits.
+    committed = commit_table(
+        other,
+        "c",
+        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
+        append_updates(fake_snapshot(100, 1)),
+    ).json()
+    assert committed["metadata"]["table-uuid"] == table_uuid
+    assert committed["metadata"]["current-snapshot-id"] == 100
+
+    response = rename_table([ns], "missing", [ns], "x", expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+    response = rename_table([ns, "other"], "c", [ns, "missing"], "c", expected_code=404)
+    assert_error_shape(response, "NoSuchNamespaceException")
+    assert table_exists(other, "c")
+
+    create_table(ns, "d")
+    response = rename_table([ns, "other"], "c", [ns], "d", expected_code=409)
+    assert_error_shape(response, "AlreadyExistsException")
+    assert table_exists(other, "c")
+    assert table_exists(ns, "d")
+
+    response = rename_table([ns], "d", [ns], "d", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    bodies = [
+        {"source": {"namespace": [ns], "name": "d"}},  # no destination
+        {"source": {"namespace": ns, "name": "d"}, "destination": {"namespace": [ns], "name": "e"}},
+        {"source": {"namespace": [ns]}, "destination": {"namespace": [ns], "name": "e"}},  # no name
+        {"source": {"namespace": [ns], "name": "d"}, "destination": {"namespace": [ns], "name": ""}},
+    ]
+    for body in bodies:
+        response = catalog_request("POST", "/v1/my_warehouse/tables/rename", json=body, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+    assert list_tables(ns) == ["d"]
+
+    # No nodes are left behind under the old names.
+    zk = get_keeper()
+    assert zk.get_children(f"{KEEPER_ROOT}/namespaces/{ns}/tables") == ["d"]
+    assert zk.get_children(f"{KEEPER_ROOT}/namespaces/{ns}/namespaces/other/tables") == ["c"]
+
+
+def test_rename_keeps_commit_version(started_cluster):
+    ns = f"rename_version_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    table_uuid = create_table(ns, "a").json()["metadata"]["table-uuid"]
+    commit_table(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
+
+    # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
+    zk = get_keeper()
+    uuid_path = f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}"
+    assert zk.get(uuid_path)[1].version == 1
+
+    # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
+    rename_table([ns], "a", [ns], "b")
+    rename_table([ns], "b", [ns], "a")
+    assert zk.get(uuid_path)[1].version == 1
+    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+
+    committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
+    assert committed["metadata"]["current-snapshot-id"] == 200
+    assert zk.get(uuid_path)[1].version == 2
+
+
+def test_report_metrics(started_cluster):
+    ns = f"metrics_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "t")
+
+    report = {"report-type": "scan-report", "table-name": "t"}
+    catalog_request("POST", tables_url(ns, "t") + "/metrics", json=report, expected_code=204)
+
+    response = catalog_request("POST", tables_url(ns, "missing") + "/metrics", json=report, expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+
 def pyiceberg_catalog():
     return load_catalog(
         "ch",
@@ -1091,9 +1199,14 @@ def test_pyiceberg_client(started_cluster):
     assert catalog.list_tables(ns) == [(ns, "events")]
     assert catalog.table_exists(f"{ns}.events")
 
-    catalog.drop_table(f"{ns}.events")
+    # PyIceberg loads the table under the new name after the rename.
+    renamed = catalog.rename_table(f"{ns}.events", f"{ns}.renamed")
+    assert renamed.metadata_location == table.metadata_location
+    assert catalog.list_tables(ns) == [(ns, "renamed")]
+
+    catalog.drop_table(f"{ns}.renamed")
     assert catalog.list_tables(ns) == []
-    assert not catalog.table_exists(f"{ns}.events")
+    assert not catalog.table_exists(f"{ns}.renamed")
 
 
 def test_names_with_slash(started_cluster):
@@ -1214,9 +1327,8 @@ def test_commit_append(started_cluster):
     assert len(list_metadata_files(location)) == 3
 
     zk = get_keeper()
-    table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/events"
-    table_uuid = zk.get(table_path)[0].decode()
-    assert zk.get(f"{table_path}/{table_uuid}")[0] == second["metadata-location"].encode()
+    table_uuid = zk.get(f"{KEEPER_ROOT}/namespaces/{ns}/tables/events")[0].decode()
+    assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == second["metadata-location"].encode()
 
 
 def test_commit_empty(started_cluster):

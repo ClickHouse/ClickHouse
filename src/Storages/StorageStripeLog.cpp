@@ -1,3 +1,4 @@
+#include <Formats/FormatSettings.h>
 #include <sys/types.h>
 
 #include <optional>
@@ -781,6 +782,8 @@ void registerStorageStripeLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
@@ -792,7 +795,7 @@ void registerStorageStripeLog(StorageFactory & factory)
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         return std::make_shared<StorageStripeLog>(
             disk,

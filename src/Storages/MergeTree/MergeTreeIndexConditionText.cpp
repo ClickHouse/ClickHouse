@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Formats/FormatSettings.h>
 
 #include "config.h"
 
