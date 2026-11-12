@@ -10,7 +10,7 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
-#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HyperLogLogCounter.h>
 #include <Common/PODArray.h>
 #include <Common/PartitionedRecordBuffer.h>
@@ -44,10 +44,11 @@ constexpr size_t adaptive_append_prefetch_distance = 8;
 /// The staged records of this many consecutive buckets share allocation blocks, so their memory is released as the
 /// merge tasks advance through the bucket order, while the grouping holds when the pruning reorders the buckets.
 constexpr size_t adaptive_staging_block_buckets = 16;
-/// Partition-count combining starts with a bounded trial of nonconsecutive misses in each block.
-constexpr size_t adaptive_count_combining_sample_records = 1024;
-/// Combining continues only if at least one lookup in this many reuses a missed key's count descriptor.
-constexpr size_t adaptive_count_combining_min_hit_rate_inverse = 8;
+/// Combining the misses of a partition starts with a bounded trial of nonconsecutive misses in each block (see
+/// `Aggregator::collectCombinedMisses`).
+constexpr size_t adaptive_miss_combining_sample_records = 1024;
+/// Combining continues only if at least one lookup in this many reuses a missed key's descriptor.
+constexpr size_t adaptive_miss_combining_min_hit_rate_inverse = 8;
 /// Fixed-width arguments are gathered column by column into bounded batches of staged records, so
 /// width and nullability are dispatched once per field while the destination rows remain in cache.
 constexpr size_t adaptive_argument_staging_batch_rows = 1024;
@@ -90,7 +91,7 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// The thaw guard: the table filled and froze, but the stream behind it keeps repeating the same missing
 /// keys instead of bringing rare ones. Staged misses are supposed to be rare keys, each staged about once.
 /// A key's first staged record is the price of storing it once, repaid by the merge working on deduplicated
-/// keys; repeats can instead be absorbed by in-place updates. The verdict weighs the repeated records'
+/// keys; repeats can instead be absorbed by in-place updates. The guard weighs the repeated records'
 /// bytes against the state retained by an ordinary table. Cheap, fixed-size states use the calibrated
 /// minimum cost below. Larger inline states raise that cost, and a supported model of state growth adds
 /// the estimated distinct payload. Switching mid-stream must pay for retaining the records already staged,
@@ -113,7 +114,7 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// at least ~ 440 bytes per key (a 90-byte string key at repeat ~ 3, a 90-byte string argument at repeat ~ 5,
 /// high-repeat count streams land in the kilobytes), and every shape that wins when kept engaged wastes
 /// at most ~ 275 (fixed-width arguments up to repeat ~ 12.5, count streams far below).
-/// `adaptive_thaw_min_staged_records` is the evidence floor of a thread before its verdict may fire. It is
+/// `adaptive_thaw_min_staged_records` is the evidence floor of a thread before it may thaw. It is
 /// in records rather than bytes because the repeat estimate's confidence comes from sampled observations.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 65'536;
@@ -125,28 +126,34 @@ constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 /// bounds above are calibrated with.
 constexpr size_t adaptive_thaw_record_cost = 8;
 
-/// The verdict of a run, which the hash-table statistics keep for the later runs of the query (see
-/// `Aggregator::adaptiveStagingVerdict`), weighs the whole staged stream of a thread that is still frozen
-/// at its finish using the staging-cost comparison of the thaw guard. A thaw switches a thread in the
-/// middle of its stream: the records staged so far stay, and the table starts filling only then, so it
-/// pays only for heavy repeats. A verdict decides the next runs from their start, which have nothing to
-/// switch, so the stream needs to repeat only enough for the ordinary path to win. The verdict estimates
-/// the ordinary table's per-key cost from its hash buffer and arena allocations at the freeze, including
-/// capacity and allocation overhead. Its state cost has a floor of 75 bytes per key, which splits the
-/// cheap-state shapes measured per thread: the numeric-key streams that lose to the ordinary path when
-/// kept engaged waste ~ 84 bytes per key and more (a count, a sum or a key-only stream at repeat ~ 6-10
-/// in a thread), and those that win waste at most ~ 34 (the same streams at repeat ~ 1.5-3). Narrow count
-/// and key-only streams at repeat ~ 2.5-3 still lose up to ~ 15% below the bound: the ordinary path of an
-/// aggregation without states wins at less waste than the bytes tell.
-constexpr size_t adaptive_staging_min_state_bytes_per_key = 75;
+/// The least per-key state cost that the thaw guard above weighs, the cost of cheap, fixed-size states.
+/// Multiplied by `adaptive_thaw_state_cost_multiplier`, it gives the bound of 300 bytes.
+constexpr size_t adaptive_thaw_min_state_bytes_per_key = 75;
+
+/// A lone `count()` under the top-K pruning stays frozen while the pruning is expected to free most of its
+/// staged records (see `Aggregator::adaptiveTopKPruningFreesStaging`). A bin counts as pruned while it holds
+/// less than the producer's local top divided by the number of producers. The merge bounds a bin by the sum
+/// of all producers' bins, but the threshold is only sure to reach the producer's own top, because each
+/// producer may have hot keys of its own. For example, with 32 producers and a local top of 960 rows, a bin
+/// of 40 rows can be bounded by 1280 rows at the merge, above the top: 40 is not below 960 / 32, so the bin
+/// does not count as pruned. The divisor is at least `adaptive_thaw_min_pruned_bin_divisor`: the local top of
+/// a uniform stream is a bin that holds several keys by chance, with a few times the rows of a one-key bin,
+/// and the one-key bins must not count as pruned. The producer stays frozen while the pruned bins hold at
+/// least `1 / adaptive_thaw_pruned_share_inverse` as many rows as it staged records. So a uniform stream,
+/// whose bins all reach the top, thaws as without the pruning, and a skewed one, whose cold tail sits in
+/// bins far below the top, stays frozen.
+constexpr size_t adaptive_thaw_min_pruned_bin_divisor = 8;
+constexpr size_t adaptive_thaw_pruned_share_inverse = 2;
 
 struct AdaptiveAggregationSession
 {
     AdaptiveAggregationSession(
+        size_t producers_,
         AdaptivePartitionLayout layout_,
         TemporaryDataOnDiskScopePtr spill_scope_,
         std::unique_ptr<AdaptiveTopKPruning> top_k_pruning_)
-        : layout(layout_)
+        : producers(producers_)
+        , layout(layout_)
         , spill_scope(std::move(spill_scope_))
         , top_k_pruning(std::move(top_k_pruning_))
         , spilled_partitions(layout_.numPartitions())
@@ -158,6 +165,9 @@ struct AdaptiveAggregationSession
 
     /// Whether some producer froze, which makes the merge adaptive. Read after the finish barrier.
     bool engaged() const { return frozen_producers > 0; }
+
+    /// The number of producers: the pipeline's aggregation streams.
+    const size_t producers;
 
     /// Every producer uses the layout chosen for the pipeline's aggregation streams.
     const AdaptivePartitionLayout layout;
@@ -193,11 +203,10 @@ struct AdaptiveAggregationSession
     size_t estimated_merge_work = 0;
     size_t finished_producers = 0;
 
-    /// The producers whose tables froze at least once, and those of them whose staged streams were repeat-dominated:
-    /// they thawed, or they finished frozen past the bound of the verdict. Published under the same mutex, they make
-    /// the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
+    /// The producers whose tables froze at least once, and those of them that thawed. Published under the
+    /// same mutex, they make the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
     size_t frozen_producers = 0;
-    size_t repeat_dominated_producers = 0;
+    size_t thawed_producers = 0;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
@@ -401,10 +410,9 @@ struct AdaptiveAggregationProducer
     /// even after per-row probes are bypassed.
     struct FrozenState
     {
-        FrozenState(size_t used_arena_bytes_at_freeze_, size_t memory_usage_at_freeze_, size_t estimated_table_bytes_per_key_)
+        FrozenState(size_t used_arena_bytes_at_freeze_, size_t memory_usage_at_freeze_)
             : used_arena_bytes_at_freeze(used_arena_bytes_at_freeze_)
             , memory_usage_at_freeze(memory_usage_at_freeze_)
-            , estimated_table_bytes_per_key(estimated_table_bytes_per_key_)
         {
         }
 
@@ -414,11 +422,6 @@ struct AdaptiveAggregationProducer
         /// measures the growth of the states against both.
         size_t used_arena_bytes_at_freeze;
         size_t memory_usage_at_freeze;
-        /// Estimated hash-table buffer and arena bytes per key. A populated table supplies its measured
-        /// allocations, including capacity and allocation overhead. An empty table uses the aggregate state
-        /// size as a lower bound. This excludes staged records, other workers' memory and allocations owned
-        /// directly by aggregate states, matching `AggregatedDataVariants::allocatedBytes`.
-        size_t estimated_table_bytes_per_key;
         size_t sampled_hits = 0;
         size_t sampled_rows = 0;
         bool bypass_local_probe = false;
@@ -447,7 +450,14 @@ struct AdaptiveAggregationProducer
         size_t rows = 0;
         size_t staged_records = 0;
         size_t staged_bytes = 0;
-        HashSet<UInt64> distinct_sampled_hashes;
+        /// The staged records at which a lone `count()` under the top-K pruning weighs the pruning again (see
+        /// `Aggregator::adaptiveTopKPruningFreesStaging`).
+        size_t next_pruning_check = 0;
+        HyperLogLogCounter<12, UInt64, TrivialHash, UInt64> distinct_sampled_hashes;
+
+        /// Sampled hashes share their low bits (the sample mask) and may be 32-bit, so they are mixed before
+        /// the sketch.
+        void addSampledHash(UInt64 hash) { distinct_sampled_hashes.insert(intHash64(hash)); }
 
         size_t getEstimatedStagedKeyCount() const
         {
@@ -489,9 +499,9 @@ struct AdaptiveAggregationProducer
     bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
-    void freeze(size_t used_arena_bytes_at_freeze, size_t memory_usage_at_freeze, size_t estimated_table_bytes_per_key)
+    void freeze(size_t used_arena_bytes_at_freeze, size_t memory_usage_at_freeze)
     {
-        phase.emplace<FrozenState>(used_arena_bytes_at_freeze, memory_usage_at_freeze, estimated_table_bytes_per_key);
+        phase.emplace<FrozenState>(used_arena_bytes_at_freeze, memory_usage_at_freeze);
     }
     void learnAgain() { phase = LearningState{}; }
     void standDown() { phase = BaselineState{}; }
