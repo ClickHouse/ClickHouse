@@ -8,7 +8,10 @@
          dictionaries of the part, hashing the string of each entry once per block. `s` has 200 thousand values, more
          than a dictionary keeps, and `t` has 20 values, such as a category or a status. A filter that keeps half of
          the rows leaves each block with fewer rows than its dictionary has entries, so the method hashes the string
-         of each row instead. -->
+         of each row instead.
+
+         A `GROUP BY` without aggregate functions takes the key-only form of the method, whose cells hold the keys
+         alone. -->
 
     <create_query>CREATE TABLE narrow_key_short_string (k UInt32, s String, k2 UInt32, s2 String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE narrow_key_low_cardinality_string (k UInt32, s LowCardinality(String), w UInt32, t LowCardinality(String), v UInt32) ENGINE = MergeTree ORDER BY tuple()</create_query>
@@ -22,6 +25,7 @@
     <query>SELECT k, s, count() FROM narrow_key_low_cardinality_string GROUP BY k, s FORMAT Null</query>
     <query>SELECT k, s, count() FROM narrow_key_low_cardinality_string WHERE w % 2 = 0 GROUP BY k, s FORMAT Null</query>
     <query>SELECT w, t, sum(v) FROM narrow_key_low_cardinality_string GROUP BY w, t FORMAT Null</query>
+    <query>SELECT k, s FROM narrow_key_low_cardinality_string GROUP BY k, s FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS narrow_key_short_string</drop_query>
     <drop_query>DROP TABLE IF EXISTS narrow_key_low_cardinality_string</drop_query>
