@@ -8,19 +8,24 @@
 
 using namespace DB;
 
-/// Without an external-aggregation threshold the partitions of a bucket follow the number of producers, half the bits
-/// of their count rounded up, at most 16, and every partition starts with the largest first chunk. The chunks double up
-/// to the default cap with at most 4 partitions per bucket, and up to half of it with more.
+/// Without an external-aggregation threshold the partitions of a bucket follow the number of producers,
+/// half the bits of their count rounded up, at most 16, and every partition starts with the largest first
+/// chunk. The chunk cap is the largest power of two at which one unused chunk in every partition of every
+/// producer fits in 128 MiB, clamped to 4-32 KiB. For example, 8 producers with 4 partitions per bucket
+/// have 8 * 1024 partitions, which afford 16 KiB each; 9 producers afford 14.2 KiB each, so they get
+/// 8 KiB. The cases sit on both sides of each band's edge.
 TEST(AdaptivePartitionLayout, PartitionsFollowProducers)
 {
-    constexpr size_t default_cap = PartitionedRecordBuffer::default_max_chunk_bytes;
     for (const auto & [producers, partitions_per_bucket, max_chunk_bytes] : {
-             std::tuple<size_t, size_t, size_t>{1, 1, default_cap},
-             {4, 2, default_cap},
-             {16, 4, default_cap},
-             {17, 8, default_cap / 2},
-             {64, 8, default_cap / 2},
-             {1024, 16, default_cap / 2}})
+             std::tuple<size_t, size_t, size_t>{1, 1, 32 << 10},
+             {4, 2, 32 << 10},
+             {5, 4, 16 << 10},
+             {8, 4, 16 << 10},
+             {9, 4, 8 << 10},
+             {16, 4, 8 << 10},
+             {17, 8, 4 << 10},
+             {64, 8, 4 << 10},
+             {1024, 16, 4 << 10}})
     {
         const auto layout = AdaptivePartitionLayout::forProducers(producers, 0);
         EXPECT_EQ(layout.partitionsPerBucket(), partitions_per_bucket) << producers << " producers";
@@ -51,10 +56,11 @@ TEST(AdaptivePartitionLayout, FirstChunksFitQuarterOfThreshold)
     }
 }
 
-/// The boundaries for 64 producers: a quarter of the threshold that affords two first chunks of 2 KiB per bucket and
-/// producer keeps two partitions per bucket, one chunk keeps one partition, and less halves the first chunks until the
-/// smallest, which a threshold of one byte takes. With the partitions reduced to two per bucket, the chunks double up to
-/// the default cap again.
+/// The boundaries for 64 producers: a quarter of the threshold that affords two first chunks of 2 KiB per
+/// bucket and producer keeps two partitions per bucket, one chunk keeps one partition, and less halves the
+/// first chunks until the smallest, which a threshold of one byte takes. The chunk cap follows the
+/// partitions that remain: 64 producers with 512 partitions afford 4 KiB each within 128 MiB, and with 256
+/// partitions 8 KiB.
 TEST(AdaptivePartitionLayout, ThresholdBoundaries)
 {
     constexpr size_t producers = 64;
@@ -64,11 +70,12 @@ TEST(AdaptivePartitionLayout, ThresholdBoundaries)
     auto layout = AdaptivePartitionLayout::forProducers(producers, 2 * one_chunk_per_bucket);
     EXPECT_EQ(layout.partitionsPerBucket(), 2);
     EXPECT_EQ(layout.firstChunkBytes(), PartitionedRecordBuffer::max_first_chunk_bytes);
-    EXPECT_EQ(layout.maxChunkBytes(), PartitionedRecordBuffer::default_max_chunk_bytes);
+    EXPECT_EQ(layout.maxChunkBytes(), size_t{4} << 10);
 
     layout = AdaptivePartitionLayout::forProducers(producers, one_chunk_per_bucket);
     EXPECT_EQ(layout.partitionsPerBucket(), 1);
     EXPECT_EQ(layout.firstChunkBytes(), PartitionedRecordBuffer::max_first_chunk_bytes);
+    EXPECT_EQ(layout.maxChunkBytes(), size_t{8} << 10);
 
     layout = AdaptivePartitionLayout::forProducers(producers, one_chunk_per_bucket - 1);
     EXPECT_EQ(layout.partitionsPerBucket(), 1);

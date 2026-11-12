@@ -787,9 +787,21 @@ void SystemLogs::flushAndShutdown()
 
 void SystemLogs::shutdown()
 {
+    /// Shut down every log even if one of them throws: otherwise the saving threads of the remaining logs are not
+    /// joined. Also, the constructor calls this in its `catch` block, where an exception from here would replace the
+    /// original error.
     auto logs = getAllLogs();
     for (auto & log : logs)
-        log->shutdown();
+    {
+        try
+        {
+            log->shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 void SystemLogs::handleCrash()
