@@ -69,6 +69,10 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
 
 namespace ErrorCodes
@@ -350,6 +354,25 @@ ContextMutablePtr StorageABR::buildAttemptContext(
     ContextMutablePtr context = Context::createCopy(base_context);
     context->applySettingsChanges(query_settings);
     const auto & settings = context->getSettingsRef();
+
+    /// With 'break', an attempt that exceeds its share would return a partial result instead of failing, so it would not
+    /// be retried on a coarser table, which is what the limits of an `ABR` query are for.
+    auto check_overflow_mode = [&](std::string_view mode_name, OverflowMode mode, bool has_limit)
+    {
+        if (has_limit && mode == OverflowMode::BREAK)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Tables with the `ABR` engine do not support `{} = 'break'`, as an attempt that exceeds its limits must fail to "
+                "be retried on a coarser table",
+                mode_name);
+    };
+    check_overflow_mode("timeout_overflow_mode", settings[Setting::timeout_overflow_mode],
+        settings[Setting::max_execution_time].totalMicroseconds() > 0);
+    check_overflow_mode("timeout_overflow_mode_leaf", settings[Setting::timeout_overflow_mode_leaf],
+        settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0);
+    check_overflow_mode("read_overflow_mode", settings[Setting::read_overflow_mode],
+        settings[Setting::max_rows_to_read] > 0 || settings[Setting::max_bytes_to_read] > 0);
+    check_overflow_mode("read_overflow_mode_leaf", settings[Setting::read_overflow_mode_leaf],
+        settings[Setting::max_rows_to_read_leaf] > 0 || settings[Setting::max_bytes_to_read_leaf] > 0);
 
     std::optional<UInt64> elapsed_us;
     if (const auto query_status = base_context->getProcessListElementSafe())
@@ -1168,6 +1191,9 @@ whole, across all attempts. The candidate tables are the chosen table and the co
   attempt to read up to 1 million rows with three candidate tables, set `max_rows_to_read = 3000000`.
 - The estimate of the rows an attempt plans to read is only checked against the share of that attempt. Outside the attempt,
   including on the initiator of a distributed query, only the rows actually read count against the limits.
+- An attempt that exceeds its share must fail to be retried, so with one of these limits set, its overflow mode
+  (`timeout_overflow_mode`, `timeout_overflow_mode_leaf`, `read_overflow_mode`, `read_overflow_mode_leaf`) cannot be
+  `'break'`. Such a query is rejected with `NOT_IMPLEMENTED`.
 
 **Limitations**
 

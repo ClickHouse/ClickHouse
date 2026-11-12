@@ -89,6 +89,11 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT abr_interval, mapApply((k, v) -> (k, errorCodeToName(v)), abr_exception_codes) AS exception_codes FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05304, query 3 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 
+-- Test 4: an attempt that stopped with a partial result would not be retried, so 'break' is rejected for a limit that is set.
+SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 2000 second SETTINGS max_execution_time = 10, timeout_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 2000 second SETTINGS max_rows_to_read = 100000, read_overflow_mode = 'break', enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT count() > 0 FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 2000 second SETTINGS timeout_overflow_mode = 'break', read_overflow_mode = 'break';
+
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS timeout_test_1;
 DROP TABLE IF EXISTS timeout_test_10;
