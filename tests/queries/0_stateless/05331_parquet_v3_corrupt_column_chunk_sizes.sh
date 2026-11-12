@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format, which is not built in fasttest.
 
 # A negative ColumnMetaData.num_values, total_uncompressed_size or size_statistics.unencoded_byte_array_data_bytes
 # in a column chunk whose data the query reads is rejected with INCORRECT_DATA. A positive one implying 2^61 bytes

@@ -12,6 +12,8 @@ namespace DB
 AdaptivePartitionLayout AdaptivePartitionLayout::forProducers(size_t producers, size_t max_bytes_before_external_group_by)
 {
     constexpr size_t max_sub_bits = 4;
+    /// The most partitions per bucket, as bits, whose chunks still double up to the default cap.
+    constexpr size_t max_sub_bits_for_default_chunk_cap = 2;
 
     chassert(producers > 0);
     size_t sub_bits = std::min<size_t>((std::bit_width(producers - 1) + 1) / 2, max_sub_bits);
@@ -29,7 +31,10 @@ AdaptivePartitionLayout AdaptivePartitionLayout::forProducers(size_t producers, 
             first_chunk_bytes = std::max(PartitionedRecordBuffer::min_first_chunk_bytes, std::bit_floor(bucket_budget));
         }
     }
-    return AdaptivePartitionLayout(static_cast<UInt8>(sub_bits), first_chunk_bytes);
+    const size_t max_chunk_bytes = sub_bits > max_sub_bits_for_default_chunk_cap
+        ? PartitionedRecordBuffer::default_max_chunk_bytes / 2
+        : PartitionedRecordBuffer::default_max_chunk_bytes;
+    return AdaptivePartitionLayout(static_cast<UInt8>(sub_bits), first_chunk_bytes, max_chunk_bytes);
 }
 
 }
