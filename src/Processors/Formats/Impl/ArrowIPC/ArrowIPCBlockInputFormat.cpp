@@ -751,7 +751,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
     const DataTypes & alternatives = to.getVariants();
     DataTypes targets(elements.size());
 
-    std::vector<std::vector<size_t>> candidates(elements.size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(elements.size());
     for (size_t e = 0; e < elements.size(); ++e)
         for (size_t a = 0; a < alternatives.size(); ++a)
             if (variantElementMatchesType(elements[e], alternatives[a]))
@@ -759,7 +759,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
 
     const auto preferred_candidates = [&](size_t e)
     {
-        std::vector<size_t> preferred;
+        VectorWithMemoryTracking<size_t> preferred;
         for (const size_t a : candidates[e])
             if (variantElementPrefersType(elements[e], alternatives[a]))
                 preferred.push_back(a);
@@ -794,7 +794,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
             if (targets[e] || candidates[e].size() < 2)
                 continue;
             /// A lone preference is never contested: the decoded element names are pairwise distinct.
-            const std::vector<size_t> preferred = preferred_candidates(e);
+            const VectorWithMemoryTracking<size_t> preferred = preferred_candidates(e);
             if (preferred.size() != 1)
                 continue;
             take(e, preferred.front());
@@ -807,7 +807,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
     for (bool dropped = true; dropped;)
     {
         dropped = false;
-        std::vector<bool> drop(elements.size(), false);
+        VectorWithMemoryTracking<bool> drop(elements.size(), false);
         for (size_t e = 0; e < elements.size(); ++e)
             for (size_t other = 0; targets[e] && other < elements.size(); ++other)
                 if (other != e && (targets[other] ? targets[other] : elements[other])->getName() == targets[e]->getName())
@@ -1320,7 +1320,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
         {
             const DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
-            reinterpretRawByteColumns(column, geo_type, src_field);
+            reinterpretRawByteColumns(column, geo_type, src_field, /*repair_variants=*/true);
             try
             {
                 column = prepareArrowColumnForCast(column, geo_type, format_settings, i, block_missing_values_ptr);
