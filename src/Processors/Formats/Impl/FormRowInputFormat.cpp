@@ -80,7 +80,8 @@ void FormRowInputFormat::readFormData(MutableColumns & columns)
             if (!format_settings.skip_unknown_fields)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref);
 
-            reportSkippedUnknownField(name_ref);
+            if (needToCheckSkippedUnknownField())
+                reportSkippedUnknownField(name_ref);
 
             /// Skip the value if key is not found.
             String encoded_str;

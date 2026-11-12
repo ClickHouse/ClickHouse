@@ -166,11 +166,14 @@ public:
     /// (`input_format_skip_unknown_fields`): once per name, for at most `max_reported_skipped_unknown_fields + 1` names.
     using SkippedUnknownFieldCallback = std::function<void(std::string_view field_name)>;
     static constexpr size_t max_reported_skipped_unknown_fields = 10;
+    /// Formats that match fields by name in every row check only this many skipped fields, see `needToCheckSkippedUnknownField`.
+    static constexpr size_t max_checked_skipped_unknown_fields = 100;
 
     virtual void setSkippedUnknownFieldCallback(SkippedUnknownFieldCallback callback)
     {
         skipped_unknown_field_callback = std::move(callback);
         reported_skipped_unknown_fields.clear();
+        skipped_unknown_fields_to_check = skipped_unknown_field_callback ? max_checked_skipped_unknown_fields : 0;
     }
 
     /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
@@ -214,7 +217,16 @@ protected:
 
     InputFormatErrorsLoggerPtr errors_logger;
 
-    bool needToReportSkippedUnknownField(std::string_view field_name) const;
+    /// For the formats that match fields by name in every row: whether to pass the next skipped field to
+    /// `reportSkippedUnknownField`. True for the first `max_checked_skipped_unknown_fields` calls after
+    /// `setSkippedUnknownFieldCallback`, so the rest of the data pays one branch per skipped field.
+    bool needToCheckSkippedUnknownField()
+    {
+        if (skipped_unknown_fields_to_check == 0)
+            return false;
+        --skipped_unknown_fields_to_check;
+        return true;
+    }
     void reportSkippedUnknownField(std::string_view field_name);
     /// For every field of the header of the input data that `column_mapping` maps to no column.
     void reportSkippedUnknownFieldsOfColumnMapping();
@@ -227,6 +239,7 @@ private:
 
     VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
     VectorWithMemoryTracking<String> reported_skipped_unknown_fields;
+    size_t skipped_unknown_fields_to_check = 0;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

@@ -80,16 +80,10 @@ void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*
 {
 }
 
-bool IInputFormat::needToReportSkippedUnknownField(std::string_view field_name) const
-{
-    if (!skipped_unknown_field_callback || reported_skipped_unknown_fields.size() > max_reported_skipped_unknown_fields)
-        return false;
-    return std::ranges::find(reported_skipped_unknown_fields, field_name) == reported_skipped_unknown_fields.end();
-}
-
 void IInputFormat::reportSkippedUnknownField(std::string_view field_name)
 {
-    if (!needToReportSkippedUnknownField(field_name))
+    if (!skipped_unknown_field_callback || reported_skipped_unknown_fields.size() > max_reported_skipped_unknown_fields
+        || std::ranges::find(reported_skipped_unknown_fields, field_name) != reported_skipped_unknown_fields.end())
         return;
     reported_skipped_unknown_fields.emplace_back(field_name);
     skipped_unknown_field_callback(field_name);

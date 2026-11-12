@@ -32,8 +32,11 @@ $CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_parallel_${DB} FROM numbers(10
     | insert t_null JSONEachRow "input_format_parallel_parsing=1&max_parsing_threads=4&min_chunk_bytes_for_parallel_parsing=1024"
 $CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_serial_${DB} FROM numbers(100000) FORMAT JSONEachRow" \
     | insert t_null JSONEachRow "input_format_parallel_parsing=0"
+# Only the first 100 fields skipped row by row are checked: u_late comes after 100 skipped u_early fields.
+$CLICKHOUSE_CLIENT -q "SELECT if(number < 100, '{\"a\":1,\"u_early_${DB}\":1}', '{\"a\":1,\"u_late_${DB}\":1}') FROM numbers(101) ORDER BY number FORMAT TSVRaw" \
+    | insert t_null JSONEachRow "input_format_parallel_parsing=0"
 printf '{"k":1,"s":5,"u_aggstate_%s":1}' "$DB" | insert t_agg JSONEachRow "aggregate_function_input_format=value"
-printf '{"a":15,"u_input_%s":1}' "$DB" | insert "t+SELECT+*+FROM+input()" JSONEachRow
+printf '{"a":15,"u_input_%s":1}' "$DB" | insert "t_null+SELECT+*+FROM+input()" JSONEachRow
 
 ASYNC="async_insert=1&wait_for_async_insert=1"
 printf '{"a":8,"u_async_%s":1}' "$DB" | insert t JSONEachRow "$ASYNC&query_id=${DB}_async"
@@ -67,7 +70,7 @@ for _ in {1..30}; do
 done
 
 for f in u_Native u2_Native u_JSONEachRow u2_JSONEachRow u_TSKV u2_TSKV u_BSONEachRow u2_BSONEachRow u_JSONColumns u2_JSONColumns \
-    u_CSVWithNames u2_CSVWithNames u_JSONCompact u2_JSONCompact u_form u_mysqldump u_optout u_after u_parallel u_serial u_aggstate u_input \
+    u_CSVWithNames u2_CSVWithNames u_JSONCompact u2_JSONCompact u_form u_mysqldump u_optout u_after u_parallel u_serial u_early u_late u_aggstate u_input \
     u_async u_async_optout u_async_fmt u_read u_insert_select; do
     echo "$f $(warnings "position(message, 'Field \`${f}_${DB}\` ') > 0")"
 done

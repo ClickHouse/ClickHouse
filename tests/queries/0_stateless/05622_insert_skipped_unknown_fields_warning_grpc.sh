@@ -14,7 +14,7 @@ if [[ -z "$CLICKHOUSE_GRPC_CLIENT" ]]; then
 fi
 
 U="u_grpc_${CLICKHOUSE_DATABASE}"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_grpc (a UInt64, b String DEFAULT 'b_default') ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_grpc (a UInt64) ENGINE = Memory"
 printf '{"a":1,"%s":1}' "$U" | $CLICKHOUSE_GRPC_CLIENT --port "${CLICKHOUSE_PORT_GRPC:-9100}" --database "$CLICKHOUSE_DATABASE" \
     --query "INSERT INTO t_grpc FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
