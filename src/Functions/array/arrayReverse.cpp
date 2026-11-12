@@ -8,6 +8,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -111,9 +113,67 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 }
 
 
+/// `src.index(indexes)`, except that arrays are copied by ranges: `ColumnArray::index` makes an index entry
+/// for every element of every array. A column of dynamic structure, which may hold arrays, is copied element
+/// by element.
+static ColumnPtr gatherElements(const IColumn & src, const ColumnUInt64 & indexes_column)
+{
+    const auto & indexes = indexes_column.getData();
+
+    if (const auto * src_array = typeid_cast<const ColumnArray *>(&src))
+    {
+        const auto & src_offsets = src_array->getOffsets();
+        auto res = ColumnArray::create(src_array->getData().cloneEmpty());
+        auto & res_offsets = res->getOffsets();
+        res_offsets.resize(indexes.size());
+        size_t res_size = 0;
+        for (size_t i = 0; i < indexes.size(); ++i)
+        {
+            res_size += src_offsets[indexes[i]] - src_offsets[ssize_t(indexes[i]) - 1];
+            res_offsets[i] = res_size;
+        }
+
+        auto & res_data = res->getData();
+        res_data.reserve(res_size);
+        for (const auto index : indexes)
+        {
+            const size_t offset = src_offsets[ssize_t(index) - 1];
+            res_data.insertRangeFrom(src_array->getData(), offset, src_offsets[index] - offset);
+        }
+        return res;
+    }
+
+    if (const auto * src_tuple = typeid_cast<const ColumnTuple *>(&src); src_tuple && src_tuple->tupleSize() != 0)
+    {
+        Columns res_elements;
+        res_elements.reserve(src_tuple->tupleSize());
+        for (const auto & element : src_tuple->getColumns())
+            res_elements.push_back(gatherElements(*element, indexes_column));
+        return ColumnTuple::create(std::move(res_elements));
+    }
+
+    if (const auto * src_map = typeid_cast<const ColumnMap *>(&src))
+        return ColumnMap::create(gatherElements(src_map->getNestedColumn(), indexes_column));
+
+    if (const auto * src_nullable = typeid_cast<const ColumnNullable *>(&src))
+        return ColumnNullable::create(
+            gatherElements(src_nullable->getNestedColumn(), indexes_column), src_nullable->getNullMapColumn().index(indexes_column, 0));
+
+    if (src.hasDynamicStructure())
+    {
+        auto res = src.cloneEmpty();
+        res->reserve(indexes.size());
+        for (const auto index : indexes)
+            res->insertFrom(src, index);
+        return res;
+    }
+
+    return src.index(indexes_column, 0);
+}
+
 ColumnPtr FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets)
 {
-    /// One `index` call instead of a virtual `insertFrom` call per element.
+    /// Gather the elements instead of a virtual `insertFrom` call per element.
     auto indexes_column = ColumnUInt64::create(src_data.size());
     auto & indexes = indexes_column->getData();
 
@@ -125,7 +185,7 @@ ColumnPtr FunctionArrayReverse::executeGeneric(const IColumn & src_data, const C
         src_prev_offset = src_offset;
     }
 
-    return src_data.index(*indexes_column, 0);
+    return gatherElements(src_data, *indexes_column);
 }
 
 template <typename T>
