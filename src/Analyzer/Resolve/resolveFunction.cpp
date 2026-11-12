@@ -3668,13 +3668,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (settings[Setting::in_null_as_unknown])
                 first_argument_set_type = makeNullableOrLowCardinalityNullableSafe(first_argument_set_type);
 
+            SetSourceInfo source_info;
             auto result_block = getSetElementsForConstantValue(
                 first_argument_set_type, second_argument_constant_column, second_argument_constant_type,
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown],
                     .in_null_as_unknown = settings[Setting::in_null_as_unknown],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-                });
+                },
+                &source_info);
 
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
@@ -3687,8 +3689,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 std::move(result_block),
                 settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown],
                 size_limits_for_set,
-                isEmptySetForConstantValue(second_argument_constant_column, second_argument_constant_type),
-                in_rhs_has_explicit_null);
+                settings[Setting::in_null_as_unknown] ? std::optional<bool>{source_info.is_empty} : std::nullopt,
+                settings[Setting::in_null_as_unknown] && (source_info.has_null || in_rhs_has_explicit_null));
 
             /// Create constant set column for constant folding
 

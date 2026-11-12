@@ -189,12 +189,6 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 }
 
 
-struct SetSourceInfo
-{
-    bool is_empty = false;
-    bool has_null = false;
-};
-
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
@@ -211,12 +205,6 @@ ColumnsWithTypeAndName createBlockForSet(
     const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
     const auto & right_arg_column = right_value.getColumn();
     const auto & right_arg_type = right_value.getType();
-    if (source_info)
-    {
-        source_info->is_empty = isEmptySetForConstantValue(right_arg_column, right_arg_type);
-        source_info->has_null = setContainsNullForConstantValue(right_arg_column, right_arg_type);
-    }
-
     auto set_element_type = left_arg_type;
     if (context->getSettingsRef()[Setting::in_null_as_unknown])
         set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
@@ -229,7 +217,7 @@ ColumnsWithTypeAndName createBlockForSet(
     };
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params, source_info);
 }
 
 /** Create a block for set from literal.
@@ -254,14 +242,8 @@ ColumnsWithTypeAndName createBlockForSet(
     };
 
     auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
-    if (source_info)
-    {
-        source_info->is_empty = isEmptySetForConstantValue(right_arg_column, right_arg_type);
-        source_info->has_null = setContainsNullForConstantValue(right_arg_column, right_arg_type);
-    }
-
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params, source_info);
 }
 
 bool hasIdentifiers(const ASTPtr & ast)
@@ -648,7 +630,7 @@ FutureSetPtr makeExplicitSet(
         right_arg_func,
         std::move(block),
         context->getSettingsRef(),
-        source_info.is_empty,
+        context->getSettingsRef()[Setting::in_null_as_unknown] ? std::optional<bool>{source_info.is_empty} : std::nullopt,
         context->getSettingsRef()[Setting::in_null_as_unknown] && source_info.has_null);
 }
 

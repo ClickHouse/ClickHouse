@@ -204,6 +204,7 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     SettingsChanges settings_changes;
     settings_changes.insertSetting("aggregate_functions_null_for_empty", false);
     settings_changes.insertSetting("transform_null_in", false);
+    settings_changes.insertSetting("in_null_as_unknown", false);
     settings_changes.insertSetting("legacy_column_name_of_tuple_literal", false);
     settings_query->changes = std::move(settings_changes);
     settings_query->is_standalone = false;

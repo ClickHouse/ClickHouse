@@ -250,6 +250,8 @@ FutureSet::Hash FutureSetFromTuple::computeContentHash() const
     }
 
     SipHash siphasher;
+    siphasher.update(source_is_empty);
+    siphasher.update(source_has_null);
     for (size_t i = 0; i < normalized.size(); ++i)
     {
         const auto type_name = element_types[i]->getName();

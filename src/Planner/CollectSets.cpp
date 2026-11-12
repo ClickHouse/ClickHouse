@@ -102,9 +102,7 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
-            const bool source_is_empty = isEmptySetForConstantValue(constant_node->getColumn(), constant_node->getResultType());
-            const bool source_has_null
-                = use_null_as_unknown && setContainsNullForConstantValue(constant_node->getColumn(), constant_node->getResultType());
+            SetSourceInfo source_info;
             auto set_element_type = in_first_argument->getResultType();
             if (use_null_as_unknown)
                 set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
@@ -115,7 +113,8 @@ public:
                     .transform_null_in = settings[Setting::transform_null_in] || use_null_as_unknown,
                     .in_null_as_unknown = use_null_as_unknown,
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-                });
+                },
+                &source_info);
 
             if (set.empty())
                 throw Exception(
@@ -150,8 +149,8 @@ public:
                 std::move(ast),
                 std::move(set),
                 settings,
-                source_is_empty,
-                source_has_null);
+                use_null_as_unknown ? std::optional<bool>{source_info.is_empty} : std::nullopt,
+                use_null_as_unknown && source_info.has_null);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||

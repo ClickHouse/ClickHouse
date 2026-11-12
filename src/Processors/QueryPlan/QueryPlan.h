@@ -300,7 +300,14 @@ private:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
-    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeSets(
+        QueryPlan plan,
+        DeserializedSetsRegistry & registry,
+        ReadBuffer & in,
+        const SerializationFlags & flags,
+        const ContextPtr & context,
+        size_t max_type_complexity,
+        std::optional<UInt64> num_sets = std::nullopt);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;

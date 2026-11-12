@@ -18,6 +18,8 @@
 
 #include <Common/assert_cast.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -645,35 +647,6 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 
 }
 
-bool isEmptySetForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type)
-{
-    const WhichDataType rhs_which_type(rhs_type);
-    if (rhs_which_type.isArray())
-    {
-        const auto full_column = rhs_column->convertToFullColumnIfConst();
-        const auto & array = assert_cast<const ColumnArray &>(*full_column);
-        return array.getOffsets().empty() || array.getOffsets()[0] == 0;
-    }
-
-    if (rhs_which_type.isTuple())
-    {
-        const auto full_column = rhs_column->convertToFullColumnIfConst();
-        return assert_cast<const ColumnTuple &>(*full_column).tupleSize() == 0;
-    }
-
-    return false;
-}
-
-bool setContainsNullForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type)
-{
-    const WhichDataType rhs_which_type(rhs_type);
-    if (rhs_which_type.isArray() || rhs_which_type.isTuple())
-        return columnCollectionHasNull(rhs_column, rhs_which_type);
-
-    const auto full_column = rhs_column->convertToFullColumnIfConst();
-    return !full_column->empty() && full_column->isNullAt(0);
-}
-
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.
@@ -681,7 +654,11 @@ bool setContainsNullForConstantValue(const ColumnPtr & rhs_column, const DataTyp
 /// If `transform_null_in` is false, then `SELECT NULL IN (NULL, 1)` returns NULL, otherwise it returns true.
 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
-    const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
+    const DataTypePtr & lhs_expression_type,
+    const ColumnPtr & rhs_column,
+    const DataTypePtr & rhs_type,
+    GetSetElementParams params,
+    SetSourceInfo * source_info)
 {
     if (params.in_null_as_unknown && lhs_expression_type->onlyNull())
     {
@@ -693,6 +670,15 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             members = membersFromTuple(rhs_column, rhs_type);
         else
             members = membersFromSingleValue(rhs_column, rhs_type);
+
+        if (source_info)
+        {
+            source_info->is_empty = members.empty();
+            source_info->has_null = std::any_of(members.begin(), members.end(), [](const auto & member)
+            {
+                return member.column->isNullAt(0);
+            });
+        }
 
         auto nested_column = ColumnUInt8::create(members.size(), UInt8{0});
         auto null_map = ColumnUInt8::create(members.size(), UInt8{0});
@@ -749,6 +735,13 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     auto build_from_array = [&](const DataTypePtr & type)
     {
+        if (source_info)
+        {
+            const auto full_column = rhs_column->convertToFullColumnIfConst();
+            const auto & array = assert_cast<const ColumnArray &>(*full_column);
+            source_info->is_empty = array.getOffsets().empty() || array.getOffsets()[0] == 0;
+            source_info->has_null = columnCollectionHasNull(rhs_column, WhichDataType(type));
+        }
         /// Hot path: an `Array` RHS whose key columns are all native numbers (single scalar key, or a
         /// multi-column key over an array of tuples). The array is homogeneous, so its elements are
         /// already contiguous key columns - convert them directly, without `membersFromArray` cutting
@@ -761,11 +754,22 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     auto build_from_tuple = [&](const DataTypePtr & type)
     {
+        if (source_info)
+        {
+            const auto full_column = rhs_column->convertToFullColumnIfConst();
+            source_info->is_empty = assert_cast<const ColumnTuple &>(*full_column).tupleSize() == 0;
+            source_info->has_null = columnCollectionHasNull(rhs_column, WhichDataType(type));
+        }
         return createBlockFromCollection(membersFromTuple(rhs_column, type), lhs_unpacked_types, params);
     };
 
     auto build_from_single_value = [&](const DataTypePtr & type)
     {
+        if (source_info)
+        {
+            source_info->is_empty = false;
+            source_info->has_null = rhs_column->isNullAt(0);
+        }
         return createBlockFromCollection(membersFromSingleValue(rhs_column, type), lhs_unpacked_types, params);
     };
 
@@ -869,7 +873,11 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                     }
 
                     if (all_tuple_elements_nullable)
+                    {
                         append_set_elements(res, build_from_single_value(rhs_type));
+                        if (source_info)
+                            source_info->has_null = true;
+                    }
                 }
 
                 return res;

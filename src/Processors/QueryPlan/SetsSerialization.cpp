@@ -21,6 +21,8 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageProxy.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -229,10 +231,12 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     ReadBuffer & in,
     const SerializationFlags & flags,
     const ContextPtr & context,
-    size_t max_type_complexity)
+    size_t max_type_complexity,
+    std::optional<UInt64> num_sets_from_header)
 {
-    UInt64 num_sets = 0;
-    readVarUInt(num_sets, in);
+    UInt64 num_sets = num_sets_from_header.value_or(0);
+    if (!num_sets_from_header)
+        readVarUInt(num_sets, in);
 
     QueryPlanAndSets res;
     res.plan = std::move(plan);
@@ -403,12 +407,46 @@ void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffe
 {
     SerializationFlags flags;
     flags.sets_must_be_ready = true;
+    for (const auto & [hash, future_set] : registry.sets)
+    {
+        (void)hash;
+        const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get());
+        if (!tuple_set)
+            continue;
+
+        const auto columns = tuple_set->getKeyColumns();
+        const bool serialized_is_empty = columns.empty() || columns.front()->empty();
+        if (tuple_set->isSourceEmpty() != serialized_is_empty || tuple_set->sourceHasNull() != columnsContainNull(columns))
+        {
+            /// A marker distinguishes this payload from the legacy count-first format. Old peers
+            /// can still read ordinary sets; they reject the new semantics instead of misreading them.
+            writeVarUInt(std::numeric_limits<UInt64>::max(), out);
+            writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, out);
+            flags.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+            break;
+        }
+    }
     serializeSets(registry, out, flags);
 }
 
 void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
 {
-    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
+    UInt64 header = 0;
+    readVarUInt(header, in);
+
+    SerializationFlags flags;
+    std::optional<UInt64> num_sets;
+    if (header == std::numeric_limits<UInt64>::max())
+    {
+        readVarUInt(flags.version, in);
+        if (flags.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE
+            || flags.version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported ready-set serialization version {}", flags.version);
+    }
+    else
+        num_sets = header;
+
+    makeSets(deserializeSets(QueryPlan{}, registry, in, flags, context, 0, num_sets), context);
 }
 
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
