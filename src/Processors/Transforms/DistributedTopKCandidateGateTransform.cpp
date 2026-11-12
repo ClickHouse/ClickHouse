@@ -5,6 +5,7 @@
 #include <Processors/Port.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -142,7 +143,9 @@ void DistributedTopKCandidateGateTransform::retainChunk(Chunk chunk)
     const auto & columns = chunk.getColumns();
     for (size_t index = 0; index < sort_key_positions.size(); ++index)
     {
-        const auto source = columns[sort_key_positions[index]]->convertToFullColumnIfConst();
+        /// The candidate columns are created by `IDataType::createColumn`, so the sort key must not stay
+        /// wrapped: e.g. a `ColumnSparse` key from a sparse part can reach here through `FinishSorting`.
+        const auto source = columns[sort_key_positions[index]]->convertToFullIfWrapped();
         candidate_columns[index]->insertRangeFrom(*source, 0, rows);
     }
 
