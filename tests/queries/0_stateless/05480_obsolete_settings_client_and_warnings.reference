@@ -8,6 +8,7 @@ Obsolete setting ['min_rows_for_compact_part'] is specified on the command line
 2
 3
 4
+4
 5
 6
 -- ... and it is shown in system.warnings

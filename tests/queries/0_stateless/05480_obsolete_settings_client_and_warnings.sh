@@ -15,6 +15,8 @@ $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS max_memory_usage_for_all_queries = 123"
 $CLICKHOUSE_CLIENT -q "SET multiple_joins_rewriter_version = 2; SELECT 2"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&odbc_max_field_size=1" -d "SELECT 3"
 $CLICKHOUSE_LOCAL -q "SELECT 4 SETTINGS max_memory_usage_for_all_queries = 123"
+# An obsolete setting with its default value passed over HTTP: the constraints check drops it as a no-op change.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_window_functions=1" -d "SELECT 4"
 # An obsolete `MergeTree` setting, by its `merge_tree_`-prefixed name, in a query and in a settings profile.
 $CLICKHOUSE_CLIENT -q "SET merge_tree_min_rows_for_compact_part = 123; SELECT 5"
 $CLICKHOUSE_CLIENT -q "
@@ -32,6 +34,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT message LIKE '%''max_memory_usage_for_all_queries''%'
        AND message LIKE '%''multiple_joins_rewriter_version''%'
        AND message LIKE '%''odbc_max_field_size''%'
+       AND message LIKE '%''allow_experimental_window_functions''%'
        AND message LIKE '%''merge_tree_min_rows_for_compact_part''%'
        AND message LIKE '%''merge_tree_min_bytes_for_compact_part''%'
     FROM system.warnings WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %'"

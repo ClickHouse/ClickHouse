@@ -4277,17 +4277,31 @@ void Context::checkSettingsConstraintsForSettingsReset(
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    /// The check removes the changes that keep the current value, so they never reach `applySettingChange`.
+    /// Report the obsolete ones among them here, otherwise e.g. `allow_experimental_json_type = 1` passed over HTTP
+    /// or in the native protocol would go unnoticed.
+    SettingsChanges obsolete_changes;
+    for (const auto & change : changes)
+        if (settingGetTier(change.name) == SettingsTierType::OBSOLETE)
+            obsolete_changes.push_back(change);
+
     if (std::ranges::any_of(changes, isProfileChange))
     {
         changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
         {
             context.checkSettingsConstraints(segment, source);
         });
-        return;
+    }
+    else
+    {
+        SharedLockGuard lock(mutex);
+        checkSettingsConstraintsWithLock(changes, source);
     }
 
-    SharedLockGuard lock(mutex);
-    checkSettingsConstraintsWithLock(changes, source);
+    /// The remaining changes are reported when they are applied.
+    for (const auto & change : obsolete_changes)
+        if (!changes.tryGet(change.name))
+            reportObsoleteSettingChange(change);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
