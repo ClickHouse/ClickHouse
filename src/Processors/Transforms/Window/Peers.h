@@ -11,7 +11,9 @@ struct PeersBounds
 {
     RowPoint start;
     RowPoint end;
-    bool fully_visible = false;
+    int64_t group_index = 0;
+    bool start_visible = false;
+    bool end_visible = false;
 };
 
 class Peers
@@ -19,7 +21,7 @@ class Peers
 public:
     void enterPartition(RowNumber partition_start);
     void advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition);
-    void advanceCurrentRow(const SlidingBlocks & blocks, const PartitionBounds & partition);
+    void advanceCurrentRow(const SlidingBlocks & blocks);
 
     const RowPoint & current() const;
     const PeersBounds & bounds() const;
