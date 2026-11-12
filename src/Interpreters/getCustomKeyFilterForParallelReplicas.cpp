@@ -10,6 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -85,6 +86,18 @@ void collectInLambdaArgumentIdentifiers(
         collectInLambdaArgumentIdentifiers(*child, lambda_arguments, result);
 }
 
+/// Whether `database.table` is a table that the user may see. The custom key is a setting of the query, so
+/// whether it is accepted must not reveal the existence of a table the user has no access to: a table that the
+/// user may not see is treated as absent. The access check is done before the lookup, so it does not depend
+/// on whether the table exists. For such a table the analyzer resolves the identifier in the same way it
+/// would for an absent one (to a column of the query if there is one), and the binding it makes is checked
+/// by `checkCustomKeyQueryTreeReadsOnlyRow`.
+bool isVisibleTable(const String & database, const String & table, const ContextPtr & context)
+{
+    return context->getAccess()->isGranted(AccessType::SHOW_TABLES, database, table)
+        && DatabaseCatalog::instance().isTableExist(StorageID(database, table), context);
+}
+
 /// Whether an identifier on the right-hand side of `IN` in the custom key names a column of the table,
 /// possibly qualified with the table name (`t.arr`) or with the database and table names (`db.t.arr`).
 bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescription & columns, const ContextPtr & context)
@@ -98,7 +111,7 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
     /// analyzer resolves `x.y` to a table when it is not a column of the query, and then `x.y` with
     /// a matching column `y` may still be the table `x.y` (`a IN default.set_rhs`). Do not accept it
     /// as a column when such a table exists.
-    if (parts.size() == 2 && DatabaseCatalog::instance().isTableExist(StorageID(parts[0], parts[1]), context))
+    if (parts.size() == 2 && isVisibleTable(parts[0], parts[1], context))
         return false;
     for (size_t num_qualifiers = 1; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
     {
@@ -198,7 +211,7 @@ void expandAliasColumns(
     {
         const auto * rhs_identifier = func->arguments->children[1]->as<ASTIdentifier>();
         if (rhs_identifier && rhs_identifier->name_parts.size() == 2
-            && DatabaseCatalog::instance().isTableExist(StorageID(rhs_identifier->name_parts[0], rhs_identifier->name_parts[1]), context))
+            && isVisibleTable(rhs_identifier->name_parts[0], rhs_identifier->name_parts[1], context))
         {
             auto & lhs = func->arguments->children[0];
             auto * old_ptr = lhs.get();
