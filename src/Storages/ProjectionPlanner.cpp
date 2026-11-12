@@ -128,6 +128,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     /// the stored query is final, so the settings of the session must not rewrite it again
     query_context->setSetting("enable_positional_arguments", false);
     query_context->setSetting("rewrite_in_to_join", false);
+    query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
 
     auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
     QueryTreeNodeToName unresolved_node_names;
