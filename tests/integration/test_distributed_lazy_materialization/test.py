@@ -116,8 +116,12 @@ def _load_shard2():
 
 
 def _settings(enabled=True):
-    value = 1 if enabled else 0
-    return f"{BASE_SETTINGS}, query_plan_optimize_distributed_lazy_materialization = {value}"
+    if enabled:
+        return f"{BASE_SETTINGS}, query_plan_optimize_distributed_lazy_materialization = 1"
+    # Without the optimization, the classic path is used. With `serialize_query_plan = 1` it plans the source
+    # table on the initiator, which has no `local_data`, so the baseline sends the query text instead.
+    baseline = BASE_SETTINGS.replace("serialize_query_plan = 1", "serialize_query_plan = 0")
+    return f"{baseline}, query_plan_optimize_distributed_lazy_materialization = 0"
 
 
 def _run(query_id, enabled=True):

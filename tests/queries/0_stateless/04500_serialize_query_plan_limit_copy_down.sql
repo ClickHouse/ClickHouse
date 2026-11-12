@@ -5,6 +5,8 @@
 -- gets a copy with limit = limit + offset and offset = 0.
 
 SET serialize_query_plan = 1;
+-- The plan-level distributed read is used only with distributed lazy materialization enabled.
+SET query_plan_optimize_distributed_lazy_materialization = 1;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS mdp_lim_local;
@@ -18,7 +20,7 @@ INSERT INTO mdp_lim_local SELECT number FROM numbers(100);
 SELECT '-- Limit copied into the per-shard plan: shard Limit 10 (= 7 + 3), initiator keeps Limit 7 Offset 3';
 EXPLAIN actions = 1, distributed = 1 SELECT x FROM mdp_lim_dist LIMIT 7 OFFSET 3;
 
-SELECT '-- WITH TIES is not copied down (per-shard ties are not composable)';
+SELECT '-- WITH TIES keeps the classic path: shards sort, the initiator merges (per-shard ties are not composable)';
 EXPLAIN distributed = 1 SELECT x FROM mdp_lim_dist ORDER BY x LIMIT 3 WITH TIES;
 
 SELECT '-- exact_rows_before_limit keeps the shard reading everything (no per-shard Limit)';

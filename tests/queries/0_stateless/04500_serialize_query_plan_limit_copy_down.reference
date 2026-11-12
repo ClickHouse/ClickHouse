@@ -16,15 +16,20 @@ Positions: 0
       Limit 10
       Offset 0
         ReadFromTable
--- WITH TIES is not copied down (per-shard ties are not composable)
+-- WITH TIES keeps the classic path: shards sort, the initiator merges (per-shard ties are not composable)
 Expression (Project names)
   Limit (LIMIT WITH TIES)
-    Sorting (Sorting for ORDER BY)
-      ReadFromRemote (Read from remote replica)
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          ReadFromTable
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          ReadFromTable
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            ReadFromMergeTree (default.mdp_lim_local)
+        ReadFromRemote (Read from remote replica)
+          Sorting (Sorting for ORDER BY)
+            Expression (Before ORDER BY)
+              Expression (Projection)
+                Expression (Change column names to column identifiers)
+                  ReadFromTable
 -- exact_rows_before_limit keeps the shard reading everything (no per-shard Limit)
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   Limit (preliminary LIMIT)

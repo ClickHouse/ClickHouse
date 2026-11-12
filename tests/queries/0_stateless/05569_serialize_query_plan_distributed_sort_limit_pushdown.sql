@@ -1,11 +1,14 @@
 -- Tags: no-random-settings
--- With `serialize_query_plan = 1` and `query_plan_optimize_distributed_lazy_materialization = 0`,
--- `ORDER BY ... LIMIT` over a `Distributed` table must still sort and limit on each shard,
--- so that a shard sends at most `limit + offset` rows instead of all of them.
+-- With the plan-level distributed read (`serialize_query_plan = 1` and
+-- `query_plan_optimize_distributed_lazy_materialization = 1`) but without the coordinated Top-K
+-- (here because `query_plan_optimize_lazy_materialization = 0`), `ORDER BY ... LIMIT` over a
+-- `Distributed` table must still sort and limit on each shard, so that a shard sends at most
+-- `limit + offset` rows instead of all of them.
 -- DISTINCT and LIMIT BY keep the classic path, which applies them on the shards as well.
 
 SET serialize_query_plan = 1;
-SET query_plan_optimize_distributed_lazy_materialization = 0;
+SET query_plan_optimize_distributed_lazy_materialization = 1;
+SET query_plan_optimize_lazy_materialization = 0;
 SET distributed_push_down_limit = 1;
 SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
@@ -28,7 +31,7 @@ SELECT '-- Same result as the classic path';
 SELECT payload FROM sort_limit_dist ORDER BY key DESC LIMIT 3 OFFSET 2;
 SELECT payload FROM sort_limit_dist ORDER BY key DESC LIMIT 3 OFFSET 2 SETTINGS serialize_query_plan = 0;
 
-SELECT '-- Without distributed_push_down_limit the shards send every row';
+SELECT '-- Without distributed_push_down_limit the classic path is used: shards sort, the initiator merges';
 EXPLAIN distributed = 1 SELECT payload FROM sort_limit_dist ORDER BY key DESC LIMIT 3 SETTINGS distributed_push_down_limit = 0;
 
 SELECT '-- DISTINCT keeps the classic path';
