@@ -2734,7 +2734,9 @@ def test_namespace_two_part_name_resolution(started_cluster):
     A two-part name `X.T` in a table expression is read as table `T` of database `X`; the
     current-database reading (table `X.T`) is tried too only when the current database
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
-    existing is an error unless the user can access only one of them.
+    existing is an error unless the user can access only one of them. SQL stored in
+    definitions (views, materialized views, row policies, mutations) always reads `X.T`
+    as table `T` of database `X`.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
@@ -2742,6 +2744,11 @@ def test_namespace_two_part_name_resolution(started_cluster):
     test_ref = f"test_ns_two_part_{uuid.uuid4().hex[:8]}"
     X = f"ns_{test_ref}"
     T = "priority_table"
+    P = "policy_table"
+    T2 = f"t2_{test_ref}"
+    V, V2, MV = f"v_{test_ref}", f"v2_{test_ref}", f"mv_{test_ref}"
+    policy = f"pol_{test_ref}"
+    policy_user = f"u_policy_{test_ref}"
 
     catalog = load_catalog_impl(started_cluster)
 
@@ -2801,6 +2808,27 @@ def test_namespace_two_part_name_resolution(started_cluster):
         )
         assert "UNKNOWN_TABLE" in err, f"INSERT must not fall back to the catalog: {err}"
 
+        # stored definitions read `X.T` as database `X`, table `T`
+        node.query(f"CREATE TABLE default.{T2} (symbol Nullable(String)) ENGINE = MergeTree ORDER BY tuple()")
+        node.query(f"INSERT INTO default.{T2} VALUES ('kek'), ('kek')")
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; CREATE VIEW default.{V2} AS SELECT * FROM {X}.{T}", settings=on
+        )
+        assert "UNKNOWN_TABLE" in err, f"view body must not read the catalog table: {err}"
+        node.query(f"USE {CATALOG_NAME}; CREATE VIEW default.{V2} AS SELECT * FROM `{X}.{T}`", settings=on)
+        result = int(node.query(f"SELECT count() FROM default.{V2}", settings=on))
+        assert result == 5, f"quoted name in a view body must be the catalog table (5 rows), got {result}"
+
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; ALTER TABLE default.{T2} DELETE WHERE symbol IN {X}.{T}", settings=on
+        )
+        assert "AMBIGUOUS_IDENTIFIER" not in err, f"mutation must not read the catalog table: {err}"
+        assert "UNKNOWN_IDENTIFIER" in err, f"mutation must not read the catalog table: {err}"
+        unfinished = node.query(
+            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{T2}' AND NOT is_done"
+        ).strip()
+        assert unfinished == "0", f"rejected mutation must not be left in system.mutations: {unfinished}"
+
         node.query(f"CREATE TABLE `{X}`.{T} (id UInt64) ENGINE = Memory")
         node.query(f"INSERT INTO `{X}`.{T} VALUES (1), (2), (3)")
 
@@ -2847,9 +2875,51 @@ def test_namespace_two_part_name_resolution(started_cluster):
         assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting on: {err}"
         _, err = node.query_and_get_answer_with_error(query)
         assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting off: {err}"
+
+        # a view and a materialized view over `default.T2`, which also exists in the catalog
+        try:
+            catalog.create_namespace("default")
+        except NamespaceAlreadyExistsError:
+            pass
+        create_table(catalog, "default", T2).append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+        node.query(f"CREATE VIEW default.{V} AS SELECT * FROM {T2}")
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{V}", settings=on))
+        assert result == 2, f"view must read the database table (2 rows), got {result}"
+
+        node.query(f"CREATE MATERIALIZED VIEW default.{MV} ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM {T2}")
+        node.query(
+            f"USE {CATALOG_NAME}; INSERT INTO default.{T2} VALUES ('kek')",
+            settings={**on, "async_insert": 0},
+        )
+        result = int(node.query(f"SELECT count() FROM default.{MV}"))
+        assert result == 1, f"materialized view must get the inserted row, got {result}"
+
+        # a row policy reads `X.P` as the database table, which the user cannot access
+        catalog_p = create_table(catalog, X, P)
+        catalog_p.append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+        node.query(f"CREATE TABLE `{X}`.{P} (symbol Nullable(String)) ENGINE = Memory")
+        node.query(f"INSERT INTO `{X}`.{P} VALUES ('kek')")
+        node.query(f"DROP USER IF EXISTS {policy_user}")
+        node.query(f"CREATE USER {policy_user} IDENTIFIED WITH no_password")
+        node.query(f"GRANT SELECT ON default.{T2} TO {policy_user}")
+        node.query(f"GRANT SELECT ON {CATALOG_NAME}.`{X}.{P}` TO {policy_user}")
+        node.query(
+            f"CREATE ROW POLICY {policy} ON default.{T2} USING symbol IN (SELECT symbol FROM {X}.{P}) TO {policy_user}"
+        )
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM default.{T2}", settings=on, user=policy_user
+        )
+        assert "ACCESS_DENIED" in err, f"row policy must read the database table: {err}"
     finally:
         for kind in ("catalog", "database", "neither"):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
+        node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.{T2}")
+        node.query(f"DROP USER IF EXISTS {policy_user}")
+        for name in (V, V2, MV):
+            node.query(f"DROP VIEW IF EXISTS default.{name}")
+        node.query(f"DROP TABLE IF EXISTS default.{T2}")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{T2}`")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{P}`")
         node.query(f"DROP DATABASE IF EXISTS `{X}`")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.one`")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.columns`")
