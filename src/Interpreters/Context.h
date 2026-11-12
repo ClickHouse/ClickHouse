@@ -684,6 +684,9 @@ protected:
     /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
     /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
     bool is_automatic_parallel_replicas_probe = false;
+    /// Set for the context `system.tables` reads table totals with: a storage that would have to read remote
+    /// storage (e.g. data lake metadata) to compute `totalRows`/`totalBytes` returns nullopt instead.
+    bool totals_without_storage_access = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -2114,6 +2117,9 @@ public:
 
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
+
+    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
