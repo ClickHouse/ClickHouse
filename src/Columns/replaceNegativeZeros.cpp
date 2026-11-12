@@ -1,5 +1,6 @@
 #include <Columns/replaceNegativeZeros.h>
 
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -73,6 +74,12 @@ bool hasNegativeZeros(const IColumn & column)
     /// `forEachSubcolumn` skips a shared dictionary.
     if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
         return hasNegativeZeros(*low_cardinality->getDictionary().getNestedNotNullableColumn());
+
+    /// A value of `Dynamic` is stored either in a typed variant or serialized in the shared variant, depending on
+    /// the order of inserts, and both layouts give the value the same key. Only the typed one could be modified,
+    /// so the same `-0.` would get two keys. `Dynamic` is not modified at all, also as a path of `JSON`.
+    if (typeid_cast<const ColumnDynamic *>(&column))
+        return false;
 
     bool found = false;
     column.forEachSubcolumn([&](const auto & subcolumn) { found = found || hasNegativeZeros(*subcolumn); });

@@ -89,3 +89,18 @@ SELECT count() FROM (SELECT DISTINCT x FROM (SELECT [arrayJoin([0., -0.])]::Arra
 SETTINGS allow_suspicious_low_cardinality_types = 1;
 SELECT count() FROM (SELECT x FROM (SELECT ('a', [toNullable(arrayJoin([0., -0.]))]) AS x) GROUP BY x);
 SELECT count() FROM (SELECT x FROM (SELECT map('k', arrayJoin([0., -0.])) AS x) GROUP BY x);
+
+-- `Dynamic` keeps a value typed or serialized in the shared variant, depending on the order of inserts. It is not
+-- modified, so the same `-0.` has the same key in both layouts.
+SELECT '-- Dynamic in both layouts';
+DROP TABLE IF EXISTS nz_dynamic;
+CREATE TABLE nz_dynamic (d Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO nz_dynamic VALUES (-0.0);
+INSERT INTO nz_dynamic VALUES ('seed'), (-0.0);
+-- Two groups: 'seed' and `-0.`.
+SELECT count() FROM (SELECT d FROM nz_dynamic GROUP BY d) SETTINGS allow_suspicious_types_in_group_by = 1, max_threads = 1;
+SELECT count() FROM (SELECT DISTINCT d FROM nz_dynamic) SETTINGS max_threads = 1;
+DROP TABLE nz_dynamic;
+
+SELECT '-- A typed path of JSON';
+SELECT count() FROM (SELECT j.a AS a FROM (SELECT ('{"a" : ' || arrayJoin(['0.0', '-0.0']) || '}')::JSON(a Float64) AS j) GROUP BY a);

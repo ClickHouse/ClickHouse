@@ -13,8 +13,9 @@ namespace DB
   *
   * These functions are applied to the key columns right before they are hashed. A column is quickly scanned
   * for the presence of negative zeros, and only if there are any, a copy is made with negative zeros replaced
-  * by positive zeros. Floating point values are found at any depth of the column, by walking its subcolumns
-  * (except for the values that `Dynamic` and `JSON` keep serialized in their shared storage).
+  * by positive zeros. Floating point values are found at any depth of the column, by walking its subcolumns,
+  * except inside `Dynamic` (also as a path of `JSON`): it keeps a value either typed or serialized in the shared
+  * variant, and both layouts have to give the value the same key.
   */
 
 /// Returns `nullptr` if the column contains no negative zeros, which is the common case.
