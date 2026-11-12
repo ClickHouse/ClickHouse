@@ -1204,6 +1204,10 @@ _ALLOWED_WITHOUT_INTEGRITY = (
     # which browsers refuse to run as scripts or apply as stylesheets.
     "github.com",
     "raw.githubusercontent.com",
+    # The Kapa AI assistant widget of the documentation website (`docs/_site/customizations/kapa-init.js`).
+    # It cannot have an integrity hash: the host sends no CORS headers, the bundle is unversioned and
+    # redeployed by Kapa, and it loads captcha scripts from other hosts by itself.
+    "widget.kapa.ai",
 )
 # Copies of third-party libraries; they mention CDN URLs in their banners.
 _VENDORED_PATHS = ("/vendor/", "./programs/server/js/", "./utils/trace-visualizer/js/", "./utils/trace-visualizer/css/")
