@@ -1265,7 +1265,12 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                /// Fill with the default value of the element type, not with the zero of the underlying column:
+                /// they differ e.g. for Enum, whose default is the member with the lowest value (and 0 may be
+                /// not a member at all), and for nested Tuples containing such elements.
+                auto default_column = to_element_types[i]->createColumn();
+                to_element_types[i]->insertManyDefaultsInto(*default_column, input_rows_count);
+                converted_columns[i] = std::move(default_column);
             }
         }
 
