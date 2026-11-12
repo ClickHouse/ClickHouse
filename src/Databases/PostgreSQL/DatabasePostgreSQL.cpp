@@ -850,9 +850,13 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             checkSettingsOfDefinition(*engine_define, named_collection.get(), args.context);
         postgresql_settings.loadFromQuery(*engine_define);
 
-        /// Only a definition that is written now stores the values: not one read from the metadata file, and not on `RESTORE`,
-        /// which rejects a database whose definition differs from the one in the backup.
-        const bool is_new_definition = !is_stored_definition && !args.is_restore_from_backup;
+        /// Only a definition that is written now stores the values: not one read from the metadata file, not on `RESTORE`,
+        /// which rejects a database whose definition differs from the one in the backup, and not a full `ATTACH DATABASE` of a
+        /// detached database, whose metadata file `InterpreterCreateQuery::createDatabase` keeps instead of writing the
+        /// definition, so the values would be shown but not stored.
+        const bool keeps_metadata_file = args.create_query.attach
+            && args.context->getDatabaseDisk()->existsFile(DatabaseCatalog::getMetadataFilePath(args.database_name));
+        const bool is_new_definition = !is_stored_definition && !args.is_restore_from_backup && !keeps_metadata_file;
         postgresql_settings.loadFromQueryContext(*args.context, engine_define->settings, is_new_definition ? engine_define : nullptr);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])

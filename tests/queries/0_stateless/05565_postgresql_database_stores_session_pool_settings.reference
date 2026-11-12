@@ -16,6 +16,9 @@ SETTINGS postgresql_connection_pool_size = 3
 PostgreSQL connection pool size: 5
 SETTINGS postgresql_connection_pool_size = 5
 PostgreSQL connection pool size: 3
+--- an ATTACH with the full definition of a detached database adds nothing, since the metadata file is kept
+
+
 --- a RESTORE keeps the definition from the backup
 
 --- a stated value is held to the constraints of the user

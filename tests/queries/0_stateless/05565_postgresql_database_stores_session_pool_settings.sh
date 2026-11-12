@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # no-fasttest: depends on libpqxx (the PostgreSQL database engine), which is not built in fast test.
+# no-parallel: the databases created here point at an unreachable host, and a concurrent statement over all databases,
+#   such as `SYSTEM STOP MERGES`, would try to connect there and log connection errors.
 #
 # A `PostgreSQL` database can state the connection pool settings of its tables in a `SETTINGS` clause, and takes those it
 # does not state from the session that creates it. A new database adds those that differ from the server's values to its
@@ -19,7 +21,7 @@ PROFILE="profile_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 function cleanup()
 {
-    for suffix in session server session_server stated default attach backup restored user_stated user_default; do
+    for suffix in session server session_server stated default attach reattach backup restored user_stated user_default; do
         ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}_${suffix}"
     done
     ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER}"
@@ -73,6 +75,15 @@ ${CLICKHOUSE_CLIENT} --send_logs_level trace --postgresql_connection_pool_size 7
 settings_of stated
 ${CLICKHOUSE_CLIENT} --query "DETACH DATABASE ${DB}_session"
 ${CLICKHOUSE_CLIENT} --send_logs_level trace --query "ATTACH DATABASE ${DB}_session" 2>&1 | pool_size
+
+echo "--- an ATTACH with the full definition of a detached database adds nothing, since the metadata file is kept"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB}_reattach ENGINE = ${ENGINE}"
+${CLICKHOUSE_CLIENT} --query "DETACH DATABASE ${DB}_reattach"
+${CLICKHOUSE_CLIENT} --postgresql_connection_pool_size 3 --query "ATTACH DATABASE ${DB}_reattach ENGINE = ${ENGINE}"
+settings_of reattach
+${CLICKHOUSE_CLIENT} --query "DETACH DATABASE ${DB}_reattach"
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${DB}_reattach"
+settings_of reattach
 
 echo "--- a RESTORE keeps the definition from the backup"
 # `RESTORE` rejects a restored database whose definition differs from the one in the backup, so nothing is added to it.

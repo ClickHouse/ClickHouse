@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # no-fasttest: depends on libpqxx (the PostgreSQL database engine), which is not built in fast test.
+# no-parallel: the databases created here point at an unreachable host, and a concurrent statement over all databases,
+#   such as `SYSTEM STOP MERGES`, would try to connect there and log connection errors.
 #
 # A `PostgreSQL` database with a named collection: its `SETTINGS` clause takes precedence over the collection, unless the
 # collection marks the setting `NOT OVERRIDABLE`, and a value that the collection sets is not taken from the session, so
