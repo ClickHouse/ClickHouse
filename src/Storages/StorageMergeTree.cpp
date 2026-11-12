@@ -3719,6 +3719,9 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
     size_t next_part_index = 0;
 
     auto timeout_ms = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
     Stopwatch watch;
     do
     {
@@ -3752,6 +3755,10 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
             auto & part = new_parts[next_part_index];
             LOG_INFO(log, "Part {} is temporarily locked, will clear old parts and retry.", part->name);
         }
+
+        /// Nothing else ends the retries on KILL QUERY or max_execution_time, and there is no partial result to return.
+        if (query_status)
+            query_status->checkTimeLimit(OverflowMode::THROW);
 
         clearOldPartsFromFilesystem();
         sleepForMilliseconds(200);

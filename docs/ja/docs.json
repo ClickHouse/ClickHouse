@@ -9,16 +9,24 @@
     {
       "menu": [
         {
-          "$ref": "./get-started/navigation.json"
+          "href": "#",
+          "icon": "/images/icons/icon-clickhouse.svg",
+          "item": "ClickHouse"
         },
         {
-          "$ref": "./concepts/navigation.json"
+          "$ref": "./get-started/navigation.json"
         },
         {
           "$ref": "./guides/navigation.json"
         },
         {
+          "$ref": "./concepts/navigation.json"
+        },
+        {
           "$ref": "./reference/navigation.json"
+        },
+        {
+          "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
       "tab": "データベース"
@@ -28,18 +36,34 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "ClickHouse Cloud"
+          "item": "デプロイメント"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "item": "BYOC",
+          "pages": [
+            "ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "アプリケーション"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Langfuse"
+          "item": "AI エンジニアリング"
+        },
+        {
+          "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
+          "item": "セキュリティ"
         },
         {
           "href": "#",
@@ -47,16 +71,23 @@
           "item": "オープンソース"
         },
         {
-          "$ref": "./clickstack/navigation.json"
+          "item": "ClickStack",
+          "pages": [
+            "ja/clickstack/index"
+          ]
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
+        },
+        {
+          "href": "https://www.librechat.ai/docs",
+          "item": "LibreChat"
         }
       ],
-      "tab": "ソリューション"
+      "tab": "製品"
     },
     {
       "menu": [
