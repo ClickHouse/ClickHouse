@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/NamesAndTypes.h>
 
@@ -1046,6 +1047,28 @@ std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_
     }
 
     return {std::move(physical_names), std::move(virtual_names)};
+}
+
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, ContextPtr context)
+{
+    return getVirtualsForFileLikeStorage(storage_columns, std::move(context), std::nullopt);
+}
+
+ColumnPtr getFilterByPathAndFileIndexes(
+    const std::vector<String> & paths,
+    const ExpressionActionsPtr & actions,
+    const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
+    const ContextPtr & context)
+{
+    return getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, std::nullopt);
+}
+
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context)
+{
+    addRequestedFileLikeStorageVirtualsToChunk(chunk, requested_virtual_columns, std::move(virtual_values), std::move(context), std::nullopt);
 }
 
 }
