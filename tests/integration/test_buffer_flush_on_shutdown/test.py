@@ -1,3 +1,4 @@
+
 """A graceful shutdown must hand a `Buffer` table's rows over to its destination.
 
 Databases shut down one at a time in name order, so a destination in an earlier-sorting database is
@@ -290,3 +291,25 @@ def test_async_insert_flush_cancelled_in_delay_at_shutdown(started_cluster):
     assert shard.query("SELECT count() FROM dist_inflight.data") == "15\n"
 
     drop_database("dist_inflight")
+
+
+def test_buffer_flush_delayed_over_threshold_at_shutdown(started_cluster):
+    # `buf_dist` is full, so the next `INSERT` flushes it to `dist` itself and waits in the delay.
+    create_distributed_over_delay_threshold("dist_bufd")
+    create_buffer_over_merge_tree("dist_bufd")
+    node.query(
+        "CREATE TABLE dist_bufd.buf_dist (x UInt64) "
+        "ENGINE = Buffer(dist_bufd, dist, 1, 100000, 100000, 1, 1, 1000000000, 1000000000)"
+    )
+    node.query("INSERT INTO dist_bufd.buf_dist VALUES (0)")
+    thread, errors = start_delayed_insert(
+        "dist_bufd", "dist_bufd_delayed_insert", table="buf_dist"
+    )
+
+    restart_node_while_shard_is_down()
+
+    thread.join(60)
+    assert not thread.is_alive()
+    assert node.query("SELECT count() FROM dist_bufd.mt") == "100\n"
+
+    drop_database("dist_bufd")
