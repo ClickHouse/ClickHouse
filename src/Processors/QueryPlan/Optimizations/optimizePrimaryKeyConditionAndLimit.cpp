@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 
@@ -52,6 +53,11 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         else if (auto * limit_step = typeid_cast<LimitStep *>(iter->node->step.get()))
         {
             source_step_with_filter->setLimit(limit_step->getLimitForSorting());
+
+            /// `LIMIT 0` takes no row unless it reads till end, for totals or `exact_rows_before_limit`.
+            if (limit_step->getLimit() == 0 && limit_step->getOffset() == 0 && !limit_step->alwaysReadTillEnd())
+                if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(source_step_with_filter))
+                    read_from_merge_tree->setNoRowsNeeded();
             break;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
