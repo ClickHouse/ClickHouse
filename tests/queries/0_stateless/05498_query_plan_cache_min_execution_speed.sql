@@ -11,7 +11,8 @@ DROP TABLE IF EXISTS t_min_speed;
 CREATE TABLE t_min_speed (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_min_speed SELECT number FROM numbers(100000);
 
-SET timeout_before_checking_execution_speed = 0, max_block_size = 1000;
+-- `use_statistics_for_sum_avg_aggregation` would answer `sum` from part statistics without reading.
+SET timeout_before_checking_execution_speed = 0, max_block_size = 1000, use_statistics_for_sum_avg_aggregation = 0;
 
 SELECT sum(id) FROM t_min_speed SETTINGS min_execution_speed = 1000000000000000, log_comment = '05498_rows_off'; -- { serverError TOO_SLOW }
 SELECT sum(id) FROM t_min_speed SETTINGS min_execution_speed_bytes = 1000000000000000, log_comment = '05498_bytes_off'; -- { serverError TOO_SLOW }

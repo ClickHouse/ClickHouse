@@ -62,8 +62,21 @@ Q1="SELECT /* q1 */ id FROM ${CLICKHOUSE_DATABASE}.t_05620 ORDER BY id"
 echo "-- native: $(run_user "$Q1" | tr '\n' ' ')"
 run_user "$Q1" > /dev/null
 echo "-- hits after a native repeat (must be 0): $(hits_of_last_run 'SELECT /* q1 */')"
-echo "-- HTTP (must be empty): [$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&allow_experimental_query_plan_cache=1&enable_query_plan_cache=1" -d "$Q1" | tr '\n' ' ')]"
-echo "-- hits of the HTTP run (must be 0): $(hits_of_last_run 'SELECT /* q1 */')"
+http_query_id="05620_http_${CLICKHOUSE_DATABASE}_${RANDOM}"
+echo "-- HTTP (must be empty): [$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&query_id=${http_query_id}&allow_experimental_query_plan_cache=1&enable_query_plan_cache=1" -d "$Q1" | tr '\n' ' ')]"
+# The `query_log` entry of an HTTP query is written after the response is sent, so wait for it.
+http_hits=""
+while clickhouse_test_time_left
+do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    http_hits=$($CLICKHOUSE_CLIENT --query "
+        SELECT ProfileEvents['QueryPlanCacheHits']
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND query_id = '${http_query_id}' AND type = 'QueryFinish'")
+    [ -n "$http_hits" ] && break
+    sleep 0.1
+done
+echo "-- hits of the HTTP run (must be 0): ${http_hits}"
 
 echo "-- 2. row policy reading an ALIAS column that expands to now"
 Q2="SELECT /* q2 */ id FROM ${CLICKHOUSE_DATABASE}.e_05620 ORDER BY id"
