@@ -175,9 +175,13 @@ TEST(QueryStatusCancellationException, CachedTimeoutIncludesElapsedTimeForEither
     for (bool worker_first : {true, false})
     {
         SCOPED_TRACE(worker_first ? "throwIfKilled first" : "checkTimeLimit first");
-        const auto start_ns = clock_gettime_ns(CLOCK_MONOTONIC) - 2'000'000'000ULL;
+        /// Bracket the start of execution. The two seconds spent waiting for admission must be excluded.
+        const Stopwatch before_admission(CLOCK_MONOTONIC);
+        const auto start_ns = before_admission.getStart() - 2'000'000'000ULL;
         auto query = makeQueryStatus("gtest_cached_timeout", settings, start_ns);
+        const Stopwatch after_admission(CLOCK_MONOTONIC);
         query->cancelQuery(CancelReason::TIMEOUT);
+        const auto min_elapsed_ms = static_cast<double>(after_admission.elapsedMicroseconds()) / 1000;
 
         std::string first_message;
         for (bool use_worker_path : {worker_first, !worker_first})
@@ -195,7 +199,8 @@ TEST(QueryStatusCancellationException, CachedTimeoutIncludesElapsedTimeForEither
                 ASSERT_EQ(e.code(), ErrorCodes::TIMEOUT_EXCEEDED);
                 double elapsed_ms = 0;
                 ASSERT_TRUE(RE2::FullMatch(e.message(), message_pattern, &elapsed_ms)) << e.message();
-                EXPECT_GE(elapsed_ms, 2000.0);
+                EXPECT_GE(elapsed_ms, min_elapsed_ms);
+                EXPECT_LE(elapsed_ms, static_cast<double>(before_admission.elapsedMicroseconds() + 1) / 1000);
                 if (first_message.empty())
                     first_message = e.message();
                 else

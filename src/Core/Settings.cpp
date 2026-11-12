@@ -10793,7 +10793,7 @@ Two different keys of 16 bytes or more whose hashes have the same 127 bits are m
 
 The hash tables are smaller, so a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` keys or to `LowCardinality(Nullable(String))` keys. A join on a non-nullable `LowCardinality(String)` key can use a hash table of the key's dictionary instead. This needs a join that has one condition, is not `ASOF` and builds its hash table as one part: a `grace_hash` join, or a `hash` join with the serial layout (see `parallel_hash_join_threshold` and `hash_join_layout`). Tables with the `Join` engine, `joinGet` and joins that run from a serialized query plan keep exact keys. So does a join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join`.
+The setting does not apply to `FixedString` keys or to `LowCardinality(Nullable(String))` keys. A join on a non-nullable `LowCardinality(String)` key can use a hash table of the key's dictionary instead. This needs a join that has one condition, is not `ASOF` and builds its hash table as one part: a `grace_hash` join, or a `hash` join with the serial layout (see `parallel_hash_join_threshold` and `hash_join_layout`). Tables with the `Join` engine and `joinGet` keep exact keys. So does a join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join`.
 )", 0, \
         {"26.11", false, true, "New setting to store the single `String` key of `hash`, `parallel_hash` and `grace_hash` joins in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys."}) \
     DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
