@@ -27,5 +27,9 @@ n.ts = if(equals(toTypeName(n.ts), \'DateTime64(3)\'), toDateTime64(\'2020-01-01
 2
 1
 2
+--- a DateTime alias of a DateTime64(0) column
+1
+2
+2
 --- aliases inside the expression of an alias with the name of a column
 3

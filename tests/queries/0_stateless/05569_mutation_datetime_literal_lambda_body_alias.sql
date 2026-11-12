@@ -25,6 +25,13 @@ ALTER TABLE t_lambda_body_alias_invoke DELETE WHERE arrayExists(x -> (arrayExist
 SELECT extract(command, 'event = toDateTime\\([^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_lambda_body_alias_invoke';
 SELECT id FROM t_lambda_body_alias_invoke ORDER BY id;
 
+SELECT '--- an alias inside a lambda that calls the alias of a lambda';
+DROP TABLE IF EXISTS t_lambda_body_alias_call;
+CREATE TABLE t_lambda_body_alias_call (id UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_lambda_body_alias_call VALUES (1), (2);
+ALTER TABLE t_lambda_body_alias_call DELETE WHERE arrayExists((y -> y = 1) AS f, [1]) AND arrayExists(x -> (f(id) AS z), [1]);
+SELECT id FROM t_lambda_body_alias_call ORDER BY id;
+
 SELECT '--- a String alias inside a lambda';
 DROP TABLE IF EXISTS t_lambda_body_alias_string;
 CREATE TABLE t_lambda_body_alias_string (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
@@ -36,3 +43,4 @@ SELECT id FROM t_lambda_body_alias_string ORDER BY id;
 DROP TABLE t_lambda_body_alias;
 DROP TABLE t_lambda_body_alias_string;
 DROP TABLE t_lambda_body_alias_invoke;
+DROP TABLE t_lambda_body_alias_call;

@@ -104,6 +104,21 @@ SELECT id FROM t_prefer_before_1970 WHERE isNotNull(toDateTime64(event, 6) AS ev
 ALTER TABLE t_prefer_before_1970 DELETE WHERE isNotNull(toDateTime64(event, 6) AS event) AND event = '1960-01-01 00:00:00.123456';
 SELECT id FROM t_prefer_before_1970 ORDER BY id;
 
+-- A `DateTime` alias of a `DateTime64(0)` column has the same precision but another range, so the literal is read with the
+-- type that the identifier names too, here the column, also for an element of a tuple.
+SELECT '--- a DateTime alias of a DateTime64(0) column';
+DROP TABLE IF EXISTS t_prefer_scale_zero;
+CREATE TABLE t_prefer_scale_zero (id UInt8, event DateTime64(0)) ENGINE = Memory;
+INSERT INTO t_prefer_scale_zero VALUES (1, '1960-01-01 00:00:00'), (2, '1970-01-02 00:00:00');
+SELECT id FROM t_prefer_scale_zero WHERE isNotNull(toDateTime(event) AS event) AND event = '1960-01-01 00:00:00';
+ALTER TABLE t_prefer_scale_zero DELETE WHERE isNotNull(toDateTime(event) AS event) AND event = '1960-01-01 00:00:00';
+SELECT id FROM t_prefer_scale_zero ORDER BY id;
+DROP TABLE IF EXISTS t_prefer_scale_zero_tuple;
+CREATE TABLE t_prefer_scale_zero_tuple (id UInt8, n Tuple(ts DateTime64(0))) ENGINE = Memory;
+INSERT INTO t_prefer_scale_zero_tuple SELECT 1, tuple('1960-01-01 00:00:00') UNION ALL SELECT 2, tuple('1970-01-02 00:00:00');
+ALTER TABLE t_prefer_scale_zero_tuple DELETE WHERE isNotNull(CAST(n, 'Tuple(ts DateTime)') AS n) AND n.ts = '1960-01-01 00:00:00';
+SELECT id FROM t_prefer_scale_zero_tuple ORDER BY id;
+
 -- The analysis of the expression of an alias with the name of a column keeps the aliases inside its lambdas and subqueries.
 SELECT '--- aliases inside the expression of an alias with the name of a column';
 DROP TABLE IF EXISTS t_prefer_nested;
@@ -124,4 +139,6 @@ DROP TABLE t_prefer_tuple;
 DROP TABLE t_prefer_tuple_merge_tree;
 DROP TABLE t_prefer_range;
 DROP TABLE t_prefer_before_1970;
+DROP TABLE t_prefer_scale_zero;
+DROP TABLE t_prefer_scale_zero_tuple;
 DROP TABLE t_prefer_nested;
