@@ -880,8 +880,9 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
     Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
-    result.outstanding_requests_count
-        = CurrentMetrics::values[CurrentMetrics::KeeperOutstandingRequests].load(std::memory_order_relaxed);
+    /// The metric is incremented after the request is pushed, so the request thread may decrement it first.
+    result.outstanding_requests_count = std::max<Int64>(
+        0, CurrentMetrics::values[CurrentMetrics::KeeperOutstandingRequests].load(std::memory_order_relaxed));
     result.alive_connections_count
         = CurrentMetrics::values[CurrentMetrics::KeeperAliveConnections].load(std::memory_order_relaxed);
     return result;
