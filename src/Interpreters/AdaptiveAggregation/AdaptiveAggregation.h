@@ -77,6 +77,9 @@ struct AdaptiveMergeTask;
 class AdaptiveTopKPruning;
 class AdaptiveTopKCountBins;
 
+/// How a session divides the buckets into partitions, for its staged records and the producers' cell indexes.
+class AdaptivePartitionLayout;
+
 /// The staged records of one partition as contiguous byte ranges of whole records: a producer's chunk, or a block
 /// read back from a spill stream.
 using AdaptiveRecordRanges = std::vector<std::string_view>;

@@ -30,7 +30,6 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
-#include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Interpreters/AggregationMethod.h>
