@@ -45,24 +45,7 @@ ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & co
 
     const auto & set_query = settings_ast->as<const ASTSetQuery &>();
     auto subquery_context = Context::createCopy(context);
-
-    /// One change at a time, so that each is clamped against the context as the preceding changes left it.
-    for (const auto & change : set_query.changes)
-    {
-        SettingsChanges single_change{change};
-        subquery_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
-        subquery_context->applySettingsChanges(single_change);
-    }
-
-    if (!set_query.default_settings.empty())
-    {
-        auto allowed_resets = set_query.default_settings;
-        SettingsChanges clamped_resets;
-        subquery_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
-        subquery_context->resetSettingsToDefaultValue(allowed_resets);
-        subquery_context->applySettingsChanges(clamped_resets);
-    }
-
+    subquery_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
     return subquery_context;
 }
 
@@ -73,11 +56,10 @@ ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & co
 ContextPtr getSetOperationContext(const ASTs & operands, const ASTPtr & settings_ast, const ContextPtr & context)
 {
     ContextPtr result = getSubqueryContext(settings_ast, context);
+    /// The clause may be nested into `INTERSECT` / `EXCEPT` nodes as the last operand of each, but not into
+    /// a parenthesized operand, which keeps its clause to itself.
     if (operands.size() > 1)
-    {
-        if (const auto * last_select = operands.back()->as<ASTSelectQuery>())
-            result = getSubqueryContext(last_select->settings(), result);
-    }
+        result = getSubqueryContext(ASTSelectIntersectExceptQuery::getTrailingSettings(operands.back()), result);
     return result;
 }
 

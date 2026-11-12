@@ -469,6 +469,7 @@ struct RuntimeFilterIndexAnalysisDescriptor
     /// `key_column_name` is then only a display name.
     bool is_global_row_index = false;
 };
+using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
 
 /// Display name of the `_part_starting_offset + _part_offset` key of a global row index descriptor.
 inline constexpr std::string_view runtime_filter_global_row_index_key_name = "_part_starting_offset + _part_offset";
