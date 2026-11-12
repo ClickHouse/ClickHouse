@@ -31,6 +31,10 @@ public:
 protected:
     int fd = -1;
     std::optional<StorageFile::FileSource> file_source;
+    /// The first argument is an array of paths.
+    bool is_array_source = false;
+    /// The first path of the array.
+    String first_array_path;
 
     void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
     std::optional<String> tryGetFormatFromFirstArgument() override;

@@ -52,6 +52,22 @@ CREATE TABLE t_hive_path (a UInt8, k String) AS file(currentDatabase() || '_0556
 SELECT a, k FROM t_hive_path ORDER BY a;
 CREATE TABLE t_not_hive (a UInt8, j String) AS file(currentDatabase() || '_05567_hive/k=v1/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
 CREATE TABLE t_not_virtual (a UInt8, _nothing String) AS file(currentDatabase() || '_05567_hive/k=v1/f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+-- A directory lists its files, which take the hive partition columns of the directory, also before it has any: the file
+-- here is in a subdirectory, which is not listed.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_05567_directory/k=v/sub/f.csv', 'CSV', 'a UInt8') SELECT 1
+SETTINGS engine_file_truncate_on_insert = 1;
+CREATE TABLE t_directory (a UInt8, k String) AS file(currentDatabase() || '_05567_directory/k=v', 'CSV', 'a UInt8');
+CREATE TABLE t_directory_not_hive (a UInt8, j String) AS file(currentDatabase() || '_05567_directory/k=v', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_directory_files (a UInt8, k String) AS file(currentDatabase() || '_05567_hive/k=v1', 'CSV', 'a UInt8');
+SELECT a, k FROM t_directory_files ORDER BY a;
+-- The first path of an array is its first file, unless it is a glob or a directory: then which of the paths has the first
+-- file depends on the files that exist, so any name is accepted, as for a glob.
+CREATE TABLE t_array_files (a UInt8, k String) AS file([currentDatabase() || '_05567_hive/k=v1/f.csv', currentDatabase() || '_05567_hive/k=v2/f.csv'], 'CSV', 'a UInt8');
+SELECT a, k FROM t_array_files ORDER BY a;
+CREATE TABLE t_array_files_not_hive (a UInt8, j String) AS file([currentDatabase() || '_05567_hive/k=v1/f.csv', currentDatabase() || '_05567_hive/k=v2/f.csv'], 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_array_missing_file_not_hive (a UInt8, j String) AS file([currentDatabase() || '_05567_hive/k=v1/missing.csv', currentDatabase() || '_05567_hive/k=v2/f.csv'], 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE t_array (a UInt8, k String) AS file([currentDatabase() || '_05567_directory/k=v', currentDatabase() || '_05567_hive/k=v1'], 'CSV', 'a UInt8');
+CREATE TABLE t_array_any (a UInt8, j String) AS file([currentDatabase() || '_05567_directory/k=v', currentDatabase() || '_05567_hive/k=v1'], 'CSV', 'a UInt8');
 -- A file in an archive has no hive partition columns.
 CREATE TABLE t_archive (a UInt8, k String) AS file(currentDatabase() || '_05567_hive/k=v1/a.zip :: f.csv', 'CSV', 'a UInt8'); -- { serverError THERE_IS_NO_COLUMN }
 -- A path with `{_partition_id}` is not listed, so it is not a glob: its hive partition columns are those of the path.
@@ -73,6 +89,11 @@ DROP TABLE t_hint;
 DROP TABLE t_subcolumn;
 DROP TABLE t_virtual;
 DROP TABLE t_hive;
+DROP TABLE t_directory;
+DROP TABLE t_directory_files;
+DROP TABLE t_array_files;
+DROP TABLE t_array;
+DROP TABLE t_array_any;
 DROP TABLE t_hive_no_files;
 DROP TABLE t_hive_path;
 DROP TABLE t_elasticsearch;
