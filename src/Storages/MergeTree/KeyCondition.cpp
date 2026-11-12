@@ -2320,8 +2320,7 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
-/// The type of the value in the single row of `column`: the active member of a `Variant` or `Dynamic`, otherwise
-/// `type`. The row must not be NULL.
+/// The type of the single non-NULL row of `column`: the active member of a `Variant` or `Dynamic`, otherwise `type`.
 static DataTypePtr activeValueType(const IColumn & column, const DataTypePtr & type)
 {
     if (isDynamic(type))
@@ -2391,15 +2390,14 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
-/// Whether converting a `Tuple` constant to `target_type` drops the padding of a `FixedString` element: tuples are compared
-/// element by element, so such an element is compared as a `FixedString` constant is. An `Array` or a `Map` is compared after
-/// both sides are cast to a common type, so the elements below one are not looked at. `column` holds the constant's row.
+/// Whether converting a `Tuple` constant to `target_type` drops the padding of a `FixedString` element. Tuples compare
+/// element by element; an `Array` or a `Map` compares after both sides are cast to a common type.
 static bool tupleConstantLosesFixedStringPadding(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
 {
     const ColumnPtr data_column = removeNullable(column->convertToFullColumnIfConst());
     const DataTypePtr data_type = removeLowCardinalityAndNullable(type);
     const DataTypePtr data_target_type = removeLowCardinalityAndNullable(target_type);
-    /// A `Variant` or `Dynamic` is compared as its active member; a held `Tuple` that may hold a `FixedString` is reported.
+    /// A `Variant` or `Dynamic` compares as its active member.
     if (isVariant(data_type) || isDynamic(data_type))
     {
         if (data_column->isNullAt(0) || !isTuple(data_target_type))
@@ -2886,13 +2884,11 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
 }
 
 
-/// `type` with each `Nothing` replaced by the type at the same place of `target_type`: no cast to `Nothing` exists,
-/// and a `Nothing`, as in `[]`, `map()` or `NULL`, holds no value.
+/// `type` with each `Nothing` replaced by the type at the same place of `target_type`; a `Nothing` holds no value.
 static DataTypePtr replaceNothingByTargetType(const DataTypePtr & type, const DataTypePtr & target_type)
 {
     if (isNothing(type))
         return target_type;
-    /// The common type may wrap a type of the constant in `Nullable`.
     if (!type->isNullable() && target_type->isNullable())
         return replaceNothingByTargetType(type, removeNullable(target_type));
     if (type->getTypeId() != target_type->getTypeId() || type->getNumberOfChildren() != target_type->getNumberOfChildren()
@@ -2906,10 +2902,7 @@ static DataTypePtr replaceNothingByTargetType(const DataTypePtr & type, const Da
     return type->cloneWithChildren(children);
 }
 
-/// Converts a `Tuple`, `Array` or `Map` constant into `target_type` the way the comparison does, with a cast of its
-/// column; a `Field` conversion converts the elements without their types. The bound is read back from the
-/// cast column so that every element has the carrier of the key's values. Returns `Null` when the cast does
-/// not round-trip or does not exist.
+/// The constant cast to `target_type` as the comparison casts it, or `Null` when the cast fails or does not round-trip.
 static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
 {
     if (tupleConstantLosesFixedStringPadding(column, type, target_type))
@@ -2930,10 +2923,8 @@ static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr &
     }
 }
 
-/// Whether casting a key value to `common_type` changes how it compares with the constant. Only a single-point
-/// analysis accepts such a cast. A `Dynamic` or `Variant` keeps the key's own type, a `FixedString` loses its zero
-/// padding, and an `Enum` cast to a string compares by name. A `Tuple` is compared element by element; an `Array`
-/// or a `Map` is compared after the same cast.
+/// Whether casting a key value to `common_type` changes how it compares with the constant: a `Dynamic` or `Variant`
+/// keeps the key's own type, a `FixedString` loses its zero padding, and an `Enum` cast to a string compares by name.
 static bool keyCastChangesComparison(const DataTypePtr & key_type, const DataTypePtr & common_type)
 {
     const DataTypePtr key = removeLowCardinalityAndNullable(key_type);
