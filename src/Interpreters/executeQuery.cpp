@@ -3040,7 +3040,7 @@ static BlockIO executeQueryImpl(
             /// Per query, like `log_queries_probability` above; secondary queries carry the
             /// initiator's already-resolved settings.
             if (!out_ast->as<ASTSetQuery>() && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-                checkDistributedPlanSettings(context);
+                applyDistributedPlanSettings(context);
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.

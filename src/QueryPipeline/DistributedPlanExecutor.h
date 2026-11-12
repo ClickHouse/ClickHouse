@@ -32,7 +32,7 @@ size_t getCascadesPlanningNodeCount(ContextPtr context);
 /// Rejects explicit settings that both want and refuse a distributed query plan, and derives
 /// `make_distributed_plan` on the query context when a worker setting wants it and nothing set it
 /// explicitly.
-void checkDistributedPlanSettings(ContextMutablePtr context);
+void applyDistributedPlanSettings(ContextMutablePtr context);
 
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
 /// server-level defaults). Both ports may differ per node so several workers can share a host.

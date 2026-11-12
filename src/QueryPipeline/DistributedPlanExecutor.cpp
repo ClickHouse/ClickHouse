@@ -1444,7 +1444,7 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
 }
 
-void checkDistributedPlanSettings(ContextMutablePtr context)
+void applyDistributedPlanSettings(ContextMutablePtr context)
 {
     const ContextMutablePtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     const auto & settings = query_context->getSettingsRef();
