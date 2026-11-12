@@ -189,6 +189,14 @@ namespace Net
         /// Same as `writeRaw`, but loops until all `length` bytes are written.
         /// Throws `MessageException` if the socket stops accepting data.
 
+        int writeRawNonBlocking(const char * buffer, std::streamsize length, const std::function<bool()> & ready_to_send = {});
+        /// Sends up to `length` bytes on a socket that the caller has set to non-blocking mode.
+        /// Returns the number of bytes sent, or 0 when the socket would block.
+        ///
+        /// The send throttler and the send data hooks wait before the send, as for a blocking send.
+        /// What the caller checked before the call can change during these waits, so `ready_to_send`
+        /// is called after them: when it returns false, nothing is sent, and the result is 0.
+
         int buffered() const;
         /// Returns the number of bytes in the buffer.
 

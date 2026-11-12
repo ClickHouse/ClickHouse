@@ -248,7 +248,10 @@ class _ServerRuntime:
         # Answers directly instead of redirecting, so the upload is never completed upstream and
         # whatever object the key already holds stays in place.
         def __init__(self, early=None):
-            self.early = early == "1"
+            # `1`: answer before reading the body, then reset the connection, like MinIO.
+            # `lingering`: answer before reading the body, then read and drop a part of it before
+            # the connection is reset, like AWS S3, which keeps reading for a while after its answer.
+            self.early = early
 
         def inject_error(self, request_handler):
             data = (
@@ -260,15 +263,29 @@ class _ServerRuntime:
                 "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
                 "</Error>"
             )
-            if self.early:
+            if self.early in ("1", "lingering"):
                 request_handler.send_response(404)
                 request_handler.send_header("Content-Type", "text/xml")
                 request_handler.send_header("Content-Length", str(len(data)))
                 request_handler.send_header("Connection", "close")
                 request_handler.end_headers()
                 request_handler.wfile.write(bytes(data, "UTF-8"))
-                # like MinIO: stop sending, wait, then close with the body unread, which resets the connection
                 request_handler.connection.shutdown(socket.SHUT_WR)
+                if self.early == "lingering":
+                    # like AWS S3: keep reading and dropping the body after the answer, but less than
+                    # a large part, so that a client that does not watch the connection is still sending
+                    connection = request_handler.connection
+                    connection.settimeout(1)
+                    to_drop = 8 * 1024 * 1024
+                    while to_drop > 0:
+                        try:
+                            data = connection.recv(min(to_drop, 65536))
+                        except OSError:
+                            break
+                        if not data:
+                            break
+                        to_drop -= len(data)
+                # stop reading, wait, then close with the body unread, which resets the connection
                 time.sleep(0.5)
                 request_handler.connection.close()
             else:

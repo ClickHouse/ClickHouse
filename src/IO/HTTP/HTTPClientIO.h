@@ -33,6 +33,11 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 class HTTPRequestBodyWriteBuffer : public WriteBuffer
 {
 public:
+    /// On a plain TCP socket, the body is sent while the connection is watched for a response
+    /// (RFC 9112, 9.5). The response is given to the parser of the session as it arrives, and
+    /// `receiveHTTPResponse` finishes it: an error status stops the body, and the rest of it is
+    /// dropped; a success is finished after the body. A response that breaks the syntax or the
+    /// limits makes the write throw. A TLS or a Silk fiber socket sends the body with blocking writes.
     HTTPRequestBodyWriteBuffer(
         Poco::Net::HTTPClientSession & session_, Poco::Net::HTTPClientSession::BodyInfo body_info_, size_t buf_size);
 
@@ -47,10 +52,18 @@ protected:
     void finalizeImpl() override;
 
 private:
+    void writeBody(const char * data, size_t size);
+    /// Gives the response bytes that have arrived to the parser. Returns true for an error status.
+    bool checkResponse();
+
     Poco::Net::HTTPClientSession & session;
     const Poco::Net::HTTPClientSession::BodyEncoding encoding;
     const UInt64 content_length;
     UInt64 bytes_written = 0;
+    /// The server answered with an error before the end of the body.
+    bool stopped = false;
+    /// A response that is not an error is complete; the rest of it is read after the body.
+    bool response_header_complete = false;
 
     Memory<> memory;
 };
@@ -120,8 +133,8 @@ private:
 /// of `Poco::Net::HTTPClientSession::sendRequest`, which returns an `std::ostream` that copies
 /// the data through an 8 KiB buffer and sends it in 8 KiB pieces.
 ///
-/// The header of the response is checked against `response_header_limits`: the response parser
-/// of the session starts with them.
+/// The header of the response is checked against `response_header_limits`. They are given here,
+/// because the response is parsed from the moment the body starts to be sent.
 std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPClientSession & session,
     Poco::Net::HTTPRequest & request,
@@ -145,14 +158,6 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
 
 /// Same, but the returned buffer keeps the session alive.
 std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
-    HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
-
-/// Reads the response that the server has sent before reading the whole request body, after
-/// writing the body failed: a server may answer a request it rejects right after its headers and
-/// close the connection with the body unread. The caller checks that data is pending on the socket.
-/// Returns `nullptr` if no response header can be read. The request stays incomplete, so the
-/// connection is not reused. The returned buffer keeps the session alive.
-std::unique_ptr<HTTPResponseReadBuffer> receiveEarlyHTTPResponse(
     HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
 }

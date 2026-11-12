@@ -1,13 +1,27 @@
 #include <IO/HTTP/HTTPClientIO.h>
+#include <IO/ScopedNonBlocking.h>
+
+#include "config.h"
 
 #include <Common/Exception.h>
 #include <Common/Hex.h>
+#include <Common/Stopwatch.h>
 
 #include <Poco/Net/HTTPResponseParser.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
 
+#include <cerrno>
 #include <cstring>
+#include <limits>
+#include <poll.h>
+
+#if USE_SILK
+#include <IO/SilkFiberStreamSocketImpl.h>
+#if USE_SSL
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
+#endif
+#endif
 
 
 namespace DB
@@ -31,6 +45,20 @@ constexpr size_t max_transfer_at_once = 1UL << 30;
 /// The chunk header is `<size in hex>\r\n`, at most 16 hex digits for a 64 bit size.
 constexpr size_t chunk_header_reserve = 18;
 constexpr size_t chunk_footer_size = 2;
+
+/// A Silk fiber socket waits by suspending its fiber, and it has no non-blocking mode.
+bool isFiberSocket([[maybe_unused]] Poco::Net::SocketImpl & socket_impl)
+{
+#if USE_SILK
+    if (dynamic_cast<Silk::FiberStreamSocketImpl *>(&socket_impl))
+        return true;
+#if USE_SSL
+    if (dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        return true;
+#endif
+#endif
+    return false;
+}
 
 /// The scratch buffer a response is read into when the caller provided no memory: in the
 /// external buffer mode the memory arrives with `set()` before every read, but the body of an
@@ -88,7 +116,7 @@ HTTPRequestBodyWriteBuffer::HTTPRequestBodyWriteBuffer(
     , content_length(body_info_.content_length)
     , memory(std::min(buf_size, max_transfer_at_once) + chunk_header_reserve + chunk_footer_size)
 {
-    /// Every flush leaves as a single `writeAllRaw`, whose length `Poco` narrows down to `int`,
+    /// Every flush is sent with `writeBody`, and `Poco` narrows the length of a send down to `int`,
     /// so the buffer is capped the same way the read side caps a single transfer.
     buf_size = std::min(buf_size, max_transfer_at_once);
 
@@ -103,6 +131,130 @@ HTTPRequestBodyWriteBuffer::~HTTPRequestBodyWriteBuffer()
     /// `requestBodyComplete` false, and the pool drops the connection instead of handing it to
     /// the next request.
     cancel();
+}
+
+bool HTTPRequestBodyWriteBuffer::checkResponse()
+{
+    feedHTTPResponseParser(session);
+    const auto & parser = session.responseParser();
+    if (parser.statusLineComplete() && parser.response().getStatus() >= Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+        return true;
+
+    /// The rest of a response that is not an error comes after the body: stop reading it now.
+    if (parser.complete())
+        response_header_complete = true;
+    return false;
+}
+
+void HTTPRequestBodyWriteBuffer::writeBody(const char * data, size_t size)
+{
+    /// The server has answered with an error: drop the rest of the body.
+    if (stopped)
+        return;
+
+    auto & socket = session.socket();
+
+    /// The watching needs a non-blocking socket and a `poll` of its descriptor. A fiber socket has
+    /// no non-blocking mode, and a `poll` would block the thread of the fiber scheduler, not the
+    /// fiber. A TLS socket is not watched yet. Such a body is sent with blocking writes, and a
+    /// response is read only after the body.
+    if (session.secure() || isFiberSocket(*socket.impl()))
+    {
+        session.writeAllRaw(data, static_cast<std::streamsize>(size));
+        return;
+    }
+
+    /// The send timeout bounds the time spent waiting for the socket without sending anything, as
+    /// for a blocking send, also when signals interrupt `poll`. The waits of the send throttler and
+    /// of the data hooks are not part of it.
+    const Int64 send_timeout_us = session.getSendTimeout().totalMicroseconds();
+    Int64 waited_us = 0;
+
+    /// Set when the server closed the connection without a response.
+    bool peer_closed = false;
+
+    /// The send throttler and the data hooks can wait before the send. A response that arrives
+    /// meanwhile is read first: the write after it can fail on a connection that the server resets.
+    const auto ready_to_send = [&]
+    {
+        if (peer_closed || response_header_complete)
+            return true;
+        pollfd check{.fd = socket.impl()->sockfd(), .events = POLLIN, .revents = 0};
+        return ::poll(&check, 1, 0) <= 0;
+    };
+
+    while (size > 0)
+    {
+        /// Wait for the socket to accept data and watch for a response at the same time. A server
+        /// that rejects the request answers and then resets the connection: a write after the reset
+        /// fails, and the response is never read. The response is parsed as it arrives: an error
+        /// stops the body, a success is finished after the body.
+        const bool watch_response = !peer_closed && !response_header_complete;
+        const Int16 events = watch_response ? (POLLIN | POLLOUT) : POLLOUT;
+        pollfd fd{.fd = socket.impl()->sockfd(), .events = events, .revents = 0};
+
+        int res = 0;
+        while (true)
+        {
+            int timeout_ms = -1;
+            if (send_timeout_us > 0)
+            {
+                const Int64 remaining_us = send_timeout_us - waited_us;
+                if (remaining_us <= 0)
+                {
+                    res = 0;
+                    break;
+                }
+                timeout_ms = static_cast<int>(std::min<Int64>((remaining_us + 999) / 1000, std::numeric_limits<int>::max()));
+            }
+            const Stopwatch watch;
+            res = ::poll(&fd, 1, timeout_ms);
+            waited_us += static_cast<Int64>(watch.elapsedMicroseconds());
+            if (res >= 0 || errno != EINTR)
+                break;
+        }
+
+        if (res < 0)
+            throw Poco::Net::NetException("Failed to poll the socket while sending the HTTP request body", errno);
+        if (res == 0)
+            throw Poco::TimeoutException("Timeout while sending the HTTP request body");
+
+        if (watch_response && (fd.revents & (POLLIN | POLLHUP | POLLERR)))
+        {
+            int received = 0;
+            {
+                ScopedNonBlocking non_blocking(*socket.impl());
+                received = session.fillBuffer();
+            }
+
+            /// The next write reports how the connection ended, as without the watching.
+            if (received < 0)
+                peer_closed = true;
+
+            if (checkResponse())
+            {
+                stopped = true;
+                return;
+            }
+        }
+
+        /// A send on a closed or failed connection reports how it ended.
+        if ((fd.revents & (POLLOUT | POLLHUP | POLLERR)) || peer_closed)
+        {
+            /// Only the send is non-blocking: a response header is read with the timeouts of the session.
+            int sent = 0;
+            {
+                ScopedNonBlocking non_blocking(*socket.impl());
+                sent = session.writeRawNonBlocking(data, static_cast<std::streamsize>(size), ready_to_send);
+            }
+            if (sent > 0)
+            {
+                data += sent;
+                size -= static_cast<size_t>(sent);
+                waited_us = 0;
+            }
+        }
+    }
 }
 
 void HTTPRequestBodyWriteBuffer::nextImpl()
@@ -124,11 +276,11 @@ void HTTPRequestBodyWriteBuffer::nextImpl()
                     "HTTP request body is larger than its Content-Length: {} bytes to write of {}",
                     bytes_written + size,
                     content_length);
-            session.writeAllRaw(working_buffer.begin(), static_cast<std::streamsize>(size));
+            writeBody(working_buffer.begin(), size);
             break;
 
         case Poco::Net::HTTPClientSession::BodyEncoding::UntilEOF:
-            session.writeAllRaw(working_buffer.begin(), static_cast<std::streamsize>(size));
+            writeBody(working_buffer.begin(), size);
             break;
 
         case Poco::Net::HTTPClientSession::BodyEncoding::Chunked:
@@ -145,7 +297,7 @@ void HTTPRequestBodyWriteBuffer::nextImpl()
 
             memcpy(data + size, "\r\n", chunk_footer_size);
 
-            session.writeAllRaw(header, static_cast<std::streamsize>(data + size + chunk_footer_size - header));
+            writeBody(header, static_cast<size_t>(data + size + chunk_footer_size - header));
             break;
         }
     }
@@ -157,8 +309,17 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
 {
     next();
 
+    /// The server has answered with an error, and the rest of the body was dropped: the request stays incomplete.
+    if (stopped)
+        return;
+
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::Chunked)
-        session.writeAllRaw("0\r\n\r\n", 5);
+    {
+        writeBody("0\r\n\r\n", 5);
+        /// The error response can arrive while the terminator is being sent.
+        if (stopped)
+            return;
+    }
 
     if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength && bytes_written != content_length)
         throw Exception(
@@ -505,15 +666,6 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
 {
     auto & session_ref = *session;
     return receiveHTTPResponseImpl(std::move(session), session_ref, response, buf_size);
-}
-
-std::unique_ptr<HTTPResponseReadBuffer>
-receiveEarlyHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size)
-{
-    if (!session->receiveEarlyResponse(response))
-        return nullptr;
-    auto & session_ref = *session;
-    return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }
 
 }
