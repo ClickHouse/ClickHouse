@@ -509,6 +509,10 @@ std::pair<size_t, size_t> calculatedBlockBytes(const Block & block)
     return {shared, owned};
 }
 
+/// a projection part has level zero, so a merge of projection parts chooses the format at level 1, whatever the level of the parent
+/// see `FAKE_RESULT_PART_FOR_PROJECTION` and `FutureMergedMutatedPart::assign`
+constexpr UInt32 projection_merge_level = 1;
+
 /// `MATERIALIZE PROJECTION` calculates in batches of `min_insert_block_size_rows` or `min_insert_block_size_bytes` of the background
 /// profile, and the blocks it calculates go to temporary parts in batches of the same size, see `PartMergerWriter`
 /// returns true if these rows and bytes can give more than one batch
@@ -754,7 +758,7 @@ String buildProjectionPart(
     if (out.merged && !stored_bytes_known)
     {
         out.merge_history_unknown |= constant_granularity;
-        out.both_formats = merge_tree.choosePartFormat(0, 0, part->info.level, &projection).part_type != MergeTreeDataPartType::Wide;
+        out.both_formats = merge_tree.choosePartFormat(0, 0, projection_merge_level, &projection).part_type != MergeTreeDataPartType::Wide;
     }
     if (out.materialized && out.materialized->rows == out.rows && out.materialized->row_bytes == out.row_bytes
         && out.materialized->format_bytes == out.format_bytes)
@@ -983,15 +987,15 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     };
 
     /// a merge chooses the format from the bytes that its parts store, `MATERIALIZE PROJECTION` and an insert from the block
-    auto type_of = [&](size_t sample_bytes)
-    { return merge_tree.choosePartFormat(whole_part.scaled(sample_bytes), whole_part.rows, parent_part->info.level, &projection).part_type; };
-    const auto block_type = type_of(data.format_bytes);
-    const auto merged_type = type_of(data.stored_bytes);
+    auto type_of = [&](size_t sample_bytes, UInt32 level)
+    { return merge_tree.choosePartFormat(whole_part.scaled(sample_bytes), whole_part.rows, level, &projection).part_type; };
+    const auto block_type = type_of(data.format_bytes, parent_part->info.level);
+    const auto merged_type = type_of(data.stored_bytes, projection_merge_level);
     const auto part_type = merged_rows && parent_part->info.level > 0 ? merged_type : block_type;
     /// a merge keeps a wide format of the parts that it merges, and the settings that chose their formats are unknown
     data.both_formats |= merged_rows
         && (merged_type != block_type || merged_type != MergeTreeDataPartType::Wide
-            || type_of(data.stored_bytes_least) != type_of(data.stored_bytes_most));
+            || type_of(data.stored_bytes_least, projection_merge_level) != type_of(data.stored_bytes_most, projection_merge_level));
     auto [layouts, primary] = layouts_of(part_type);
     data.wide = part_type == MergeTreeDataPartType::Wide;
     if (data.both_formats)
