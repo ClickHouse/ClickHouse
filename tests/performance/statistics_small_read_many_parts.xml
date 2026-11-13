@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: the test measures the statistics and the primary key analysis of MergeTree parts. -->
     <create_query>
         CREATE TABLE statistics_small_read (p UInt16, k UInt32, d Date, x UInt64, y UInt8, z UInt8)
         ENGINE = MergeTree PARTITION BY p ORDER BY (k, d)
