@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 
 #include <base/find_symbols.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/typeid_cast.h>
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -20,14 +21,31 @@ namespace DB
 namespace
 {
 
-/// The step's own account of itself, one string per line. Like: `Filter column: ...`,
-/// `Sort description: ...`, `Limit ...`.
+/// Cuts a captured string to `max_bytes`, which is `query_plan_max_step_description_length`. Zero
+/// means no limit.
 ///
-/// Each line is cut to `max_description_length`, as the one-line description is. A step renders its
-/// literals here, so a query carrying a large `IN` list produces a correspondingly large line, and
+/// Every piece of text a step renders goes through here. A step renders its literals, so a query
+/// carrying a large `IN` list or a folded constant produces a correspondingly large string, and
 /// this one is stored on a `system.query_log` row rather than streamed to the client as `EXPLAIN`
 /// does. The capture also runs with the memory tracker blocked, so without the cut the size of a
 /// row would answer to nothing.
+///
+/// The cut is moved back to a UTF-8 boundary: the bytes end up in a `JSON` column, and half of a
+/// multi-byte character is not a character.
+String truncateCapturedText(std::string_view text, size_t max_bytes)
+{
+    if (!max_bytes || text.size() <= max_bytes)
+        return String(text);
+
+    const auto * begin = reinterpret_cast<const UInt8 *>(text.data());
+    const auto * cut = begin + max_bytes;
+    UTF8::syncBackward(cut, begin);
+
+    return String(text.substr(0, static_cast<size_t>(cut - begin)));
+}
+
+/// The step's own account of itself, one string per line. Like: `Filter column: ...`,
+/// `Sort description: ...`, `Limit ...`.
 std::vector<String> stepDetails(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
@@ -56,10 +74,8 @@ std::vector<String> stepDetails(
     std::vector<String> details;
     splitInto<'\n'>(details, out.str(), /*token_compress=*/ true);
 
-    if (max_description_length)
-        for (auto & line : details)
-            if (line.size() > max_description_length)
-                line.resize(max_description_length);
+    for (auto & line : details)
+        line = truncateCapturedText(line, max_description_length);
 
     return details;
 }
@@ -81,32 +97,43 @@ String stepDescription(
         description = pretty_description;
     }
 
-    if (max_description_length)
-        description = description.substr(0, max_description_length);
-
-    return String(description);
+    return truncateCapturedText(description, max_description_length);
 }
 
 /// Only a `ReadFromMergeTree` analyses indexes, and the analysis is data it already holds --
 /// `describeIndexes` is one rendering of it, this capture is another.
-PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.indexes || !read_from_merge_tree)
         return {};
 
-    return read_from_merge_tree->getIndexStats();
+    PlanIndexStats stats = read_from_merge_tree->getIndexStats();
+    for (auto & stat : stats)
+    {
+        stat.description = truncateCapturedText(stat.description, max_description_length);
+        stat.condition = truncateCapturedText(stat.condition, max_description_length);
+    }
+
+    return stats;
 }
 
 /// See `stepIndexes`: the same data, from the same step. A query served from a projection says so
 /// here, as `EXPLAIN` does.
-PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.projections || !read_from_merge_tree)
         return {};
 
-    return read_from_merge_tree->getProjectionStats();
+    PlanProjectionStats stats = read_from_merge_tree->getProjectionStats();
+    for (auto & stat : stats)
+    {
+        stat.description = truncateCapturedText(stat.description, max_description_length);
+        stat.condition = truncateCapturedText(stat.condition, max_description_length);
+    }
+
+    return stats;
 }
 
 /// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
@@ -147,8 +174,8 @@ CapturedStep captureStep(
     captured.type = step.getName();
     captured.description = stepDescription(step, options, max_description_length);
     captured.details = stepDetails(step, options, max_description_length, plan_pretty_names);
-    captured.indexes = stepIndexes(step, options);
-    captured.projections = stepProjections(step, options);
+    captured.indexes = stepIndexes(step, options, max_description_length);
+    captured.projections = stepProjections(step, options, max_description_length);
     captured.statistics = stepStatistics(step, steps_to_stats);
 
     return captured;
@@ -195,7 +222,8 @@ CapturedPlan CapturedPlan::capture(
         const auto & root_step = *walk.plan->getRootNode()->step;
         if (root_step.hasOutputHeader() && root_step.getOutputHeader())
             for (const auto & column : *root_step.getOutputHeader())
-                result.output.push_back(QueryPlanFormat::formatColumnPretty(column.name, names));
+                result.output.push_back(
+                    truncateCapturedText(QueryPlanFormat::formatColumnPretty(column.name, names), max_description_length));
     }
 
     return result;
