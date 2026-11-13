@@ -32,6 +32,8 @@ data/c.parquet	[]
 --- other integer types ---
 data/e.parquet	[1,2,3]
 data/f.parquet	[7,4294967296]
+--- blob metadata settings ---
+deletion-vector-v1	8143950620832403401	7	[2147483645,2147483546]	{'cardinality':'2','referenced-data-file':'data/g.parquet'}
 --- written to stdout, read from stdin ---
 data/h.parquet	[10,20,30]
 --- errors ---
@@ -42,3 +44,5 @@ requires a column of deleted row positions of an integer type or an array of int
 Deleted row position -1 is negative
 Deleted row position 9223372030412324865 exceeds the maximum deletion vector position
 Deleted row position 9223372036854775807 exceeds the maximum deletion vector position
+Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids
+Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids

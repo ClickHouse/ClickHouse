@@ -14,6 +14,9 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
@@ -87,11 +90,33 @@ String serializeDeletionVectorBlob(std::map<UInt32, roaring::Roaring> & bitmaps,
     return buf.str();
 }
 
+std::vector<Int32> parseFieldIds(const String & field_ids)
+{
+    std::vector<Int32> result;
+    std::vector<String> parts;
+    boost::split(parts, field_ids, boost::is_any_of(","));
+    for (auto & part : parts)
+    {
+        boost::trim(part);
+        Int32 field_id = 0;
+        if (part.empty() || !tryParse(field_id, part))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids, got '{}'",
+                field_ids);
+        result.push_back(field_id);
+    }
+    return result;
+}
+
 }
 
 PuffinBlockOutputFormat::PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , referenced_data_file(format_settings_.puffin.referenced_data_file)
+    , snapshot_id(format_settings_.puffin.snapshot_id)
+    , sequence_number(format_settings_.puffin.sequence_number)
+    , field_ids(parseFieldIds(format_settings_.puffin.field_ids))
 {
     if (referenced_data_file.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting output_format_puffin_referenced_data_file must be set for the Puffin output format");
@@ -154,7 +179,8 @@ void PuffinBlockOutputFormat::finalizeImpl()
     out.write(blob.data(), blob.size());
 
     Poco::JSON::Array::Ptr fields_json = new Poco::JSON::Array;
-    fields_json->add(ICEBERG_ROW_POSITION_FIELD_ID);
+    for (Int32 field_id : field_ids)
+        fields_json->add(field_id);
 
     Poco::JSON::Object::Ptr properties_json = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
     properties_json->set("referenced-data-file", referenced_data_file);
@@ -163,8 +189,8 @@ void PuffinBlockOutputFormat::finalizeImpl()
     Poco::JSON::Object::Ptr blob_json = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
     blob_json->set("type", PUFFIN_DELETION_VECTOR_BLOB_TYPE);
     blob_json->set("fields", fields_json);
-    blob_json->set("snapshot-id", -1);
-    blob_json->set("sequence-number", -1);
+    blob_json->set("snapshot-id", snapshot_id);
+    blob_json->set("sequence-number", sequence_number);
     blob_json->set("offset", static_cast<UInt64>(sizeof(PUFFIN_MAGIC)));
     blob_json->set("length", static_cast<UInt64>(blob.size()));
     blob_json->set("properties", properties_json);

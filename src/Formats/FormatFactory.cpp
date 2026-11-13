@@ -400,6 +400,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
     format_settings.puffin.referenced_data_file = settings[Setting::output_format_puffin_referenced_data_file];
+    format_settings.puffin.snapshot_id = settings[Setting::output_format_puffin_snapshot_id];
+    format_settings.puffin.sequence_number = settings[Setting::output_format_puffin_sequence_number];
+    format_settings.puffin.field_ids = settings[Setting::output_format_puffin_field_ids];
     format_settings.vortex.filter_push_down = settings[Setting::input_format_vortex_filter_push_down];
     format_settings.vortex.preserve_order = settings[Setting::input_format_vortex_preserve_order];
     format_settings.vortex.output_string_as_string = settings[Setting::output_format_vortex_string_as_string];
