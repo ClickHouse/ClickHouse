@@ -35,6 +35,9 @@ SELECT 'info(metric, {__name__!="metric"}) from 0 to 600 step 300';
 SELECT tags, arrayMap(x -> (toUnixTimestamp64Milli(x.1), x.2), samples) FROM prometheusQueryRange(ts_f, 'info(metric, {__name__!="metric"})', 0, 600, 300) ORDER BY tags;
 SELECT 'info(metric, {__name__!="metric", data=~".*"}) from 0 to 600 step 300';
 SELECT tags, arrayMap(x -> (toUnixTimestamp64Milli(x.1), x.2), samples) FROM prometheusQueryRange(ts_f, 'info(metric, {__name__!="metric", data=~".*"})', 0, 600, 300) ORDER BY tags;
+SELECT 'info(metric, {}) from 0 to 600 step 300';
+SELECT tags, arrayMap(x -> (toUnixTimestamp64Milli(x.1), x.2), samples) FROM prometheusQueryRange(ts_f, 'info(metric, {})', 0, 600, 300) ORDER BY tags;
+SELECT * FROM prometheusQuery(ts_f, '{}', 0); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 DROP TABLE ts_f;
 
 SELECT '-- an info series appearing and disappearing within the range, a base series with only one identifying label';

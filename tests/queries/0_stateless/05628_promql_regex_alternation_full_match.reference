@@ -23,3 +23,8 @@
 [('__name__','metric3'),('data','foo|bar'),('instance','c'),('job','1')]	11
 [('__name__','metric3'),('instance','c'),('job','1')]	11
 [('__name__','metric3'),('data','foo|bar'),('instance','c'),('job','1')]	11
+-- multiline flag in a selector
+[('__name__','p'),('data','foo')]	13
+[('__name__','p'),('data','foo\nbar')]	12
+-- multiline flag in the label selector of info
+[('__name__','metric4'),('data','foo\nbar'),('instance','d'),('job','1')]	14

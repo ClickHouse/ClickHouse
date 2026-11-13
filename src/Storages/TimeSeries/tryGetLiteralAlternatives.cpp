@@ -46,6 +46,7 @@ String toFullMatchRegex(std::string_view regex)
 {
     String res(regex);
     bool has_pipe = false;
+    bool has_flags = false;
     bool ends_with_anchor = false;
     for (size_t pos = 0; pos < regex.size(); ++pos)
     {
@@ -65,12 +66,15 @@ String toFullMatchRegex(std::string_view regex)
             ++pos;
         else if (regex[pos] == '|')
             has_pipe = true;
+        else if (regex.substr(pos).starts_with("(?"))
+            has_flags = true;
         else if (regex[pos] == '$')
             ends_with_anchor = true;
     }
 
-    /// `a|b` becomes `^(a|b)$` and not `^a|b$`. Other regexes keep the simple form, which the primary key can use.
-    if (has_pipe)
+    /// `a|b` becomes `^(a|b)$` and not `^a|b$`, and flags like `(?m)` stay inside the group so they do not change the anchors.
+    /// Other regexes keep the simple form, which the primary key can use.
+    if (has_pipe || has_flags)
         return "^(" + res + ")$";
     if (!res.starts_with('^'))
         res = '^' + res;

@@ -128,7 +128,7 @@ offsetValue
 
 instantSelector
     : metricName (LEFT_BRACE labelMatcherList? RIGHT_BRACE)?
-    | LEFT_BRACE labelMatcherList RIGHT_BRACE
+    | LEFT_BRACE labelMatcherList? RIGHT_BRACE
     ;
 
 labelMatcher

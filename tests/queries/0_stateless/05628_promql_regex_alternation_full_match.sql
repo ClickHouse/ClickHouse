@@ -22,7 +22,11 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
     ('metric2', map('instance', 'b', 'job', '1'), [(toDateTime64(0, 3), 10)]),
     ('target_info', map('instance', 'b', 'job', '1', 'data', 'a$extra'), [(toDateTime64(0, 3), 1)]),
     ('metric3', map('instance', 'c', 'job', '1'), [(toDateTime64(0, 3), 11)]),
-    ('target_info', map('instance', 'c', 'job', '1', 'data', 'foo|bar'), [(toDateTime64(0, 3), 1)]);
+    ('target_info', map('instance', 'c', 'job', '1', 'data', 'foo|bar'), [(toDateTime64(0, 3), 1)]),
+    ('p', map('data', 'foo\nbar'), [(toDateTime64(0, 3), 12)]),
+    ('p', map('data', 'foo'), [(toDateTime64(0, 3), 13)]),
+    ('metric4', map('instance', 'd', 'job', '1'), [(toDateTime64(0, 3), 14)]),
+    ('target_info', map('instance', 'd', 'job', '1', 'data', 'foo\nbar'), [(toDateTime64(0, 3), 1)]);
 
 SELECT '-- =~ in a selector';
 SELECT tags, value FROM prometheusQuery(ts, 'm{version=~"1\\\\.0|2\\\\.0"}', 0) ORDER BY ALL;
@@ -47,5 +51,13 @@ SELECT '-- quoted regex in the label selector of info';
 SELECT tags, value FROM prometheusQuery(ts, 'info(metric3, {data=~"\\\\Qfoo|bar"})', 0) ORDER BY ALL;
 SELECT tags, value FROM prometheusQuery(ts, 'info(metric3, {data!~"\\\\Qfoo|bar"})', 0) ORDER BY ALL;
 SELECT tags, value FROM prometheusQuery(ts, 'info(metric3, {__name__=~"\\\\Qtarget_info"})', 0) ORDER BY ALL;
+
+-- A flag like `(?m)` does not change the anchors that make the regex match the whole value.
+SELECT '-- multiline flag in a selector';
+SELECT tags, value FROM prometheusQuery(ts, 'p{data=~"(?m)foo"}', 0) ORDER BY ALL;
+SELECT tags, value FROM prometheusQuery(ts, 'p{data!~"(?m)foo"}', 0) ORDER BY ALL;
+SELECT '-- multiline flag in the label selector of info';
+SELECT tags, value FROM prometheusQuery(ts, 'info(metric4, {data=~"(?m)foo"})', 0) ORDER BY ALL;
+SELECT tags, value FROM prometheusQuery(ts, 'info(metric4, {data!~"(?m)foo"})', 0) ORDER BY ALL;
 
 DROP TABLE ts;

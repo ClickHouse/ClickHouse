@@ -9,6 +9,8 @@ info(metric, {__name__!="metric"}) from 0 to 600 step 300
 [('__name__','metric'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
 info(metric, {__name__!="metric", data=~".*"}) from 0 to 600 step 300
 [('__name__','metric'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
+info(metric, {}) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
 -- an info series appearing and disappearing within the range, a base series with only one identifying label
 info(metric) from 0 to 600 step 300
 [('__name__','metric'),('data','mid'),('instance','a'),('job','1')]	[(300000,1)]
