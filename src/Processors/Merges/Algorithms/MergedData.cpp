@@ -2,8 +2,16 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -30,6 +38,104 @@ bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
         result = result || byteSizeAtCanUnderestimateGrowth(*subcolumn);
     });
     return result;
+}
+
+/// An upper bound of how much inserting a row of `src` grows `dst` beyond `src.byteSizeAt(row)`, or nullopt.
+/// A merge fixes the dynamic structure of `dst`, so a row whose paths and variants are all in `dst` is copied as is,
+/// and `dst` only adds a default (a discriminator and an offset) to each dynamic path that `src` does not have.
+std::optional<size_t> extraBytesPerInsertedRow(const IColumn & dst, const IColumn & src)
+{
+    checkStackSize();
+
+    /// For `LowCardinality` the sum of `byteSizeAt` is a close, mostly pessimistic estimate: a repeated value adds just an index entry.
+    if (!byteSizeAtCanUnderestimateGrowth(dst) && !byteSizeAtCanUnderestimateGrowth(src))
+        return 0;
+
+    const auto * dst_object = typeid_cast<const ColumnObject *>(&dst);
+    const auto * src_object = typeid_cast<const ColumnObject *>(&src);
+    if (dst_object && src_object && !dst_object->canAddNewDynamicPath())
+    {
+        size_t extra = 0;
+        auto add_paths = [&](const auto & dst_paths, const auto & src_paths)
+        {
+            for (const auto & [path, src_column] : src_paths)
+            {
+                auto it = dst_paths.find(path);
+                auto path_extra = it == dst_paths.end() ? std::nullopt : extraBytesPerInsertedRow(*it->second, *src_column);
+                if (!path_extra)
+                    return false;
+                extra += *path_extra;
+            }
+            return true;
+        };
+        if (!add_paths(dst_object->getTypedPaths(), src_object->getTypedPaths())
+            || !add_paths(dst_object->getDynamicPaths(), src_object->getDynamicPaths()))
+            return std::nullopt;
+
+        size_t missing_paths = dst_object->getDynamicPaths().size() - src_object->getDynamicPaths().size();
+        /// A value in the shared data of `src` could be moved into one of the missing paths.
+        if (missing_paths && !src_object->getSharedDataNestedColumn().getData().empty())
+            return std::nullopt;
+        return extra + missing_paths * (sizeof(ColumnVariant::Discriminator) + sizeof(ColumnVariant::Offset));
+    }
+
+    const auto * dst_dynamic = typeid_cast<const ColumnDynamic *>(&dst);
+    const auto * src_dynamic = typeid_cast<const ColumnDynamic *>(&src);
+    if (dst_dynamic && src_dynamic && !dst_dynamic->canAddNewVariant())
+    {
+        const auto & dst_info = dst_dynamic->getVariantInfo();
+        const auto & src_info = src_dynamic->getVariantInfo();
+        /// A value in the shared variant of `src` could be moved into a variant of `dst`.
+        if (dst_info.variant_names != src_info.variant_names && !src_dynamic->getSharedVariant().empty())
+            return std::nullopt;
+
+        size_t extra = 0;
+        for (size_t src_discr = 0; src_discr != src_info.variant_names.size(); ++src_discr)
+        {
+            auto it = dst_info.variant_name_to_discriminator.find(src_info.variant_names[src_discr]);
+            auto variant_extra = it == dst_info.variant_name_to_discriminator.end() ? std::nullopt
+                : extraBytesPerInsertedRow(
+                    dst_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(it->second),
+                    src_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(src_discr));
+            if (!variant_extra)
+                return std::nullopt;
+            extra = std::max(extra, *variant_extra);
+        }
+        return extra;
+    }
+
+    const auto * dst_array = typeid_cast<const ColumnArray *>(&dst);
+    const auto * src_array = typeid_cast<const ColumnArray *>(&src);
+    /// The bound of the elements is per element, and a row can have any number of them.
+    if (dst_array && src_array && extraBytesPerInsertedRow(dst_array->getData(), src_array->getData()) == 0uz)
+        return 0;
+
+    const auto * dst_map = typeid_cast<const ColumnMap *>(&dst);
+    const auto * src_map = typeid_cast<const ColumnMap *>(&src);
+    if (dst_map && src_map)
+        return extraBytesPerInsertedRow(dst_map->getNestedColumn(), src_map->getNestedColumn());
+
+    const auto * dst_nullable = typeid_cast<const ColumnNullable *>(&dst);
+    const auto * src_nullable = typeid_cast<const ColumnNullable *>(&src);
+    if (dst_nullable && src_nullable)
+        return extraBytesPerInsertedRow(dst_nullable->getNestedColumn(), src_nullable->getNestedColumn());
+
+    const auto * dst_tuple = typeid_cast<const ColumnTuple *>(&dst);
+    const auto * src_tuple = typeid_cast<const ColumnTuple *>(&src);
+    if (dst_tuple && src_tuple && dst_tuple->tupleSize() == src_tuple->tupleSize())
+    {
+        size_t extra = 0;
+        for (size_t i = 0; i != dst_tuple->tupleSize(); ++i)
+        {
+            auto element_extra = extraBytesPerInsertedRow(dst_tuple->getColumn(i), src_tuple->getColumn(i));
+            if (!element_extra)
+                return std::nullopt;
+            extra += *element_extra;
+        }
+        return extra;
+    }
+
+    return std::nullopt;
 }
 
 }
@@ -306,15 +412,14 @@ size_t MergedData::rowsToInsertBeforeFlush(
 
     chassert(columns.size() == raw_columns.size());
 
-    /// The sum of `IColumn::byteSizeAt` over the source rows can arbitrarily underestimate how much
-    /// the destination grows for aggregate states (their data is copied into the destination arena)
-    /// and dynamic columns (the destination adds defaults for paths missing in the source), so let
-    /// `hasEnoughRows` measure the actual size after inserting one row. For `LowCardinality` the sum
-    /// is a close, mostly pessimistic estimate: a repeated value adds just an index entry.
+    /// Without a bound on the growth, let `hasEnoughRows` measure the actual size after inserting one row.
+    size_t extra_bytes_per_row = 0;
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (byteSizeAtCanUnderestimateGrowth(*columns[i]) || byteSizeAtCanUnderestimateGrowth(*raw_columns[i]))
+        auto extra = extraBytesPerInsertedRow(*columns[i], *raw_columns[i]);
+        if (!extra)
             return 1;
+        extra_bytes_per_row += *extra;
     }
 
     size_t merged_bytes = 0;
@@ -323,6 +428,7 @@ size_t MergedData::rowsToInsertBeforeFlush(
 
     for (size_t length = 1; length <= rows_to_insert; ++length)
     {
+        merged_bytes += extra_bytes_per_row;
         const size_t row = start_index + length - 1;
         for (const auto * column : raw_columns)
             merged_bytes += column->byteSizeAt(row);

@@ -1,0 +1,43 @@
+<test>
+    <!-- A horizontal merge with `merge_use_batch_sorting_queue` of a large part and three small parts whose keys
+         interleave with it, so the large part contributes runs of about 10 rows and each small part runs of 5 rows. -->
+    <create_query>
+        CREATE TABLE t_merge_batch_json (k UInt64, json JSON) ENGINE = MergeTree ORDER BY k
+        SETTINGS merge_use_batch_sorting_queue = 1, enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE t_merge_batch_json_missing_paths (k UInt64, json JSON) ENGINE = MergeTree ORDER BY k
+        SETTINGS merge_use_batch_sorting_queue = 1, enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE t_merge_batch_dynamic (k UInt64, value Dynamic) ENGINE = MergeTree ORDER BY k
+        SETTINGS merge_use_batch_sorting_queue = 1, enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_merge_batch_json</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_merge_batch_json_missing_paths</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_merge_batch_dynamic</fill_query>
+
+    <fill_query>INSERT INTO t_merge_batch_json SELECT number * 10, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(20)), 'Map(String, UInt64)') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_json SELECT intDiv(number, 5) * 300 + 105 + number % 5, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(20)), 'Map(String, UInt64)') FROM numbers(50000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_json SELECT intDiv(number, 5) * 300 + 205 + number % 5, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(20)), 'Map(String, UInt64)') FROM numbers(50000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_json SELECT intDiv(number, 5) * 300 + 5 + number % 5, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(20)), 'Map(String, UInt64)') FROM numbers(50000)</fill_query>
+
+    <fill_query>INSERT INTO t_merge_batch_json_missing_paths SELECT number * 10, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(20)), 'Map(String, UInt64)') FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_json_missing_paths SELECT intDiv(number, 5) * 300 + 105 + number % 5, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(5)), 'Map(String, UInt64)') FROM numbers(50000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_json_missing_paths SELECT intDiv(number, 5) * 300 + 205 + number % 5, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(5)), 'Map(String, UInt64)') FROM numbers(50000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_json_missing_paths SELECT intDiv(number, 5) * 300 + 5 + number % 5, CAST(arrayMap(x -> tuple('key_' || toString(x), number + x), range(5)), 'Map(String, UInt64)') FROM numbers(50000)</fill_query>
+
+    <fill_query>INSERT INTO t_merge_batch_dynamic SELECT number * 10, multiIf(number % 3 = 0, number::Dynamic, number % 3 = 1, toString(number)::Dynamic, [number, number + 1]::Dynamic) FROM numbers(300000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_dynamic SELECT intDiv(number, 5) * 300 + 105 + number % 5, multiIf(number % 3 = 0, number::Dynamic, number % 3 = 1, toString(number)::Dynamic, [number, number + 1]::Dynamic) FROM numbers(50000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_dynamic SELECT intDiv(number, 5) * 300 + 205 + number % 5, multiIf(number % 3 = 0, number::Dynamic, number % 3 = 1, toString(number)::Dynamic, [number, number + 1]::Dynamic) FROM numbers(50000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_dynamic SELECT intDiv(number, 5) * 300 + 5 + number % 5, multiIf(number % 3 = 0, number::Dynamic, number % 3 = 1, toString(number)::Dynamic, [number, number + 1]::Dynamic) FROM numbers(50000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_merge_batch_json DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0'</query>
+    <query>OPTIMIZE TABLE t_merge_batch_json_missing_paths DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0'</query>
+    <query>OPTIMIZE TABLE t_merge_batch_dynamic DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_merge_batch_json</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_merge_batch_json_missing_paths</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_merge_batch_dynamic</drop_query>
+</test>
