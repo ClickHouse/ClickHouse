@@ -508,12 +508,14 @@ bool UnityV2Catalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr new_snapshot) const
+    const String & base_catalog_metadata_location,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_snapshot, new_metadata);
     });
 }
 
@@ -521,12 +523,13 @@ bool UnityV2Catalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_schema, previous_schema_id);
     });
 }
 

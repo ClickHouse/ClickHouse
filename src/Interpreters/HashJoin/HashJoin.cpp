@@ -527,6 +527,11 @@ HashJoin::HashJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot choose JOIN method without keys");
 
     data->type = build_layout.two_level ? toTwoLevelType(*selected_join_method) : *selected_join_method;
+    if (table_join->enablePackedStringKeysInHashJoin() && (data->type == Type::key_string || data->type == Type::two_level_key_string))
+    {
+        data->type = data->type == Type::key_string ? Type::key_packed_string : Type::two_level_key_packed_string;
+        LOG_TRACE(log, "{}Using packed keys for the single String join key", instance_log_id);
+    }
 
     LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, data->type);
     LOG_TEST(
@@ -737,7 +742,10 @@ void HashJoin::dataMapInit(MapsVariant & map)
 {
     const auto maps_kind = getMapsKind();
     joinDispatchInit(kind, strictness, map, maps_kind);
-    joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_) { map_.create(data->type); });
+    joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_)
+    {
+        map_.create(data->type, table_join->enableRobinHoodHashForJoins());
+    });
 
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin::dataMapInit called with empty data");

@@ -2622,7 +2622,7 @@ Please note that temporary tables are not replicated. As a result, there is no g
 ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
+- A temporary table uses the `Memory` table engine when engine is not specified. Only lightweight engines may back a temporary table: `Memory`, the non-replicated `MergeTree` family, `Log`, `TinyLog`, `StripeLog`, `File`, `URL`, `Null`, `Join` and `Set`. With `cloud_mode` enabled, the engines that store data on the local disk are forbidden as well.
 - The DB can't be specified for a temporary table. It is created outside of databases.
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
@@ -3450,7 +3450,7 @@ The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS 
 
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
-* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result.
+* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result. The source table cannot be dropped, renamed or exchanged (including by `CREATE OR REPLACE TABLE`), and its database cannot be dropped or renamed, while the view exists.
 * Otherwise, each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
