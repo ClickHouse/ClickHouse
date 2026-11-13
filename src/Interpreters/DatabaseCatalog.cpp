@@ -446,8 +446,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             return stopped_new;
         };
 
-        auto user_tables = list_user_tables();
-
         auto drain_buffers = [&](const std::vector<StoragePtr> & tables)
         {
             for (size_t pass = 0; pass <= tables.size(); ++pass)
@@ -476,7 +474,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         };
 
-        drain_buffers(user_tables);
+        drain_buffers(list_user_tables());
 
         /// After the drain, which can wait for a destination that is still starting, nothing may load,
         /// start or replicate tables anymore. Replicated DDL must not drop or detach a table prepared below.
@@ -494,18 +492,13 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         }
 
-        /// List again to include the tables that finished loading meanwhile. Tables that write into others in the background
-        /// stop first, what they wrote is drained while destinations still accept it, and only then are all tables prepared.
-        /// Stopping a writer or draining can load or create another writer, so both repeat until no new writer appears.
-        bool stopped_new_writers = true;
-        while (stopped_new_writers)
-        {
-            user_tables = list_user_tables();
-            stopped_new_writers = stop_background_writes(user_tables);
-            drain_buffers(user_tables);
-        }
+        /// Background writers stop before all tables are prepared, and what they wrote is drained while destinations still accept it.
+        /// Every call lists the tables anew, so a writer that a stop creates or a drain loads is found by the next stop.
+        while (stop_background_writes(list_user_tables()))
+            drain_buffers(list_user_tables());
 
-        for (const auto & table : user_tables)
+        /// List again to include the tables that finished loading meanwhile.
+        for (const auto & table : list_user_tables())
         {
             if (!table)
                 continue;
