@@ -203,7 +203,8 @@ private:
     /// Parse errors are swallowed on purpose — the user will see the output anyway.
     String postProcessResponse(const String & raw) const override
     {
-        if (!trimWhitespace(raw).starts_with('{'))
+        std::string_view trimmed = trimWhitespace(raw);
+        if (!trimmed.starts_with('{'))
             return raw;
 
         try

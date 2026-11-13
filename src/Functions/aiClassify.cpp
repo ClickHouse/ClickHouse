@@ -173,7 +173,8 @@ private:
     /// swallowed on purpose — the user will see the output anyway.
     String postProcessResponse(const String & raw_response) const override
     {
-        if (!trimWhitespace(raw_response).starts_with('{'))
+        std::string_view trimmed = trimWhitespace(raw_response);
+        if (!trimmed.starts_with('{'))
             return raw_response;
 
         try
