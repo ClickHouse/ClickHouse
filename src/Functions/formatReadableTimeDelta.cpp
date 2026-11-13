@@ -269,11 +269,7 @@ public:
         if (has_output)
         {
             /// Need delimiter between values. The last delimiter is " and ", all previous are comma.
-            /// No sub-second digits are shown when `min_unit` is above seconds, and `4 - min_unit` would be negative.
-            if (is_minimum_unit
-                || (whole_part < 1
-                    && (min_unit >= Seconds
-                        || fractional_str.substr(0, (4 - min_unit) * 3) == std::string((4 - min_unit) * 3, '0'))))
+            if (is_minimum_unit || isLastPrintedUnit(whole_part, fractional_str, min_unit))
                 writeCString(" and ", buf_to);
             else
                 writeCString(", ", buf_to);
@@ -291,6 +287,44 @@ public:
     }
 
 private:
+    /// Number of seconds in one unit, for units of seconds and above. Sub-second units return 1
+    /// and are never queried through this function (they are handled via `subSecondDigits`).
+    static Float64 secondsPerUnit(Unit unit)
+    {
+        switch (unit)
+        {
+            case Years: return 365.0 * 24 * 3600;
+            case Months: return static_cast<Float64>(static_cast<UInt64>(30.5 * 24 * 3600));
+            case Days: return 24.0 * 3600;
+            case Hours: return 3600;
+            case Minutes: return 60;
+            default: return 1; /// Seconds and sub-second units.
+        }
+    }
+
+    /// Number of fractional (sub-second) digits shown for a sub-second minimum unit: three decimal
+    /// digits per unit below seconds (milliseconds, microseconds, nanoseconds). The caller must only
+    /// pass a `min_unit` below `Seconds`, so the result is always in the range 3..9.
+    static size_t subSecondDigits(Unit min_unit)
+    {
+        return static_cast<size_t>((Seconds - min_unit) * 3);
+    }
+
+    /// Whether the current unit is the last one that will be printed, i.e. the value remaining after it
+    /// is smaller than one `min_unit`, so nothing below the current unit will be shown. This decides
+    /// whether the delimiter before the current unit is " and " (last) or ", " (more to come).
+    static bool isLastPrintedUnit(Float64 whole_part, const String & fractional_str, Unit min_unit)
+    {
+        if (min_unit >= Seconds)
+            /// Sub-second digits are never shown, so only remaining whole seconds can produce more output.
+            return whole_part < secondsPerUnit(min_unit);
+
+        /// A sub-second minimum unit: there is more to show if there are whole seconds left,
+        /// or any of the shown fractional digits is non-zero.
+        const size_t digits = subSecondDigits(min_unit);
+        return whole_part < 1 && fractional_str.substr(0, digits) == std::string(digits, '0');
+    }
+
     static std::string getFractionalString(const Float64 & fractional_part)
     {
         DB::DoubleConverter<true>::BufferType buffer;

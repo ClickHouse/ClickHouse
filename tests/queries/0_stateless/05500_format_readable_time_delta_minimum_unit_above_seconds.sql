@@ -15,3 +15,9 @@ SELECT formatReadableTimeDelta(365 * 86400 + 30.5 * 86400 + 3630.5, 'years', 'ho
 SELECT formatReadableTimeDelta(365 * 86400 + 0.5, 'years', 'hours');
 SELECT formatReadableTimeDelta(90000.5, 'days', 'hours');
 SELECT formatReadableTimeDelta(90060.5, 'days', 'minutes');
+
+-- A leftover of one second or more that stays below the minimum unit must still use the last
+-- separator " and ", even when the last printed unit is above the minimum unit (previously ", ").
+SELECT formatReadableTimeDelta(86400 + 3600 + 30, 'days', 'minutes');
+SELECT formatReadableTimeDelta(365 * 86400 + 30.5 * 86400 + 3600 + 30, 'years', 'minutes');
+SELECT formatReadableTimeDelta(-(86400 + 3600 + 30), 'days', 'minutes');
