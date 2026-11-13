@@ -107,15 +107,28 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+
+    /// `make_distributed_plan` may be inferred from `distributed_plan_workers_num`/`distributed_plan_worker_cluster`,
+    /// and this clause is applied again later, so an in-query reset counts as an explicit 0, not "unset".
+    std::vector<String> default_settings;
+    default_settings.reserve(ast.default_settings.size());
+    for (const auto & name : ast.default_settings)
+    {
+        if (name == "make_distributed_plan" && getContext()->getApplicationType() != Context::ApplicationType::CLIENT)
+            changes.setSetting(name, Field(false));
+        else
+            default_settings.push_back(name);
+    }
+
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, changes, SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForSettingsReset(default_settings, changes, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);
-    getContext()->resetSettingsToDefaultValue(ast.default_settings);
+    getContext()->resetSettingsToDefaultValue(default_settings);
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
