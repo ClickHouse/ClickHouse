@@ -2,6 +2,7 @@
 -- for join reordering, see the setting `estimate_distinct_values_from_metadata`.
 
 SET use_statistics = 1;
+SET query_plan_optimize_join_order_limit = 10;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 'auto';
@@ -11,13 +12,15 @@ DROP TABLE IF EXISTS facts;
 DROP TABLE IF EXISTS facts_delta;
 DROP TABLE IF EXISTS dim;
 
--- `k` has 16 equally frequent values. No statistics, wide parts and a general purpose codec, so that the size of the column is known.
-CREATE TABLE facts (id UInt32 CODEC(LZ4), k UInt32 CODEC(LZ4), fk UInt32 CODEC(LZ4))
+-- `k` has 16 equally frequent values in random order, compressed by `ZSTD`, whose entropy coding brings it to a few bits per
+-- row (`LZ4` takes about 3 bytes for each 4-byte value in random order). No statistics and wide parts, so that the size of
+-- the column is known.
+CREATE TABLE facts (id UInt32 CODEC(LZ4), k UInt32 CODEC(ZSTD(1)), fk UInt32 CODEC(LZ4))
 ENGINE = MergeTree ORDER BY id
 SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi', min_compress_block_size = 65536, max_compress_block_size = 1048576;
 
 -- The same data, compressed by the order of the values.
-CREATE TABLE facts_delta (id UInt32, k UInt32 CODEC(Delta, LZ4), fk UInt32 CODEC(Delta, LZ4))
+CREATE TABLE facts_delta (id UInt32, k UInt32 CODEC(Delta, ZSTD(1)), fk UInt32 CODEC(Delta, LZ4))
 ENGINE = MergeTree ORDER BY id
 SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi', min_compress_block_size = 65536, max_compress_block_size = 1048576;
 
@@ -39,7 +42,7 @@ CREATE VIEW join_estimate AS
         extract(arrayStringConcat(groupArray(explain), '\n'), 'Output rows: estimated ([^\n]+)') AS output_rows
     FROM (EXPLAIN SELECT count() FROM facts AS a JOIN facts AS b ON a.k = b.k);
 
-SELECT 'Join on a column with 16 distinct values: the selectivity is about 1/16, so the join is much larger than its inputs.';
+SELECT 'Join on a column with 16 distinct values: the selectivity is far above that of a unique key, so the join is much larger than its inputs.';
 SELECT selectivity BETWEEN 1 / 1024 AND 1 / 4 FROM join_estimate;
 SELECT selectivity BETWEEN 1 / 1024 AND 1 / 4 FROM join_estimate SETTINGS estimate_distinct_values_from_metadata = 0;
 

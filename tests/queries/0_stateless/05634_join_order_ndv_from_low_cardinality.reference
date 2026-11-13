@@ -1,0 +1,6 @@
+A skewed column: the number of distinct values of the dictionary
+1
+A Nullable column: the placeholder for NULL is not counted
+1
+More values than fit into a dictionary: no number from the dictionaries
+1

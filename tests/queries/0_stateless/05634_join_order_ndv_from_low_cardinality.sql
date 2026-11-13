@@ -2,6 +2,7 @@
 -- parts for join reordering, see the setting `estimate_distinct_values_from_metadata`.
 
 SET use_statistics = 1;
+SET query_plan_optimize_join_order_limit = 10;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 'auto';
