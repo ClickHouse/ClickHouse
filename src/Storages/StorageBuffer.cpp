@@ -134,9 +134,8 @@ struct BufferWriteIdentity
     String quota_key;
     /// The originating client addresses: a downstream `Distributed` destination over a cluster secret
     /// authenticates `initial_user` against `initial_address` on the remote, and IP-keyed quotas are billed
-    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`. Batch keys only
-    /// for a remote destination (see hasSameFlushIdentity), where they affect authentication; a local
-    /// destination ignores them so a background/async flush (which carries none) does not spuriously split.
+    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`. Their hosts are
+    /// batch keys (see hasSameFlushIdentity).
     std::optional<Poco::Net::SocketAddress> current_address;
     std::optional<Poco::Net::SocketAddress> initial_address;
     /// Quota bucket selectors for `KEYED BY forwarded_ip_address` / `KEYED BY normalized_query_hash`; without
@@ -146,14 +145,18 @@ struct BufferWriteIdentity
     String forwarded_for;
     UInt64 normalized_query_hash = 0;
 
+    /// An unset or wildcard address means the client host is unknown, e.g. in the flush of an asynchronous insert.
+    static bool isKnownClientHost(const std::optional<Poco::Net::SocketAddress> & address)
+    {
+        return address && !address->host().isWildcard();
+    }
+
     /// Hosts match for batching when neither imposes a different constraint: the client host only (not the full
-    /// socket endpoint - the ephemeral source port is not an authorization boundary), with an unspecified or
-    /// wildcard host (a background/async flush carries 0.0.0.0) treated as no constraint.
+    /// socket endpoint - the ephemeral source port is not an authorization boundary), with an unknown host treated
+    /// as no constraint.
     static bool sameClientHost(const std::optional<Poco::Net::SocketAddress> & a, const std::optional<Poco::Net::SocketAddress> & b)
     {
-        const bool a_constrained = a && !a->host().isWildcard();
-        const bool b_constrained = b && !b->host().isWildcard();
-        if (a_constrained && b_constrained)
+        if (isKnownClientHost(a) && isKnownClientHost(b))
             return a->host() == b->host();
         return true;
     }
@@ -164,8 +167,9 @@ struct BufferWriteIdentity
     /// (`currentUser()` and triggered views), the quota key and the client hosts. The hosts matter because a
     /// `Distributed` over a cluster secret - reached directly or through a dependent materialized view -
     /// authenticates the forwarded `initial_address`, so mixing hosts in one flushed block would let one host's
-    /// rows be authorized under another's. Only the host is compared, and a wildcard/unset host imposes no
-    /// constraint, so the same user's async and sync inserts are not spuriously split (see `03554_connection_crash`).
+    /// rows be authorized under another's. Only the host is compared, and an unknown host imposes no constraint, so
+    /// the same user's async and sync inserts are not spuriously split (see `03554_connection_crash`); a batch that
+    /// mixes them is flushed with an unknown origin (see identityForJoinedBatch).
     /// The forwarded address and normalized query hash are restored best-effort but never compared. A shard is
     /// flushed before it accepts a different identity; with several shards the sink routes different identities to
     /// different shards instead.
@@ -214,6 +218,23 @@ std::shared_ptr<const BufferWriteIdentity> captureWriteIdentity(const ContextPtr
     identity->forwarded_for = client_info.forwarded_for;
     identity->normalized_query_hash = context->getNormalizedQueryHash();
     return identity;
+}
+
+/// The identity to flush a batch with after rows of `joining` (accepted by `hasSameFlushIdentity`) are added to rows
+/// buffered under `batch`. A remote shard authenticates the whole flushed block by its `initial_address` against the
+/// shard's own policy, which may restrict a user the local policy allows from any host, so the client host is kept
+/// only if every row carries it. Otherwise the batch's origin is unknown, which only a shard allowing any host
+/// accepts: a row whose host is unknown is never authorized under another row's host.
+std::shared_ptr<const BufferWriteIdentity> identityForJoinedBatch(
+    const std::shared_ptr<const BufferWriteIdentity> & batch, const BufferWriteIdentity & joining)
+{
+    if (BufferWriteIdentity::isKnownClientHost(batch->initial_address)
+        == BufferWriteIdentity::isKnownClientHost(joining.initial_address))
+        return batch;
+
+    auto joined = std::make_shared<BufferWriteIdentity>(*batch);
+    joined->initial_address = Poco::Net::SocketAddress();
+    return joined;
 }
 
 void restoreWriteIdentity(const ContextMutablePtr & insert_context, const BufferWriteIdentity & identity)
@@ -1181,6 +1202,8 @@ private:
             buffer.first_write_time = current_time;
             buffer.write_identity = write_identity;
         }
+        else if (storage.destination_id)
+            buffer.write_identity = identityForJoinedBatch(buffer.write_identity, *write_identity);
 
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
