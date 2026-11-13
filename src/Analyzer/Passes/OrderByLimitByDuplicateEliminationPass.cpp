@@ -14,12 +14,28 @@ namespace DB
 namespace
 {
 
-bool hasPartWrittenAlike(const QueryTreeNodePtr & node, const QueryTreeNodePtr & part)
+bool areWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    return lhs->isEqual(*rhs, {.compare_aliases = false}) && areConstantsWrittenAlike(lhs, rhs);
+}
+
+bool isKey(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys)
+{
+    return std::ranges::any_of(group_by_keys, [&](const QueryTreeNodePtr & key) { return areWrittenAlike(key, node); });
+}
+
+/// Returns true if `part` is calculated after the aggregation for `node`. Keys, and arguments of aggregate functions, are calculated before.
+bool isCalculatedFor(const QueryTreeNodePtr & node, const QueryTreeNodePtr & part, const QueryTreeNodes & group_by_keys)
 {
     checkStackSize();
 
-    return (node->isEqual(*part, {.compare_aliases = false}) && areConstantsWrittenAlike(node, part))
-        || std::ranges::any_of(node->getChildren(), [&](const auto & child) { return child && hasPartWrittenAlike(child, part); });
+    const auto * function_node = node->as<FunctionNode>();
+    if (isKey(node, group_by_keys) || (function_node && function_node->isAggregateFunction()))
+        return false;
+
+    return areWrittenAlike(node, part)
+        || std::ranges::any_of(
+               node->getChildren(), [&](const auto & child) { return child && isCalculatedFor(child, part, group_by_keys); });
 }
 
 bool hasOnlyCalculatedArrayJoins(
@@ -27,13 +43,11 @@ bool hasOnlyCalculatedArrayJoins(
 {
     checkStackSize();
 
-    const auto is_key = [&](const QueryTreeNodePtr & key)
-    { return key->isEqual(*node, {.compare_aliases = false}) && areConstantsWrittenAlike(key, node); };
-    if (std::ranges::any_of(group_by_keys, is_key))
+    if (isKey(node, group_by_keys))
         return true;
 
     if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "arrayJoin")
-        return std::ranges::any_of(clauses, [&](const auto & clause) { return hasPartWrittenAlike(clause, node); });
+        return std::ranges::any_of(clauses, [&](const auto & clause) { return isCalculatedFor(clause, node, group_by_keys); });
 
     return std::ranges::all_of(
         node->getChildren(), [&](const auto & child) { return !child || hasOnlyCalculatedArrayJoins(child, clauses, group_by_keys); });

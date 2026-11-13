@@ -74,6 +74,15 @@ SELECT toYear(d) AS k, count() FROM t GROUP BY k ORDER BY k, k = 2024 SETTINGS d
 SELECT toYear(d) AS k, count() FROM t GROUP BY 1 HAVING arrayJoin([4, 4]) = count() ORDER BY 1, k = 2024;
 SELECT toYear(d) AS k, count() FROM t GROUP BY k HAVING arrayJoin([4, 4]) = count() ORDER BY k, k = 2024;
 
+SELECT 'sort keys';
+SELECT toYear(d) AS k, a, count() FROM t GROUP BY k, a ORDER BY k, k = 2024, a;
+SELECT toYear(d) AS k, toFloat64(a) AS f, count() FROM t GROUP BY k, f ORDER BY f, k, if(k = 2024, count(), 0);
+SELECT toYear(d) AS k, toFloat64(a) AS f, count() FROM t GROUP BY k, f ORDER BY f, k, (k = 2024) IN (SELECT 1), arrayMap(x -> k = 2024, [1]);
+SELECT toYear(d) AS k, count() FROM t GROUP BY k ORDER BY k, rowNumberInAllBlocks(), if(k = 2024, count(), 0);
+SELECT toYear(d) AS k, count() FROM remote('127.0.0.{2,3}', currentDatabase(), t) GROUP BY k ORDER BY k, if(k = 2024, count(), 0) SETTINGS distributed_group_by_no_merge = 2;
+SELECT toYear(d) AS k, arrayJoin([a, 2]) AS x, arrayJoin([a, toUInt8(2)]) AS y, count() FROM t GROUP BY k, x, y ORDER BY k, x, y, k = 2024;
+SELECT DISTINCT count() > 0 FROM t GROUP BY toYear(d) AS k, rand(a + 2) AS x, rand(a + toUInt8(2)) AS y ORDER BY k, x, y, k = 2024;
+
 SELECT 'rewritten';
 SELECT countIf(explain LIKE '%toYear(%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT toYear(d) = 2024 AS k, count() FROM t GROUP BY 1);
 SELECT countIf(explain LIKE '%toYear(%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM t GROUP BY a HAVING max(toYear(d) = 2024));

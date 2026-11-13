@@ -37,6 +37,12 @@ SELECT max(intDiv(number, 4)) AS m, count() AS c FROM numbers(10) GROUP BY intDi
 SELECT arrayJoin([number, 2]) AS x, toString(x) AS y, count() AS c FROM numbers(3) GROUP BY x, toString(arrayJoin([number, toUInt8(2)])) WITH TOTALS ORDER BY x, y, c;
 SELECT arrayJoin([number, 2]) AS x, toString(x) AS y, count() AS c FROM numbers(3) GROUP BY x, toString(arrayJoin([number, toUInt8(2)])) ORDER BY x, y, c SETTINGS max_block_size = 1;
 SELECT arrayJoin([number, 2]) AS x, arrayJoin([number, toUInt8(2)]) AS y, count() AS c FROM numbers(3) GROUP BY x, y ORDER BY x, c, y SETTINGS max_block_size = 1;
+SELECT rand64(number + 2.) % 2 AS x, rand64(number + toFloat64(2)) % 2 AS y FROM numbers(1000) GROUP BY 1, 2 ORDER BY 1, 2 DESC LIMIT 1 BY x;
+SELECT rand64(number + 2.) % 2 AS x, rand64(number + toFloat64(2)) % 2 AS y FROM numbers(1000) GROUP BY x, y ORDER BY x, y DESC LIMIT 1 BY x;
+SELECT arrayMap(a -> rand(a) % 2, [number]) AS x, arrayMap(a -> rand(a) % toUInt8(2), [number]) AS y FROM numbers(1000) GROUP BY 1, 2 ORDER BY 1, 2 DESC LIMIT 1 BY x;
+SELECT arrayJoin([1, 2]) + 2 AS x, count() AS c FROM numbers(3) GROUP BY x ORDER BY x, arrayJoin([1, 2]) + toUInt8(2);
+SELECT arrayJoin([1, 2]) + 2 AS x, max(arrayJoin([1, 2])) AS m FROM numbers(3) GROUP BY x ORDER BY x LIMIT 10 BY x, arrayJoin([1, 2]) + toUInt8(2);
+SELECT arrayJoin([number, 2]) AS x, arrayJoin([3, 4]) AS y FROM numbers(3) GROUP BY x ORDER BY x, arrayJoin([number, toUInt8(2)]) - y;
 SELECT number AS x, arrayMap(a -> a + toUInt8(2), [x]) AS y FROM numbers(2) GROUP BY x, arrayMap(a -> a + 2, [x]) WITH ROLLUP ORDER BY ALL;
 SELECT arrayMap(a -> a + toUInt8(2), [number]) AS x, count() AS c FROM numbers(2) GROUP BY arrayMap(a -> a + 2, [number]) ORDER BY ALL;
 DROP TABLE IF EXISTS t;

@@ -89,6 +89,13 @@ bool areConstantsWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodeP
 /// The same, but constants can differ in the cast.
 bool areConstantsEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs);
 
+/// Returns true if `node` has a function, other than `arrayJoin`, that can return different values for the same arguments.
+bool hasNonDeterministicFunction(const QueryTreeNodePtr & node);
+
+/// Returns true if equal expressions have the same value. Their constants can differ in the cast, but not if an expression has an `arrayJoin`
+/// or a non-deterministic function, because these are calculated separately for each name.
+bool haveSameValue(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs);
+
 /// Returns true if `node` can be calculated after the aggregation from the keys as they are written.
 bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys);
 

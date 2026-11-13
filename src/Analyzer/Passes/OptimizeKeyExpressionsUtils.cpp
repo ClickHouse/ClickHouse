@@ -532,6 +532,24 @@ bool areConstantsEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rh
     return allConstantsInEqualNodes(lhs, rhs, haveSameValueName);
 }
 
+bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    checkStackSize();
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() != "arrayJoin")
+        if (const auto function = function_node->getFunction())
+            if (!function->isDeterministicInScopeOfQuery() || function->isStateful())
+                return true;
+
+    return std::ranges::any_of(node->getChildren(), [](const auto & child) { return child && hasNonDeterministicFunction(child); });
+}
+
+bool haveSameValue(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    return areConstantsWrittenAlike(lhs, rhs)
+        || (areConstantsEqual(lhs, rhs) && !hasFunctionNode(lhs, "arrayJoin") && !hasNonDeterministicFunction(lhs));
+}
+
 bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys)
 {
     checkStackSize();

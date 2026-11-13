@@ -89,6 +89,10 @@ private:
             if (!key->isEqual(*node, {.compare_aliases = false}) || !areConstantsEqual(key, node))
                 continue;
 
+            /// This is another value.
+            if (hasNonDeterministicFunction(node) && !areConstantsWrittenAlike(key, node))
+                continue;
+
             equal_keys_are_different |= result && !areConstantsWrittenAlike(key, result);
             if (!result)
                 result = key;
