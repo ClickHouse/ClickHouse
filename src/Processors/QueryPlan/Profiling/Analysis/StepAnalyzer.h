@@ -23,8 +23,7 @@ using StepReporter = std::function<StepAnalysisReport(StepProcessors)>;
 struct StepStatsContext;
 
 /// One stage of a step's execution, as `getStepGroups` numbers them and `getStepGroupName` names
-/// them. Most steps have the single unnamed stage; a join has a build and a probe. The id and the
-/// name travel together so that a step cannot declare one without the other.
+/// them. Most steps have the single unnamed stage; a join has a build and a probe.
 struct StepGroup
 {
     size_t id = 0;
@@ -57,8 +56,7 @@ struct StepAnalyzer
     /// Filled by the walk, which is the only thing that knows the shape.
     std::vector<String> children;
 
-    /// What the passes that run across steps need to know about this one. A step declares these
-    /// for itself, so that nothing has to ask what kind of step it is after the fact.
+    /// What the passes that run across steps need to know about this one.
     ///
     /// Joins of one cluster share their cost. Zero means the join belongs to no cluster.
     UInt64 cluster_id = 0;
@@ -77,9 +75,7 @@ struct StepAnalyzer
     /// Set by joins only; its presence is what puts a step in the branch-cost phase.
     JoinCardinalityReader join_cardinality;
 
-    /// What a pass across steps asks. The fields above are what a step declares about itself;
-    /// these are the questions asked of it afterwards, so no caller has to know which field
-    /// answers which question.
+    /// What a pass across steps asks of a step.
     bool isJoin() const { return join_cardinality != nullptr; }
     bool isCreatingSet() const { return is_creating_set; }
 };

@@ -314,10 +314,9 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// The last moment the plan is worth reading: the index analysis and the child plans built
     /// along the way exist now, and nothing after this needs the plan at all.
     ///
-    /// The two readings are owned differently. The captured plan goes to the log capture, which
-    /// the `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
-    /// and analyzers go to the pipeline, which must be their only owner, so that they are freed
-    /// with it rather than living as long as the context does.
+    /// The two readings are owned differently. The captured plan goes to the log capture, which the
+    /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
+    /// and analyzers go to the pipeline, which is their only owner, so that they are freed with it.
     if (log_capture)
     {
         /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
@@ -325,8 +324,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
         try
         {
-            /// Walked once and read twice, so that the captured plan and the analyzers cannot
-            /// disagree about which steps there are or what is below what.
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
             log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);

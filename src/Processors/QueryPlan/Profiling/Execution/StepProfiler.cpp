@@ -7,7 +7,7 @@ namespace DB
 namespace
 {
 
-/// One clock per stage of every step the snapshot found, so the walk of the plan happens once.
+/// One clock per stage of every step the snapshot found.
 StepWallClocks collectWallClocksForPlanSteps(const PlanAnalysisSnapshot & plan_snapshot)
 {
     StepWallClocks clocks;

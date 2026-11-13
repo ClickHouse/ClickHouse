@@ -27,10 +27,10 @@ class StepProfiler;
 
 class AnalyzeStepsStats
 {
-    /// Everything below is keyed by the step's uniq id rather than its address, so the collected
-    /// statistics outlive the plan. The processors carry the same id (`IProcessor::getStepUniqID`),
-    /// and it is unique within a query: the counter behind `PlanStepIndex` lives in the thread
-    /// group's local data, so every thread building steps for one query draws from it.
+    /// Everything below is keyed by the step's uniq id, so the collected statistics outlive the
+    /// plan. The processors carry the same id (`IProcessor::getStepUniqID`), and it is unique within
+    /// a query: the counter behind `PlanStepIndex` lives in the thread group's local data, so every
+    /// thread building steps for one query draws from it.
     using StepAndGroup = std::pair<String, size_t>;
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.

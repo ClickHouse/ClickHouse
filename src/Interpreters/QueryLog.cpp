@@ -409,9 +409,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         }
         else
         {
-            /// The serialization is built here rather than kept in a static, because a
-            /// SerializationJSON carries mutable per-use caches that must not be shared across
-            /// queries.
+            /// A `SerializationJSON` carries mutable per-use caches, so one cannot be shared
+            /// across queries.
             const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
             const auto plan_serialization = plan_type->getDefaultSerialization();
 

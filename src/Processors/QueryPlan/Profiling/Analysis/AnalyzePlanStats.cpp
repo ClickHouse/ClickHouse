@@ -297,7 +297,8 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
 void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 {
-    /// By id rather than by step: the processors outlive the plan, and so does this.
+    /// Whether the step a processor belongs to is the builder of a set, answered from the
+    /// snapshot because the processors outlive the plan.
     const auto creates_a_set = [this](const String & step_id)
     {
         const auto * analyzer = plan_snapshot.find(step_id);

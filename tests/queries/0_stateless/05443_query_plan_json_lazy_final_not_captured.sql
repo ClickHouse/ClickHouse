@@ -40,8 +40,7 @@ SELECT
             AND JSONExtractRaw(node, 'Children') = '[]')
 FROM
 (
-    -- The plan is picked first and only then split into nodes: a LIMIT after `arrayJoin` would
-    -- keep one node rather than one plan.
+    -- One plan is picked before it is split into nodes, so that the row limit applies to plans.
     WITH one_plan AS
     (
         SELECT toJSONString(query_plan) AS plan

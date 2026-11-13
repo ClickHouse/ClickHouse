@@ -20,8 +20,7 @@ namespace DB
 class StepIntervalTimings
 {
 public:
-    /// Reads the plan's shape out of the snapshot rather than the plan, so this runs once the
-    /// plan is gone, like the rest of the analysis.
+    /// Takes the plan's shape from the snapshot, so it runs once the plan is gone.
     StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const PlanAnalysisSnapshot & plan_snapshot);
 
     const StepTimeAndConcurrency * findTiming(const String & step_id) const;

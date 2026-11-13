@@ -1,9 +1,9 @@
 -- Tags: no-old-analyzer
 
 -- Verifies the part of `system.query_log.query_plan` that a plain SELECT never reaches: the
--- sub-plans a step returns from `getChildPlans`. A `Merge` table produces one per underlying
--- table, and they are a separate naming scope, so this covers the per-plan pretty-name lookup and
--- the suppression of the root `Output` on anything that is not the plan the caller asked about.
+-- sub-plans a step holds, which the capture reaches through `getBuiltChildPlans`. A `Merge` table
+-- produces one per underlying table, and they are a separate naming scope, so this covers the
+-- per-plan pretty-name lookup and the single `Output` taken from the root of the outer plan.
 --
 -- Rows are matched on `log_comment` rather than on the query text, so that the query itself stays
 -- exactly what is being described, and on `currentDatabase()` so a parallel run cannot be seen.
@@ -29,11 +29,11 @@ SELECT
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
     -- The step that owns the sub-plans, and one entry per underlying table below it. Without the
-    -- recursion into getChildPlans the tree would stop at ReadFromMerge.
+    -- recursion into the sub-plans the tree would stop at ReadFromMerge.
     anyLast(position(toJSONString(query_plan), 'ReadFromMerge"')) > 0,
     anyLast(countSubstrings(toJSONString(query_plan), '"NodeType":"ReadFromMergeTree"')),
-    -- Written once, for the plan the caller asked about. A sub-plan root must not repeat it, which
-    -- is the whole reason explainPlan knows whether it is rendering a child plan.
+    -- Written once: the document takes its output columns from the root of the outer plan, and a
+    -- sub-plan root adds none of its own.
     anyLast(countSubstrings(toJSONString(query_plan), '"Output":')),
     -- Both sub-plans describe their own filter, and they do it through the names captured before
     -- the pipeline was built: an unresolved name would read as a column identifier, not as `MOD`.

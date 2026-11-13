@@ -99,7 +99,7 @@ PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions
 }
 
 /// See `stepIndexes`: the same data, from the same step. A query served from a projection says so
-/// here, and `EXPLAIN` already shows it, so the captured plan would otherwise hide the choice.
+/// here, as `EXPLAIN` does.
 PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);

@@ -328,9 +328,8 @@ void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
 
 void PipelineExecutor::finalizeExecution()
 {
-    /// Stamped before the `SCOPE_EXIT` below rather than inside it: the output formats write their
-    /// epilogue in `onPipelineFinished`, and counting that towards the execution time would make the
-    /// plan logged for a `Parquet` or `ORC` query look slower than the work it actually did.
+    /// Stamped before the epilogue the output formats write in `onPipelineFinished` below, which is
+    /// not part of the execution.
     if (step_profiler)
         step_profiler->markExecutionFinished();
 

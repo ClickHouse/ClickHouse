@@ -1,9 +1,9 @@
 -- Tags: no-old-analyzer
 
 -- A join reports metrics of its own -- how many rows each side saw, how large the hash table grew --
--- only when the query runs with the join analyze mode on. Until `log_query_plans` turned that mode
--- on, the plan stored for a query with a join carried its I/O and timings but none of that, so the
--- whole `Left` / `Right` / `HashTable` vocabulary was unreachable through `system.query_log`.
+-- only when the query runs with the join analyze mode on, which `log_query_plans` turns on. The
+-- plan stored for a query with a join therefore carries a `Left`, a `Right` and a `HashTable` group
+-- alongside its I/O and its timings.
 --
 -- The mode has to be set before the interpreter is built, because every join reads it while the
 -- planner constructs it; a join built without it does not even allocate the counters. That makes
@@ -31,8 +31,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     'join_stats',
     count(),
-    -- The join's own groups, which are what this is about: none of them appeared before the
-    -- analyze mode was turned on for a logged query.
+    -- The join's own groups, which exist only when the analyze mode is on.
     anyLast(JSONHas(join_stats, 'Left')),
     anyLast(JSONHas(join_stats, 'Right')),
     anyLast(JSONHas(join_stats, 'HashTable')),

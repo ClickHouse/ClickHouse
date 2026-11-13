@@ -2,9 +2,10 @@
 
 -- A recursive CTE evaluates its steps by building a whole new InterpreterSelectQueryAnalyzer per
 -- iteration, from RecursiveCTESource::generate -- that is, while the outer query is already
--- running. If such an interpreter can reach the query's plan profiler, it captures over the plan
--- this row is about, and `query_plan` ends up describing the recursive arm instead. The profiler
--- is therefore handed only to the interpreter executeQuery built, and nested ones never see it.
+-- running. If such an interpreter can reach the query's `QueryPlanLogCapture`, it captures over
+-- the plan this row is about, and `query_plan` ends up describing the recursive arm instead. The
+-- capture is therefore handed only to the interpreter executeQuery built, and nested ones never
+-- see it.
 --
 -- The check is the plan's own `Output`: the outer query selects `sum(n)`, every recursive step
 -- selects `n`. Asserting on that rather than on step names keeps the test independent of how the

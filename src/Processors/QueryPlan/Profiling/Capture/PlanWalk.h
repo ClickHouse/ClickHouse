@@ -26,9 +26,8 @@ struct VisitedStep
 
 /// Every step of a plan and of the child plans its steps hold, visited once.
 ///
-/// The walk exists so that the readings taken of a plan agree about its shape: `CapturedPlan` and
-/// `PlanAnalysisSnapshot` want different things from each step but the same answer to what is
-/// below what, and deriving that twice is two rules that have to stay equal.
+/// The single source of what is below what: `CapturedPlan` and `PlanAnalysisSnapshot` want
+/// different things from each step but the same shape, and both take it from here.
 ///
 /// It holds pointers into the plan, so it is valid only while the plan is alive. Read it where it
 /// is made and keep the values, not this.

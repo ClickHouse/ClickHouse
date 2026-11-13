@@ -43,9 +43,9 @@ FROM
 -- rather than the values: a step that ran took a positive amount of wall clock, it cannot have
 -- taken more than the query did, and the per-processor distribution has to be ordered.
 --
--- Nothing derivable is stored, so nothing derivable is asserted here. What used to be checked as
--- `ShareOfQueryTime` and `Parallelism` is checked as the quantities they are computed from --
--- the query-level totals at the root and the per-stage primaries -- which is all a reader has.
+-- The column stores nothing a reader could derive from it, so the assertions are over the
+-- quantities a share of query time or a degree of parallelism would be computed from: the
+-- query-level totals at the root and the per-stage primaries.
 SELECT
     'timings',
     anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) > 0,

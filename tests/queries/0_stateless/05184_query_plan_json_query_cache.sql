@@ -1,9 +1,9 @@
 -- Tags: no-old-analyzer, no-parallel-replicas
 
 -- A query answered from the query result cache runs no pipeline, so it has no plan to store. That
--- is correct, but it happens above `canEnableProfiler` -- the whole interpreter branch is skipped
--- on a hit -- so the reason has to be reported from there instead, or the column is just silently
--- empty for a query that asked for a plan.
+-- is correct, but it happens above `QueryPlanLogCapture::canCapturePlan` -- the whole interpreter
+-- branch is skipped on a hit -- so the reason is reported from the cache branch itself, or the
+-- column is just silently empty for a query that asked for a plan.
 --
 -- Both statements are identical and the settings are set outside them, because the cache key is a
 -- hash of the AST and the settings: a `SETTINGS log_comment = ...` clause would make the second

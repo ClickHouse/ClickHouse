@@ -631,8 +631,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-    /// Only worth paying for when something is going to read the descriptions: cutting them to
-    /// length means every step resizes its own, and nothing reads them otherwise.
+    /// Cutting the descriptions to length makes every step resize its own, so it is done only when
+    /// something is going to read them.
     if (plan_log_capture)
         optimization_settings.max_step_description_length = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
 

@@ -935,7 +935,7 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        /// Say why rather than leave half a document behind.
+        /// Replace the half-written document with the reason it could not be written.
         elem.query_plan.clear();
         try
         {
@@ -945,8 +945,8 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         }
         catch (...)
         {
-            /// Ok to swallow: writing the error itself failed. Empty rather than invalid, so the
-            /// column takes its default of an empty JSON object.
+            /// Writing the error itself failed. An empty column takes its default of an empty JSON
+            /// object; a half-written document would not be valid JSON.
             elem.query_plan.clear();
         }
     }

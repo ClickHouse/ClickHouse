@@ -17,9 +17,9 @@ namespace DB
 {
 
 
-/// Keyed by the step's uniq id rather than its address: the clocks are read while the query runs
-/// and once it has finished, and by then the plan the steps belonged to may be long gone. The
-/// processors carry the same id, so they can find their clock without the step.
+/// Keyed by the step's uniq id: the clocks are read while the query runs and once it has finished,
+/// and by then the plan the steps belonged to may be long gone. The processors carry the same id,
+/// so they can find their clock without the step.
 using PlanStepGroup = std::pair<String, size_t>;
 using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 

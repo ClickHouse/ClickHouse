@@ -117,8 +117,6 @@ void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const Pret
 
 void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 {
-    /// The pipeline has owned it since it was built, which is why it is read back from there
-    /// rather than kept here: nothing of the query outlives the pipeline.
     const StepProfilerPtr profiler = pipeline.getStepProfiler();
 
     if (!captured || !profiler)

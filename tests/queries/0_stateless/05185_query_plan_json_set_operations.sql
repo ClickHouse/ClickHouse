@@ -7,7 +7,7 @@
 -- `ASTSelectIntersectExceptQuery` even though that class derives from `ASTSelectQuery`. Set
 -- operations are captured anyway because the parser leaves that node one level down --
 -- `SelectWithUnionQuery -> ExpressionList -> SelectIntersectExceptQuery` -- and nothing between
--- the parser and `canEnableProfiler` unwraps the single-element union into it. `InterpreterFactory`
+-- the parser and `canCapturePlan` unwraps the single-element union into it. `InterpreterFactory`
 -- routes on the same outer type and so reaches `InterpreterSelectQueryAnalyzer`.
 --
 -- Should normalization ever start unwrapping, the top-level AST would become the intersect node,

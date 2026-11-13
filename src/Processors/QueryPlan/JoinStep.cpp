@@ -359,7 +359,6 @@ StepAnalyzer JoinStep::makeAnalyzer() const
         return analyzeJoinStep(context, std::move(report), inputs);
     };
 
-    /// `JoinStep` is the only step in the branch-cost phase, so it is the only one reading this.
     analyzer.join_cardinality = [join_ptr = join](const StepAnalysisReport & report, UInt64 output_rows)
     {
         const auto & table_join = join_ptr->getTableJoin();
