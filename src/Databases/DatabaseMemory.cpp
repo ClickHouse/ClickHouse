@@ -198,8 +198,21 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
+    /// Unqualified names in the stored definition are resolved against the database that owns the table
+    /// (as on the metadata loading path), not against the current database of the session that issued
+    /// the `ALTER`, so that a metadata-only `ALTER` does not move the dependencies of the table.
+    /// Temporary objects belong to no database, so their names are resolved against the current database
+    /// of the session, as on the `CREATE` path (`getDatabaseForUnqualifiedNames` in `InterpreterCreateQuery`).
+    /// The arguments of the table engine are not stored qualified, so they are resolved against the current database,
+    /// as on the `CREATE` path (`addTableDependencies` in `InterpreterCreateQuery`).
+    const bool is_temporary_database = getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+    const String database_for_unqualified_names = is_temporary_database ? local_context->getCurrentDatabase() : table_id.database_name;
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, database_for_unqualified_names, /*can_throw*/false,
+        /*validate_current_database*/true, /*max_expanded_ast_elements*/0, /*engine_arguments_database*/local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, database_for_unqualified_names, /*can_throw*/false,
+        /*engine_arguments_database*/local_context->getCurrentDatabase());
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
     {
@@ -207,7 +220,14 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         create_queries[table_id.table_name] = create_query;
     }
 
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+    /// Temporary views live in the temporary database (`DatabaseMemory`). Their sources must never be
+    /// registered in the global `plain_view_dependencies` graph, otherwise a metadata-only `ALTER`
+    /// (e.g. `MODIFY COMMENT`) on a temporary view would make permanent source tables report the
+    /// session-local `_temporary_and_external_tables._tmp_<uuid>` object in `system.tables.dependencies_*`.
+    /// This mirrors the guard on the `CREATE` path in `InterpreterCreateQuery`.
+    auto plain_view_dependencies = is_temporary_database ? TableNamesSet{} : ref_dependencies.plain_view_dependencies;
+
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, plain_view_dependencies);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const

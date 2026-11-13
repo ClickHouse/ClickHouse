@@ -4,6 +4,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -21,7 +23,8 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// `current_database` is the database against which the unqualified table names of the CREATE query
 /// have to be resolved: the current database of the query for a freshly executed CREATE, or the
 /// database owning the table for the metadata loaded at startup.
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw = false);
+/// `engine_arguments_database` is the database the arguments of the table engine are resolved against, `current_database` if not set.
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw = false, const std::optional<String> & engine_arguments_database = {});
 
 
 class DDLMatcherBase
@@ -44,6 +47,8 @@ public:
         String default_database;
         /// The database against which the unqualified table names of the CREATE query are resolved.
         String current_database;
+        /// The database against which the arguments of the table engine are resolved.
+        String engine_arguments_database;
         TableNamesSet dependencies;
         ContextPtr global_context;
         ASTPtr create_query;

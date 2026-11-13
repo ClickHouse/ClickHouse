@@ -1,0 +1,18 @@
+v_setting	1
+v_setting	3
+v_enclosing_setting	1
+v_enclosing_setting	3
+v_body_setting	1
+v_body_setting	3
+v_cte	1
+v_cte	2
+v_cte	3
+v_session	1
+v_session	2
+v_session	3
+v_session, disabled	1
+v_session, disabled	3
+r	['v_body_setting','v_enclosing_setting','v_session','v_setting']
+v_created_without_global_with	1
+v_created_without_global_with	3
+r	['v_created_without_global_with']
