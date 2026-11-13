@@ -23,9 +23,7 @@ No se pueden realizar las siguientes consultas:
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## Creación de una base de datos
-</div>
+## Creación de una base de datos {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -42,9 +40,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Configuración**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 Habilita la compresión zlib para la conexión del protocolo MySQL. Cuando se establece en `1`, ClickHouse solicita al servidor MySQL compresión a nivel de protocolo.
 
@@ -58,9 +54,13 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+Permite cerrar automáticamente la conexión tras la ejecución de la consulta, es decir, desactivar la reutilización de conexiones. Si se establece en `0`, cada table de la base de datos conserva sus conexiones en su propio grupo para la siguiente consulta.
+
+Valor predeterminado: `1`.
+
+## TLS/SSL {#tls-ssl}
 
 Las credenciales de una conexión cifrada a MySQL se proporcionan como claves de una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) (o como argumentos de clave-valor):
 
@@ -76,9 +76,7 @@ Las mismas credenciales también se pueden proporcionar como rutas de archivos e
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Compatibilidad de tipos de datos
-</div>
+## Compatibilidad de tipos de datos {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +105,7 @@ La conversión de los tipos espaciales (excepto `POINT`, que siempre se conviert
 
 Se admite [Nullable](/es/reference/data-types/nullable). Una columna espacial se asigna a `String` (`Nullable(String)` si admite valores nulos) en tres casos: se declara como `GEOMETRYCOLLECTION`; el indicador `geometry` está deshabilitado y el tipo no es `POINT`; o la columna admite valores nulos y el tipo no es `POINT`, ya que `Point` es el único tipo geométrico que puede anidarse dentro de `Nullable`. En los tres casos, la cadena contiene el valor exactamente como lo devuelve MySQL: un prefijo SRID de 4 bytes seguido de la carga útil WKB, por lo que debe eliminar esos 4 bytes iniciales antes de pasarlo a un decodificador WKB.
 
-<div id="global-variables-support">
-  ## Compatibilidad con las variables globales
-</div>
+## Compatibilidad con las variables globales {#global-variables-support}
 
 Para mejorar la compatibilidad, puede hacer referencia a las variables globales al estilo de MySQL, como `@@identifier`.
 
@@ -128,9 +124,7 @@ Ejemplo:
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## Ejemplos de uso
-</div>
+## Ejemplos de uso {#examples-of-use}
 
 Tabla en MySQL:
 

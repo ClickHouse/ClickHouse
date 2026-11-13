@@ -336,6 +336,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     new_info.columns_added_after_format = info.columns_added_after_format;
 
     new_info.requested_virtual_columns = info.requested_virtual_columns;
+    new_info.columns_read_under_other_names = info.columns_read_under_other_names;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
