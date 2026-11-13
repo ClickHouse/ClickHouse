@@ -403,13 +403,6 @@ CREATE TABLE t_tsub (k Tuple(DateTime64(4), UInt64)) ENGINE = MergeTree ORDER BY
 INSERT INTO t_tsub VALUES (('2020-01-01 00:00:01.0000', 1)), (('2020-01-01 00:00:01.1000', 1)), (('2020-01-01 00:00:02.0000', 1));
 SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
--- CONTROL: the top-level `DateTime64` key does not collapse, so its atom stays live.
-DROP TABLE IF EXISTS t_dsub;
-CREATE TABLE t_dsub (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
-INSERT INTO t_dsub VALUES ('2020-01-01 00:00:01.0000'), ('2020-01-01 00:00:01.1000'), ('2020-01-01 00:00:02.0000');
-SELECT d FROM t_dsub WHERE d IN (SELECT CAST(toDateTime('2020-01-01 00:00:01'), 'Nullable(DateTime)') UNION ALL SELECT NULL) ORDER BY d;
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dsub WHERE d IN (SELECT CAST(toDateTime('2020-01-01 00:00:01'), 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dsub WHERE d IN (SELECT CAST(toDateTime('2020-01-01 00:00:01'), 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- Case C25: for a transformed key, membership casts the column the transform reads into the set's type,
 -- so the collapse is checked on that column. The set holds no NULL: an actual NULL makes the transform
@@ -561,5 +554,4 @@ DROP TABLE t_td;
 DROP TABLE t_fss;
 DROP TABLE t_nt;
 DROP TABLE t_tsub;
-DROP TABLE t_dsub;
 DROP TABLE t_dh;

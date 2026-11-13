@@ -3571,7 +3571,7 @@ static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, co
     return (isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type));
 }
 
-static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool plain_column)
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
     auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
@@ -3596,8 +3596,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isArray() && set_which.isArray())
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
-            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType(),
-            /*plain_column=*/ false);
+            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType());
 
     /// `CAST` turns an array of pairs into a `Map` pair by pair, by position, and keeps repeated keys.
     if (key_which.isArray() && set_which.isMap())
@@ -3605,8 +3604,8 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         const auto * pair = typeid_cast<const DataTypeTuple *>(assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType().get());
         const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
         return !pair || pair->getElements().size() != 2
-            || keyToSetConversionMayCollapse(pair->getElements()[0], set_map.getKeyType(), /*plain_column=*/ false)
-            || keyToSetConversionMayCollapse(pair->getElements()[1], set_map.getValueType(), /*plain_column=*/ false);
+            || keyToSetConversionMayCollapse(pair->getElements()[0], set_map.getKeyType())
+            || keyToSetConversionMayCollapse(pair->getElements()[1], set_map.getValueType());
     }
 
     if (key_which.isTuple() && set_which.isTuple())
@@ -3625,8 +3624,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
                 for (size_t i = 0; i < key_elements.size(); ++i)
                 {
                     auto set_position = set_tuple.tryGetPositionByName(key_names[i]);
-                    if (!set_position
-                        || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position], /*plain_column=*/ false))
+                    if (!set_position || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position]))
                         return true;
                 }
 
@@ -3638,7 +3636,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return false;
 
         for (size_t i = 0; i < key_elements.size(); ++i)
-            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i], /*plain_column=*/ false))
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i]))
                 return true;
 
         return false;
@@ -3677,9 +3675,6 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return !set_which.isDateTime64();
         if (key_which.isTime())
             return !set_which.isTime64();
-        /// `Set::execute` drops the sub-second keys only of a `plain_column` (non-`Nullable`, not in a composite); it truncates others.
-        if (key_which.isDateTime64() && set_which.isDateTime())
-            return !plain_column && *key_scale > 0;
         const bool same_family = (key_which.isDateTime64() && set_which.isDateTime64()) || (key_which.isTime64() && set_which.isTime64());
         return !same_family || *set_scale < *key_scale;
     }
@@ -3709,7 +3704,6 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
     Columns new_columns;
     DataTypes new_types;
-    const bool set_is_packed = set_columns.size() < candidate.args_count;
     while (set_columns.size() < candidate.args_count) /// If we have a packed tuple inside, we unpack it
     {
         bool has_tuple = false;
@@ -3798,10 +3792,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
 
-            if (keyToSetConversionMayCollapse(
-                    predicate_column_type,
-                    element_type,
-                    /*plain_column=*/ !set_is_packed && !isNullableOrLowCardinalityNullable(predicate_input_type))
+            if (keyToSetConversionMayCollapse(predicate_column_type, element_type)
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
         }

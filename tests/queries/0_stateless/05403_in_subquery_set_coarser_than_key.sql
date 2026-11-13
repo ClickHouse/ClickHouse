@@ -94,6 +94,11 @@ CREATE TABLE t_tup64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree ORDER 
 INSERT INTO t_tup64 VALUES ('2023-02-01 12:00:00.500', 1), ('2023-02-03 13:00:00', 1);
 SELECT count() FROM t_tup64 WHERE (d, x) IN (SELECT tuple(toDateTime('2023-02-01 12:00:00', 'UTC'), toUInt8(1)));
 
+-- The cast into `DateTime` saturates, so a bound also stands for the keys beyond it.
+CREATE TABLE t_dt64s (d DateTime64(3, 'UTC')) ENGINE = MergeTree PARTITION BY d ORDER BY d;
+INSERT INTO t_dt64s VALUES ('1969-12-31 23:59:59'), ('1970-01-01 00:00:00'), ('2106-02-07 06:28:15'), ('2106-02-07 06:28:16');
+SELECT count() FROM t_dt64s WHERE d IN (SELECT toDateTime(0, 'UTC') UNION ALL SELECT toDateTime(4294967295, 'UTC'));
+
 -- A numeric `CAST` stores values beyond the declared precision.
 CREATE TABLE t_dec6 (d Decimal(6, 0)) ENGINE = MergeTree PARTITION BY d ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_dec6 SELECT CAST(16777216 + number, 'Decimal(6, 0)') FROM numbers(2);
@@ -128,9 +133,6 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a FROM t_arr WHERE a IN (SEL
 CREATE TABLE t_enum (e Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 1;
 INSERT INTO t_enum VALUES ('a'), ('b');
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT e FROM t_enum WHERE e IN (SELECT CAST('a', 'Enum8(''a'' = 1, ''b'' = 2, ''c'' = 3)'))) WHERE explain ILIKE '%Granules: 1/2%';
-CREATE TABLE t_dt64s (d DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
-INSERT INTO t_dt64s VALUES ('2023-02-01 12:00:00'), ('2023-02-01 13:00:00.500');
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt64s WHERE d IN (SELECT toDateTime('2023-02-01 12:00:00', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
 CREATE TABLE t_wrap (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO t_wrap VALUES (1), (5);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Dynamic'))) WHERE explain ILIKE '%Granules: 1/2%';
