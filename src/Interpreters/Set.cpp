@@ -92,7 +92,7 @@ ColumnPtr normalizeFloatZeroKey(const ColumnPtr & column)
         auto nested = normalizeFloatZeroKey(nullable->getNestedColumnPtr());
         if (nested == nullable->getNestedColumnPtr())
             return column;
-        return ColumnNullable::create(std::move(nested), nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
     }
 
     auto normalized = normalizeFloatZeroColumn<ColumnFloat32>(column);
