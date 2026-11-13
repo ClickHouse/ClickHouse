@@ -71,7 +71,7 @@ public:
     bool tryLock()
     {
         uint32_t current = 0;
-        return state.compare_exchange_weak(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
+        return state.compare_exchange_strong(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
     }
 
     void unlock()
@@ -266,9 +266,9 @@ private:
         std::__libcpp_condvar_t & storage;
     };
 
-    bool empty() const { return !std::atomic_ref(storage.__head).load(std::memory_order_relaxed); }
+    bool empty() const { return !std::atomic_ref(storage.__head).load(std::memory_order_acquire); }
 
-    void setHead(Waiter * waiter) { std::atomic_ref(storage.__head).store(waiter, std::memory_order_relaxed); }
+    void setHead(Waiter * waiter) { std::atomic_ref(storage.__head).store(waiter, std::memory_order_release); }
 
     void unlink(Waiter & waiter)
     {
