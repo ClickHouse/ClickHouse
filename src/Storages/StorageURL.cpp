@@ -3349,6 +3349,11 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             engine_name, configuration.url);
 
     const String engine_name_str = engine_name;
+
+    /// The query named `URL`, which passed the temporary-table check; the engine built here must pass it too.
+    if (args.query.isTemporary())
+        StorageFactory::instance().checkTemporaryTableEngine(engine_name_str, context);
+
     StorageFactory::Arguments delegate_factory_args
     {
         .engine_name = engine_name_str,
@@ -3590,6 +3595,7 @@ void registerStorageURL(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
+            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(

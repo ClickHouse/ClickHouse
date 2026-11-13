@@ -44,14 +44,14 @@ Ejemplo de configuración:
 
 Campos de configuración:
 
-| Configuración          | Descripción                                                                                                                                                                                     |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db`                   | Nombre de la base de datos. Omítalo si el nombre de la base de datos está definido en los parámetros de `<connection_string>`.                                                                  |
-| `table`                | Nombre de la tabla y del esquema, si existe.                                                                                                                                                    |
-| `connection_string`    | Cadena de conexión.                                                                                                                                                                             |
-| `invalidate_query`     | Consulta para comprobar el estado del diccionario. Opcional. Lea más en la sección [Actualización de los datos del diccionario con LIFETIME](/es/reference/statements/create/dictionary/lifetime). |
-| `background_reconnect` | Se vuelve a conectar a la réplica en segundo plano si falla la conexión. Opcional.                                                                                                              |
-| `query`                | Consulta personalizada. Opcional.                                                                                                                                                               |
+| Configuración          | Descripción                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `db`                   | Nombre de la base de datos. Omítalo si el nombre de la base de datos está definido en los parámetros de `<connection_string>`.                                                                                                 |
+| `table`                | Nombre de la tabla y del esquema, si existe.                                                                                                                                                                                   |
+| `connection_string`    | Cadena de conexión.                                                                                                                                                                                                            |
+| `invalidate_query`     | Consulta para comprobar el estado del diccionario. Opcional. Lea más en la sección [Actualización de los datos del diccionario con LIFETIME](/es/reference/statements/create/dictionary/lifetime).                                |
+| `background_reconnect` | Se vuelve a conectar a la réplica en segundo plano si falla la conexión. Opcional.                                                                                                                                             |
+| `query`                | Consulta personalizada. Opcional. Sus columnas se toman por posición, por lo que debe devolverlas en el [orden que espera el diccionario](/es/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 
 <Note>
   Los campos `table` y `query` no pueden usarse juntos. Debe declararse uno de los dos: `table` o `query`.
@@ -61,9 +61,7 @@ ClickHouse recibe los caracteres de comillas del controlador ODBC y pone entre c
 
 Si tiene problemas de codificación al usar Oracle, consulte la entrada correspondiente de [FAQ](/es/resources/support-center/knowledge-base/integrations/oracle-odbc).
 
-<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
-  ### Vulnerabilidad conocida de la funcionalidad de los diccionarios ODBC
-</div>
+### Vulnerabilidad conocida de la funcionalidad de los diccionarios ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 <Note>
   Al conectarse a la base de datos mediante el parámetro de conexión `Servername` del controlador ODBC, este puede sustituirse. En ese caso, los valores de `USERNAME` y `PASSWORD` de `odbc.ini` se envían al servidor remoto y pueden verse comprometidos.
@@ -92,9 +90,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 El controlador ODBC enviará los valores de `USERNAME` y `PASSWORD` del archivo `odbc.ini` a `some-server.com`.
 
-<div id="example-of-connecting-postgresql">
-  ### Ejemplo de conexión a PostgreSQL
-</div>
+### Ejemplo de conexión a PostgreSQL {#example-of-connecting-postgresql}
 
 Sistema operativo Ubuntu.
 
@@ -181,9 +177,7 @@ La configuración del diccionario en ClickHouse:
 
 Puede que tenga que editar `odbc.ini` para especificar la ruta completa a la biblioteca con el controlador `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-<div id="example-of-connecting-ms-sql-server">
-  ### Ejemplo de conexión a MS SQL Server
-</div>
+### Ejemplo de conexión a MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Sistema operativo Ubuntu.
 
