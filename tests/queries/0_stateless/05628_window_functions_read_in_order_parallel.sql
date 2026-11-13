@@ -40,8 +40,8 @@ SELECT
   = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)));
 -- `PARTITION BY a, b % 10` determines only the first column of the primary key, which is enough to split by ranges of `a`.
 SELECT
-    (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c) AS rn FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
-  = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c) AS rn FROM t_window_read_in_order));
+    (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c, b) AS rn FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
+  = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c, b) AS rn FROM t_window_read_in_order));
 -- The second window reuses the sorting and the distribution of the first one.
 SELECT
     (SELECT sum(cityHash64(a, b, rn, s)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b, c) AS rn, sum(c) OVER (PARTITION BY a ORDER BY b) AS s FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
