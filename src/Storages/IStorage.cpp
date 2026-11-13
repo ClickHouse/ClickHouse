@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -12,7 +15,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <QueryPipeline/Pipe.h>
@@ -425,6 +427,22 @@ VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
     return result;
 }
 
+namespace
+{
+
+/// Analysis folds some expressions, e.g. scalar subqueries, into constants that keep the expression only as their source.
+void collectConstantSources(const QueryTreeNodePtr & node, QueryTreeNodes & sources)
+{
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        sources.push_back(constant->getSourceExpression());
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectConstantSources(child, sources);
+}
+
+}
+
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
@@ -436,12 +454,21 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         auto view_metadata = view->getInMemoryMetadataPtr(context, false);
         if (view_metadata->select.inner_query)
         {
-            /// With the rights the query of the view runs with, not necessarily those of the caller.
-            auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
-            const auto & select_query = view_metadata->select.inner_query;
-            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, view_context, SelectQueryOptions{}.noModify());
-            auto query_tree = interpreter.getQueryTree();
-            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, view_context);
+            auto view_context = Context::createCopy(view_metadata->getSQLSecurityOverriddenContext(context));
+            view_context->setSetting("enable_scalar_subquery_optimization", Field(false));
+
+            /// Resolved with scalar subqueries kept, not optimized: the view's query must resolve every column it names.
+            QueryTreeNodes trees{buildQueryTree(view_metadata->select.inner_query, view_context)};
+            QueryAnalysisPass(/*only_analyze_=*/ true).run(trees.front(), view_context);
+
+            NameSet required_columns;
+            for (size_t i = 0; i < trees.size(); ++i)
+            {
+                auto tree = trees[i];
+                for (auto & column : collectSelectedColumnsFromTable(tree, current_storage_id, view_context))
+                    required_columns.insert(std::move(column));
+                collectConstantSources(tree, trees);
+            }
 
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);
