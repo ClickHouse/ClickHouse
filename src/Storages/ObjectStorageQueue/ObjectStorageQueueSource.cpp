@@ -1853,7 +1853,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         error_code);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
-    const auto after_processing = after_processing_settings.after_processing;
+    const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
@@ -1869,6 +1869,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 configuration->getType(),
                 object_storage,
                 getName(),
+                files_metadata->getTableMetadata(),
                 after_processing_settings);
             postProcessor.process(successful_objects, post_processing_failed_paths);
 

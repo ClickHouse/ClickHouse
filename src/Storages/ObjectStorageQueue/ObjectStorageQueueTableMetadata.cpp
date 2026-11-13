@@ -239,8 +239,6 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
 
         processing_threads_num = from_zk.processing_threads_num.load();
     }
-
-    after_processing = from_zk.after_processing.load();
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const
@@ -250,6 +248,14 @@ void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableM
 
 void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const
 {
+    if (after_processing != from_zk.after_processing)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs "
+            "in action after processing. Stored in ZooKeeper: {}, local: {}",
+            DB::toString(from_zk.after_processing.load()),
+            DB::toString(after_processing.load()));
+
     if (mode != from_zk.mode)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,

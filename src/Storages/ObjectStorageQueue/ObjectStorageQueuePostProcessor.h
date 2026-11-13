@@ -15,7 +15,6 @@ class ObjectStorageQueuePostProcessor : public WithContext
 public:
     struct AfterProcessingSettings
     {
-        ObjectStorageQueueAction after_processing{};
         UInt32 after_processing_retries{};
         String after_processing_move_uri;
         String after_processing_move_prefix;
@@ -33,6 +32,7 @@ public:
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
         String engine_name_,
+        const ObjectStorageQueueTableMetadata & table_metadata_,
         AfterProcessingSettings settings_);
 
     /// Like a move to another S3 bucket, a move to another Azure container must carry its own credentials.
@@ -59,6 +59,7 @@ private:
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
     const String engine_name;
+    const ObjectStorageQueueTableMetadata & table_metadata;
     const AfterProcessingSettings settings;
 
     LoggerPtr log;

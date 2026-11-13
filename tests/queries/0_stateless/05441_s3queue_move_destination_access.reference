@@ -33,26 +33,3 @@ CREATE ON CLUSTER with WRITE on S3: created
 CREATE AS ON CLUSTER with WRITE on S3: created
 ATTACH with WRITE on S3: attached
 RESTORE TEMPORARY with WRITE on S3: restored	1
--- Tables sharing a keeper_path, each with its own after_processing
-1
-1
-shared_a	keep
-shared_b	delete
-keeper	keep
-a	['1.csv']
-b	[]
-shared_a	delete
-shared_b	delete
-keeper	delete
-a	['1.csv']
-b	[]
-shared_a	delete
-shared_b	keep
-keeper	keep
-a	['1.csv']
-b	['2.csv']
-shared_a	delete
-shared_b	keep
-keeper	delete
-a	['1.csv']
-b	['2.csv','3.csv']

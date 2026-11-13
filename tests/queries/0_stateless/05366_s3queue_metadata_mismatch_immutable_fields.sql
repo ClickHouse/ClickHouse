@@ -16,6 +16,11 @@ ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366', processing_threads_num = 1,
          polling_min_timeout_ms = 1, polling_max_timeout_ms = 1, polling_backoff_ms = 0;
 
+-- `after_processing`: stored as 'keep', local 'delete'.
+CREATE TABLE tq1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
+SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
+         after_processing = 'delete'; -- { serverError METADATA_MISMATCH }
+
 -- `bucketing_mode`: stored as 'path', local 'partition'. A 'partition' bucketing mode hashes the
 -- partition key instead of the path, so `bucketing_mode = 'partition'` is rejected outright unless a
 -- partitioning mode is set too. To vary `bucketing_mode` alone, a second keeper path already stores
