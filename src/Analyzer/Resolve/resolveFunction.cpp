@@ -1342,7 +1342,12 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
         /// The exact comparison uses each operand in several branches. Bind both
         /// operands once so nested `IN` expressions grow linearly and the query
         /// can still be sent to older shards using existing function names.
-        const DataTypes argument_types{left_argument->getResultType(), right_argument->getResultType()};
+        auto left_array = buildResolvedFunction("array", {left_argument}, context);
+        auto right_array = buildResolvedFunction("array", {right_argument}, context);
+        const auto * left_array_type = typeid_cast<const DataTypeArray *>(left_array->getResultType().get());
+        const auto * right_array_type = typeid_cast<const DataTypeArray *>(right_array->getResultType().get());
+        chassert(left_array_type && right_array_type);
+        const DataTypes argument_types{left_array_type->getNestedType(), right_array_type->getNestedType()};
         auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_exact_left", "__in_exact_right"});
         lambda_arguments->resolve(argument_types);
         auto left_value = std::make_shared<ColumnNode>(
@@ -1353,8 +1358,6 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
         auto lambda = std::make_shared<LambdaNode>(
             lambda_arguments, body, false /*is_operator*/,
             std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
-        auto left_array = buildResolvedFunction("array", {left_argument}, context);
-        auto right_array = buildResolvedFunction("array", {right_argument}, context);
         auto mapped = buildResolvedFunction("arrayMap", {lambda, std::move(left_array), std::move(right_array)}, context);
         return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
     }
