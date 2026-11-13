@@ -20,6 +20,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/LiteralTokenInfo.h>
@@ -528,7 +530,7 @@ static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr 
     const auto & src_names = src_tuple_type->getElementNames();
     const auto & dst_names = dst_tuple_type->getElementNames();
 
-    std::unordered_map<std::string_view, size_t> src_positions;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> src_positions;
     for (size_t i = 0; i < src_names.size(); ++i)
         src_positions[src_names[i]] = i;
 
@@ -547,7 +549,7 @@ static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr 
     if (src_names.size() != dst_names.size() || common_names_count != dst_names.size())
         return;
 
-    std::vector<size_t> dst_to_src(dst_names.size());
+    VectorWithMemoryTracking<size_t> dst_to_src(dst_names.size());
     for (size_t i = 0; i < dst_names.size(); ++i)
         dst_to_src[i] = src_positions.at(dst_names[i]);
 
@@ -603,7 +605,7 @@ static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_t
     const auto & src_names = src_tuple_type->getElementNames();
     const auto & dst_names = dst_tuple_type->getElementNames();
 
-    std::unordered_map<std::string_view, size_t> src_positions;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> src_positions;
     for (size_t i = 0; i < src_names.size(); ++i)
         src_positions[src_names[i]] = i;
 
