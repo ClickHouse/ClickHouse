@@ -87,17 +87,6 @@ namespace
         table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, routing_hash);
     }
 
-    /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
-    /// its iteration handed out (see `forEachMappedCellWithHash`), which goes in with `emplaceIteratedKey`.
-    template <typename Table, typename Key>
-    void ALWAYS_INLINE emplaceSourceKey(Table & table, const Key & key, typename Table::LookupResult & it, bool & inserted, size_t hash)
-    {
-        if constexpr (requires { table.emplaceIteratedKey(key, it, inserted, hash); })
-            table.emplaceIteratedKey(key, it, inserted, hash);
-        else
-            table.emplace(key, it, inserted, hash);
-    }
-
     /// Prefetches the table slot of a staged record ahead of its emplace: hash-organized tables
     /// by the routing hash, string tables from the key bytes and the hash.
     template <typename Key, typename Table>
@@ -725,7 +714,7 @@ void Aggregator::adoptSourceCells(Table & table, const ForEachCell & for_each_ce
 
         typename Table::LookupResult it;
         bool inserted = false;
-        emplaceSourceKey(table, key, it, inserted, hash);
+        table.emplaceIteratedKey(key, it, inserted, hash);
         if constexpr (MapAggregationMethod<Method>)
         {
             AggregateDataPtr & source_place = *mapped;
@@ -784,7 +773,7 @@ size_t Aggregator::selectCountFirstBestGroups(
             return;
         typename Table::LookupResult it;
         bool inserted = false;
-        emplaceSourceKey(counting_table, key, it, inserted, hash);
+        counting_table.emplaceIteratedKey(key, it, inserted, hash);
         const UInt64 count = getCountState(*mapped + rank_offset);
         UInt64 & group_count = getInlineCountState(it->getMapped());
         if (inserted)

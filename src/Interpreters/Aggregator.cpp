@@ -3896,7 +3896,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         if constexpr (is_void_mapped)
         {
             /// `src_data` is the cell's `VoidMapped` placeholder - the key union is the whole merge.
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_method.data.emplaceIteratedKey(key, it, inserted, hash_value);
         }
         else
         {
@@ -3904,7 +3904,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
             if (!src_data)
                 return;
 
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_method.data.emplaceIteratedKey(key, it, inserted, hash_value);
             adopt_or_collect(inserted, it->getMapped(), src_data);
         }
     };
