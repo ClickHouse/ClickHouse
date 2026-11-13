@@ -4607,6 +4607,10 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
       */
     const auto & sample_block = info.key_expr->getSampleBlock();
 
+    /// A key expression is always deterministic, so a column named like `rand()` must not stand in for a call to `rand`.
+    if (node.isFunction() && !node.toFunctionNode().getFunctionBase()->isDeterministicInScopeOfQuery())
+        return false;
+
     /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
 
