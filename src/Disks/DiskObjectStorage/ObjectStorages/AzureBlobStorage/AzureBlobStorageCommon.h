@@ -235,7 +235,7 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 /// reported as `LOGICAL_ERROR`, not handled gracefully, so that it stays on the logical-error
 /// radar of monitoring; note that debug and sanitizer builds abort when such an exception is
 /// constructed, so tests of this behavior only run in release builds.
-String getETag(const Azure::ETag & etag);
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 
