@@ -168,9 +168,8 @@ SELECT o.k,
 FROM values('k Nullable(Int32)', (NULL), (5)) AS o
 ORDER BY o.k NULLS LAST;
 
--- Null-safe match (IS NOT DISTINCT FROM) over a nullable key: the decorrelation identity join uses plain
--- equality, so a NULL-key group does not match (a pre-existing limitation shared by sum()/EXISTS, not specific
--- to this restore) -- the NULL outer row reports 0. Asserting current behavior to track it.
+-- Null-safe match (IS NOT DISTINCT FROM) over a nullable key: the decorrelation join matches a NULL outer
+-- value to its own group null-safely, so the NULL outer row counts the two inner NULL rows.
 SELECT o.k, (SELECT count() FROM values('k Nullable(Int32)', (NULL), (NULL), (5)) AS i WHERE i.k IS NOT DISTINCT FROM o.k) AS c
 FROM values('k Nullable(Int32)', (NULL), (5)) AS o
 ORDER BY o.k NULLS LAST;
