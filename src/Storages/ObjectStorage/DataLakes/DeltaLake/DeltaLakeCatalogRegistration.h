@@ -13,7 +13,7 @@
 namespace DB
 {
 
-/// Register a Delta table (just created or attached by `DeltaLakeMetadata::createInitial`) with a data lake catalog (Unity).
+/// Register a Delta table (just created or attached by `DeltaLakeMetadataDeltaKernel::createInitial`) with a data lake catalog (Unity).
 void registerDeltaTableInCatalog(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const ObjectStoragePtr & object_storage,

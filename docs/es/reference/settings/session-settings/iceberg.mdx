@@ -34,11 +34,21 @@ Las tareas de decodificación se pausan cuando la cola se llena y la consulta no
 
 Debe ser mayor que cero.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para listar solo el prefijo de clave `metadata\/v` al buscar el archivo de metadatos más reciente de una tabla Iceberg leída por ruta."}]}]} />
+
+Busca el archivo de metadatos más reciente de una tabla Iceberg leída por ruta en S3 o Azure listando únicamente el prefijo de clave `metadata/v`, de modo que no se listen los manifiestos almacenados en el mismo directorio `metadata`. Si este prefijo contiene archivos `.metadata.json`, solo esos archivos son candidatos; de lo contrario, se lista el directorio completo. No se aplica cuando se usan `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` o `iceberg_recent_metadata_file_by_last_updated_ms_field`, ni a las tablas de una base de datos de catálogo de lago de datos.
+
+Actívelo solo para tablas cuyos archivos de metadatos sigan todos el formato `v<N>...` (que es como los nombran los catálogos de ClickHouse y Hadoop): en un directorio que también contenga archivos `<N>-<uuid>.metadata.json`, esos archivos nunca se consideran candidatos, por lo que los commits de su escritor no se detectan.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +72,14 @@ Debe ser mayor que cero.
       label:
         "Nueva configuración que limita cuántos archivos de manifiesto de borrado de Iceberg se decodifican de forma concurrente antes de leer la primera fila. Antes de 26.8, los manifiestos se decodificaban de uno en uno, con el fetch del siguiente ya en curso, por lo que `2` es el equivalente más cercano al comportamiento anterior, en el que la suma de sus round-trips al almacenamiento de objetos quedaba en la ruta crítica antes de la primera fila. En aquel momento, la configuración se llamaba `iceberg_delete_manifest_decode_concurrency`, nombre que ahora es un alias de esta."
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "Aumenta de 4 a 16 el número predeterminado de archivos de manifiesto de Iceberg que se decodifican de forma concurrente, para solapar más round-trips al almacenamiento de objetos en tablas con muchos manifiestos." }
   ]
 }
 ]}
@@ -97,6 +115,16 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "Nueva configuración"}]}]} />
 
 Umbral para los archivos de datos de compactación en Iceberg.
+
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "Nuevo ajuste. `remove_orphan_files` rechaza un `older_than` que esté a menos de esta cantidad de segundos del momento actual, de modo que conserva los archivos de una escritura que comenzó hace menos de ese tiempo y todavía no ha hecho commit. Establecer `compatibility` con versiones anteriores a la 26.10 restaura el comportamiento anterior (sin mínimo)."}]}]} />
+
+Antigüedad mínima, en segundos, de los archivos que `ALTER TABLE ... EXECUTE remove_orphan_files` puede eliminar de una tabla Iceberg. Se rechaza cualquier `older_than` (indicado explícitamente o derivado de `iceberg_orphan_files_older_than_seconds`) que esté más cerca del momento actual que este valor, ya que los archivos de una escritura que todavía no ha hecho commit no están referenciados en la metadata de la tabla y se eliminarían, lo que dejaría la tabla corrupta en el momento en que la escritura hiciera commit. Configúrelo con un valor superior al tiempo máximo que una escritura en la tabla puede tardar en hacer commit. Con el valor 0 se deshabilita la comprobación.
 
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 

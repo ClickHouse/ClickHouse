@@ -18,6 +18,16 @@ for test_case in "${tests_with_query_log[@]}"; do
     } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
+# Queries to system.text_log should have an event_time condition: the table is large on CI servers,
+# and a full scan exceeds max_rows_to_read of the test profile. A test that must scan it all sets max_rows_to_read = 0.
+tests_with_text_log=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep --with-filename -E 'system\.text_log\b' | grep -vE '^[^:]*:\s*(--|#)' | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_text_log[@]}"; do
+    grep -qiE '\bevent_time(_microseconds)?\s*(>|<|=|BETWEEN\b)|max_rows_to_read\s*=\s*0' "$test_case" || echo "Query to system.text_log does not have an event_time condition in $test_case"
+done
+
 grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateless tests, because it will break concurrently running queries"
 
 
@@ -171,8 +181,6 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # without a query context (e.g. by `system.functions` which only needs to read
     # `getSignatureString`). These are non-deterministic functions and are not used
     # in default expressions.
-    -e /timeSeriesTagsToGroup.cpp
-    -e /timeSeriesStoreTags.cpp
     -e /FunctionsTransactionCounters.cpp
     -e /FunctionNaiveBayesClassifier.cpp
     # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the
@@ -191,7 +199,7 @@ find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or 
 
 # Check for misuse of timeout in .sh tests
 find $ROOT_PATH/tests/queries -name '*.sh' |
-    grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
+    grep -vP 'queries/shell_config\.sh|02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
     xargs grep -l -P 'export -f' |
     xargs grep -l -F 'timeout' &&
     echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
@@ -269,6 +277,10 @@ for test_case in "${curl_flush_logs_tests[@]}"; do
         echo "$test_case uses curl and SYSTEM FLUSH LOGS without a retry loop. Add a retry loop to handle the race between HTTP response and log entry writing. See https://github.com/ClickHouse/ClickHouse/issues/84364"
     fi
 done
+
+# Unbounded loops spin forever on the host when the runner dies before `clickhouse-test` kills the test.
+git grep -nP '^[^#]*\bwhile\s+(true|:)\s*(;|$)' -- "$ROOT_PATH/tests/queries/0_stateless/*.sh" "$ROOT_PATH/tests/queries/0_stateless/*.lib" &&
+    echo "Use 'while clickhouse_test_time_left' instead of an unbounded loop in tests, see shell_config.sh"
 
 # `clickhouse-test` passes non-SQL tests to the interpreter for their extension (`TEST_INTERPRETERS`), so the shebang
 # must name that interpreter.

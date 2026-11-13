@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-msan, no-parallel-replicas
+# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # what EXPLAIN WHATIF refuses to estimate, and which settings it follows; the mark counts live in 05076
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1566,8 +1566,22 @@ struct ConvertThroughParsing
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
-            ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
-            read_buffer.setPadded();
+            const char * string_begin = reinterpret_cast<const char *>(chars->data()) + current_offset;
+
+            /// Fast path for canonical IPv4 addresses; anything else (e.g. leading zeros) falls back to the generic parser.
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && std::is_same_v<ToDataType, DataTypeIPv4>)
+            {
+                if (tryParseIPv4(string_begin, string_begin + string_size, vec_to[i].toUnderType()))
+                {
+                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                        (*vec_null_map_to)[i] = false;
+                    current_offset = next_offset;
+                    continue;
+                }
+            }
+
+            ReadBufferFromMemory read_buffer(string_begin, string_size);
+            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -4191,6 +4205,9 @@ private:
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
             {
+                /// Types without values are not converted, so they cannot fail the conversion.
+                if (args[0].column->empty())
+                    return nullptr;
                 return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 

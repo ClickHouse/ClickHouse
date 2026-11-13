@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <gtest/gtest.h>
 
@@ -45,7 +45,7 @@ void convertToArrow(const DataTypePtr & type, const Field & value)
     Columns columns;
     columns.emplace_back(std::move(column));
 
-    std::vector<Chunk> chunks;
+    Chunks chunks;
     chunks.emplace_back(std::move(columns), 1);
 
     CHColumnToArrowColumn converter(header_columns, "Arrow", CHColumnToArrowColumn::Settings{});

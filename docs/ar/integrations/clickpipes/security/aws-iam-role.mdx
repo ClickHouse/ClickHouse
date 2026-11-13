@@ -1,0 +1,58 @@
+---
+title: 'المصادقة باستخدام دور AWS IAM في ClickPipes'
+sidebarTitle: 'أدوار AWS IAM'
+slug: /integrations/clickpipes/security/aws-iam-role
+description: 'استخدم أدوار AWS IAM لمنح ClickPipes الوصول إلى مصادر البيانات دون الحاجة إلى تخزين مفاتيح الوصول الخاصة بـ AWS.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'aws', 'iam role', 'role-based access', 'authentication']
+---
+
+تتيح المصادقة باستخدام دور AWS IAM لـ ClickPipes الوصول إلى مصادر AWS المدعومة دون الحاجة إلى تخزين مفاتيح الوصول الخاصة بـ AWS. للقيام بذلك، أنشئ دورًا في حساب AWS الخاص بك، واسمح لخدمة ClickHouse Cloud بتولّي هذا الدور، ثم امنحه الصلاحيات اللازمة للوصول إلى المصدر.
+
+## قبل البدء {#before-you-begin}
+
+* لاستخدام المصادقة باستخدام دور IAM، يجب أن تكون خدمة ClickHouse Cloud الخاصة بك مستضافة على AWS.
+* تحتاج إلى صلاحية إنشاء أدوار IAM وتهيئتها في حساب AWS الذي يملك المصدر.
+* لمصادقة قواعد بيانات RDS أو Aurora، تحتاج أيضًا إلى صلاحية تمكين مصادقة قاعدة البيانات عبر IAM وتهيئة مستخدم قاعدة البيانات.
+
+## آلية العمل {#how-it-works}
+
+1. اعثر على **معرّف دور الخدمة (IAM)** الخاص بخدمة ClickHouse Cloud لديك ضمن **Settings → Network security information**. يحدّد عنوان ARN هذا الدورَ الذي تستخدمه ClickPipes لطلب الوصول.
+2. أنشئ دورًا في حساب AWS الخاص بك، واضبط علاقة الثقة فيه بحيث يُسمح لدور خدمة ClickHouse بتولّيه.
+3. امنح هذا الدور الصلاحيات التي يتطلبها المصدر، وفقًا لدليل الإعداد الخاص به أدناه.
+4. هيّئ ClickPipe لاستخدام عنوان ARN الخاص بالدور الذي أنشأته. تتولّى ClickPipes هذا الدور عند الاتصال بالمصدر.
+
+## تهيئة سياسة الثقة {#configure-trust-policy}
+
+استخدم سياسة الثقة التالية عند إنشاء الدور في حساب AWS الخاص بك. استبدل `{ClickHouse_IAM_ARN}` بقيمة ARN الخاصة بـ **معرّف دور الخدمة (IAM)** لخدمة ClickHouse Cloud لديك:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+بالنسبة إلى **المصادقة باستخدام IAM لقواعد بيانات RDS وAurora**، اسمح بكلٍّ من `sts:AssumeRole` و`sts:TagSession` في حقل `Action`. اتبع [دليل المصادقة باستخدام IAM الخاص بقاعدة البيانات](/ar/integrations/clickpipes/postgres/auth) لإتمام الإعداد كاملاً، بما في ذلك مستخدم قاعدة البيانات المفعّلة له المصادقة باستخدام IAM.
+
+تختلف **سياسة الصلاحيات** الخاصة بالدور وأي متطلبات لتسميته باختلاف المصدر. استخدم الدليل الخاص بكل مصدر أدناه لتهيئتها.
+
+## اختر مصدرك {#choose-your-source}
+
+| المصدر أو التكامل                                                   | دليل الإعداد                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Amazon S3                                                           | [المصادقة باستخدام دور IAM في S3](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role). للاستيعاب المستمر باستخدام إشعارات SQS، اتبع [خطوات إعداد دور IAM للوضع غير المرتب](/ar/integrations/clickpipes/object-storage/amazon-s3/unordered-mode#configure-iam-role). |
+| Amazon Kinesis                                                      | [الوصول المستند إلى الأدوار في Kinesis](/ar/integrations/clickpipes/kinesis/auth#setup).                                                                                                                                                                                             |
+| Amazon MSK                                                          | [أذونات IAM وعلاقة الثقة في MSK](/ar/integrations/clickpipes/kafka/best-practices#iam).                                                                                                                                                                                              |
+| Amazon RDS (PostgreSQL وMySQL وMariaDB) وAurora (PostgreSQL وMySQL) | اختر [دليل المصادقة باستخدام IAM الخاص بقاعدة بياناتك](/ar/integrations/clickpipes/postgres/auth). تتطلب هذه المصادر أيضًا مستخدم قاعدة بيانات مفعّلةً له مصادقة IAM، إضافةً إلى صلاحية `rds-db:connect`.                                                                            |
+| AWS Glue Schema Registry                                            | [أعد استخدام دور IAM الخاص بـ MSK أو هيّئ دورًا مخصصًا للسجل](/ar/integrations/clickpipes/kafka/schema-registries#glue-iam-setup).                                                                                                                                                   |
+
+تتحكم المصادقة باستخدام دور IAM في الوصول إلى المصدر فقط، لذا هيّئ [الاتصال الشبكي](/ar/integrations/clickpipes/networking/index) بشكل منفصل إذا كان المصدر خاصًا.

@@ -40,6 +40,7 @@ namespace ProfileEvents
     extern const Event QueryCacheMisses;
     extern const Event QueryCacheOnDiskHits;
     extern const Event QueryCacheOnDiskMisses;
+    extern const Event QueryCacheOnDiskReadBytes;
     extern const Event QueryCacheAgeSeconds;
     extern const Event QueryCacheReadRows;
     extern const Event QueryCacheReadBytes;
@@ -90,6 +91,12 @@ struct HasNonDeterministicFunctionsMatcher
     {
         if (data.has_non_deterministic_functions)
             return;
+
+        if (const auto * select = node->as<ASTSelectQuery>(); select && select->shuffle)
+        {
+            data.has_non_deterministic_functions = true;
+            return;
+        }
 
         if (const auto * function = node->as<ASTFunction>())
         {
@@ -217,49 +224,18 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 }
 
 /// Returns the context a (sub)query runs with after its query-level `SETTINGS` clause has been applied
-/// to `context`, as far as `obfuscate_seed` is concerned. Besides `obfuscate_seed` itself, the seed can
-/// be changed by `profile`, which applies all settings of a settings profile, so replay both - in the
-/// same way as `applyQueryLevelSettings` in `QueryTreeBuilder` does when it builds the context of the
-/// nested query: changes one at a time, each clamped to the settings constraints, then the resets.
-/// Returns `context` itself when the clause can not change the seed, to avoid copying the context.
-static ContextPtr applyObfuscateSeedChanges(const ASTPtr & settings_ast, const ContextPtr & context)
+/// to `context`, in the same way as `applyQueryLevelSettings` in `QueryTreeBuilder` does when it builds
+/// the context of the nested query. The whole clause is replayed, not only `obfuscate_seed`: other
+/// settings decide whether the seed assignment is allowed at all - e.g. `readonly = 1` before it makes
+/// the constraints drop it - and `profile` can change the seed too.
+static ContextPtr applyQueryLevelSettings(const ASTPtr & settings_ast, const ContextPtr & context)
 {
     const auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
-    if (!set_query)
-        return context;
-
-    auto affects_seed = [](const String & name) { return name == "obfuscate_seed" || name == "profile"; };
-
-    SettingsChanges changes;
-    for (const auto & change : set_query->changes)
-        if (affects_seed(change.name))
-            changes.push_back(change);
-
-    /// `SETTINGS name = DEFAULT` is stored separately.
-    std::vector<String> resets;
-    for (const auto & name : set_query->default_settings)
-        if (affects_seed(name))
-            resets.push_back(name);
-
-    if (changes.empty() && resets.empty())
+    if (!set_query || (set_query->changes.empty() && set_query->default_settings.empty()))
         return context;
 
     auto updated_context = Context::createCopy(context);
-    for (const auto & change : changes)
-    {
-        SettingsChanges single_change{change};
-        updated_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
-        updated_context->applySettingsChanges(single_change);
-    }
-
-    if (!resets.empty())
-    {
-        SettingsChanges clamped_resets;
-        updated_context->clampSettingsConstraintsForSettingsReset(resets, clamped_resets, SettingSource::QUERY);
-        updated_context->resetSettingsToDefaultValue(resets);
-        updated_context->applySettingsChanges(clamped_resets);
-    }
-
+    updated_context->applyNestedQuerySettingsClamped(set_query->changes, set_query->default_settings);
     return updated_context;
 }
 
@@ -280,17 +256,17 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     ///  - `ASTSelectQuery::settings()` - a plain `SELECT`;
     ///  - the *last* arm of a `UNION` - in every nested position the parser leaves a trailing
     ///    union-level clause there instead of filling `settings_ast`. After
-    ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier is the last
-    ///    operand of an `ASTSelectIntersectExceptQuery`.
+    ///    `SelectIntersectExceptQueryVisitor` has normalized the arms, the same carrier can be nested
+    ///    into `ASTSelectIntersectExceptQuery` nodes (see `ASTSelectIntersectExceptQuery::getTrailingSettings`),
+    ///    and it governs every node on the way to it.
     if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
-        context = applyObfuscateSeedChanges(query_with_output->settings_ast, context);
+        context = applyQueryLevelSettings(query_with_output->settings_ast, context);
 
     if (const auto * select_with_union = node->as<ASTSelectWithUnionQuery>())
     {
         const auto & arms = select_with_union->list_of_selects->children;
         if (!arms.empty())
-            if (const auto * last_arm = arms.back()->as<ASTSelectQuery>())
-                context = applyObfuscateSeedChanges(last_arm->settings(), context);
+            context = applyQueryLevelSettings(ASTSelectIntersectExceptQuery::getTrailingSettings(arms.back()), context);
     }
 
     /// Check the intersect/except node before the plain-select check: it inherits `ASTSelectQuery`,
@@ -299,12 +275,11 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
     {
         const auto & operands = intersect_except->children;
         if (!operands.empty())
-            if (const auto * last_operand = operands.back()->as<ASTSelectQuery>())
-                context = applyObfuscateSeedChanges(last_operand->settings(), context);
+            context = applyQueryLevelSettings(ASTSelectIntersectExceptQuery::getTrailingSettings(operands.back()), context);
     }
 
     if (const auto * select = node->as<ASTSelectQuery>())
-        context = applyObfuscateSeedChanges(select->settings(), context);
+        context = applyQueryLevelSettings(select->settings(), context);
 
     if (const auto * function = node->as<ASTFunction>())
         if (function->name == "obfuscate" && context->getSettingsRef()[Setting::obfuscate_seed].value.empty())
@@ -837,6 +812,11 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+void QueryResultCacheWriter::markResultIncomplete()
+{
+    result_is_incomplete = true;
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -853,6 +833,12 @@ void QueryResultCacheWriter::finalizeWrite()
     std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
+
+    if (result_is_incomplete)
+    {
+        LOG_TRACE(logger, "Skipped insert because the query result is incomplete (a consumer stopped reading it before the end), query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {
@@ -1004,8 +990,10 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
         total_rows += chunk.getNumRows();
         total_bytes += chunk.bytes();
     }
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
+    /// Recorded by `hasCacheEntryForKey`, not here: a query whose quota over profile events is exhausted probes the cache, but is
+    /// rejected before it reads the result, so it must not be charged with these events.
+    read_rows = total_rows;
+    read_bytes = total_bytes;
 
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
@@ -1033,14 +1021,20 @@ QueryResultCacheReader::QueryResultCacheReader(
     Source source_,
     SharedHeader header,
     QueryResultCache::Entry && entry,
+    ResultColumnOrigins && result_column_origins_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
-    std::chrono::time_point<std::chrono::system_clock> expires_at_)
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool ignore_quota_,
+    size_t on_disk_read_bytes_)
     : source(source_)
+    , on_disk_read_bytes(on_disk_read_bytes_)
 {
     buildSourceFromChunks(header, std::move(entry.chunks), entry.totals, entry.extremes);
 
     created_at = created_at_;
     expires_at = expires_at_;
+    ignore_quota = ignore_quota_;
+    result_column_origins = std::move(result_column_origins_);
 }
 
 QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
@@ -1106,6 +1100,8 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
 
     created_at = entry_key.created_at;
     expires_at = entry_key.expires_at;
+    ignore_quota = entry_key.ignore_quota;
+    result_column_origins = entry_key.result_column_origins;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
@@ -1121,6 +1117,14 @@ bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) con
         /// both backends enabled, a miss in memory followed by a hit on disk is a hit of the query result cache.
         if (source == Source::OnDisk)
             ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheOnDiskHits : ProfileEvents::QueryCacheOnDiskMisses);
+
+        if (has_entry)
+        {
+            ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, read_rows);
+            ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, read_bytes);
+            if (on_disk_read_bytes)
+                ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskReadBytes, on_disk_read_bytes);
+        }
 
         /// The age of the entry is a property of the hit and not of the backend that served it, so it is recorded for both.
         if (has_entry)
@@ -1138,6 +1142,13 @@ void QueryResultCacheReader::recordProbeResult(bool has_entry)
     ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
 }
 
+void QueryResultCacheReader::recordMiss(bool probed_on_disk)
+{
+    if (probed_on_disk)
+        ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskMisses);
+    recordProbeResult(false);
+}
+
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
 {
@@ -1149,6 +1160,18 @@ std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entry
 {
     chassert(hasCacheEntryForKey(false));
     return expires_at;
+}
+
+bool QueryResultCacheReader::entryIgnoresQuota() const
+{
+    chassert(hasCacheEntryForKey(false));
+    return ignore_quota;
+}
+
+const ResultColumnOrigins & QueryResultCacheReader::entryResultColumnOrigins() const
+{
+    chassert(hasCacheEntryForKey(false));
+    return result_column_origins;
 }
 
 std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSource()

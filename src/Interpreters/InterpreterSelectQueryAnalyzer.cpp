@@ -24,8 +24,10 @@
 
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/getResultColumnOrigins.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -158,9 +160,9 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             || settings[Setting::parallel_replicas_mode] != ParallelReplicasMode::READ_TASKS))
         result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
 
-    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// Injecting `SHUFFLE` (the setting `inject_random_order_for_select_without_order_by`) is only valid
     /// for a query processed up to the stage `Complete`: the injection wraps the query into
-    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
+    /// `SELECT * FROM (...) SHUFFLE`, and if the query is planned only up to an intermediate stage
     /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
     /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
     /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,
@@ -170,6 +172,13 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         result_context->setSetting("inject_random_order_for_select_without_order_by", false);
 
     return result_context;
+}
+
+SelectQueryOptions buildSelectQueryOptions(const SelectQueryOptions & select_query_options, const ContextPtr & context, const StoragePtr & storage)
+{
+    auto result = select_query_options;
+    result.view_source_in_subqueries = (storage && storage == context->getViewSource()) || select_query_options.view_source_in_subqueries;
+    return result;
 }
 
 template <typename... Args>
@@ -206,6 +215,10 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// The automatic mode decides with its own cost model, and the row estimate that
+    /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
+    /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
+    ctx->setIsAutomaticParallelReplicasProbe(true);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -380,6 +393,11 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+StoragePtr getViewSourceIfRead(const ContextPtr & context, bool reads_view_source)
+{
+    return reads_view_source && !context->isViewInnerQuery() ? context->getViewSource() : nullptr;
+}
+
 /// The plan steps captured the query tree node contexts by pointer at build time, so the
 /// distributed-to-local fallback must flip the setting in place on those same objects
 /// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
@@ -400,24 +418,41 @@ static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, co
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
-    const StoragePtr & storage)
+    const StoragePtr & storage,
+    ResultColumnOrigins & result_column_origins)
 {
     ProfileEventTimeIncrement<Microseconds> analysis_time_watch(ProfileEvents::QueryAnalysisMicroseconds);
 
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
+    /// Only this analysis swaps the view source in, so only it may analyze the view source table without data.
     addQueryTreePasses(
-        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
+        query_tree_pass_manager,
+        select_query_options.only_analyze,
+        select_query_options.positional_arguments_already_resolved,
+        storage && storage == context->getViewSource() ? storage : nullptr,
+        select_query_options.view_source_in_subqueries);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+        result_column_origins = getResultColumnOrigins(query_tree);
+        /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
+        DisableParallelReplicasPass{}.run(query_tree, context);
+    }
     else
-        query_tree_pass_manager.run(query_tree);
+    {
+        /// The origins are collected before the optimizations: they can rewrite an expression into a column
+        /// (e.g. `length(arr)` into the subcolumn `arr.size0`), but the result of an expression has no origin.
+        query_tree_pass_manager.runOnlyResolve(query_tree);
+        result_column_origins = getResultColumnOrigins(query_tree);
+        query_tree_pass_manager.runFrom(query_tree, QueryTreePassManager::resolve_passes_count);
+    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
@@ -434,8 +469,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ActionsDAG * post_filter_)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , select_query_options(buildSelectQueryOptions(select_query_options_, context_, nullptr /*storage*/))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, result_column_origins))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
@@ -457,8 +492,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , select_query_options(buildSelectQueryOptions(select_query_options_, context_, storage_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, result_column_origins))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
@@ -487,7 +522,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
-           select_options = select_query_options_,
+           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
            single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {

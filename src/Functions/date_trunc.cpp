@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/toStartOfInterval.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -37,8 +38,11 @@ class FunctionDateTrunc final : public IFunction
 public:
     static constexpr auto name = "dateTrunc";
 
-    FunctionDateTrunc(FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_)
-        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_) {}
+    FunctionDateTrunc(
+        FunctionOverloadResolverPtr to_start_of_interval_,
+        IntervalKind::Kind datepart_kind_,
+        std::optional<Date32RoundingNarrowing> date32_narrowing_)
+        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_), date32_narrowing(date32_narrowing_) {}
 
     String getName() const override { return name; }
 
@@ -76,14 +80,17 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
+        if (date32_narrowing)
+            return getDate32RoundingMonotonicity(*date32_narrowing, left, right);
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
     FunctionOverloadResolverPtr to_start_of_interval;
     IntervalKind::Kind datepart_kind;
+    std::optional<Date32RoundingNarrowing> date32_narrowing;
 };
 
 
@@ -93,7 +100,9 @@ public:
     static constexpr auto name = "dateTrunc";
 
     explicit FunctionDateTruncOverloadResolver(ContextPtr context)
-        : to_start_of_interval(FunctionFactory::instance().get("toStartOfInterval", context))
+        /// `dateTrunc` has its own result type, and its results must not depend on `to_start_of_interval_preserves_argument_type`,
+        /// which also changes how `toStartOfInterval` clamps values near the epoch.
+        : to_start_of_interval(createLegacyToStartOfIntervalOverloadResolver(context))
         , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
     {
     }
@@ -251,7 +260,11 @@ public:
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind);
+        std::optional<Date32RoundingNarrowing> date32_narrowing;
+        if (args.size() >= 2 && isDate32(removeLowCardinalityAndNullable(args[1].type)))
+            date32_narrowing = describeDate32RoundingNarrowing(return_type, datepart_kind, 1);
+
+        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind, date32_narrowing);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

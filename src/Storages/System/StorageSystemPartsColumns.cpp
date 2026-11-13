@@ -466,6 +466,7 @@ void StorageSystemPartsColumns::processPart(
         ArrayColumnWriter<ColumnUInt64> subcolumn_data_compressed_bytes(next_column());
         ArrayColumnWriter<ColumnUInt64> subcolumn_data_uncompressed_bytes(next_column());
         ArrayColumnWriter<ColumnUInt64> subcolumn_marks_bytes(next_column());
+        NamesAndTypesList subcolumns;
 
         const bool need_subcolumn_sizes = subcolumn_bytes_on_disk || subcolumn_data_compressed_bytes || subcolumn_data_uncompressed_bytes || subcolumn_marks_bytes;
 
@@ -492,34 +493,25 @@ void StorageSystemPartsColumns::processPart(
                 if (!need_subcolumn_sizes)
                     return;
 
-                ColumnSize size;
-                NameAndTypePair subcolumn(column.name, name, column.type, data.type);
-
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, data_settings);
-                if (stream_name)
-                {
-                    auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");
-                    if (bin_checksum != part->checksums.files.end())
-                    {
-                        size.data_compressed += bin_checksum->second.file_size;
-                        size.data_uncompressed += bin_checksum->second.uncompressed_size;
-                    }
-
-                    auto mrk_checksum = part->checksums.files.find(*stream_name + part->index_granularity_info.mark_type.getFileExtension());
-                    if (mrk_checksum != part->checksums.files.end())
-                        size.marks += mrk_checksum->second.file_size;
-                }
-
-                if (subcolumn_bytes_on_disk)
-                    subcolumn_bytes_on_disk.getData().insertValue(size.data_compressed + size.marks);
-                if (subcolumn_data_compressed_bytes)
-                    subcolumn_data_compressed_bytes.getData().insertValue(size.data_compressed);
-                if (subcolumn_data_uncompressed_bytes)
-                    subcolumn_data_uncompressed_bytes.getData().insertValue(size.data_uncompressed);
-                if (subcolumn_marks_bytes)
-                    subcolumn_marks_bytes.getData().insertValue(size.marks);
-
+                subcolumns.emplace_back(column.name, name, column.type, data.type);
             }, ISerialization::SubstreamData(serialization).withType(column.type));
+
+            /// Through the part, as the readers take it, and for all sub-columns of the column at once: a sub-column stored
+            /// in a shared file has no file of its own to measure, and one reader lists the streams of all of them.
+            if (need_subcolumn_sizes)
+            {
+                for (const auto & size : part->getSubcolumnSizes(subcolumns))
+                {
+                    if (subcolumn_bytes_on_disk)
+                        subcolumn_bytes_on_disk.getData().insertValue(size.data_compressed + size.marks);
+                    if (subcolumn_data_compressed_bytes)
+                        subcolumn_data_compressed_bytes.getData().insertValue(size.data_compressed);
+                    if (subcolumn_data_uncompressed_bytes)
+                        subcolumn_data_uncompressed_bytes.getData().insertValue(size.data_uncompressed);
+                    if (subcolumn_marks_bytes)
+                        subcolumn_marks_bytes.getData().insertValue(size.marks);
+                }
+            }
 
             subcolumn_names.finishRow();
             subcolumn_types.finishRow();

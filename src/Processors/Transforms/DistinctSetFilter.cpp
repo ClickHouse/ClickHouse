@@ -1,4 +1,6 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
@@ -83,7 +85,7 @@ struct DistinctLowCardinalityFilter::DictionariesState
     };
 
     /// Per-dictionary state which may cover multiple `IColumn` instances.
-    std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
+    UnorderedMapWithMemoryTracking<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 };
 
 DistinctLowCardinalityFilter::DistinctLowCardinalityFilter()
@@ -229,7 +231,7 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
+    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
 
     if (mask)
     {
@@ -389,6 +391,11 @@ public:
             data.reset();
 
         return columns;
+    }
+
+    size_t getTotalByteCount() const override
+    {
+        return data ? data->getTotalByteCount() : 0;
     }
 
 private:

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <utility>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ public:
         PartsIterator end,
         size_t sum_size,
         size_t sum_rows,
-        size_t min_age,
+        time_t min_age,
         size_t size_prev_at_left,
         double min_partition_age,
         const SimpleMergeSelector::Settings & settings)
@@ -41,7 +42,7 @@ public:
         /// of its own parts or by the age of the whole partition, is exempt from both minimums below.
         const auto qualifies_for_force_merge = [&](time_t trimmed_min_age)
         {
-            if (settings.min_age_to_force_merge && static_cast<size_t>(trimmed_min_age) >= settings.min_age_to_force_merge)
+            if (settings.min_age_to_force_merge && std::cmp_greater_equal(trimmed_min_age, settings.min_age_to_force_merge))
                 return true;
 
             return settings.min_partition_age_to_force_merge && min_partition_age > 0
@@ -50,7 +51,7 @@ public:
 
         const bool should_remove_small_parts_at_right = settings.enable_heuristic_to_remove_small_parts_at_right
             && (!settings.merge_selector_min_age_to_disable_right_tail_heuristic
-                || min_age < settings.merge_selector_min_age_to_disable_right_tail_heuristic);
+                || std::cmp_less(min_age, settings.merge_selector_min_age_to_disable_right_tail_heuristic));
         if (should_remove_small_parts_at_right)
         {
             size_t size_delta = 0;
@@ -359,18 +360,18 @@ void selectWithinPartsRange(
         size_t sum_size = parts[begin].size;
         size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
-        size_t min_age = parts[begin].age;
-        size_t max_age = parts[begin].age;
+        time_t min_age = parts[begin].age;
+        time_t max_age = parts[begin].age;
         bool all_small_and_fresh = settings.small_parts_min_count
             && parts[begin].size < settings.small_parts_threshold
-            && static_cast<size_t>(parts[begin].age) < settings.small_parts_max_age;
+            && std::cmp_less(parts[begin].age, settings.small_parts_max_age);
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             chassert(end > begin);
 
             size_t cur_size = parts[end - 1].size;
-            size_t cur_age = parts[end - 1].age;
+            time_t cur_age = parts[end - 1].age;
             size_t cur_rows = parts[end - 1].rows;
 
             sum_size += cur_size;
@@ -380,7 +381,7 @@ void selectWithinPartsRange(
             max_age = std::max(max_age, cur_age);
             all_small_and_fresh = all_small_and_fresh
                 && cur_size < settings.small_parts_threshold
-                && cur_age < settings.small_parts_max_age;
+                && std::cmp_less(cur_age, settings.small_parts_max_age);
 
             if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
             {
@@ -404,7 +405,7 @@ void selectWithinPartsRange(
                 const size_t range_size = end - begin;
 
                 const bool qualifies_for_force_merge
-                    = (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
+                    = (settings.min_age_to_force_merge && std::cmp_greater_equal(min_age, settings.min_age_to_force_merge))
                     || (settings.min_partition_age_to_force_merge && min_partition_age > 0
                         && min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge));
 

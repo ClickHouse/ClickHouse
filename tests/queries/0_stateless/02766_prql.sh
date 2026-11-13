@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-msan
-# no-msan: PRQL is not built with MSan
+# Tags: no-fasttest, no-random-settings
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "
-SET allow_experimental_prql_dialect = 1;
+SET enable_prql_dialect = 1;
 
 CREATE TEMPORARY TABLE IF NOT EXISTS aboba
 (

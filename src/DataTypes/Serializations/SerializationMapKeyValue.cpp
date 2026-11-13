@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <Common/Exception.h>
@@ -19,12 +20,14 @@ SerializationMapKeyValue::SerializationMapKeyValue(
     const SerializationPtr & map_nested_serialization_,
     MergeTreeMapSerializationVersion serialization_version_,
     ColumnPtr key_,
-    const DataTypePtr & nested_type_)
+    const DataTypePtr & nested_type_,
+    bool read_whole_map_)
     : SerializationWrapper(value_serialization_)
     , map_nested_serialization(map_nested_serialization_)
     , serialization_version(serialization_version_)
     , key(std::move(key_))
     , nested_type(nested_type_)
+    , read_whole_map(read_whole_map_)
 {
 }
 
@@ -33,13 +36,15 @@ SerializationPtr SerializationMapKeyValue::create(
     const SerializationPtr & map_nested_serialization_,
     MergeTreeMapSerializationVersion serialization_version_,
     ColumnPtr key_,
-    const DataTypePtr & nested_type_)
+    const DataTypePtr & nested_type_,
+    bool read_whole_map_)
 {
-    return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_));
+    return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(
+        value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_, read_whole_map_));
 }
 
 /// Deserialization state for reading a single key's value from a Map.
-/// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
+/// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key), unless `read_whole_map` is set.
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState
 {
     /// The specific bucket that contains the requested key (determined by hashing the key).
@@ -66,8 +71,8 @@ void SerializationMapKeyValue::enumerateStreams(
         .withSerializationInfo(data.serialization_info)
         .withDeserializeState(map_key_value_state ? map_key_value_state->nested_state : nullptr);
 
-    /// BASIC format has no bucketing, delegate directly.
-    if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
+    /// BASIC format has no bucketing, delegate directly. The same when the whole Map is read.
+    if (serialization_version == MergeTreeMapSerializationVersion::BASIC || read_whole_map)
     {
         map_nested_serialization->enumerateStreams(settings, callback, next_data);
         return;
@@ -115,8 +120,8 @@ void SerializationMapKeyValue::deserializeBinaryBulkStatePrefix(
 {
     auto map_key_value_state = std::make_shared<DeserializeBinaryBulkStateMapKeyValue>();
 
-    /// BASIC format has no bucketing, delegate directly.
-    if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
+    /// BASIC format has no bucketing, delegate directly. The same when the whole Map is read.
+    if (serialization_version == MergeTreeMapSerializationVersion::BASIC || read_whole_map)
     {
         map_nested_serialization->deserializeBinaryBulkStatePrefix(settings, map_key_value_state->nested_state, cache);
         state = std::move(map_key_value_state);
@@ -148,8 +153,9 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     size_t num_read_rows = 0;
     auto * map_key_value_state = checkAndGetState<DeserializeBinaryBulkStateMapKeyValue>(state);
 
-    /// For the bucketed format, read only the bucket that contains our key.
-    if (serialization_version == MergeTreeMapSerializationVersion::WITH_BUCKETS)
+    /// For the bucketed format, read only the bucket that contains our key, unless the whole Map is read.
+    bool read_one_bucket = serialization_version == MergeTreeMapSerializationVersion::WITH_BUCKETS && !read_whole_map;
+    if (read_one_bucket)
     {
         settings.path.push_back(SubstreamType::Bucket);
         settings.path.back().bucket = map_key_value_state->bucket;
@@ -167,13 +173,15 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
         map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_nested_column, limit, settings, map_key_value_state->nested_state, cache);
         num_read_rows = mutable_nested_column->size();
         nested_column = std::move(mutable_nested_column);
+        if (read_whole_map)
+            nested_column = assert_cast<const ColumnMap &>(*nested_column).getNestedColumnPtr();
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
     }
 
     /// Extract the value for the requested key from the deserialized Map data.
     extractKeyValueFromMap(*nested_column, *key, column, nested_column->size() - num_read_rows, nested_column->size());
 
-    if (serialization_version == MergeTreeMapSerializationVersion::WITH_BUCKETS)
+    if (read_one_bucket)
         settings.path.pop_back();
 }
 

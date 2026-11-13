@@ -3,10 +3,17 @@ from pathlib import PurePosixPath
 
 from ci.defs.defs import ArtifactNames, BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
+from ci.jobs.scripts.clang_tidy_changed_files import (
+    is_selectable_path as is_analyzed_by_clang_tidy,
+    is_generator_input,
+    is_tidy_config_path,
+    normalize_changed_path as normalize_tidy_path,
+)
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
 )
+from ci.jobs.scripts.perf.test_discovery import changed_iceberg_tests, iceberg_code_changed
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.store_data import PRODUCT_CODE_PATHS
 from ci.praktika.info import Info
@@ -141,6 +148,15 @@ def _has_keeper_stress_changes(changed_files):
     return False
 
 
+ICEBERG_PERFORMANCE_JOBS = [j.name for j in JobConfigs.performance_comparison_iceberg_jobs]
+
+def _has_iceberg_performance_changes(changed_files):
+    """True if the change touches the code the Iceberg configuration of the
+    performance comparison measures or its harness, or adds or changes a
+    performance test that the configuration runs (then only those tests run)."""
+    return iceberg_code_changed(changed_files) or bool(changed_iceberg_tests(changed_files, "./tests/performance"))
+
+
 def _has_build_digest_changes(changed_files):
     """True if any changed file may affect the compiled ClickHouse binary,
     per `build_digest_config.include_paths`/`exclude_paths` - the same paths
@@ -178,6 +194,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/print_uncovered_code.py",
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
+    "ci/jobs/scripts/filter_coverage_lines.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     # Exports per-test coverage and runs the post-export selector smoke.
     "ci/jobs/scripts/functional_tests/export_coverage.py",
@@ -217,6 +234,7 @@ _LLVM_COVERAGE_ONLY_PATHS = (
     "ci/jobs/scripts/print_uncovered_code.py",
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
+    "ci/jobs/scripts/filter_coverage_lines.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/functional_tests/export_coverage.py",
     "ci/jobs/scripts/coverage_selection.py",
@@ -281,7 +299,7 @@ SMALL_PR_WORKFLOW = "PR"
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
-    JobNames.BUZZHOUSE,
+    JobNames.LACASADELDOLOR,
     JobNames.SQL_LOGIC_TEST,
     JobNames.SQL_STORM_TEST,
 )
@@ -300,9 +318,12 @@ _COMMON_TEST_PATHS = ("tests/queries/0_stateless/",)
 # Machinery of these jobs that is not a digest input of theirs, but still decides
 # what they do or whether they run at all.
 _EXTRA_STRESS_AND_FUZZER_PATHS = (
-    # The fuzzers themselves live in the server code.
+    # The fuzzers themselves: BuzzHouse, the AST fuzzer's mutator, and the client
+    # that drives both loops (`programs/client/FuzzLoop.cpp` and the options in
+    # `Client.cpp`). The whole directory, changed in 0.3% of commits, not one file.
     "src/Client/BuzzHouse/",
     "src/Common/QueryFuzzer*",
+    "programs/client/",
     # This rule, and the pre-hook computing the line count it reads.
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     "ci/jobs/scripts/workflow_hooks/store_data.py",
@@ -329,7 +350,7 @@ def _stress_and_fuzzer_paths():
     for job in (
         *JobConfigs.stress_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
+        *JobConfigs.lacasadeldolor_jobs,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
     ):
@@ -689,6 +710,24 @@ def _is_empty_merge_commit(sha):
     return num_parents >= 2 and num_files == 0
 
 
+def configure_performance_shards():
+    """Choose one PR shard family before optional workflow filters run."""
+    from ci.jobs.scripts.performance_selection import pr_shards
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    config = RunConfig.from_fs(info.workflow_name)
+    # ci-force-all bypasses workflow_filter_hooks, so mutually exclusive job
+    # families must be filtered in this pre-hook, before claiming any runners.
+    for job in JobConfigs.performance_comparison_pr_jobs:
+        build_type = job.parameter.split(",", 1)[0].strip()
+        total = pr_shards(info, build_type)
+        count = int(job.parameter.rsplit("/", 1)[1])
+        if count != total:
+            config.set_job_as_filtered(job.name, "Other performance shard family selected")
+    config.dump()
+
+
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
@@ -754,6 +793,10 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
+
+    # Not even with the `ci-performance` label: the configuration measures the Iceberg code.
+    if job_name in ICEBERG_PERFORMANCE_JOBS and not _has_iceberg_performance_changes(changed_files):
+        return True, "Skipped, no changes in the Iceberg, object storage or Parquet code or in a performance test it runs"
 
     # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change
@@ -1059,7 +1102,11 @@ def should_skip_job(job_name):
         and "amd" in job_name
         and _info_cache.pr_number  # run all performance jobs on master
     ):
-        return True, "Skipped, not labeled with 'pr-performance'"
+        from ci.jobs.scripts.performance_selection import full_suite_reason
+
+        # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
+        if not full_suite_reason(_info_cache, "arm_release"):
+            return True, "Skipped, not labeled with 'pr-performance'"
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
@@ -1097,13 +1144,20 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, and the docs examples). Only
-    the flaky check is conditional: it reruns the PR's new/changed stateless
-    tests and the tests `master` changed after the PR's last CI run as a drift
-    guard, so when there are none it has nothing to do. Filter it out here, at
-    config time, so such a PR does not schedule the runner, restore
-    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
-    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
+    `amd_binary` build, the stateless flaky check, the stateless and integration
+    targeted checks, the docs examples, and the limited clang-tidy check). The
+    targeted checks select from CIDB and skip themselves when the selection is
+    empty. Two of the others are conditional here. The limited
+    clang-tidy check has nothing to analyze when the change touches neither a C
+    or C++ file, nor an input of a code generator producing C++, nor the
+    clang-tidy configuration or the check's own logic, so a docs- or test-only
+    PR does not need to claim a large runner for it. And the flaky check reruns
+    the PR's new/changed stateless tests and the tests `master` changed after
+    the PR's last CI run as a drift guard, so when there are none it has nothing
+    to do. Filter it out here, at config time, so such a PR does not schedule
+    the runner, restore `CH_AMD_BINARY`, and enter the test container only to
+    exit `SKIPPED`. This is the merge-queue counterpart to the `flaky` branch of
+    `should_skip_job`, kept deliberately minimal so it cannot skip the
     build/style/fast-test/docs-examples jobs the queue always needs. The skip
     condition matches the in-job selection in `functional_tests.py` (both rely
     on `Targeting.get_merge_queue_tests`), so the early exit and the config-time
@@ -1116,6 +1170,23 @@ def should_skip_merge_queue_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
+
+    if job_name == JobNames.CLANG_TIDY_CHANGED_FILES:
+        # Fail-close: with the changed files unknown there is no basis for a
+        # skip, so run the job - it refuses to report a selection it could not
+        # compute, rather than passing on an empty one.
+        changed_files = _info_cache.get_changed_files()
+        if changed_files is not None and not any(
+            is_analyzed_by_clang_tidy(normalize_tidy_path(f))
+            or is_tidy_config_path(normalize_tidy_path(f))
+            or is_generator_input(normalize_tidy_path(f))
+            for f in changed_files
+        ):
+            return (
+                True,
+                "Skipped, the change touches no C or C++ file that clang-tidy analyzes",
+            )
+        return False, ""
 
     if "flaky" not in job_name.lower() or "stateless" not in job_name.lower():
         return False, ""

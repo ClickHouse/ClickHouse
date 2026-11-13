@@ -5,7 +5,6 @@
 -- 3. Inner level that inherits the duplicate, processes it, removes the alias
 -- When middle scope later processes its duplicates, the alias is already gone.
 
-SET enable_analyzer = 1;
 SET enable_scopes_for_with_statement = 0;
 
 -- Three levels of nesting with the same WITH alias at each level
