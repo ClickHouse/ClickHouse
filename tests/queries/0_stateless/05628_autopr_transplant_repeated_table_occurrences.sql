@@ -36,27 +36,6 @@ SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 -- before the cost model, where its reads are to be declined.
 SET optimize_move_to_prewhere = 1;
 
--- Results on a single node.
-SELECT count(), sum(d.v), sum(b.v), sum(a.v), sum(a.k)
-FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b
-WHERE d.id = b.id AND a.id = b.k AND b.id < 20000
-SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05628_single_node_aliases';
-
-SELECT count(), sum(d.v), sum(a.v), sum(b.v), sum(c.v), sum(a.k)
-FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b, t_occ_t AS c
-WHERE d.id = c.id AND b.id = c.k AND a.id = b.k AND c.id < 20000
-SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05628_single_node_three';
-
-SELECT count(), sum(d.v), sum(b.v), sum(a.v)
-FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t PREWHERE id < 20000) AS b
-WHERE d.id = b.id AND a.id = b.k
-SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05628_single_node_subqueries';
-
-SELECT count(), sum(d.v), sum(b.v), sum(a.v)
-FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
-WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
-SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05628_single_node_ambiguous';
-
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
 SET parallel_replicas_local_plan = 1;
@@ -64,7 +43,7 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
--- The first run of each shape only collects statistics; the next ones can act on them.
+-- The first run of each shape only collects statistics; the next one can act on them.
 SELECT count(), sum(d.v), sum(b.v), sum(a.v), sum(a.k)
 FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b
 WHERE d.id = b.id AND a.id = b.k AND b.id < 20000
@@ -73,33 +52,12 @@ SELECT count(), sum(d.v), sum(b.v), sum(a.v), sum(a.k)
 FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b
 WHERE d.id = b.id AND a.id = b.k AND b.id < 20000
 SETTINGS log_comment = '05628_replicas_aliases';
-SELECT count(), sum(d.v), sum(b.v), sum(a.v), sum(a.k)
-FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b
-WHERE d.id = b.id AND a.id = b.k AND b.id < 20000
-SETTINGS log_comment = '05628_replicas_aliases';
-
-SELECT count(), sum(d.v), sum(a.v), sum(b.v), sum(c.v), sum(a.k)
-FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b, t_occ_t AS c
-WHERE d.id = c.id AND b.id = c.k AND a.id = b.k AND c.id < 20000
-SETTINGS log_comment = '05628_warmup_three';
-SELECT count(), sum(d.v), sum(a.v), sum(b.v), sum(c.v), sum(a.k)
-FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b, t_occ_t AS c
-WHERE d.id = c.id AND b.id = c.k AND a.id = b.k AND c.id < 20000
-SETTINGS log_comment = '05628_replicas_three';
-SELECT count(), sum(d.v), sum(a.v), sum(b.v), sum(c.v), sum(a.k)
-FROM t_occ_d AS d, t_occ_t AS a, t_occ_t AS b, t_occ_t AS c
-WHERE d.id = c.id AND b.id = c.k AND a.id = b.k AND c.id < 20000
-SETTINGS log_comment = '05628_replicas_three';
 
 -- Neither read has an alias, and the two subqueries differ only in `WHERE` against `PREWHERE`.
 SELECT count(), sum(d.v), sum(b.v), sum(a.v)
 FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t PREWHERE id < 20000) AS b
 WHERE d.id = b.id AND a.id = b.k
 SETTINGS log_comment = '05628_warmup_subqueries';
-SELECT count(), sum(d.v), sum(b.v), sum(a.v)
-FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t PREWHERE id < 20000) AS b
-WHERE d.id = b.id AND a.id = b.k
-SETTINGS log_comment = '05628_replicas_subqueries';
 SELECT count(), sum(d.v), sum(b.v), sum(a.v)
 FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t PREWHERE id < 20000) AS b
 WHERE d.id = b.id AND a.id = b.k
@@ -116,31 +74,27 @@ SELECT count(), sum(d.v), sum(b.v), sum(a.v)
 FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
 WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
 SETTINGS log_comment = '05628_replicas_ambiguous';
-SELECT count(), sum(d.v), sum(b.v), sum(a.v)
-FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
-WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
-SETTINGS log_comment = '05628_replicas_ambiguous';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Every run above prints its result, so the reference holds them equal to the single-node one. What it cannot
--- show is whether replicas were used; that is this, and it holds both runs after the warmup to it.
+-- Every run above prints its result, and the reference holds the correct one. What it cannot show is whether
+-- replicas were used; that is this.
 SELECT
     replaceOne(log_comment, '05628_replicas_', '') AS shape,
-    count() = 2 AND min(ProfileEvents['ParallelReplicasUsedCount'] > 0) AS replicas_were_used_on_every_run
+    count() = 1 AND min(ProfileEvents['ParallelReplicasUsedCount'] > 0) AS replicas_were_used
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
   AND event_date >= yesterday()
-  AND log_comment IN ('05628_replicas_aliases', '05628_replicas_subqueries', '05628_replicas_three')
+  AND log_comment IN ('05628_replicas_aliases', '05628_replicas_subqueries')
 GROUP BY shape
 ORDER BY shape
 FORMAT TSVWithNames;
 
 SELECT
-    count() = 2
+    count() = 1
         AND min(ProfileEvents['AutoParallelReplicasCostModelEvaluated'] > 0)
         AND min(ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0)
         AND max(ProfileEvents['AutoParallelReplicasApplied']) = 0

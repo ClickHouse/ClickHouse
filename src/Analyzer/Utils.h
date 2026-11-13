@@ -131,10 +131,9 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
   */
 struct TableOccurrences
 {
-    std::unordered_map<const IAST *, UInt128> identity_by_ast;
+    /// Keyed by the AST pointer itself, which also keeps it from being freed and its address reused.
+    std::unordered_map<ASTPtr, UInt128> identity_by_ast;
     std::unordered_map<UInt128, size_t> counts;
-    /// Keeps the keys of `identity_by_ast` from being freed and their addresses reused while they are compared.
-    std::vector<ASTPtr> asts;
 };
 
 TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree);

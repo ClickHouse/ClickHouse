@@ -48,8 +48,8 @@ struct PlanWithParallelReplicas
     SkipReason skip_reason = SkipReason::None;
     /// The tables of the single-node query tree and of the tree `plan` was built from (`collectTableOccurrences`),
     /// which tell apart the reads of a table read more than once.
-    std::shared_ptr<const TableOccurrences> single_node_table_occurrences;
-    std::shared_ptr<const TableOccurrences> replicas_table_occurrences;
+    std::shared_ptr<const TableOccurrences> single_node_table_occurrences = nullptr;
+    std::shared_ptr<const TableOccurrences> replicas_table_occurrences = nullptr;
 };
 
 using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;

@@ -2152,7 +2152,8 @@ bool findPathInAST(const IAST & node, const IAST * target, std::vector<size_t> &
     return false;
 }
 
-std::optional<UInt128> getTableOccurrenceIdentity(const IAST * scope_ast, const IAST * table_expression_ast)
+/// The `SELECT` a query node was built from, if there is one with a `FROM`.
+const ASTSelectQuery * getScopeSelect(const IAST * scope_ast)
 {
     /// A subquery's node keeps the union around its `SELECT`, which is the scope when it is the only one.
     if (const auto * select_with_union = scope_ast ? scope_ast->as<ASTSelectWithUnionQuery>() : nullptr;
@@ -2160,23 +2161,20 @@ std::optional<UInt128> getTableOccurrenceIdentity(const IAST * scope_ast, const 
         scope_ast = select_with_union->list_of_selects->children.front().get();
 
     const auto * select = scope_ast ? scope_ast->as<ASTSelectQuery>() : nullptr;
-    if (!select || !table_expression_ast || !select->tables())
-        return {};
+    if (!select || !select->tables())
+        return nullptr;
+    return select;
+}
 
-    std::vector<size_t> path;
-    if (!findPathInAST(*select->tables(), table_expression_ast, path))
-        return {};
-
-    /// The whole `SELECT` is hashed, with the role of each clause and its flags, so `WHERE` and `PREWHERE` over the
-    /// same condition differ. A shallow copy without the `SETTINGS` clause leaves the query itself untouched.
+/// The whole `SELECT` is hashed, with the role of each clause and its flags, so `WHERE` and `PREWHERE` over the
+/// same condition differ. A shallow copy without the `SETTINGS` clause leaves the query itself untouched.
+SipHash hashScopeSelect(const ASTSelectQuery & select)
+{
     SipHash hash;
-    ASTSelectQuery scope_without_settings(*select);
+    ASTSelectQuery scope_without_settings(select);
     scope_without_settings.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     scope_without_settings.updateTreeHash(hash, /*ignore_aliases=*/false);
-    hash.update(path.size());
-    for (size_t index : path)
-        hash.update(index);
-    return hash.get128();
+    return hash;
 }
 
 }
@@ -2196,6 +2194,9 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
         /// of a `view` table function, has an identifier for its join tree, and that is not an error here.
         if (const auto * query_node = node->as<QueryNode>())
         {
+            const auto * scope_select = getScopeSelect(query_node->getOriginalAST().get());
+            /// Taken at the first table found in this scope, and then for all of them.
+            std::optional<SipHash> scope_hash;
             std::vector<const IQueryTreeNode *> join_tree{query_node->getJoinTreeNode().get()};
             while (!join_tree.empty())
             {
@@ -2221,12 +2222,21 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
                 else if (table_expression->getNodeType() == QueryTreeNodeType::TABLE)
                 {
                     const auto & table_expression_ast = table_expression->getOriginalAST();
-                    if (auto identity = getTableOccurrenceIdentity(query_node->getOriginalAST().get(), table_expression_ast.get()))
-                    {
-                        ++result.counts[*identity];
-                        if (result.identity_by_ast.emplace(table_expression_ast.get(), *identity).second)
-                            result.asts.push_back(table_expression_ast);
-                    }
+                    std::vector<size_t> path;
+                    if (!scope_select || !table_expression_ast
+                        || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
+                        continue;
+
+                    if (!scope_hash)
+                        scope_hash = hashScopeSelect(*scope_select);
+                    SipHash hash = *scope_hash;
+                    hash.update(path.size());
+                    for (size_t index : path)
+                        hash.update(index);
+                    const auto identity = hash.get128();
+
+                    ++result.counts[identity];
+                    result.identity_by_ast.emplace(table_expression_ast, identity);
                 }
             }
         }
