@@ -65,8 +65,8 @@ void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const 
 void FunctionSecretArgumentsFinder::markNamedArgumentsWithRejectedKeys(const std::function<bool(std::string_view)> & accepted_keys)
 {
     /// The parser rejects an unknown key (`validateNamedCollection`), but the query has been formatted for logging
-    /// by then. The key can be a misspelled secret key, so fail closed: hide the value, keep the key visible, so
-    /// that the user can still find the typo. A key that is not a plain literal is hidden the same way.
+    /// by then. The value can be a secret under a misspelled key, and the key itself can be the secret (`'secret' = 'x'`),
+    /// so fail closed and hide the argument whole. A key that is not a plain literal can hide a secret too: hidden whole.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
         const auto equals_func = function->arguments->at(i)->getFunction();
@@ -75,7 +75,7 @@ void FunctionSecretArgumentsFinder::markNamedArgumentsWithRejectedKeys(const std
 
         String key;
         if (!tryGetStringFromArgument(*equals_func->arguments->at(0), &key) || !accepted_keys(key))
-            markSecretArgument(i, /* argument_is_named= */ true);
+            markSecretArgument(i);
     }
 }
 

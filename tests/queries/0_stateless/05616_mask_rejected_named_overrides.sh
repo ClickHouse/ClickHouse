@@ -4,8 +4,8 @@
 
 # A `key = value` argument whose key the parser of the engine rejects (for example a misspelled
 # secret key: `secret_acces_key`, `passwd`, `pass`) is rejected only after the query is formatted
-# for logging. Its value must be hidden, while its key stays visible, so that the typo can be found.
-# The values of accepted non-secret keys stay visible.
+# for logging. The whole argument must be hidden: the value can be a secret under a misspelled key,
+# and the key itself can be the secret. The values of accepted non-secret keys stay visible.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -49,6 +49,14 @@ format "MaterializedPostgreSQL database engine" \
 format "Remote database engine" \
     "CREATE DATABASE d ENGINE = Remote(nc, port = 9000, password = '${SECRET}', passwd = '${SECRET}')"
 
+# The secret typed into the key.
+format "secret as the key" \
+    "SELECT * FROM s3(nc, format = 'CSV', '${SECRET}' = 'x')"
+format "secret appended to the key" \
+    "SELECT * FROM mysql(nc, table = 't', password_${SECRET} = 1)"
+format "key that is an expression" \
+    "SELECT * FROM postgresql(nc, schema = 's', concat('pass', 'word') = '${SECRET}')"
+
 # A key is compared as the parser compares it: case-sensitively, with the aliases of `user`, `db` and `host`.
 format "aliases and case" \
     "SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', PASSWORD = '${SECRET}')"
@@ -57,7 +65,7 @@ format "aliases and case" \
 format "s3 table function, explicit url" \
     "SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', secret_access_key = '${SECRET}')"
 
-# The rejected queries are logged with the value hidden.
+# The rejected queries are logged with the argument hidden.
 DB="$CLICKHOUSE_DATABASE"
 NC_S3="nc_s3_${DB}"
 NC_MYSQL="nc_mysql_${DB}"

@@ -1,29 +1,35 @@
 --- s3 table function
-SELECT * FROM s3(nc, filename = 'data.csv', secret_access_key = '[HIDDEN]', secret_acces_key = '[HIDDEN]')
+SELECT * FROM s3(nc, filename = 'data.csv', secret_access_key = '[HIDDEN]', '[HIDDEN]')
 --- s3Cluster table function
-SELECT * FROM s3Cluster('cluster', nc, format = 'CSV', session_token = '[HIDDEN]', sesion_token = '[HIDDEN]')
+SELECT * FROM s3Cluster('cluster', nc, format = 'CSV', session_token = '[HIDDEN]', '[HIDDEN]')
 --- S3 table engine
-CREATE TABLE t (`x` Int32) ENGINE = S3(nc, format = 'CSV', secret_access_key = '[HIDDEN]', secret_acces_key = '[HIDDEN]')
+CREATE TABLE t (`x` Int32) ENGINE = S3(nc, format = 'CSV', secret_access_key = '[HIDDEN]', '[HIDDEN]')
 --- icebergS3 table function
-SELECT * FROM icebergS3(nc, url = 'http://127.0.0.1:1/x/', secret_access_key = '[HIDDEN]', secret_acces_key = '[HIDDEN]')
+SELECT * FROM icebergS3(nc, url = 'http://127.0.0.1:1/x/', secret_access_key = '[HIDDEN]', '[HIDDEN]')
 --- mysql table function
-SELECT * FROM mysql(nc, `table` = 't', password = '[HIDDEN]', passwd = '[HIDDEN]')
+SELECT * FROM mysql(nc, `table` = 't', password = '[HIDDEN]', '[HIDDEN]')
 --- MySQL table engine
-CREATE TABLE t (`x` Int32) ENGINE = MySQL(nc, connection_pool_size = 4, password = '[HIDDEN]', passwd = '[HIDDEN]')
+CREATE TABLE t (`x` Int32) ENGINE = MySQL(nc, connection_pool_size = 4, password = '[HIDDEN]', '[HIDDEN]')
 --- MySQL database engine
-CREATE DATABASE d ENGINE = MySQL(nc, database = 'db', password = '[HIDDEN]', passwd = '[HIDDEN]')
+CREATE DATABASE d ENGINE = MySQL(nc, database = 'db', password = '[HIDDEN]', '[HIDDEN]')
 --- postgresql table function
-SELECT * FROM postgresql(nc, schema = 's', password = '[HIDDEN]', pass = '[HIDDEN]')
+SELECT * FROM postgresql(nc, schema = 's', password = '[HIDDEN]', '[HIDDEN]')
 --- PostgreSQL table engine
-CREATE TABLE t (`x` Int32) ENGINE = PostgreSQL(nc, postgresql_connection_pool_size = 4, password = '[HIDDEN]', pass = '[HIDDEN]')
+CREATE TABLE t (`x` Int32) ENGINE = PostgreSQL(nc, postgresql_connection_pool_size = 4, password = '[HIDDEN]', '[HIDDEN]')
 --- PostgreSQL database engine
-CREATE DATABASE d ENGINE = PostgreSQL(nc, use_table_cache = 1, password = '[HIDDEN]', pass = '[HIDDEN]')
+CREATE DATABASE d ENGINE = PostgreSQL(nc, use_table_cache = 1, password = '[HIDDEN]', '[HIDDEN]')
 --- MaterializedPostgreSQL database engine
-CREATE DATABASE d ENGINE = MaterializedPostgreSQL(nc, schema = 's', password = '[HIDDEN]', pass = '[HIDDEN]')
+CREATE DATABASE d ENGINE = MaterializedPostgreSQL(nc, schema = 's', password = '[HIDDEN]', '[HIDDEN]')
 --- Remote database engine
-CREATE DATABASE d ENGINE = Remote(nc, port = 9000, password = '[HIDDEN]', passwd = '[HIDDEN]')
+CREATE DATABASE d ENGINE = Remote(nc, port = 9000, password = '[HIDDEN]', '[HIDDEN]')
+--- secret as the key
+SELECT * FROM s3(nc, format = 'CSV', '[HIDDEN]')
+--- secret appended to the key
+SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
+--- key that is an expression
+SELECT * FROM postgresql(nc, schema = 's', '[HIDDEN]')
 --- aliases and case
-SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', PASSWORD = '[HIDDEN]')
+SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', '[HIDDEN]')
 --- s3 table function, explicit url
 SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', secret_access_key = '[HIDDEN]')
 CREATE TABLE db.t_s3_valid
@@ -31,7 +37,7 @@ CREATE TABLE db.t_s3_valid
     `x` Int32
 )
 ENGINE = S3(nc_s3, filename = 'data.csv', format = 'CSV', secret_access_key = '[HIDDEN]')
-SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', secret_acces_key = \'[HIDDEN]\')	1
-CREATE TABLE t_s3 (`x` Int32) ENGINE = S3(nc_s3, filename = \'data.csv\', format = \'CSV\', secret_acces_key = \'[HIDDEN]\')	1
-SELECT * FROM mysql(nc_mysql, passwd = \'[HIDDEN]\')	1
-SELECT * FROM postgresql(nc_pg, pass = \'[HIDDEN]\')	1
+SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1
+CREATE TABLE t_s3 (`x` Int32) ENGINE = S3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1

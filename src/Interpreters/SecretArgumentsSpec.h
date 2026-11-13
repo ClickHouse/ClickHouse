@@ -41,9 +41,9 @@ struct SecretArgumentsSpec
     /// not applied: a positional after a named argument and the value of a key that is not a literal are hidden.
     bool custom_reads_named_arguments = false;
     /// Whether the engine's parser accepts a `key = value` argument with this key (named-collection overrides included).
-    /// If set, the value of every `key = value` argument whose key it rejects is hidden, and the key stays visible. The
-    /// parser rejects such an argument only after the query is formatted for logging, and the key can be a misspelled
-    /// secret key (`passwd = '...'`).
+    /// If set, every `key = value` argument whose key it rejects, or whose key is not a plain literal, is hidden whole.
+    /// The parser rejects such an argument only after the query is formatted for logging, and the key can be a
+    /// misspelled secret key (`passwd = '...'`) or the secret itself (`'secret' = 'x'`).
     std::function<bool(std::string_view)> accepted_keys = {};
 
     bool hasArgumentSecrets() const

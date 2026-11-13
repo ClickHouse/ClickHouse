@@ -43,8 +43,8 @@ constexpr std::string_view s3_secret_keys[]
 /// are masked (the query is logged before validation and the intended slot is unknowable). The
 /// backup locator (`BackupInfo::fromAST`) instead collects positionals independently of named
 /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
-/// With `mask_rejected_keys`, the value of a `key = value` argument whose key `S3StorageParsedArguments::fromNamedCollection`
-/// rejects is masked too (see `isS3NamedCollectionKey`).
+/// With `mask_rejected_keys`, a `key = value` argument whose key `S3StorageParsedArguments::fromNamedCollection` rejects
+/// (see `isS3NamedCollectionKey`), or whose key is not a plain literal, is hidden whole.
 std::vector<size_t> classifyS3Arguments(
     FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false, bool mask_rejected_keys = false)
 {
@@ -98,18 +98,19 @@ std::vector<size_t> classifyS3Arguments(
                     }
                     else if (mask_rejected_keys && !isS3NamedCollectionKey(key))
                     {
-                        /// The parser rejects the key, but only after the query is formatted for logging, and the
-                        /// key can be a misspelled secret key (`secret_acces_key`). Fail closed and hide the value;
-                        /// the key stays visible, so that the user can still find the typo.
-                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                        /// The parser rejects the key, but only after the query is formatted for logging. The value
+                        /// can be a secret under a misspelled key (`secret_acces_key`), and the key itself can be the
+                        /// secret (`'secret' = 'x'`), so fail closed and hide the argument whole.
+                        finder.markSecretArgument(i);
                     }
                 }
                 else
                 {
                     /// The parsers evaluate the key as a constant expression, so it can name any secret
                     /// key. We cannot evaluate it here, so fail closed and hide the value (the key
-                    /// expression itself stays visible; keys are not secrets).
-                    finder.markSecretArgument(i, /* argument_is_named= */ true);
+                    /// expression itself stays visible; keys are not secrets). Where the accepted keys are known
+                    /// (`mask_rejected_keys`), such a key can hide a secret like a rejected one: hide it whole.
+                    finder.markSecretArgument(i, /* argument_is_named= */ !mask_rejected_keys);
                 }
                 continue;
             }

@@ -67,8 +67,8 @@ format "MySQL database engine, named password without a collection" \
 
 # The key of a named argument is not required to be a plain identifier or literal: the named
 # collection parser evaluates it as a constant expression, so `concat('ssl_ca', '_pem')` names a TLS
-# credential too. The formatter cannot evaluate it, so it hides the value of every argument whose key
-# it cannot read; the keys themselves and the arguments around them stay visible.
+# credential too. The formatter cannot evaluate it, so it hides every argument whose key it cannot
+# read whole (the key can hide a secret too); the arguments around them stay visible.
 format "key given as a constant expression" \
     "SELECT * FROM mysql(creds, concat('ssl_ca', '_pem') = '${SECRET}', table = 't')"
 format "key given as a constant expression, positional arguments" \

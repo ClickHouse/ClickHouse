@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// The keys of an S3 named collection, with its overrides, that `S3StorageParsedArguments::fromNamedCollection` accepts.
-/// The masking of query arguments (`S3SecretArguments.cpp`) hides the value of an override with any other key, so both
+/// The masking of query arguments (`S3SecretArguments.cpp`) hides an override with any other key whole, so both
 /// use these sets. This header does not depend on `USE_AWS_S3`, because the masking is built without it too.
 inline const std::unordered_set<std::string_view> s3_named_collection_required_keys =
 {
