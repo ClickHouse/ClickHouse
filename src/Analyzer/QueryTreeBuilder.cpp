@@ -1,7 +1,6 @@
 #include <Interpreters/applyColumnsTransformer.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
-#include <algorithm>
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
@@ -57,7 +56,6 @@
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/Context.h>
-#include <QueryPipeline/DistributedPlanExecutor.h>
 
 
 namespace DB
@@ -302,22 +300,6 @@ void applyQueryLevelSettings(
         updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
-/// Re-applying a top-level `make_distributed_plan = DEFAULT` clears the value `executeQuery` inferred; infer it again.
-void rederiveDistributedPlanIfReset(
-    bool is_subquery, const std::vector<String> & default_settings, const ContextMutablePtr & updated_context)
-{
-    if (is_subquery)
-        return;
-
-    if (updated_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return;
-
-    if (std::find(default_settings.begin(), default_settings.end(), "make_distributed_plan") == default_settings.end())
-        return;
-
-    applyDistributedPlanSettings(updated_context);
-}
-
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     const ASTPtr & select_with_union_query,
     bool is_subquery,
@@ -354,8 +336,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
 
     apply_settings(select_with_union_query_typed.settings_ast);
     apply_settings(ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.children.back()));
-
-    rederiveDistributedPlanIfReset(is_subquery, default_settings, updated_context);
 
     auto union_node = std::make_shared<UnionNode>(
         std::move(updated_context),
@@ -424,8 +404,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
             applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
     }
 
-    rederiveDistributedPlanIfReset(is_subquery, default_settings, updated_context);
-
     auto union_node = std::make_shared<UnionNode>(
         std::move(updated_context),
         union_mode,
@@ -469,8 +447,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     if (select_settings)
         applyQueryLevelSettings(
             select_settings->as<ASTSetQuery &>(), updated_context, settings_changes, default_settings, query_parameters);
-
-    rederiveDistributedPlanIfReset(is_subquery, default_settings, updated_context);
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
     const auto allow_experimental_shuffle_query = updated_context->getSettingsRef()[Setting::allow_experimental_shuffle_query];
