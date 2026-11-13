@@ -333,6 +333,8 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
         new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
+    new_info.columns_added_after_format = info.columns_added_after_format;
+
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
@@ -392,14 +394,16 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
 
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
 {
-    if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
+    if (!filter_actions_dag
+        || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty() && columns_added_after_format.empty()))
         return filter_actions_dag;
     if (formatReadsHivePartitionColumns())
         return nullptr;
 
     auto is_added_after_format = [&](const String & name)
     {
-        return hive_partition_columns_to_read_from_file_path.contains(name) || requested_virtual_columns.contains(name);
+        return hive_partition_columns_to_read_from_file_path.contains(name) || requested_virtual_columns.contains(name)
+            || columns_added_after_format.contains(name);
     };
 
     auto reads_added_column = [&](const ActionsDAG::Node * atom)
@@ -453,6 +457,9 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     ctx.out << "\n";
 
     hive_partition_columns_to_read_from_file_path.writeTextWithNamesInStorage(ctx.out);
+    writeVarUInt(columns_added_after_format.size(), ctx.out);
+    for (const auto & name : columns_added_after_format)
+        writeStringBinary(name, ctx.out);
     writeBinary(prewhere_info != nullptr, ctx.out);
     if (prewhere_info != nullptr)
         prewhere_info->serialize(ctx);
@@ -492,6 +499,14 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
+    size_t num_columns_added_after_format = 0;
+    readVarUInt(num_columns_added_after_format, ctx.in);
+    for (size_t i = 0; i < num_columns_added_after_format; ++i)
+    {
+        String name;
+        readStringBinary(name, ctx.in);
+        result.columns_added_after_format.insert(std::move(name));
+    }
     bool has_prewhere_info = false;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)

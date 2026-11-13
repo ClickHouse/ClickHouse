@@ -654,6 +654,10 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         }
     }
 
+    /// These columns are added by the schema transform of each data file, so the filter on them must not be used
+    /// by the format: e.g. a data file can have an incidental physical `_change_type` column with other values.
+    info.columns_added_after_format.insert(partition_columns.begin(), partition_columns.end());
+
     Names columns_to_read;
     std::tie(columns_to_read, info.requested_virtual_columns) =
         splitVirtualColumns(requested_columns, storage_snapshot->metadata->virtuals);

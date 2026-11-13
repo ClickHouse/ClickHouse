@@ -1,0 +1,8 @@
+--- input_format_parquet_filter_push_down = 0
+1	delete	10
+1	delete	10
+13
+--- input_format_parquet_filter_push_down = 1
+1	delete	10
+1	delete	10
+13
