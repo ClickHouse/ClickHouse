@@ -50,7 +50,15 @@ class AvroDeserializer
 {
 public:
     /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false.
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns = {});
+    /// `read_names`: the names the top-level fields of the file are read as, instead of their own; a field not in it is not read.
+    AvroDeserializer(
+        const Block & header,
+        avro::ValidSchema schema,
+        bool allow_missing_fields,
+        bool null_as_default_,
+        const FormatSettings & settings_,
+        const NameSet & absent_columns = {},
+        const UnorderedMapWithMemoryTracking<String, String> * read_names = nullptr);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
