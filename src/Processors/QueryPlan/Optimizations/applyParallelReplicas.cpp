@@ -15,6 +15,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -202,8 +203,8 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
 }
 
 /// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
-/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, or a source step's row-level
-/// filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, or a
+/// source step's row-level filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
 /// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
 /// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
 static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
@@ -300,6 +301,13 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
         /// so `IN (SELECT ... GROUP BY ... WITH TOTALS HAVING ...)` does put one in the walked plan.
         if (const auto * actions = totals_having->getActions())
             if (predicate(*actions))
+                return true;
+    }
+    else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
+    {
+        /// `ArrayJoinStep::serialize` writes the element filter fused into it from a `FilterStep` above.
+        if (const auto & element_filter = array_join->getElementFilter())
+            if (predicate(*element_filter))
                 return true;
     }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
@@ -587,6 +595,30 @@ public:
             merging_sorted_step->setStepDescription("merge sorted streams from replicas");
             parent_node->step = std::move(merging_sorted_step);
             parent_node->children = {&new_split_node};
+            return;
+        }
+
+        /// A `LIMIT` without `ORDER BY` can take any rows, so a `LimitStep` of `limit + offset` rows is added to the
+        /// plan fragment: each replica stops after that many rows. The query's `LIMIT` stays on the initiator and
+        /// applies the offset and the final limit. With `exact_rows_before_limit`, the `Limit` in the plan fragment reads
+        /// all rows but returns only `limit + offset` of them, and `markAsShardLimit` makes `rows_before_limit_at_least`
+        /// count all the rows it read.
+        const auto * limit_step = typeid_cast<const LimitStep *>(parent_step);
+        if (limit_step && !limit_step->withTies())
+        {
+            const auto local_limit = limit_step->getLimitWithOffset();
+            if (!local_limit || *local_limit == 0)
+                return;
+
+            const bool read_till_end = limit_step->alwaysReadTillEnd();
+            auto * fragment_child = original_split_node->children.front();
+            auto & local_limit_node = nodes.emplace_back();
+            auto local_limit_step = std::make_unique<LimitStep>(fragment_child->step->getOutputHeader(), *local_limit, 0, read_till_end);
+            local_limit_step->markAsShardLimit();
+            local_limit_node.step = std::move(local_limit_step);
+            local_limit_node.step->setStepDescription("local LIMIT");
+            local_limit_node.children = {fragment_child};
+            original_split_node->children = {&local_limit_node};
             return;
         }
     }

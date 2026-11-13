@@ -435,6 +435,13 @@ IMPLEMENT_SETTING_ENUM(
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeSnapshotLoadingMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", DatabaseDataLakeSnapshotLoadingMode::AUTO},
+     {"all", DatabaseDataLakeSnapshotLoadingMode::ALL},
+     {"refs", DatabaseDataLakeSnapshotLoadingMode::REFS}})
+
+IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
     ErrorCodes::BAD_ARGUMENTS,
     {{"lru", FileCachePolicy::LRU},

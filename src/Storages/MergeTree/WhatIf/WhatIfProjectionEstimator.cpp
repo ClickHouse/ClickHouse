@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/WhatIf/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <algorithm>
 #include <array>
@@ -49,6 +50,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_DENIED;
+}
 
 namespace FailPoints
 {
@@ -402,7 +408,7 @@ String buildProjectionPart(
     /// a projection part keeps only the rows that exist, `calculate` drops the deleted ones by this column
     Names columns_to_read = projection.required_columns;
     const bool has_delete_mask = part->hasLightweightDelete();
-    if (has_delete_mask)
+    if (has_delete_mask && std::ranges::find(columns_to_read, RowExistsColumn::name) == columns_to_read.end())
         columns_to_read.push_back(RowExistsColumn::name);
 
     Pipe pipe = makePartPipe(part, ranges, columns_to_read, read_step, context);
@@ -1307,7 +1313,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     String & reason)
 {
     if (!stored.required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), stored.required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(stored.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
     std::optional<ProjectionDescription> fresh;
@@ -1325,7 +1332,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
 
     /// an ALTER may retarget an ALIAS, so check the columns actually read
     if (!fresh->required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(fresh->required_columns, context, data.getStorageID()));
     return fresh;
 }
 
@@ -1361,6 +1369,13 @@ WhatIfCandidateResult evaluateProjection(
     if (!projection)
         return result;
     const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
+
+    /// Same as for indexes: building the projection reads every row, including the rows a row policy hides
+    if (getEffectiveRowPolicyFilter(data, context))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use `EXPLAIN WHATIF` because a row policy is applied on table {}. "
+            "The projection estimate is derived from all rows, so it could violate the row policy",
+            data.getStorageID().getNameForLogs());
 
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
     {

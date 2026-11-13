@@ -20,6 +20,7 @@ from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExpor
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_KEEP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_exclusive_modules_sequential,
     get_optimal_test_batch,
@@ -1351,11 +1352,18 @@ def get_parallel_sequential_tests_to_run(
     ]
 
     if "amd_llvm_coverage" in (job_options or ""):
+        skip_prefixes = LLVM_COVERAGE_SKIP_PREFIXES
+        if "per_test_coverage" in (job_options or ""):
+            # The targeted jobs need the per-module coverage of these modules, see
+            # `PER_TEST_COVERAGE_KEEP_PREFIXES`.
+            skip_prefixes = [
+                p for p in skip_prefixes if p not in PER_TEST_COVERAGE_KEEP_PREFIXES
+            ]
         before = len(test_files)
         test_files = [
             f
             for f in test_files
-            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            if not any(f.startswith(prefix) for prefix in skip_prefixes)
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"

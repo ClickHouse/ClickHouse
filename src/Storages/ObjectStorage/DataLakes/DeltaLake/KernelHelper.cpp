@@ -11,8 +11,13 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <IO/S3/Client.h>
+
 #include <algorithm>
 #include <filesystem>
+
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -81,6 +86,13 @@ public:
 private:
     ffi::EngineBuilder * builder = nullptr;
 };
+
+/// The kernel parses the location as a URL, where `#` would start a fragment.
+std::string escapeForKernelUrl(std::string path)
+{
+    boost::replace_all(path, "#", "%23");
+    return path;
+}
 
 }
 
@@ -187,12 +199,34 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
+        /// The object store of the kernel is a separate client, so the request options of the S3 client that
+        /// ClickHouse uses for the data files must be passed to it as well. The extra headers of that client
+        /// already contain the SSE-C headers (see `ClientFactory::create`) and the explicit request headers.
+        /// The object store does not take arbitrary headers, only the options that it knows: the SSE-C key
+        /// (it then sends the key with every request, including the reads of `_delta_log`) and requester pays.
+        bool has_sse_customer_key = false;
+        bool request_payer = false;
+        for (const auto & header : object_storage->getS3StorageClient()->getClientConfiguration().extra_headers)
+        {
+            if (boost::iequals(header.name, "x-amz-server-side-encryption-customer-key"))
+            {
+                set_option("aws_server_side_encryption", "sse-c");
+                set_option("aws_sse_customer_key_base64", header.value);
+                has_sse_customer_key = true;
+            }
+            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(header.value, "requester"))
+            {
+                set_option("aws_request_payer", "true");
+                request_payer = true;
+            }
+        }
+
         LOG_TRACE(
             log,
             "Using endpoint: {}, uri: {}, region: {}, bucket: {}, no sign: {}, "
-            "has access_key_id: {}, has secret_access_key: {}, has token: {}",
+            "has access_key_id: {}, has secret_access_key: {}, has token: {}, SSE-C: {}, requester pays: {}",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
-            !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
+            !access_key_id.empty(), !secret_access_key.empty(), !token.empty(), has_sse_customer_key, request_payer);
 
         return guard.release();
     }
@@ -208,7 +242,7 @@ private:
 
     static std::string getTableLocation(const DB::S3::URI & url)
     {
-        return "s3://" + url.bucket + "/" + url.key;
+        return "s3://" + url.bucket + "/" + escapeForKernelUrl(url.key);
     }
 };
 
@@ -330,8 +364,48 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
+        {
+            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+            if (!name.empty())
+                set_option("azure_storage_account_name", name);
+
+            /// Without the credentials the request is unsigned, see `azure_skip_signature` below.
+            if (drop_credentials)
+                break;
+
+            /// The same parameters as the Azure SDK credential uses: the defaults of the options come from the
+            /// environment (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_AUTHORITY_HOST`),
+            /// and `client_id` and `tenant_id` from `extra_credentials` override them.
+            Azure::Identity::WorkloadIdentityCredentialOptions workload_identity_options;
+            if (!connection_params.workload_identity_client_id.empty())
+                workload_identity_options.ClientId = connection_params.workload_identity_client_id;
+            if (!connection_params.workload_identity_tenant_id.empty())
+                workload_identity_options.TenantId = connection_params.workload_identity_tenant_id;
+
+            /// The object store of the kernel uses the workload identity only if all three are set, and otherwise
+            /// silently falls back to the managed identity of the machine.
+            if (workload_identity_options.ClientId.empty() || workload_identity_options.TenantId.empty()
+                || workload_identity_options.TokenFilePath.empty())
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Azure workload identity requires a client id, a tenant id and a federated token file "
+                    "(environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`), "
+                    "but the {} is not set",
+                    workload_identity_options.ClientId.empty() ? "client id"
+                        : (workload_identity_options.TenantId.empty() ? "tenant id" : "federated token file"));
+
+            set_option("azure_client_id", workload_identity_options.ClientId);
+            set_option("azure_tenant_id", workload_identity_options.TenantId);
+            set_option("azure_federated_token_file", workload_identity_options.TokenFilePath);
+            /// The SDK default is `https://login.microsoftonline.com/`, while the object store appends `/<tenant>/...` itself.
+            std::string authority_host = workload_identity_options.AuthorityHost;
+            while (authority_host.ends_with('/'))
+                authority_host.pop_back();
+            if (!authority_host.empty())
+                set_option("azure_authority_host", authority_host);
+            break;
+        }
+        case 1: /// ClientSecretCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:
@@ -442,7 +516,7 @@ private:
         const auto & prefix = params.endpoint.prefix;
         std::string full_path = prefix.empty() ? path : (std::filesystem::path(prefix) / path).string();
 
-        return "az://" + params.endpoint.container_name + "/" + full_path;
+        return "az://" + params.endpoint.container_name + "/" + escapeForKernelUrl(full_path);
     }
 };
 #endif
@@ -490,7 +564,7 @@ private:
         std::string absolute_path = std::filesystem::absolute(resolved_path).lexically_normal().string();
         while (absolute_path.size() > 1 && absolute_path.ends_with('/'))
             absolute_path.pop_back();
-        return "file://" + absolute_path + "/";
+        return "file://" + escapeForKernelUrl(absolute_path) + "/";
     }
 };
 }

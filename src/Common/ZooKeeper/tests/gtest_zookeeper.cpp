@@ -9,7 +9,12 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 using namespace Coordination;
 using namespace DB;
@@ -29,6 +34,58 @@ zkutil::ZooKeeper::Ptr makeTestKeeperClient(int32_t session_timeout_ms)
     args.session_timeout_ms = session_timeout_ms;
     return zkutil::ZooKeeper::createWithoutKillingPreviousSessions(args);
 }
+
+/// An `IKeeper` that only remembers the callback of the latest `get` and lets the test invoke it
+/// at will, emulating responses of earlier requests that arrive late. All other operations are not supported.
+class GetCallbackKeeper final : public IKeeper
+{
+public:
+    std::shared_ptr<const GetCallback> getLatestGetCallback() const
+    {
+        std::lock_guard lock(mutex);
+        return latest_get_callback;
+    }
+
+    void get(const String &, GetCallback callback, WatchCallbackPtrOrEventPtr) override
+    {
+        auto callback_ptr = std::make_shared<const GetCallback>(std::move(callback));
+        std::lock_guard lock(mutex);
+        latest_get_callback = std::move(callback_ptr);
+    }
+
+    bool isExpired() const override { return false; }
+    std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
+    String getConnectedHostPort() const override { return "GetCallbackKeeper:0000"; }
+    int64_t getConnectionXid() const override { return 0; }
+    int64_t getSessionID() const override { return 0; }
+    int64_t getLastZXIDSeen() const override { return 0; }
+    bool isFeatureEnabled(KeeperFeatureFlag) const override { return false; }
+    void finalize(const String &) override { }
+
+    void create(const String &, const String &, bool, bool, const ACLs &, CreateCallback) override { unsupported(); }
+    void remove(const String &, int32_t, RemoveCallback) override { unsupported(); }
+    void removeRecursive(const String &, uint32_t, RemoveRecursiveCallback) override { unsupported(); }
+    void listRecursive(const String &, uint32_t, ListRecursiveCallback) override { unsupported(); }
+    void listWithOptions(const String &, const ListOptions &, ListWithOptionsCallback, WatchCallbackPtrOrEventPtr) override { unsupported(); }
+    void exists(const String &, ExistsCallback, WatchCallbackPtrOrEventPtr) override { unsupported(); }
+    void set(const String &, const String &, int32_t, SetCallback) override { unsupported(); }
+    void list(const String &, ListRequestType, ListCallback, WatchCallbackPtrOrEventPtr, bool, bool) override { unsupported(); }
+    void check(const String &, int32_t, CheckCallback) override { unsupported(); }
+    void sync(const String &, SyncCallback) override { unsupported(); }
+    void reconfig(std::string_view, std::string_view, std::string_view, int32_t, ReconfigCallback) override { unsupported(); }
+    void multi(std::span<const RequestPtr>, MultiCallback) override { unsupported(); }
+    void multi(const Requests &, MultiCallback) override { unsupported(); }
+    void getACL(const String &, GetACLCallback) override { unsupported(); }
+
+private:
+    [[noreturn]] static void unsupported()
+    {
+        throw Coordination::Exception::fromMessage(Error::ZUNIMPLEMENTED, "Not supported by GetCallbackKeeper");
+    }
+
+    mutable std::mutex mutex;
+    std::shared_ptr<const GetCallback> latest_get_callback;
+};
 
 }
 
@@ -270,6 +327,59 @@ TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
     auto request = ZooKeeperRequestFactory::instance().get(OpNum::Multi);
     ReadBufferFromString in(out.str());
     EXPECT_THROW(request->readImpl(in), Coordination::Exception);
+}
+
+TEST(ZooKeeperTest, WaitForDisappearWithLateGetResponses)
+{
+    /// `waitForDisappear` issues a new `get` with the same callback in every iteration, so responses of earlier
+    /// requests may arrive at any moment and overwrite the stored code. Here threads keep delivering
+    /// alternating `ZOK` and `ZNONODE` responses. Each `ZNONODE` wakes up the waiter, which must then return
+    /// `true`, and must never throw `ZNONODE` because the code changed between two reads of it.
+    auto keeper_holder = std::make_unique<GetCallbackKeeper>();
+    auto & keeper = *keeper_holder;
+    auto zk = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::unique_ptr<IKeeper>(std::move(keeper_holder)));
+
+    /// Several threads deliver responses to make the interleaving more likely.
+    struct ResponsesThreads
+    {
+        std::atomic<bool> stop = false;
+        std::vector<std::thread> threads;
+
+        ~ResponsesThreads()
+        {
+            stop = true;
+            for (auto & thread : threads)
+                thread.join();
+        }
+    };
+
+    /// Declared after `zk` so that the threads are joined before the keeper is destroyed.
+    ResponsesThreads responses;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        responses.threads.emplace_back([&keeper, &stop = responses.stop]
+        {
+            GetResponse ok_response;
+            ok_response.error = Error::ZOK;
+            GetResponse no_node_response;
+            no_node_response.error = Error::ZNONODE;
+
+            while (!stop)
+            {
+                auto callback = keeper.getLatestGetCallback();
+                if (!callback)
+                {
+                    std::this_thread::yield();
+                    continue;
+                }
+                (*callback)(ok_response);
+                (*callback)(no_node_response);
+            }
+        });
+    }
+
+    for (size_t i = 0; i < 100000; ++i)
+        ASSERT_TRUE(zk->waitForDisappear("/node")) << "iteration " << i;
 }
 
 TEST(ZooKeeperTest, AsyncTryGetIsAwaitedOnFirstAccess)

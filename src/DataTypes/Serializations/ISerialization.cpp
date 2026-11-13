@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
