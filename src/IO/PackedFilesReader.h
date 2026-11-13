@@ -52,6 +52,9 @@ public:
 
     static PackedFilesIO::Index readIndex(ReadBuffer & in);
 
+    /// Settings to read a file of `file_size` bytes stored inside the archive.
+    static ReadSettings getReadSettingsForFile(ReadSettings settings, size_t file_size);
+
 private:
     /// Index of archive: immutable and path-independent.
     const PackedFilesIO::Index index;

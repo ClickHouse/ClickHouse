@@ -3,6 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileView.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -96,11 +98,14 @@ Names PackedFilesReader::getFileNames() const
     return res;
 }
 
-static ReadSettings patchSettings(ReadSettings settings)
+ReadSettings PackedFilesReader::getReadSettingsForFile(ReadSettings settings, size_t file_size)
 {
     settings.local_fs_settings.direct_io_threshold = 0;
     if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
         settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    /// With filesystem cache the buffer grows up to `large_buffer_size`, bounded only by the object read: the whole archive.
+    settings.remote_fs_settings.large_buffer_size = std::min(settings.remote_fs_settings.large_buffer_size, std::max<size_t>(1, file_size));
     return settings;
 }
 
@@ -121,7 +126,7 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because
     /// they require special alignment which cannot be achieved while reading archive file.
     /// So just disable them.
-    auto in = disk->readFile(data_file_name, patchSettings(settings), read_hint);
+    auto in = disk->readFile(data_file_name, getReadSettingsForFile(settings, size), read_hint);
     return std::make_unique<ReadBufferFromFileView>(std::move(in), file_name, offset, offset + size);
 }
 
