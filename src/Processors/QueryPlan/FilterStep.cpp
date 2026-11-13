@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <limits>
@@ -316,16 +317,10 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
 /// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
 /// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
 /// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
-bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    std::unordered_set<const ActionsDAG::Node *> visited{node};
-    while (!nodes.empty())
+    return allReachableNodes({atom}, [](const ActionsDAG::Node * node)
     {
-        node = nodes.top();
-        nodes.pop();
-
         if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
             return false;
 
@@ -345,25 +340,16 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
                 return false;
         }
 
-        for (const auto * child : node->children)
-            if (visited.insert(child).second)
-                nodes.push(child);
-    }
-    return true;
+        return true;
+    });
 }
 
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
 /// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
-static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
+static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    std::unordered_set<const ActionsDAG::Node *> visited{node};
-    while (!nodes.empty())
+    return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
     {
-        node = nodes.top();
-        nodes.pop();
-
         if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
         {
             DataTypesWithConstInfo arguments;
@@ -375,37 +361,25 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
                 return true;
         }
 
-        for (const auto * child : node->children)
-            if (visited.insert(child).second)
-                nodes.push(child);
-    }
-    return false;
+        return false;
+    });
 }
 
 /// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
 /// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
 /// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
-static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
+static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
-    std::unordered_set<const ActionsDAG::Node *> visited{node};
-    while (!nodes.empty())
+    return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
     {
-        node = nodes.top();
-        nodes.pop();
-
         if (node->type == ActionsDAG::ActionType::FUNCTION
             && (node->function_base->isStateful()
                 || node->function_base->hasObservableSideEffects()
                 || !node->function_base->isDeterministicInScopeOfQuery()))
             return true;
 
-        for (const auto * child : node->children)
-            if (visited.insert(child).second)
-                nodes.push(child);
-    }
-    return false;
+        return false;
+    });
 }
 
 /// Try to split the left most AND atom to a separate DAG.

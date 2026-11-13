@@ -25,7 +25,11 @@
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageLog.h>
+#include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageStripeLog.h>
+#include <Common/assert_cast.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
@@ -68,6 +72,7 @@ namespace Setting
 extern const SettingsBool ast_fuzzer_oracle;
 extern const SettingsBool enable_global_with_statement;
 extern const SettingsJoinStrictness join_default_strictness;
+extern const SettingsBool make_distributed_plan;
 extern const SettingsUInt64 max_expanded_ast_elements;
 extern const SettingsUInt64 max_parser_backtracks;
 extern const SettingsUInt64 max_parser_depth;
@@ -428,6 +433,10 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
 {
     if (!ast)
         return false;
+
+    /// `SHUFFLE` returns the rows in random order, and with `LIMIT` a random subset of them.
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->shuffle)
+        return true;
 
     if (const auto * table_expr = ast->as<ASTTableExpression>())
     {
@@ -911,6 +920,24 @@ bool hasWithTotalsAnywhere(const ASTPtr & ast)
     return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
 }
 
+/// True if any SELECT keeps a subset of its rows chosen by position.
+bool hasRowLimitAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->limitLength() || select->limitOffset() || select->limitBy() || select->limitAfter() || select->limitUntil())
+            return true;
+    return anyChild(ast, [](const ASTPtr & child) { return hasRowLimitAnywhere(child); });
+}
+
+/// A distributed plan feeds a `LIMIT` one stream per source task, so the rows it keeps can change with the query
+/// around it, and the oracle's rewritten reads of the same subquery can keep different rows.
+bool hasRowLimitInDistributedPlan(const ASTPtr & ast, const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::make_distributed_plan] && hasRowLimitAnywhere(ast);
+}
+
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
 /// global over the table's row versions and is NOT distributive over a WHERE
 /// predicate: the TLP rewrites split rows into `p` / `NOT p` / `p IS NULL`
@@ -1184,6 +1211,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasWithTotalsAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesDistributedTableAnywhere(definition, context)
+                        || hasRowLimitInDistributedPlan(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
                         return true;
             }
@@ -1266,9 +1294,10 @@ NameSet getTableExpressionAliases(const ASTTablesInSelectQuery & tables)
     return aliases;
 }
 
-/// Appends each `MergeTree` table a read of `ast` (an `expandWithElements` output) reaches, then its active part
-/// names: parts are immutable and their names are never reused, so an unchanged list means unchanged data.
-/// Not recorded: `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
+/// Appends each table a read of `ast` (an `expandWithElements` output) reaches, then a version of its data that changes with
+/// each committed write of rows: the active part names of a `MergeTree` table (immutable, never reused), the generation, first
+/// block number and row count of a `Memory` one, the file sizes of a `Log`, `TinyLog` or `StripeLog` one.
+/// Not recorded: other engines, `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
 void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0, const NameSet & from_aliases = {})
 {
     if (!ast || depth > MAX_DEFINITION_SCREEN_DEPTH)
@@ -1287,6 +1316,24 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
                          {MergeTreeData::DataPartState::Active},
                          {MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch}))
                     parts.push_back(part->name);
+            }
+            else if (const auto memory = castStorage<StorageMemory>(storage, DeferredTable::Load))
+            {
+                const auto metadata = memory->getInMemoryMetadataPtr(nullptr, /* bypass_metadata_cache = */ false);
+                const auto snapshot = memory->getStorageSnapshot(metadata, nullptr);
+                const auto & data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(fmt::format("{}_{}_{}", data.generation, data.first_block_number, data.rows));
+            }
+            else if (const auto log_table = castStorage<StorageLog>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(std::to_string(log_table->totalBytes(context).value_or(0)));
+            }
+            else if (const auto stripe_log_table = castStorage<StorageStripeLog>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(std::to_string(stripe_log_table->totalBytes(context).value_or(0)));
             }
             else if (storage->getName() == "View")
             {
@@ -2941,6 +2988,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         return false;
     }
 
+    if (hasRowLimitInDistributedPlan(query_ast, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: LIMIT/OFFSET in a query run as a distributed plan");
+        return false;
+    }
+
     /// `Distributed` tables route to remote shards (here, test clusters whose
     /// replicas all point at localhost), so a row is read once per shard and
     /// the reference vs rewrite can route/dedup differently — the oracle can't
@@ -3040,7 +3093,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
                 /// A merge, insert or mutation between the reads means they compared different data.
                 if (readPartsChanged(context))
                 {
-                    LOG_TRACE(logger, "{} oracle mismatch skipped: the parts of a table it reads changed", name);
+                    LOG_TRACE(logger, "{} oracle mismatch skipped: the data of a table it reads changed", name);
                     return;
                 }
                 ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);

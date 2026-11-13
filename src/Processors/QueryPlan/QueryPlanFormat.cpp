@@ -1,3 +1,4 @@
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>

@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 
 namespace DB
@@ -37,6 +38,12 @@ private:
     /// Calls onException() in a try-catch block.
     void tryCallOnException();
 
+    /// Parses the client's trace context from the request and starts the server span of the current thread.
+    OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request);
+
+    /// Returns the request URI with the values of sensitive parameters and PromQL expressions hidden.
+    String getURIForLogging(const HTTPServerRequest & request) const;
+
     IServer & server;
     const PrometheusRequestHandlerConfig config;
     const AsynchronousMetrics & async_metrics;
@@ -53,6 +60,9 @@ private:
     std::unique_ptr<Impl> impl;
 
     String http_method;
+
+    OpenTelemetry::TracingContext client_trace_context;
+
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
     /// Compresses the response body into `write_buffer_from_response` when the client accepts it.
     std::unique_ptr<WriteBuffer> compressed_write_buffer;

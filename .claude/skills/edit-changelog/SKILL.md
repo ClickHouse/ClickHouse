@@ -335,8 +335,7 @@ Delete:
 
 - Anything starting `CI:`, `ci:`, `tests:`, `Fix flaky `, `Disable test`,
   `Bump pytest`, `Update version_date.tsv`, `Switch ... workflow`,
-  `Praktika ...`, `Sync ...`, `Refactor `, `chcache: ` (unless it's a
-  user-relevant build issue).
+  `Praktika ...`, `Sync ...`, `Refactor `.
 - Internal coverage / digest / scheduling / artifact-path tweaks.
 
 ### 5. Per-entry text rewrites

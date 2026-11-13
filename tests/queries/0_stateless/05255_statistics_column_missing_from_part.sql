@@ -8,6 +8,7 @@
 -- and statistics part pruning keep agreeing with a plain read, for a mutation that carries the part's
 -- columns over and for one that rewrites them all, and that a column the part does store keeps both.
 
+SET min_marks_per_part_to_load_statistics = 0;
 SET mutations_sync = 2, alter_sync = 2;
 SET use_statistics_for_part_pruning = 1, use_statistics_for_min_max_aggregation = 1;
 -- An insert must not be allowed to supply a statistic that a mutation below is supposed to supply, or
@@ -88,7 +89,7 @@ SELECT count() FROM t_stored WHERE w > 1000;
 SELECT count() FROM t_stored WHERE w = 10;
 SELECT countIf(explain ILIKE '%Statistics%') > 0 AND countIf(explain ILIKE '%Parts: 0/1%') > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_stored WHERE w > 1000);
-SELECT countIf(explain ILIKE '%statistics_min_max%') > 0
+SELECT countIf(explain ILIKE '%_statistics_projection%') > 0
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT max(w) FROM t_stored);
 
 DROP TABLE t_carried_over;

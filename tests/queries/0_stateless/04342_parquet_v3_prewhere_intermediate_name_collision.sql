@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: needs the native Parquet V3 reader.
-
 -- Regression test for a silent wrong-results bug in the ParquetV3 native reader's
 -- preparePrewhere(). When the prewhere splitter promotes a shared intermediate to a
 -- step boundary, the later step references it by its generated result_name. If a real
