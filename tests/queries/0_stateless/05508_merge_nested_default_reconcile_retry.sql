@@ -1,6 +1,8 @@
 -- Reconciliation of `Nested` defaults with the shared offsets during merges: dependents reached
 -- through a subcolumn of an intermediate, non-deterministic prerequisites, and mutations that leave
--- the reconciled column missing.
+-- the reconciled column missing. The mutations hardlink the untouched columns of a part with full
+-- storage only; a part with packed storage is rewritten as a whole (see
+-- `05628_merge_nested_default_reconcile_stored_dependents`).
 
 SELECT '-- dependency through a subcolumn of an intermediate';
 DROP TABLE IF EXISTS t_nested_reconcile_subcolumn;
@@ -32,7 +34,7 @@ SELECT '-- projection materialized by a mutation';
 DROP TABLE IF EXISTS t_nested_reconcile_projection;
 CREATE TABLE t_nested_reconcile_projection (id UInt32, `n.a` Array(UInt32))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+SETTINGS min_bytes_for_wide_part = 1, max_bytes_to_merge_at_max_space_in_pool = 1, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_nested_reconcile_projection VALUES (1, [10, 20]);
 ALTER TABLE t_nested_reconcile_projection ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
 ALTER TABLE t_nested_reconcile_projection ADD PROJECTION p (SELECT id, `n.b` ORDER BY id);
@@ -45,7 +47,7 @@ SELECT '-- dependent column materialized by a mutation';
 DROP TABLE IF EXISTS t_nested_reconcile_materialize;
 CREATE TABLE t_nested_reconcile_materialize (id UInt32, `n.a` Array(UInt32))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+SETTINGS min_bytes_for_wide_part = 1, max_bytes_to_merge_at_max_space_in_pool = 1, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_nested_reconcile_materialize VALUES (1, [10, 20]);
 ALTER TABLE t_nested_reconcile_materialize ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
 ALTER TABLE t_nested_reconcile_materialize ADD COLUMN b_length UInt64 MATERIALIZED length(`n.b`);

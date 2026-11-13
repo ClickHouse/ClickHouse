@@ -2470,7 +2470,8 @@ void MutationsInterpreter::Source::read(
     if (data)
     {
         createReadFromPartStep(
-            MergeTreeSequentialSourceType::Mutation,
+            mutation_settings.rewrites_all_part_columns ? MergeTreeSequentialSourceType::MutationOfAllColumns
+                                                        : MergeTreeSequentialSourceType::Mutation,
             plan,
             *data,
             storage_snapshot,

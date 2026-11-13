@@ -187,6 +187,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     switch (type)
     {
         case Mutation:
+        case MutationOfAllColumns:
             addThrottler(read_settings.remote_throttler, context->getMutationsThrottler());
             addThrottler(read_settings.local_throttler, context->getMutationsThrottler());
             break;
@@ -208,11 +209,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings));
     /// A merge writes every column it reads, so the defaults it reconciles with the shared `Nested`
-    /// offsets are stored in the new part. A mutation may read a missing column only to compute
-    /// something derived from it (a projection, a skip index, a `MATERIALIZED` column) and leave the
-    /// column itself missing, so the reads of the mutated part would still evaluate the default as is
-    /// and disagree with the derived data. So a mutation reads the defaults like a query does.
-    reader_settings.reconcile_missing_defaults_with_shared_offsets = (type == Merge);
+    /// offsets are stored in the new part. So does a mutation that rewrites every column of the part;
+    /// without the reconciliation it would store a default inconsistent with the shared offsets and
+    /// corrupt the part. A mutation that hardlinks the untouched columns may read a missing column
+    /// only to compute something derived from it (a projection, a skip index, a `MATERIALIZED` column)
+    /// and leave the column itself missing, so the reads of the mutated part would still evaluate the
+    /// default as is and disagree with the derived data. So such a mutation reads the defaults like a
+    /// query does.
+    reader_settings.reconcile_missing_defaults_with_shared_offsets = (type == Merge || type == MutationOfAllColumns);
 
     MergeTreeReadTask::Extras extras =
     {

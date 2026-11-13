@@ -97,6 +97,9 @@ public:
         /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
         /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
         bool apply_on_fly_for_read = false;
+        /// Whether the mutation rewrites every column of the part instead of hardlinking the ones it
+        /// does not touch, so every column it reads is written to the new part.
+        bool rewrites_all_part_columns = false;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
@@ -161,6 +164,9 @@ public:
 
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
+
+    /// Must be called before `execute`. See `Settings::rewrites_all_part_columns`.
+    void setRewritesAllPartColumns(bool value) { settings.rewrites_all_part_columns = value; }
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 

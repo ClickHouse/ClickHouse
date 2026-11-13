@@ -5369,6 +5369,10 @@ bool MutateTask::prepare()
         ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
         ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+        /// A mutation that rewrites every column stores the missing `Nested` defaults it reads, so it
+        /// must reconcile them with the shared offsets, as a merge does.
+        ctx->interpreter->setRewritesAllPartColumns(MutationHelpers::rewritesAllPartColumns(
+            ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type));
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback(
