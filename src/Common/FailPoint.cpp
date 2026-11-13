@@ -541,6 +541,9 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
+    PAUSEABLE_ONCE(memory_sink_pause_before_commit) \
+    PAUSEABLE_ONCE(memory_write_pause_before_sink) \
+    PAUSEABLE_ONCE(memory_alter_pause_before_metadata_commit) \
     REGULAR(http_connection_socket_inode_unavailable)
 
 namespace FailPoints

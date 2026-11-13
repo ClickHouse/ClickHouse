@@ -1,10 +1,14 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <optional>
 #include <mutex>
+#include <vector>
 
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
+#include <Storages/AlterCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -204,11 +208,29 @@ private:
 
     mutable std::mutex mutex;
 
+    /// While set, data commits wait until `alter` finishes persisting metadata.
+    bool block_data_commits = false;
+    mutable std::condition_variable data_commit_cv;
+
     bool delay_read_for_global_subqueries = false;
     bool is_temporary_table = false;
     MaterializedCTEWeakPtr materialized_cte;
 
     MultiVersion<MemorySettings> memory_settings;
+
+    /// Stored-column rewrites an in-flight `INSERT` must replay.
+    /// `schema_generation` is the table generation after that `ALTER`.
+    /// A sink replays entries newer than the generation it captured at creation.
+    struct IdentityRewrite
+    {
+        UInt64 schema_generation = 0;
+        AlterCommands commands;
+        StorageInMemoryMetadata metadata;
+    };
+    std::vector<IdentityRewrite> identity_rewrites;
+
+    /// Bumped under `mutex` on every successful `ALTER`, including one that does not rewrite blocks.
+    UInt64 schema_generation = 0;
 
     friend class ReadFromMemoryStorageStep;
 };

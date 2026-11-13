@@ -195,7 +195,8 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
         return false;
 
     bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
-    return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
+    return alter_conversions && alter_conversions->isColumnDropped(
+        columns_to_read[pos].getNameInStorage(), share_nested, data_part_info_for_read.get());
 }
 
 bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
@@ -298,8 +299,8 @@ void IMergeTreeReader::fillMissingColumns(
 
                     /// DROP/CLEAR invalidates both the physical and current name.
                     bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
-                    if (alter_conversions->isColumnDropped(name_in_part, share_nested)
-                        || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested))
+                    if (alter_conversions->isColumnDropped(name_in_part, share_nested, data_part_info_for_read.get())
+                        || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested, data_part_info_for_read.get()))
                     {
                         ++column_index;
                         continue;

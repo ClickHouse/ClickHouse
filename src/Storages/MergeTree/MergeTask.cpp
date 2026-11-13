@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -748,15 +749,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             continue;
 
         ++non_empty_parts;
+        const bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+        LoadedMergeTreeDataPartInfoForReader part_info(part, conversions);
         for (const auto & marker : part->getSerializationInfos().getMissingColumns())
         {
             String current_name = marker.name;
             if (conversions->columnHasNewName(marker.name))
                 current_name = conversions->getColumnNewName(marker.name);
 
-            bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
-            if (conversions->isColumnDropped(marker.name, share_nested)
-                || conversions->isColumnDropped(current_name, share_nested))
+            if (conversions->isColumnDropped(marker.name, share_nested, &part_info)
+                || conversions->isColumnDropped(current_name, share_nested, &part_info))
                 continue;
 
             auto [it, inserted] = missing_column_states.try_emplace(current_name);
