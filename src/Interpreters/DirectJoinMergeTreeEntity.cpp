@@ -156,6 +156,15 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
     return result_chunk;
 }
 
+/// The type default differs from the column zero for an `Enum` (its first value) and for composites containing one.
+static void insertTypeDefaults(IColumn & column, const IDataType & type, size_t count)
+{
+    if (type.isDefaultInsertTrivial())
+        column.insertManyDefaults(count);
+    else
+        type.insertManyDefaultsInto(column, count);
+}
+
 Chunk DirectJoinMergeTreeEntity::getByKeys(
     const ColumnsWithTypeAndName & keys,
     const Names & required_columns,
@@ -199,8 +208,8 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     if (!found_chunk)
     {
         auto result_columns = sample_block.cloneEmptyColumns();
-        for (auto & col : result_columns)
-            col->insertManyDefaults(num_keys);
+        for (size_t i = 0; i < result_columns.size(); ++i)
+            insertTypeDefaults(*result_columns[i], *sample_block.getByPosition(i).type, num_keys);
         out_null_map.resize_fill(num_keys, 0);
         return Chunk(std::move(result_columns), num_keys);
     }
@@ -271,8 +280,8 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
 
     /// Append default values to each result column to handle not found keys.
     /// These serve as the target for the sentinel index (num_found_rows) used when keys are not found.
-    for (const auto & col : found_columns)
-        col->insertDefault();
+    for (size_t i = 0; i < found_columns.size(); ++i)
+        insertTypeDefaults(*found_columns[i], *plan_header->getByPosition(i).type, 1);
 
     /// Remap `found_columns` (in `plan_header` order) into `sample_block` order so the result
     /// matches the schema the caller expects. `sample_block` already encodes the empty-means-all
