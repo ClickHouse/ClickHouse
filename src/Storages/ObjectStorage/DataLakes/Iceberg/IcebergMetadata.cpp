@@ -838,14 +838,14 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             persistent_components.metadata_compression_method,
             /* ignore_explicit_metadata_file_path */ true);
 
-        auto metadata_object = getMetadataJSONObject(
+        auto metadata_object = deepCopy(getMetadataJSONObject(
             metadata_file_path,
             object_storage,
             persistent_components.metadata_cache,
             context,
             log,
             compression_method,
-            persistent_components.table_uuid);
+            persistent_components.table_uuid));
 
         // Use -1 as the Iceberg spec sentinel for "no parent snapshot"
         Int64 parent_snapshot_id = -1;
