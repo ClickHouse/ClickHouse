@@ -13,6 +13,8 @@
 #include <boost/dynamic_bitset.hpp>
 
 #include <expected>
+#include <functional>
+#include <span>
 
 struct PreformattedMessage;
 
@@ -167,6 +169,13 @@ public:
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
     static bool isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings);
 
+    /// Returns whether OR-connected filters are evaluated with skip indexes during index analysis.
+    static bool useSkipIndexesForDisjunctions(
+        bool requested,
+        bool use_skip_indexes_on_data_read,
+        const ConditionTemplate<KeyCondition> * key_condition_rpn_template,
+        const Settings & settings);
+
 private:
     const MergeTreeData & data;
     MergeTreeSettingsPtr data_settings;
@@ -317,6 +326,84 @@ public:
         ReadFromMergeTree::AnalysisResult & result;
     };
 
+    /// Counters of one index in one analysis.
+    struct IndexAnalysisStat
+    {
+        std::atomic<size_t> total_granules = 0;
+        std::atomic<size_t> granules_dropped = 0;
+        std::atomic<size_t> total_parts = 0;
+        std::atomic<size_t> parts_dropped = 0;
+        std::atomic<size_t> elapsed_us = 0;
+        std::atomic<MarkRanges::SearchAlgorithm> search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
+    };
+
+    struct IndexAnalysisStats
+    {
+        explicit IndexAnalysisStats(size_t num_skip_index_stats) : skip_indexes(num_skip_index_stats) {}
+
+        IndexAnalysisStat primary_key;
+        /// By position in the part's skip index order; one block per part with `per_part_index_stats`.
+        std::vector<IndexAnalysisStat> skip_indexes;
+        std::atomic<size_t> marks_after_primary_key = 0;
+        std::atomic<size_t> parts_after_primary_key = 0;
+        std::atomic<size_t> marks_after_disjunctions = 0;
+    };
+
+    /// Query-level inputs of `analyzeSinglePart`, shared by all parts and threads.
+    struct SinglePartIndexAnalysisParams
+    {
+        StorageMetadataPtr metadata_snapshot;
+        ContextPtr context;
+        const Settings & settings;
+        const MergeTreeReaderSettings & reader_settings;
+        LoggerPtr log;
+
+        bool use_primary_key = true;
+        const ConditionTemplate<KeyCondition> & key_condition;
+        const ConditionTemplate<KeyCondition> * part_offset_condition = nullptr;
+        /// Only with the real `part_starting_offset_in_query` of every part.
+        const ConditionTemplate<KeyCondition> * total_offset_condition = nullptr;
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot = nullptr;
+        bool find_exact_ranges = false;
+        /// `FINAL` exact mode.
+        bool keep_ranges_after_primary_key = false;
+
+        const UsefulSkipIndexes & skip_indexes;
+        const ConditionTemplate<KeyCondition> * key_condition_rpn_template = nullptr;
+        /// The result of `useSkipIndexesForDisjunctions`.
+        bool use_skip_indexes_for_disjunctions = false;
+        bool use_skip_indexes_on_data_read = false;
+        bool query_hides_lightweight_deleted_rows = true;
+        MarkCache * mark_cache = nullptr;
+        UncompressedCache * uncompressed_cache = nullptr;
+        VectorSimilarityIndexCache * vector_similarity_index_cache = nullptr;
+    };
+
+    /// References into the caller's per-part state.
+    struct PartRangesForIndexAnalysis
+    {
+        MarkRanges & ranges;
+        RangesInDataPartReadHints & read_hints;
+        MarkRanges & exact_ranges;
+        std::optional<MarkRanges> & ranges_snapshot_after_pk_analysis;
+        size_t part_starting_offset_in_query = 0;
+    };
+
+    /// Primary key and offset conditions, then the skip indexes in `skip_index_order` (declaration order when null), then the
+    /// disjunction merge. Calls `get_part_for_skip_indexes` once, only when skip indexes run, inside the
+    /// `FilteringMarksWithSecondaryKeys` metric scope; it returns the same part with its alter conversions (not null).
+    /// Per-index counters go to `skip_index_stats` (the caller's slice of
+    /// `IndexAnalysisStats::skip_indexes`, by position in the order).
+    /// Returns whether a skip index is usable for the part, applied here or deferred to the read.
+    static bool analyzeSinglePart(
+        const SinglePartIndexAnalysisParams & params,
+        const IMergeTreeDataPartInfoForReader & part,
+        const std::function<MergeTreeDataPartInfoForReaderPtr()> & get_part_for_skip_indexes,
+        const std::vector<size_t> * skip_index_order,
+        PartRangesForIndexAnalysis ranges,
+        IndexAnalysisStats & stats,
+        std::span<IndexAnalysisStat> skip_index_stats);
+
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
@@ -381,20 +468,27 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
+    /// Orders the useful indices for one part: vector similarity first, then minmax, then coarser granularity, then smaller index files.
+    /// `index_sizes_scratch` is a buffer the caller reuses across parts.
+    static SkipIndexOrder computeSkipIndexOrder(
+        const IMergeTreeDataPartInfoForReader & part,
+        const std::vector<MergeTreeIndexWithCondition> & useful_indices,
+        std::vector<size_t> & index_sizes_scratch);
+
     /// Returns an error if the index depends on a column updated on the fly. A value update
     /// (@value_updated_columns: ALTER UPDATE / patches / pending DROP COLUMN), a pending RENAME COLUMN,
     /// or a MATERIALIZED column the read recalculates from an updated one, always makes it stale. A
-    /// value-preserving type change is tolerated when @part records the granules were built against the
+    /// value-preserving type change is tolerated when @index_column_types records the granules were built against the
     /// current read type. Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes` as
     /// @all_updated_columns (it also holds the names touched by a pending DROP/RENAME COLUMN).
-    /// @part is optional: some callers aggregate updated columns across parts and decide once.
+    /// @index_column_types is optional: some callers aggregate updated columns across parts and decide once.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns,
         const NameSet & value_updated_columns,
         const ContextPtr & context,
-        const IMergeTreeDataPart * part = nullptr);
+        const SecondaryIndexColumnTypes * index_column_types = nullptr);
 
     /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
     /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
