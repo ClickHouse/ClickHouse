@@ -20,7 +20,7 @@ class KafkaProducer : public IMessageProducer
 {
 public:
     KafkaProducer(
-        ProducerPtr producer_,
+        cppkafka::Configuration conf,
         const std::string & topic_,
         std::chrono::milliseconds poll_timeout,
         std::atomic<bool> & shutdown_called_,
@@ -35,6 +35,10 @@ public:
 
 private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};
+
+    /// Written by the delivery report callback of `producer`, so they must outlive it.
+    size_t failed_deliveries = 0;
+    cppkafka::Error first_delivery_error;
 
     ProducerPtr producer;
     const std::string topic;
