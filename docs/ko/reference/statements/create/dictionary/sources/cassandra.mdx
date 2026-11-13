@@ -18,6 +18,8 @@ doc_type: 'reference'
         port 9042
         user 'username'
         password 'qwerty123'
+        secure 1
+        compression 'lz4'
         keyspace 'database_name'
         column_family 'table_name'
         allow_filtering 1
@@ -38,7 +40,9 @@ doc_type: 'reference'
             <port>9042</port>
             <user>username</user>
             <password>qwerty123</password>
-            <keyspase>database_name</keyspase>
+            <secure>1</secure>
+            <compression>lz4</compression>
+            <keyspace>database_name</keyspace>
             <column_family>table_name</column_family>
             <allow_filtering>1</allow_filtering>
             <partition_key_prefix>1</partition_key_prefix>
@@ -54,20 +58,22 @@ doc_type: 'reference'
 
 설정 필드:
 
-| 설정                     | 설명                                                                                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host`                 | Cassandra 호스트 또는 쉼표로 구분된 호스트 목록입니다.                                                                                                                         |
-| `port`                 | Cassandra 서버의 포트입니다. 지정하지 않으면 기본 포트 `9042`를 사용합니다.                                                                                                          |
-| `user`                 | Cassandra 사용자의 이름입니다.                                                                                                                                       |
-| `password`             | Cassandra 사용자의 비밀번호입니다.                                                                                                                                     |
-| `keyspace`             | 키스페이스(데이터베이스)의 이름입니다.                                                                                                                                       |
-| `column_family`        | 컬럼 패밀리(테이블)의 이름입니다.                                                                                                                                         |
-| `allow_filtering`      | 클러스터링 키 컬럼에 대해 비용이 많이 들 수 있는 조건을 허용할지 여부를 나타내는 플래그입니다. 기본값은 `1`입니다.                                                                                         |
-| `partition_key_prefix` | Cassandra 테이블의 프라이머리 키에 포함된 파티션 키 컬럼 수입니다. 복합 키 딕셔너리에는 필수입니다. 딕셔너리 정의에서 키 컬럼의 순서는 Cassandra와 같아야 합니다. 기본값은 `1`입니다(첫 번째 키 컬럼은 파티션 키이고 나머지 키 컬럼은 클러스터링 키입니다). |
-| `consistency`          | 일관성 수준입니다. 가능한 값: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. 기본값은 `One`입니다.                  |
-| `where`                | 선택 조건입니다. 옵션입니다.                                                                                                                                            |
-| `max_threads`          | 복합 키 딕셔너리에서 여러 파티션의 데이터를 로드하는 데 사용할 최대 스레드 수입니다.                                                                                                            |
-| `query`                | 사용자 지정 쿼리입니다. 옵션입니다.                                                                                                                                        |
+| 설정                     | 설명                                                                                                                                                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`                 | Cassandra 호스트 또는 쉼표로 구분된 호스트 목록입니다.                                                                                                                                                                                                              |
+| `port`                 | Cassandra 서버의 포트입니다. 지정하지 않으면 기본 포트 `9042`를 사용합니다.                                                                                                                                                                                               |
+| `user`                 | Cassandra 사용자의 이름입니다.                                                                                                                                                                                                                            |
+| `password`             | Cassandra 사용자의 비밀번호입니다.                                                                                                                                                                                                                          |
+| `secure`               | 연결에 TLS를 사용합니다. 인증서 검증 모드와 같은 TLS 클라이언트 설정은 서버 구성의 `openSSL.client` 섹션에서 가져옵니다. 기본값은 `0`입니다.                                                                                                                                                     |
+| `compression`          | 전송 데이터의 압축 방식으로, `none`, `lz4`, `snappy` 중 하나를 지정합니다. 기본값은 `none`입니다.                                                                                                                                                                            |
+| `keyspace`             | 키스페이스(데이터베이스)의 이름입니다.                                                                                                                                                                                                                            |
+| `column_family`        | 컬럼 패밀리(테이블)의 이름입니다.                                                                                                                                                                                                                              |
+| `allow_filtering`      | 클러스터링 키 컬럼에 대해 비용이 많이 들 수 있는 조건을 허용할지 여부를 나타내는 플래그입니다. 기본값은 `1`입니다.                                                                                                                                                                              |
+| `partition_key_prefix` | Cassandra 테이블의 프라이머리 키에 포함된 파티션 키 컬럼 수입니다. 복합 키 딕셔너리에는 필수입니다. 딕셔너리 정의에서 키 컬럼의 순서는 Cassandra와 같아야 합니다. 기본값은 `1`입니다(첫 번째 키 컬럼은 파티션 키이고 나머지 키 컬럼은 클러스터링 키입니다).                                                                                      |
+| `consistency`          | 일관성 수준입니다. 가능한 값: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. 기본값은 `One`입니다.                                                                                                       |
+| `where`                | 선택 조건입니다. 옵션입니다.                                                                                                                                                                                                                                 |
+| `max_threads`          | 데이터 로드(예: 복합 키 딕셔너리에서 여러 파티션의 데이터 로드)를 위해 열어 둘 유휴 연결의 최대 수입니다. 기본값은 `8`입니다.                                                                                                                                                                      |
+| `query`                | 사용자 지정 쿼리입니다. 옵션입니다. 복합 키와 `cache` 또는 `direct` 레이아웃을 사용하는 딕셔너리에서는 `{condition}` 플레이스홀더를 반드시 포함해야 합니다. CQL은 서브쿼리를 지원하지 않으므로 이 플레이스홀더는 요청된 키에 대한 조건으로 대체됩니다. 전체 딕셔너리를 로드할 때는 플레이스홀더가 `WHERE` 또는 `AND`와 함께 제거되므로, 반드시 `WHERE` 또는 `AND` 뒤에 위치해야 합니다. |
 
 <Note>
   `column_family` 또는 `where` 필드는 `query` 필드와 함께 사용할 수 없습니다. 또한 `column_family` 또는 `query` 필드 중 하나는 반드시 선언해야 합니다.

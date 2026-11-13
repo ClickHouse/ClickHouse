@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -7,7 +8,6 @@
 #include <optional>
 #include <string_view>
 #include <type_traits>
-#include <unordered_set>
 #include <vector>
 
 #include <Common/WKB.h>
@@ -779,7 +779,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 template <typename AcceptInput, typename OnBbox>
 void collectConjunctiveSpatialBboxes(
     const ActionsDAG::Node * node,
-    std::unordered_set<const ActionsDAG::Node *> & visited,
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & visited,
     AcceptInput && accept_input,
     OnBbox && on_bbox,
     bool & failed)

@@ -164,7 +164,7 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBboxes(
 {
     bool failed = false;
     std::vector<QueryBbox> bboxes;
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
 
     /// Accept only the INPUT node matching the indexed column: a spatial predicate on any
     /// other column carries no pruning information for THIS index (but its invalid constant
