@@ -27,7 +27,9 @@ SELECT windowFunnel(1)(number + 1, number = 0, number = 1, number = 3) FROM numb
 SELECT windowFunnel(1, 'strict_once')(number + 1, number = 0, number = 1, number = 3) FROM numbers(4) SETTINGS max_threads = 1;"
 
 echo "-- memory estimate of the sorter with the maximum block size"
-$CLICKHOUSE_CLIENT -q "
+# The server warns that it reduces the huge `max_block_size` of the query.
+CLICKHOUSE_CLIENT_NO_WARNINGS=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=error/g')
+$CLICKHOUSE_CLIENT_NO_WARNINGS -q "
 SELECT groupArray(number) FROM (
     SELECT number FROM numbers(3) ORDER BY number % 2, number
     SETTINGS max_threads = 1, max_block_size = 18446744073709551615, enable_adaptive_memory_spill_scheduler = 1,
