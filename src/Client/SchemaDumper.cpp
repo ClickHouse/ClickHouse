@@ -9,9 +9,11 @@
 #include <Core/Defines.h>
 #include <Core/Field.h>
 #include <Core/Protocol.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/TypeTree.h>
@@ -1327,6 +1329,38 @@ bool engineCanBind(ReferenceKind kind, const String & engine)
     }
 }
 
+/// The query of a dictionary's local `CLICKHOUSE` source, which an eager dictionary runs at CREATE; null for any other source.
+ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary)
+{
+    const auto * source = dictionary.source;
+    if (!source || !source->elements || !equalsCaseInsensitive(source->name, "clickhouse"))
+        return nullptr;
+    String query;
+    for (const auto & element : source->elements->children)
+    {
+        const auto * pair = element->as<ASTPair>();
+        const auto * literal = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
+        if (!literal || literal->value.getType() != Field::Types::String)
+            continue;
+        const String & value = literal->value.safeGet<String>();
+        if (equalsCaseInsensitive(pair->first, "host") && value != "localhost" && value != "127.0.0.1" && value != "::1")
+            return nullptr;
+        if (equalsCaseInsensitive(pair->first, "query"))
+            query = value;
+    }
+    if (query.empty())
+        return nullptr;
+    try
+    {
+        ParserSelectWithUnionQuery parser;
+        return parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
+}
+
 /// Tables (name -> engine) of the databases left out of the dump, and the external ones among them, whose tables are not listed.
 struct OmittedTables
 {
@@ -2222,6 +2256,36 @@ std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, cons
     return {};
 }
 
+/// A state type without a version has its function's default one, but a fresh CREATE pins the current one, so the dump
+/// spells the default out. Returns whether a type changed.
+bool pinDefaultStateVersions(IAST & node)
+{
+    bool changed = false;
+    for (const auto & child : node.children)
+        changed |= pinDefaultStateVersions(*child);
+    auto * data_type = node.as<ASTDataType>();
+    const ASTPtr arguments = data_type && data_type->name == "AggregateFunction" ? data_type->getArguments() : nullptr;
+    if (!arguments || arguments->children.empty() || arguments->children[0]->as<ASTLiteral>())
+        return changed;
+    try
+    {
+        const DataTypePtr type = DataTypeFactory::instance().get(node.ptr());
+        const auto * state = typeid_cast<const DataTypeAggregateFunction *>(type.get());
+        if (!state || !state->isVersioned() || state->hasExplicitVersion())
+            return changed;
+        const size_t default_version = state->getFunction()->getDefaultVersion();
+        if (state->getFunction()->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION) <= default_version)
+            return changed;
+        arguments->children.insert(arguments->children.begin(), make_intrusive<ASTLiteral>(static_cast<UInt64>(default_version)));
+        return true;
+    }
+    catch (const Exception &)
+    {
+        /// A type this process cannot build is replayed as stored.
+        return changed;
+    }
+}
+
 /// Prepares the stored CREATE of an emitted object for replay, and records what it needs that the dump does not create.
 /// A refreshable materialized view runs a refresh as soon as CREATE makes it, which writes its target and reads its
 /// sources, unless the CREATE says `EMPTY`. The server does not store `EMPTY`, so the dump adds it, and replay recreates
@@ -2243,6 +2307,9 @@ void prepareCreateForReplay(TableInfo & table, const String & engine, const Cont
         /// `reportDependenciesOutsideDumpSet` warns that it was not checked.
         return;
     }
+
+    if (table.create_query.contains("AggregateFunction(") && pinDefaultStateVersions(*create))
+        table.create_query = create->formatWithSecretsOneLine();
 
     if (const auto refused = indexOnlyAttachAccepts(*create, function_context))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -2561,17 +2628,35 @@ std::vector<TableInfo> resolveTables(
         }
         else if (row.engine != "View" && row.engine != "MaterializedView")
         {
-            /// CREATE analyzes the column expressions and runs constraint subqueries, which need what they read.
-            const bool reads_at_create = row.create_query.contains("predictXGBoost") || row.create_query.contains("CONSTRAINT");
+            /// CREATE analyzes the column and storage expressions and runs constraint subqueries, which need what they read.
+            /// An eager dictionary runs its local CLICKHOUSE source query.
+            const bool reads_at_create = row.create_query.contains("predictXGBoost") || row.create_query.contains("CONSTRAINT")
+                || row.create_query.starts_with("CREATE DICTIONARY");
             if (!reads_at_create || database_info.at(row.database).is_external)
                 continue;
             ParserCreateQuery create_parser;
             ASTPtr create_ast = parseQuery(
                 create_parser, row.create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
             const auto * create = create_ast->as<ASTCreateQuery>();
-            if (!create || !create->columns_list)
+            if (create && create->dictionary)
+            {
+                select_ast = localDictionarySourceQuery(*create->dictionary);
+                if (!select_ast)
+                    continue;
+            }
+            else if (create && create->columns_list)
+            {
+                auto parts = make_intrusive<ASTExpressionList>();
+                parts->children.push_back(create->columns_list->ptr());
+                if (create->storage)
+                    for (IAST * part : {create->storage->partition_by, create->storage->primary_key, create->storage->order_by,
+                                              create->storage->sample_by, create->storage->ttl_table})
+                        if (part)
+                            parts->children.push_back(part->ptr());
+                select_ast = parts;
+            }
+            else
                 continue;
-            select_ast = create->columns_list->ptr();
         }
         else
         {
@@ -2592,6 +2677,19 @@ std::vector<TableInfo> resolveTables(
                     "The dump would be incomplete without this view/materialized view's dependency edges",
                     row.database, row.name, e.message());
             }
+            /// The inner table's storage expressions are analyzed at CREATE too.
+            if (row.engine == "MaterializedView" && row.create_query.contains("predictXGBoost"))
+                if (const ASTPtr create_ast = tryParseCreate(row.create_query))
+                    if (const auto * create = create_ast->as<ASTCreateQuery>(); create && create->targets)
+                    {
+                        auto parts = make_intrusive<ASTExpressionList>();
+                        parts->children.push_back(select_ast);
+                        for (const auto * inner : create->targets->getInnerEngines())
+                            for (IAST * part : {inner->partition_by, inner->primary_key, inner->order_by, inner->sample_by, inner->ttl_table})
+                                if (part)
+                                    parts->children.push_back(part->ptr());
+                        select_ast = parts;
+                    }
         }
 
         auto add_dependency = [&](const TableReference & candidate)
@@ -3335,6 +3433,7 @@ struct ReplayGateNeeds
     bool rank_arguments = false; /// `rank` or `dense_rank` with arguments
     bool streaming_query = false; /// a table expression read with `STREAM`
     bool shuffle_query = false; /// a SELECT with `SHUFFLE`
+    bool executed_join = false; /// a JOIN in a query that CREATE runs, such as a constraint's scalar subquery
     bool kafka_consumers_over_limit = false; /// `kafka_num_consumers` may be above the per-server limit
     bool dynamic_disk_from_env = false;
     bool dynamic_disk_from_zk = false;
@@ -4429,6 +4528,8 @@ ReplayGateNeeds collectReplayGateNeeds(
                     AnalyzerCarriers carriers = scan_analyzed(*query);
                     carriers.subquery = false;
                     add_carriers(carriers);
+                    /// The subquery runs, so its JOIN is planned and reads the Dynamic key gate.
+                    forEachNode(*query, [&needs](const IAST & inner) { needs.executed_join |= inner.as<ASTTableJoin>() != nullptr; });
                 }
             });
         if (create->as_table_function)
@@ -4893,8 +4994,6 @@ String replaySettingsPrelude(
         "allow_create_index_without_type",
         "allow_experimental_lightweight_update",
         "allow_experimental_json_lazy_type_hints",
-        /// Read only when a query plans a JOIN; neither a view nor a `Join` table plans one at CREATE.
-        "allow_dynamic_type_in_join_keys",
         /// Read only by ALTER; CREATE checks the table's own MergeTree setting of the same name, kept in its SETTINGS.
         "allow_minmax_index_for_json",
         "allow_suspicious_indices",
@@ -4957,6 +5056,7 @@ String replaySettingsPrelude(
         {"enable_elasticsearch", &ReplayGateNeeds::elasticsearch},
         {"enable_streaming_queries", &ReplayGateNeeds::streaming_query},
         {"allow_experimental_shuffle_query", &ReplayGateNeeds::shuffle_query},
+        {"allow_dynamic_type_in_join_keys", &ReplayGateNeeds::executed_join},
         {"allow_get_client_http_header", &ReplayGateNeeds::client_http_header_function},
         {"allow_introspection_functions", &ReplayGateNeeds::introspection_functions},
         {"allow_nonconst_timezone_arguments", &ReplayGateNeeds::nonconst_timezone_argument},
@@ -5760,6 +5860,13 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
     return passive;
 }
 
+/// The registered name behind a function alias, so `caseWithoutExpr` counts as `multiIf`.
+String resolveFunctionAlias(const String & name)
+{
+    const auto & factory = FunctionFactory::instance();
+    return factory.isAlias(name) ? factory.aliasTo(name) : name;
+}
+
 /// The typing settings that can change the result type of a function call in `ast`.
 std::set<String> typingSettingsCarriedBy(const IAST & ast)
 {
@@ -5769,8 +5876,9 @@ std::set<String> typingSettingsCarriedBy(const IAST & ast)
         const auto * function = node.as<ASTFunction>();
         if (!function)
             return;
+        const String function_name = resolveFunctionAlias(function->name);
         for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "ifNotFinite", "array", "map"})
-            if (equalsCaseInsensitive(function->name, name))
+            if (equalsCaseInsensitive(function_name, name))
                 res.insert("allow_lossy_numeric_supertype");
         /// Any element name lookup can depend on the names `tuple` gives, so every `tuple` with arguments is a carrier.
         if (equalsCaseInsensitive(function->name, "tuple") && function->arguments && !function->arguments->children.empty())
@@ -5907,8 +6015,9 @@ void markTypingSettings(
                 const auto * function = node.as<ASTFunction>();
                 if (!function)
                     return;
+                const String function_name = resolveFunctionAlias(function->name);
                 for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "ifNotFinite", "array", "map", "tuple", "tupleElement"})
-                    if (equalsCaseInsensitive(function->name, name))
+                    if (equalsCaseInsensitive(function_name, name))
                         out.insert(&node);
             });
         };

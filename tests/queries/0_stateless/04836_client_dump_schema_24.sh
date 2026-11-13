@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, long, no-replicated-database
+# Tag long: its MergeTree, transaction and FileLog sources take over three minutes under sanitizers.
 # Tag no-replicated-database: the dump of a `Replicated` database names macros that the replaying `clickhouse-local` does not have.
 
 # --dump-schema keeps MergeTree parts, their transaction files and FileLog offsets as they were, and its dumps replay: the typing settings

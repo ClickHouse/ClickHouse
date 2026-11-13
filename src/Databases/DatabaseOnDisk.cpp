@@ -48,6 +48,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Poco/String.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/ThreadPool.h>
 
 
@@ -118,6 +121,32 @@ void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const Str
         visitor.visitTableExpressions(*ast_create_query.columns_list);
 }
 
+namespace
+{
+
+/// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.
+void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!function || !function->arguments || !context->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+    std::vector<const IAST *> stack{function->arguments.get()};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call
+            && (Poco::toLower(call->name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call->name)
+                || UserDefinedExecutableFunctionFactory::has(call->name, context)))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+}
+
+}
+
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -148,8 +177,12 @@ std::pair<String, StoragePtr> createTableFromAST(
     /// `TablesLoader::buildDependencyGraph`.
     qualifyNamesFromLegacyMetadata(ast_create_query, database_name, context);
 
+    if (ast_create_query.storage)
+        checkArgumentsLoadPassively(ast_create_query.storage->engine, ast_create_query, context);
+
     if (ast_create_query.as_table_function)
     {
+        checkArgumentsLoadPassively(ast_create_query.as_table_function->as<ASTFunction>(), ast_create_query, context);
         const auto & factory = TableFunctionFactory::instance();
         auto table_function_ast = ast_create_query.as_table_function->ptr();
         auto table_function = factory.get(table_function_ast, context);
