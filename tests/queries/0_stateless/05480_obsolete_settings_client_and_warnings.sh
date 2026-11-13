@@ -41,9 +41,10 @@ $CLICKHOUSE_CLIENT -q "
 
 echo "-- ... and logged"
 # The log entry can be written after the response is sent, so retry until it appears.
+# Only the first use of each obsolete setting since the server start is logged, so the entry can be older than this test.
 while clickhouse_test_time_left; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
-    res=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log WHERE level = 'Warning' AND message LIKE 'Obsolete setting \`max_memory_usage_for_all_queries\` is changed%'")
+    res=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log WHERE event_time >= now() - uptime() - 60 AND level = 'Warning' AND message LIKE 'Obsolete setting \`max_memory_usage_for_all_queries\` is changed%'")
     [ "$res" = 1 ] && break
     sleep 0.5
 done
