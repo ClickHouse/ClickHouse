@@ -877,14 +877,20 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
     filter.original_node = std::move(new_node);
 }
 
+/// NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter)
+static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTreeNodePtr & expression) { return expression; }
+static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTreeNodePtrWithHash & expression) { return expression.node; }
+
 /// Insert a new comparison filter for `expression` into `filter_map`.
 /// Performs type conversion; with `enable_pruning` also boundary folding and comparison against
 /// every existing filter for the expression, otherwise only against the first `equals` seen.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
+/// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
+template <typename Expression>
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
-    const QueryTreeNodePtrWithHash & expression,
+    const Expression & expression,
     ComparisonFilterInfo new_filter,
     bool enable_pruning,
     const ContextPtr & context)
@@ -899,7 +905,7 @@ static AddComparisonFilterResult addComparisonFilter(
     }
 
     /// Step 1: convert the constant to the column's type for uniform comparison.
-    const auto & raw_type = expression.node->getResultType();
+    const auto & raw_type = getComparisonFilterExpressionNode(expression)->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
