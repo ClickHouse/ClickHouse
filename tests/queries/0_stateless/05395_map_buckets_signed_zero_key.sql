@@ -26,6 +26,16 @@ SET optimize_functions_to_subcolumns = 1;
 SELECT id, m[0.0], m[-0.0], m[0.5], f[0.0], f[-0.0], t[(0.0, 1)], t[(-0.0, 1)], a[[0.0]], a[[-0.0]] FROM t_map_buckets_signed_zero ORDER BY id;
 SELECT 'm[0.0] != \'\'', arraySort(groupArray(id)) FROM t_map_buckets_signed_zero WHERE m[0.0] != '';
 
+-- NaN keys with different bit patterns must match even when stored in different buckets.
+INSERT INTO t_map_buckets_signed_zero VALUES
+    (5, map(toFloat64('nan'), 'e'), map(toFloat32('nan'), 'e'),
+        map((toFloat64('nan'), 1), 'e'), map([toFloat64('nan')], 'e')),
+    (6, map(toFloat64('-nan'), 'f'), map(toFloat32('-nan'), 'f'),
+        map((toFloat64('-nan'), 1), 'f'), map([toFloat64('-nan')], 'f'));
+
+SELECT id, m[nan], f[toFloat32('nan')], t[(nan, 1)], a[[nan]]
+FROM t_map_buckets_signed_zero WHERE id >= 5 ORDER BY id;
+
 DROP TABLE t_map_buckets_signed_zero;
 
 -- A zero in a path of a `JSON` key.
