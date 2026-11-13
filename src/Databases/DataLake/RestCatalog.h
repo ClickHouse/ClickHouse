@@ -240,6 +240,13 @@ protected:
     static void parseCatalogConfigurationSettings(
         const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode);
 
+    /// Read settings for a catalog request with the given HTTP method. Requests other than `GET` and `HEAD`
+    /// change the catalog and are not idempotent, so they are sent only once: if the catalog has applied
+    /// a commit but the response was lost, a replayed commit fails with `409 Conflict`, which the callers
+    /// take for a concurrent change and retry against the new state, e.g. `ALTER TABLE ADD COLUMN` then
+    /// fails because the column already exists. The original error is reported instead.
+    static DB::ReadSettings getReadSettingsForRequest(const DB::ContextPtr & request_context, const String & method);
+
     /// Returns the body of the response, empty with `ignore_result`.
     virtual String sendRequest(
         const CatalogState & catalog_state,

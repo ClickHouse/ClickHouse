@@ -221,7 +221,8 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
-    /// The snapshot referencing the written files is committed, so they must never be removed.
+    /// The snapshot referencing the written files is committed, or its commit state is unknown
+    /// (`DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN`), so they must never be removed.
     bool committed = false;
 
     /// The manifests are written once and reused on commit retries.

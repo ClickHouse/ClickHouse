@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
@@ -1861,8 +1862,15 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        /// The catalog may have published the new snapshot, which then references these files.
+        /// Mark the files as committed so the destructor does not remove them either.
+        if (getCurrentExceptionCode() == ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN)
+        {
+            committed = true;
+            persistent_table_components.invalidateMetadataCache();
+        }
+        else
+            cleanup(false);
         throw;
     }
     return true;
