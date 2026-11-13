@@ -12,9 +12,11 @@
 #include <Poco/Timespan.h>
 #include <Poco/Net/HTTPClientSession.h>
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -42,7 +44,13 @@ public:
     using ConnectionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
     /// can throw Poco::Net::Exception, DB::NetException, DB::Exception
-    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) = 0;
+    /// With a `deadline`, connecting and reconnecting the connection try no address after it.
+    virtual ConnectionPtr getConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline) = 0;
+    ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    {
+        return getConnection(timeouts, connect_time, std::nullopt);
+    }
     virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 

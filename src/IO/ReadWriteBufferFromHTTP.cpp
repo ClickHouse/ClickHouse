@@ -316,7 +316,10 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, range, with_request_body);
 
-    auto session = makeHTTPSession(connection_group, current_uri, getTimeoutsForTry(), proxy_config);
+    auto session = makeHTTPSession(connection_group, current_uri, getTimeoutsForTry(), proxy_config, /*connect_time=*/ nullptr, deadline);
+    /// Connecting used up some of the time.
+    if (deadline)
+        setTimeouts(*session, getTimeoutsForTry());
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
@@ -420,7 +423,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
 
         if (deadline && std::chrono::steady_clock::now() >= *deadline)
-            throwDeadlineExceeded(error_message);
+            throwDeadlineExceeded(initial_uri, error_message);
 
         try
         {
@@ -500,7 +503,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                 throw ReadInterruptedException(exception);
 
             if (is_retriable && no_time_for_retry)
-                throwDeadlineExceeded(error_message);
+                throwDeadlineExceeded(initial_uri, error_message);
 
             std::rethrow_exception(exception);
         }
@@ -562,28 +565,19 @@ ConnectionTimeouts ReadWriteBufferFromHTTP::getTimeoutsForTry() const
     if (!deadline)
         return timeouts;
 
-    const auto left = std::chrono::duration_cast<std::chrono::microseconds>(*deadline - std::chrono::steady_clock::now());
-    if (left.count() <= 0)
-        throwDeadlineExceeded({});
+    if (std::chrono::steady_clock::now() >= *deadline)
+        throwDeadlineExceeded(initial_uri, {});
 
-    /// Zero means no timeout, so it is capped too.
-    const Poco::Timespan limit(left.count());
-    ConnectionTimeouts result = timeouts;
-    for (auto * timeout : {&result.connection_timeout, &result.send_timeout, &result.receive_timeout})
-    {
-        if (*timeout == 0 || *timeout > limit)
-            *timeout = limit;
-    }
-    return result;
+    return timeouts.getCappedAt(*deadline);
 }
 
 
-void ReadWriteBufferFromHTTP::throwDeadlineExceeded(const String & error_message) const
+void ReadWriteBufferFromHTTP::throwDeadlineExceeded(const Poco::URI & uri, const String & error_message)
 {
     throw Exception(
         ErrorCodes::TIMEOUT_EXCEEDED,
         "Request to '{}' did not complete by its deadline{}",
-        maskedURI(initial_uri),
+        maskedURI(uri),
         error_message.empty() ? String() : fmt::format(". Last error: {}", error_message));
 }
 
@@ -1123,6 +1117,10 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
+    /// Proxy discovery can make a request of its own.
+    if (deadline && std::chrono::steady_clock::now() >= *deadline)
+        ReadWriteBufferFromHTTP::throwDeadlineExceeded(uri, {});
+
     ProxyConfiguration proxy_configuration;
 
     if (!bypass_proxy)

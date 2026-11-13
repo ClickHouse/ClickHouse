@@ -221,7 +221,7 @@ private:
     /// `timeouts` capped at the time left before `deadline`.
     ConnectionTimeouts getTimeoutsForTry() const;
 
-    [[noreturn]] void throwDeadlineExceeded(const String & error_message) const;
+    [[noreturn]] static void throwDeadlineExceeded(const Poco::URI & uri, const String & error_message);
 
     /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
     bool isReadCancelled() const;

@@ -580,7 +580,7 @@ private:
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getPooledConnection(timeouts, connect_time);
+                auto new_connection = lock->getPooledConnection(timeouts, connect_time, deadline);
                 assignFrom(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
@@ -876,6 +876,8 @@ private:
         Poco::Timespan last_idle_time;
         /// When the socket was last stored in the pool.
         Poco::Timestamp idle_since;
+        /// The deadline of the request the connection is handed out for, a reconnect keeps to it as well.
+        std::optional<std::chrono::steady_clock::time_point> deadline;
     };
 
     using Connection = PooledConnection;
@@ -915,14 +917,18 @@ public:
         return host;
     }
 
-    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
+    using IHTTPConnectionPoolForEndpoint::getConnection;
+
+    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline) override
     {
-        return getPooledConnection(timeouts, connect_time);
+        return getPooledConnection(timeouts, connect_time, deadline);
     }
 
     /// Same as `getConnection`, but keeps the concrete type: `PooledConnection::reconnect` needs it
     /// in order to inherit the socket's identity from the connection it takes over.
-    ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    ConnectionPtr getPooledConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline)
     {
         std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
@@ -954,6 +960,7 @@ public:
             reused_connection->sampleIdleTime();
 
             setTimeouts(*reused_connection, timeouts);
+            reused_connection->deadline = deadline;
 
             /// Apply socket buffer sizes outside the lock because applySocketBufferSizes
             /// can throw, and PooledConnection destructor during stack unwinding would
@@ -963,7 +970,9 @@ public:
             return reused_connection;
         }
 
-        return prepareNewConnection(timeouts, connect_time);
+        auto new_connection = prepareNewConnection(timeouts, connect_time, deadline);
+        new_connection->deadline = deadline;
+        return new_connection;
     }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
@@ -1133,7 +1142,8 @@ private:
         return connection;
     }
 
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    ConnectionPtr prepareNewConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline)
     {
         /// `Poco::Net::HTTPClientSession::reconnect` uses the proxy only when
         /// `!_proxyConfig.host.empty() && !bypassProxy()`; route that case to
@@ -1220,6 +1230,17 @@ private:
                 continue;
             }
 
+            ConnectionTimeouts attempt_timeouts = timeouts;
+            if (deadline)
+            {
+                if (connect_attempts > 0 && std::chrono::steady_clock::now() >= *deadline)
+                {
+                    address.setUnused();
+                    break;
+                }
+                attempt_timeouts = timeouts.getCappedAt(*deadline);
+            }
+
             ++connect_attempts;
 
             ConnectionPtr connection;
@@ -1247,7 +1268,7 @@ private:
 
             try
             {
-                setTimeouts(*connection, timeouts);
+                setTimeouts(*connection, attempt_timeouts);
 
                 auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
                 /// `reconnect` records this attempt's duration on success and failure; accumulate it
