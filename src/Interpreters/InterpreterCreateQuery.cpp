@@ -1314,6 +1314,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             mv_context->setCurrentDatabase(create.getDatabase());
             select_context = mv_context;
         }
+        /// The query of a view is a stored definition; `CREATE TABLE ... AS SELECT` is not.
+        if (create.isView())
+        {
+            auto view_context = Context::createCopy(select_context);
+            view_context->setAllowCompoundTableIdentifierQualification(false);
+            select_context = view_context;
+        }
 
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
             select_context,
@@ -1481,6 +1488,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
+                context->setAllowCompoundTableIdentifierQualification(false);
 
                 /// For refreshable materialized views, use the MV's database as context.
                 /// This ensures unqualified references resolve in the MV's database, not session's database.
@@ -2838,9 +2846,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         {
             database->checkMetadataFilenameAvailability(create.getTable());
         }
-        catch (const Exception &)
+        catch (const Exception & e)
         {
-            if (create.if_not_exists)
+            /// Only a taken name makes `IF NOT EXISTS` a no-op; other errors (e.g. an invalid name) propagate.
+            if (create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
                 return false;
             throw;
         }
@@ -3261,9 +3270,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     database->checkMetadataFilenameAvailability(table_to_replace_name);
                 }
-                catch (const Exception &)
+                catch (const Exception & e)
                 {
-                    if (create.if_not_exists)
+                    /// Only a taken name makes `IF NOT EXISTS` a no-op; other errors (e.g. an invalid name) propagate.
+                    if (create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
                         return {};
                     throw;
                 }
@@ -3608,7 +3618,15 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             local_context->setSetting("parallel_distributed_insert_select", Field{0});
             local_context->setSetting("enable_parallel_replicas", Field{0});
             removeSettingsFromQuery(insert->select, settings_sending_population_to_other_servers);
+            if (create.is_materialized_view)
+                local_context->setAllowCompoundTableIdentifierQualification(false);
             insert_context = local_context;
+        }
+        else if (create.is_materialized_view)
+        {
+            /// The `POPULATE` query is the stored definition of the view.
+            insert_context = Context::createCopy(getContext());
+            insert_context->setAllowCompoundTableIdentifierQualification(false);
         }
 
         InterpreterInsertQuery interpreter(
@@ -3938,6 +3956,8 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// disabling `parallel_distributed_insert_select` and parallel-replica reading for this insert.
     populate_context->setSetting("parallel_distributed_insert_select", Field{0});
     populate_context->setSetting("enable_parallel_replicas", Field{0});
+    /// The population runs the stored definition of the view.
+    populate_context->setAllowCompoundTableIdentifierQualification(false);
 
     StorageSnapshotPtr snapshot;
     {

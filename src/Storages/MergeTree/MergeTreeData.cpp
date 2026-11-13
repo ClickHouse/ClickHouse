@@ -5961,6 +5961,8 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
         return {};
 
     auto analysis_context = Context::createCopy(context);
+    /// Column and TTL expressions are stored SQL: read table names in them as written.
+    analysis_context->setAllowCompoundTableIdentifierQualification(false);
     auto expression = buildQueryTree(ast, analysis_context);
 
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
@@ -11669,6 +11671,8 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         /// `discardSharedStorageSnapshot` before reading, see `StorageReplicatedMergeTree::updateLightweight`.
         execution_context = Context::createCopy(query_context);
     }
+    /// Read table names as written, like `MutationsInterpreter` does for the commands.
+    execution_context->setAllowCompoundTableIdentifierQualification(false);
 
     /// The predicate comes from a serialized mutation command that was re-parsed, so its set
     /// operations (`UNION`/`INTERSECT`/`EXCEPT`) are not normalized yet and the analyzer would

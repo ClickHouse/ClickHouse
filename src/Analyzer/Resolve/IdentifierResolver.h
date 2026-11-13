@@ -115,6 +115,7 @@ public:
         const IdentifierResolveScope & scope);
 
     /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
+    /// Checks access to the table metadata.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context,
@@ -132,6 +133,13 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context,
         const StoragePtr & replaced_storage = nullptr);
+
+    /// True if the user may see at least one column of the table.
+    static bool hasAccessToTableMetadata(
+        const StoragePtr & storage,
+        const StorageID & storage_id,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context);
 
     /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
     static void checkAccessToTableMetadata(
@@ -175,6 +183,12 @@ public:
 
 private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const std::string & database_name,
+        const std::string & table_name,
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage);
 
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,

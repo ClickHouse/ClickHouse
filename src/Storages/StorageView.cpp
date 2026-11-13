@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
@@ -358,6 +359,9 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
+    /// The query of a table function such as `view` is a part of the query that calls it, not a stored definition.
+    view_context->setAllowCompoundTableIdentifierQualification(
+        view->getStorageID().database_name == ITableFunction::getDatabaseName());
     return view_context;
 }
 
@@ -570,11 +574,16 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
 
     auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
 
+    /// A stored view body reads table names as written; the query of a table function such as `view` does not.
+    ContextPtr resolve_context = getStorageID().database_name == ITableFunction::getDatabaseName()
+        ? context
+        : Context::createCopyForStoredDefinition(context);
+
     QueryTreeNodePtr inner_query_tree;
     try
     {
-        inner_query_tree = buildQueryTree(inner_query_ast->clone(), context);
-        QueryTreePassManager pass_manager(context);
+        inner_query_tree = buildQueryTree(inner_query_ast->clone(), resolve_context);
+        QueryTreePassManager pass_manager(resolve_context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
         /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
@@ -994,6 +1003,8 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
+    /// The view body is stored SQL: read table names in it as written.
+    view_context->setAllowCompoundTableIdentifierQualification(false);
     return view_context;
 }
 

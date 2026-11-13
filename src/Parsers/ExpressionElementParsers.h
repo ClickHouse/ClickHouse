@@ -74,11 +74,31 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
+    struct Options
+    {
+        bool table_name = false;             /// build `ASTTableIdentifier`, fold `db.ns.t` into (`db`, `ns.t`); implies no JSON subcolumns
+        bool allow_uuid_clause = false;      /// accept a trailing `UUID '...'`; requires `table_name`
+        bool allow_query_parameter = false;
+        bool allow_json_subcolumns = true;   /// `.:Type`, `.^path`, `.@path` and `[]` sugar for JSON subcolumns
+        Highlight highlight = Highlight::identifier;
+    };
+
+    explicit ParserCompoundIdentifier(Options options_)
+        : options(options_)
+    {
+        if (options.table_name)
+            options.allow_json_subcolumns = false;
+        options.allow_uuid_clause = options.allow_uuid_clause && options.table_name;
+    }
+
+    /// legacy spelling: `table_name_with_optional_uuid` means table name, `UUID` clause allowed, no JSON subcolumns
     explicit ParserCompoundIdentifier(
         bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_)
-        , allow_query_parameter(allow_query_parameter_)
-        , highlight_type(highlight_type_)
+        : ParserCompoundIdentifier(Options{
+            .table_name = table_name_with_optional_uuid_,
+            .allow_uuid_clause = table_name_with_optional_uuid_,
+            .allow_query_parameter = allow_query_parameter_,
+            .highlight = highlight_type_})
     {
     }
 
@@ -97,9 +117,7 @@ protected:
 
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool table_name_with_optional_uuid;
-    bool allow_query_parameter;
-    Highlight highlight_type;
+    Options options;
 };
 
 /** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)

@@ -1,0 +1,8 @@
+front only, serialize_query_plan = 0
+2
+JOIN hidden, serialize_query_plan = 0
+ACCESS_DENIED
+front only, serialize_query_plan = 1
+2
+JOIN hidden, serialize_query_plan = 1
+ACCESS_DENIED

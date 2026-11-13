@@ -672,6 +672,11 @@ protected:
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     bool is_view_inner_query = false;
+
+    /// Whether a compound table identifier `a.b` may also be read as table `a.b` of the current database.
+    /// False while analyzing SQL stored in an object definition (a view, a row policy, a column default,
+    /// a dictionary source) and mutations: table names in them are read as written.
+    bool allow_compound_table_identifier_qualification = true;
     /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not hand its reads to parallel
     /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
     /// privileges. Plan-based local reads stay allowed.
@@ -868,6 +873,9 @@ public:
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
+    /// A copy with `allow_compound_table_identifier_qualification` off, for analyzing SQL stored in an object
+    /// definition; `other` itself if it is already off there or `allow_experimental_table_namespaces` is off.
+    static ContextPtr createCopyForStoredDefinition(const ContextPtr & other);
     static SharedContextHolder createShared();
 
 
@@ -2099,6 +2107,9 @@ public:
 
     bool isAnalyzingBackgroundExpressions() const { return is_analyzing_background_expressions; }
     void setAnalyzingBackgroundExpressions(bool value) { is_analyzing_background_expressions = value; }
+
+    bool isCompoundTableIdentifierQualificationAllowed() const { return allow_compound_table_identifier_qualification; }
+    void setAllowCompoundTableIdentifierQualification(bool value) { allow_compound_table_identifier_qualification = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

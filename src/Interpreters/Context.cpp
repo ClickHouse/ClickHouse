@@ -326,6 +326,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
@@ -1721,6 +1722,7 @@ ContextData::ContextData(const ContextData &o) :
     is_analyzing_background_expressions(o.is_analyzing_background_expressions),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    allow_compound_table_identifier_qualification(o.allow_compound_table_identifier_qualification),
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
@@ -1803,6 +1805,18 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
     if (!ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
     return createCopy(ptr);
+}
+
+ContextPtr Context::createCopyForStoredDefinition(const ContextPtr & other)
+{
+    /// The field is read only with `allow_experimental_table_namespaces` on.
+    if (!other->isCompoundTableIdentifierQualificationAllowed()
+        || !other->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        return other;
+
+    auto copy = createCopy(other);
+    copy->setAllowCompoundTableIdentifierQualification(false);
+    return copy;
 }
 
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
@@ -3637,6 +3651,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            /// The view body is stored SQL: read table names in it as written.
+            view_context->setAllowCompoundTableIdentifierQualification(false);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -3929,6 +3945,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    /// The view body is stored SQL: read table names in it as written.
+    view_context->setAllowCompoundTableIdentifierQualification(false);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,

@@ -125,6 +125,7 @@ namespace Setting
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_plan_based;
 }
@@ -5457,7 +5458,13 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                     alias_column_to_resolve->setExpression(nullptr);
             });
 
-            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
+            /// `ALIAS` expressions are stored SQL: read table names in them as written. Copied per call, because the query
+            /// context is still modified while the join tree is resolved; no copy without table namespaces.
+            ContextPtr alias_column_context = scope.context;
+            if (scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+                alias_column_context = Context::createCopyForStoredDefinition(scope.context);
+
+            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, alias_column_context));
 
             auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
             /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
@@ -5465,7 +5472,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
             IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
-            alias_column_resolve_scope.context = scope.context;
+            alias_column_resolve_scope.context = alias_column_context;
 
             /// Initialize aliases in alias column scope
             QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
@@ -5587,6 +5594,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
             scope_to_check = scope_to_check->parent_scope;
         }
+    }
+
+    /// The query argument of a table function is a part of the calling query, not a stored definition.
+    /// Copy only when the field matters: a storage may keep a weak reference to this context.
+    if (execution_context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
+        && !execution_context->isCompoundTableIdentifierQualificationAllowed())
+    {
+        auto unrestricted_context = Context::createCopy(execution_context);
+        unrestricted_context->setAllowCompoundTableIdentifierQualification(true);
+        execution_context = unrestricted_context;
     }
 
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
@@ -7003,10 +7020,12 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         }
 
         /// Resolve the row policy filter expression against result_node's columns.
-        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
+        /// A row policy is a stored definition: read table names in it as written.
+        auto filter_context = Context::createCopyForStoredDefinition(scope.context);
+        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), filter_context);
         QueryAnalyzer filter_analyzer(
             this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
-        filter_analyzer.resolve(filter_node, result_node, scope.context);
+        filter_analyzer.resolve(filter_node, result_node, filter_context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
         auto result_columns = result_node->as<QueryNode>()

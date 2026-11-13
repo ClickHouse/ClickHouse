@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import psycopg2
 import random
 import re
 import time
@@ -16,6 +17,7 @@ import pytz
 from avro.datafile import DataFileReader, DataFileWriter
 from avro.io import DatumReader, DatumWriter
 from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import NamespaceAlreadyExistsError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
@@ -39,6 +41,9 @@ from helpers.resource_soak import QueryLog, ResourceSampler, soak_iterations
 BASE_URL = "http://rest:8181/v1"
 
 CATALOG_NAME = "demo"
+
+# port of programs/server/config.xml, the base config of integration instances
+POSTGRESQL_PORT = 9005
 
 DEFAULT_SCHEMA = Schema(
     NestedField(
@@ -2742,6 +2747,535 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def test_namespace_two_part_name_resolution(started_cluster):
+    """
+    A two-part name `X.T` in a table expression is read as table `T` of database `X`; the
+    current-database reading (table `X.T`) is tried too only when the current database
+    supports table namespaces and `X` is not `system`. Database `X` must exist, and both
+    existing is an error unless the user can access only one of them. SQL stored in
+    definitions (views, materialized views, row policies, mutations) always reads `X.T`
+    as table `T` of database `X`.
+    """
+    node = started_cluster.instances["node1"]
+    on = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_two_part_{uuid.uuid4().hex[:8]}"
+    X = f"ns_{test_ref}"
+    T = "priority_table"
+    P = "policy_table"
+    T2 = f"t2_{test_ref}"
+    V, V2, MV = f"v_{test_ref}", f"v2_{test_ref}", f"mv_{test_ref}"
+    policy = f"pol_{test_ref}"
+    policy_user = f"u_policy_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    catalog.create_namespace(X)
+    iceberg_table = create_table(catalog, X, T)
+
+    data = [generate_record() for _ in range(5)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    query = f"USE {CATALOG_NAME}; SELECT count() FROM {X}.{T}"
+
+    # row 1: no database X
+    _, err = node.query_and_get_answer_with_error(query, settings=on)
+    assert "UNKNOWN_DATABASE" in err, f"no database X, setting on: {err}"
+    _, err = node.query_and_get_answer_with_error(query)
+    assert "UNKNOWN_DATABASE" in err, f"no database X, setting off: {err}"
+
+    node.query(f"CREATE DATABASE `{X}`")
+    try:
+        # `system.*` names are never read from the catalog's current-database reading
+        try:
+            catalog.create_namespace("system")
+        except NamespaceAlreadyExistsError:
+            pass
+        system_one = create_table(catalog, "system", "one")
+        create_table(catalog, "system", "columns")
+        system_one.append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM system.one", settings=on))
+        assert result == 1, f"system.one must be the ClickHouse table, got {result}"
+        for name in ("`system.one`", f"{CATALOG_NAME}.system.one"):
+            result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {name}", settings=on))
+            assert result == 5, f"{name} must be the catalog table (5 rows), got {result}"
+
+        # row 2: database X exists, X.T only in the catalog
+        result = int(node.query(query, settings=on))
+        assert result == 5, f"row 2, setting on: expected the catalog table (5 rows), got {result}"
+        _, err = node.query_and_get_answer_with_error(query)
+        assert "UNKNOWN_TABLE" in err, f"catalog-only X.T, setting off: {err}"
+
+        # non-SELECT statements keep the database reading
+        assert node.query(f"USE {CATALOG_NAME}; EXISTS TABLE {X}.{T}", settings=on).strip() == "0"
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; DESCRIBE TABLE {X}.{T}", settings=on
+        )
+        assert "UNKNOWN_TABLE" in err, f"DESCRIBE must not fall back to the catalog: {err}"
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; INSERT INTO {X}.{T} VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'))",
+            settings={
+                **on,
+                "allow_insert_into_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert "UNKNOWN_TABLE" in err, f"INSERT must not fall back to the catalog: {err}"
+
+        # stored definitions read `X.T` as database `X`, table `T`
+        node.query(f"CREATE TABLE default.{T2} (symbol Nullable(String)) ENGINE = MergeTree ORDER BY tuple()")
+        node.query(f"INSERT INTO default.{T2} VALUES ('kek'), ('kek')")
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; CREATE VIEW default.{V2} AS SELECT * FROM {X}.{T}", settings=on
+        )
+        assert "UNKNOWN_TABLE" in err, f"view body must not read the catalog table: {err}"
+        node.query(f"USE {CATALOG_NAME}; CREATE VIEW default.{V2} AS SELECT * FROM `{X}.{T}`", settings=on)
+        result = int(node.query(f"SELECT count() FROM default.{V2}", settings=on))
+        assert result == 5, f"quoted name in a view body must be the catalog table (5 rows), got {result}"
+
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; ALTER TABLE default.{T2} DELETE WHERE symbol IN {X}.{T}", settings=on
+        )
+        assert "UNKNOWN_IDENTIFIER" in err, f"mutation must not read the catalog table: {err}"
+        mutations = node.query(
+            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{T2}'"
+        ).strip()
+        assert mutations == "0", f"rejected mutation must not be left in system.mutations: {mutations}"
+
+        node.query(f"CREATE TABLE `{X}`.{T} (id UInt64) ENGINE = Memory")
+        node.query(f"INSERT INTO `{X}`.{T} VALUES (1), (2), (3)")
+
+        # row 3: X.T in both the database and the catalog
+        _, err = node.query_and_get_answer_with_error(query, settings=on)
+        assert "AMBIGUOUS_IDENTIFIER" in err, f"both readings exist, setting on: {err}"
+        result = int(node.query(query))
+        assert result == 3, f"row 3, setting off: expected the database table (3 rows), got {result}"
+
+        # the ambiguity is reported only to a user who can see both candidates
+        other = f"{CATALOG_NAME}.`system.one`"
+        grants = {
+            "catalog": f"GRANT SELECT ON {CATALOG_NAME}.`{X}.{T}` TO {{user}}",
+            "database": f"GRANT SELECT ON `{X}`.{T} TO {{user}}; GRANT SELECT ON {other} TO {{user}}",
+            "neither": f"GRANT SELECT ON {other} TO {{user}}",
+        }
+        for kind, grant in grants.items():
+            user = f"u_{kind}_{test_ref}"
+            node.query(f"DROP USER IF EXISTS {user}")
+            node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+            node.query(grant.format(user=user))
+        result = int(node.query(query, settings=on, user=f"u_catalog_{test_ref}"))
+        assert result == 5, f"only the catalog table visible: expected 5 rows, got {result}"
+        result = int(node.query(query, settings=on, user=f"u_database_{test_ref}"))
+        assert result == 3, f"only the database table visible: expected 3 rows, got {result}"
+        _, err = node.query_and_get_answer_with_error(query, settings=on, user=f"u_neither_{test_ref}")
+        assert "ACCESS_DENIED" in err, f"no candidate visible: {err}"
+
+        columns = node.query(f"USE {CATALOG_NAME}; SHOW COLUMNS FROM {CATALOG_NAME}.{X}.{T}", settings=on)
+        assert "symbol" in columns, f"SHOW COLUMNS must list the table columns: {columns}"
+
+        node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
+
+        # row 4: X.T only in the database
+        result = int(node.query(query, settings=on))
+        assert result == 3, f"row 4, setting on: expected the database table (3 rows), got {result}"
+        result = int(node.query(query))
+        assert result == 3, f"row 4, setting off: expected the database table (3 rows), got {result}"
+
+        node.query(f"DROP TABLE `{X}`.{T}")
+
+        # row 5: X.T nowhere
+        _, err = node.query_and_get_answer_with_error(query, settings=on)
+        assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting on: {err}"
+        _, err = node.query_and_get_answer_with_error(query)
+        assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting off: {err}"
+
+        # a view and a materialized view over `default.T2`, which also exists in the catalog
+        try:
+            catalog.create_namespace("default")
+        except NamespaceAlreadyExistsError:
+            pass
+        create_table(catalog, "default", T2).append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+        node.query(f"CREATE VIEW default.{V} AS SELECT * FROM {T2}")
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{V}", settings=on))
+        assert result == 2, f"view must read the database table (2 rows), got {result}"
+
+        node.query(f"CREATE MATERIALIZED VIEW default.{MV} ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM {T2}")
+        node.query(
+            f"USE {CATALOG_NAME}; INSERT INTO default.{T2} VALUES ('kek')",
+            settings={**on, "async_insert": 0},
+        )
+        result = int(node.query(f"SELECT count() FROM default.{MV}"))
+        assert result == 1, f"materialized view must get the inserted row, got {result}"
+
+        # a row policy reads `X.P` as the database table, which the user cannot access
+        catalog_p = create_table(catalog, X, P)
+        catalog_p.append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+        node.query(f"CREATE TABLE `{X}`.{P} (symbol Nullable(String)) ENGINE = Memory")
+        node.query(f"INSERT INTO `{X}`.{P} VALUES ('kek')")
+        node.query(f"DROP USER IF EXISTS {policy_user}")
+        node.query(f"CREATE USER {policy_user} IDENTIFIED WITH no_password")
+        node.query(f"GRANT SELECT ON default.{T2} TO {policy_user}")
+        node.query(f"GRANT SELECT ON {CATALOG_NAME}.`{X}.{P}` TO {policy_user}")
+        node.query(
+            f"CREATE ROW POLICY {policy} ON default.{T2} USING symbol IN (SELECT symbol FROM {X}.{P}) TO {policy_user}"
+        )
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM default.{T2}", settings=on, user=policy_user
+        )
+        assert "ACCESS_DENIED" in err, f"row policy must read the database table: {err}"
+        # the catalog table would be printed as ON <catalog>.`X.P`
+        assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
+    finally:
+        for kind in ("catalog", "database", "neither"):
+            node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
+        node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.{T2}")
+        node.query(f"DROP USER IF EXISTS {policy_user}")
+        for name in (V, V2, MV):
+            node.query(f"DROP VIEW IF EXISTS default.{name}")
+        node.query(f"DROP TABLE IF EXISTS default.{T2}")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{T2}`")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{P}`")
+        node.query(f"DROP DATABASE IF EXISTS `{X}`")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.one`")
+        node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.columns`")
+
+
+def test_three_part_identifier(started_cluster):
+    """
+    Test 3-part compound identifier syntax: db.namespace.table
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_three_part_identifier_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_ns"  # Single-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # This should work the same as demo.`namespace.table`
+    count_3part = int(
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+    )
+    assert count_3part == num_rows, f"Expected {num_rows} rows, got {count_3part}"
+
+    # compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+    assert count_3part == count_backtick, "3-part and backtick syntax should return same results"
+
+    # EXISTS TABLE with 3-part identifier
+    exists_result = node.query(
+        f"EXISTS TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings
+    ).strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # DESCRIBE with 3-part identifier
+    desc_3part = node.query(f"DESCRIBE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+    desc_backtick = node.query(f"DESCRIBE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert desc_3part == desc_backtick, "DESCRIBE output should match between syntaxes"
+
+    # SHOW CREATE TABLE with 3-part identifier
+    show_create_3part = node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings
+    )
+    show_create_backtick = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert show_create_3part == show_create_backtick, "SHOW CREATE TABLE output should match between syntaxes"
+
+    # SHOW COLUMNS with 3-part identifier
+    cols = node.query(f"SHOW COLUMNS FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+    assert "symbol" in cols and "bid" in cols, f"dotted SHOW COLUMNS failed: {cols}"
+
+    # non-existent table with 3-part identifier
+    try:
+        node.query(f"SELECT * FROM {CATALOG_NAME}.{namespace}.nonexistent_table", settings=ns_settings)
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+    # without the setting, the multipart path is shorthand for the quoted name
+    multipart = node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}")
+    quoted = node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert multipart == quoted, f"multipart path and quoted name differ: {multipart} vs {quoted}"
+
+
+def test_multi_level_namespace(started_cluster):
+    """
+    Test N-part compound identifier syntax with multiple namespace levels: db.ns1.ns2.table
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_multi_ns_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    ns_level1 = f"{test_ref}_l1"
+    ns_level2 = f"{test_ref}_l2"
+    multi_namespace = f"{ns_level1}.{ns_level2}"  # Two-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(multi_namespace)
+
+    table = create_table(catalog, multi_namespace, table_name)
+
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # 4-part identifier SELECT (db.ns1.ns2.table)
+    count_4part = int(
+        node.query(
+            f"SELECT count() FROM {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}",
+            settings=ns_settings,
+        )
+    )
+    assert count_4part == num_rows, f"Expected {num_rows} rows, got {count_4part}"
+
+    # compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{multi_namespace}.{table_name}`"))
+    assert count_4part == count_backtick, "4-part and backtick syntax should return same results"
+
+    # EXISTS TABLE with 4-part identifier
+    exists_result = node.query(
+        f"EXISTS TABLE {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}", settings=ns_settings
+    ).strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # non-existent table with 4-part identifier
+    try:
+        node.query(
+            f"SELECT * FROM {CATALOG_NAME}.{ns_level1}.{ns_level2}.nonexistent_table",
+            settings=ns_settings,
+        )
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+
+def test_namespace_path_ddl(started_cluster):
+    """
+    CREATE and DROP over an explicit multipart path address the namespace; a
+    two-part CREATE still reads as a database name.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_createdrop_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "create_drop_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    try:
+        # CREATE and DROP through an explicit path
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.{namespace}.{table_name} (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_table_namespaces": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
+
+        node.query(f"DROP TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
+
+        # A two-part CREATE keeps the database reading: no database `X` means
+        # `UNKNOWN_DATABASE`, the catalog namespace is never consulted.
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; CREATE TABLE {namespace}.{table_name} (x String) ENGINE = Memory",
+            settings=ns_settings,
+        )
+        assert "UNKNOWN_DATABASE" in err, f"two-part CREATE must be rejected: {err}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {full_name}")
+
+
+def test_namespace_nested_sql_ddl(started_cluster):
+    """
+    CREATE and DROP through SQL in a nested namespace must address the namespace
+    as components in REST requests, not as one dotted string.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_nested_ddl_{uuid.uuid4().hex[:8]}"
+    root = f"ns_{test_ref}"
+    table_name = "nested_ddl_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root)
+    catalog.create_namespace(f"{root}.sub")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.{root}.sub.{table_name} (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}/', 'minio', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_table_namespaces": 1,
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 1
+    ), "table must exist in the nested namespace"
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.{root}.sub.{table_name}",
+        settings={"allow_experimental_table_namespaces": 1},
+    )
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 0
+    ), "table must be dropped from the nested namespace"
+
+    # a name without a namespace is an existence probe, not an error
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.name_without_namespace").strip()) == 0
+    ), "EXISTS on a non-namespaced name must return 0"
+
+    # IF NOT EXISTS must not turn an invalid (non-namespaced) name into a silent no-op
+    _, err = node.query_and_get_answer_with_error(
+        f"CREATE TABLE IF NOT EXISTS {CATALOG_NAME}.{table_name}_without_namespace (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}_without_namespace/', 'minio', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_table_namespaces": 1,
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert "BAD_ARGUMENTS" in err, f"CREATE IF NOT EXISTS of a non-namespaced name must fail: {err}"
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.{table_name}_without_namespace").strip()) == 0
+    ), "no table may appear for a non-namespaced name"
+
+
+def test_namespace_path_reads_and_gating(started_cluster):
+    """
+    Inserts by a multipart path, multipart column qualifiers and nested paths
+    with a quoted dotted component resolve with the setting on; the multipart
+    column qualifier is gated.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+    insert_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **ns_settings,
+    }
+
+    test_ref = f"test_ns_path_reads_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    row = "(NULL, 'AAPL', 193.24, 193.31, tuple('bot'))"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    catalog.create_namespace(f"{ns}.child")
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+    table_child = create_table(catalog, f"{ns}.child", "t2")
+    table_child.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"INSERT INTO {CATALOG_NAME}.{ns}.t VALUES {row}", settings=insert_settings)
+    result = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{ns}.t`", settings=ns_settings
+    ).strip()
+    assert result == "4", f"INSERT by three-part path: {result}"
+
+    for query in (
+        f"SELECT {CATALOG_NAME}.{ns}.t.symbol FROM {CATALOG_NAME}.{ns}.t WHERE symbol = 'kek' LIMIT 1",
+        f"SELECT {ns}.t.symbol FROM {CATALOG_NAME}.{ns}.t WHERE symbol = 'kek' LIMIT 1",
+        f"SELECT a.symbol FROM {CATALOG_NAME}.{ns}.t AS a WHERE symbol = 'kek' LIMIT 1",
+    ):
+        result = node.query(query, settings=ns_settings).strip()
+        assert result == "kek", f"qualified column in `{query}`: {result}"
+
+    gated_query = f"SELECT max({ns}.t.bid) FROM {CATALOG_NAME}.`{ns}.t`"
+    result = node.query(gated_query, settings=ns_settings).strip()
+    assert result != "", "multipart column qualifier must work with the setting on"
+    _, err = node.query_and_get_answer_with_error(gated_query)
+    assert (
+        "UNKNOWN_IDENTIFIER" in err
+        or "Unknown expression" in err
+        or "INVALID_IDENTIFIER" in err
+    ), f"multipart column qualifier must fail with the setting off: {err}"
+
+    quoted_component = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{ns}.child`.t2", settings=ns_settings
+    )
+    multipart = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.{ns}.child.t2", settings=ns_settings
+    )
+    assert (
+        quoted_component == multipart
+    ), f"quoted dotted component and multipart path differ: {quoted_component} vs {multipart}"
+
+
+def test_namespace_postgresql_wire(started_cluster):
+    """
+    A PostgreSQL wire session of a user whose settings enable the setting can
+    query a three-part path.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_postgresql_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    user = f"pg_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    conn = None
+    try:
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS allow_experimental_table_namespaces = 1"
+        )
+        node.query(f"GRANT SELECT ON {CATALOG_NAME}.* TO {user}")
+
+        conn = psycopg2.connect(
+            host=node.ip_address,
+            port=POSTGRESQL_PORT,
+            user=user,
+            password="",
+            dbname=CATALOG_NAME,
+        )
+        cur = conn.cursor()
+        cur.execute(f"SELECT count() FROM {CATALOG_NAME}.{ns}.t")
+        result = cur.fetchone()[0]
+        assert int(result) == 3, f"three-part path over the PostgreSQL wire: expected 3 rows, got {result!r}"
+        cur.close()
+    finally:
+        if conn is not None:
+            conn.close()
+        node.query(f"DROP USER IF EXISTS {user}")
 
 
 def test_alter_database_settings_not_supported(started_cluster):
