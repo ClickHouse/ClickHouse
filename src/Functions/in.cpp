@@ -53,6 +53,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -62,7 +63,10 @@ public:
         if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[1]))))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument for function {} must be a String", getName());
-        return std::make_shared<DataTypeUInt8>();
+        auto result_type = std::make_shared<DataTypeUInt8>();
+        if (isNullableOrLowCardinalityNullable(arguments[1]))
+            return std::make_shared<DataTypeNullable>(result_type);
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -70,11 +74,15 @@ public:
         const auto & map_type = assert_cast<const DataTypeMap &>(*removeNullable(removeLowCardinality(arguments[0].type)));
         auto maps = arguments[0].column->convertToFullColumnIfConst();
         auto strings = arguments[1].column->convertToFullColumnIfConst();
+        const auto * nullable_strings = checkAndGetColumn<ColumnNullable>(strings.get());
+        const auto & string_values = nullable_strings ? nullable_strings->getNestedColumn() : *strings;
         auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto & values = result->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Field source{String(strings->getDataAt(row))};
+            if (nullable_strings && nullable_strings->isNullAt(row))
+                continue;
+            const Field source{String(string_values.getDataAt(row))};
             const Field converted = convertFieldToType(source, map_type, nullptr, {}, true);
             if (converted.isNull())
                 continue;
@@ -83,6 +91,8 @@ public:
             candidate->insert(converted);
             values[row] = maps->compareAt(row, 0, *candidate, 1) == 0;
         }
+        if (nullable_strings)
+            return ColumnNullable::create(std::move(result), nullable_strings->getNullMapColumnPtr());
         return result;
     }
 };

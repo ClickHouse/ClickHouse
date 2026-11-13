@@ -485,8 +485,16 @@ ASTPtr makeNumericNonConstantInReplacement(
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
-        if (isStringOrFixedString(element_bare_type)
-            || ((isDate(left_bare_type) || isDate32(left_bare_type)) && isNumber(element_bare_type)))
+        if ((isDate(left_bare_type) || isDate32(left_bare_type)) && isNumber(element_bare_type))
+        {
+            auto cast_value = makeASTFunction(
+                "accurateCastOrNull", candidate->clone(), make_intrusive<ASTLiteral>(left_bare_type->getName()));
+            auto round_trip = makeASTFunction(
+                "accurateCastOrNull", cast_value->clone(), make_intrusive<ASTLiteral>(element_bare_type->getName()));
+            auto exact = makeASTFunction("equals", candidate->clone(), std::move(round_trip));
+            candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
+        }
+        else if (isStringOrFixedString(element_bare_type))
             candidate = makeASTFunction(
                 "accurateCastOrNull", std::move(candidate),
                 make_intrusive<ASTLiteral>(left_bare_type->getName()));
