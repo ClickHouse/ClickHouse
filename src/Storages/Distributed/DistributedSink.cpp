@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -222,7 +223,17 @@ void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
-        storage.delayInsertOrThrowIfNeeded();
+        /// A write to a local shard runs this sink in a nested pipeline that a `KILL` of the query does not cancel.
+        auto query_status = context->getProcessListElementSafe();
+
+        /// A Buffer flush builds this context from the shared Buffer context, which has no process list element.
+        /// The flush runs on the thread of the INSERT that triggered it, so that thread's query context still sees the `KILL`.
+        /// Background flushes have no query context and keep waiting.
+        if (!query_status)
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                query_status = query_context->getProcessListElementSafe();
+
+        storage.delayInsertOrThrowIfNeeded([&] { return isCancelled() || (query_status && query_status->isKilled()); });
         is_first_chunk = false;
     }
 
