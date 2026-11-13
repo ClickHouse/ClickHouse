@@ -330,7 +330,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             const auto & serialization = serializations[column_idx];
             /// Let Enum conversion functions handle the null value.
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
