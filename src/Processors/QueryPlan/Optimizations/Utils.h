@@ -74,6 +74,9 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
+
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
