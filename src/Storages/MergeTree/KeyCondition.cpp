@@ -3684,9 +3684,9 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return *set_scale < *key_scale;
         if (set_which.isInteger())
             return *key_scale > 0;
-        /// A numeric `CAST` bounds a stored decimal by its backing integer, not by its precision; only `Float64` holds every `Int32`.
+        /// `floatValuesMissKeyValues` checks float elements value by value.
         if (set_which.isFloat())
-            return !(key_which.isDecimal32() && set_which.isFloat64());
+            return false;
     }
 
     return !conversionPreservesOrder(*key_unwrapped, *set_unwrapped);
