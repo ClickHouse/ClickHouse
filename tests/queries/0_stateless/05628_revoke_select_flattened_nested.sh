@@ -103,23 +103,33 @@ $CLICKHOUSE_CLIENT -q "REVOKE SELECT(nt) ON $db.ts FROM $definer; REVOKE SELECT(
 check "mv, definer REVOKE(nt), REVOKE(x)" "${reads_mv[@]}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"; check "mv, definer REVOKE(nt), REVOKE(x), source dropped" "${reads_mv[@]}"
 
-# A view column no revoke can apply to is read without resolving the source table, which may be unavailable.
+# A view column no revoke can apply to is read without resolving the source table, which may be unavailable. A source
+# that has to be resolved but fails to counts as missing, so neither its errors nor its data reach the reader of the view.
 mvdb="${db}_mv"
 urldb="${db}_url"
-src_file="${CLICKHOUSE_USER_FILES_UNIQUE}/source.csv"
+src_file="${CLICKHOUSE_USER_FILES_UNIQUE}/source.jsonl"
 mkdir -p "${CLICKHOUSE_USER_FILES_UNIQUE}"
-printf 'id\n1\n' > "$src_file"
-# An old mtime, so that the emptied file does not match the schema cached when the view is created.
+echo '{"id":1,"nt.secret":["s"]}' > "$src_file"
+# An old mtime, so that the rewritten file does not match the schema cached when the view is created.
 touch -d @1000000000 "$src_file"
 $CLICKHOUSE_CLIENT -m -q "
 CREATE DATABASE $urldb ENGINE = URL('file://');
 CREATE DATABASE $mvdb ENGINE = Atomic;
-CREATE MATERIALIZED VIEW $mvdb.mv ENGINE = MergeTree ORDER BY tuple() SQL SECURITY DEFINER AS SELECT id FROM $urldb.\`$src_file\`;
-INSERT INTO $mvdb.mv VALUES (42);
+GRANT SELECT ON $urldb.* TO $definer;
+GRANT READ ON FILE TO $definer;
+CREATE MATERIALIZED VIEW $mvdb.mv ENGINE = MergeTree ORDER BY tuple() DEFINER = $definer SQL SECURITY DEFINER
+    AS SELECT id, \`nt.secret\` FROM $urldb.\`$src_file\`;
+INSERT INTO $mvdb.mv VALUES (42, ['stored']);
 GRANT SELECT ON $mvdb.mv TO $user;
+REVOKE SELECT(nt) ON $urldb.\`$src_file\` FROM $definer;
 "
-: > "$src_file"
-check "mv, source unreadable" "SELECT id FROM $mvdb.mv" "SELECT count() FROM $mvdb.mv"
+reads_url=("SELECT id FROM $mvdb.mv" "SELECT nt.secret FROM $mvdb.mv")
+check "mv over a URL source, definer REVOKE(nt)" "${reads_url[@]}"
+echo '{"id":1,"nt.secret":["s"],"x":LEAKED_SOURCE_BYTES}' > "$src_file"
+check "mv over a URL source, definer REVOKE(nt), source unreadable" "${reads_url[@]}"
+$CLICKHOUSE_CLIENT --user "$user" --send_logs_level debug -q "SELECT nt.secret FROM $mvdb.mv" 2>&1 | grep -c LEAKED_SOURCE_BYTES
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON $urldb.* FROM $definer"
+check "mv over a URL source, definer REVOKE source, source unreadable" "${reads_url[@]}"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $mvdb; DROP DATABASE $urldb;"
 rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"

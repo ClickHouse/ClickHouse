@@ -565,8 +565,17 @@ void StorageMaterializedView::readImpl(
         {
             if (!source_metadata)
             {
-                auto source_table = DatabaseCatalog::instance().tryGetTable(select_table_id, context);
-                source_metadata = source_table ? source_table->getInMemoryMetadataPtr(context, false) : nullptr;
+                source_metadata.emplace();
+                try
+                {
+                    if (auto source_table = DatabaseCatalog::instance().tryGetTable(select_table_id, context))
+                        source_metadata = source_table->getInMemoryMetadataPtr(context, false);
+                }
+                catch (const Exception &) /// NOLINT(bugprone-empty-catch)
+                {
+                    /// Such a source counts as missing. The reader of the view, who may have no access to the source,
+                    /// gets neither its error nor a log of it.
+                }
             }
             return *source_metadata ? (*source_metadata)->getColumns() : unknown_source_columns;
         };

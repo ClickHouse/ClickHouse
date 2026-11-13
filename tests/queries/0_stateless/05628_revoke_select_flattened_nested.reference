@@ -16,4 +16,7 @@ td GRANT table, REVOKE(n): + - -
 mv, no revoke: + + +
 mv, definer REVOKE(nt), REVOKE(x): + - +
 mv, definer REVOKE(nt), REVOKE(x), source dropped: + - -
-mv, source unreadable: + +
+mv over a URL source, definer REVOKE(nt): + -
+mv over a URL source, definer REVOKE(nt), source unreadable: + -
+0
+mv over a URL source, definer REVOKE source, source unreadable: - -
