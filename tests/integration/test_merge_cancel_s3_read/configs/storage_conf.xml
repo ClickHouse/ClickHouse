@@ -49,4 +49,12 @@
             </broken_s3_slow_backoff>
         </policies>
     </storage_configuration>
+    <s3>
+        <!-- One backoff step of 10 s for the S3 client of the Iceberg table, which is not a disk. -->
+        <iceberg_backoff>
+            <endpoint>http://resolver:8087/root/iceberg_backoff_</endpoint>
+            <retry_initial_delay_ms>10000</retry_initial_delay_ms>
+            <retry_max_delay_ms>10000</retry_max_delay_ms>
+        </iceberg_backoff>
+    </s3>
 </clickhouse>

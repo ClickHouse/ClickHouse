@@ -9,6 +9,7 @@ import boto3
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_s3_mock
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -1192,3 +1193,77 @@ def test_cancellation_ends_wait_in_shared_s3_backoff(cluster, broken_s3):
         # The removal of the blobs waits for the deadline that the `INSERT` opened.
         for table in (merged, inserted):
             drop_table_stopping_any_merge(node, table)
+
+
+def test_killed_iceberg_insert_removes_its_data_files_in_shared_backoff(cluster, broken_s3):
+    """A killed `INSERT` into an `Iceberg` table must remove the data files it has uploaded.
+
+    The first data file is uploaded, and the upload of the second one fails in its response body,
+    which opens the shared backoff of the S3 client of the table. The rollback after the kill
+    (`IcebergStorageSink::removeDataFilesAndManifests`) runs under a `QueryCancellationBlocker`, so
+    its deletions wait for the deadline and are sent. Without it the wait throws and the uncommitted
+    file stays. `DeltaLake` cannot run through the mock: `delta-kernel-rs` does not follow its
+    redirects.
+    """
+    node = cluster.instances["node"]
+    table = "t_backoff_iceberg"
+    prefix = f"iceberg_backoff_{uuid.uuid4().hex}/"
+    insert_query_id = f"backoff_iceberg_insert_{uuid.uuid4().hex}"
+    retries_query = (
+        "SELECT sumIf(value, event = 'S3WriteRequestRetryableErrors') FROM system.events"
+    )
+    insert_running = (
+        f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
+    )
+    insert = None
+
+    def data_files():
+        return [
+            obj.object_name
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, prefix=f"{prefix}data/", recursive=True
+            )
+        ]
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'http://resolver:8087/root/{prefix}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        # The first upload passes. Every later one gets a partial body and then a reset, an error
+        # that escapes the SDK and so opens the shared backoff.
+        broken_s3.setup_at_object_upload(
+            after=1, count=1000000, action="connection_reset_by_peer", action_args=["1"]
+        )
+        retries_before = int(node.query(retries_query))
+        # Two data files of 10 rows each: the first is uploaded when the second starts.
+        insert = node.get_query_request(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0, max_block_size = 10, "
+            f"min_insert_block_size_rows = 10, min_insert_block_size_bytes = 0, "
+            f"iceberg_insert_max_rows_in_data_file = 10",
+            query_id=insert_query_id,
+        )
+        # The `s3` endpoint settings in `configs/storage_conf.xml` give the S3 client of the table a
+        # backoff step of 10 s, so after one retry the deadline is still open when the rollback starts.
+        assert wait_for(
+            node, retries_query, lambda v: int(v) > retries_before
+        ), "the upload of the second data file did not retry in the shared backoff"
+        uploaded = data_files()
+        assert uploaded, "the first data file was not uploaded, so there is nothing to remove"
+
+        node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+        assert wait_for(
+            node, insert_running, lambda v: int(v) == 0
+        ), "the killed INSERT did not end"
+
+        left = data_files()
+        assert not left, f"the killed INSERT left uncommitted data files: {left}"
+    finally:
+        broken_s3.reset()
+        if insert is not None:
+            insert.get_answer_and_error()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")

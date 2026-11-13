@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
@@ -61,6 +62,9 @@ DeltaLakeSink::~DeltaLakeSink()
 
 void DeltaLakeSink::cancelBuffers()
 {
+    /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     /// The inner sinks are plain members, not pipeline processors, so the
     /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
     /// this flips its isCancelled(), so its destructor finalizes/cancels its
@@ -151,6 +155,8 @@ void DeltaLakeSink::onFinish()
     }
     catch (...)
     {
+        /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
         for (const auto & [sink, written_bytes, written_rows] : data_files)
         {
             /// FIXME: this should be just removeObject,

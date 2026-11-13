@@ -38,6 +38,7 @@
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <limits>
@@ -169,6 +170,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     SCOPE_EXIT({
         if (written)
             return;
+        /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
         for (auto * writers : {&delete_data_writers, &update_data_writers})
             for (auto & [_, writer] : *writers)
                 if (writer)
@@ -476,6 +479,8 @@ static bool writeMetadataFiles(
     auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
                     storage_manifest_list_name]()
     {
+        /// Keep the retries of this cleanup when the query is cancelled: nothing removes uncommitted files later.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
         try
         {
             for (const auto & [_, data_file] : delete_files.files_by_partition)
