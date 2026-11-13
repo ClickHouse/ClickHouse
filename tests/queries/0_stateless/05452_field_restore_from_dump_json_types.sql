@@ -36,7 +36,7 @@ SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{
 --    a declared `field_type` of `Array`/`Tuple`/`Map` never reaches the dump parser at all.
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Array_[Int64_1, Int64_2]"}}]}$$); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Tuple_(Int64_1, UInt64_2)"}}]}$$); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2)"}}]}$$); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_(Tuple_('k', Int64_2))"}}]}$$); -- { serverError BAD_ARGUMENTS }
 
 -- 7. Unterminated Array_/Tuple_/Map_ dumps: no closing bracket, so the element scan runs out
 --    of input.
@@ -48,3 +48,6 @@ SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Array_[Int64_1] x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Tuple_(Int64_1) x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2) x"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+
+-- 9. A Map element must be a key-value tuple.
+SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2)"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
