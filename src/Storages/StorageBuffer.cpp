@@ -1604,12 +1604,10 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     }
 
     Stopwatch watch;
-    /// Set once writeBlockToDestination has restored the captured identity, to classify a failure below: before
-    /// restoration it comes from rebuilding the flush context, after it from the destination pipeline.
-    bool identity_restored = false;
+    FlushStage stage = FlushStage::RestoringIdentity;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, &identity_restored);
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, &stage);
     }
     catch (...)
     {
@@ -1621,19 +1619,29 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         /// While the flush context is rebuilt, only a missing access entity (the user or one of its roles was
         /// dropped) or an expired credential mean the identity is gone for good, whether or not the destination is
         /// remote; any other failure there (e.g. the user's default database is detached) can recover, so the block
-        /// is retained. After restoration the failure is from the pipeline: for a LOCAL destination ACCESS_DENIED /
-        /// ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at this or a deeper local hop (permanent) -
-        /// discard; for a REMOTE (`Distributed`) destination they can come from the remote shard with a valid local
-        /// identity (local access was already checked when the rows were buffered), so retain for retry after the
-        /// remote RBAC/secret is corrected rather than losing an already-accepted batch.
+        /// is retained. A denial while authorizing the destination comes from a local check, so it is permanent
+        /// however remote the destination. While writing, for a LOCAL destination ACCESS_DENIED /
+        /// ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at a deeper local hop (permanent) - discard; for a
+        /// REMOTE (`Distributed`) destination they can come from the remote shard with a valid local identity, so
+        /// retain for retry after the remote RBAC/secret is corrected rather than losing an already-accepted batch.
         const auto is_undeliverable = [&](int code)
         {
-            if (!identity_restored)
-                return code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
-            if (code != ErrorCodes::ACCESS_DENIED && code != ErrorCodes::ACCESS_ENTITY_NOT_FOUND)
-                return false;
-            const auto destination = getDestinationTable();
-            return !destination || !destination->isRemote();
+            const bool access_failure = code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+            switch (stage)
+            {
+                case FlushStage::RestoringIdentity:
+                    return code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+                case FlushStage::Authorizing:
+                    return access_failure;
+                case FlushStage::Writing:
+                {
+                    if (!access_failure)
+                        return false;
+                    const auto destination = getDestinationTable();
+                    return !destination || !destination->isRemote();
+                }
+            }
+            UNREACHABLE();
         };
 
         bool undeliverable = false;
@@ -1689,7 +1697,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, bool * identity_restored)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, FlushStage * stage)
 {
     if (!destination_id || block.empty())
         return;
@@ -1711,23 +1719,25 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /// destination is re-authorized as that user instead of the full-access buffer context. Done before the
     /// destination schema is read so an `Alias` is resolved under that identity rather than the buffer context.
     restoreWriteIdentity(insert_context, *write_identity);
-    /// A later failure is from the destination pipeline rather than from rebuilding the flush context; the caller
-    /// classifies failures by this.
-    if (identity_restored)
-        *identity_restored = true;
+    if (stage)
+        *stage = FlushStage::Authorizing;
 
-    /// Authorize the forwarding chain under the restored identity before the destination schema is read,
-    /// intersected, or used to emit a "columns discarded" warning. Reading an `Alias`'s metadata follows it
-    /// through every alias hop to the (possibly protected) final target with no access check, so without this an
-    /// unauthorized user could tell a real target column (a warning, then ACCESS_DENIED) from an absent one
-    /// (zero intersection) and probe the schema of a table it cannot see. `isTargetTableGranted` checks every
-    /// hop of the chain (not just the first), matching the table-level check each nested insert does per hop.
+    /// Authorize the destination under the restored identity before its schema is read, intersected, or used to
+    /// emit a "columns discarded" warning, which would otherwise tell an unauthorized user a real column (a warning,
+    /// then ACCESS_DENIED) from an absent one and let it probe the schema of a table it cannot see. The insert
+    /// checked the same only if the destination existed then: it may have been created after the rows were
+    /// buffered, or access to it revoked since. Reading an `Alias`'s metadata also follows it through every alias
+    /// hop to the final target, so the whole chain is authorized too (`isTargetTableGranted` checks every hop),
+    /// matching the table-level check each nested insert does per hop.
+    insert_context->checkAccess(AccessType::INSERT, destination_id);
     if (const auto * alias = table->as<StorageAlias>();
         alias && !alias->isTargetTableGranted(insert_context, AccessType::INSERT, {}))
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Not enough privileges to insert into the target of {}",
             destination_id.getNameForLogs());
+    if (stage)
+        *stage = FlushStage::Writing;
 
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(insert_context, false);
 

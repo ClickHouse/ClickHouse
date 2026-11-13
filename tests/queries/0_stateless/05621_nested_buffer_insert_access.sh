@@ -202,6 +202,24 @@ ${CH} --query "OPTIMIZE TABLE ${db}.home_alias_buf"
 echo -n "home_buf: delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${victim_db}.home_dst"
 echo -n "home_alias_buf: delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${home_db}.alias_dst"
 
+echo "## Part I: a destination created after rows were buffered is authorized before its schema is read"
+# low buffers probe rows for a destination that does not exist yet, so the insert cannot check it. Once a protected
+# table appears under that name, the flush must be denied before the table's columns are intersected: otherwise only
+# the probe of an absent column gets a "columns discarded" warning, which tells low the table's schema.
+${CH} --query "GRANT OPTIMIZE ON ${db}.* TO ${low}"
+run_low --multiquery <<EOF
+CREATE TABLE ${db}.b_later_present (s String, secret_present String) ENGINE = Buffer(${victim_db}, later, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+CREATE TABLE ${db}.b_later_absent (s String, secret_absent String) ENGINE = Buffer(${victim_db}, later, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+EOF
+run_low --async-insert 0 --query "INSERT INTO ${db}.b_later_present VALUES ('p', 'x')"
+run_low --async-insert 0 --query "INSERT INTO ${db}.b_later_absent VALUES ('a', 'x')"
+${CH} --query "CREATE TABLE ${victim_db}.later (s String, secret_present String) ENGINE = MergeTree ORDER BY s"
+present=$(run_low --query "OPTIMIZE TABLE ${db}.b_later_present" 2>&1)
+absent=$(run_low --query "OPTIMIZE TABLE ${db}.b_later_absent" 2>&1)
+echo -n "probes are indistinguishable: "
+if [ "${present}" = "${absent}" ] && ! echo "${absent}" | grep -qi "columns"; then echo "OK"; else echo "UNEXPECTED"; fi
+echo -n "destination untouched:        "; ${CH} --query "SELECT count() FROM ${victim_db}.later"
+
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}; DROP USER IF EXISTS ${home}; DROP USER IF EXISTS ${cred}" 2>/dev/null
 ${CH} --query "DROP DATABASE IF EXISTS ${home_db}"
 ${CH} --query "DROP DATABASE IF EXISTS ${victim_db}"

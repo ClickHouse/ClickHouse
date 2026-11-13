@@ -31,3 +31,6 @@ home_buf: flush without the default database is retained: OK
 home_alias_buf: flush without the default database is retained: OK
 home_buf: delivered once it is attached again: ['from_home']
 home_alias_buf: delivered once it is attached again: ['from_home']
+## Part I: a destination created after rows were buffered is authorized before its schema is read
+probes are indistinguishable: OK
+destination untouched:        0
