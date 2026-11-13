@@ -1,0 +1,36 @@
+-- { echoOn }
+
+-- Basic behavior.
+SELECT arrayIsSorted([]), arrayIsSorted([1]), arrayIsSorted([1, 2, 2, 3]), arrayIsSorted([1, 3, 2]);
+1	1	1	0
+-- Strings and compound values.
+SELECT arrayIsSorted(['a', 'b', 'b']), arrayIsSorted(['a', 'c', 'b']), arrayIsSorted([(1, 'a'), (1, 'b'), (2, 'a')]), arrayIsSorted([(1, 'b'), (1, 'a')]);
+1	0	1	0
+-- Floating-point and nullable values.
+SELECT arrayIsSorted([-inf, 0.0, inf, nan]), arrayIsSorted([1.0, nan]), arrayIsSorted([nan, 1.0]), arrayIsSorted([1, 2, NULL]), arrayIsSorted([1, NULL, 2]);
+1	1	0	1	0
+-- Keep comparisons inside each array row.
+SELECT arrayIsSorted(a)
+FROM values(
+    'a Array(Int32)',
+    ([100, 200]),
+    ([-100, -50]),
+    ([5, 3]),
+    ([])
+);
+1
+1
+0
+1
+-- LowCardinality ordering must follow values rather than dictionary indexes.
+SELECT arrayIsSorted(a)
+FROM values(
+    'a Array(LowCardinality(String))',
+    (['z']),
+    (['a', 'z']),
+    (['z', 'a'])
+);
+1
+1
+0
+SELECT arrayIsSorted(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
