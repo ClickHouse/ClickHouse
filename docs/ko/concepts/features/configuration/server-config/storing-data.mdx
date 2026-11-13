@@ -415,7 +415,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 있으며 `INSERT` 작업을 지원합니다.
 테이블 복제는 지원되지 않습니다.
 [뮤테이션](/ko/reference/statements/alter/index#mutations)과 `ALTER` 작업은
-디스크가 `enable_hard_links`로 구성된 경우에만 지원됩니다. 아래를 참고하세요.
+`enable_hard_links`로 하드 링크가 비활성화되지 않은 경우에 지원됩니다. 아래를 참고하세요.
 
 이 디스크 유형의 사용 사례 중 하나는 비복제 `MergeTree` 테이블입니다. `s3`
 디스크 유형도 비복제 `MergeTree` 테이블에 적합하지만, 테이블의 로컬 메타데이터가
@@ -447,26 +447,103 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 `24.5`부터는 `plain_rewritable` 메타데이터 타입을 사용해
 모든 객체 스토리지 디스크(`s3`, `azure`, `local`)를 구성할 수 있습니다.
 
-#### plain rewritable 디스크의 하드 링크(Hard Link) {#plain-rewritable-hard-links}
+#### 메타데이터 스냅샷 {#plain-rewritable-metadata-snapshot}
 
-`MergeTree` 테이블의 `ALTER` 작업과 뮤테이션은 변경되지 않은 파일을 복사하지 않고
-하드 링크를 통해 원본 파트와 뮤테이션이 적용된 새 파트 간에 공유합니다.
-`enable_hard_links` 설정(기본값 `0`)을 활성화하면 `plain_rewritable` 메타데이터를
-사용하는 디스크에서도 실제 하드 링크를 생성할 수 있으며, 이에 따라 다음 작업을
-사용할 수 있습니다.
+`plain_rewritable` 디스크의 메타데이터는 객체 스토리지에 디렉터리마다
+`prefix.path` 객체로 저장됩니다. 이 객체들로부터 메모리 내 상태를 구성하려면
+메타데이터 디렉터리를 목록 조회하고, 모든 `prefix.path`를 읽고,
+모든 디렉터리를 목록 조회해야 하므로, 테이블이 하나뿐인 디스크라도
+수만 건의 요청이 발생합니다.
+
+이 과정을 빠르게 하기 위해, 데이터를 쓰는 디스크는 같은 위치를 가리키는
+읽기 전용 디스크(`readonly`가 `true`로 설정되었거나, `read_only`를 `true`로
+설정하여 연결된 디스크)를 위해 전체 상태의 간결한 스냅샷을
+`__meta/snapshot.bin`(`ZSTD`로 압축된, 버전이 명시된 바이너리 형식)에 함께 기록합니다.
+
+읽기 전용 디스크는 단 한 번의 요청으로 스냅샷에서 전체 상태를 로드하며,
+주기적인 갱신(`MergeTree` 설정 `refresh_parts_interval` 참조) 시에는
+스냅샷을 확인하여 재작성된 경우에만 다시 읽습니다. 메타데이터 디렉터리를
+목록 조회하거나 `prefix.path`를 읽는 일은 전혀 없습니다. 유일한 목록 조회는
+완료되지 않은 연산의 마커를 대상으로 하는 단 한 번의 요청이며, 이를 통해
+writer가 현재 대체하고 있는 파일은 백업(backup)에서 읽습니다. 읽기 전용 디스크는 원래
+`MergeTree` 테이블의 오래된 파트의 수명에 의존하여 지연된 상태로 동작하며,
+스냅샷도 같은 종류의 지연된 상태입니다. 즉, writer의 변경 사항은 writer가
+스냅샷을 재작성하는 시점에 리더에게 반영됩니다.
+여기에는 writer가 대체했거나 제자리에서 재작성한 파일도 포함됩니다. 스냅샷이
+재작성되기 전까지 리더는 이 파일들을 이전 크기와 블롭 기준으로 인식하며, 해당 블롭은
+이미 덮어쓰였거나 삭제되었을 수 있습니다. 이는 객체 스토리지를 목록 조회하는
+리더가 다음 갱신 전까지 파일을 인식하는 방식과 정확히 같습니다. 스냅샷으로 인해 이 시간 범위가
+늘어나는 것은 최대 `metadata_snapshot_write_delay_ms`뿐입니다.
+스냅샷이 없거나(예: writer에서 비활성화되었거나 writer가 이전 버전을 실행 중인 경우)
+읽을 수 없는 경우에만 읽기 전용 디스크가 객체 스토리지를 목록 조회합니다.
+
+writer는 항상 최신의 정확한 상태를 유지해야 하므로 스냅샷을 절대 읽지 않습니다.
+시작 시 평소처럼 객체 스토리지를 목록 조회한 뒤 스냅샷을 기록합니다.
+`metadata_snapshot_enabled`가 `false`로 설정된 writer는 시작 시 이전에 남아 있던
+스냅샷을 삭제하여, 읽기 전용 디스크가 오래된 상태를 계속 사용하지 않도록 합니다.
+스냅샷을 읽을 수 없거나 완료되지 않은 연산의 마커가 잘못된 형식이면, 읽기 전용
+디스크는 객체 스토리지를 목록 조회하며, 해당 스냅샷은 재작성될 때까지 사용하지 않습니다.
+
+스냅샷은 객체를 원자적으로 대체하는 객체 스토리지에서만 사용되므로, 읽기 전용
+디스크가 부분적으로 기록된 스냅샷을 읽는 일은 없습니다. 해당 스토리지는
+`S3`, Azure blob storage, 로컬입니다. `HDFS` 및 Azure Data Lake Storage
+Gen2 엔드포인트(예: OneLake)에서는 스냅샷을 기록하지도 읽지도 않으며,
+디스크는 스냅샷이 없을 때와 마찬가지로 객체 스토리지를 목록 조회합니다. 이러한 스토리지에 이전부터
+남아 있던 스냅샷은 writer가 시작 시 삭제합니다.
+
+| 설정                                 | 설명                                                                                                                                                                                    | 기본값    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `metadata_snapshot_enabled`        | 수정 후 스냅샷을 기록하거나(객체 스토리지가 쓰기 가능한 경우), 객체 스토리지를 목록 조회하는 대신 스냅샷에서 상태를 로드합니다(객체 스토리지가 읽기 전용인 경우).                                                                                         | `true` |
+| `metadata_snapshot_write_delay_ms` | 수정 사항이 있는 동안 스냅샷은 백그라운드에서 재작성되며, 재작성 간격은 지정된 밀리초보다 짧아지지 않습니다. `0`이면 매 수정 직후 커밋하는 스레드에서 스냅샷을 재작성하므로, 모든 커밋의 비용이 디스크 전체의 메타데이터를 직렬화하는 비용만큼 커집니다. 스냅샷은 서버 종료 시에도 기록되며, 디스크가 비면 즉시 삭제됩니다. | `1000` |
+
+두 설정 모두 디스크가 생성될 때만 읽힙니다. 변경 사항은 서버를 재시작해야
+적용되며, `SYSTEM RELOAD CONFIG`로는 적용되지 않습니다. 디스크의 역할도
+마찬가지입니다. 스냅샷을 기록할지 읽을지는 디스크 생성 시 `readonly`에 따라
+결정되므로, `readonly`를 변경할 때도 서버를 재시작해야 합니다.
+
+이전 버전은 `__meta/snapshot.bin`을 무시하므로 이 파일을 읽지도, 재작성하거나
+삭제하지도 않습니다. 따라서 읽기 전용 디스크는 계속 새 버전으로 실행하면서
+writer만 스냅샷을 지원하지 않는 버전으로 다운그레이드하는 경우, writer가 남긴 스냅샷을
+폐기해야 합니다. 그렇지 않으면 읽기 전용 디스크가 이 스냅샷을 계속 사용하여 다운그레이드
+이후의 변경 사항을 보지 못합니다. 새 버전의 writer를 중지한 후 이전 버전을
+시작하기 전에 `__meta/snapshot.bin`을 삭제하거나, 읽기 전용 디스크에서
+`metadata_snapshot_enabled`를 `false`로 설정하고 재시작하여 객체 스토리지를
+목록 조회하도록 하십시오.
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
+    <metadata_snapshot_write_delay_ms>10000</metadata_snapshot_write_delay_ms>
+</s3_plain_rewritable>
+```
+
+[system.events](/ko/reference/system-tables/events)의 `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotWritten`
+및 `DiskPlainRewritableSnapshotWriteFailed` 이벤트를 통해
+스냅샷 사용 현황을 확인할 수 있습니다.
+
+#### plain rewritable 디스크의 하드 링크(Hard Link) {#plain-rewritable-hard-links}
+
+`MergeTree` 테이블의 `ALTER` 작업과 뮤테이션은 변경되지 않은 파일을 복사하지 않고
+하드 링크를 통해 원본 파트와 뮤테이션이 적용된 새 파트 간에 공유합니다.
+`enable_hard_links` 설정(기본값 `1`)을 활성화하면 `plain_rewritable` 메타데이터를
+사용하는 디스크에서도 실제 하드 링크를 생성할 수 있으며, 이에 따라 이러한 작업을
+사용할 수 있습니다. `26.10` 이전 버전의 서버에서도 디스크를 읽을 수 있도록 유지하려면 `0`으로 설정하십시오.
+이 경우 하드 링크는 복사로 에뮬레이션되며, 데이터를 수정하는 `ALTER` 작업과 뮤테이션은 지원되지 않습니다.
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>0</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 하드 링크(hard link)를 사용하면 디렉터리의 메타데이터에 해당 디렉터리의 파일과 각 파일을 저장하는
 객체의 키가 명시적으로 나열되므로, 파일이 다른 디렉터리의 접두사 아래에 저장된 객체를
-참조할 수 있습니다. 이 기능을 활성화하기 전에 다음 사항을 고려하십시오.
+참조할 수 있습니다. 다음 사항을 고려하십시오.
 
 * `enable_hard_links` 설정을 지원하지 않는 서버는 이 형식의 디렉터리를 읽을 수 없으며,
   디렉터리의 메타데이터 전체를 논리 경로로 읽습니다. 따라서 이러한 디렉터리가 있는 디스크는
@@ -722,29 +799,30 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 
 이 설정은 디스크 구성 섹션에 정의해야 합니다. 이 표에는 자주 사용하는 캐시 디스크 설정 항목만 나열되어 있으며, 구성에서 허용되는 모든 키가 포함되어 있지는 않습니다. 런타임 값과 전체 설정 목록은 [`system.filesystem_cache_settings`](/ko/operations/system-tables/filesystem_cache_settings)에서 확인할 수 있습니다.
 
-| 매개변수                                        | 유형      | 기본값        | 설명                                                                                                                                                                                                                       |
-| ------------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`                                      | String  | -          | **필수**. 캐시가 저장될 디렉터리 경로입니다.                                                                                                                                                                                              |
-| `max_size`                                  | 크기      | -          | 바이트 또는 읽기 쉬운 형식(예: `10Gi`)으로 지정하는 최대 캐시 크기입니다. `max_size_ratio_to_total_space`가 설정되지 않은 경우 **필수**이며, 두 설정은 함께 지정할 수 없습니다. 한도에 도달하면 파일은 `cache_policy`에 지정된 정책(기본값 SLRU)에 따라 제거됩니다. `ki`, `Mi`, `Gi` 포맷을 지원합니다(v22.10부터). |
-| `max_size_ratio_to_total_space`             | Double  | -          | `max_size` 대신 사용할 수 있는 설정으로, 전체 디스크 공간 중 캐시 크기로 사용할 비율이며 `(0, 1]` 범위로 지정합니다. `max_size`가 설정되지 않은 경우 **필수**입니다. `max_size`와 함께 지정할 수 없습니다.                                                                                |
-| `cache_policy`                              | Enum    | `SLRU`     | 캐시 eviction 정책입니다. 가능한 값: `LRU`, `SLRU`(기본값), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`. 오버커밋 정책은 분산 캐시를 지원하는 빌드에서만 사용할 수 있으며 `use_split_cache`와 함께 사용할 수 없습니다(두 경우 모두 시작 시 거부됩니다).                                            |
-| `slru_size_ratio`                           | Double  | `0.6`      | `SLRU` / `SLRU_OVERCOMMIT`에서 보호(protected) 캐시와 수습(probationary) 캐시의 비율입니다.                                                                                                                                               |
-| `reserve_granularity`                       | 크기      | `4Mi`      | 파일 세그먼트 다운로드를 위해 공간을 예약할 때 최소 이 바이트만큼 미리 예약합니다(최대 파일 세그먼트 크기까지). `0`이면 요청된 크기만큼만 예약합니다.                                                                                                                                  |
-| `cache_on_write_operations`                 | 불리언     | `false`    | `INSERT` 쿼리와 백그라운드 머지에 대해 write-through 캐시를 활성화합니다. 쿼리별로 `enable_filesystem_cache_on_write_operations`를 사용해 재정의할 수 있습니다.                                                                                                 |
-| `enable_filesystem_query_cache_limit`       | 불리언     | `false`    | `filesystem_cache_max_download_size`를 기준으로 쿼리별 캐시 크기 제한을 활성화합니다.                                                                                                                                                         |
-| `cache_hits_threshold`                      | Integer | `0`        | 더 이상 사용되지 않으며 효과가 없습니다.                                                                                                                                                                                                  |
-| `enable_bypass_cache_with_threshold`        | 불리언     | `false`    | 큰 읽기 범위에서는 캐시를 건너뜁니다.                                                                                                                                                                                                    |
-| `bypass_cache_threshold`                    | 크기      | `256Mi`    | 이 값을 초과하는 읽기 범위 크기에서는 캐시를 우회합니다(`enable_bypass_cache_with_threshold` 필요).                                                                                                                                                |
-| `max_file_segment_size`                     | 크기      | `32Mi`     | 바이트 또는 읽기 쉬운 형식으로 지정하는 단일 캐시 파일의 최대 크기입니다.                                                                                                                                                                               |
-| `boundary_alignment`                        | 크기      | `4Mi`      | 캐시 내 파일 세그먼트 경계의 정렬 단위입니다. `max_file_segment_size`를 초과할 수 없습니다(더 큰 값은 시작 시 거부됩니다).                                                                                                                                       |
-| `max_elements`                              | Integer | `10000000` | 캐시 파일의 최대 개수입니다.                                                                                                                                                                                                         |
-| `load_metadata_threads`                     | Integer | `16`       | 시작 시 캐시 메타데이터를 로드하는 데 사용할 스레드 수입니다.                                                                                                                                                                                      |
-| `background_download_threads`               | UInt64  | `5`        | 파일 세그먼트를 백그라운드에서 다운로드하는 데 사용할 스레드 수입니다. `0`이면 백그라운드 다운로드가 비활성화됩니다.                                                                                                                                                       |
-| `background_download_queue_size_limit`      | UInt64  | `5000`     | 백그라운드 다운로드 큐에서 대기할 수 있는 세그먼트의 최대 개수입니다. `0`은 제한이 없음을 의미하며, 큐가 비활성화되는 것은 아닙니다. 백그라운드 다운로드 자체는 `background_download_threads`가 `0`일 때만 비활성화됩니다.                                                                             |
-| `background_download_max_file_segment_size` | 크기      | `4Mi`      | 세그먼트를 백그라운드에서 어디까지 프리페치할지 정하는 임계값이며, 정렬 단위에 맞춰 올림됩니다. 다운로드 크기는 `boundary_alignment` 단위로 올림되므로 엄격한 상한은 아닙니다(예: `boundary_alignment`가 `4Mi`이면 `1Mi`로 설정해도 `4Mi`를 다운로드합니다).                                                 |
-| `load_metadata_asynchronously`              | 불리언     | `false`    | 서버 시작 시 캐시 메타데이터를 비동기로 로드합니다.                                                                                                                                                                                            |
-| `use_split_cache`                           | 불리언     | `false`    | 파일을 시스템/데이터로 분리해 사용합니다. `SLRU_OVERCOMMIT` 또는 `LRU_OVERCOMMIT`과 함께 사용할 수 없습니다.                                                                                                                                            |
-| `split_cache_ratio`                         | Double  | `0.1`      | split&#95;cache에서 시스템 세그먼트가 전체 캐시 크기에서 차지하는 비율입니다.                                                                                                                                                                       |
+| 매개변수                                        | 유형      | 기본값        | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                      | String  | *          | **필수**. 캐시가 저장될 디렉터리 경로입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `max_size`                                  | 크기      | -          | 바이트 또는 읽기 쉬운 형식(예: `10Gi`)으로 지정하는 최대 캐시 크기입니다. `max_size_ratio_to_total_space`가 설정되지 않은 경우 **필수**이며, 두 설정은 함께 지정할 수 없습니다. 한도에 도달하면 파일은 `cache_policy`에 지정된 정책(기본값 SLRU)에 따라 제거됩니다. `ki`, `Mi`, `Gi` 포맷을 지원합니다(v22.10부터).                                                                                                                                                                                                                                        |
+| `max_size_ratio_to_total_space`             | Double  | *          | `max_size` 대신 사용할 수 있는 설정으로, 전체 디스크 공간 중 캐시 크기로 사용할 비율이며 `(0, 1]` 범위로 지정합니다. `max_size`가 설정되지 않은 경우 **필수**입니다. `max_size`와 함께 지정할 수 없습니다.                                                                                                                                                                                                                                                                                                                       |
+| `cache_policy`                              | Enum    | `SLRU`     | 캐시 eviction 정책입니다. 가능한 값: `LRU`, `SLRU`(기본값), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`. 오버커밋 정책은 분산 캐시를 지원하는 빌드에서만 사용할 수 있으며 `use_split_cache`와 함께 사용할 수 없습니다(두 경우 모두 시작 시 거부됩니다).                                                                                                                                                                                                                                                                                   |
+| `slru_size_ratio`                           | Double  | `0.6`      | `SLRU` / `SLRU_OVERCOMMIT`에서 보호(protected) 캐시와 수습(probationary) 캐시의 비율입니다.                                                                                                                                                                                                                                                                                                                                                                                      |
+| `reserve_granularity`                       | 크기      | `4Mi`      | 파일 세그먼트 다운로드를 위해 공간을 예약할 때 최소 이 바이트만큼 미리 예약합니다(최대 파일 세그먼트 크기까지). `0`이면 요청된 크기만큼만 예약합니다.                                                                                                                                                                                                                                                                                                                                                                         |
+| `cache_on_write_operations`                 | 불리언     | `false`    | `INSERT` 쿼리와 백그라운드 머지에 대해 write-through 캐시를 활성화합니다. 쿼리별로 `enable_filesystem_cache_on_write_operations`를 사용해 재정의할 수 있습니다.                                                                                                                                                                                                                                                                                                                                        |
+| `enable_filesystem_query_cache_limit`       | 불리언     | `false`    | `filesystem_cache_max_download_size`를 기준으로 쿼리별 캐시 크기 제한을 활성화합니다.                                                                                                                                                                                                                                                                                                                                                                                                |
+| `cache_hits_threshold`                      | Integer | `0`        | 더 이상 사용되지 않으며 효과가 없습니다.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `enable_bypass_cache_with_threshold`        | 불리언     | `false`    | 큰 읽기 범위에서는 캐시를 건너뜁니다.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `bypass_cache_threshold`                    | 크기      | `256Mi`    | 이 값을 초과하는 읽기 범위 크기에서는 캐시를 우회합니다(`enable_bypass_cache_with_threshold` 필요).                                                                                                                                                                                                                                                                                                                                                                                       |
+| `max_file_segment_size`                     | 크기      | `32Mi`     | 바이트 또는 읽기 쉬운 형식으로 지정하는 단일 캐시 파일의 최대 크기입니다. `SLRU` / `SLRU_OVERCOMMIT`에서는 각 SLRU 큐의 크기인 `max_size * min(slru_size_ratio, 1 - slru_size_ratio)`(`use_split_cache` 사용 시에는 각 파트의 크기)를 초과할 수 없으며, 더 큰 값은 거부됩니다.                                                                                                                                                                                                                                                      |
+| `boundary_alignment`                        | 크기      | `4Mi`      | 캐시 내 파일 세그먼트 경계의 정렬 단위입니다. `max_file_segment_size`를 초과할 수 없습니다(더 큰 값은 시작 시 거부됩니다).                                                                                                                                                                                                                                                                                                                                                                              |
+| `max_elements`                              | Integer | `10000000` | 캐시 파일의 최대 개수입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `load_metadata_threads`                     | Integer | `16`       | 시작 시 캐시 메타데이터를 로드하는 데 사용할 스레드 수입니다.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `background_download_threads`               | UInt64  | `5`        | 파일 세그먼트를 백그라운드에서 다운로드하는 데 사용할 스레드 수입니다. `0`이면 백그라운드 다운로드가 비활성화됩니다.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `background_download_queue_size_limit`      | UInt64  | `5000`     | 백그라운드 다운로드 큐에서 대기할 수 있는 세그먼트의 최대 개수입니다. `0`은 제한이 없음을 의미하며, 큐가 비활성화되는 것은 아닙니다. 백그라운드 다운로드 자체는 `background_download_threads`가 `0`일 때만 비활성화됩니다.                                                                                                                                                                                                                                                                                                                    |
+| `background_download_max_file_segment_size` | 크기      | `4Mi`      | 세그먼트를 백그라운드에서 어디까지 프리페치할지 정하는 임계값이며, 정렬 단위에 맞춰 올림됩니다. 다운로드 크기는 `boundary_alignment` 단위로 올림되므로 엄격한 상한은 아닙니다(예: `boundary_alignment`가 `4Mi`이면 `1Mi`로 설정해도 `4Mi`를 다운로드합니다).                                                                                                                                                                                                                                                                                        |
+| `load_metadata_asynchronously`              | 불리언     | `false`    | 서버 시작 시 캐시 메타데이터를 비동기로 로드합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `use_real_disk_size`                        | 불리언     | `false`    | 캐시 예약량을 예약된 바이트 수가 아닌 파일 시스템 블록 단위로 정렬하여 계산합니다. 이 값은 디스크상의 예약 점유량에 근사하지만 실제 할당된 크기와 정확히 일치하지는 않으며, `system.filesystem_cache_settings`에 표시되는 이 캐시의 `current_size`에 영향을 줍니다. 프로세스 전체 `FilesystemCacheSize` 메트릭과 eviction 크기 관련 프로파일 이벤트(profile events)는 모든 캐시에 대해 합산되므로, 모든 캐시가 동일한 모드를 사용할 때만 예약 점유량을 균등하게 반영합니다. `system.filesystem_cache`의 세그먼트별 `size`는 여전히 논리적 범위 크기를 나타냅니다. 부분적으로 기록된 세그먼트의 바이트 수를 확인하려면 `downloaded_size`를 사용하십시오. 이 설정을 변경하려면 재시작해야 합니다. |
+| `use_split_cache`                           | Boolean | `false`    | 파일을 시스템/데이터로 분리해 사용합니다. `SLRU_OVERCOMMIT` 또는 `LRU_OVERCOMMIT`과 함께 사용할 수 없습니다.                                                                                                                                                                                                                                                                                                                                                                                   |
+| `split_cache_ratio`                         | Double  | `0.1`      | split&#95;cache에서 시스템 세그먼트가 전체 캐시 크기에서 차지하는 비율입니다.                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 > **참고**: 크기 값은 `ki`, `Mi`, `Gi` 등의 단위를 지원합니다(예: `10Gi`).
 
