@@ -451,6 +451,7 @@ ASTPtr tryParseQuery(
         diagnostics->expected.max_parsed_pos = nullptr;
         diagnostics->expected.highlights.clear();
         diagnostics->expected.failed_keyword_readings.reset();
+        diagnostics->expected.failed_subquery_readings.reset();
         diagnostics->error_token = Token{};
     }
 

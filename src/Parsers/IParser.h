@@ -18,6 +18,7 @@ namespace DB
 
 struct LiteralTokenMap;
 struct FailedKeywordReadings;
+struct FailedSubqueryReadings;
 
 namespace ErrorCodes
 {
@@ -90,6 +91,9 @@ struct Expected
 
     /// Positions of CASE and INTERVAL tokens whose keyword reading failed in this parse; copies share it.
     std::shared_ptr<FailedKeywordReadings> failed_keyword_readings;
+
+    /// Positions of opening brackets where `ParserSubquery` failed in this parse; copies share it.
+    std::shared_ptr<FailedSubqueryReadings> failed_subquery_readings;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
