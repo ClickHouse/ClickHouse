@@ -1019,7 +1019,8 @@ private:
     /// Worker side: fills `distributed_read_task_buckets` from this read's bucket parameter.
     void readDistributedReadTaskBuckets(const BuildQueryPipelineSettings & settings);
     /// Worker side, before the index analysis: pins `prepared_parts` to the marks of this task's bucket,
-    /// so the analysis covers only this task's share of the table. A read with sampling is not pinned.
+    /// so the analysis covers only this task's share of the table. A read with sampling, or from a
+    /// table with `max_concurrent_queries` admission, is not pinned.
     /// Returns whether it pinned them.
     bool pinPartsToReceivedMarks();
     /// Worker side: whether its own index analysis can prune the received marks further than the

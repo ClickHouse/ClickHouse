@@ -5579,6 +5579,13 @@ bool ReadFromMergeTree::pinPartsToReceivedMarks()
     if (isQueryWithSampling())
         return false;
 
+    /// `AnalysisResult::checkLimits` admits a read to `max_concurrent_queries` by the number of marks it
+    /// selects, which must be those of the whole read, not of this task's bucket. Until the replicas get
+    /// the admission decision of the whole read, such a table keeps the analysis of the whole snapshot.
+    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0
+        && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0)
+        return false;
+
     /// The coordinator has already analyzed the whole table and this task reads only its share, so the
     /// analysis here starts from the received marks instead of from every part of the snapshot.
     /// A non-FINAL read has one bucket, which names each part once. The lanes of a FINAL read can name
