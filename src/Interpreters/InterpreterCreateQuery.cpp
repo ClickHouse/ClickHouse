@@ -8,6 +8,7 @@
 #include <Access/User.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Access/checkRowPolicyForBlendingEngine.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
@@ -2730,6 +2731,9 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, create, mode, context, is_temporary);
+    /// A policy can be created before its table, and then nobody was told that a merge undoes it
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkNoRowPolicyForBlendingEngine(storage, storage.getStorageID(), /*include_database_policies=*/ true, context);
 }
 catch (...)
 {

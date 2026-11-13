@@ -17,14 +17,14 @@ column outside the sorting key
 1
 100	0
 Graphite time
-1
-0	0
+0
+1	2
 Graphite time, literal
-1
-1	3
+0
+1	1
 Graphite leading path
 0
 1	3
 Graphite path not leading
-1
-2	3
+0
+1	3
