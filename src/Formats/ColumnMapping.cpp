@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/CaseAwareBlockNameMap.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/ColumnMapping.h>
 #include <Formats/FormatSettings.h>
 #include <optional>
@@ -118,11 +119,11 @@ void ColumnMapping::addColumns(std::span<const String> column_names, const Block
         });
 }
 
-void ColumnMapping::insertDefaultsForNotSeenColumns(MutableColumns & columns, std::span<UInt8> read_columns)
+void ColumnMapping::insertDefaultsForNotSeenColumns(MutableColumns & columns, const DataTypes & data_types, std::span<UInt8> read_columns)
 {
     for (auto index : not_presented_columns)
     {
-        columns[index]->insertDefault();
+        data_types[index]->insertDefaultInto(*columns[index]);
         read_columns[index] = false;
     }
 }

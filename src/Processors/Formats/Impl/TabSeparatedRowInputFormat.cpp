@@ -172,7 +172,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
     if (format_settings.tsv.empty_as_default && is_empty_field)
     {
-        column.insertDefault();
+        type->insertDefaultInto(column);
         return false;
     }
 
@@ -181,7 +181,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization);
+            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization, type.get());
 
         serialization->deserializeTextRaw(column, *buf, format_settings);
         return true;
@@ -189,7 +189,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization, type.get());
 
     serialization->deserializeTextEscaped(column, *buf, format_settings);
     return true;

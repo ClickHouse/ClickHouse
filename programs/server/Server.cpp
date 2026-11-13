@@ -57,7 +57,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
@@ -272,6 +272,12 @@ namespace ServerSetting
     extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
     extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
+    extern const ServerSettingsUInt64 amber_connections_soft_limit;
+    extern const ServerSettingsUInt64 amber_connections_warn_limit;
+    extern const ServerSettingsUInt64 amber_connections_store_limit;
+    extern const ServerSettingsUInt64 amber_connections_hard_limit;
+    extern const ServerSettingsUInt64 amber_connections_rcvbuf;
+    extern const ServerSettingsUInt64 amber_connections_sndbuf;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -505,6 +511,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
+    extern const ServerSettingsBool quick_startup;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
     extern const ServerSettingsUInt32 listen_backlog;
@@ -1163,10 +1170,14 @@ try
     };
     validate_insert_deduplication_version(server_settings);
 
+    const bool quick_startup = server_settings[ServerSetting::quick_startup];
+    if (quick_startup)
+        LOG_INFO(log, "Quick startup (`quick_startup`): skipping mlock and remapping of the executable, its integrity check, and the checks of the environment");
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
-    if (server_settings[ServerSetting::remap_executable])
+    if (server_settings[ServerSetting::remap_executable] && !quick_startup)
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
         /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
@@ -1253,7 +1264,7 @@ try
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
-    if (server_settings[ServerSetting::mlock_executable])
+    if (server_settings[ServerSetting::mlock_executable] && !quick_startup)
     {
         size_t min_physical_server_memory_to_mlock = server_settings[ServerSetting::mlock_executable_min_total_memory_amount_bytes];
         if (physical_server_memory >= min_physical_server_memory_to_mlock)
@@ -1941,7 +1952,7 @@ try
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
     }
-    else if (!executable_path.empty())
+    else if (!executable_path.empty() && !quick_startup)
     {
         /// Integrity check based on checksum of the executable code.
         /// Note: it is not intended to protect from malicious party,
@@ -3128,6 +3139,12 @@ try
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
                     new_server_settings[ServerSetting::http_connections_hard_limit],
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings[ServerSetting::amber_connections_soft_limit],
+                    new_server_settings[ServerSetting::amber_connections_warn_limit],
+                    new_server_settings[ServerSetting::amber_connections_store_limit],
+                    new_server_settings[ServerSetting::amber_connections_hard_limit],
                 });
 
             HTTPConnectionPools::instance().setSocketBufferSizes(
@@ -3142,6 +3159,10 @@ try
                 HTTPConnectionPools::SocketBufferSizes{
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::amber_connections_rcvbuf],
+                    new_server_settings[ServerSetting::amber_connections_sndbuf],
                 });
 
             StreamingExchangeProtocol::setSocketBufferSizes(
@@ -3533,7 +3554,8 @@ try
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
     /// It is important to initialize MergeTreeSettings after Settings, to support compatibility for MergeTreeSettings.
-    addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
+    if (!quick_startup)
+        addEnvironmentWarnings(global_context, logger(), path_str, server_settings[ServerSetting::logger_log]);
 
     /// Check sanity of MergeTreeSettings on server startup
     {

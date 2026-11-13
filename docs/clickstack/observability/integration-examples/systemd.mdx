@@ -9,7 +9,6 @@ keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickHouse Observability',
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect systemd journal logs with the OpenTelemetry journald receiver and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without a Linux host.
@@ -29,7 +28,15 @@ Collect systemd journal logs with the OpenTelemetry journald receiver and send t
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -253,7 +260,15 @@ Leave the terminal open while verifying ingestion. Stop with **Ctrl+C** when fin
 
 Open **Search**, select **Logs**, filter for `ServiceName:systemd-demo`, and select **Last 2 days**. You should see the sample entries with `unit`, `hostname`, and `message` attributes.
 
-<Image img="/images/clickstack/observability-systemd-demo-logs.png" alt="Systemd demo logs in ClickHouse Observability Search"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Systemd demo logs in ClickHouse Observability Search](/images/clickstack/observability-systemd-demo-logs.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>
@@ -268,14 +283,30 @@ Open **Search**, select **Logs**, filter for `ServiceName:systemd-demo`, and sel
 2. Upload `systemd-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
 
 Select **Last 2 days** for the sample and optionally filter for `ServiceName:systemd-demo`. For live logs, use `ServiceName:systemd-logs` and a time range covering your records. The dashboard includes log volume, units, SSH events, and service failures.
 
-<Image img="/images/clickstack/observability-systemd-logs-dashboard.png" alt="Systemd logs dashboard in ClickHouse Observability"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Systemd logs dashboard in ClickHouse Observability](/images/clickstack/observability-systemd-logs-dashboard.png)
+
+</Frame>
+
+</div>
 
 For live journal logs, change the SSH authentication chart's `Body LIKE '%sshd%'` condition to `LogAttributes['SYSLOG_IDENTIFIER'] = 'sshd'`. The live receiver stores the message in `Body` and the process identifier separately.
 
