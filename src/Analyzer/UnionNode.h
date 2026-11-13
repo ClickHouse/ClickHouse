@@ -142,6 +142,18 @@ public:
         is_materialized = is_materialized_value;
     }
 
+    /// Returns true if union node is a CTE declared as NOT MATERIALIZED, false otherwise
+    bool isNotMaterialized() const noexcept
+    {
+        return is_not_materialized;
+    }
+
+    /// Set union node is NOT MATERIALIZED CTE value
+    void setIsNotMaterialized(bool is_not_materialized_value) noexcept
+    {
+        is_not_materialized = is_not_materialized_value;
+    }
+
     /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
     bool isRecursiveCTE() const
     {
@@ -271,6 +283,7 @@ private:
     bool is_subquery = false;
     bool is_cte = false;
     bool is_materialized = false;
+    bool is_not_materialized = false;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;

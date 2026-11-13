@@ -111,7 +111,12 @@ MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & 
         if (!canonical)
             candidates.push_back(table_node);                      /// first encountered = canonical (deterministic)
         else if (canonical->getMaterializedCTE() != table_node->getMaterializedCTE())
+        {
+            /// An automatically materialized CTE that cannot be materialized at one reference is inlined at all of them.
+            if (table_node->getMaterializedCTE()->must_inline)
+                canonical->getMaterializedCTE()->must_inline = true;
             table_node->adoptMaterializedCTE(canonical->getMaterializedCTE(), context);
+        }
         /// same pointer already (in-branch repeat) -> merge is a no-op
 
         /// Count AFTER adoption so in-branch shared-pointer repeats and cross-branch
@@ -177,9 +182,10 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
     /// A CTE with a single static reference site is inlined, unless that site is inside a recursive member
     /// of a recursive CTE: `RecursiveCTESource` re-executes the recursive members once per recursion step,
     /// so the snapshot must be kept to be evaluated once (see `QueryAnalyzer::resolveUnion`).
+    /// An automatically materialized CTE that turned out to be unsuitable for materialization is inlined at every reference.
     ReusedMaterializedCTEs reused_materialized_cte;
     for (const auto & [materialized_cte, count] : use_count)
-        if (count >= 2 || materialized_cte->is_referenced_from_recursive_cte_member)
+        if ((count >= 2 || materialized_cte->is_referenced_from_recursive_cte_member) && !materialized_cte->must_inline)
             reused_materialized_cte.insert(materialized_cte);
 
     if (context->hasQueryContext())

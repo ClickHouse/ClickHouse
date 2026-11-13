@@ -37,6 +37,7 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(name.size());
     hash_state.update(name);
     hash_state.update(is_materialized);
+    hash_state.update(is_not_materialized);
     hash_state.update(aliases != nullptr);
     if (aliases)
         aliases->updateTreeHash(hash_state, ignore_aliases);
@@ -49,6 +50,8 @@ void ASTWithElement::writeJSON(WriteBuffer & out) const
     w.writeString("name", name);
     if (is_materialized)
         w.writeBool("is_materialized", true);
+    if (is_not_materialized)
+        w.writeBool("is_not_materialized", true);
     w.writeChild("subquery", subquery);
     w.writeChild("aliases", aliases);
 }
@@ -61,6 +64,9 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' during AST JSON deserialization");
     is_materialized = r.getBool("is_materialized");
+    is_not_materialized = r.getBool("is_not_materialized");
+    if (is_materialized && is_not_materialized)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'is_materialized' and 'is_not_materialized' are mutually exclusive during AST JSON deserialization");
 
     /// The parser produces an `ASTSubquery` here (`ParserWithElement` uses `ParserSubquery`), and the
     /// analyzer relies on exactly that: `QueryTreeBuilder::buildExpression` does
@@ -102,7 +108,7 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
-    ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
+    ostr << " AS" << (is_materialized ? " MATERIALIZED" : "") << (is_not_materialized ? " NOT MATERIALIZED" : "");
     ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
 }

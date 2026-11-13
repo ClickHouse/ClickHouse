@@ -16,6 +16,7 @@ public:
     ASTPtr aliases;
 
     bool is_materialized = false; /// WITH t AS MATERIALIZED (subquery)
+    bool is_not_materialized = false; /// WITH t AS NOT MATERIALIZED (subquery)
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }

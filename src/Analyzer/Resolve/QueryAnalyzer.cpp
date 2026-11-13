@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/JoinNode.h>
@@ -107,6 +108,7 @@ namespace Setting
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool enable_automatic_cte_materialization;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -178,6 +180,134 @@ void checkMaterializedCTESubqueryIsNotCorrelated(
             "Materialized CTE '{}' cannot be correlated. In scope {}",
             cte_name,
             scope_node->formatASTForErrorMessage());
+}
+
+bool isMaterializedCTESubqueryCorrelated(const QueryTreeNodePtr & subquery)
+{
+    return subquery->as<QueryNode>() ? subquery->as<QueryNode>()->isCorrelated() : subquery->as<UnionNode>()->isCorrelated();
+}
+
+/// Whether the subquery of a CTE, not resolved yet, is worth materializing automatically when the CTE is referenced
+/// more than once: it aggregates, deduplicates or computes window functions, so recomputing it is expensive,
+/// and its result is usually not larger than its input. A subquery that only filters or projects a table is inlined,
+/// so that each reference can use the indexes of the table and read only the columns it needs.
+bool isCTEWorthMaterializingAutomatically(const QueryTreeNodePtr & cte_node)
+{
+    if (const auto * union_node = cte_node->as<UnionNode>())
+    {
+        if (union_node->isRecursiveCTE())
+            return false;
+
+        const auto & queries = union_node->getQueries().getNodes();
+        return !queries.empty() && std::ranges::all_of(queries, isCTEWorthMaterializingAutomatically);
+    }
+
+    const auto * query_node = cte_node->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    /// The temporary table does not keep the totals row of `WITH TOTALS`.
+    if (query_node->isGroupByWithTotals())
+        return false;
+
+    if (query_node->hasGroupBy() || query_node->isGroupByAll() || query_node->isDistinct() || query_node->hasWindow())
+        return true;
+
+    /// Look for aggregate and window functions in the expressions of this query, not descending into nested queries and lambdas.
+    const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+    std::vector<const IQueryTreeNode *> nodes_to_visit{query_node->getProjectionNode().get()};
+    if (query_node->hasHaving())
+        nodes_to_visit.push_back(query_node->getHaving().get());
+
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION || node_type == QueryTreeNodeType::LAMBDA)
+            continue;
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            if (function_node->isWindowFunction() || aggregate_function_factory.isAggregateFunctionName(function_node->getFunctionName()))
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child.get());
+    }
+
+    return false;
+}
+
+/// Called once the subquery of a reference to a materialized CTE is resolved: binds the reference
+/// to the temporary table of the CTE, creating the table at the first reference.
+/// Returns false if the CTE is materialized automatically, but this reference must be replaced by its resolved subquery.
+bool bindMaterializedCTEReference(TableNode & table_node, const IdentifierResolveScope & scope)
+{
+    const auto & subquery = table_node.getMaterializedCTESubquery();
+
+    if (table_node.getMaterializedCTE()->is_automatic)
+    {
+        /// Automatic materialization must not change the result of the query. A reference whose subquery resolves differently
+        /// from the reference that created the temporary table (e.g. a name in the subquery refers to another CTE at this
+        /// reference) gets a separate temporary table: references that resolve equally are merged again by
+        /// `inlineMaterializedCTEIfNeeded`, and a single reference is inlined there. A correlated subquery depends on the
+        /// row of the outer query, so it is inlined right away: it points to the outer query, so it cannot be moved
+        /// into the query tree later by `inlineMaterializedCTEIfNeeded`. A correlated subquery has a different hash than
+        /// a subquery that is not correlated, so it never shares a temporary table with other references.
+        const auto subquery_hash = subquery->getTreeHash({.compare_aliases = false, .ignore_cte = true});
+        if (table_node.getMaterializedCTE()->isStorageInitialized() && table_node.getMaterializedCTE()->subquery_hash != subquery_hash)
+            table_node.detachMaterializedCTE();
+
+        if (isMaterializedCTESubqueryCorrelated(subquery))
+            return false;
+
+        const auto & materialized_cte = table_node.getMaterializedCTE();
+        if (!materialized_cte->isStorageInitialized())
+            materialized_cte->subquery_hash = subquery_hash;
+    }
+    else
+    {
+        checkMaterializedCTESubqueryIsNotCorrelated(subquery, table_node.getMaterializedCTE()->cte_name, scope.scope_node);
+    }
+
+    const auto materialized_cte = table_node.getMaterializedCTE();
+    if (!materialized_cte->isStorageInitialized())
+    {
+        const auto & projection_columns = subquery->as<QueryNode>()
+            ? subquery->as<QueryNode>()->getProjectionColumns()
+            : subquery->as<UnionNode>()->computeProjectionColumns();
+
+        NamesAndTypesList columns;
+        for (const auto & column : projection_columns)
+            columns.emplace_back(column.name, column.type);
+
+        auto query_context = scope.context->getQueryContext();
+        auto storage_holder = TemporaryTableHolder(
+            query_context,
+            ColumnsDescription(std::move(columns), false),
+            ConstraintsDescription{},
+            nullptr /*query*/,
+            true /*create_for_global_subquery*/);
+
+        table_node.finalizeMaterializedCTE(std::move(storage_holder), scope.context);
+    }
+    else
+    {
+        table_node.updateStorage(materialized_cte->storage, scope.context);
+        verifyMaterializedCTESubqueryMatchesStorage(
+            subquery,
+            materialized_cte->storage,
+            scope.context,
+            materialized_cte->cte_name,
+            scope.scope_node,
+            /*throw_on_mismatch=*/ true);
+    }
+
+    return true;
 }
 
 /// Whether `resolveQuery` disabled `parallel_replicas_for_cluster_engines` for the query of `scope` or an enclosing query.
@@ -1639,26 +1769,42 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     auto * query_node = cte_node->as<QueryNode>();
     auto * union_node = cte_node->as<UnionNode>();
 
+    const auto & settings = scope.context->getSettingsRef();
     bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
-    if (is_materialized_cte)
-    {
-        if (scope.context->getSettingsRef()[Setting::enable_materialized_cte])
-        {
-            /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
-            /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
-            auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
-            table_node->setAlias(full_name);
+    bool is_not_materialized_cte = (query_node && query_node->isNotMaterialized()) || (union_node && union_node->isNotMaterialized());
 
-            cte_node = table_node;
-        }
-        else
-        {
-            LOG_WARNING(
-                getLogger("QueryAnalyzer"),
-                "CTE '{}' is declared as MATERIALIZED, but the setting 'enable_materialized_cte' is disabled: "
-                "the MATERIALIZED keyword is ignored and the CTE is inlined at each reference",
-                full_name);
-        }
+    /// A CTE that may be referenced more than once is materialized automatically, as in PostgreSQL. It is decided here,
+    /// before the references are counted: a CTE that ends up referenced only once is inlined by `inlineMaterializedCTEIfNeeded`.
+    /// CTEs of a `WITH RECURSIVE` clause are not materialized automatically, as they can be read by the recursive members.
+    bool materialize_automatically = false;
+    if (!is_materialized_cte || !settings[Setting::enable_materialized_cte])
+    {
+        const auto * defining_query_node = scope.scope_node->as<QueryNode>();
+        materialize_automatically = settings[Setting::enable_automatic_cte_materialization]
+            && !is_not_materialized_cte
+            && !several_definitions
+            && defining_query_node && !defining_query_node->isRecursiveWith()
+            && scope.context->hasQueryContext()
+            && isCTEWorthMaterializingAutomatically(cte_node);
+    }
+
+    if ((is_materialized_cte && settings[Setting::enable_materialized_cte]) || materialize_automatically)
+    {
+        /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
+        /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
+        auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+        table_node->setAlias(full_name);
+        table_node->getMaterializedCTE()->is_automatic = materialize_automatically;
+
+        cte_node = table_node;
+    }
+    else if (is_materialized_cte)
+    {
+        LOG_WARNING(
+            getLogger("QueryAnalyzer"),
+            "CTE '{}' is declared as MATERIALIZED, but the setting 'enable_materialized_cte' is disabled: "
+            "the MATERIALIZED keyword is ignored and the CTE is inlined at each reference",
+            full_name);
     }
 
     return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
@@ -4050,42 +4196,16 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 resolveUnion(mat_subquery, mat_subquery_scope);
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
-
-                            checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
 
-                        /// Create temp table only if no other clone has done it yet.
-                        if (!materialized_cte_ptr->isStorageInitialized())
+                        if (!bindMaterializedCTEReference(*mat_table_node, scope))
                         {
-                            const auto & proj_cols = mat_subquery->as<QueryNode>()
-                                ? mat_subquery->as<QueryNode>()->getProjectionColumns()
-                                : mat_subquery->as<UnionNode>()->computeProjectionColumns();
-
-
-                            NamesAndTypesList columns;
-                            for (const auto & col : proj_cols)
-                                columns.emplace_back(col.name, col.type);
-
-                            auto query_context = scope.context->getQueryContext();
-                            auto storage_holder = TemporaryTableHolder(
-                                query_context,
-                                ColumnsDescription(std::move(columns), false),
-                                ConstraintsDescription{},
-                                nullptr /*query*/,
-                                true /*create_for_global_subquery*/);
-
-                            mat_table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
-                        }
-                        else
-                        {
-                            mat_table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
-                            verifyMaterializedCTESubqueryMatchesStorage(
-                                mat_subquery,
-                                materialized_cte_ptr->storage,
-                                scope.context,
-                                materialized_cte_ptr->cte_name,
-                                scope.scope_node,
-                                /*throw_on_mismatch=*/ true);
+                            auto inlined_subquery = mat_subquery;
+                            if (auto * inlined_query_node = inlined_subquery->as<QueryNode>())
+                                inlined_query_node->setIsSubquery(true);
+                            else
+                                inlined_subquery->as<UnionNode &>().setIsSubquery(true);
+                            resolved_identifier_node = std::move(inlined_subquery);
                         }
                     }
                     else if (isTableExpressionNodeType(resolved_identifier_node->getNodeType()))
@@ -7133,16 +7253,16 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                 /// Each clone gets a deep-cloned subquery (IQueryTreeNode::clone deep-clones children).
                 /// Use materialized_cte->storage (shared across clones) to distinguish first vs subsequent.
+                auto & subquery = table_node->getMaterializedCTESubquery();
+
+                for (const auto & cte_map_node : cte_map_nodes)
+                {
+                    ctes_in_resolve_process.insert(cte_map_node);
+                    cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                }
+
                 if (!materialized_cte_ptr->isStorageInitialized())
                 {
-                    auto & subquery = table_node->getMaterializedCTESubquery();
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
-
                     IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
                     subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
@@ -7150,67 +7270,37 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         resolveQuery(subquery, subquery_scope);
                     else
                         resolveUnion(subquery, subquery_scope);
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                    }
-
-                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
-
-                    const auto & projection_columns = subquery->as<QueryNode>()
-                        ? subquery->as<QueryNode>()->getProjectionColumns()
-                        : subquery->as<UnionNode>()->computeProjectionColumns();
-
-                    NamesAndTypesList columns;
-                    for (const auto & col : projection_columns)
-                        columns.emplace_back(col.name, col.type);
-
-                    auto query_context = scope.context->getQueryContext();
-                    auto storage_holder = TemporaryTableHolder(
-                        query_context,
-                        ColumnsDescription(std::move(columns), false),
-                        ConstraintsDescription{},
-                        nullptr /*query*/,
-                        true /*create_for_global_subquery*/);
-
-                    table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
                 }
                 else
                 {
                     /// Subsequent reference: another clone already resolved and created the storage.
                     /// Resolve this clone's own subquery copy for correct EXPLAIN output,
                     /// then reuse the existing storage.
-                    auto & subquery = table_node->getMaterializedCTESubquery();
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
-
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+                }
 
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                    }
+                for (const auto & cte_map_node : cte_map_nodes)
+                {
+                    ctes_in_resolve_process.erase(cte_map_node);
+                    cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                }
 
-                    /// A clone can resolve correlated even when the storage-initializing clone did not
-                    /// (identifiers may bind to outer scope here). The first-reference branch above
-                    /// already rejects correlation; this branch must do the same.
-                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, materialized_cte_ptr->cte_name, scope.scope_node);
+                /// A clone can resolve correlated even when the storage-initializing clone did not
+                /// (identifiers may bind to outer scope here), so this is checked at every reference.
+                if (!bindMaterializedCTEReference(*table_node, scope))
+                {
+                    /// Replace the reference with its resolved subquery, as `inlineViewSubqueryIfNeeded` does for a view.
+                    QueryTreeNodePtr inlined_subquery = subquery;
+                    if (auto * inlined_query_node = inlined_subquery->as<QueryNode>())
+                        inlined_query_node->setIsSubquery(true);
+                    else
+                        inlined_subquery->as<UnionNode &>().setIsSubquery(true);
+                    inlined_subquery->setAlias(table_node->getAlias());
 
-                    table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
-                    verifyMaterializedCTESubqueryMatchesStorage(
-                        subquery,
-                        materialized_cte_ptr->storage,
-                        scope.context,
-                        materialized_cte_ptr->cte_name,
-                        scope.scope_node,
-                        /*throw_on_mismatch=*/ true);
+                    scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
+                    join_tree_node = std::move(inlined_subquery);
+                    scope.table_expressions_in_resolve_process.insert(join_tree_node.get());
+                    break;
                 }
             }
 
@@ -8262,7 +8352,13 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                     if (!table_node || !table_node->isMaterializedCTE())
                         return;
 
-                    if (isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                    if (!isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                        return;
+
+                    /// An automatically materialized CTE is inlined instead, so it reads the working table at every step.
+                    if (table_node->getMaterializedCTE()->is_automatic)
+                        table_node->getMaterializedCTE()->must_inline = true;
+                    else
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
                             table_node->getMaterializedCTE()->cte_name,

@@ -2,6 +2,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
+#include <city.h>
 
 #include <atomic>
 #include <memory>
@@ -80,6 +81,16 @@ struct MaterializedCTE
     const std::string temporary_table_name;
     /// The CTE is referenced from a recursive member of a recursive CTE, so it is never inlined.
     bool is_referenced_from_recursive_cte_member = false;
+    /// The CTE is not declared `MATERIALIZED`, but is materialized automatically because it may be referenced
+    /// more than once (see the setting `enable_automatic_cte_materialization`). Materialization must not change
+    /// the result of the query, so such a CTE is inlined instead of throwing when it cannot be materialized.
+    bool is_automatic = false;
+    /// An automatically materialized CTE that turned out to be unsuitable for materialization (its subquery reads
+    /// a recursive CTE from a recursive member): every reference is inlined, regardless of the number of references.
+    bool must_inline = false;
+    /// For an automatically materialized CTE: the tree hash of the resolved subquery of the reference that created
+    /// `storage`. A reference whose subquery resolves differently reads a separate temporary table.
+    CityHash_v1_0_2::uint128 subquery_hash{};
     /// Query Plan for the CTE
     std::unique_ptr<QueryPlan> plan = {};
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
