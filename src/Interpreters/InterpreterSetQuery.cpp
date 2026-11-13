@@ -114,7 +114,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     default_settings.reserve(ast.default_settings.size());
     for (const auto & name : ast.default_settings)
     {
-        if (name == "make_distributed_plan" && getContext()->getApplicationType() != Context::ApplicationType::CLIENT)
+        if (name == "make_distributed_plan")
             changes.setSetting(name, Field(false));
         else
             default_settings.push_back(name);
