@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <join_algorithm>ie_join</join_algorithm>
+        <max_threads>1</max_threads>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>CREATE TABLE ie_join_ranges (lo Int32, hi Int32) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO ie_join_ranges VALUES (0, 15), (1, 1), (2, 2), (3, 15), (4, 6), (5, 5), (6, 6), (7, 15), (8, 12), (9, 9), (10, 10), (11, 11), (12, 12), (13, 15), (14, 14), (15, 15)</fill_query>
+
+    <query>SELECT count() FROM (SELECT toInt32(number % 16) AS x FROM numbers(1000000)) AS p JOIN ie_join_ranges AS r ON p.x &gt;= r.lo AND p.x &lt;= r.hi FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT toInt32(number % 16) AS x FROM numbers(1000000)) AS p JOIN (SELECT lo, lo + 3 AS hi FROM ie_join_ranges) AS r ON p.x &gt;= r.lo AND p.x &lt;= r.hi FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ie_join_ranges</drop_query>
+</test>

@@ -224,10 +224,8 @@ private:
     void setBit(size_t pos);
     bool testBit(size_t pos) const;
     /// Position of the first set bit at or after `scan_pos` (advancing `scan_pos` past it),
-    /// or num_union_entries if there is none. Returns nothing when the work budget stops the
-    /// scan first; `scan_pos` then points at the first uninspected position, so the next call
-    /// resumes there.
-    std::optional<size_t> findNextSetBit();
+    /// or num_union_entries if there is none.
+    size_t findNextSetBit();
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
     bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
@@ -331,6 +329,9 @@ private:
     PaddedPODArray<UInt64> l2_keys_by_position;
     /// One bit per L1 position, set for right-side entries that passed the frontier.
     PaddedPODArray<UInt64> bit_array;
+    /// Summary levels over `bit_array`, lowest first: bit j of a level is set iff word j of the level below is
+    /// non-zero, so `findNextSetBit` skips a run of empty words in O(number of levels).
+    VectorWithMemoryTracking<PaddedPODArray<UInt64>> bit_array_summaries;
     /// One past the highest set bit; lets scans stop instead of walking empty words to the end.
     size_t bit_array_end = 0;
 
