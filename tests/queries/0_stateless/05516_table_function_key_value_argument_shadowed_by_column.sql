@@ -53,23 +53,28 @@ ORDER BY foo;
 -- expression followed by a positional argument (here the partition_columns_in_data_file Boolean before
 -- the structure) is an ordinary comparison and must resolve to the alias. Analysis only (EXPLAIN): the
 -- endpoint is never contacted; the test fails (UNKNOWN_IDENTIFIER) if `keep` is wrongly skipped.
-EXPLAIN QUERY TREE
-WITH 1 AS keep
-SELECT * FROM azureBlobStorage('http://127.0.0.1:1/account', 'container', 'file.csv', 'CSV', 'none', 'NONE', keep = 1, 'a UInt8')
-FORMAT Null;
+-- The EXPLAIN is wrapped in a subquery so the outer `FORMAT Null` discards the tree: a trailing
+-- `FORMAT Null` on `EXPLAIN` itself is the explained query's format and does not suppress the output.
+SELECT * FROM (
+    EXPLAIN QUERY TREE
+    WITH 1 AS keep
+    SELECT * FROM azureBlobStorage('http://127.0.0.1:1/account', 'container', 'file.csv', 'CSV', 'none', 'NONE', keep = 1, 'a UInt8')
+) FORMAT Null;
 
 -- `extra_credentials(...)` is a wrapper the storage parser removes before it classifies arguments, so a
 -- `key = value` named argument can precede it and must still be treated as a parameter, not resolved to a
 -- shadowing `WITH` alias. Analysis only (EXPLAIN): the endpoint is never contacted; both orders must analyze
 -- (BAD_ARGUMENTS if `partition_strategy` is wrongly folded instead of reaching the storage parser).
-EXPLAIN QUERY TREE
-WITH 'ignored' AS partition_strategy
-SELECT * FROM s3('http://127.0.0.1:1/bucket/file.csv', 'NOSIGN', 'CSV', 'a UInt8', partition_strategy = 'none', extra_credentials(role_arn = ''))
-FORMAT Null;
+SELECT * FROM (
+    EXPLAIN QUERY TREE
+    WITH 'ignored' AS partition_strategy
+    SELECT * FROM s3('http://127.0.0.1:1/bucket/file.csv', 'NOSIGN', 'CSV', 'a UInt8', partition_strategy = 'none', extra_credentials(role_arn = ''))
+) FORMAT Null;
 
-EXPLAIN QUERY TREE
-WITH 'ignored' AS partition_strategy
-SELECT * FROM s3('http://127.0.0.1:1/bucket/file.csv', 'NOSIGN', 'CSV', 'a UInt8', extra_credentials(role_arn = ''), partition_strategy = 'none')
-FORMAT Null;
+SELECT * FROM (
+    EXPLAIN QUERY TREE
+    WITH 'ignored' AS partition_strategy
+    SELECT * FROM s3('http://127.0.0.1:1/bucket/file.csv', 'NOSIGN', 'CSV', 'a UInt8', extra_credentials(role_arn = ''), partition_strategy = 'none')
+) FORMAT Null;
 
 DROP TABLE t_05516;
