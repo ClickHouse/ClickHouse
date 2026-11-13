@@ -54,9 +54,7 @@ private:
     SortCursorImpl * last_emitted_cursor = nullptr;
     size_t last_emitted_row = 0;
 
-    /// A column that has the same fixed-size type in every input chunk. Merging interleaved chunks takes runs
-    /// of a few rows, and a virtual `insertRangeFrom` per column and run costs more than copying the run, so
-    /// `mergeBatchImpl` writes the values of such columns in place.
+    /// A column that has the same fixed-size type in every input chunk; `mergeBatchImpl` writes its values in place.
     struct FixedSizeColumn
     {
         size_t position = 0;
@@ -66,7 +64,7 @@ private:
     };
 
     VectorWithMemoryTracking<FixedSizeColumn> fixed_size_columns;
-    /// The remaining columns, inserted with `insertFrom` and `insertRangeFrom`.
+    /// Positions of the remaining columns.
     VectorWithMemoryTracking<size_t> other_columns;
     /// Output data of `fixed_size_columns` in the current call of `mergeBatchImpl`.
     VectorWithMemoryTracking<char *> fixed_size_output;

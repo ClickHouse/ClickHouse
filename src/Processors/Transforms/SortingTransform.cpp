@@ -187,8 +187,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     for (auto & column : merged_columns)
         column->reserve(size_to_reserve);
 
-    /// Fixed-size columns expose their capacity and are written in place below the smallest one. A run that does
-    /// not fit is inserted as into the other columns, so these columns grow exactly as the others do.
+    /// Written in place below the smallest capacity; a run that does not fit grows them as the other columns grow.
     size_t fixed_size_capacity = 0;
     auto expose_fixed_size_capacity = [&]
     {
@@ -272,9 +271,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
                         const size_t bytes = rows_to_insert * column.value_size;
                         copyFixedSizeRows(fixed_size_output[i] + merged_rows * column.value_size, from, bytes);
 
-                        /// Every chunk is read sequentially, but the merge alternates between all chunks, which is more
-                        /// streams than the hardware prefetcher follows. This cursor usually comes back only after runs
-                        /// of the other chunks, so its next cache line can be requested now.
+                        /// The merge alternates between more streams than the hardware prefetcher follows.
                         if (has_next_row)
                             __builtin_prefetch(from + bytes + 64);
                     }
