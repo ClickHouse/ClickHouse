@@ -136,6 +136,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
 ThreadGroup::ThreadGroup(const ContextWeakPtr & global_context_)
     : master_thread_id(CurrentThread::get().thread_id)
     , global_context(global_context_)
+    , with_query_context(false)
     , os_threads_nice_value(0)
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>())
 {
@@ -147,6 +148,7 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_
     , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
+    , with_query_context(parent->with_query_context)
     , fatal_error_callback(parent->fatal_error_callback)
     , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
@@ -504,7 +506,8 @@ void ThreadStatus::detachFromGroup()
 
     if (boundToOSThread())
     {
-        finalizeQueryProfiler();
+        if (thread_group->with_query_context)
+            finalizeQueryProfiler();
         finalizePerformanceCounters();
     }
 

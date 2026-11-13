@@ -97,6 +97,10 @@ public:
     const ContextWeakPtr query_context;
     const ContextWeakPtr global_context;
 
+    /// False for a group from `createWithoutQueryContext` and the groups nested in it: attaching them does not set up
+    /// query profilers, so detaching keeps the profilers of the thread (e.g. the global profiler of a pool thread).
+    const bool with_query_context = true;
+
     const FatalErrorCallback fatal_error_callback;
 
     const Int32 os_threads_nice_value;
