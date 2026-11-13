@@ -1289,7 +1289,8 @@ static QueryTreeNodePtr buildResolvedFunction(
 static QueryTreeNodePtr buildPortableNullSafeEquals(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    bool inside_container = false);
 static bool isCheapInOperand(const QueryTreeNodePtr & argument);
 
 /// Builds the row-wise comparison for a one-element IN set: the compare-nulls functions
@@ -1381,12 +1382,14 @@ static QueryTreeNodePtr includeMatchingNaNs(
     QueryTreeNodePtr result,
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool inside_container = false)
 {
     const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
     if (!isFloat(left_type) || !isFloat(right_type)
-        || (!isNullableOrLowCardinalityNullable(left_argument->getResultType())
+        || (!inside_container
+            && !isNullableOrLowCardinalityNullable(left_argument->getResultType())
             && !isNullableOrLowCardinalityNullable(right_argument->getResultType())))
         return result;
 
@@ -1400,7 +1403,8 @@ static QueryTreeNodePtr includeMatchingNaNs(
 static QueryTreeNodePtr buildPortableNullSafeEquals(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool inside_container)
 {
     const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
@@ -1421,7 +1425,7 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
             auto index = std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1));
             auto left_element = buildResolvedFunction("tupleElement", {left_argument, index}, context);
             auto right_element = buildResolvedFunction("tupleElement", {right_argument, std::move(index)}, context);
-            element_comparisons.push_back(buildPortableNullSafeEquals(left_element, right_element, context));
+            element_comparisons.push_back(buildPortableNullSafeEquals(left_element, right_element, context, true));
         }
         if (element_comparisons.empty())
             result = std::make_shared<ConstantNode>(Field{1u}, std::make_shared<DataTypeUInt8>());
@@ -1450,7 +1454,7 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
             NameAndTypePair{"__in_null_left_element", argument_types[0]}, lambda_arguments);
         auto right_element = std::make_shared<ColumnNode>(
             NameAndTypePair{"__in_null_right_element", argument_types[1]}, lambda_arguments);
-        auto body = buildPortableNullSafeEquals(left_element, right_element, context);
+        auto body = buildPortableNullSafeEquals(left_element, right_element, context, true);
         auto lambda = std::make_shared<LambdaNode>(
             lambda_arguments, body, false /*is_operator*/,
             std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
@@ -1466,8 +1470,8 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
         auto right_keys = buildResolvedFunction("mapKeys", {right_argument}, context);
         auto left_values = buildResolvedFunction("mapValues", {left_argument}, context);
         auto right_values = buildResolvedFunction("mapValues", {right_argument}, context);
-        auto keys_equal = buildPortableNullSafeEquals(left_keys, right_keys, context);
-        auto values_equal = buildPortableNullSafeEquals(left_values, right_values, context);
+        auto keys_equal = buildPortableNullSafeEquals(left_keys, right_keys, context, true);
+        auto values_equal = buildPortableNullSafeEquals(left_values, right_values, context, true);
         result = buildResolvedFunction("and", {std::move(keys_equal), std::move(values_equal)}, context);
     }
     else
@@ -1489,7 +1493,7 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
         else
         {
             result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
-            result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
+            result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context, inside_container);
         }
     }
 
