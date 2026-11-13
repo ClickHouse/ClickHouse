@@ -11,6 +11,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/OneTimePasswordUsageTracker.h>
+#include <Access/QueryMaskingRulesCache.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -318,6 +319,7 @@ AccessControl::AccessControl()
       one_time_password_usage_tracker(std::make_unique<OneTimePasswordUsageTracker>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
+      query_masking_rules_cache(std::make_unique<QueryMaskingRulesCache>(*this)),
       password_rules(std::make_unique<PasswordComplexityRules>())
 {
 }
@@ -397,6 +399,8 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
+
+    ensureQueryMaskingRulesRead();
 }
 
 
@@ -1005,6 +1009,12 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     external_authenticators->setConfiguration(config, getLogger());
+}
+
+
+void AccessControl::ensureQueryMaskingRulesRead()
+{
+    query_masking_rules_cache->ensureAllRulesRead();
 }
 
 

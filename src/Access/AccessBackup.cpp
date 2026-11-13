@@ -9,6 +9,7 @@
 #include <Access/RowPolicy.h>
 #include <Access/Quota.h>
 #include <Access/MaskingPolicy.h>
+#include <Access/QueryMaskingRule.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -427,6 +428,12 @@ AccessRights AccessRestorerFromBackup::getRequiredAccess() const
                 if (replace)
                     flags |= AccessType::DROP_QUOTA;
                 res.grant(flags);
+                break;
+            }
+
+            case QueryMaskingRule::TYPE:
+            {
+                res.grant(AccessType::QUERY_MASKING_RULE_ADMIN);
                 break;
             }
 

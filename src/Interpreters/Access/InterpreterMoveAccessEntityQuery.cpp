@@ -99,6 +99,11 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
             res.emplace_back(AccessType::CREATE_MASKING_POLICY);
             return res;
         }
+        case AccessEntityType::QUERY_MASKING_RULE:
+        {
+            res.emplace_back(AccessType::QUERY_MASKING_RULE_ADMIN);
+            return res;
+        }
         case AccessEntityType::MAX:
             break;
     }

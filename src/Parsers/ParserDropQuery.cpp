@@ -290,6 +290,16 @@ Syntax:
 DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
+## DROP QUERY MASKING RULE {#drop-query-masking-rule}
+
+Deletes a [query masking rule](/reference/statements/create/query-masking-rule). Requires the `QUERY MASKING RULE ADMIN` privilege.
+
+Syntax:
+
+```sql
+DROP QUERY MASKING RULE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
 ## DROP QUOTA {#drop-quota}
 
 Deletes a quota. The deleted quota is revoked from all the entities where it was assigned.
@@ -381,6 +391,7 @@ DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage
 DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
+DROP QUERY MASKING RULE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]

@@ -28,6 +28,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int LOGICAL_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -117,23 +118,72 @@ public:
 
 };
 
+SensitiveDataMasker::SensitiveDataMasker() = default;
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
 SensitiveDataMasker::MaskerMultiVersion SensitiveDataMasker::sensitive_data_masker{};
+std::mutex SensitiveDataMasker::rule_sources_mutex;
+SensitiveDataMasker::MaskingRules SensitiveDataMasker::config_rules;
+SensitiveDataMasker::MaskingRules SensitiveDataMasker::sql_defined_rules;
 
 void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_)
 {
-
     if (!sensitive_data_masker_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The 'sensitive_data_masker' is not set");
 
-    if (sensitive_data_masker_->rulesCount() > 0)
-    {
-        sensitive_data_masker.set(std::move(sensitive_data_masker_));
-    }
-    else
+    std::lock_guard lock(rule_sources_mutex);
+    config_rules = std::move(sensitive_data_masker_->all_masking_rules);
+    publishRules();
+}
+
+void SensitiveDataMasker::setSQLDefinedRules(std::unique_ptr<SensitiveDataMasker>&& sql_defined_masker)
+{
+    if (!sql_defined_masker)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The masker of SQL-defined rules is not set");
+
+    std::lock_guard lock(rule_sources_mutex);
+    sql_defined_rules = std::move(sql_defined_masker->all_masking_rules);
+    publishRules();
+}
+
+void SensitiveDataMasker::publishRules()
+{
+    if (config_rules.empty() && sql_defined_rules.empty())
     {
         sensitive_data_masker.set(nullptr);
+        return;
+    }
+
+    auto masker = std::make_unique<SensitiveDataMasker>();
+    masker->all_masking_rules.reserve(config_rules.size() + sql_defined_rules.size());
+    masker->all_masking_rules.insert(masker->all_masking_rules.end(), config_rules.begin(), config_rules.end());
+    masker->all_masking_rules.insert(masker->all_masking_rules.end(), sql_defined_rules.begin(), sql_defined_rules.end());
+    sensitive_data_masker.set(std::move(masker));
+}
+
+void SensitiveDataMasker::validateRule(
+    const std::string & rule_description, const std::string & regexp_string, const std::string & replacement_string)
+{
+    if (regexp_string.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The REGEXP of {} must not be empty", rule_description);
+
+    const RE2 regexp(regexp_string, RE2::Quiet);
+    if (!regexp.ok())
+    {
+        /// RE2 formats the error as "<category>: <fragment of the pattern>".
+        std::string error = regexp.error();
+        const std::string fragment_suffix = ": " + regexp.error_arg();
+        if (!regexp.error_arg().empty() && error.ends_with(fragment_suffix))
+            error.resize(error.size() - fragment_suffix.size());
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile the REGEXP of {}: {}", rule_description, error);
+    }
+
+    std::string error;
+    if (!regexp.CheckRewriteString(replacement_string, &error))
+    {
+        if (error.ends_with('.'))
+            error.pop_back();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid REPLACE of {}: {}", rule_description, error);
     }
 }
 
@@ -210,7 +260,7 @@ void SensitiveDataMasker::addMaskingRule(
     const std::string & replacement_string,
     bool throw_on_match)
 {
-    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string, throw_on_match));
+    all_masking_rules.push_back(std::make_shared<const MaskingRule>(name, regexp_string, replacement_string, throw_on_match));
 }
 
 

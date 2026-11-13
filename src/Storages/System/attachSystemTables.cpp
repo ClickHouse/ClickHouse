@@ -95,6 +95,7 @@
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
 #include <Storages/System/StorageSystemRowPolicies.h>
 #include <Storages/System/StorageSystemMaskingPolicies.h>
+#include <Storages/System/StorageSystemQueryMaskingRules.h>
 #include <Storages/System/StorageSystemQuotas.h>
 #include <Storages/System/StorageSystemQuotaLimits.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
@@ -1758,6 +1759,13 @@ Contains filters for one particular table, as well as a list of roles and/or use
 Contains information about all masking policies defined in the system.
 
 Masking policies can only be created and applied in ClickHouse Cloud. In open-source builds the `system.masking_policies` table is always empty, but it is still present so that introspection queries such as `SHOW MASKING POLICIES` work and return an empty result instead of throwing.
+)DOCS_MD");
+    attach<StorageSystemQueryMaskingRules>(context, system_database, "query_masking_rules", R"DOCS_MD(
+.description
+Contains the query masking rules created by [CREATE QUERY MASKING RULE](/reference/statements/create/query-masking-rule). The rules from the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) server setting are not listed. Reading the table requires the `QUERY MASKING RULE ADMIN` privilege, or `SELECT` on the table when `select_from_system_db_requires_grant` is enabled.
+
+.see_also
+- [SHOW QUERY MASKING RULES](/reference/statements/show#show-query-masking-rules)
 )DOCS_MD");
     attach<StorageSystemQuotas>(context, system_database, "quotas", R"DOCS_MD(
 .description

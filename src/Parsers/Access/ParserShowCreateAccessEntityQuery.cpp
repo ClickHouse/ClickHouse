@@ -136,6 +136,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             break;
         }
         case AccessEntityType::SETTINGS_PROFILE:
+        case AccessEntityType::QUERY_MASKING_RULE:
         {
             if (!atQueryOutputTail(pos, expected) && parseIdentifiersOrStringLiterals(pos, expected, names))
             {
