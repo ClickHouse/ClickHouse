@@ -7,15 +7,21 @@ description: 'お使いのクラウドインフラストラクチャにClickHous
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="key-concepts">
   ## 主要な概念
 </div>
 
 以下の図は、ClickHouse Cloud の組織、クラウドアカウント、BYOC インフラストラクチャの関係を示しています。
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC 組織階層" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![BYOC 組織階層](/images/cloud/reference/byoc-organization-hierarchy.svg)
+
+</Frame>
+
+</div>
 
 * **ClickHouse Cloud organization:** ClickHouse Cloud における最上位のエンティティで、ユーザー、課金、および BYOC 以外の ClickHouse サービスを管理します。1 つの組織内のユーザーは、標準の Cloud サービスと BYOC サービスの両方にアクセスできます。
 * **ClickHouse BYOC organization:** BYOC デプロイメントの管理に特化した独立した組織です。Cloud organization とユーザーを共有しますが、BYOC インフラストラクチャがデプロイされる 1 つ以上の クラウドアカウントに関連付けられています。
@@ -43,7 +49,15 @@ BYOC では、ClickHouse VPC 上で稼働する **ClickHouse コントロール�
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC アーキテクチャ: ClickHouse VPC 内の ClickHouse コントロールプレーンが、お客様のクラウドアカウント内の Kubernetes データプレーンを管理します。ClickHouse のデータ、バックアップ、ログ、監視データはお客様のアカウント内にとどまり、エクスポートされるのは限定された運用テレメトリーのみです。" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![BYOC アーキテクチャ: ClickHouse VPC 内の ClickHouse コントロールプレーンが、お客様のクラウドアカウント内の Kubernetes データプレーンを管理します。ClickHouse のデータ、バックアップ、ログ、監視データはお客様のアカウント内にとどまり、エクスポートされるのは限定された運用テレメトリーのみです。](/images/cloud/reference/byoc-architecture.svg)
+
+</Frame>
+
+</div>
 
 <br />
 
