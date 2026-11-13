@@ -276,6 +276,10 @@ server config parameter `custom_local_disks_base_directory`, which has no
 default, so set that also when using local disk.
 </Note>
 
+Each argument of `disk` can be specified only once. A setting that can be repeated
+in the configuration file, such as `header` of an `s3` disk, must be given under
+different names that share its prefix, for example `header1` and `header2`.
+
 A combination of config-based configuration and sql-defined configuration is 
 also possible:
 

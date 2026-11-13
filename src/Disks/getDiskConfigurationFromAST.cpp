@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <unordered_set>
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -113,6 +114,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
     };
 
+    std::unordered_set<std::string> seen_keys;
+
     for (const auto & arg : disk_args)
     {
         const auto * setting_function = arg->as<const ASTFunction>();
@@ -132,6 +135,15 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
         std::string key = key_identifier->name();
+
+        /// The disk is built from an `XMLConfiguration`, which resolves a repeated key to its first occurrence,
+        /// so a later occurrence must not be able to change what the checks below see. A repeated key is
+        /// rejected in a fresh definition. A definition stored before this check may still have one; it is
+        /// loaded, and only the first occurrence of each key counts for the checks, as it does for the disk.
+        const bool is_repeated_key = !seen_keys.insert(key).second;
+        if (is_repeated_key && !is_loading_from_existing_metadata)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key `{}` is specified more than once in the disk configuration", key);
+
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
         root->appendChild(key_element);
 
@@ -145,8 +157,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
 
+        /// Every `include` is resolved, not only the first one.
         if (key == "include")
             has_include = true;
+        else if (is_repeated_key)
+        {
+            /// Not used by the disk, see above.
+        }
         else if (key == "type" || key == "object_storage_type")
         {
             const bool is_s3_value = (value_str == "s3" || value_str.starts_with("s3_"));
