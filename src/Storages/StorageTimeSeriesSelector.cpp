@@ -364,6 +364,19 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
+    /// Whether the regex has a `|` that isn't escaped with a backslash.
+    bool hasUnescapedPipe(std::string_view regex)
+    {
+        for (size_t i = 0; i < regex.size(); ++i)
+        {
+            if (regex[i] == '\\')
+                ++i;
+            else if (regex[i] == '|')
+                return true;
+        }
+        return false;
+    }
+
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
@@ -397,10 +410,16 @@ namespace
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
 
-            if (!value.starts_with('^'))
-                value = '^' + value;
-            if (!value.ends_with('$'))
-                value += '$';
+            /// PromQL anchors the whole regex, so `a|b` becomes `^(a|b)$` and not `^a|b$`.
+            if (hasUnescapedPipe(value))
+                value = "^(" + value + ")$";
+            else
+            {
+                if (!value.starts_with('^'))
+                    value = '^' + value;
+                if (!value.ends_with('$'))
+                    value += '$';
+            }
         }
         ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)

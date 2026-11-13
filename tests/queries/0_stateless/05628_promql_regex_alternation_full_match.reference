@@ -1,0 +1,9 @@
+-- =~ in a selector
+[('__name__','m'),('version','1.0')]	1
+[('__name__','m'),('version','2.0')]	2
+-- !~ in a selector
+[('__name__','m'),('version','1.0-extra')]	3
+[('__name__','m'),('version','x2.0')]	4
+-- =~ in the label selector of info
+-- !~ in the label selector of info
+[('__name__','metric'),('instance','a'),('job','1'),('version','1.0-extra')]	5
