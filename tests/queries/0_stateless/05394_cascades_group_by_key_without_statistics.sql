@@ -72,5 +72,13 @@ SELECT 'group by assumeNotNull, no statistics:', countIf(explain LIKE '%Aggregat
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
+-- A join took the zero NDV of a key without statistics as known. Narrowing the join keys to the smaller
+-- NDV then erased the known NDV of 10 of the other side, and a `GROUP BY` on that key fell back to
+-- 10% of the join output. A key without a known NDV is bounded by the row count of its side instead.
+SELECT 'group by joined key, other side without statistics:', countIf(explain LIKE '%Aggregating%(rows: ~10.0,%') > 0 FROM (
+    EXPLAIN estimates = 1 SELECT r.k, count() FROM t_no_stats AS l LEFT JOIN t_known_ndv AS r ON l.k = r.k GROUP BY r.k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
 DROP TABLE t_no_stats;
 DROP TABLE t_known_ndv;
