@@ -186,6 +186,15 @@ VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()
     return desc;
 }
 
+void StoragePrometheusQuery::applySettingsForPrometheusQuery(Context & context)
+{
+    if (!context.getSettingsRef()[Setting::enable_materialized_cte].changed)
+        context.setSetting("enable_materialized_cte", true);
+
+    context.setSetting("empty_result_for_aggregation_by_empty_set", false);
+}
+
+
 void StoragePrometheusQuery::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -210,9 +219,7 @@ void StoragePrometheusQuery::readImpl(
 
     /// Isolate the settings required by generated PromQL from the outer query.
     auto query_context = Context::createCopy(context);
-    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        query_context->setSetting("enable_materialized_cte", true);
-    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    applySettingsForPrometheusQuery(*query_context);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
