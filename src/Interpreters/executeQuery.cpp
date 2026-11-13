@@ -3048,7 +3048,7 @@ static BlockIO executeQueryImpl(
 
                 /// The query tree builder re-applies this clause, and the reset would undo the inferred value.
                 if (!make_distributed_plan_was_set && settings[Setting::make_distributed_plan])
-                    InterpreterSetQuery::removeSettingDefaultFromQuery(out_ast, "make_distributed_plan");
+                    InterpreterSetQuery::removeSettingFromAppliedClauses(out_ast, "make_distributed_plan");
             }
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must

@@ -51,6 +51,9 @@ SET distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1;
 SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_dp_settings_default_reset) SETTINGS make_distributed_plan = DEFAULT;
 "
 
+echo "set then reset in the same clause: both forms of the setting must be stripped"
+${CLICKHOUSE_CLIENT} -q "SELECT getSetting('make_distributed_plan') SETTINGS make_distributed_plan = 0, make_distributed_plan = DEFAULT, distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1"
+
 echo "P1 UNION case: one arm wants the plan, the other resets its own clause"
 ${CLICKHOUSE_CLIENT} -q "
 SELECT getSetting('make_distributed_plan') SETTINGS make_distributed_plan = DEFAULT
