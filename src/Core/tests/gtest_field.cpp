@@ -12,6 +12,8 @@ namespace DB::ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_DEEP_RECURSION;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 using namespace DB;
@@ -491,4 +493,34 @@ GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)
     /// An in-range exponent-form scale still round-trips.
     Field restored = Field::restoreFromDump("Decimal64_'1e-5'");
     ASSERT_EQ(restored.safeGet<DecimalField<Decimal64>>().getScale(), 5u);
+}
+
+GTEST_TEST(Field, RestoreFromDumpDecimalExtremeExponent)
+{
+    auto expect_error = [](const std::string & dump, int code)
+    {
+        try
+        {
+            Field::restoreFromDump(dump);
+            FAIL() << "expected error " << code << " for " << dump;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), code) << dump;
+        }
+    };
+
+    /// Negating `INT32_MIN` must not be reached.
+    expect_error("Decimal64_'1e-2147483648'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    /// The exponent sum overflows `int32_t` (only digits after the point decrease it).
+    expect_error("Decimal64_'0.1e-2147483648'", ErrorCodes::CANNOT_PARSE_NUMBER);
+    /// `scaleMultiplier` saturates beyond the precision, so `1 * max` must not be accepted as the value.
+    expect_error("Decimal64_'1e100'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal32_'1e2147483647'", ErrorCodes::DECIMAL_OVERFLOW);
+    expect_error("Decimal256_'1e100'", ErrorCodes::DECIMAL_OVERFLOW);
+
+    /// The largest exponents that fit still work, and zero takes any positive exponent.
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'1e18'").safeGet<DecimalField<Decimal64>>().getValue(), Decimal64(1000000000000000000LL));
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'1e-18'").safeGet<DecimalField<Decimal64>>().getScale(), 18u);
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'0e2147483647'").safeGet<DecimalField<Decimal64>>().getValue(), Decimal64(0));
 }

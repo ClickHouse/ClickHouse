@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/intExp.h>
+#include <base/arithmeticOverflow.h>
 
 #include <limits>
 
@@ -131,7 +132,14 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                     else
                         return false;
                 }
-                exponent += addition_exp;
+                /// The exponent comes from the text, so the sum can be anything, e.g. `0.1e-2147483648`.
+                if (common::addOverflow(exponent, addition_exp, exponent))
+                {
+                    if constexpr (_throw_on_error)
+                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Exponent is out of range while reading decimal");
+                    else
+                        return false;
+                }
                 stop = true;
                 continue;
             }
@@ -165,7 +173,8 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     if (!throw_exception && !ok)
         return ReturnType(false);
 
-    if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
+    /// Compute in 64 bits: the exponent can be close to the `int32_t` limits.
+    if (static_cast<int64_t>(digits) + exponent > static_cast<int64_t>(precision) - static_cast<int64_t>(scale))
     {
         if constexpr (throw_exception)
         {
@@ -177,9 +186,9 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
             return ReturnType(false);
     }
 
-    if (static_cast<int32_t>(scale) + exponent < 0)
+    if (static_cast<int64_t>(scale) + exponent < 0)
     {
-        auto divisor_exp = -exponent - static_cast<int32_t>(scale);
+        int64_t divisor_exp = -static_cast<int64_t>(exponent) - static_cast<int64_t>(scale);
 
         if (divisor_exp >= std::numeric_limits<typename T::NativeType>::digits10)
         {
@@ -190,7 +199,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
         }
 
         /// Too many digits after point. Just cut off excessive digits.
-        auto divisor = intExp10OfSize<typename T::NativeType>(divisor_exp);
+        auto divisor = intExp10OfSize<typename T::NativeType>(static_cast<int>(divisor_exp));
         chassert(divisor > 0); /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
         x.value /= divisor;  /// NOLINT(clang-analyzer-core.DivideZero)
         scale = 0;

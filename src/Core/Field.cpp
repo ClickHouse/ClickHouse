@@ -759,21 +759,27 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     int32_t exponent = 0;
     uint32_t max_digits = static_cast<uint32_t>(-1);
     readDigits<true>(buf, value, max_digits, exponent, true);
+    /// The exponent comes from the text and can be anything in `int32_t`, so check it against the type's
+    /// precision before using it: `scaleMultiplier` saturates instead of overflowing beyond the precision,
+    /// and negating `INT32_MIN` overflows. A negative exponent becomes the scale: an out-of-range one, e.g.
+    /// `Decimal64_'1e-1000'` (in a `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`),
+    /// later overruns a fixed-size buffer in the decimal text writer, so reject it here, matching
+    /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
+    constexpr int32_t max_precision = static_cast<int32_t>(DecimalUtils::max_precision<T>);
     if (exponent > 0)
     {
         scale = 0;
-        if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
+        if (value.value != 0
+            && (exponent > max_precision || common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value)))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
     else
+    {
+        if (exponent < -max_precision)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
+                            -static_cast<Int64>(exponent), max_precision);
         scale = -exponent;
-    /// The scale comes from the text: an exponent-form value such as `Decimal64_'1e-1000'` (e.g. in a
-    /// `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`) builds a scale that
-    /// bypasses the binary reader's check. An out-of-range scale later overruns a fixed-size buffer in
-    /// the decimal text writer, so reject it here, matching `readDecimalFieldBinary` and `DataTypeDecimalBase`.
-    if (scale > DecimalUtils::max_precision<T>)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                        scale, DecimalUtils::max_precision<T>);
+    }
     assertChar('\'', buf);
     x = DecimalField<T>{value, scale};
 }
