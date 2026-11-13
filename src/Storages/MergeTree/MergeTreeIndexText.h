@@ -612,6 +612,8 @@ public:
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
     std::optional<String> normalized_index_column_name;
+    /// Name of the subcolumn `m.key_<key>` for an index on `m['key']`.
+    std::optional<String> map_element_subcolumn_name;
     /// Shared by all conditions created by this index object, i.e. by the whole query, see `TextIndexAutomatonBudget`.
     TextIndexAutomatonBudgetPtr automaton_budget = std::make_shared<TextIndexAutomatonBudget>();
 };
