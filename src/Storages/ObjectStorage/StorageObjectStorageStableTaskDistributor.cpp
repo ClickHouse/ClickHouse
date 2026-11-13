@@ -150,18 +150,14 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
 
     while (true)
     {
-        ObjectInfoPtr object_info;
+        ObjectInfoPtr object_info = iterator->next(0);
 
+        if (!object_info)
         {
             std::lock_guard lock(mutex);
-            object_info = iterator->next(0);
-
-            if (!object_info)
-            {
-                LOG_TEST(log, "Iterator is exhausted");
-                iterator_exhausted = true;
-                break;
-            }
+            LOG_TEST(log, "Iterator is exhausted");
+            iterator_exhausted = true;
+            break;
         }
 
         String file_identifier;

@@ -140,78 +140,120 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
 
 ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 {
-    while (pending_objects_info.empty())
+    std::unique_lock lock(mutex);
+    while (true)
     {
-        auto last_object_info = iterator->next(id);
-        if (!last_object_info)
-            return {};
-
-        auto splitter = FormatFactory::instance().getSplitter(configuration->format);
-        if (splitter)
+        if (!pending_objects_info.empty())
         {
-            RowGroupIndices matching_row_groups;
-            bool has_cache_entry = false;
-            if (query_condition_cache)
-            {
-                const auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-                auto matching_marks = query_condition_cache->read(
-                    storage_id.uuid,
-                    query_condition_cache_key,
-                    *format_filter_info->condition_hash);
-                if (matching_marks.has_value())
-                {
-                    has_cache_entry = true;
-                    const auto & marks = *matching_marks;
-                    for (size_t i = 0; i < marks.size(); ++i)
-                        if (marks[i])
-                            matching_row_groups.push_back(i);
-                    ProfileEvents::increment(
-                        ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, marks.size() - matching_row_groups.size());
-                    if (matching_row_groups.empty())
-                    {
-                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
-                        continue;
-                    }
-                }
-            }
+            auto result = std::move(pending_objects_info.front());
+            pending_objects_info.pop();
+            return result;
+        }
 
-            const auto & settings = getContext()->getSettingsRef();
-            size_t bucket_size = settings[Setting::cluster_table_function_buckets_batch_size];
-            VectorWithMemoryTracking<FileBucketInfoPtr> file_bucket_infos;
-            if (settings[Setting::cluster_table_function_split_by_split_offsets] && !has_cache_entry)
+        if (iterator_exhausted)
+        {
+            if (objects_being_split == 0)
+                return {};
+            objects_split_cv.wait(lock);
+            continue;
+        }
+
+        ++objects_being_split;
+        lock.unlock();
+
+        ObjectInfos buckets;
+        bool exhausted = false;
+        try
+        {
+            if (auto object_info = iterator->next(id))
+                buckets = splitToBuckets(object_info);
+            else
+                exhausted = true;
+        }
+        catch (...)
+        {
+            lock.lock();
+            --objects_being_split;
+            objects_split_cv.notify_all();
+            throw;
+        }
+
+        lock.lock();
+        --objects_being_split;
+        if (exhausted)
+            iterator_exhausted = true;
+        for (auto & bucket : buckets)
+            pending_objects_info.push(std::move(bucket));
+        objects_split_cv.notify_all();
+    }
+}
+
+ObjectInfos ObjectIteratorSplitByBuckets::splitToBuckets(const ObjectInfoPtr & object_info) const
+{
+    auto splitter = FormatFactory::instance().getSplitter(configuration->format);
+    if (!splitter)
+        return {};
+
+    ObjectInfos result;
+
+    RowGroupIndices matching_row_groups;
+    bool has_cache_entry = false;
+    if (query_condition_cache)
+    {
+        const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+        auto matching_marks = query_condition_cache->read(
+            storage_id.uuid,
+            query_condition_cache_key,
+            *format_filter_info->condition_hash);
+        if (matching_marks.has_value())
+        {
+            has_cache_entry = true;
+            const auto & marks = *matching_marks;
+            for (size_t i = 0; i < marks.size(); ++i)
+                if (marks[i])
+                    matching_row_groups.push_back(i);
+            ProfileEvents::increment(
+                ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, marks.size() - matching_row_groups.size());
+            if (matching_row_groups.empty())
             {
-                if (auto file_size = last_object_info->getFileSizeHint())
-                    file_bucket_infos = splitter->splitByByteRanges(bucket_size, *file_size, last_object_info->getSplitOffsetsHint());
-            }
-            if (file_bucket_infos.empty())
-            {
-                auto & object = last_object_info->relative_path_with_metadata;
-                if (!object.metadata)
-                    object.metadata = StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(*configuration, *last_object_info, storage_id);
-                auto buffer = createReadBuffer(object, object_storage, getContext(), log);
-                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, object, format_settings, getContext());
-            }
-            for (const auto & file_bucket : file_bucket_infos)
-            {
-                auto copy_object_info = last_object_info->clone();
-                if (has_cache_entry)
-                {
-                    auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups);
-                    if (!filtered)
-                        continue;
-                    copy_object_info->file_bucket_info = std::move(filtered);
-                }
-                else
-                {
-                    copy_object_info->file_bucket_info = file_bucket;
-                }
-                pending_objects_info.push(std::move(copy_object_info));
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
+                return {};
             }
         }
     }
 
-    auto result = pending_objects_info.front();
-    pending_objects_info.pop();
+    const auto & settings = getContext()->getSettingsRef();
+    size_t bucket_size = settings[Setting::cluster_table_function_buckets_batch_size];
+    VectorWithMemoryTracking<FileBucketInfoPtr> file_bucket_infos;
+    if (settings[Setting::cluster_table_function_split_by_split_offsets] && !has_cache_entry)
+    {
+        if (auto file_size = object_info->getFileSizeHint())
+            file_bucket_infos = splitter->splitByByteRanges(bucket_size, *file_size, object_info->getSplitOffsetsHint());
+    }
+    if (file_bucket_infos.empty())
+    {
+        auto & object = object_info->relative_path_with_metadata;
+        if (!object.metadata)
+            object.metadata = StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(*configuration, *object_info, storage_id);
+        auto buffer = createReadBuffer(object, object_storage, getContext(), log);
+        file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, object, format_settings, getContext());
+    }
+    for (const auto & file_bucket : file_bucket_infos)
+    {
+        auto copy_object_info = object_info->clone();
+        if (has_cache_entry)
+        {
+            auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups);
+            if (!filtered)
+                continue;
+            copy_object_info->file_bucket_info = std::move(filtered);
+        }
+        else
+        {
+            copy_object_info->file_bucket_info = file_bucket;
+        }
+        result.push_back(std::move(copy_object_info));
+    }
     return result;
 }
 

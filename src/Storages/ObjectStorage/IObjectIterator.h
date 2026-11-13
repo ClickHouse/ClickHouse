@@ -9,7 +9,10 @@
 #include <Common/Macros.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
+#include <condition_variable>
 #include <limits>
+#include <mutex>
+#include <queue>
 
 namespace DB
 {
@@ -239,6 +242,8 @@ public:
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
+    ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;
+
     const ObjectIterator iterator;
     StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
@@ -247,7 +252,11 @@ private:
     FormatFilterInfoPtr format_filter_info;
     QueryConditionCachePtr query_condition_cache;
 
+    std::mutex mutex;
+    std::condition_variable objects_split_cv;
     std::queue<ObjectInfoPtr> pending_objects_info;
+    size_t objects_being_split = 0;
+    bool iterator_exhausted = false;
     const LoggerPtr log = getLogger("GlobIterator");
 };
 
