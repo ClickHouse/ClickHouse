@@ -937,6 +937,14 @@ static AddComparisonFilterResult addComparisonFilter(
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
+    /// An `Enum` is ordered against a `FixedString` constant by its name (see `FunctionComparison::executeGeneric`),
+    /// while the folds compare the converted values, which are the ordinals of the `Enum`. The two orders differ
+    /// in general (`Enum8('a' = 2, 'b' = 1)`), so only an equality keeps the converted value.
+    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
+        && isFixedString(removeLowCardinalityAndNullable(new_filter.constant_node->getResultType()))
+        && isEnum(removeLowCardinalityAndNullable(expr_type)))
+        new_filter.converted_value.reset();
+
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)
     {
