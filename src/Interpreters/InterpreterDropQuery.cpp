@@ -780,12 +780,16 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         table_context->setInternalQuery(true);
 
         std::vector<StorageID> tables_to_truncate;
+        std::vector<StoragePtr> time_series_tables;
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
             /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog metadata).
             if (!table_ptr)
                 continue;
+
+            if (castStorage<StorageTimeSeries>(table_ptr, DeferredTable::Skip))
+                time_series_tables.push_back(table_ptr);
 
             /// Skip tables that don't support truncation (e.g. views).
             if (!table_ptr->supportsTruncate())
@@ -803,6 +807,30 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     continue;
             }
             tables_to_truncate.push_back(storage_id);
+        }
+
+        /// Reject unsupported TimeSeries layouts before starting any truncate workers.
+        /// Otherwise external targets can be emptied even though the wrapper rejects TRUNCATE,
+        /// leaving its deduplication caches pointing at deleted rows.
+        std::unordered_set<String> selected_tables;
+        for (const auto & table_id : tables_to_truncate)
+            selected_tables.insert(table_id.getFullTableName());
+
+        for (const auto & table_ptr : time_series_tables)
+        {
+            auto time_series = castStorage<StorageTimeSeries>(table_ptr, DeferredTable::Skip);
+            const bool wrapper_selected = selected_tables.contains(table_ptr->getStorageID().getFullTableName());
+            for (const auto kind : StorageTimeSeries::getTargetKinds())
+            {
+                if (!time_series->hasTarget(kind) || time_series->isInnerTable(kind))
+                    continue;
+
+                const auto target_id = time_series->tryGetTargetTableID(kind, table_context);
+                if (wrapper_selected || (!target_id.empty() && selected_tables.contains(target_id.getFullTableName())))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Cannot bulk-truncate TimeSeries table {} or its external targets",
+                        table_ptr->getStorageID().getNameForLogs());
+            }
         }
 
         /// Pre-cancel merges for all matching tables simultaneously.
