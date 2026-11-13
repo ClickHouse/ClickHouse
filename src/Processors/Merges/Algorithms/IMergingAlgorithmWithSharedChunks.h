@@ -90,16 +90,19 @@ protected:
 
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
     bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
-    bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)
+    bool rowsHaveDifferentSortColumns(const RowRef & lhs, const SortCursor & rhs)
     {
         /// By the time this method is called, `sources_origin_merge_tree_part_level[lhs.source_stream_index]` must have been
         /// initialized in either `initialize` or `consume`
-        if (lhs.source_stream_index == rhs.source_stream_index && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
+        SortCursorImpl & impl = *rhs.impl;
+        if (lhs.source_stream_index == impl.order && sources_origin_merge_tree_part_level[impl.order] > 0)
             return true;
 
-        auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
+        const size_t num_columns = lhs.sort_columns->size();
+        const size_t first_non_equal = detail::RowRef::checkEqualsFirstNonEqual(
+            num_columns, prev_unequal_column, lhs.sort_columns->data(), lhs.row_num, impl.sort_columns.data(), impl.getRow());
 
-        if (first_non_equal < lhs.sort_columns->size())
+        if (first_non_equal < num_columns)
         {
             prev_unequal_column = first_non_equal;
             return true;

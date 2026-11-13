@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+        <max_final_threads>4</max_final_threads>
+    </settings>
+
+    <!-- 16 overlapping parts each: every part holds every `sid`, so FINAL merges all of them row by row. -->
+    <create_query>CREATE TABLE replacing_final_overlap (sid UInt64, ts DateTime64(3), value Float64) ENGINE = ReplacingMergeTree ORDER BY (sid, ts)</create_query>
+    <create_query>CREATE TABLE replacing_final_overlap_ver (sid UInt64, ts DateTime64(3), value Float64, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY (sid, ts)</create_query>
+    <create_query>CREATE TABLE collapsing_final_overlap (sid UInt64, ts DateTime64(3), value Float64, sign Int8) ENGINE = CollapsingMergeTree(sign) ORDER BY (sid, ts)</create_query>
+
+    <fill_query>SYSTEM STOP MERGES replacing_final_overlap</fill_query>
+    <fill_query>SYSTEM STOP MERGES replacing_final_overlap_ver</fill_query>
+    <fill_query>SYSTEM STOP MERGES collapsing_final_overlap</fill_query>
+
+    <fill_query>INSERT INTO replacing_final_overlap SELECT number % 10000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 15000), (number % 997) / 7.0 FROM numbers(8000000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 500000, min_insert_block_size_rows = 500000, max_insert_block_size = 500000, min_insert_block_size_bytes = 0</fill_query>
+    <!-- The second half of the rows updates the keys of the first half with a higher version. -->
+    <fill_query>INSERT INTO replacing_final_overlap_ver SELECT number % 10000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number % 4000000, 10000) * 15000), (number % 997) / 7.0, toUInt32(intDiv(number, 500000)) FROM numbers(8000000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 500000, min_insert_block_size_rows = 500000, max_insert_block_size = 500000, min_insert_block_size_bytes = 0</fill_query>
+    <!-- 10% of the states are cancelled by a row with sign -1 in two later parts. -->
+    <fill_query>INSERT INTO collapsing_final_overlap SELECT number % 10000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 15000), (number % 997) / 7.0, 1 FROM numbers(8000000) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 500000, min_insert_block_size_rows = 500000, max_insert_block_size = 500000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO collapsing_final_overlap SELECT number % 10000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 15000), (number % 997) / 7.0, -1 FROM numbers(8000000) WHERE number % 10 = 0 SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 500000, min_insert_block_size_rows = 500000, max_insert_block_size = 500000, min_insert_block_size_bytes = 0</fill_query>
+
+    <query>SELECT sid, ts, value FROM replacing_final_overlap FINAL FORMAT Null</query>
+    <query>SELECT sid, ts, value FROM replacing_final_overlap FINAL FORMAT Null SETTINGS enable_vertical_final = 0</query>
+    <query>SELECT sid, ts, value, ver FROM replacing_final_overlap_ver FINAL FORMAT Null</query>
+    <query>SELECT sid, ts, value FROM collapsing_final_overlap FINAL FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS replacing_final_overlap</drop_query>
+    <drop_query>DROP TABLE IF EXISTS replacing_final_overlap_ver</drop_query>
+    <drop_query>DROP TABLE IF EXISTS collapsing_final_overlap</drop_query>
+</test>
