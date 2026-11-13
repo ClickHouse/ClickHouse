@@ -25,7 +25,7 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --enable_join_runtime_filters=0 --enable_parallel_replicas=0 --enable_join_transitive_predicates=0
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
-    --allow_insert_into_iceberg=1 --use_iceberg_manifest_statistics=1"
+    --allow_insert_into_iceberg=1 --use_datalake_metadata_statistics=1"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"

@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'المصادقة باستخدام JWT مع Entra ID'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'المصادقة باستخدام JWT مع Microsoft Entra ID'
+description: 'كيفية تهيئة Microsoft Entra ID لإصدار رموز JWT لخدمة ClickHouse Cloud، مع ربط أدوار التطبيق في Entra ID بأدوار ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'أدوار التطبيق', 'المصادقة', 'موفّر الهوية']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="المصادقة باستخدام JWT مع موفر هوية مخصص" />
+
+يوضّح هذا الدليل كيفية إعداد **Microsoft Entra ID** (المعروف سابقًا باسم Azure Active Directory) بحيث يتصل المستخدمون والتطبيقات بخدمة ClickHouse Cloud باستخدام رموز وصول Entra ID بدلًا من كلمات مرور قاعدة البيانات. تُربَط أدوار التطبيقات في Entra ID بأدوار ClickHouse، ومن ثَمّ تتحكم في الوصول بتعيين المستخدمين والمجموعات والتطبيقات لأدوار التطبيقات في Entra ID.
+
+<Tip>
+  يتناول هذا الدليل الإعدادات المطلوبة في Entra ID والقيم التي يجب إدخالها في ClickHouse Cloud. للاطلاع على معلومات عامة حول موفّري JWT، راجع [إعداد المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). وللاطلاع على مطالبات الرموز وآلية عمل المستخدمين المؤقتين، راجع المرجع [المصادقة باستخدام JWT](/ar/concepts/features/security/external-authenticators/jwt).
+</Tip>
+
+## قبل أن تبدأ {#before-you-begin}
+
+ستحتاج إلى ما يلي:
+
+* مؤسسة مشتركة في خطة **Enterprise**، وخدمة تعمل بالإصدار **26.4 من ClickHouse أو أحدث**.
+* دور في ClickHouse Cloud يمتلك صلاحية `control-plane:service:manage` على الخدمة (مثل **مسؤول** أو **مسؤول الخدمة**) لإضافة موفّر JWT.
+* صلاحية الوصول إلى **Microsoft Entra admin center** بدور **Cloud Application Administrator** على الأقل.
+* ترخيص Microsoft Entra ID P1 أو P2 إذا أردت تعيين مجموعات لأدوار التطبيق بدلاً من مستخدمين أفراد.
+* [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) و[`clickhouse-client`](/ar/concepts/features/interfaces/client) لاختبار الإعداد.
+* قائمة بأدوار ClickHouse التي تريد منحها عبر Entra ID، إذ يقابل كلَّ دور منها دورُ تطبيق في Entra ID يحمل الاسم نفسه. يستخدم هذا الدليل دورين:
+
+  | قيمة دور التطبيق | امتيازات ClickHouse                  |
+  | ---------------- | ------------------------------------ |
+  | `ch_analyst`     | `SELECT` و`INSERT` على `analytics.*` |
+  | `ch_readonly`    | `SELECT` على `*.*`                   |
+
+## آلية العمل {#how-it-works}
+
+1. تسجّل في Entra ID تطبيقًا يمثّل خدمة ClickHouse Cloud الخاصة بك، وتعرّف فيه دور تطبيق واحدًا مقابل كل دور من أدوار ClickHouse.
+2. تُسند مستخدمي Entra ID ومجموعاته وتطبيقاته إلى أدوار التطبيق هذه.
+3. يسجّل المستخدم الدخول باستخدام Azure CLI أو `clickhouse-client --login`، أو يستخدم التطبيقُ تدفّق منح بيانات اعتماد العميل (client credentials grant). عندئذٍ يُصدر Entra ID رمز وصول بالإصدار v2.0، تحمل فيه مطالبة `aud` معرّف التطبيق (العميل)، وتسرد مطالبة `roles` أدوار التطبيق المُسندة إلى المُستدعي.
+4. تتحقق ClickHouse Cloud من توقيع الرمز باستخدام المفاتيح العامة لـ Entra ID، وتفحص المطالبتين `iss` و`aud`، ثم تُنشئ مستخدمًا مؤقتًا يحمل امتيازات أدوار ClickHouse المذكورة في مطالبة `roles`، على ألّا تتجاوز امتيازات المستخدم `default`.
+
+## تسجيل ClickHouse في Entra ID {#register-in-entra-id}
+
+<Steps>
+  <Step title="أنشئ تسجيلًا للتطبيق" id="create-app-registration">
+    في مركز إدارة Microsoft Entra، افتح **App registrations** واختر **New registration**:
+
+    * **Name**: اسم للعرض، مثل `clickhouse-cloud-production`.
+    * **Supported account types**: مستأجر واحد. تبعًا لإصدار البوابة، يظهر هذا الخيار باسم **Single tenant only** أو **Accounts in this organizational directory only**.
+    * **Redirect URI**: اتركه فارغًا. يسجّل المستخدمون الدخول عبر تدفق رمز الجهاز (device code flow)، وهو لا يستخدم عنوان URI لإعادة التوجيه.
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="نموذج تسجيل تطبيق في مركز إدارة Microsoft Entra بنوع حساب لمستأجر واحد ومن دون عنوان URI لإعادة التوجيه" />
+
+    اختر **Register**. في صفحة **Overview**، انسخ القيم التالية:
+
+    * **Application (client) ID**، ويُشار إليه أدناه بـ `<CLIENT_ID>`. تصبح هذه القيمة مطالبة `aud` في الرموز المميزة.
+    * **Directory (tenant) ID**، ويُشار إليه أدناه بـ `<TENANT_ID>`. وهو جزء من الجهة المُصدِرة ومن عنوان URL لمجموعة JWKS.
+  </Step>
+
+  <Step title="اطلب رموز الوصول من الإصدار v2.0" id="request-v2-tokens">
+    افتراضيًا، يُصدر Entra ID رموز وصول من الإصدار v1.0، وتكون الجهة المُصدِرة لها `https://sts.windows.net/<TENANT_ID>/`. لذا، قم بتهيئة التطبيق لتلقّي رموز من الإصدار v2.0 بدلًا منها، إذ تكون الجهة المُصدِرة لها `https://login.microsoftonline.com/<TENANT_ID>/v2.0`، وتكون قيمة المطالبة `aud` فيها دائمًا هي معرّف العميل.
+
+    في تسجيل التطبيق، افتح **Manifest**، واضبط إصدار رمز الوصول على `2`، ثم اختر **Save**. يختلف اسم الخاصية بحسب صيغة ملف البيان التي يعرضها المحرر:
+
+    * صيغة Microsoft Graph: الخاصية `requestedAccessTokenVersion` ضمن القسم `api`.
+    * صيغة Azure AD Graph: الخاصية `accessTokenAcceptedVersion` في المستوى الأعلى (top-level)، كما هو موضّح في لقطة الشاشة أدناه.
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="محرر ملف بيان التطبيق مع ضبط accessTokenAcceptedVersion على 2" />
+  </Step>
+
+  <Step title="إتاحة واجهة برمجة تطبيقات" id="expose-an-api">
+    افتح **Expose an API**:
+
+    1. بجوار **Application ID URI**، اختر **Add**، واقبل القيمة الافتراضية `api://<CLIENT_ID>`، ثم احفظ. يستخدم العملاء عنوان URI هذا لطلب رموز الوصول إلى ClickHouse. ولا يؤثر ذلك في مطالبة `aud` ضمن رموز الإصدار v2.0، إذ تظل قيمتها معرّف العميل.
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="صفحة Expose an API مع لوحة Application ID URI التي تعرض قيمة api:// الافتراضية" />
+
+    2. اختر **Add a scope** واملأ النموذج. يطلب المستخدمون هذا النطاق عند تسجيل الدخول، أما التطبيقات التي تصادق بهويتها الخاصة فلا تستخدمه.
+
+       | الحقل                          | القيمة                                                     |
+       | ------------------------------ | ---------------------------------------------------------- |
+       | **Scope name**                 | `access_as_application`                                    |
+       | **Who can consent?**           | **Admins only**                                            |
+       | **Admin consent display name** | على سبيل المثال: `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | أي وصف                                                     |
+       | **State**                      | **Enabled**                                                |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="لوحة Add a scope تعرض النطاق access_as_application، مع اقتصار الموافقة على المسؤولين، وضبط الحالة على Enabled" />
+  </Step>
+
+  <Step title="امنح تطبيق العميل صلاحية تسجيل دخول المستخدمين" id="authorize-client-application">
+    يحصل المستخدمون على الرموز المميزة عبر تطبيق عميل عام. ويُغني التفويض المسبق لهذا التطبيق على النطاق `access_as_application` المستخدمين عن تقديم الموافقة. يستخدم هذا الدليل Azure CLI، ومعرّف العميل الخاص به هو `04b07795-8ddb-461a-bbee-02f9e1bf7b46`، وذلك لكلٍّ من `az` و`clickhouse-client --login`.
+
+    في **Expose an API**، ضمن **Authorized client applications**، اختر **Add a client application**. أدخل `04b07795-8ddb-461a-bbee-02f9e1bf7b46`، واختر النطاق `api://<CLIENT_ID>/access_as_application`، ثم اختر **Add application**.
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="لوحة إضافة تطبيق عميل مع تحديد معرّف عميل Azure CLI والنطاق access_as_application" />
+
+    <Note>
+      لاستخدام تطبيق عميل خاص بك بدلاً من Azure CLI، سجّل تطبيقاً منفصلاً، واضبط **Allow public client flows** على **Yes** ضمن **Authentication**، ثم فوّض معرّف العميل الخاص به مسبقاً هنا. بعد ذلك مرّر معرّف العميل هذا عبر الخيار `--oauth-client-id` عند [تسجيل الدخول باستخدام clickhouse-client](#sign-in-with-clickhouse-client). وإذا كان المستأجر لديك لا يسمح بموافقة المستخدمين، فيتعيّن على أحد المسؤولين أيضاً منح الموافقة على الصلاحيات `openid` و`profile` و`offline_access` الخاصة بهذا التطبيق.
+    </Note>
+  </Step>
+
+  <Step title="إنشاء أدوار التطبيق" id="create-app-roles">
+    يقابل كل دور تطبيق دورًا واحدًا في ClickHouse. فقيمة **Value** لدور التطبيق هي ما يظهر في مطالبة `roles` ضمن الرمز المميز، ويجب أن تطابق اسم دور ClickHouse تمامًا، بما في ذلك حالة الأحرف.
+
+    افتح **App roles** واختر **Create app role** لكل دور من أدوار ClickHouse:
+
+    | الحقل                                    | القيمة                                                                                                                                                |
+    | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Display name**                         | اسم واضح للقراءة، مثل `ClickHouse analyst`                                                                                                            |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**. اختر **Users/Groups** إذا كان الاتصال مقتصرًا على الأشخاص، أو **Applications** إذا كان مقتصرًا على التطبيقات. |
+    | **Value**                                | اسم دور ClickHouse، مثل `ch_analyst`                                                                                                                  |
+    | **Description**                          | أي وصف                                                                                                                                                |
+    | **Do you want to enable this app role?** | محدد                                                                                                                                                  |
+
+    يعرّف المثال التالي ثلاثة أدوار تطبيق، قيمها أسماء أدوار في ClickHouse:
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="صفحة App roles تعرض ClickHouse Admin وClickHouse Analyst DB وClickHouse Read Only بالقيم ch_admin وch_analyst وch_readonly" />
+  </Step>
+
+  <Step title="اشتراط التعيين" id="require-assignment">
+    افتراضيًا، يمكن لأي مستخدم في المستأجر الخاص بك الحصول على رمز مميز للتطبيق. ولقصر الرموز المميزة على المستخدمين والمجموعات والتطبيقات التي تُسندها إلى دور تطبيق، افتح **Enterprise applications**، واختر التطبيق الذي يحمل اسم تسجيل التطبيق نفسه، ثم افتح **Properties**، واضبط **Assignment required?** على **Yes**، ثم اختر **Save**.
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="خصائص تطبيق المؤسسة مع ضبط Assignment required على Yes" />
+  </Step>
+
+  <Step title="تعيين المستخدمين والمجموعات لأدوار التطبيق" id="assign-users-and-groups">
+    في تطبيق المؤسسة نفسه، افتح **Users and groups** واختر **Add user/group**. اختر مستخدمًا أو مجموعة، ثم اختر دور تطبيق، وبعدها اختر **Assign**. كرّر هذه الخطوات لكل مستخدم أو مجموعة.
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="صفحة Users and groups في تطبيق المؤسسة، وتظهر فيها مستخدمًا مُسنَدًا إليه دور التطبيق ClickHouse Read Only" />
+
+    إذا أُسنِدت إلى المستخدم عدة أدوار تطبيق، سواء مباشرةً أو عبر المجموعات، فإنه يحصل عليها جميعًا في المطالبة `roles`.
+
+    <Note>
+      يتطلب إسناد المجموعات إلى أدوار التطبيق ترخيص Microsoft Entra ID P1 أو P2. المجموعات المتداخلة غير مدعومة، إذ لا يحصل على دور التطبيق سوى الأعضاء المباشرين في المجموعة المُسنَد إليها.
+    </Note>
+  </Step>
+</Steps>
+
+## إنشاء أدوار مطابقة في ClickHouse {#create-clickhouse-roles}
+
+اتصل بخدمتك بصفة المستخدم `default`، من وحدة تحكم SQL مثلًا، وأنشئ دورًا مقابلًا لكل قيمة من قيم أدوار التطبيق:
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+ضع في اعتبارك ما يلي:
+
+* أسماء الأدوار حساسة لحالة الأحرف، ويجب أن تطابق قيم أدوار التطبيق.
+* يتجاهل ClickHouse الأسماء الواردة في مطالبة `roles` التي لا تطابق أي دور موجود في الخدمة.
+* يمثّل المستخدم `default` الحد الأقصى للصلاحيات لموفّري JWT في ClickHouse Cloud، إذ يحذف ClickHouse أي امتيازات للدور لا يمتلكها المستخدم `default`.
+
+## إضافة Entra ID بوصفه موفّر JWT {#add-jwt-provider}
+
+اتبع الخطوات الواردة في [إضافة موفّر JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider) وأدخل القيم التالية:
+
+| الحقل                      | القيمة                                                                   |
+| -------------------------- | ------------------------------------------------------------------------ |
+| **الاسم**                  | أي اسم، مثل `entra-id`                                                   |
+| **الجهة المُصدِرة**        | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                     |
+| **الجمهور المستهدف**       | `<CLIENT_ID>`، أي معرّف التطبيق (العميل). لا تستخدم `api://<CLIENT_ID>`. |
+| **عنوان URL لمجموعة JWKS** | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys`      |
+| **مطالبة الأدوار**         | `roles`                                                                  |
+
+<Warning>
+  اضبط **مطالبة الأدوار** على `roles`. فإذا تركتها فارغة، سيقرأ ClickHouse الأدوار من المطالبة `clickhouse:roles`، وهي مطالبة لا تتضمنها رموز Entra ID المميزة، وبذلك يُصادَق على المستخدمين دون أي امتيازات.
+</Warning>
+
+## الاتصال بصفتك مستخدمًا {#connect-as-a-user}
+
+عيّن القيم المأخوذة من تسجيل تطبيقك، واسم مضيف الخدمة الخاص بك، على هيئة متغيرات shell:
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### تمرير رمز من Azure CLI {#pass-an-azure-cli-token}
+
+سجّل الدخول باستخدام Azure CLI، ثم اطلب رمز وصول لتطبيق ClickHouse، ومرّره إلى `clickhouse-client` عبر الخيار `--jwt`:
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+يعمل الرمز المميز نفسه مع واجهة HTTP:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+تظل رموز الوصول الخاصة بـ Entra ID صالحة افتراضيًا لمدة تتراوح بين 60 و90 دقيقة. اطلب رمزًا جديدًا عند انتهاء صلاحيته، أو استخدم `--login` في الجلسات الطويلة.
+
+### تسجيل الدخول باستخدام clickhouse-client {#sign-in-with-clickhouse-client}
+
+يستطيع `clickhouse-client` تنفيذ مسار رمز الجهاز (device code flow) في OAuth 2.0 بنفسه، وتجديد الرمز المميز (token) خلال الـ session:
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+يعرض العميل URL ورمزًا. افتح URL، وأدخل الرمز، ثم سجّل الدخول باستخدام حساب Entra ID الخاص بك. احرص على إبقاء `offline_access` ضمن النطاق، إذ يجعل Entra ID يُرجع رمز التجديد الذي يستخدمه العميل لتجديد رمز الوصول. ومن دونه، سيتعيّن عليك تسجيل الدخول مجددًا عند انتهاء صلاحية رمز الوصول.
+
+## الاتصال كتطبيق {#connect-as-an-application}
+
+تُصادِق التطبيقات، مثل مهام ETL والخدمات الخلفية، بهويتها الخاصة باستخدام تدفق منح بيانات اعتماد العميل (client credentials grant) في OAuth 2.0. ويجب أن تسمح أدوار التطبيق التي تمنحها لأي تطبيق بنوع العضو **Applications**.
+
+1. في **App registrations**، سجّل تطبيقًا منفصلًا لعبء العمل. ثم ضمن **Certificates &amp; secrets**، أنشئ سر عميل أو حمّل شهادة. يُشار في الأوامر أدناه إلى معرّف العميل الخاص بعبء العمل وسرّه بـ `<WORKLOAD_CLIENT_ID>` و`<WORKLOAD_CLIENT_SECRET>`.
+2. في تسجيل التطبيق الخاص بعبء العمل، افتح **API permissions** واختر **Add a permission**. ضمن **APIs my organization uses**، ابحث عن تطبيق ClickHouse، واختر **Application permissions**، ثم حدّد أدوار التطبيق التي يحتاجها عبء العمل، واختر **Add permissions**.
+3. اختر **Grant admin consent** لتعيين أدوار التطبيق لعبء العمل.
+
+اطلب رمزًا من نقطة نهاية الرموز في Entra ID، ثم أرسله إلى ClickHouse:
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+في الشيفرة المخصصة لبيئة الإنتاج، استخدم [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) أو مكتبة Azure Identity الخاصة بلغة البرمجة التي تعمل بها. إذ تخزّن هاتان المكتبتان الرموز المميزة في ذاكرة التخزين المؤقت، وتطلبان رموزًا جديدة قبل انتهاء صلاحية الرموز الحالية.
+
+## التحقق {#verify}
+
+بعد الاتصال، تحقّق من هوية الـ session وامتيازاتها:
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| الاستعلام              | النتيجة المتوقعة                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `SELECT currentUser()` | اسم بالصيغة `JWT::<sub>::<hash>`، حيث `<sub>` هي قيمة مطالبة `sub` في الرمز المميز                                |
+| `SHOW GRANTS`          | امتيازات الأدوار الواردة في مطالبة `roles` ضمن الرمز المميز، مثل `GRANT SELECT ON *.* TO ...` للدور `ch_readonly` |
+| `SHOW CURRENT ROLES`   | لا توجد صفوف                                                                                                      |
+
+لا يمنح ClickHouse الأدوار نفسها للمستخدم المؤقت، بل يجمع امتيازات الأدوار المذكورة في الرمز المميز، ثم يأخذ تقاطعها مع امتيازات المستخدم `default`، ويمنح النتيجة للمستخدم مباشرةً. ولهذا لا يُعيد `SHOW CURRENT ROLES` أي صفوف.
+
+في رموز المستخدمين المميزة، يضبط Entra ID قيمة `sub` على معرّف مُبهم فريد لكل تركيبة من المستخدم والتطبيق، وهو ليس عنوان البريد الإلكتروني للمستخدم ولا معرّف الكائن (object ID) الخاص به.
+
+## أفضل الممارسات {#best-practices}
+
+### عيِّن المجموعات بدلًا من المستخدمين الأفراد {#assign-groups}
+
+عيِّن مجموعة Entra ID واحدة لكل دور في التطبيق، ثم امنح الوصول أو اسحبه بتغيير العضوية في المجموعة. وبذلك لن يضطر أحد إلى تعديل التطبيق عند انضمام الأشخاص إلى فريق ما أو مغادرتهم إياه.
+
+### استخدم تسجيل تطبيق منفصلًا لكل بيئة {#separate-app-registrations}
+
+تتضمّن الرموز المميزة (tokens) معرّف العميل (client ID) الخاص بتسجيل التطبيق الذي أصدرها، وذلك في المطالبة `aud`. وعند استخدام تسجيل تطبيق منفصل لكلٍّ من بيئة الإنتاج وبيئة ما قبل الإنتاج (staging)، لا يمكن استخدام الرمز المميز الصادر لإحدى البيئتين للمصادقة في البيئة الأخرى.
+
+### توقّع أن تسري تغييرات الأدوار مع الرمز المميز التالي {#role-changes}
+
+يكتب Entra ID المطالبة `roles` عند إصداره رمزًا مميزًا. لذا، بعد تغيير عمليات إسناد أدوار التطبيق لمستخدم ما، لا يسري التغيير إلا عندما يحصل المستخدم على رمز مميز جديد، أما الرموز المميزة الصادرة مسبقًا فتحتفظ بأدوارها حتى انتهاء صلاحيتها. وإذا كنت تستخدم Azure CLI، فشغّل `az logout` ثم `az login` للحصول على رمز مميز جديد فورًا.
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="يُرفض الرمز وتبدأ الجهة المُصدِرة له بـ https://sts.windows.net" id="v1-token">
+    أصدر Entra ID رمزًا من الإصدار v1.0. اضبط `requestedAccessTokenVersion` على `2` في ملف البيان الخاص بالتطبيق، كما هو موضح في [طلب رموز وصول من الإصدار v2.0](#request-v2-tokens)، ثم اطلب رمزًا جديدًا.
+  </Accordion>
+
+  <Accordion title="يُرفض الرمز بسبب الجمهور المستهدف" id="audience-mismatch">
+    * يجب أن تكون قيمة **الجمهور المستهدف** الخاصة بالمزوّد في ClickHouse Cloud هي معرّف العميل، لا `api://<CLIENT_ID>`.
+    * تحقّق من أنك طلبت رمزًا لتطبيق ClickHouse، إذ يُعيد الأمر `az account get-access-token` بدون الخيار `--resource` رمزًا لـ Azure Resource Manager.
+  </Accordion>
+
+  <Accordion title="يُعيد Entra ID الخطأ AADSTS65001 أو يطلب الموافقة" id="consent-required">
+    تطبيق العميل غير مُصرَّح له مسبقًا باستخدام النطاق `access_as_application`. أضف معرّف العميل الخاص به ضمن **Expose an API → Authorized client applications**، كما هو موضح في [تفويض تطبيق عميل لتسجيل دخول المستخدمين](#authorize-client-application).
+  </Accordion>
+
+  <Accordion title="يُعيد Entra ID الخطأ AADSTS50105 أو AADSTS501051" id="not-assigned">
+    المستخدم أو التطبيق غير مُسنَد إلى تطبيق ClickHouse، والخيار **Assignment required?** مضبوط على **Yes**. أسنِد المستخدم أو إحدى مجموعاته أو التطبيق إلى دور تطبيق. وإذا أسندت مجموعة، فتأكّد من أن المستخدم عضو مباشر فيها.
+  </Accordion>
+
+  <Accordion title="تنجح المصادقة لكن الاستعلامات تفشل بالخطأ ACCESS_DENIED" id="no-privileges">
+    لا يملك المستخدم المؤقت الامتيازات التي يحتاجها الاستعلام. تحقّق مما يلي:
+
+    * أن قيمة **مطالبة الأدوار** الخاصة بالمزوّد مضبوطة على `roles`.
+    * أن الرمز يحتوي على المطالبة `roles`، إذ تغيب هذه المطالبة عندما يكون المُستدعي مُسنَدًا إلى التطبيق دون دور تطبيق.
+    * أن كل قيمة في المطالبة `roles` تطابق دورًا موجودًا في ClickHouse على الخدمة، مع مراعاة حالة الأحرف.
+    * أن المستخدم `default` يملك الامتيازات التي منحتها للدور.
+
+    لعرض المطالبات الموجودة في رمز ما، فُكّ ترميز حمولته محليًا:
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="يُرفض الرمز بعد تهيئة سياسة لمطابقة المطالبات" id="app-signing-key">
+    إذا هيّأت سياسة لمطابقة المطالبات أو مفتاح توقيع مخصصًا للتطبيق، فإن Entra ID يوقّع رموزه بمفتاح غير موجود في JWKS الخاص بالمستأجر. في هذه الحالة، اضبط **عنوان URL لمجموعة JWKS** الخاص بالمزوّد على `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`.
+  </Accordion>
+</AccordionGroup>
+
+## موارد ذات صلة {#related}
+
+* [إعداد المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup): إضافة موفّري JWT وتحديثهم وإزالتهم في وحدة تحكم ClickHouse Cloud.
+* [المصادقة باستخدام JWT](/ar/concepts/features/security/external-authenticators/jwt): مطالبات الرمز المميز، والمستخدمون المؤقتون، واستخدامها من جهة العميل.

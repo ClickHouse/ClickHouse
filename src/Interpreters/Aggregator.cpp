@@ -320,7 +320,10 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
 
             /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
             /// In two-level case we sample across 256 buckets, so we can use a larger period.
-            const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
+            /// The single-level period is not capped, so that the samples span the whole table: fixed hash maps
+            /// (`UInt8` and `UInt16` keys) are iterated in key order, and a prefix of them is biased
+            /// whenever the size of the state correlates with the key.
+            const auto period = bucket == -1 ? std::max<size_t>(table.size() / 100, 1) : 100;
 
             size_t it = 0;
             table.forEachMapped(
