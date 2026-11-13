@@ -1104,6 +1104,11 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
                 failover_pool->incrementErrorCount(address.host, address.port);
 
             connections->disconnect();
+
+            /// Destroy the failed connections before the next attempt reacquires them: `HedgedConnections`
+            /// keeps the pool entries of its replicas after `disconnect`, and with a small
+            /// `distributed_connections_pool_size` the retry would wait for a slot held by its own failed attempt.
+            connections.reset();
         }
 
         /// Make the next read attempt re-establish the connections and re-send the query.

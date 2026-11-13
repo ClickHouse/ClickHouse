@@ -379,3 +379,31 @@ def test_retry_after_send_timeout(started_cluster, async_query_sending_for_remot
     assert result.strip() == "10"
     assert node1.contains_in_log("will retry (1/2)")
     assert remote_read_rows(node3, query_id) > 0
+
+
+def test_retry_reuses_released_pool_slot(started_cluster):
+    """With `use_hedged_requests = 1`, `HedgedConnections` keeps the pool entries of its replicas
+    after `disconnect`. With a single replica and a pool of a single connection, the retry must
+    release the failed attempt's connections before reacquiring, otherwise it waits for the slot
+    held by its own failed attempt (and fails after `connection_pool_max_wait_ms`)."""
+
+    prepare_initiator()
+
+    query_id = "dq_retry_reuses_released_pool_slot"
+    # `remote` creates the connection pool with the query's `distributed_connections_pool_size`.
+    result = run_query_and_kill_replica_while_retry_is_paused(
+        "SELECT sum(x + sleepEachRow(0.25)) FROM remote('node2', default, t)",
+        {
+            **SETTINGS,
+            "use_hedged_requests": 1,
+            "distributed_query_retries": 2,
+            "distributed_connections_pool_size": 1,
+            "connection_pool_max_wait_ms": 3000,
+        },
+        query_id,
+    )
+
+    assert result.strip() == "45"
+    assert node1.contains_in_log("will retry (1/2)")
+    assert not node1.contains_in_log("will retry (2/2)")
+    assert remote_read_rows(node2, query_id) == 10
