@@ -103,7 +103,6 @@
 01283_max_threads_simple_query_optimization
 02784_parallel_replicas_automatic_decision_join
 04836_merge_table_parallel_replicas_duplicate_announcement
-05175_autopr_lazy_read_statistics
 05399_autopr_plan_without_parallel_replicas
 
     The test describes query-based behaviour (setting semantics, statistics, step names)
