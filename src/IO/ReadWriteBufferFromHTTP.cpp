@@ -317,7 +317,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     prepareRequest(request, range, with_request_body);
 
     auto session = makeHTTPSession(connection_group, current_uri, getTimeoutsForTry(), proxy_config, /*connect_time=*/ nullptr, deadline);
-    /// Connecting used up some of the time.
+    /// Connecting and sending use up some of the time.
     if (deadline)
         setTimeouts(*session, getTimeoutsForTry());
 
@@ -327,6 +327,9 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     if (out_stream_callback && with_request_body)
         out_stream_callback(*body_out);
     body_out->finalize();
+
+    if (deadline)
+        setTimeouts(*session, getTimeoutsForTry());
 
     /// In the external buffer mode the caller hands its own memory to every read, so the body
     /// buffer needs none of its own.

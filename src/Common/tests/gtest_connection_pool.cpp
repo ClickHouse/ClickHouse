@@ -1114,7 +1114,11 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 }
 
 /// The code of the `DB::Exception` a request with `deadline` fails with, 0 if it succeeds.
-static int requestWithDeadline(const Poco::URI & uri, std::chrono::steady_clock::time_point deadline, bool bypass_proxy = true)
+static int requestWithDeadline(
+    const Poco::URI & uri,
+    std::chrono::steady_clock::time_point deadline,
+    bool bypass_proxy = true,
+    std::chrono::milliseconds body_delay = {})
 {
     Poco::Net::HTTPBasicCredentials empty_creds;
     try
@@ -1122,7 +1126,11 @@ static int requestWithDeadline(const Poco::URI & uri, std::chrono::steady_clock:
         DB::BuilderRWBufferFromHTTP(uri)
             .withBypassProxy(bypass_proxy)
             .withDeadline(deadline)
-            .withOutCallback([] (DB::WriteBuffer & out) { DB::writeString("Hello", out); })
+            .withOutCallback([body_delay] (DB::WriteBuffer & out)
+            {
+                std::this_thread::sleep_for(body_delay);
+                DB::writeString("Hello", out);
+            })
             .withDelayInit(false)
             .create(empty_creds);
     }
@@ -1143,6 +1151,22 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPEndsAtDeadline)
     const auto elapsed = std::chrono::steady_clock::now() - start;
     ASSERT_GE(elapsed, std::chrono::milliseconds(400));
     ASSERT_LT(elapsed, std::chrono::milliseconds(1500));
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPSlowBodyLeavesLessTimeForResponse)
+{
+    setSlowDown(2);
+
+    /// Writing the request body takes 400 ms of the 500 ms.
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_EQ(
+        DB::ErrorCodes::TIMEOUT_EXCEEDED,
+        requestWithDeadline(
+            Poco::URI(getServerUrl()), start + std::chrono::milliseconds(500), /*bypass_proxy=*/ true, std::chrono::milliseconds(400)));
+
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    ASSERT_GE(elapsed, std::chrono::milliseconds(400));
+    ASSERT_LT(elapsed, std::chrono::milliseconds(750));
 }
 
 TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
