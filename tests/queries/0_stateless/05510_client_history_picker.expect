@@ -17,7 +17,7 @@ exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
 # Entries with a terminal control sequence and with non-ASCII letters.
-exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n### 2026-01-01 00:00:02.000\\nSELECT \\x27zzba\\x27\\n### 2026-01-01 00:00:03.000\\nSELECT \\x27zzab\\x27\\n### 2026-01-01 00:00:04.000\\nSELECT \\x27[string repeat y 100] long_target_one\\x27\\n' > $history_file"
+exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n### 2026-01-01 00:00:02.000\\nSELECT \\x27zzba\\x27\\n### 2026-01-01 00:00:03.000\\nSELECT \\x27zzab\\x27\\n### 2026-01-01 00:00:04.000\\nSELECT \\x27[string repeat y 100] long_target_one\\x27\\n### 2026-01-01 00:00:05.000\\nSELECT \\x27[string repeat 😀 60]emoji_target\\x27\\n' > $history_file"
 
 log_user 0
 set timeout 60
@@ -143,6 +143,23 @@ send -- "long_target"
 expect -re {1/[0-9]+}
 expect -re { \.\.y+ }
 expect "_one'"
+send -- "\033"
+expect ":) "
+
+# Emoji take two columns, as in terminals and `replxx`: the entry is clipped to at most 31 of them
+# before the match, and the cursor of four emoji in the query is at column 11 (counting one column
+# per emoji would never reach it).
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "emoji_target"
+expect -re {1/[0-9]+}
+expect -re { \.\.(😀){1,31}\033\[[0-9;]*memoji_target}
+send -- "\033"
+expect ":) "
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "😀😀😀😀"
+expect -ex "\033\[11G"
 send -- "\033"
 expect ":) "
 

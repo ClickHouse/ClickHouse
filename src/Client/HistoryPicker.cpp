@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/find_symbols.h>
 
+#include <widechar_width.h>
+
 #include <algorithm>
 #include <string_view>
 #include <unordered_set>
@@ -72,14 +74,81 @@ const UInt8 * toBytes(std::string_view s)
     return reinterpret_cast<const UInt8 *>(s.data());
 }
 
+struct CodePoint
+{
+    char32_t value;
+    size_t length;
+};
+
+/// Decodes the code point at `pos`. An invalid or truncated sequence is one replacement character per byte.
+CodePoint decodeCodePoint(std::string_view s, size_t pos)
+{
+    constexpr char32_t replacement = 0xFFFD;
+    auto first = static_cast<UInt8>(s[pos]);
+    if (first < 0x80)
+        return {static_cast<char32_t>(first), 1};
+
+    size_t length = UTF8::seqLength(first);
+    if (length < 2 || pos + length > s.size())
+        return {replacement, 1};
+
+    char32_t value = first & (0xFFu >> (length + 1));
+    for (size_t i = 1; i < length; ++i)
+    {
+        auto octet = static_cast<UInt8>(s[pos + i]);
+        if (!UTF8::isContinuationOctet(octet))
+            return {replacement, 1};
+        value = (value << 6) | (octet & 0x3Fu);
+    }
+    return {value, length};
+}
+
+/// The columns of a code point as terminals with Unicode 9 or newer widths and `replxx` count them:
+/// unlike `UTF8::computeWidth`, the characters widened in Unicode 9 (most emoji) take two.
+size_t codePointWidth(char32_t value)
+{
+    int width = widechar_wcwidth(static_cast<wchar_t>(value));
+    switch (width)
+    {
+        case widechar_nonprint:
+        case widechar_combining:
+        case widechar_unassigned:
+            return 0;
+        case widechar_ambiguous:
+        case widechar_private_use:
+            return 1;
+        case widechar_widened_in_9:
+            return 2;
+        default:
+            return static_cast<size_t>(width);
+    }
+}
+
 size_t displayWidth(std::string_view s)
 {
-    return UTF8::computeWidth(toBytes(s), s.size());
+    size_t width = 0;
+    for (size_t pos = 0; pos < s.size();)
+    {
+        CodePoint code_point = decodeCodePoint(s, pos);
+        width += codePointWidth(code_point.value);
+        pos += code_point.length;
+    }
+    return width;
 }
 
 std::string_view truncateToWidth(std::string_view s, size_t limit)
 {
-    return s.substr(0, UTF8::computeBytesBeforeWidth(toBytes(s), s.size(), 0, limit));
+    size_t width = 0;
+    size_t pos = 0;
+    while (pos < s.size())
+    {
+        CodePoint code_point = decodeCodePoint(s, pos);
+        width += codePointWidth(code_point.value);
+        if (width > limit)
+            break;
+        pos += code_point.length;
+    }
+    return s.substr(0, pos);
 }
 
 /// The end of `s` that fits in `limit` columns.
@@ -89,10 +158,14 @@ std::string_view tailOfWidth(std::string_view s, size_t limit)
     if (width <= limit)
         return s;
     size_t excess = width - limit;
-    size_t drop = UTF8::computeBytesBeforeWidth(toBytes(s), s.size(), 0, excess);
-    /// The widest prefix within the excess is narrower than it when a wide character crosses the boundary.
-    if (drop < s.size() && displayWidth(s.substr(0, drop)) < excess)
-        drop += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(s[drop])), s.size() - drop);
+    size_t dropped_width = 0;
+    size_t drop = 0;
+    while (drop < s.size() && dropped_width < excess)
+    {
+        CodePoint code_point = decodeCodePoint(s, drop);
+        dropped_width += codePointWidth(code_point.value);
+        drop += code_point.length;
+    }
     return s.substr(drop);
 }
 

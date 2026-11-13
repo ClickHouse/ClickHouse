@@ -621,7 +621,7 @@ endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
-target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon widechar_width)
 
 if (ENABLE_GPU)
     target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf ch_gpu::cudart ch_contrib::nvcomp)
