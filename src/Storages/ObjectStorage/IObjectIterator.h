@@ -182,7 +182,7 @@ public:
         return (peeked_objects.size() - next_peeked_object) + delegate_count;
     }
 
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {

@@ -130,7 +130,7 @@ public:
     void addMergeCountedTable(const AggregatedDataVariants & table) { merge_counted_tables.push_back(&table); }
 
     /// Whether `table` is the table of a producer that never froze, whose groups the merge adds to the bounds.
-    bool isMergeCounted(const AggregatedDataVariants & table) const
+    [[nodiscard]] bool isMergeCounted(const AggregatedDataVariants & table) const
     {
         return std::ranges::find(merge_counted_tables, &table) != merge_counted_tables.end();
     }
@@ -142,11 +142,11 @@ public:
     bool prepare(size_t expected_producers);
 
     /// The bucket that the merge claim `claim` takes: the buckets with the largest bounds come first.
-    UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
+    [[nodiscard]] UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
 
     /// The bounds of a bucket's bins: their sums over the producers' bins, unbounded where a producer's counter
     /// saturated. The merge adds the groups of the tables it counts.
-    BucketBounds boundsForBucket(size_t bucket) const;
+    [[nodiscard]] BucketBounds boundsForBucket(size_t bucket) const;
 
     /// Adds the count of a group of `hash` to the bounds of its bucket, saturating at the unbounded value.
     static ALWAYS_INLINE void addToBounds(std::span<UInt64> bounds, UInt64 hash, UInt64 count)

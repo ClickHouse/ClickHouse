@@ -29,7 +29,7 @@ public:
     MergeTreeIndexGranularity & operator=(const MergeTreeIndexGranularity &) = default;
     virtual ~MergeTreeIndexGranularity() = default;
 
-    virtual MergeTreeIndexGranularityType getType() const = 0;
+    [[nodiscard]] virtual MergeTreeIndexGranularityType getType() const = 0;
 
     /// Returns granularity if it is constant for whole part (except last granule).
     [[nodiscard]] virtual std::optional<size_t> getConstantGranularity() const = 0;
