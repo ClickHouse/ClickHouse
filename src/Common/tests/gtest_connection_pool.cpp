@@ -1376,6 +1376,26 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     echoRequest("Hello", *connection);
 }
 
+/// Connects to `server` until its accept queue is full, so that it answers no further SYN and a connect to it waits
+/// until its timeout. Returns false if the queue does not fill up.
+static bool fillAcceptQueue(Poco::Net::ServerSocket & server, std::vector<Poco::Net::StreamSocket> & queued)
+{
+    while (queued.size() < 16)
+    {
+        Poco::Net::StreamSocket socket;
+        try
+        {
+            socket.connect(server.address(), Poco::Timespan(100'000));
+        }
+        catch (const Poco::TimeoutException &)
+        {
+            return true;
+        }
+        queued.push_back(socket);
+    }
+    return false;
+}
+
 TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
 {
     /// The first address keeps the connect until the deadline: its accept queue is full, so it does not answer a SYN.
@@ -1388,21 +1408,7 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
     Poco::Net::ServerSocket good_server(Poco::Net::SocketAddress(good_ip, port));
     Poco::Net::ServerSocket slow_server(Poco::Net::SocketAddress(slow_ip, port), /*backlog=*/ 1);
     std::vector<Poco::Net::StreamSocket> queued;
-    bool queue_full = false;
-    while (!queue_full && queued.size() < 16)
-    {
-        Poco::Net::StreamSocket socket;
-        try
-        {
-            socket.connect(slow_server.address(), Poco::Timespan(100'000));
-            queued.push_back(socket);
-        }
-        catch (const Poco::TimeoutException &)
-        {
-            queue_full = true;
-        }
-    }
-    ASSERT_TRUE(queue_full);
+    ASSERT_TRUE(fillAcceptQueue(slow_server, queued));
 
     /// Resolving the host again would take 3 s. A failed connect asks for it, and so does `resolve` 400 ms after the last
     /// resolution, which is sooner than the connect gives up.
@@ -1498,6 +1504,39 @@ TEST_F(ConnectionPoolTest, NoConnectAfterResolutionUsesUpDeadline)
     ASSERT_EQ(2, resolve_calls->load());
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
     ASSERT_FALSE(good_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+}
+
+TEST_F(ConnectionPoolTest, ProxyConnectKeepsToDeadline)
+{
+    /// A proxy that does not answer a SYN.
+    Poco::Net::ServerSocket proxy_server(Poco::Net::SocketAddress("127.0.0.97", 9875), /*backlog=*/ 1);
+    std::vector<Poco::Net::StreamSocket> queued;
+    ASSERT_TRUE(fillAcceptQueue(proxy_server, queued));
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.97";
+    proxy_config.port = 9875;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, Poco::URI("http://proxy-deadline-target.invalid:9999"), proxy_config);
+    auto metrics = pool->getMetrics();
+
+    try
+    {
+        pool->getConnection(timeouts, nullptr, std::chrono::steady_clock::now());
+        FAIL() << "connected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(300)));
+    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
 }
 
 TEST_F(ConnectionPoolTest, StoreLimit)

@@ -1110,8 +1110,14 @@ private:
     /// target). A connect failure here belongs to the proxy, so it propagates without resolver
     /// bookkeeping or per-address retry.
     ConnectionPtr prepareConnectionViaProxy(
-        const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
+        const ConnectionTimeouts & timeouts,
+        UInt64 * connect_time,
+        const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config,
+        std::optional<std::chrono::steady_clock::time_point> deadline)
     {
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "The deadline passed before connecting to {} through a proxy", host);
+
         /// The proxy host name is resolved by Poco (`HTTPClientSession::reconnect` builds a
         /// `SocketAddress` out of `ProxyConfig::host`), so it does not go through the DNS cache.
         /// It cannot be replaced with a resolved address here: when TLS terminates at the proxy
@@ -1126,7 +1132,7 @@ private:
 
         try
         {
-            setTimeouts(*connection, timeouts);
+            setTimeouts(*connection, deadline ? timeouts.getCappedAt(*deadline) : timeouts);
 
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
             connection->doConnect(connect_time);
@@ -1163,7 +1169,7 @@ private:
         const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
 
         if (!retry_resolved_addresses)
-            return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config);
+            return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config, deadline);
 
         /// When DNS returns several addresses (e.g. an IPv4 and an IPv6 record), try the next one
         /// if the first fails with a network error. `max_connect_attempts` bounds real connect
