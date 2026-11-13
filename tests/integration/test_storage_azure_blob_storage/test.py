@@ -767,6 +767,25 @@ def test_put_get_with_globs_tf(cluster):
     ]
 
 
+def test_glob_skips_directory_entries(cluster):
+    node = cluster.instances["node"]
+    prefix = f"directory_entries_{random.randint(1, 1000000)}"
+    container_client = cluster.blob_service_client.get_container_client("cont")
+    container_client.upload_blob(f"{prefix}/a.csv", b"1\n")
+    container_client.upload_blob(f"{prefix}/empty.csv", b"")
+    container_client.upload_blob(f"{prefix}/marked.csv", b"3\n", metadata={"hdi_isfolder": "true"})
+    container_client.upload_blob(f"{prefix}/sub", b"", metadata={"hdi_isfolder": "true"})
+    container_client.upload_blob(f"{prefix}/sub/b.csv", b"2\n")
+    query = (
+        f"SELECT _path FROM azureBlobStorage(azure_conf2, storage_account_url = "
+        f"'{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container = 'cont', "
+        f"blob_path = '{prefix}/**', format = 'One') ORDER BY _path"
+    )
+    assert azure_query(node, query, settings={"azure_skip_empty_files": 0}).splitlines() == [
+        f"cont/{prefix}/a.csv", f"cont/{prefix}/empty.csv", f"cont/{prefix}/marked.csv", f"cont/{prefix}/sub/b.csv",
+    ]
+
+
 def test_schema_inference_no_globs_tf(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 String, column3 UInt32"

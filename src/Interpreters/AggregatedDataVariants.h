@@ -3,9 +3,11 @@
 #include <Core/Names.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
+#include <Common/PODArray.h>
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <boost/noncopyable.hpp>
 
 
@@ -21,6 +23,11 @@ struct HashMethodContextSettings;
 
 class Arena;
 class Aggregator;
+
+/// Whether an aggregation table iterates its cells, which an index of its cells needs (see
+/// `AggregatedDataVariants::CellIndex`): the string table with its sub-maps does not.
+template <typename Table>
+concept IterableCells = requires (Table & table) { table.begin(); };
 
 struct AggregatedDataVariants : private boost::noncopyable
 {
@@ -516,6 +523,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Bytes of the active method's hash-table buffer: its cells, which hold the keys (references to
+    /// the bytes of string keys) and the states' pointers, or the states themselves where they are
+    /// stored inline.
+    size_t hashTableBufferBytes() const;
     /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
     /// which grow by whole chunks of doubling size, they follow every allocation.
     size_t usedArenaBytes() const;
@@ -543,6 +554,35 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
+    /// Whether the cells of the single-level table can be indexed: the table of every method with a
+    /// two-level counterpart, except the string table (see `IterableCells`).
+    bool canIndexCells() const;
+    /// Builds the cell index of the single-level table (see `CellIndex`): its cells grouped by
+    /// `partition_of(hash)`, so that a merge reads the cells of any run of consecutive partitions without
+    /// walking the table, which spares its conversion to two-level. The caller guarantees that the table can
+    /// be indexed (see `canIndexCells`) and that `partition_of` returns a partition below `num_partitions`.
+    /// Counts the table in `AggregationIndexedTables`, as `convertToTwoLevel` counts a conversion.
+    template <typename PartitionOf>
+    void indexCells(size_t num_partitions, PartitionOf && partition_of);
+    /// Whether `indexCells` indexed the table's cells and nothing cleared the index since (see `CellIndex`).
+    bool hasCellIndex() const { return cell_index.has_value(); }
+    /// The partitions of the cell index. The caller guarantees that the table is indexed.
+    size_t numCellIndexPartitions() const { return cell_index->offsets.size() - 1; }
+    /// The cells of the partitions from `first_partition` to `end_partition` of the cell index. The caller
+    /// guarantees that the table is indexed.
+    size_t indexedCellCount(size_t first_partition, size_t end_partition) const
+    {
+        return cell_index->offsets[end_partition] - cell_index->offsets[first_partition];
+    }
+    /// Calls `callback(key, mapped, hash)` for each cell of the partitions from `first_partition` to
+    /// `end_partition` of the cell index, partition by partition and in the order of the table within a
+    /// partition. `mapped` is the cell's slot of the states, or a `VoidMapped` placeholder for a set method.
+    /// `Method` is the method of the indexed table or of its two-level counterpart: both hold the same cells.
+    /// The caller guarantees that the table is indexed.
+    template <typename Method, typename Callback>
+    void forEachIndexedCell(size_t first_partition, size_t end_partition, Callback && callback);
+    /// Drops the cell index before an insertion into the table, which may move the cells it points to.
+    void dropCellIndex() { cell_index.reset(); }
     /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
     /// `convertToTwoLevel` for a table whose data was written to disk.
     void resetToSingleLevel();
@@ -562,7 +602,134 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
+
+private:
+    /// The cells of the single-level table grouped by the partitions that `indexCells` assigns to their
+    /// hashes: a merge reads the cells of any run of consecutive partitions without walking the whole table
+    /// (see `forEachIndexedCell`). The index keeps only the partition numbers, and whoever chose the
+    /// partitions maps them back: the adaptive aggregation indexes by the partitions of its layout, which
+    /// nest in the buckets of the two-level counterpart, so its merge finds the cells of a bucket by
+    /// `AdaptivePartitionLayout::firstPartition`. The index points into the table's buffer, which an
+    /// insertion may move, so it serves only while the table takes no more keys: the serial merge, which
+    /// inserts into the first table, drops the index of that table first (see `dropCellIndex`), and `init`,
+    /// `convertToTwoLevel` and `resetAfterStateOwnershipTransfer`, which replace the table, clear it.
+    struct CellIndex
+    {
+        /// The cells of partition `p` and their hashes are at the positions from `offsets[p]` to
+        /// `offsets[p + 1]`.
+        PaddedPODArray<void *> cells;
+        PaddedPODArray<UInt64> hashes;
+        PaddedPODArray<UInt64> offsets;
+    };
+    std::optional<CellIndex> cell_index;
+
+    /// Indexes the cells of `table` by `partition_of` of their hashes with a counting sort: the cells of a
+    /// partition take a contiguous range of positions, in the order of the table. Each hash is computed once:
+    /// a table that does not save the hashes computes one for every call of `getHash`, which reads the bytes
+    /// of a long string key. The table of a `Nullable` key keeps the null key outside its cells, though
+    /// `size` counts it, so the index takes the cells that the table iterates; the merges take the null key
+    /// from the table.
+    template <typename Table, typename PartitionOf>
+    static void indexTableCells(Table & table, size_t num_partitions, PartitionOf && partition_of, CellIndex & index);
+
+    /// Stores the index that `indexCells` built, and counts it.
+    void setCellIndex(CellIndex && index);
+
+    [[noreturn]] void throwCannotIndexCells() const;
 };
+
+template <typename PartitionOf>
+void AggregatedDataVariants::indexCells(size_t num_partitions, PartitionOf && partition_of)
+{
+    auto index_table = [&]<typename TwoLevelTable>(std::type_identity<TwoLevelTable>, auto & table)
+    {
+        using Table = std::decay_t<decltype(table)>;
+        if constexpr (IterableCells<Table>)
+        {
+            /// The merges read the cells of a bucket of either kind of table as the cells of the two-level
+            /// table.
+            static_assert(std::is_same_v<typename Table::cell_type, typename TwoLevelTable::cell_type>);
+            CellIndex index;
+            indexTableCells(table, num_partitions, partition_of, index);
+            setCellIndex(std::move(index));
+        }
+        else
+        {
+            throwCannotIndexCells();
+        }
+    };
+
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            index_table(std::type_identity<decltype(NAME ## _two_level)::element_type::Data>{}, (NAME)->data); \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+        default:
+            throwCannotIndexCells();
+    }
+}
+
+template <typename Method, typename Callback>
+void AggregatedDataVariants::forEachIndexedCell(size_t first_partition, size_t end_partition, Callback && callback)
+{
+    using Table = typename Method::Data;
+    if constexpr (IterableCells<Table>)
+    {
+        using Cell = typename Table::cell_type;
+        const CellIndex & index = *cell_index;
+        for (size_t i = index.offsets[first_partition]; i < index.offsets[end_partition]; ++i)
+        {
+            Cell & cell = *static_cast<Cell *>(index.cells[i]);
+            callback(Cell::getKey(cell.getValue()), cell.getMapped(), index.hashes[i]);
+        }
+    }
+    else
+    {
+        /// The string table cannot be indexed (see `canIndexCells`), so no indexed table gets here.
+        throwCannotIndexCells();
+    }
+}
+
+template <typename Table, typename PartitionOf>
+void AggregatedDataVariants::indexTableCells(Table & table, size_t num_partitions, PartitionOf && partition_of, CellIndex & index)
+{
+    PaddedPODArray<void *> table_cells(table.size());
+    PaddedPODArray<UInt64> table_hashes(table.size());
+    PaddedPODArray<UInt64> next;
+    next.resize_fill(num_partitions, 0);
+    size_t num_cells = 0;
+    for (auto it = table.begin(); it != table.end(); ++it, ++num_cells)
+    {
+        table_cells[num_cells] = &*it;
+        table_hashes[num_cells] = it.getHash();
+        const size_t partition = partition_of(table_hashes[num_cells]);
+        chassert(partition < num_partitions);
+        ++next[partition];
+    }
+
+    index.offsets.resize(num_partitions + 1);
+    UInt64 position = 0;
+    for (size_t partition = 0; partition < num_partitions; ++partition)
+    {
+        index.offsets[partition] = position;
+        position += std::exchange(next[partition], position);
+    }
+    index.offsets[num_partitions] = position;
+
+    index.cells.resize(num_cells);
+    index.hashes.resize(num_cells);
+    for (size_t cell = 0; cell < num_cells; ++cell)
+    {
+        const UInt64 i = next[partition_of(table_hashes[cell])]++;
+        index.cells[i] = table_cells[cell];
+        index.hashes[i] = table_hashes[cell];
+    }
+}
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;

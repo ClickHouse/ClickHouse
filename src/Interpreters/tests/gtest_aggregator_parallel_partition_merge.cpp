@@ -4,6 +4,7 @@
 #include <bit>
 #include <limits>
 #include <map>
+#include <optional>
 #include <type_traits>
 #include <unordered_set>
 #include <vector>
@@ -35,7 +36,7 @@ using namespace DB;
 namespace
 {
 
-/// The parallel single-level merge (`Aggregator::mergeSingleLevelPartitionAndConvertToChunk`) combines
+/// The parallel single-level merge (`Aggregator::mergeSingleLevelPartitionsAndConvertToChunk`) combines
 /// the per-thread hash tables partition by partition, where a key's partition is its two-level bucket modulo the
 /// partition count. Each test builds several tables through `executeOnBlock`, merges every partition, and
 /// asserts that the partitions partition the keys and that their union equals a serial reference
@@ -142,6 +143,9 @@ struct Scenario
         return variants;
     }
 
+    /// Hands out no partition after the first, so that a chunk holds one partition.
+    static std::optional<size_t> claimNothing(size_t /*rows*/) { return std::nullopt; }
+
     /// Merges `sources` partition by partition and returns the union, asserting the partitions are key-disjoint.
     std::map<String, String> mergePartitions(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
@@ -158,8 +162,9 @@ struct Scenario
         std::map<String, String> united;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
-            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-                prepared, /*final=*/true, partition, num_partitions, max_table_size, cancelled, /*updater=*/nullptr);
+            auto agg_chunk = aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
+                prepared, /*final=*/true, num_partitions, partition, claimNothing, max_table_size / num_partitions,
+                aggregator.parallelMergeThreshold(/*session=*/nullptr), cancelled, /*updater=*/nullptr);
             for (const auto & [key, value] : renderChunk(agg_chunk.chunk, params.keys_size))
             {
                 EXPECT_TRUE(united.emplace(key, value).second) << "key " << key << " produced by two partitions";
@@ -183,8 +188,9 @@ struct Scenario
         std::map<String, String> united;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
-            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-                prepared, /*final=*/false, partition, num_partitions, max_table_size, cancelled, /*updater=*/nullptr);
+            auto agg_chunk = aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
+                prepared, /*final=*/false, num_partitions, partition, claimNothing, max_table_size / num_partitions,
+                aggregator.parallelMergeThreshold(/*session=*/nullptr), cancelled, /*updater=*/nullptr);
             const size_t rows = agg_chunk.chunk.getNumRows();
             auto columns = agg_chunk.chunk.detachColumns();
             for (size_t i = params.keys_size; i < columns.size(); ++i)
