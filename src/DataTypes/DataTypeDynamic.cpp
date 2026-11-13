@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDynamic.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>

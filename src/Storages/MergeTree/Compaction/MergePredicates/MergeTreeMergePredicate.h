@@ -17,7 +17,11 @@ public:
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
-    PartsRange getPatchesToApplyOnMerge(PartsRangeView range) const override;
+
+    /// Whether merges and mutations of the partition are stopped by `stopMergesAndWaitForPartition`
+    /// (`DROP`, `DETACH` or `REPLACE PARTITION` in progress).
+    bool areMergesBlockedInPartition(const String & partition_id) const;
+    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
 private:
     const StorageMergeTree & storage;

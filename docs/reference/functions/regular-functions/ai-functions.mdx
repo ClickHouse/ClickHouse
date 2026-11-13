@@ -32,7 +32,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
+AI functions require the `AI FUNCTIONS` grant (see [Access control](#access-control)) and reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
 
 Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
@@ -49,6 +49,35 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Access control {#access-control}
+
+Calling an AI function requires two privileges:
+
+- the function's privilege: either the per-function privilege (e.g. `aiGenerate`) or the `AI FUNCTIONS` group, see [`GRANT`](/reference/statements/grant#ai-functions);
+- the `NAMED COLLECTION` privilege on the selected credentials.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+AI functions are executed only in queries run by a user. They are rejected in mutations (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) and in the keys, TTL, skip indexes and projections of a table, which are executed in the background, and `Buffer` flushes throw an exception when they evaluate an AI function. `DEFAULT` and `MATERIALIZED` columns are evaluated by the insert; when such a column is added with `ALTER TABLE`, the existing parts compute it in the background, where AI functions are not executed.
+
+To fill a column of existing rows, use a lightweight [`UPDATE`](/reference/statements/update), which is executed by the query and writes only the updated column:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+For a table that does not meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), use `INSERT ... SELECT`, for example one partition at a time:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Named collection parameters {#named-collection-parameters}
@@ -200,23 +229,48 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
-| `AIInputTokens` | Total input tokens consumed. |
+| `AIInputTokens` | Total input tokens consumed, including cache reads and writes. |
 | `AIOutputTokens` | Total output tokens consumed. |
+| `AICacheReadTokens` | Input tokens read from the provider's prompt cache. |
+| `AICacheWriteTokens` | Input tokens written to the provider's prompt cache. |
+| `AIRequestMicroseconds` | Total time spent in AI provider calls (request serialization, HTTP round trip, response parsing), including failed attempts, excluding retry backoff. |
+| `AIRetryBackoffMicroseconds` | Total time spent waiting before retries of failed AI provider calls. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
+
+Times are summed across executions and threads, so they can exceed query wall-clock time.
+Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
+These counters are per-query, they do not provide per-request latency information.
+If a query calls multiple AI functions, their counts are added together.
+
+Cache counters are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not any internal ClickHouse caching. A provider that omits cache usage contributes
+zero cache tokens.
 
 Query these events:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
+
+`log_queries` and `log_profile_events` are enabled by default to record these events in `system.query_log`.
+Server-wide totals are also available in `system.events`.
 
 {/*
 The inner content of the tags below are replaced at doc framework build time with

@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <functional>
 #include <list>
@@ -26,6 +27,7 @@ namespace DB
 {
 
 class AnalyzeStepsStats;
+struct ExplainFormatSettings;
 
 struct PrettyNames;
 struct PrettyNamesPerPlan;
@@ -60,6 +62,9 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
+/// The id of the exchange that each send and receive step writes to or reads from.
+using MapStepToExchangeIds = std::unordered_map<const IQueryPlanStep *, UInt32>;
+
 /// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions
 {
@@ -81,6 +86,9 @@ struct ExplainPlanOptions
     /// followed by the exchanges between the fragments.
     /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
     bool fragments = false;
+    /// Draw a plan executed by stateless workers as boxes: one box per step, a frame per query fragment, and the
+    /// exchanges as edges between the fragments. Not sent to remote shards by `toSettingsChanges`, like `fragments`.
+    bool tree = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
@@ -105,6 +113,9 @@ struct ExplainPlanOptions
     /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
     /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
     const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
+    /// When set, the JSON output adds `Exchange Id` to each send and receive step in the map: the id of the exchange it
+    /// writes to or reads from. Set by `EXPLAIN PLAN fragments = 1, json = 1` (see `explainAsFragmentsJSON`).
+    const MapStepToExchangeIds * exchange_ids = nullptr;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -145,6 +156,9 @@ public:
     void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
+    static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
     void ensureSerialized(size_t max_supported_version) const;
@@ -203,6 +217,10 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+    /// The steps of `explainPlan` as a flat array in pre-order, the root first. Instead of `Plans`, each step has `Children`:
+    /// the `Node Id` of its inputs in input order, then of the roots of its nested plans (`IQueryPlanStep::getChildPlans`),
+    /// whose steps follow in the same array.
+    JSONBuilder::ItemPtr explainPlanSteps(const ExplainPlanOptions & options) const;
 
     void explainPlan(
         WriteBuffer & buffer,
@@ -251,7 +269,7 @@ public:
         std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.
@@ -354,6 +372,15 @@ struct QueryPlanAndSets
 };
 
 std::string debugExplainStep(IQueryPlanStep & step);
+
+/// The lines `EXPLAIN PLAN` prints under the line of a step, as chosen by `options`: the header, the input headers, the
+/// sorting, the actions, the indexes, the projections, the distributed plan and, with `steps_to_stats`, the measured
+/// statistics. Every line starts with `settings.detail_prefix` and ends with a newline.
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats = nullptr);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 /// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.

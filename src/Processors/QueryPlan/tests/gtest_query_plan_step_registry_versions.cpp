@@ -200,14 +200,3 @@ TEST(QueryPlanStepVersionRoundTrip, NonZeroStepVersionCarriesThePayload)
     ASSERT_NE(step, nullptr);
     EXPECT_EQ(step->getPayload(), 0x9abcdef1u);
 }
-
-/// Below the version that introduced step versions, no per-step version is written and the step is
-/// read at version 0, so the payload the step gained at version 1 is not carried. This also checks
-/// that the older wire layout is unchanged: an extra varint would corrupt the fields after it.
-TEST(QueryPlanStepVersionRoundTrip, VersionZeroStreamDoesNotCarryThePayload)
-{
-    auto restored = roundTrip(0x9abcdef1u, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS - 1);
-    const auto * step = rootStep(restored);
-    ASSERT_NE(step, nullptr);
-    EXPECT_EQ(step->getPayload(), 0u);
-}

@@ -7,6 +7,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -135,12 +136,15 @@ public:
             bool build_independent = false,
             const Block * input_header = nullptr,
             bool with_variable_size_constant_values = true) const;
+        /// What `updateHash` mixes in for this node itself, without its children.
+        void updateOwnHash(
+            SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const;
     };
 
-    /// NOTE: std::list is an implementation detail.
+    /// NOTE: the list is an implementation detail.
     /// It allows to add and remove new nodes inplace without reallocation.
     /// Raw pointers to nodes remain valid.
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
 private:
     Nodes nodes;
@@ -170,6 +174,9 @@ public:
     /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
     /// position is not usable here - the same expression can sit at a different index in the two builds.
     UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
+    /// Build-independent hash of what the outputs compute, in order: `ALIAS` nodes are looked through, and an `INPUT` is
+    /// identified as `writeCacheKeyColumnName` identifies a column of `input_header`.
+    UInt64 getComputedOutputsHash(const Block & input_header) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
@@ -314,6 +321,9 @@ public:
     /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
     void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
+    /// The constant that `foldFilterPredicateThroughMaterialize` would fold the predicate `node` to, or nullptr.
+    static ColumnConstPtr tryFoldPredicateThroughMaterialize(const Node * node);
+
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
@@ -355,11 +365,17 @@ public:
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
     static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
+    /// Inputs below `root` (or `roots`, in one walk) read by a `!isDeterministic()` function, also through a lambda body: the result
+    /// may depend on their representation (e.g. constness). `outermost_readers`, if set, receives each node where such a read starts.
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers = nullptr);
+    static std::unordered_set<const Node *> getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers = nullptr);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
+    static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
@@ -584,6 +600,8 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
+      * @param keep_runtime_filters_out_of_left_stream - the left stream is only matched against (RIGHT OUTER or ANTI join).
+      * @param keep_runtime_filters_out_of_right_stream - the right stream is only matched against (LEFT OUTER or ANTI join).
       * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
@@ -597,6 +615,8 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
         const NameSet & cross_type_equivalent_columns,
+        bool keep_runtime_filters_out_of_left_stream,
+        bool keep_runtime_filters_out_of_right_stream,
         bool filter_is_always_false);
 
     /** Build filter dag from multiple filter dags.
@@ -629,14 +649,14 @@ public:
     /// column names and prepared-set values - so the result identifies what the DAG computes rather
     /// than how this particular plan named it. See `Node::updateHash`.
     ///
-    /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
-    /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
-    /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
-    /// scalar subquery can carry a `groupBitmap` state of millions of elements. Fixed-size values are
-    /// always hashed. Two such constants that share a name then collide even when their values differ,
-    /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
-    /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
-    /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
+    /// With `with_variable_size_constant_values = false` a constant value that can be large is not
+    /// hashed: an aggregate function state (a folded scalar subquery can carry a `groupBitmap` state of
+    /// millions of elements), or another value without a fixed size, such as a string or an array,
+    /// over 1 KiB. Other values are hashed. Two constants whose values are not hashed and that share a
+    /// name then collide even when their values differ, and so do any two with `build_independent`,
+    /// which hashes no names of constants: e.g. a heavy scalar subquery over changed data (named
+    /// `__getScalar('<hash of the subquery>')`). Meant for keys where a wrong match only costs a worse
+    /// estimate, such as the hash-table-stats key.
     void updateHash(
         SipHash & hash_state,
         bool build_independent = false,

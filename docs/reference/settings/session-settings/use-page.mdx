@@ -37,6 +37,14 @@ Use userspace page cache when reading from local disks. Used for testing, unlike
 
 Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
 
+## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Text index files that are read out of file order (dictionary, postings, positions) are, by default, read through the userspace page cache with a lookahead of one block, so that the remote connection can be reused after each read. Enable this setting to make those files use `page_cache_lookahead_blocks` like other files instead.
+
 ## use_page_cache_with_distributed_cache {#use_page_cache_with_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
