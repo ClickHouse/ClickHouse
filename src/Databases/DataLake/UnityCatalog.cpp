@@ -85,6 +85,26 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
+std::pair<Poco::JSON::Object::Ptr, std::string> UnityCatalog::tryGetManagedTableJSON(const std::string & full_table_name) const
+{
+    try
+    {
+        auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name, READ_AS_MANAGED_PARAMS).first;
+        return {json.extract<Poco::JSON::Object::Ptr>(), ""};
+    }
+    catch (const DB::HTTPException & e)
+    {
+        /// Databricks answers 400 when the table cannot be read as a managed table.
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST)
+        {
+            LOG_DEBUG(log, "Unity does not expose table {} as a managed table: {}", full_table_name, e.message());
+            return {nullptr, e.message()};
+        }
+
+        throw;
+    }
+}
+
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const
 {
     const auto & context = getContext();
@@ -213,9 +233,21 @@ bool UnityCatalog::tryGetTableMetadata(
     try
     {
         std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+        Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
         {
+            if (isStreamingTableOrMaterializedView(object))
+            {
+                /// Without the managed description, the default one still gives the columns.
+                auto [managed_object, databricks_error] = tryGetManagedTableJSON(full_table_name);
+                if (managed_object)
+                    object = managed_object;
+                else
+                    result.setTableIsNotReadable(fmt::format(
+                        "Cannot read table `{}` because it has table_type '{}' and Databricks does not describe it as a managed table: {}",
+                        full_table_name, object->get("table_type").extract<String>(), databricks_error));
+            }
+
             std::string location;
             if (result.requiresLocation())
             {
@@ -471,8 +503,15 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
 
             for (size_t i = 0; i < tables_object->size(); ++i)
             {
-                const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+                auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 const auto table_name = current_table_json->get("name").extract<String>();
+
+                /// These table types need a second request with additional query parameters.
+                if (isStreamingTableOrMaterializedView(current_table_json))
+                {
+                    if (auto managed_json = tryGetManagedTableJSON(warehouse + "." + schema + "." + table_name).first)
+                        current_table_json = managed_json;
+                }
 
                 tables.push_back(CatalogTable{
                     .name = schema + "." + table_name,
