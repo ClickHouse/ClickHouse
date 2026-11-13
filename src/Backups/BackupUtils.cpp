@@ -220,7 +220,7 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         auto normalize_time_series = [&](ASTCreateQuery & query)
         {
             /// Use the same mode as InterpreterCreateQuery uses during RESTORE.
-            normalizeTimeSeriesDefinition(query, global_context, LoadingStrictnessLevel::SECONDARY_CREATE, /*is_restore_from_backup=*/true);
+            normalizeTimeSeriesDefinition(query, global_context, LoadingStrictnessLevel::RESTORE, /*is_restore_from_backup=*/true);
         };
         normalize_time_series(*query1);
         normalize_time_series(*query2);

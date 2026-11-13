@@ -599,16 +599,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
+        /// Only a freshly supplied definition is validated: a CREATE, a RESTORE or a full-definition ATTACH.
         /// Every other route re-derives a table that already exists and must keep loading. Such a
         /// replay can arrive at CREATE, so `mode` cannot tell it apart and the context carries it.
         const bool validate_substitutions = isFreshDefinition(args.mode)
-            && !args.is_restore_from_backup
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
             validate_substitutions,
-            /*validate_injected_defaults=*/ validate_substitutions || (args.is_restore_from_backup && !is_ddl_replay));
+            /*validate_injected_defaults=*/ validate_substitutions);
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -1244,7 +1243,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
           * is refused. Only a fresh definition is: a table that already exists has to keep loading,
           * however its metadata came to carry the setting - which the `convert_to_replicated` flag
           * produced before it learned to refuse such a table. That covers a short `ATTACH TABLE t`,
-          * `SECONDARY_CREATE` (`RESTORE` from a backup) and the startup levels, as well as the replays
+          * `SECONDARY_CREATE` and the startup levels, as well as the replays
           * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
           * is the way out of that state.
           */

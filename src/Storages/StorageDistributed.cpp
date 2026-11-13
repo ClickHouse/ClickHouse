@@ -608,7 +608,7 @@ StorageDistributed::StorageDistributed(
         ///
         /// Only a definition the user supplies now is rejected. A definition that is replayed - a short
         /// `ATTACH TABLE t`, the tables of an `ATTACH DATABASE`, a `Replicated` database's
-        /// `SECONDARY_CREATE`, a `RESTORE`, server startup - is read back from metadata that already
+        /// `SECONDARY_CREATE`, server startup - is read back from metadata that already
         /// exists, and rejecting it there would make the table (or the whole database) unloadable
         /// instead of failing the one insert that is actually broken. The size mismatch in
         /// `DistributedSink` remains the backstop for such a table, and `ALTER TABLE ... MODIFY QUERY`
@@ -3029,7 +3029,7 @@ void registerStorageRemote(StorageFactory & factory)
         /// same existing-metadata case: only an `ATTACH` query that carries a full definition
         /// introduces one that still needs validation.
         ///
-        /// A backup `RESTORE` is different: it reaches here with `args.mode == SECONDARY_CREATE` and
+        /// A backup `RESTORE` is different: it reaches here with `args.mode == RESTORE` and
         /// `args.is_restore_from_backup`, introducing the definition under a possibly different user, so it
         /// must be validated like a `CREATE`. Both the plain local-shard `SELECT`/`INSERT` check below and
         /// the table-function analysis run for it, otherwise a user who can restore could smuggle in

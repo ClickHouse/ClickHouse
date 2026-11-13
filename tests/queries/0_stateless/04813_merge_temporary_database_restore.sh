@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# A `Merge` table over `_temporary_and_external_tables` created before the database became
-# forbidden must remain restorable from a backup: `RESTORE` (like replicated-database DDL
-# replay) brings back previously stored metadata, not fresh user input, so only reading
-# from the table is denied. The backup is prepared from a legitimate definition and then
-# edited on disk, because such a table can no longer be created directly.
+# A backup is user input: `RESTORE` of a `Merge` table over `_temporary_and_external_tables` is
+# denied like a `CREATE`. The backup is prepared from a legitimate definition and then edited on
+# disk, because such a table cannot be created directly.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,12 +34,7 @@ BACKUP TABLE m TO File('${WORK_DIR}/backups/b1') FORMAT Null;
 sed -i "s/${SRC_DB}/_temporary_and_external_tables/" "${WORK_DIR}/backups/b1/metadata/default/m.sql"
 
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG}" --path "${WORK_DIR}/data_restored" -q "
-RESTORE TABLE default.m FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
-SHOW CREATE TABLE m;
--- Introspection stays best-effort for the restored table: the size columns of \`system.columns\`
--- go through \`StorageMerge::tryGetColumnSizes\`, which must not throw for the forbidden database.
-SELECT name, type, data_compressed_bytes FROM system.columns WHERE database = currentDatabase() AND table = 'm';
-SELECT * FROM m; -- { serverError DATABASE_ACCESS_DENIED }
+RESTORE TABLE default.m FROM File('${WORK_DIR}/backups/b1') FORMAT Null; -- { serverError DATABASE_ACCESS_DENIED }
 "
 
 rm -rf "${WORK_DIR}"

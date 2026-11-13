@@ -3303,11 +3303,10 @@ void registerStorageMerge(StorageFactory & factory)
         /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
         /// does not need schema inference and would not read the source tables, so the unusable table definition
         /// would be stored; deny it right away, the same way as reading does, see `DatabaseNameOrRegexp::getDatabaseIterator`.
-        /// Only fresh user-supplied definitions are denied. Loads of previously stored metadata (server startup,
-        /// short-syntax `ATTACH`) and replays of definitions that already exist elsewhere (`SECONDARY_CREATE`:
-        /// replicated-database DDL replay, backup `RESTORE`) stay loadable, so a table created before this check
-        /// existed can still be restored or materialized on a new replica. Reading from such a table is denied
-        /// anyway, so unlike `StorageDistributed` there is nothing a restoring user could reach through it.
+        /// Only fresh user-supplied definitions (including a backup `RESTORE`) are denied. Loads of previously stored
+        /// metadata (server startup, short-syntax `ATTACH`) and replays of definitions that already exist elsewhere
+        /// (`SECONDARY_CREATE`: replicated-database DDL replay) stay loadable, so a table created before this check
+        /// existed can still be materialized on a new replica. Reading from such a table is denied anyway.
         bool fresh_user_definition = isFreshDefinition(args.mode);
         if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
             && fresh_user_definition)

@@ -12,16 +12,18 @@ enum class LoadingStrictnessLevel : uint8_t
 {
     /// Fresh definition, no existing state: do all sanity checks
     CREATE = 0,
-    /// Replay of a definition validated elsewhere (internal queries in DatabaseReplicated; RESTORE)
+    /// Replay of a definition validated elsewhere (internal queries in DatabaseReplicated)
     SECONDARY_CREATE = 1,
+    /// Restore from a backup: user input that creates new state
+    RESTORE = 2,
     /// ATTACH stating the whole definition: user input, existing state expected
-    ATTACH_FULL_DEFINITION = 2,
+    ATTACH_FULL_DEFINITION = 3,
     /// Replay of a stored definition, existing state expected
-    ATTACH = 3,
+    ATTACH = 4,
     /// We ignore some error on server startup
-    FORCE_ATTACH = 4,
+    FORCE_ATTACH = 5,
     /// Skip all sanity checks (if force_restore_data flag exists)
-    FORCE_RESTORE = 5,
+    FORCE_RESTORE = 6,
 };
 
 bool operator<(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
@@ -29,12 +31,13 @@ bool operator<=(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
 bool operator>(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
 bool operator>=(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
 
-LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary, bool full_definition);
+LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary, bool full_definition, bool restore);
 
 /// The definition is user input now, so it gets every check `CREATE` runs.
 inline bool isFreshDefinition(LoadingStrictnessLevel level)
 {
-    return level == LoadingStrictnessLevel::CREATE || level == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION;
+    return level == LoadingStrictnessLevel::CREATE || level == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION
+        || level == LoadingStrictnessLevel::RESTORE;
 }
 
 /// Data, paths and ZooKeeper nodes of the object are expected to exist already.

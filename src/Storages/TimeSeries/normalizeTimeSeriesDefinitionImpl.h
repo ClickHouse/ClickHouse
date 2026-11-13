@@ -18,7 +18,7 @@ struct Settings;
 /// (on ATTACH) doesn't use it, so the corresponding fields can be left empty then.
 struct NormalizeTimeSeriesDefinitionParams
 {
-    /// How the table is loaded: `CREATE` or `SECONDARY_CREATE` for a new table, an `ATTACH` level for an existing one.
+    /// How the table is loaded: `CREATE`, `SECONDARY_CREATE` or `RESTORE` for a new table, an `ATTACH` level for an existing one.
     LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
 
     /// Whether the table is restored from a backup: such a table is an existing one whatever `mode` is.

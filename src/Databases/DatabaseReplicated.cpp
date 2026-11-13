@@ -804,7 +804,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 
 void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookeeper, LoadingStrictnessLevel mode)
 {
-    bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
+    bool is_create_query = mode == LoadingStrictnessLevel::CREATE || mode == LoadingStrictnessLevel::RESTORE;
 
     String replica_host_id;
     bool replica_exists_in_zk = current_zookeeper->tryGet(replica_path, replica_host_id);

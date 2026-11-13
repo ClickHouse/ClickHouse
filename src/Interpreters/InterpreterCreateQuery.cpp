@@ -420,7 +420,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// `loadMetadata` replays a stored full definition.
     const bool full_definition = create.attach && !create.attach_short_syntax && !is_metadata_replay;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false, full_definition);
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false, full_definition, is_restore_from_backup);
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef()[Setting::enable_database_materialized_postgresql] && !internal && isFreshDefinition(mode))
@@ -490,7 +490,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!load_database_without_tables)
         {
             /// The tables are loaded from stored metadata even when the database definition is fresh.
-            const auto tables_mode = mode == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION ? LoadingStrictnessLevel::ATTACH : mode;
+            auto tables_mode = mode;
+            if (mode == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION)
+                tables_mode = LoadingStrictnessLevel::ATTACH;
+            else if (mode == LoadingStrictnessLevel::RESTORE)
+                tables_mode = LoadingStrictnessLevel::CREATE;
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, tables_mode};
             auto load_tasks = loader.loadTablesAsync();
@@ -714,10 +718,10 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 namespace
 {
 
-/// The gate guards only new declarations; tables that have them load, are restored, are altered and are refreshed without it.
-void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+/// The gate guards only new declarations; tables that have them load, are altered and are refreshed without it.
+void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode)
 {
-    if (isFreshDefinition(mode) && !is_restore_from_backup && !context->getParentTable()
+    if (isFreshDefinition(mode) && !context->getParentTable()
         && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
 }
@@ -736,8 +740,7 @@ void applyCodecDeclarations(
     const ASTExpressionList & declarations,
     ColumnsDescription & columns,
     const ContextPtr & context,
-    LoadingStrictnessLevel mode,
-    bool is_restore_from_backup)
+    LoadingStrictnessLevel mode)
 {
     const bool skip_checks = !isFreshDefinition(mode);
     const CodecValidationSettings codec_validation_settings
@@ -766,7 +769,7 @@ void applyCodecDeclarations(
 
         if (target->isSubcolumn())
         {
-            checkSubcolumnCodecsAreEnabled(context, mode, is_restore_from_backup);
+            checkSubcolumnCodecsAreEnabled(context, mode);
             if (owner.subcolumn_codecs.contains(target->getSubcolumnName()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Codec for subcolumn {} is declared more than once", backQuote(declaration.name));
@@ -960,7 +963,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     if (columns_list.codec_declarations)
-        applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode, is_restore_from_backup);
+        applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode);
 
     return res;
 }
@@ -1067,7 +1070,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
     /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
     /// schema, so `attach_short_syntax` is false and it goes through the create-like path). Short ATTACH
-    /// (`ATTACH TABLE t;`) and SECONDARY_CREATE (`DatabaseReplicated` internal queries, `RESTORE`) stay
+    /// (`ATTACH TABLE t;`) and SECONDARY_CREATE (`DatabaseReplicated` internal queries) stay
     /// permissive so previously-validated metadata that persisted these forms still loads. Server startup
     /// does not reach this function (tables are loaded via `createTableFromAST`), so it is unaffected.
     if (isFreshDefinition(mode) && create.is_clone_as && create.as_table.empty())
@@ -1175,7 +1178,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Copying subcolumn codecs is a new declaration of them.
         for (const auto & column : properties.columns)
             if (!column.subcolumn_codecs.empty())
-                checkSubcolumnCodecsAreEnabled(getContext(), mode, is_restore_from_backup);
+                checkSubcolumnCodecsAreEnabled(getContext(), mode);
 
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
@@ -2145,11 +2148,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
-    const bool is_secondary = is_secondary_query || is_restore_from_backup;
     /// A replay on a secondary replica or from stored metadata is not user input.
-    const bool full_definition = create.attach && !create.attach_short_syntax && !isStubAttach(create) && !is_secondary
-        && !getContext()->isRecoveryFromStoredMetadata();
-    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary, full_definition);
+    const bool full_definition = create.attach && !create.attach_short_syntax && !isStubAttach(create) && !is_secondary_query
+        && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+    auto mode = getLoadingStrictnessLevel(
+        create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query, full_definition, is_restore_from_backup);
 
     /// A replayed definition stays loadable with the setting off.
     if (isFreshDefinition(mode))
@@ -2338,8 +2341,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// refreshes through `InterpreterInsertQuery`, not `executeQuery`. Reject them in a view
         /// definition rather than shaping inconsistently — put them on the query that reads the view.
         ///
-        /// Only a fresh definition is rejected. Replays (short `ATTACH`, metadata load on startup,
-        /// Replicated database DDL, ON CLUSTER, restore from backup) must keep loading definitions that
+        /// Only a fresh definition (including `RESTORE`) is rejected. Replays (short `ATTACH`, metadata load on startup,
+        /// Replicated database DDL, ON CLUSTER) must keep loading definitions that
         /// were stored before this rule existed: `limit` and `offset` are pre-existing setting names,
         /// so `SETTINGS limit = 10` can legitimately occur in old view metadata.
         if (isFreshDefinition(mode) && hasConstructionSettings(*create.select))
@@ -2349,8 +2352,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
-        /// A definition replayed from metadata or restored from a backup was bounded when it was created.
-        /// A full `ATTACH ... AS SELECT` is user input, so it is bounded as well, and so is a fresh `CREATE`
+        /// A definition replayed from metadata was bounded when it was created. A full `ATTACH ... AS SELECT`
+        /// and a `RESTORE` are user input, so they are bounded as well, and so is a fresh `CREATE`
         /// executed on a follower replica of a `Replicated` database: it carries the settings of the initial
         /// query, and no earlier pass on this replica has expanded it.
         const bool is_fresh_secondary_create = mode == LoadingStrictnessLevel::SECONDARY_CREATE && is_secondary_query
@@ -2436,12 +2439,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    /// A `RESTORE` that drops the view's UUID supplies a definition too: restore overwrites
-    /// `create.uuid` but not `create.has_uuid`, so `has_uuid` still reports the backup's own metadata
-    /// and separates a view that had a UUID (about to lose it here) from one that never had one.
-    const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
-    if (create.refresh_strategy && !create.refresh_strategy->isAppend()
-        && (isFreshDefinition(mode) || is_uuid_losing_restore))
+    if (create.refresh_strategy && !create.refresh_strategy->isAppend() && isFreshDefinition(mode))
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -2453,8 +2451,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && isFreshDefinition(mode))
+    /// Check type compatible for materialized dest table and select columns.
+    /// Not on `RESTORE`: the check depends on other tables, which a partial or out-of-order restore may not have yet.
+    if (create.select && create.is_materialized_view && isFreshDefinition(mode) && mode != LoadingStrictnessLevel::RESTORE)
     {
         // An MV with a flattened nested column in an inner table can never be filled
         if (create.is_materialized_view_with_inner_table())
