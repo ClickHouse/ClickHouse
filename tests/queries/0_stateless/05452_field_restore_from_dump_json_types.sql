@@ -51,3 +51,10 @@ SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{
 
 -- 9. A Map element must be a key-value tuple.
 SELECT formatQueryFromJSON($${"type":"SetQuery","changes":[{"name":"a","value":{"field_type":"UUID","value":"Map_('k', Int64_2)"}}]}$$); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+
+-- 10. A Map element read from a JSON-native `Map` field must be a key-value tuple as well.
+SELECT formatQueryFromJSON(parseQueryToJSON('SET SQL_a = {''k'':''v''}'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SET SQL_a = {''k'':''v''}'), '"value":[{"field_type":"String","value":"k"},{"field_type":"String","value":"v"}]', '"value":[]')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SET SQL_a = {''k'':''v''}'), '"value":[{"field_type":"String","value":"k"},{"field_type":"String","value":"v"}]', '"value":[{"field_type":"String","value":"k"}]')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SET SQL_a = {''k'':''v''}'), '{"field_type":"String","value":"v"}', '{"field_type":"String","value":"v"},{"field_type":"String","value":"w"}')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SET SQL_a = {''k'':''v''}'), '{"field_type":"Tuple","value":[{"field_type":"String","value":"k"},{"field_type":"String","value":"v"}]}', '{"field_type":"String","value":"k"}')); -- { serverError BAD_ARGUMENTS }

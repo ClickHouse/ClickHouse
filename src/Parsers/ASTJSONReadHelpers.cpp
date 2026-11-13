@@ -388,7 +388,11 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             auto elem = json_arr->getObject(i);
             if (!elem)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Map field during AST JSON deserialization", i);
-            map.push_back(readFieldFromObjectImpl(*elem, depth + 1));
+            Field entry = readFieldFromObjectImpl(*elem, depth + 1);
+            if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Element at index {} in Map field is not a key-value tuple during AST JSON deserialization", i);
+            map.push_back(std::move(entry));
         }
         return Field(std::move(map));
     }
