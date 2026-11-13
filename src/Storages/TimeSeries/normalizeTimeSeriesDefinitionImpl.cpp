@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -700,23 +702,30 @@ namespace
 
     /// The expression of `SET samples = ...` of a downsampling TTL rule: the samples of the group sorted and merged by
     /// `timeSeriesGroupArray`, then only the last sample of each `[k * interval, (k + 1) * interval)` interval is kept.
-    /// The grid keeps the native type of the timestamps: `DateTime` and `DateTime64` go into `toStartOfInterval` as they
-    /// are, so their scale and signed range stay intact; a raw `UInt32` is wrapped with `toDateTime` first, which is exact
-    /// over that type. The timezone is named because `toStartOfInterval` counts from local midnight, while the intervals
-    /// must count from the Unix epoch like the buckets.
+    /// The interval id is the timestamp rounded down to a multiple of the interval, toward negative infinity, in the
+    /// native ticks of the type: the raw `Int64` of a `DateTime64`, or Unix seconds of a `DateTime` or `UInt32`.
+    /// The step is at most `UInt32::max` and the interval divides it, so the modulus stays inside `Int64`.
     ASTPtr makeDownsampledSamplesExpression(UInt64 interval_seconds, const DataTypePtr & timestamp_type)
     {
+        const auto scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+        const Int64 interval_ticks = static_cast<Int64>(interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(scale);
+
         auto samples = [] { return makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)); };
         /// The operators are marked as such to be formatted as `(s, i) -> ... a[i + 1].1 ...`, the way the parser reads them back.
         auto start_of_interval = [&](ASTPtr sample)
         {
-            auto timestamp = makeASTOperator("tupleElement", std::move(sample), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
-            if (WhichDataType{timestamp_type}.isUInt32())
-                timestamp = makeASTFunction("toDateTime", std::move(timestamp), make_intrusive<ASTLiteral>(String{"UTC"}));
-            return makeASTFunction("toStartOfInterval",
-                std::move(timestamp),
-                makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(interval_seconds)),
-                make_intrusive<ASTLiteral>(String{"UTC"}));
+            auto timestamp = [&]()
+            {
+                return makeASTOperator("tupleElement", sample->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+            };
+            auto ticks = [&]()
+            {
+                if (WhichDataType{timestamp_type}.isDateTime64())
+                    return makeASTFunction("reinterpret", timestamp(), make_intrusive<ASTLiteral>(String{"Int64"}));
+                return makeASTFunction("toUnixTimestamp", timestamp());
+            };
+            return makeASTOperator("minus", ticks(),
+                makeASTFunction("positiveModulo", ticks(), make_intrusive<ASTLiteral>(static_cast<UInt64>(interval_ticks))));
         };
 
         auto is_last_in_array = makeASTOperator("equals", make_intrusive<ASTIdentifier>("i"), makeASTFunction("length", samples()));

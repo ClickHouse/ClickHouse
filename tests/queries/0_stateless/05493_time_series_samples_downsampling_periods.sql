@@ -73,7 +73,7 @@ INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (to
 OPTIMIZE TABLE ts FINAL;
 SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 CREATE TABLE ts_copy AS ts;
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%' AND engine_full LIKE '%toStartOfInterval(toDateTime(%';
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%' AND engine_full LIKE '%positiveModulo(toUnixTimestamp(s.1), 7)%';
 DROP TABLE ts_copy;
 DROP TABLE ts;
 
