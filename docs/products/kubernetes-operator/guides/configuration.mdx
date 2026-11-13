@@ -1204,7 +1204,7 @@ spec:
 
 Besides reacting to Kubernetes events, the operator re-reconciles every cluster on a fixed interval. This keeps status conditions fresh for state that no watch can observe — ClickHouse replica health, Keeper quorum — and retries remediation such as stuck-pod cleanup.
 
-The interval is controlled by the operator's `RESYNC_PERIOD` environment variable (default `30s`). It applies to `KeeperCluster` resources, where `0` disables the periodic resync. `ClickHouseCluster` resources poll ClickHouse `system.warnings` every 30 seconds, which already re-triggers reconciliation, so `RESYNC_PERIOD` currently has no effect on them.
+The interval is controlled by the operator's `RESYNC_PERIOD` environment variable (default `30s`); `0` disables the periodic resync for both `KeeperCluster` and `ClickHouseCluster` resources.
 
 ```yaml
 # in the operator Deployment spec
@@ -1214,6 +1214,12 @@ env:
 ```
 
 The operator reconciles clusters concurrently; the number of parallel reconciles per controller is set by `MAX_CONCURRENT_RECONCILES` (default `4`).
+
+## Cluster observation {#cluster-observation}
+
+Outside the reconciliation loop, the operator periodically observes the externally visible state of every cluster: Keeper quorum via the `mntr` command, and ClickHouse replica reachability, applied configuration-reload revisions, and `system.warnings`. When the observed state changes, the affected cluster is reconciled immediately, so health transitions and completed configuration reloads reach the status conditions within the observation interval instead of waiting for a Kubernetes event or the next resync.
+
+The interval is controlled by the operator's `OBSERVE_INTERVAL` environment variable (default `15s`). Setting it to `0` disables observation: observed state transitions then surface only on the `RESYNC_PERIOD` cadence.
 
 ## Pausing reconciliation {#pausing-reconciliation}
 

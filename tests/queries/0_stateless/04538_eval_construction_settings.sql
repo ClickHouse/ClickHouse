@@ -6,7 +6,7 @@
 -- expecting them to have been materialized already as an outer `LIMIT` / `OFFSET`, so without `eval`
 -- materializing them itself the cap was ignored.
 
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 
 -- { echoOn }
 -- `limit` caps the generated query's result.

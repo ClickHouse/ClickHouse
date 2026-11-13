@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     all_running = True
     while all_running:
-        start = time.time()
+        start = time.monotonic()
         finish = start + 1
 
         while all_running and start < finish:
