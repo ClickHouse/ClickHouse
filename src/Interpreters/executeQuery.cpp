@@ -2491,6 +2491,29 @@ static void checkQueryIsAllowedOnIntrospectionPort(const IAST & ast, const Conte
             ASTSystemQuery::typeToString(system_query->type));
 }
 
+/// `removeSettingsFromQueryTopLevel` does not unwrap EXPLAIN or `CREATE ... AS SELECT`; retarget to
+/// the node it would otherwise miss before calling it.
+static void stripInferredSettingDefault(const ASTPtr & ast, std::string_view setting_name)
+{
+    ASTPtr target = ast;
+    if (auto * explain_query = ast->as<ASTExplainQuery>())
+    {
+        if (explain_query->settings_ast)
+            if (auto * set_query = explain_query->settings_ast->as<ASTSetQuery>())
+            {
+                stripNamesFromSetQuery(*set_query, {&setting_name, 1});
+                if (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())
+                    explain_query->reset(explain_query->settings_ast);
+            }
+        target = explain_query->getExplainedQuery();
+    }
+
+    if (const auto * create_query = target ? target->as<ASTCreateQuery>() : nullptr; create_query && create_query->select)
+        target = create_query->select->ptr();
+
+    removeSettingsFromQueryTopLevel(target, {&setting_name, 1});
+}
+
 
 static BlockIO executeQueryImpl(
     const char * begin,
@@ -3048,7 +3071,7 @@ static BlockIO executeQueryImpl(
 
                 /// The query tree builder re-applies this clause, and the reset would undo the inferred value.
                 if (!make_distributed_plan_was_set && settings[Setting::make_distributed_plan])
-                    InterpreterSetQuery::removeSettingDefaultFromQuery(out_ast, "make_distributed_plan");
+                    stripInferredSettingDefault(out_ast, "make_distributed_plan");
             }
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must

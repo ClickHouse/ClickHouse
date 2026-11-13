@@ -23,7 +23,6 @@
 #include <Storages/StorageFactory.h>
 #include <Common/SettingsChanges.h>
 
-#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -131,53 +130,6 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     const auto * last_select = children.back()->as<ASTSelectQuery>();
     if (last_select && last_select->settings())
         InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
-}
-
-static void dropSettingDefault(const ASTPtr & settings_ast, const String & setting_name)
-{
-    if (auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr)
-        std::erase(set_query->default_settings, setting_name);
-}
-
-static void dropSettingDefaultFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, const String & setting_name)
-{
-    const ASTs & children = select_with_union.list_of_selects->children;
-    const auto * last_select = children.empty() ? nullptr : children.back()->as<ASTSelectQuery>();
-    if (last_select)
-        dropSettingDefault(last_select->settings(), setting_name);
-}
-
-/// Same clauses as `applySettingsFromQuery`; it must change with it.
-void InterpreterSetQuery::removeSettingDefaultFromQuery(const ASTPtr & ast, const String & setting_name)
-{
-    if (!ast)
-        return;
-
-    if (const auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
-    {
-        dropSettingDefault(query_with_output->settings_ast, setting_name);
-
-        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-            dropSettingDefaultFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), setting_name);
-    }
-
-    if (const auto * select_query = ast->as<ASTSelectQuery>())
-    {
-        dropSettingDefault(select_query->settings(), setting_name);
-    }
-    else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
-    {
-        dropSettingDefaultFromSelectWithUnion(*select_with_union_query, setting_name);
-    }
-    else if (const auto * explain_query = ast->as<ASTExplainQuery>())
-    {
-        dropSettingDefault(explain_query->settings_ast, setting_name);
-        removeSettingDefaultFromQuery(explain_query->getExplainedQuery(), setting_name);
-    }
-    else if (const auto * insert_query = ast->as<ASTInsertQuery>())
-    {
-        dropSettingDefault(insert_query->settings_ast, setting_name);
-    }
 }
 
 namespace
