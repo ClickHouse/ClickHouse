@@ -27,6 +27,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/FixedHashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/RowsSkipBudget.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/PartitionedFixedHashTable.h>
@@ -118,6 +119,18 @@ struct BuildResult
 {
     bool is_inserted = false;
     bool all_values_unique = true;
+};
+
+/// What a probe stream of `INTERSECT ALL` or `EXCEPT ALL` keeps from one block to the next: the table it pre-aggregates the
+/// rows of its blocks in.
+struct SetOperationProbeState
+{
+    struct PreAggregationTable
+    {
+        virtual ~PreAggregationTable() = default;
+    };
+
+    std::unique_ptr<PreAggregationTable> pre_aggregation_table;
 };
 
 /** Data structure for implementation of hash JOIN.
@@ -267,7 +280,7 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    JoinResultPtr joinBlock(Block block) override;
+    JoinResultPtr joinBlock(Block block, JoinProbeContext context) override;
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -663,6 +676,15 @@ public:
 
         BuildSlots slots;
 
+        /// The lock under which the counts of a bucket are updated.
+        struct alignas(CH_CACHE_LINE_SIZE) SetOperationBucketLock
+        {
+            std::mutex mutex;
+        };
+        mutable std::array<SetOperationBucketLock, NUM_HASH_TABLE_BUCKETS> set_operation_bucket_locks;
+        /// Throttles the pre-aggregation of the probe of `INTERSECT ALL` and `EXCEPT ALL` for all probe streams.
+        mutable RowsSkipBudget set_operation_pre_aggregation_skip_budget;
+
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
         /// Number of rows of right table to join
@@ -813,6 +835,13 @@ private:
     std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
 
+    /// What each probe stream keeps from one of its blocks to the next, by the number of the stream.
+    /// Sized once, by the first call of a probe stream.
+    std::once_flag init_probe_states_once;
+    std::vector<SetOperationProbeState> probe_states;
+
+    SetOperationProbeState * getProbeState(JoinProbeContext context);
+
     std::vector<Sizes> key_sizes;
 
     /// Block with columns from the right-side table.
@@ -886,7 +915,7 @@ private:
 
     class ContinuationResult;
 
-    JoinResultPtr runJoinDispatch(ScatteredBlock block);
+    JoinResultPtr runJoinDispatch(ScatteredBlock block, SetOperationProbeState * probe_state);
 
     bool preferUseMapsAll() const;
 

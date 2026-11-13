@@ -35,3 +35,14 @@ a	String
 2	3
 
 0	7
+-- One row of a key stands for its copies in the result, also when the result is split into small blocks.
+3335	14995
+6665	30005
+-- A block with more keys than the probe pre-aggregation table holds.
+25000	62487500
+75000	187462500
+-- Repeated rows with lazy output, which a small LIMIT above the join turns on.
+1000	2495	998	499
+1000	167	999	167
+-- A swapped EXCEPT ALL keeps only the right blocks with a row it outputs.
+10000	2

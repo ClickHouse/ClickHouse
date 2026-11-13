@@ -53,7 +53,7 @@ public:
 
     void checkTypesOfKeys(const Block &) const override {}
 
-    JoinResultPtr joinBlock(Block block) override;
+    JoinResultPtr joinBlock(Block block, JoinProbeContext context) override;
 
     size_t getTotalRowCount() const override { return in_memory_rows; }
     size_t getTotalByteCount() const override;

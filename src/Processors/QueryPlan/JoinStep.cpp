@@ -681,7 +681,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, output_header, join, max_block_size, on_totals, default_totals, counter, match_counter);
+        return std::make_shared<JoiningTransform>(header, output_header, join, JoinProbeContext::none(), max_block_size, on_totals, default_totals, counter, match_counter);
     });
 }
 

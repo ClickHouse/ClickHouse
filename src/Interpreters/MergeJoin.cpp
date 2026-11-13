@@ -939,7 +939,7 @@ public:
     }
 };
 
-JoinResultPtr MergeJoin::joinBlock(Block block)
+JoinResultPtr MergeJoin::joinBlock(Block block, JoinProbeContext /*context*/)
 {
     return std::make_unique<MergeJoinResult>(std::move(block), *this);
 }

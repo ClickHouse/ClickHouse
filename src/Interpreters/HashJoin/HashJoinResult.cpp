@@ -448,7 +448,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
         /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
         if (properties.need_filter)
-            scattered_block->filter(std::span<UInt64>{matched_rows});
+            scattered_block->filter(std::span<UInt64>{matched_rows}, properties.matched_rows_have_repeats);
         if (properties.enable_lazy_columns_indexing)
             scattered_block->filterBySelectorLazily();
         else
@@ -577,7 +577,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
     if (properties.need_filter)
-        current_scattered_block.filter(partial_matched_rows);
+        current_scattered_block.filter(partial_matched_rows, properties.matched_rows_have_repeats);
     if (properties.enable_lazy_columns_indexing)
         current_scattered_block.filterBySelectorLazily();
     else

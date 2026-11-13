@@ -109,7 +109,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
-    JoinResultPtr joinBlock(Block block) override;
+    JoinResultPtr joinBlock(Block block, JoinProbeContext context) override;
     void joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed);
 
     void setTotals(const Block &) override;
