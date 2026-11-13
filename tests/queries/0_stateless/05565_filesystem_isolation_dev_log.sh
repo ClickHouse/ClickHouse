@@ -49,7 +49,7 @@ cat > "$DIR/conf/config.xml" <<EOF
     <named_collections>
         <shared_cache>
             <path>$DIR/cache_from_named_collection/</path>
-            <max_size>1048576</max_size>
+            <max_size>1073741824</max_size>
         </shared_cache>
     </named_collections>
     <storage_configuration>
@@ -103,3 +103,8 @@ echo "dev/pts: $(ls "/proc/$PID/root/dev/pts" | paste -sd ' ')"
 echo "working directory: $(ls "/proc/$PID/root$DIR/work" | paste -sd ' ')"
 echo "definitions: $(ls "/proc/$PID/root$DIR/work/definitions" | paste -sd ' ')"
 echo "cache from a named collection: $([ -d "/proc/$PID/root$DIR/cache_from_named_collection" ] && echo visible || echo invisible)"
+# The checks above see the root of a running server only.
+if ! kill -0 "$PID" 2>/dev/null; then
+    echo "The server exited"
+    cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
+fi
