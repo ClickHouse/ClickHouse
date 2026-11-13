@@ -91,4 +91,6 @@ StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool();
 
 StaticThreadPool & getFormatParsingThreadPool();
 
+StaticThreadPool & getParquetEncoderThreadPool();
+
 }

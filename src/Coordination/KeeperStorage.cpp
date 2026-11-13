@@ -2573,7 +2573,9 @@ processImpl(const Coordination::ZooKeeperCheckWatchRequest & zk_request, Storage
         }
     }
 
-    if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
+    if (!magic_enum::enum_contains(zk_request.type))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
         response->error = Coordination::Error::ZNOWATCHER;
     return response;
 }
@@ -2610,7 +2612,9 @@ processImpl(const Coordination::ZooKeeperRemoveWatchRequest & zk_request, Storag
         }
     }
 
-    if (!storage.removePersistentWatch(zk_request.path, zk_request.type, session_id))
+    if (!magic_enum::enum_contains(zk_request.type))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else if (!storage.removePersistentWatch(zk_request.path, zk_request.type, session_id))
         response->error = Coordination::Error::ZNOWATCHER;
 
     return response;
@@ -2648,7 +2652,10 @@ processImpl(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage &
         }
     }
 
-    storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
+    if (!magic_enum::enum_contains(zk_request.mode))
+        response->error = Coordination::Error::ZBADARGUMENTS;
+    else
+        storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
     return response;
 }
 

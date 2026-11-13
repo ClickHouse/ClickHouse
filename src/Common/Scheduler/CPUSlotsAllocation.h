@@ -17,6 +17,7 @@ namespace DB
 {
 
 class CPUSlotsAllocation;
+class ThreadGroup;
 
 // Represents a resource request for a cpu slot for a single thread
 class CPUSlotRequest final : public ResourceRequest
@@ -113,6 +114,9 @@ private:
     std::vector<CPUSlotRequest> requests; // Requests per every slot
     CPUSlotRequest * current_request;
     std::optional<CurrentMetrics::Increment> scheduled_slot_increment;
+    /// `wait_timer` may end on another thread after the creating one has exited, so it counts into the query's group, kept alive here.
+    std::shared_ptr<ThreadGroup> wait_thread_group;
+    ProfileEvents::Counters * wait_counters = &ProfileEvents::global_counters;
     std::optional<ProfileEvents::Timer> wait_timer;
 };
 

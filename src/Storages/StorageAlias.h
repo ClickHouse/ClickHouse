@@ -55,7 +55,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(
@@ -143,6 +143,7 @@ public:
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getTargetTable()->supportsDeduplication(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }

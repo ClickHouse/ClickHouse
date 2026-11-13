@@ -1370,9 +1370,10 @@ private:
                     if (memory_buffer_partitions.size() < configuration.max_partitions_count)
                     {
                         /// Try tro create next partition without reusing old partitions
-                        ++current_partition_index;
                         file_buffer.allocateSizeForNextPartition();
                         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
+                        /// Advance only after both calls succeed, so the index stays valid if one of them throws.
+                        ++current_partition_index;
                     }
                     else
                     {

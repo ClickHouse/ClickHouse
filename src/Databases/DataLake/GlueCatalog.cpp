@@ -20,6 +20,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <base/unit.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -77,8 +78,8 @@ namespace DB::ServerSetting
 
 namespace CurrentMetrics
 {
-    extern const Metric MarkCacheBytes;
-    extern const Metric MarkCacheFiles;
+    extern const Metric GlueCatalogSchemaCacheBytes;
+    extern const Metric GlueCatalogSchemaCacheEntries;
 }
 
 namespace DataLake
@@ -95,7 +96,7 @@ GlueCatalog::GlueCatalog(
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
-    , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
+    , current_schema_field_types(CurrentMetrics::GlueCatalogSchemaCacheBytes, CurrentMetrics::GlueCatalogSchemaCacheEntries, 16_MiB)
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
@@ -466,7 +467,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
 
     const String & metadata_uri = table_specific_properties->iceberg_metadata_file_location;
 
-    if (!metadata_objects.get(metadata_uri))
+    auto [field_types, _] = current_schema_field_types.getOrSet(metadata_uri, [&]
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
         const auto & read_settings = getContext()->getReadSettings();
@@ -479,28 +480,42 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file_content);
         auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
-        metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
-    }
+        return std::make_shared<FieldTypes>(getCurrentSchemaFieldTypes(metadata_object));
+    });
 
-    auto metadata_object = *metadata_objects.get(metadata_uri);
+    auto it = field_types->find(column_name);
+    return it != field_types->end() && it->second == DB::Iceberg::f_timestamptz;
+}
+
+GlueCatalog::FieldTypes GlueCatalog::getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    FieldTypes result;
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));
-        if (schema->getValue<Int64>("schema-id") == current_schema_id)
+        if (schema->getValue<Int64>("schema-id") != current_schema_id)
+            continue;
+
+        auto fields = schema->getArray(DB::Iceberg::f_fields);
+        for (size_t j = 0; j < fields->size(); ++j)
         {
-            auto fields = schema->getArray(DB::Iceberg::f_fields);
-            for (size_t j = 0; j < fields->size(); ++j)
-            {
-                auto field = fields->getObject(static_cast<UInt32>(j));
-                if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
-                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
-            }
+            auto field = fields->getObject(static_cast<UInt32>(j));
+            auto type = field->get(DB::Iceberg::f_type);
+            if (type.isString())
+                result.emplace(field->getValue<String>(DB::Iceberg::f_name), type.extract<String>());
         }
     }
+    return result;
+}
 
-    return false;
+size_t GlueCatalog::FieldTypesWeightFunction::operator()(const FieldTypes & field_types) const
+{
+    size_t result = 0;
+    for (const auto & [name, type] : field_types)
+        result += sizeof(FieldTypes::value_type) + name.size() + type.size();
+    return result;
 }
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
