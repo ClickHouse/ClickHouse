@@ -15,8 +15,24 @@ NOT_IMPLEMENTED
 -- s3, gs:// path on S3
 is not in the bucket
 NOT_IMPLEMENTED
+-- azure, abfss:// and wasbs:// URIs
+45	10
+45	10
+-- azure, another container, another account, s3a:// scheme, a dot segment, an empty segment
+is not in the container
+NOT_IMPLEMENTED
+is not in the container
+NOT_IMPLEMENTED
+is not in the container
+NOT_IMPLEMENTED
+is not in the container
+NOT_IMPLEMENTED
+is not in the container
+NOT_IMPLEMENTED
 -- a user granted only the clone
 value
 necessary to have the grant READ ON FILE
 value
 necessary to have the grant READ ON S3
+value
+necessary to have the grant READ ON AZURE
