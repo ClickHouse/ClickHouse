@@ -231,7 +231,7 @@ A sparse `Nullable(T)` column is a special case, because the default value of `N
 
 A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for each output row `i`. Composite inner types recurse: the element list is materialized in the inner type, then indexed. Supported inner types include the leaf types, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)` (each field expanded like an `Array`), and `LowCardinality(T)` (the shared dictionary is kept; only the per-element keys are indexed).
 
-**Detached wire format.** `DETACHED` (`0x02`) and `DETACHED_OVER_SPARSE` (`0x03`) *do* appear over the wire — they are not purely internal. On the TCP path, when compression is enabled and the negotiated revision is at least `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), the column goes through three steps:
+**Detached wire format.** `DETACHED` (`0x02`) and `DETACHED_OVER_SPARSE` (`0x03`) *do* appear over the wire — they are not purely internal. A server marshalls only the result blocks of a secondary query (`query_kind` is `SECONDARY_QUERY`) that it processes up to a stage other than `Complete`, when compression is enabled and the negotiated revision is at least `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478). Servers before 26.8 could also marshall the blocks of a nested plan while processing a secondary query up to `Complete`; that was a defect. A receiver accepts the two kinds only in the results of a query it sent this way, and never in a block without rows; anywhere else it rejects them with `INCORRECT_DATA`. The column goes through three steps:
 
 1. Each eligible column (non-`const`, non-`Tuple`, in a block with more than one row) is wrapped in a `ColumnBLOB` that holds the column already marshalled and compressed off the main thread.
 2. `DETACHED` is appended to the wrapped column's kind stack.
@@ -1512,7 +1512,7 @@ On the native TCP protocol, compression is per-query, not per-connection. The Qu
 Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`ZSTD(3)`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
 
 <Note>
-With compression on, the server may also route columns through the parallel block-marshalling / `ColumnBLOB` path (`PARALLEL_BLOCK_MARSHALLING`, v54478) for blocks with more than one row. An implementation that compresses INSERT data must be prepared to handle (or explicitly opt out of) that path to avoid a desynchronized stream.
+With compression on, the server may also route the result blocks of a secondary query through the parallel block-marshalling / `ColumnBLOB` path (`PARALLEL_BLOCK_MARSHALLING`, v54478); the exact conditions are under [Detached wire format](#kind-stack-and-sparse-encoding). A client that sends ordinary queries never receives such blocks, whether or not it compresses its INSERT data.
 </Note>
 
 ## Glossary {#glossary}

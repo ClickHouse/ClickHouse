@@ -1,0 +1,374 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# The `Detached` serialization kind carries a column marshalled into a blob (`ColumnBLOB`). A server
+# selects it only for a secondary query that is processed up to an intermediate stage, over a
+# compressed connection, and only the sources that read such a query convert the blob back.
+#
+# The receiver used to accept the kind in every result block, so a server could hand a blob to
+# clickhouse-client or to an initiator that never asked for one (LOGICAL_ERROR 'ColumnBLOB should
+# be converted to a regular column before usage'), declare a blob size that is allocated before
+# any byte of it arrives (LOGICAL_ERROR 'Too large size passed to allocator'), or send a blob
+# column without rows, which nothing can convert back.
+#
+# The untrusted server here is a fake one. It answers clickhouse-client directly, and it answers
+# the real server as a shard of `remote`. It is pinned to revision 54482, so the set of exchanged,
+# revision-gated fields is fixed and does not drift.
+
+import os
+import shlex
+import socket
+import struct
+import subprocess
+import sys
+import threading
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "helpers"))
+
+from cityhash128 import checksum
+
+CLICKHOUSE_CLIENT_BINARY = shlex.split(os.environ["CLICKHOUSE_CLIENT_BINARY"])
+CLICKHOUSE_CLIENT = shlex.split(os.environ["CLICKHOUSE_CLIENT"])
+
+REVISION = 54482
+
+# The name is in the text of every query the fake server has to answer.
+COLUMN = "column_of_fake_server"
+# The name the column gets in the queries.
+ALIAS = "x"
+
+SERVER_DATA = 1
+SERVER_END_OF_STREAM = 5
+SERVER_TOTALS = 7
+
+KIND_STACK_DETACHED = 2
+
+METHOD_NONE = 0x02
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+        ba.append(byte)
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8") if isinstance(s, str) else s
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def compressedFrame(data):
+    """`data` as one block of the `NONE` codec, preceded by its checksum."""
+    block = bytes([METHOD_NONE]) + struct.pack("<II", 9 + len(data), len(data)) + data
+    return checksum(block) + block
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)  # field 1
+    ba.append(0)  # is_overflows = false
+    writeVarUInt(2, ba)  # field 2
+    ba.extend(struct.pack("<i", -1))  # bucket_num = -1
+    writeVarUInt(0, ba)  # end of block info
+
+
+def blockPacket(packet_type, columns, rows, compressed):
+    """A `Data` or `Totals` packet. `columns` are already serialized, see the functions below."""
+    body = bytearray()
+    serializeBlockInfo(body)
+    writeVarUInt(len(columns), body)
+    writeVarUInt(rows, body)
+    for column in columns:
+        body.extend(column)
+
+    ba = bytearray()
+    writeVarUInt(packet_type, ba)
+    writeStringBinary("", ba)  # table name
+    ba.extend(compressedFrame(bytes(body)) if compressed else body)
+    return bytes(ba)
+
+
+def endOfStream():
+    return bytes([SERVER_END_OF_STREAM])
+
+
+def plainColumn(name, type_name, data):
+    ba = bytearray()
+    writeStringBinary(name, ba)
+    writeStringBinary(type_name, ba)
+    ba.append(0)  # no custom serialization
+    ba.extend(data)
+    return bytes(ba)
+
+
+def stringColumn(name, value):
+    data = bytearray()
+    writeStringBinary(value, data)
+    return plainColumn(name, "String", data)
+
+
+def detachedColumn(name, type_name, blob_size=None, blob=b""):
+    """`blob_size` is None for a block without rows: such a column has no data at all."""
+    ba = bytearray()
+    writeStringBinary(name, ba)
+    writeStringBinary(type_name, ba)
+    ba.append(1)  # has custom serialization
+    ba.append(KIND_STACK_DETACHED)
+    if blob_size is not None:
+        writeVarUInt(blob_size, ba)
+        ba.extend(blob)
+    return bytes(ba)
+
+
+VALUES = [10, 20, 30, 40]
+# What a server puts into the blob: the compressed data of the column.
+BLOB = compressedFrame(b"".join(struct.pack("<Q", value) for value in VALUES))
+
+
+def marshalledColumnReply(name, compressed):
+    column = detachedColumn(name, "UInt64", len(BLOB), BLOB)
+    return blockPacket(SERVER_DATA, [column], len(VALUES), compressed) + endOfStream()
+
+
+def hugeBlobReply(name, compressed):
+    """The blob declares 2^62 + 1 bytes and none of them follows."""
+    column = detachedColumn(name, "UInt64", (1 << 62) + 1)
+    return blockPacket(SERVER_DATA, [column], len(VALUES), compressed)
+
+
+def largeBlobWithLittleDataReply(name, compressed):
+    """The blob declares 2^40 bytes and 16 of them follow."""
+    column = detachedColumn(name, "UInt64", 1 << 40, bytes(16))
+    return blockPacket(SERVER_DATA, [column], len(VALUES), compressed)
+
+
+def marshalledTotalsWithoutRowsReply(name, compressed):
+    data = plainColumn(name, "UInt64", struct.pack("<Q", 1))
+    totals = detachedColumn(name, "UInt64")
+    return (
+        blockPacket(SERVER_DATA, [data], 1, compressed)
+        + blockPacket(SERVER_TOTALS, [totals], 0, compressed)
+        + endOfStream()
+    )
+
+
+def describeTableReply(compressed):
+    """The answer to `DESC TABLE`, which `remote` sends to learn the structure of the table."""
+    columns = [
+        stringColumn("name", COLUMN),
+        stringColumn("type", "UInt64"),
+        stringColumn("default_type", ""),
+        stringColumn("default_expression", ""),
+    ]
+    return blockPacket(SERVER_DATA, columns, 1, compressed) + endOfStream()
+
+
+def fakeServerHello():
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary("fake server", ba)
+    writeVarUInt(24, ba)  # major
+    writeVarUInt(9, ba)  # minor
+    writeVarUInt(REVISION, ba)
+    writeVarUInt(1, ba)  # parallel replicas protocol version (>= 54471)
+    writeStringBinary("UTC", ba)  # timezone (>= 54058)
+    writeStringBinary("fake", ba)  # display name (>= 54372)
+    writeVarUInt(0, ba)  # version patch (>= 54401)
+    writeStringBinary("notchunked", ba)  # proto_send chunked (>= 54470)
+    writeStringBinary("notchunked", ba)  # proto_recv chunked (>= 54470)
+    writeVarUInt(0, ba)  # password complexity rules (>= 54461)
+    ba.extend(struct.pack("<Q", 0))  # nonce (>= 54462)
+    writeStringBinary("", ba)  # end of the server settings (>= 54474)
+    writeVarUInt(0, ba)  # query plan serialization version (>= 54477)
+    writeVarUInt(0, ba)  # cluster function protocol version (>= 54479)
+    return bytes(ba)
+
+
+class FakeServer:
+    """Answers every connection with `reply`, and `DESC TABLE` with the structure of the table.
+
+    It does not parse what the peer sends: once the name of the column has arrived, the query is
+    there and the peer is about to wait for the result. Every connection serves one query.
+    """
+
+    def __init__(self, reply, compressed):
+        self.reply = reply
+        self.compressed = compressed
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.listener.settimeout(0.2)
+        self.port = self.listener.getsockname()[1]
+        self.stopped = False
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        while not self.stopped:
+            try:
+                connection, _ = self.listener.accept()
+            except OSError:
+                continue
+            threading.Thread(
+                target=self.answer, args=(connection,), daemon=True
+            ).start()
+
+    def answer(self, connection):
+        with connection:
+            try:
+                connection.settimeout(60)
+                received = connection.recv(65536)  # the Hello of the peer
+                connection.sendall(fakeServerHello())
+                while COLUMN.encode() not in received:
+                    chunk = connection.recv(65536)
+                    if not chunk:
+                        return
+                    received += chunk
+
+                if b"DESC TABLE" in received:
+                    connection.sendall(describeTableReply(self.compressed))
+                else:
+                    connection.sendall(self.reply(self.compressed))
+
+                # A reply may be cut short: signal EOF so that the peer gets a short read instead
+                # of waiting for the missing bytes. Then wait until the peer closes the connection:
+                # a connection closed with unread input is reset, and the reply can be lost with it.
+                connection.shutdown(socket.SHUT_WR)
+                while connection.recv(65536):
+                    pass
+            except OSError:
+                pass
+
+    def stop(self):
+        self.stopped = True
+        self.thread.join()
+        self.listener.close()
+
+
+# The analyzer names the columns of an intermediate stage, see `queryFakeServerFromInitiator`.
+# A serialized query plan would be sent with the `QueryPlan` stage whatever the number of shards.
+QUERY_OF_INITIATOR = (
+    "SELECT sum({alias}) FROM (SELECT {column} AS {alias} "
+    "FROM remote('{addresses}', view(SELECT toUInt64(1) AS {column})) GROUP BY {column}) "
+    "SETTINGS enable_analyzer = 1, serialize_query_plan = 0"
+)
+
+
+def run(command):
+    result = subprocess.run(command, capture_output=True, timeout=120)
+    return (result.stdout + result.stderr).decode("utf-8", "replace")
+
+
+def queryFakeServerFromClient(reply):
+    """The output of clickhouse-client whose server is the fake one."""
+    server = FakeServer(lambda compressed: reply(ALIAS, compressed), compressed=False)
+    try:
+        return run(
+            CLICKHOUSE_CLIENT_BINARY
+            + ["--host", "127.0.0.1", "--port", str(server.port), "--compression", "0"]
+            + ["--query", "SELECT {} AS {} FORMAT TSV".format(COLUMN, ALIAS)]
+        )
+    finally:
+        server.stop()
+
+
+def queryFakeServerFromInitiator(reply, shards, client_options=()):
+    """The output of a query of the real server that reads `shards` fake shards.
+
+    One shard gets the whole query, with the `Complete` stage. Several shards get it with an intermediate
+    stage, the initiator merges their groups. The result block of a stage has its own column name.
+    """
+    name = ALIAS if shards == 1 else "__table1." + COLUMN
+    server = FakeServer(lambda compressed: reply(name, compressed), compressed=True)
+    try:
+        addresses = ",".join(["127.0.0.1:{}".format(server.port)] * shards)
+        return run(
+            CLICKHOUSE_CLIENT
+            + list(client_options)
+            + [
+                "--query",
+                QUERY_OF_INITIATOR.format(
+                    alias=ALIAS, column=COLUMN, addresses=addresses
+                ),
+            ]
+        )
+    finally:
+        server.stop()
+
+
+def expectError(scenario, output, codes, must_contain):
+    assert "LOGICAL_ERROR" not in output and "Logical error" not in output, output
+    assert any("Code: {}.".format(code) in output for code in codes), output
+    assert must_contain in output, output
+    print("{}: caught expected exception".format(scenario))
+
+
+def main():
+    unexpected_kind = "Unexpected serialization kind Detached in the received data"
+    without_rows = "Unexpected serialization kind Detached in a block without rows"
+    incorrect_data = [117]
+    # The blob ends before its declared size: CANNOT_READ_ALL_DATA or ATTEMPT_TO_READ_AFTER_EOF.
+    short_read = [32, 33]
+
+    # A client is never the peer of a secondary query.
+    expectError(
+        "client, marshalled column",
+        queryFakeServerFromClient(marshalledColumnReply),
+        incorrect_data,
+        unexpected_kind,
+    )
+    expectError(
+        "client, blob of 2^62 bytes",
+        queryFakeServerFromClient(hugeBlobReply),
+        incorrect_data,
+        unexpected_kind,
+    )
+    expectError(
+        "client, marshalled totals without rows",
+        queryFakeServerFromClient(marshalledTotalsWithoutRowsReply),
+        incorrect_data,
+        unexpected_kind,
+    )
+
+    # An initiator accepts a blob only where a shard may send one.
+    expectError(
+        "initiator, complete stage, marshalled column",
+        queryFakeServerFromInitiator(marshalledColumnReply, shards=1),
+        incorrect_data,
+        unexpected_kind,
+    )
+
+    output = queryFakeServerFromInitiator(marshalledColumnReply, shards=2)
+    assert output == "{}\n".format(sum(VALUES)), output
+    print("initiator, intermediate stage, marshalled column: converted back")
+
+    expectError(
+        "initiator, intermediate stage, blob of 2^62 bytes",
+        queryFakeServerFromInitiator(hugeBlobReply, shards=2),
+        short_read,
+        "while receiving packet from",
+    )
+    # A blob is not allocated to its declared size: that would exceed the memory limit of the query.
+    expectError(
+        "initiator, intermediate stage, blob of 2^40 bytes under a memory limit",
+        queryFakeServerFromInitiator(
+            largeBlobWithLittleDataReply,
+            shards=2,
+            client_options=["--max_memory_usage", "1G"],
+        ),
+        short_read,
+        "while receiving packet from",
+    )
+    expectError(
+        "initiator, intermediate stage, marshalled totals without rows",
+        queryFakeServerFromInitiator(marshalledTotalsWithoutRowsReply, shards=2),
+        incorrect_data,
+        without_rows,
+    )
+
+
+if __name__ == "__main__":
+    main()

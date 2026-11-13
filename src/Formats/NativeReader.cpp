@@ -259,6 +259,9 @@ Block NativeReader::read()
             NameAndTypePair name_and_type = {column.name, column.type};
             readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
+        /// A `ColumnBLOB` gets the task that converts it back while its data is read, and no sender marshalls an empty block.
+        else if (ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::DETACHED))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected serialization kind Detached in a block without rows");
 
         column.column = std::move(read_column);
 
