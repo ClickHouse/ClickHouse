@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # - no-fasttest: needs Iceberg (USE_AVRO)
-# Random settings limits: max_threads=(8, None)
-# - max_threads: each check reads 80 data files, which takes minutes on 1-3 threads under MSan.
 
 # Each sink of a parallel INSERT commits its own snapshot, so the sinks race for the same metadata version
 # and the losers retry. A lost race must not be logged as a warning or an error, which would reach stderr.

@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
   "root": "integrations/clickpipes/home",
   "pages": [

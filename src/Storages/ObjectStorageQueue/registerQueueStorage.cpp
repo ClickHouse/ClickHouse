@@ -40,7 +40,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
-    extern const SettingsBool enable_object_storage_queue_hive_partitioning;
+    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
 }
 
@@ -130,11 +130,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     if ((*queue_settings)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
         if (!is_attach &&
-            !args.getLocalContext()->getSettingsRef()[Setting::enable_object_storage_queue_hive_partitioning])
+            !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental 'use_hive_partitioning' setting is not enabled "
-                            "(the setting 'enable_object_storage_queue_hive_partitioning')");
+                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
         }
     }
 
@@ -850,7 +850,7 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings](/reference/engines/table-engines/integrations/s3queue#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](/reference/engines/table-engines/integrations/s3queue#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
 Below are the settings only compatible with AzureQueue and not applicable for S3Queue.

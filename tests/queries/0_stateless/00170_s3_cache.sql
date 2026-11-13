@@ -1,4 +1,4 @@
--- Tags: stateful, no-parallel, no-random-settings, no-msan
+-- Tags: stateful, no-parallel, no-random-settings
 -- no-parallel: Heavy and it drops filesystem cache
 
 -- { echo }

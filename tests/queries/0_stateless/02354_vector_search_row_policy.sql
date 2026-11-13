@@ -9,6 +9,7 @@
 -- fetched only `LIMIT` neighbours without the `vector_search_index_fetch_multiplier` compensation, which the
 -- policy can then discard.
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP ROW POLICY IF EXISTS rp_04814 ON t_04814;

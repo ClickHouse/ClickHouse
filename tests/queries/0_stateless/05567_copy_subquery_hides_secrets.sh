@@ -22,7 +22,7 @@ query_id="${CLICKHOUSE_DATABASE}_copy_subquery_hides_secrets"
 $CLICKHOUSE_CLIENT --log_queries=1 --log_formatted_queries=1 --query_id "$query_id" --query "$copy_query" 2>&1 | grep -o -m1 UNKNOWN_TYPE_OF_QUERY
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, text_log"
 $CLICKHOUSE_CLIENT --query "SELECT type, query, position(formatted_query, '[HIDDEN]') > 0, position(concat(query, formatted_query), '$secret') = 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND event_date >= yesterday() SETTINGS enable_parallel_replicas = 0"
-$CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%$secret%'), countIf(logger_name = 'executeQuery' AND message LIKE '%[HIDDEN]%') > 0 FROM system.text_log WHERE query_id = '$query_id' AND event_date >= yesterday() AND event_time >= now() - 600 SETTINGS enable_parallel_replicas = 0"
+$CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%$secret%'), countIf(logger_name = 'executeQuery' AND message LIKE '%[HIDDEN]%') > 0 FROM system.text_log WHERE query_id = '$query_id' AND event_date >= yesterday() SETTINGS enable_parallel_replicas = 0"
 
 # `EXPLAIN AST` accepts `COPY`, so this one runs on the native protocol.
 echo "-- explain"

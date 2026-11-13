@@ -13,8 +13,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -162,13 +160,6 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<void()> && read_func)
 {
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
-}
-
-SerializationTuple::SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
-    : elems(std::move(elems_))
-    , has_explicit_names(has_explicit_names_)
-    , elems_support_pooling(std::ranges::all_of(elems, [](const auto & elem) { return elem->supportsPooling(); }))
-{
 }
 
 SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
@@ -933,7 +924,10 @@ size_t SerializationTuple::allocatedBytes() const
 
 bool SerializationTuple::supportsPooling() const
 {
-    return elems_support_pooling;
+    for (const auto & elem : elems)
+        if (!elem->supportsPooling())
+            return false;
+    return true;
 }
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const

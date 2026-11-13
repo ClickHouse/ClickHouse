@@ -2,6 +2,8 @@
 -- we only assert structural invariants
 -- and deterministic row counts via string matching on the `explain` column.
 
+SET enable_analyzer = 1;
+
 SELECT count() > 0
 FROM (EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
 

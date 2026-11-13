@@ -69,7 +69,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     }
 }
 
-void DataFileStatistics::addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block)
+void DataFileStatistics::addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block)
 {
     if (sizes_by_column_name.empty())
         return;
@@ -129,19 +129,8 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
     }
 }
 
-/// `ColumnNullable::getExtremes` returns `POSITIVE_INFINITY` as both ends for a column with only NULL.
-static bool isAllNullRange(const Range & range)
-{
-    return range.left.isPositiveInfinity() && range.right.isPositiveInfinity();
-}
-
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
-    if (isAllNullRange(right))
-        return left;
-    if (isAllNullRange(left))
-        return right;
-
     return Range(
         Range::less(left.left, right.left) ? left.left : right.left,
         true,

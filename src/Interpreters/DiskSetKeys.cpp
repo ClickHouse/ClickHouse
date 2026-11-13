@@ -146,7 +146,7 @@ ColumnPtr computePrefixedHashes(const IColumn & column, size_t rows, ConstNullMa
 ColumnPtr computeHashedKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map)
 {
     using HashedMethod = decltype(SetVariants::hashed)::element_type;
-    HashedMethod::State state(key_columns, key_sizes, nullptr, {.skips_rows = null_map != nullptr});
+    HashedMethod::State state(key_columns, key_sizes, nullptr);
     Arena pool;
     auto keys = ColumnVector<HashedMethod::Key>::create();
     keys->reserve(rows);

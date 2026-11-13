@@ -566,15 +566,7 @@ public:
 
     void removeCurrentPartsFromMutations();
 
-    /// Not std::scoped_lock: libc++ 23 annotates it for Clang's thread-safety analysis, which
-    /// cannot model returning the lock out of lockQueue (copy elision is not visible to the
-    /// analysis), so returning std::scoped_lock fails to compile with `-Wthread-safety`.
-    struct QueueLocks
-    {
-        std::unique_lock<SharedMutex> state_lock;
-        std::unique_lock<std::mutex> pull_logs_to_queue_lock;
-        std::unique_lock<std::mutex> update_mutations_lock;
-    };
+    using QueueLocks = std::scoped_lock<SharedMutex, std::mutex, std::mutex>;
 
     /// This method locks all important queue mutexes: state_mutex,
     /// pull_logs_to_queue and update_mutations_mutex. It should be used only

@@ -56,7 +56,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 </Tab>
 </Tabs>
 
-_The `OTEL_SERVICE_NAME` environment variable is used to identify your service in the ClickStack UI, it can be any name you want._
+_The `OTEL_SERVICE_NAME` environment variable is used to identify your service in the HyperDX app, it can be any name you want._
 
 ### Run the application with OpenTelemetry Python agent {#run-the-application-with-otel-python-agent}
 
@@ -135,7 +135,7 @@ logger.setLevel(logging.DEBUG)
 
 The OpenTelemetry Python SDK usually displays errors in the console when they
 occur. However, if you don't encounter any errors but notice that your data is
-not appearing in ClickStack UI as expected, you have the option to enable debug mode.
+not appearing in HyperDX as expected, you have the option to enable debug mode.
 When debug mode is activated, all telemetries will be printed to the console,
 allowing you to verify if your application is properly instrumented with the
 expected data.

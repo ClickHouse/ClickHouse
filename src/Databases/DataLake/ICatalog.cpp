@@ -69,9 +69,6 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
-    if (storage_type_str == "hdfs")
-        return StorageType::HDFS;
-
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
     else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
@@ -207,10 +204,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        /// An Azure host never names a container, only a segment of the endpoint path can.
-        std::vector<std::string> endpoint_path_segments;
-        Poco::URI(location, /* enable_url_encoding */ false).getPathSegments(endpoint_path_segments);
-        if (!force_add_bucket && std::ranges::contains(endpoint_path_segments, bucket))
+        if (!force_add_bucket && location.contains("/" + bucket))
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
@@ -448,11 +442,6 @@ std::optional<std::string> ICatalog::getDefaultTableLocation(const std::string &
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
-}
-
-void ICatalog::createTableAtDefaultLocation(const String & /*namespace_name*/, const String & /*table_name*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTableAtDefaultLocation is not implemented");
 }
 
 void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const

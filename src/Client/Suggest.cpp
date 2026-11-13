@@ -150,7 +150,7 @@ static String getLoadSuggestionQuery(IServerConnection & connection, Int32 sugge
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
-    loading_thread = LoadingThread([my_context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    loading_thread = std::thread([my_context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
         /// Creates new QueryScope/ThreadStatus to avoid sharing global context, which settings can be modified by the client in another thread.
         ThreadStatus thread_status;

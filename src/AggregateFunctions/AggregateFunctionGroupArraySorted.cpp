@@ -1,5 +1,4 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -11,7 +10,6 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/Exception.h>
-#include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 
@@ -71,7 +69,7 @@ struct GroupArraySortedData
         }
         else
         {
-            return CompareHelper<T>::less(lhs, rhs, 1);
+            return CompareHelper<T>::less(lhs, rhs, -1);
         }
     }
 
@@ -135,13 +133,7 @@ struct GroupArraySortedData
         {
             bool try_sort = trySort(values.begin(), values.end(), Comparator());
             if (!try_sort)
-            {
-                auto * sort_end = values.end();
-                /// RadixSort puts NaNs with the sign bit set first, so move all NaNs to the end and sort the rest.
-                if constexpr (is_floating_point<T>)
-                    sort_end = std::partition(values.begin(), values.end(), [](T value) { return !isNaN(value); });
-                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), static_cast<size_t>(sort_end - values.begin()));
-            }
+                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
         }
 
         if (values.size() > max_elements)

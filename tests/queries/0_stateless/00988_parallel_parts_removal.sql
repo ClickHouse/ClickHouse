@@ -1,4 +1,4 @@
--- Tags: long, no-object-storage, no-msan
+-- Tags: long, no-object-storage
 
 DROP TABLE IF EXISTS mt;
 

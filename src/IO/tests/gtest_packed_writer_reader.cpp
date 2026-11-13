@@ -181,18 +181,3 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     assertString("123", *in);
     assertEOF(*in);
 }
-
-TEST(PackedFilesWriter, FilesOrderHint)
-{
-    PackedFilesWriter writer;
-
-    for (const auto & name : {"a%2Eb", "first", "second", "third"})
-        writer.writeFile(name)->finalize();
-
-    /// The hint names the files as they are stored, so `a.b` matches nothing. Repeated hints are
-    /// ignored too, and the files not in the hint keep their order.
-    const Strings hint = {"a.b", "third", "a%2Eb", "third", "first"};
-    auto plan = writer.prepareFinalize(hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
-
-    ASSERT_EQ(plan.ordered_file_names, (Strings{"third", "a%2Eb", "first", "second"}));
-}

@@ -154,7 +154,7 @@ The supported options are:
     ("http") or 9440 ("binary").
   * `off` (or `false`/`no`/`0`): never use TLS. Defaults `port` to 8123
     ("http") or 9000 ("binary").
-* `encoding_check`: Defines how to handle invalid characters under the
+* `encoding_check`: Defines how to to handle invalid characters under the
   [database encoding] when converting ClickHouse String and JSON values. One
   of:
   * `fail` (default): raise an error
@@ -265,7 +265,7 @@ Some details to keep in mind:
   `NOT NULL`, whatever the ClickHouse declaration, see [State Columns and `NOT
   NULL`](#state-columns-and-not-null).
 
-* `Tuple` columns import as `text[]`. `Map` and `Nested` columns
+* `Tuple` columns import as `text[]`. `Map` and `Nested` columns columns
   created with `flatten_nested=0` import as `text[][]`. Each conversion emits
   a `NOTICE`. PostgreSQL's `record` pseudotype cannot define a table column,
   so each tuple becomes an array of values, each map becomes an
@@ -1787,7 +1787,7 @@ Two [fuzzystrmatch] functions push down to ClickHouse:
 * `soundex`: [soundex](/reference/functions/regular-functions/string-functions#soundex)
 * `levenshtein` (2-arg): [editDistanceUTF8](/reference/functions/regular-functions/string-functions#editDistanceUTF8)
 
-#### pgcrypto {#pgcrypto}
+#### pgcyrpto {#pgcrypto}
 
 *   `digest(text, text)` and `digest(bytea, text)`: Corresponding ClickHouse
     [hash function](https://clickhouse.com/docs/sql-reference/functions/hash-functions)

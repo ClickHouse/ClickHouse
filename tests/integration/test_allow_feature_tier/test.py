@@ -117,7 +117,7 @@ MERGE_TREE_FORBIDDEN_DEFAULT_MIN = 16384
 
 # `compatibility` older than 25.1 sets this EXPERIMENTAL setting to 1, and one older than 23.7 sets this
 # PRODUCTION setting to 0.
-COMPATIBILITY_EXPERIMENTAL_SETTING = "enable_prql_dialect"
+COMPATIBILITY_EXPERIMENTAL_SETTING = "allow_experimental_prql_dialect"
 COMPATIBILITY_PRODUCTION_SETTING = "function_sleep_max_microseconds_per_block"
 
 EXPERIMENTAL_BLOCKED = "Changes to EXPERIMENTAL settings are disabled"
@@ -1934,11 +1934,11 @@ def test_compatibility_skips_settings_of_a_disabled_tier(start_cluster):
 
 
 def test_compatibility_sets_beta_kusto_dialect_setting(start_cluster):
-    # `enable_kusto_dialect` is a BETA setting that `compatibility` older than 25.1 sets to 1:
+    # `allow_experimental_kusto_dialect` is a BETA setting that `compatibility` older than 25.1 sets to 1:
     # tiers 1 and 2 still apply it, while tier 3 skips it.
     assert "0" == get_current_tier_value(instance)
     query = (
-        "SELECT getSetting('enable_kusto_dialect') "
+        "SELECT getSetting('allow_experimental_kusto_dialect') "
         "SETTINGS compatibility = '23.6'"
     )
     assert instance.query(query) == "true\n"

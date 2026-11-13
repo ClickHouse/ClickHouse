@@ -51,8 +51,7 @@ jobs:
 
   dockers_build_amd:
     runs-on: [self-hosted, amd-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Dockers Build (amd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -85,8 +84,7 @@ jobs:
 
   dockers_build_arm:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -118,11 +116,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyDocsAutogenerate" --ci --timestamp
 
   build_arm_binary:
-    runs-on: [self-hosted, arm-medium-cpu]
-    needs:
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Build (arm_binary)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -155,11 +150,7 @@ jobs:
 
   docs_autogenerate:
     runs-on: [self-hosted, arm-medium]
-    needs:
-    - build_arm_binary
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Docs autogenerate"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

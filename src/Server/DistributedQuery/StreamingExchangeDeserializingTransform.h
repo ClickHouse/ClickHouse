@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Formats/NativeReaderTypeCache.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -22,8 +21,6 @@ protected:
 private:
     /// For messages.
     const String exchange_id;
-    /// The types of the packets that this transform has read, for all its packets.
-    NativeReaderTypeCache type_cache;
 };
 
 }

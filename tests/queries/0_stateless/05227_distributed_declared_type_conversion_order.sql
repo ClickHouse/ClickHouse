@@ -183,12 +183,7 @@ CREATE TABLE t_enum_neg (v Enum8('a' = -1, 'b' = 2)) ENGINE = MergeTree ORDER BY
 INSERT INTO t_enum_neg SELECT if(number % 2 = 0, 'a', 'b') FROM numbers(10);
 CREATE TABLE dist_enum_neg_u16 (v UInt16) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_enum_neg);
 SELECT DISTINCT v FROM dist_enum_neg_u16 ORDER BY v DESC; -- { serverError INCOMPATIBLE_COLUMNS }
--- `Bool` reports `WhichDataType::isUInt()` because it is backed by `UInt8`, but casting to `Bool`
--- maps every non-zero value to `true`, collapsing distinct enum values.
-CREATE TABLE dist_enum_bool (v Bool) ENGINE = Distributed('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), t_enum);
-SELECT DISTINCT v FROM dist_enum_bool ORDER BY v; -- { serverError INCOMPATIBLE_COLUMNS }
 
-DROP TABLE dist_enum_bool;
 DROP TABLE dist_enum_neg_u16;
 DROP TABLE t_enum_neg;
 DROP TABLE dist_enum_u8;

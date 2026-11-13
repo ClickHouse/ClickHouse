@@ -51,7 +51,7 @@
   var DOCS_SUBAREAS = [
     'Get started', 'Concepts', 'Guides', 'Reference',
     'Cloud', 'ClickHouse Private', 'Managed Postgres', 'ClickStack',
-    'chDB', 'Kubernetes Operator',
+    'Agentic Data Stack', 'chDB', 'Kubernetes Operator',
     'ClickPipes', 'Connectors', 'Language clients', 'Ecosystem',
   ];
   var SEARCH_TABS = ROW1_TABS.concat(DOCS_SUBAREAS);
@@ -67,6 +67,7 @@
     ['products/bring-your-own-cloud', 'Cloud'],
     ['products/clickhouse-private', 'ClickHouse Private'],
     ['products/managed-postgres', 'Managed Postgres'],
+    ['products/agentic-data-stack', 'Agentic Data Stack'],
     ['chdb', 'chDB'],
     ['products/kubernetes-operator', 'Kubernetes Operator'],
     ['clickstack', 'ClickStack'],

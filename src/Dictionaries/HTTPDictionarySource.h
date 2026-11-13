@@ -68,8 +68,6 @@ public:
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
 
-    void checkCredentials() const;
-
     // wrap buffer using encoding from made request
     QueryPipeline createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
 

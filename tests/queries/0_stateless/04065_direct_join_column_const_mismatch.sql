@@ -27,6 +27,7 @@ INSERT INTO t_left SELECT number FROM numbers(10);
 
 SET join_algorithm = 'direct';
 SET max_block_size = 2;
+SET enable_analyzer = 1;
 
 SELECT l.id, r.value, r.new_col
 FROM t_left AS l
@@ -65,6 +66,7 @@ INSERT INTO t_left_sparse SELECT number FROM numbers(10);
 
 SET join_algorithm = 'direct';
 SET max_block_size = 2;
+SET enable_analyzer = 1;
 
 SELECT l.id, r.value, r.extra
 FROM t_left_sparse AS l

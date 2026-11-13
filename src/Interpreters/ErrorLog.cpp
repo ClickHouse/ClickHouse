@@ -105,7 +105,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "last_error_trace",
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "A stack trace of the last error. Except on FreeBSD, addresses inside the main ClickHouse binary "
+                "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
                 "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."
             },
         {

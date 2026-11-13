@@ -102,18 +102,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast, ExpandedASTBudget & budget)
 
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
-        /// A parenthesized first operand with its own `SETTINGS` clause keeps its single-SELECT
-        /// `ASTSelectWithUnionQuery` wrapper (see `ParserUnionQueryElement`), so look through such wrappers:
-        /// the wrapper is only the boundary of that clause and must not stop `WITH` propagation.
-        IAST * first_operand = node_union->list_of_selects->children[0].get();
-        while (auto * wrapper = typeid_cast<ASTSelectWithUnionQuery *>(first_operand))
-        {
-            if (wrapper->list_of_selects->children.size() != 1)
-                break;
-            first_operand = wrapper->list_of_selects->children[0].get();
-        }
-
-        if (auto * first_select = typeid_cast<ASTSelectQuery *>(first_operand))
+        if (auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get()))
         {
             ASTPtr with_expression_list = first_select->with();
             if (with_expression_list)

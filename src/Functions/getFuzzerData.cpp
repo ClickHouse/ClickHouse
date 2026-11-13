@@ -28,9 +28,9 @@ public:
 
     inline size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     inline bool isDeterministic() const override { return false; }

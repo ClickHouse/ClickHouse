@@ -72,7 +72,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsString count_distinct_implementation;
@@ -82,8 +81,6 @@ namespace Setting
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
     extern const SettingsBool optimize_if_chain_to_multiif;
-    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
-    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool optimize_group_by_function_keys;
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsBool optimize_move_to_prewhere;
@@ -102,7 +99,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -1510,17 +1506,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
     }
 
-    if (select_query->shuffle)
-    {
-        if (!settings[Setting::allow_experimental_shuffle_query])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
-
-        if (!select_options.only_analyze)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "`SHUFFLE` is supported only with the analyzer (turn on setting `allow_experimental_analyzer = 1`)");
-    }
-
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
@@ -1556,19 +1541,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         && !select_options.ignore_ast_optimizations;
 
     bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if];
-    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
-    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
-    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
-    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
-    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
-    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
-    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
-    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
-    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
-    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
-        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
-             && !settings[Setting::optimize_if_transform_strings_to_enum]);
-    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, optimize_multiif_to_if_v);
+    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], optimize_multiif_to_if_v);
 
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
@@ -1684,19 +1657,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
-    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
-    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
-    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
-    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
-    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
-    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
-    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
-    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
-    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
-        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
-             && !settings[Setting::optimize_if_transform_strings_to_enum]);
-    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, false);
+    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], false);
 
     if (allow_aggregations)
     {

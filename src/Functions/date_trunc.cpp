@@ -11,7 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/toStartOfInterval.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -38,11 +37,8 @@ class FunctionDateTrunc final : public IFunction
 public:
     static constexpr auto name = "dateTrunc";
 
-    FunctionDateTrunc(
-        FunctionOverloadResolverPtr to_start_of_interval_,
-        IntervalKind::Kind datepart_kind_,
-        std::optional<Date32RoundingNarrowing> date32_narrowing_)
-        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_), date32_narrowing(date32_narrowing_) {}
+    FunctionDateTrunc(FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_)
+        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_) {}
 
     String getName() const override { return name; }
 
@@ -80,17 +76,14 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        if (date32_narrowing)
-            return getDate32RoundingMonotonicity(*date32_narrowing, left, right);
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
     FunctionOverloadResolverPtr to_start_of_interval;
     IntervalKind::Kind datepart_kind;
-    std::optional<Date32RoundingNarrowing> date32_narrowing;
 };
 
 
@@ -100,9 +93,7 @@ public:
     static constexpr auto name = "dateTrunc";
 
     explicit FunctionDateTruncOverloadResolver(ContextPtr context)
-        /// `dateTrunc` has its own result type, and its results must not depend on `to_start_of_interval_preserves_argument_type`,
-        /// which also changes how `toStartOfInterval` clamps values near the epoch.
-        : to_start_of_interval(createLegacyToStartOfIntervalOverloadResolver(context))
+        : to_start_of_interval(FunctionFactory::instance().get("toStartOfInterval", context))
         , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
     {
     }
@@ -114,20 +105,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
-
-    /// Documentation-only, and intentionally so: like CAST, `dateTrunc` computes a result type that
-    /// is not a pure function of its argument types. `dateTrunc(unit, datetime[, timezone])` maps the
-    /// const `unit` string (year/quarter/month/week -> `Date`; day/hour/minute/second -> `DateTime`;
-    /// millisecond/microsecond/nanosecond -> `DateTime64` with scale 3/6/9) and then, when the source
-    /// is a negative-capable `Date32`/`DateTime64`, widens `Date` -> `Date32` and `DateTime` ->
-    /// `DateTime64` — but only under the `function_date_trunc_return_type_behavior` setting. That
-    /// widening depends on a query setting, which the declarative signature machinery (and its type
-    /// functions) cannot see, so the legacy `getReturnTypeImpl` below stays authoritative. The
-    /// signature string is purely descriptive; it is only rendered, never applied.
-    String getSignatureString() const override
-    {
-        return "(const unit String, DateOrDateTime, [const timezone String]) -> Date | Date32 | DateTime | DateTime64";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -260,11 +237,7 @@ public:
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-        std::optional<Date32RoundingNarrowing> date32_narrowing;
-        if (args.size() >= 2 && isDate32(removeLowCardinalityAndNullable(args[1].type)))
-            date32_narrowing = describeDate32RoundingNarrowing(return_type, datepart_kind, 1);
-
-        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind, date32_narrowing);
+        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

@@ -76,7 +76,6 @@ public:
     String getName() const override { return "groupUniqArray"; }
 
     bool allocatesMemoryInArena() const override { return false; }
-    bool ignoresRepeatedValues() const override { return true; }
 
     /// `final` devirtualizes the per-row call in addBatchSinglePlace (this class has subclasses).
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
@@ -189,7 +188,6 @@ public:
     String getName() const override { return "groupUniqArray"; }
 
     bool allocatesMemoryInArena() const override { return false; }
-    bool ignoresRepeatedValues() const override { return true; }
 
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -314,7 +312,6 @@ public:
     {
         return true;
     }
-    bool ignoresRepeatedValues() const override { return true; }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {

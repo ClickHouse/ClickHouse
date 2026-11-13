@@ -1,7 +1,5 @@
 # docker build -t clickhouse/integration-tests-runner .
-ARG CCTOOLS_TAG
 ARG FROM_TAG=latest
-FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/test-base:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
@@ -115,10 +113,10 @@ RUN set -x \
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY misc/ /misc/
 
-COPY --from=cctools /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=cctools \
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

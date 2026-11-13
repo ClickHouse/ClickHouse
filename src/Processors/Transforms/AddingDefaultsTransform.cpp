@@ -1,7 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -32,7 +29,6 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -141,51 +137,6 @@ static MutableColumnPtr mixColumns(
     return column_mixed;
 }
 
-/// The column that `name` is or is a subcolumn of.
-static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
-{
-    if (columns.has(name))
-        return name;
-
-    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
-    {
-        const auto * column = columns.tryGet(String(column_name));
-        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
-            return column->name;
-    }
-    return name;
-}
-
-/// Columns of `header` that the default of `column_name` reads: directly, through a subcolumn, or through columns
-/// absent from `header`, whose defaults are inlined into the evaluation.
-static NameSet getHeaderColumnsReadByDefault(
-    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & header)
-{
-    NameSet result;
-    NameSet visited{column_name};
-    VectorWithMemoryTracking<ASTPtr> expressions{column_defaults.at(column_name).expression};
-    while (!expressions.empty())
-    {
-        auto expression = expressions.back()->clone();
-        expressions.pop_back();
-
-        RequiredSourceColumnsVisitor::Data data;
-        RequiredSourceColumnsVisitor(data).visit(expression);
-        for (const auto & required : data.requiredColumns())
-        {
-            auto name = getColumnOfSubcolumn(columns, required);
-            if (!visited.insert(name).second)
-                continue;
-
-            if (header.has(name))
-                result.insert(name);
-            else if (auto it = column_defaults.find(name); it != column_defaults.end())
-                expressions.push_back(it->second.expression);
-        }
-    }
-    return result;
-}
-
 
 AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
@@ -237,7 +188,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto res = header.cloneWithColumns(chunk.detachColumns());
 
     /// Identify columns that need defaults computed
-    VectorWithMemoryTracking<std::pair<String, size_t>> columns_needing_defaults;
+    std::vector<std::pair<String, size_t>> columns_needing_defaults;
     for (const auto & [col_name, col_default] : column_defaults)
     {
         if (!res.has(col_name))
@@ -259,31 +210,37 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     /// and column `n` has DEFAULT 42, when inserting {"n": 2} we need to first compute
     /// n's defaults (for rows where n is missing), mix them into the block, and only
     /// then compute s's defaults so that s can see the correct values of n.
-    UnorderedMapWithMemoryTracking<String, NameSet> dependencies;
-    UnorderedSetWithMemoryTracking<String> columns_needing_defaults_set;
+    std::unordered_map<String, NameSet> dependencies;
+    std::unordered_set<String> columns_needing_defaults_set;
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
         columns_needing_defaults_set.insert(col_name);
 
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
+        const auto & col_default = column_defaults.at(col_name);
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expr_clone = col_default.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expr_clone);
+        NameSet required = columns_context.requiredColumns();
+
         NameSet deps;
-        for (const auto & read : getHeaderColumnsReadByDefault(col_name, columns, column_defaults, header))
+        for (const auto & req : required)
         {
-            if (columns_needing_defaults_set.contains(read))
-                deps.insert(read);
+            if (columns_needing_defaults_set.contains(req))
+                deps.insert(req);
         }
         dependencies[col_name] = std::move(deps);
     }
 
     /// Process columns in dependency order (topological sort).
     /// In each iteration, process columns whose dependencies have all been satisfied.
-    UnorderedSetWithMemoryTracking<String> processed;
-    UnorderedMapWithMemoryTracking<size_t, MutableColumnPtr> mixed_columns;
+    std::unordered_set<String> processed;
+    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
     while (processed.size() < columns_needing_defaults.size())
     {
         /// Find columns ready to process (all dependencies satisfied)
-        VectorWithMemoryTracking<std::pair<String, size_t>> ready;
+        std::vector<std::pair<String, size_t>> ready;
         for (const auto & [col_name, col_idx] : columns_needing_defaults)
         {
             if (processed.contains(col_name))

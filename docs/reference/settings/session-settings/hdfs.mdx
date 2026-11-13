@@ -53,18 +53,6 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 
-## hdfs_skip_hidden_files {#hdfs_skip_hidden_files}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting: skip files with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}]}]}/>
-
-Enables or disables skipping hidden paths when listing files by glob in [HDFS](/reference/engines/table-engines/integrations/hdfs) engine tables: files with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker files under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
-
-Possible values:
-- 0 — every file matched by the glob is read.
-- 1 — files with a hidden path segment below the non-glob prefix are skipped.
-
 ## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

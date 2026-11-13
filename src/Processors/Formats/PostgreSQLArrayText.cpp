@@ -1,5 +1,4 @@
 #include <Processors/Formats/PostgreSQLArrayText.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -20,6 +19,7 @@
 #include <Poco/String.h>
 
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -33,7 +33,7 @@ namespace
 {
 
 void validatePostgreSQLArrayShape(
-    const IColumn & column, const IDataType & type, size_t row, VectorWithMemoryTracking<std::optional<size_t>> & dimensions, size_t depth)
+    const IColumn & column, const IDataType & type, size_t row, std::vector<std::optional<size_t>> & dimensions, size_t depth)
 {
     if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))
     {
@@ -83,7 +83,7 @@ void writeQuotedElement(const String & value, WriteBuffer & out)
 void writePostgreSQLArrayText(
     const IColumn & column, const IDataType & type, size_t row, WriteBuffer & out, const FormatSettings & settings)
 {
-    VectorWithMemoryTracking<std::optional<size_t>> dimensions;
+    std::vector<std::optional<size_t>> dimensions;
     validatePostgreSQLArrayShape(column, type, row, dimensions, 0);
 
     /// A constant expression (e.g. `SELECT [1, 2]`) may reach here as a `ColumnConst` if the caller
@@ -167,7 +167,7 @@ private:
     /// accepted here would produce a row that this interface can no longer read back. Arrays
     /// complete innermost-first, so a depth may be filled in before its parent: the entries are
     /// optional rather than appended in order.
-    VectorWithMemoryTracking<std::optional<size_t>> dimensions;
+    std::vector<std::optional<size_t>> dimensions;
     size_t depth = 0;
 
     [[noreturn]] void throwError(const String & what) const
@@ -175,7 +175,7 @@ private:
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot parse the PostgreSQL array literal {} at position {}: {}",
-            quoteString(text), pos, what);
+            quoteString(String(text)), pos, what);
     }
 
     void skipWhitespace()

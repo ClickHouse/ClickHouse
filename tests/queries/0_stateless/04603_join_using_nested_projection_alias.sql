@@ -2,6 +2,8 @@
 -- Resolving JOIN USING identifiers from aliases nested inside SELECT-list
 -- expressions under analyzer_compatibility_join_using_top_level_identifier = 1.
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS events;
 
 CREATE TABLE events

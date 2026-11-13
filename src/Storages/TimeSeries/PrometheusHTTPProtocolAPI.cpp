@@ -10,8 +10,6 @@
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Server/PrometheusMetricsWriter.h>
-#include <Storages/StoragePrometheusQuery.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/ASTExpressionList.h>
@@ -29,10 +27,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
-#include <Storages/TimeSeries/makeASTSelectLatestSamples.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -63,7 +59,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 promql_max_points_per_series;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -246,7 +242,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, time_scale);
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
-        evaluation_settings.max_points_per_series = getContext()->getSettingsRef()[Setting::promql_max_points_per_series];
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
@@ -257,7 +252,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
-    StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        query_context->setSetting("enable_materialized_cte", true);
+
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
@@ -1001,105 +999,6 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
         /// Finalize the query result cache write before the executor's destructor cancels the pipeline.
         /// The SQL query doesn't depend on `limit`, so its result is complete even when the response is truncated.
-        io.pipeline.finalizeWriteInQueryResultCache();
-    }
-    catch (...)
-    {
-        io.onException();
-        throw;
-    }
-
-    /// Release the query slot early, flush the response and record QueryFinish.
-    finishExecutedQuery(io, query_finish_callback);
-}
-
-void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback)
-{
-    /// Like Prometheus, no `match[]` selectors means an empty response.
-    if (match_params.empty())
-        return;
-
-    /// Prometheus reads the samples in [now - 5m, now] (its default lookback delta).
-    constexpr UInt32 time_scale = 3;
-    const DateTime64 now{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()};
-    const Decimal64 lookback_delta{5 * 60 * 1000};
-
-    /// The newest sample of each series, skipping the series whose newest sample is a stale marker, sorted by metric name.
-    auto sql_query = makeASTSelectLatestSamples(time_series_storage->getStorageID(), match_params, now, lookback_delta, time_scale)
-                         ->formatWithSecretsOneLine();
-
-    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
-
-    auto [ast, io] = executeQuery(sql_query, getContext(), serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
-
-    try
-    {
-        PullingAsyncPipelineExecutor executor(io.pipeline);
-        String last_metric_name;
-        Block block;
-        while (executor.pull(block))
-        {
-            if (block.rows() == 0)
-                continue;
-            const auto & tags_column = typeid_cast<const ColumnArray &>(*block.getByName(TimeSeriesColumnNames::Tags).column);
-            const auto & offsets = tags_column.getOffsets();
-            const auto & tag_names = typeid_cast<const ColumnTuple &>(tags_column.getData()).getColumn(0);
-            const auto & tag_values = typeid_cast<const ColumnTuple &>(tags_column.getData()).getColumn(1);
-            const auto & value_column = block.getByName("last_value").column;
-            const auto & timestamp_column = block.getByName("last_timestamp").column;
-
-            for (size_t row = 0; row < block.rows(); ++row)
-            {
-                const size_t start = (row == 0) ? 0 : offsets[row - 1];
-                std::string_view metric_name;
-                for (size_t j = start; j < offsets[row]; ++j)
-                    if (tag_names.getDataAt(j) == TimeSeriesTagNames::MetricName)
-                        metric_name = tag_values.getDataAt(j);
-
-                /// Like Prometheus, skip nameless series and start a metric family for each new name.
-                if (metric_name.empty())
-                    continue;
-                if (metric_name != last_metric_name)
-                {
-                    writeString("# TYPE ", response);
-                    writePrometheusLabelName(metric_name, response);
-                    writeString(" untyped\n", response);
-                    last_metric_name = metric_name;
-                }
-
-                writePrometheusLabelName(metric_name, response);
-                char separator = '{';
-                bool has_instance = false;
-                for (size_t j = start; j < offsets[row]; ++j)
-                {
-                    auto name = tag_names.getDataAt(j);
-                    auto value = tag_values.getDataAt(j);
-                    if (value.empty() || (name == TimeSeriesTagNames::MetricName))
-                        continue;
-                    writeChar(separator, response);
-                    separator = ',';
-                    writePrometheusLabelName(name, response);
-                    writeChar('=', response);
-                    writeChar('"', response);
-                    writePrometheusLabelValue(value, response);
-                    writeChar('"', response);
-                    has_instance |= (name == "instance");
-                }
-
-                /// Prometheus adds an empty `instance` label to each series without one.
-                if (!has_instance)
-                {
-                    writeChar(separator, response);
-                    writeString("instance=\"\"", response);
-                }
-                writeString("} ", response);
-                writeScalar(response, value_column->getFloat64(row));
-                writeChar(' ', response);
-                writeIntText(timestamp_column->getInt(row), response);
-                writeChar('\n', response);
-            }
-        }
-
         io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)

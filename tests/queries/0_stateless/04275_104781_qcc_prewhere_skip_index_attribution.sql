@@ -24,6 +24,8 @@
 --                                               the implicit projection the count is read
 --                                               from per-part metadata and bypasses QCC.
 
+SET allow_experimental_analyzer = 1;
+
 DROP TABLE IF EXISTS t_104781;
 
 CREATE TABLE t_104781

@@ -853,14 +853,12 @@ ColumnPtr ColumnNullable::compress(bool force_compression) const
     ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
-    Columns parts{nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
             return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
-        },
-        std::move(parts));
+        });
 }
 
 
@@ -1071,16 +1069,6 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
 void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
     getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
-}
-
-void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const
-{
-    getNestedColumn().gatherRangeIntoRows(rows, row_length, field_offset, start, count, overflow_cursor, getNullMapData().data());
-}
-
-void ColumnNullable::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 *) const
-{
-    getNestedColumn().gatherSelectedIntoRows(source_rows, destination_rows, field_offset, getNullMapData().data());
 }
 
 /// A NULL row emits only the flag byte and never touches the nested column, so an
