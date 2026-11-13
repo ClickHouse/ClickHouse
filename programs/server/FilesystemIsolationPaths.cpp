@@ -13,10 +13,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <set>
+#include <string_view>
 
 namespace fs = std::filesystem;
 
@@ -112,6 +115,7 @@ public:
         addKeeper();
         addLogs();
         addCertificates();
+        addKerberosProfiles();
         addBridge();
         addJemallocProfiles();
         addExtraPaths();
@@ -156,22 +160,23 @@ private:
     void addLocation(const fs::path & path, Access access, const std::string & source)
     {
         std::error_code error;
-        if (fs::is_directory(path, error))
-        {
-            add(path, access, source);
-            return;
-        }
         /// The same limit on the number of links as in the kernel, against a loop.
         constexpr size_t max_links = 40;
         fs::path current = path;
         for (size_t i = 0;; ++i)
         {
+            /// A directory, also as the target of a link, on its own.
+            if (fs::is_directory(current, error))
+            {
+                add(current, access, source);
+                return;
+            }
             /// A device or a standard stream, such as `/dev/null` or `/dev/stderr` for a log, on its own, also when it
             /// is the target of a link, as for a log file that is a link to `/dev/null`: the isolated filesystem has
             /// its own `/dev` with only a few devices, and the one of the host must stay invisible. A file that does
             /// not exist is not created there, and it cannot be created inside either. The links a device can be
             /// itself, such as `/dev/stdout`, are resolved when it is mounted.
-            if (isSameOrInside(current.lexically_normal(), "/dev"))
+            if (isSameOrInside(fs::weakly_canonical(current.parent_path(), error) / current.filename(), "/dev"))
             {
                 if (fs::exists(current, error))
                     add(current, access, source);
@@ -186,7 +191,9 @@ private:
             /// itself, or be inside one, as in `certs -> /etc/letsencrypt/live/<domain>`, so it is resolved first.
             if (target.is_relative())
                 target = fs::canonical(current.parent_path()) / target;
-            current = target.lexically_normal();
+            /// The `..` in the target is kept: after a link in the target, as in `versions/current/../fullchain.pem`,
+            /// it means the parent of the target of that link, which `resolvePath` follows as the kernel does.
+            current = absolute(target.string(), "/");
         }
     }
 
@@ -210,7 +217,10 @@ private:
                     return;
                 target = directory / target;
             }
-            current = target.lexically_normal();
+            /// With `..`, as in `addLocation`.
+            current = absolute(target.string(), "/");
+            if (current.filename() == "..")
+                return;
             /// Nor a top-level directory, such as `/run`, with the sockets of every service in it, or `/dev`.
             const fs::path directory = current.parent_path();
             const fs::path real_directory = fs::canonical(directory, error);
@@ -525,6 +535,57 @@ private:
         for (const auto & server : ldap_servers)
             for (const auto * name : {"tls_cert_file", "tls_key_file", "tls_ca_cert_file", "tls_ca_cert_dir"})
                 addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, working_directory);
+    }
+
+    /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
+    /// files and directories they name in `include` and `includedir`. They hold the default realm and the locations of
+    /// the KDCs, which the clients of HDFS and Kafka with a keytab need, and these can be created at runtime by tables.
+    void addKerberosProfiles()
+    {
+        std::vector<fs::path> pending = {"/etc/krb5.conf", "/usr/local/etc/krb5.conf"};
+        std::set<fs::path> seen;
+        /// Against a loop of includes and an unbounded number of files.
+        constexpr size_t max_files = 100;
+        while (!pending.empty() && seen.size() < max_files)
+        {
+            const fs::path file = std::move(pending.back());
+            pending.pop_back();
+            std::error_code error;
+            if (!seen.insert(file).second || !fs::is_regular_file(file, error))
+                continue;
+            add(file, Access::ReadOnly, "a profile of Kerberos");
+            addLinkTargetDirectories(file, Access::ReadOnly, "a profile of Kerberos");
+
+            std::ifstream in(file);
+            std::string line;
+            while (std::getline(in, line))
+            {
+                /// As `profile_parse_file` does: the directive at the start of a line, followed by whitespace and an
+                /// absolute path, which is the rest of the line.
+                for (const std::string_view directive : {"include", "includedir"})
+                {
+                    if (!line.starts_with(directive) || line.size() <= directive.size() || !std::isspace(static_cast<unsigned char>(line[directive.size()])))
+                        continue;
+                    const size_t begin = line.find_first_not_of(" \t", directive.size());
+                    const size_t end = line.find_last_not_of(" \t\r");
+                    if (begin == std::string::npos || line[begin] != '/')
+                        continue;
+                    const fs::path included = absolute(line.substr(begin, end + 1 - begin), "/");
+                    if (directive == "include")
+                    {
+                        pending.push_back(included);
+                    }
+                    else if (fs::is_directory(included, error))
+                    {
+                        /// The directory itself, for the files added to it later, and the files in it, which may be
+                        /// links to other places.
+                        add(included, Access::ReadOnly, "a directory of profiles of Kerberos");
+                        for (const auto & entry : fs::directory_iterator(included, error))
+                            pending.push_back(entry.path());
+                    }
+                }
+            }
+        }
     }
 
     /// The server starts `clickhouse-odbc-bridge` from the directory of its own executable. Only the program is
