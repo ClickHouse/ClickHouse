@@ -2535,6 +2535,25 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
+    /// The page cache keeps the bytes under the ETag seen by this read, so the bytes must be checked to be of that
+    /// generation of the object. Otherwise an object changed between the `HEAD` and the `GET` and then restored is
+    /// served from the cache with the bytes of the other generation. An immutable content id needs no check.
+    bool pin_read_to_etag_for_page_cache = false;
+    if (use_page_cache && object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        if (object_storage->getType() == ObjectStorageType::Web)
+        {
+            pin_read_to_etag_for_page_cache = true;
+        }
+        else if ((object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::Azure)
+            && !validate_etag_on_read)
+        {
+            LOG_DEBUG(log, "Cannot use page cache, the read is not validated against the etag "
+                "(`s3_validate_etag_on_read` or `azure_validate_etag_on_read` is disabled)");
+            use_page_cache = false;
+        }
+    }
+
     if (use_distributed_cache && !object_info.metadata->getContentCacheToken())
     {
         LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
@@ -2613,7 +2632,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
     /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
-    if (validate_etag_on_read && object_info.metadata.has_value())
+    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     /// The distributed cache keys on the etag whether or not this read validates it. The cache server also checks
     /// the etag of its own `GET` against it, so an immutable content id, which is not an etag, goes into a separate

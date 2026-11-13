@@ -243,7 +243,10 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
         read_settings,
         use_external_buffer,
         /* read_until_position */ 0,
-        headers);
+        headers,
+        /// Set by a read that has to be pinned to the generation of the object that it has seen (`HEAD`),
+        /// e.g. because the ETag keys the page cache.
+        object.etag);
 }
 
 void WebObjectStorage::throwNotAllowed()
