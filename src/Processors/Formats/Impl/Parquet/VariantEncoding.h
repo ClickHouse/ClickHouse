@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 
@@ -50,13 +52,14 @@ class VariantValueEncoder
 {
 public:
     VariantValueEncoder(String column_name_, const VariantSettings & settings_);
-    ~VariantValueEncoder();
 
     void encode(const IColumn & column, const IDataType & type, size_t row, String & metadata, String & value);
 
 private:
-    class Impl;
-    std::unique_ptr<Impl> impl;
+    String column_name;
+    VariantSettings settings;
+    UnorderedMapWithMemoryTracking<String, UInt32> key_ids;
+    VectorWithMemoryTracking<std::string_view> keys;
 };
 
 /// `output` must be a column of `output_type`, which is either `Dynamic` or `JSON`.

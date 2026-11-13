@@ -949,13 +949,15 @@ struct JSONNode
     std::optional<String> value;
 };
 
-}
-
-class VariantValueEncoder::Impl
+class ValueEncoder
 {
 public:
-    Impl(String column_name_, const VariantSettings & settings_)
-        : column_name(std::move(column_name_)), settings(settings_)
+    ValueEncoder(
+        const String & column_name_,
+        const VariantSettings & settings_,
+        UnorderedMapWithMemoryTracking<String, UInt32> & key_ids_,
+        VectorWithMemoryTracking<std::string_view> & keys_)
+        : column_name(column_name_), settings(settings_), key_ids(key_ids_), keys(keys_)
     {
     }
 
@@ -1367,11 +1369,13 @@ private:
             column_name, path);
     }
 
-    const String column_name;
-    const VariantSettings settings;
-    UnorderedMapWithMemoryTracking<String, UInt32> key_ids;
-    VectorWithMemoryTracking<std::string_view> keys;
+    const String & column_name;
+    const VariantSettings & settings;
+    UnorderedMapWithMemoryTracking<String, UInt32> & key_ids;
+    VectorWithMemoryTracking<std::string_view> & keys;
 };
+
+}
 
 VariantSettings::VariantSettings(const FormatSettings & format_settings)
     : max_depth(format_settings.max_parser_depth)
@@ -1381,17 +1385,17 @@ VariantSettings::VariantSettings(const FormatSettings & format_settings)
 }
 
 VariantValueEncoder::VariantValueEncoder(String column_name_, const VariantSettings & settings_)
-    : impl(std::make_unique<Impl>(std::move(column_name_), settings_))
+    : column_name(std::move(column_name_))
+    , settings(settings_)
 {
 }
 
-VariantValueEncoder::~VariantValueEncoder() = default;
-
 void VariantValueEncoder::encode(const IColumn & column, const IDataType & type, size_t row, String & metadata, String & value)
 {
-    impl->reset();
-    impl->encode(column, type, row, value);
-    impl->writeMetadata(metadata);
+    ValueEncoder encoder(column_name, settings, key_ids, keys);
+    encoder.reset();
+    encoder.encode(column, type, row, value);
+    encoder.writeMetadata(metadata);
 }
 
 VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const VariantSettings & settings_)
