@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Common/typeid_cast.h>
 
 #include <vector>
@@ -34,6 +35,18 @@ namespace ActionLocks
 
 namespace
 {
+
+/// The storage a lock for `table` is held under. A lazily loaded table is a `StorageTableProxy` until the
+/// database replaces it with the loaded storage, so `SYSTEM STOP ...` and `SYSTEM START ...` may see
+/// different objects for the same table. Both address the loaded storage. A proxy that has not been
+/// loaded cannot hold a lock: taking one loads the table.
+StoragePtr lockKey(const StoragePtr & table)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
+        if (auto loaded = proxy->getLoadedTable())
+            return loaded;
+    return table;
+}
 
 /// Forwarding storages return the action locks of the storage they resolve to, so the lock
 /// belongs to that storage rather than to the one it was requested from.
@@ -82,7 +95,7 @@ void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType 
         add(table, action_type);
 }
 
-void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType action_type)
+void ActionLocksManager::add(const StoragePtr & requested_table, StorageActionBlockType action_type)
 {
     /// Take the lock and determine its owner from one resolution of the aliases. `StorageAlias::getActionLock`
     /// resolves its target by name on its own, so asking the alias for the lock and resolving the owner
@@ -92,7 +105,7 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
     /// A materialized view is asked for the lock itself, because it also stops or pauses its refresher for
     /// the corresponding lock types, and it reports the inner table it took the lock on: the inner table of a
     /// non-`APPEND` refreshable view is bound by name, so resolving it again could see another storage.
-    const auto lock_source = resolveAliases(table);
+    const auto lock_source = resolveAliases(requested_table);
     if (!lock_source)
         return;
 
@@ -108,6 +121,10 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
     if (!owner)
         owner = lock_source;
+
+    /// Taking the lock has loaded a lazily loaded table, so the keys address the loaded storages.
+    const auto table = lockKey(requested_table);
+    owner = lockKey(owner);
 
     std::lock_guard lock(mutex);
 
@@ -136,8 +153,10 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 }
 
 void ActionLocksManager::remove(
-    const StoragePtr & table, StorageActionBlockType action_type, bool resolve_forwarding_target, const OwnerReleaseCheck & may_release_owner)
+    const StoragePtr & requested_table, StorageActionBlockType action_type, bool resolve_forwarding_target, const OwnerReleaseCheck & may_release_owner)
 {
+    const auto table = lockKey(requested_table);
+
     /// The blocker behind a lock taken through a forwarding storage belongs to the storage it resolved to,
     /// so `SYSTEM START` on either of them has to release it. The owner is the one recorded when the lock
     /// was taken, so a forwarding storage that holds a lock is not resolved again here: its target may be
@@ -147,7 +166,7 @@ void ActionLocksManager::remove(
     if (auto recorded_owner = tryGetRecordedOwner(table.get(), action_type))
         owner = std::move(*recorded_owner);
     else if (resolve_forwarding_target)
-        owner = resolveActionLockOwner(table);
+        owner = lockKey(resolveActionLockOwner(table));
 
     if (owner == table)
         owner.reset();
@@ -204,7 +223,7 @@ bool ActionLocksManager::has(const StorageID & table_id, StorageActionBlockType 
 
 bool ActionLocksManager::has(const StoragePtr & table, StorageActionBlockType action_type) const
 {
-    return hasImpl(table.get(), action_type);
+    return hasImpl(lockKey(table).get(), action_type);
 }
 
 bool ActionLocksManager::hasAny(const StorageID & table_id) const
@@ -216,7 +235,7 @@ bool ActionLocksManager::hasAny(const StorageID & table_id) const
 
 bool ActionLocksManager::hasAny(const StoragePtr & table) const
 {
-    return hasImpl(table.get(), std::nullopt);
+    return hasImpl(lockKey(table).get(), std::nullopt);
 }
 
 bool ActionLocksManager::hasImpl(StorageRawPtr table, std::optional<StorageActionBlockType> action_type) const

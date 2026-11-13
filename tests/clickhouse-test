@@ -3975,7 +3975,7 @@ class TestCase:
             # Transactions are not supported for SMT
             r"BEGIN TRANSACTION",
             # Temporary SMT is not supported:
-            # Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines. (INCORRECT_QUERY)
+            # Temporary tables cannot be created with the SharedMergeTree table engine. (INCORRECT_QUERY)
             r"CREATE TEMPORARY",
             # Dictionaries from configs
             r"(flat_ints|hashed_ints|hashed_sparse_ints|cache_ints|complex_hashed_ints|"

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-detach
-# no-fasttest: needs the Parquet format
+# Tags: no-random-detach
 # no-random-detach: concurrent queries fail with `UNKNOWN_TABLE` while another session's query has the table detached
 
 # INSERTs into a `File` table must not wait out `lock_acquire_timeout` behind a SELECT that reads the table more than once.

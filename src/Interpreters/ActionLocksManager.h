@@ -26,7 +26,7 @@ public:
 
     /// Add new lock for a table if it has not been already added
     void add(const StorageID & table_id, StorageActionBlockType action_type);
-    void add(const StoragePtr & table, StorageActionBlockType action_type);
+    void add(const StoragePtr & requested_table, StorageActionBlockType action_type);
 
     /// Removes a lock for a table if it exists.
     /// Also removes the locks of the same type held on the storage the lock resolved to, when it was taken
@@ -40,7 +40,7 @@ public:
     using OwnerReleaseCheck = std::function<bool(const StoragePtr & owner)>;
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(
-        const StoragePtr & table,
+        const StoragePtr & requested_table,
         StorageActionBlockType action_type,
         bool resolve_forwarding_target = false,
         const OwnerReleaseCheck & may_release_owner = {});

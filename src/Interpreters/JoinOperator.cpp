@@ -146,6 +146,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
     extern const QueryPlanSerializationSettingsBool enable_join_key_only_hash_tables;
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_hash_join;
+    extern const QueryPlanSerializationSettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
     extern const QueryPlanSerializationSettingsBool enable_hash_join_row_store;
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const QueryPlanSerializationSettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
@@ -286,8 +288,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
-    enable_packed_string_keys_in_hash_join = false;
-    min_rows_for_packed_string_keys_in_hash_join = 0;
+    enable_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join];
+    min_rows_for_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join];
     enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
     min_string_column_bytes_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store];
@@ -545,6 +547,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
+    settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join] = enable_packed_string_keys_in_hash_join;
+    settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join] = min_rows_for_packed_string_keys_in_hash_join;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES)

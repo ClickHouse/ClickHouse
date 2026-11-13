@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-random-detach
+-- Tags: no-parallel, no-random-detach
 -- no-random-detach: test uses File engine tables
 
 drop table if exists test;
