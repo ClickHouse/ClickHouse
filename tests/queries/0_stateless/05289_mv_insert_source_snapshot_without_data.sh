@@ -40,14 +40,14 @@ SYSTEM FLUSH LOGS text_log, asynchronous_insert_log;
 
 SELECT 'snapshots taken by sync insert', count()
 FROM system.text_log
-WHERE event_date >= yesterday()
+WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND query_id = '$sync_query_id'
     AND message_format_string = 'Injecting {}ms artificial delay before taking storage snapshot'
 SETTINGS max_rows_to_read = 0;
 
 SELECT 'snapshots taken by async insert flush', count()
 FROM system.text_log
-WHERE event_date >= yesterday()
+WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND query_id IN (
         SELECT flush_query_id FROM system.asynchronous_insert_log
         WHERE event_date >= yesterday() AND query_id = '$async_query_id')

@@ -39,63 +39,63 @@ SELECT intDiv(number, 500) AS r, uniqExact(u, s), uniqExact(t2), uniqExact(s, fs
 FROM t GROUP BY r ORDER BY r SETTINGS max_threads = 1;
 
 SELECT 'states, no key';
-SELECT 7, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 7, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v SETTINGS max_threads = 1, max_block_size = 7;
-SELECT 257, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 257, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v SETTINGS max_threads = 1, max_block_size = 257;
-SELECT 1000, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 1000, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v SETTINGS max_threads = 1, max_block_size = 1000;
-SELECT 65409, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 65409, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v SETTINGS max_threads = 1, max_block_size = 65409;
 
 SELECT 'states, GROUP BY k';
-SELECT 7, k, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 7, k, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v GROUP BY k ORDER BY k SETTINGS max_threads = 1, max_block_size = 7;
-SELECT 257, k, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 257, k, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v GROUP BY k ORDER BY k SETTINGS max_threads = 1, max_block_size = 257;
-SELECT 1000, k, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 1000, k, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v GROUP BY k ORDER BY k SETTINGS max_threads = 1, max_block_size = 1000;
-SELECT 65409, k, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT 65409, k, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v GROUP BY k ORDER BY k SETTINGS max_threads = 1, max_block_size = 65409;
 
 -- Blocks of one key each: the rows reach the function as ranges of equal keys.
 SELECT 'states, GROUP BY runs of equal keys';
-SELECT intDiv(number, 500) AS r, hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactState(t2)))), hex(MD5(hex(uniqExactState(s, fs, d)))),
-    hex(MD5(hex(uniqExactState(arr, lc)))), hex(MD5(hex(uniqExactState(u, ns)))), hex(MD5(hex(uniqExactState(d)))),
-    hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT intDiv(number, 500) AS r, hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactState(t2)))), hex(sipHash128(hex(uniqExactState(s, fs, d)))),
+    hex(sipHash128(hex(uniqExactState(arr, lc)))), hex(sipHash128(hex(uniqExactState(u, ns)))), hex(sipHash128(hex(uniqExactState(d)))),
+    hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM v GROUP BY r ORDER BY r SETTINGS max_threads = 1, max_block_size = 500;
 
 SELECT 'states, GROUP BY with keys left out';
-SELECT k, p, uniqExact(u, s), hex(MD5(hex(uniqExactState(u, s)))), hex(MD5(hex(uniqExactIfState(u, s, u % 3 = 0))))
+SELECT k, p, uniqExact(u, s), hex(sipHash128(hex(uniqExactState(u, s)))), hex(sipHash128(hex(uniqExactIfState(u, s, u % 3 = 0))))
 FROM (SELECT *, number % 2 AS p FROM v) GROUP BY k, p ORDER BY k, p
 SETTINGS max_rows_to_group_by = 2, group_by_overflow_mode = 'any', max_threads = 1, max_block_size = 7;
 
 -- Two threads make the sets two-level once they hold more than 100000 keys; one stream keeps the insertion order fixed.
 SELECT 'states, two-level';
-SELECT 65505, uniqExact(number, s), hex(MD5(hex(uniqExactState(number, s))))
+SELECT 65505, uniqExact(number, s), hex(sipHash128(hex(uniqExactState(number, s))))
 FROM (SELECT number, toString(number) AS s FROM numbers(300000)) SETTINGS max_threads = 2, max_block_size = 65505;
-SELECT 1000, uniqExact(number, s), hex(MD5(hex(uniqExactState(number, s))))
+SELECT 1000, uniqExact(number, s), hex(sipHash128(hex(uniqExactState(number, s))))
 FROM (SELECT number, toString(number) AS s FROM numbers(300000)) SETTINGS max_threads = 2, max_block_size = 1000;
-SELECT 65505, g, uniqExact(number, s), hex(MD5(hex(uniqExactState(number, s))))
+SELECT 65505, g, uniqExact(number, s), hex(sipHash128(hex(uniqExactState(number, s))))
 FROM (SELECT number, toString(number) AS s, number % 2 AS g FROM numbers(400000)) GROUP BY g ORDER BY g
 SETTINGS max_threads = 2, max_block_size = 65505;
-SELECT 1000, g, uniqExact(number, s), hex(MD5(hex(uniqExactState(number, s))))
+SELECT 1000, g, uniqExact(number, s), hex(sipHash128(hex(uniqExactState(number, s))))
 FROM (SELECT number, toString(number) AS s, number % 2 AS g FROM numbers(400000)) GROUP BY g ORDER BY g
 SETTINGS max_threads = 2, max_block_size = 1000;
 

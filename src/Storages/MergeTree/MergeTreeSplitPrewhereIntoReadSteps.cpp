@@ -715,6 +715,7 @@ bool tryBuildPrewhereSteps(
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
                 .query_condition_cache_attribution_boundary = condition_groups[step_index].ends_cache_prefix,
+                .is_query_prewhere = true,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));
