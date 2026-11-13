@@ -2,6 +2,8 @@
 -- Tag no-fasttest: Depends on S3
 
 SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT 42 FORMAT CSV', CSV, 'x UInt32');
+-- `::` in a query string is a cast, not the archive path syntax.
+SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT 42::UInt32 FORMAT CSV', CSV, 'x UInt32');
 
 INSERT INTO FUNCTION s3('http://localhost:11111/test/05407 dir/a b.csv', 'test', 'testtest', 'CSV', 'x UInt32') SELECT 1 SETTINGS s3_truncate_on_insert = 1;
 INSERT INTO FUNCTION s3('http://localhost:11111/test/05407 dir/c d.csv.gz', 'test', 'testtest', 'CSV', 'x UInt32') SELECT 2 SETTINGS s3_truncate_on_insert = 1;
@@ -32,6 +34,6 @@ SELECT 'URL engine';
 DROP TABLE IF EXISTS t_05407_url;
 CREATE TABLE t_05407_url (x UInt32) ENGINE = URL('http://localhost:11111/test/05407 dir/a b.csv', 'CSV');
 SELECT x FROM t_05407_url;
--- The URL is stored with the spaces encoded, as the storage uses it.
+-- The URL is kept as written.
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_05407_url';
 DROP TABLE t_05407_url;

@@ -23,7 +23,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <IO/Archives/ArchiveUtils.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
 
@@ -103,7 +102,6 @@ namespace FailPoints
 
 namespace Setting
 {
-    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool enable_url_encoding;
@@ -2668,18 +2666,13 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
-String StorageURL::encodeSpacesInHTTPURL(const String & url, const ContextPtr & context)
+String StorageURL::encodeSpacesInHTTPURL(const String & url, const String & request_method)
 {
     if (classifyURLScheme(url) != URLSchemeTarget::URL)
         return url;
-
-    if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
-    {
-        /// `path_to_archive` is a prefix of `url`. The separator and the path inside the archive follow it verbatim.
-        const auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(url);
-        if (path_in_archive)
-            return encodeSpacesInURI(path_to_archive) + url.substr(path_to_archive.size());
-    }
+    /// The index-page backend splits off the archive path, whose ` :: ` separator holds spaces, and encodes the rest itself.
+    if (request_method.empty() && urlPathHasListableGlobs(url))
+        return url;
     return encodeSpacesInURI(url);
 }
 
@@ -2995,12 +2988,16 @@ void StorageURL::overrideURLInEngineArgs(
     if (skip_userinfo && urlHasUserInfo(resolved_url))
         return;
 
+    /// The spaces of the resolved URL are encoded when it enters the configuration, and again on every load,
+    /// so a URL that differs only in them is the same one. Persisting it would turn the encoding into an
+    /// explicit `url` override, which a named collection may forbid.
+    const auto is_same_url = [&](const String & url) { return encodeSpacesInURI(url) == encodeSpacesInURI(resolved_url); };
+
     /// Positional form: `URL('url', ...)` — replace the first literal argument.
     if (const auto * existing_literal = args[0]->as<ASTLiteral>();
         existing_literal && existing_literal->value.getType() == Field::Types::String)
     {
-        const auto & current_url = existing_literal->value.safeGet<String>();
-        if (current_url != resolved_url)
+        if (!is_same_url(existing_literal->value.safeGet<String>()))
             args[0] = make_intrusive<ASTLiteral>(resolved_url);
         return;
     }
@@ -3012,7 +3009,7 @@ void StorageURL::overrideURLInEngineArgs(
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
             args, context, /*throw_unknown_collection=*/false, nullptr, nullptr, /* settings= */ nullptr, is_replayed_definition))
     {
-        if (named_collection->getOrDefault<String>("url", "") == resolved_url)
+        if (is_same_url(named_collection->getOrDefault<String>("url", "")))
             return;
     }
 
@@ -3073,7 +3070,7 @@ StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, cons
     /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     configuration.url = resolveURLBase(configuration.url, url_base);
-    configuration.url = encodeSpacesInHTTPURL(configuration.url, local_context);
+    configuration.url = encodeSpacesInHTTPURL(configuration.url, configuration.http_method);
 
     if (configuration.format == "auto")
     {

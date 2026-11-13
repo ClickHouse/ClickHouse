@@ -165,7 +165,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
     filename = StorageURL::resolveURLBase(filename, url_base);
-    filename = StorageURL::encodeSpacesInHTTPURL(filename, context);
+    filename = StorageURL::encodeSpacesInHTTPURL(filename, configuration.http_method);
     configuration.url = filename;
 
     /// Dispatch to another backend based on the URL scheme (file://, s3://, az://, hdfs://, ...).

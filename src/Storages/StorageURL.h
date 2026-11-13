@@ -455,9 +455,9 @@ public:
 
     /// `Poco::URI` rejects spaces, but they are common in object keys (e.g. `a b.csv`). Percent-encodes them
     /// once, where the user URL enters the configuration, so every consumer sees the same valid URL.
-    /// URLs of other schemes are returned unchanged: they are handled by the backends they dispatch to.
-    /// The separator of the archive path syntax (` :: `) and the path inside the archive are kept as is.
-    static String encodeSpacesInHTTPURL(const String & url, const ContextPtr & context);
+    /// Returns `url` unchanged when `StorageURL` does not read it: URLs of other schemes are handled by
+    /// the backends they dispatch to, and the HTTP index-page backend encodes it after the archive split.
+    static String encodeSpacesInHTTPURL(const String & url, const String & request_method);
 
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.
