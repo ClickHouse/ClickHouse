@@ -11,7 +11,8 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True, main_configs=[])
+# A test rewrites a stored table definition, which must be a local file.
+node = cluster.add_instance("node", stay_alive=True, main_configs=[], with_remote_database_disk=False)
 
 
 def skip_test_msan(instance):
@@ -615,13 +616,19 @@ def test_executable_function_in_alias_with_implicit_index_after_restart(started_
         == "auto_minmax_index_a\n"
     )
 
-    # Versions before 25.12 stored the implicit index in the table definition.
+    # Versions before 25.12 stored the implicit index in the table definition. A new definition cannot use
+    # the reserved name, so the index is renamed in the stored definition.
     node.query("DROP TABLE IF EXISTS t_alias_implicit_index_legacy SYNC")
     node.query(
-        "ATTACH TABLE t_alias_implicit_index_legacy UUID '6d1f0c3e-5b8a-4c2e-9f47-3a0b8e2d1c75' "
-        "(id UInt64, a String ALIAS test_function_bash_deterministic(id), INDEX auto_minmax_index_a a TYPE minmax() GRANULARITY 1) "
+        "CREATE TABLE t_alias_implicit_index_legacy "
+        "(id UInt64, a String ALIAS test_function_bash_deterministic(id), INDEX legacy_a a TYPE minmax() GRANULARITY 1) "
         "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1"
     )
+    node.query("DETACH TABLE t_alias_implicit_index_legacy")
+    node.exec_in_container(
+        ["bash", "-c", "sed -i 's/INDEX legacy_a /INDEX auto_minmax_index_a /' /var/lib/clickhouse/metadata/default/t_alias_implicit_index_legacy.sql"]
+    )
+    node.query("ATTACH TABLE t_alias_implicit_index_legacy")
     node.query("INSERT INTO t_alias_implicit_index_legacy VALUES (1)")
 
     # Executable functions are registered only after the tables are loaded.

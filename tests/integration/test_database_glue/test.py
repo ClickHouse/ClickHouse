@@ -2047,7 +2047,8 @@ def test_listing_propagates_non_not_found_error(started_cluster):
         ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
         SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
                  aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
-        """
+        """,
+        settings={"allow_database_glue_catalog": 1},
     )
     try:
         # `name = 'ns.table'` is pushed down, so the failing call is the single-namespace listing -- the
@@ -2107,7 +2108,8 @@ def test_exists_table_answers_only_from_not_found(started_cluster):
         ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
         SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
                  aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
-        """
+        """,
+        settings={"allow_database_glue_catalog": 1},
     )
     try:
         error = node.query_and_get_error(
