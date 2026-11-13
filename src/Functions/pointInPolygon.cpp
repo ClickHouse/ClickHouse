@@ -707,6 +707,9 @@ private:
         size_t rings_begin = array_col.getOffsets()[i - 1];
         size_t rings_end = array_col.getOffsets()[i];
 
+        if (rings_begin == rings_end)
+            return false;
+
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
         const auto & tuple_columns = static_cast<const ColumnTuple &>(nested_array_col.getData()).getColumns();
         const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();

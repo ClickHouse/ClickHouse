@@ -36,3 +36,12 @@ Polygon: Empty Ring
 MultiPolygon: Empty Ring
 0
 0
+Polygon: No Rings (non-const)
+0
+0
+MultiPolygon: Polygon With No Rings (non-const)
+0
+0
+MultiPolygon: Empty Then Valid Polygon (non-const)
+1
+0
