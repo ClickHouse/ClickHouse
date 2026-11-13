@@ -25,6 +25,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
@@ -671,13 +672,21 @@ bool StorageView::readRequiresFullQuery() const
 {
     std::vector<std::pair<ASTPtr, String>> nodes;
     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited_views;
+    const auto query_context = CurrentThread::tryGetQueryContext();
     auto add_view_query = [&](const StorageView & view)
     {
         if (!visited_views.insert(view.getStorageID()).second)
             return;
-        const auto metadata = view.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-        if (const auto & inner_query = metadata->getSelectQuery().inner_query)
-            nodes.emplace_back(inner_query, view.getStorageID().database_name);
+        const auto metadata = view.getInMemoryMetadataPtr(query_context, false);
+        const auto & inner_query = metadata->getSelectQuery().inner_query;
+        if (!inner_query)
+            return;
+
+        /// The tables of the `view` table function are in the current database of the query, as when it is read.
+        String database = view.getStorageID().database_name;
+        if (database == ITableFunction::getDatabaseName() && query_context)
+            database = query_context->getCurrentDatabase();
+        nodes.emplace_back(inner_query, std::move(database));
     };
     add_view_query(*this);
 
