@@ -575,6 +575,9 @@ private:
 
         void reconnect(UInt64 * connect_time) override
         {
+            if (deadline && std::chrono::steady_clock::now() >= *deadline)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "The deadline passed before reconnecting to {}", Session::getHost());
+
             Session::close();
             forgetSocketIdentity();
 
@@ -587,6 +590,8 @@ private:
             }
             else
             {
+                if (deadline)
+                    setTimeouts(*this, getTimeouts(*this).getCappedAt(*deadline));
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);

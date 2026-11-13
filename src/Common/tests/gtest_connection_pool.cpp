@@ -1539,6 +1539,34 @@ TEST_F(ConnectionPoolTest, ProxyConnectKeepsToDeadline)
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
 }
 
+TEST_F(ConnectionPoolTest, ReconnectWithoutPoolKeepsToDeadline)
+{
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    auto connection = pool->getConnection(timeouts, nullptr, deadline);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+
+    /// The endpoint pool goes away while the connection is borrowed, and the connection loses its socket, so the next
+    /// request reconnects it directly.
+    pool.reset();
+    DB::HTTPConnectionPools::instance().dropCache();
+    connection->reset();
+    std::this_thread::sleep_until(deadline);
+
+    try
+    {
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        DB::sendHTTPRequest(*connection, request)->finalize();
+        FAIL() << "reconnected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+}
+
 TEST_F(ConnectionPoolTest, StoreLimit)
 {
     DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};
