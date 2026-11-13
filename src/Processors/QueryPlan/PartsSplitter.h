@@ -67,7 +67,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
   * If setting use_skip_indexes_if_final_exact_mode=1, then we need to expand
   * the initial set of granules returned from the skip index by
   * looking for that initial set of PK ranges across all other newer parts.
-  * If within_partition is true, granules are only added back from parts of the same partition.
+  * If within_partition is true (all versions of a row are in one partition), granules are only added back from parts of the same partition.
   */
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,

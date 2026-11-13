@@ -2558,16 +2558,8 @@ static NameSet getColumnsRequiredForMergingFinal(
     return required_columns;
 }
 
-static bool doNotMergePartsAcrossPartitionsFinalImpl(
-    const Settings & settings, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+static bool isPartitionKeyDeterminedByPrimaryKey(const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
 {
-    /// If setting do_not_merge_across_partitions_select_final is set always prefer it
-    if (settings[Setting::do_not_merge_across_partitions_select_final])
-        return true;
-    /// If automatic decision is disabled, should return false straight away
-    else if (!settings[Setting::enable_automatic_decision_for_merging_across_partitions_for_final])
-        return false;
-
     /// Graphite rolls up rows with different values of the time column, so the primary key is not its merge key.
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
         return false;
@@ -2611,11 +2603,19 @@ static bool doNotMergePartsAcrossPartitionsFinalImpl(
 
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 {
-    return doNotMergePartsAcrossPartitionsFinalImpl(context->getSettingsRef(), data, *storage_snapshot->metadata);
+    const auto & settings = context->getSettingsRef();
+
+    /// If setting do_not_merge_across_partitions_select_final is set always prefer it
+    if (settings[Setting::do_not_merge_across_partitions_select_final])
+        return true;
+    /// If automatic decision is disabled, should return false straight away
+    else if (!settings[Setting::enable_automatic_decision_for_merging_across_partitions_for_final])
+        return false;
+
+    return isPartitionKeyDeterminedByPrimaryKey(data, *storage_snapshot->metadata);
 }
 
-static bool expandSkipIndexGranulesWithinPartition(
-    const Settings & settings, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+static bool expandSkipIndexGranulesWithinPartition(const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
 {
     /// Other engines combine rows in `FINAL`, so a partition can return a matching row built from rows the skip index rejected.
     switch (data.merging_params.mode)
@@ -2623,7 +2623,8 @@ static bool expandSkipIndexGranulesWithinPartition(
         case MergeTreeData::MergingParams::Replacing:
         case MergeTreeData::MergingParams::Collapsing:
         case MergeTreeData::MergingParams::VersionedCollapsing:
-            return doNotMergePartsAcrossPartitionsFinalImpl(settings, data, metadata);
+            /// Not the settings-based rule: lazy `FINAL` deduplicates across partitions even with `do_not_merge_across_partitions_select_final`.
+            return isPartitionKeyDeterminedByPrimaryKey(data, metadata);
         case MergeTreeData::MergingParams::Ordinary:
         case MergeTreeData::MergingParams::Summing:
         case MergeTreeData::MergingParams::Aggregating:
@@ -4102,7 +4103,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             {
                 result.parts_with_ranges
                     = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges,
-                        expandSkipIndexGranulesWithinPartition(settings, data, *metadata_snapshot), log);
+                        expandSkipIndexGranulesWithinPartition(data, *metadata_snapshot), log);
                 add_index_stat_row_for_pk_expand = true;
             }
         }

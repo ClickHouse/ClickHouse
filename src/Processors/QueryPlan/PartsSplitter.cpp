@@ -1374,7 +1374,6 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     if (!within_partition)
         return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
 
-    /// FINAL merges the parts of each partition separately, so only parts of the same partition can hold another version of a selected row.
     std::map<String, RangesInDataParts> parts_by_partition;
     for (auto & part : ranges_in_data_parts)
         parts_by_partition[part.data_part->info.getPartitionId()].push_back(std::move(part));
