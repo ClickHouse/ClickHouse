@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/RowsSourcesTemporaryFile.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
+#include <Common/BackgroundTaskCancellationException.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -1432,7 +1433,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         [merge_cancelled = ctx->merge_cancelled]
         {
             if (merge_cancelled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+                throw BackgroundTaskCancellationException(ErrorCodes::ABORTED, "Cancelled merging parts");
         });
 
     /// This is the end of preparation. Execution will be per block.

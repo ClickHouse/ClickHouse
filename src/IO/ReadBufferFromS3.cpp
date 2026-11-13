@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/StdStreamBufFromReadBuffer.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Common/BackgroundTaskCancellationException.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/HTTPConnectionPool.h>
 #include <IO/WriteHelpers.h>
@@ -212,8 +213,6 @@ bool ReadBufferFromS3::nextImpl()
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
-
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
         try
@@ -242,11 +241,8 @@ bool ReadBufferFromS3::nextImpl()
         }
         catch (...)
         {
-            if (!processException(getPosition(), attempt) || last_attempt)
+            if (!shouldRetryRead(getPosition(), attempt))
                 throw;
-
-            FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_retry);
-            checkIfNotCancelled();
 
             /// Drop the failed request before pausing. Its connection is of no use to this buffer
             /// anymore, and keeping it during the back-off would only take it away from the others.
@@ -319,7 +315,6 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; n > 0; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
         Stopwatch request_watch{CLOCK_MONOTONIC};
         bool metrics_observed = false;
@@ -371,11 +366,8 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (request_started)
                 observe_request_metrics();
 
-            if (!processException(range_begin, attempt) || last_attempt)
+            if (!shouldRetryRead(range_begin, attempt))
                 throw;
-
-            FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_retry);
-            checkIfNotCancelled();
 
             /// Drop the failed request before pausing, for the same reason as in `nextImpl`: its
             /// connection is of no use to this read anymore, and holding it during the back-off
@@ -396,18 +388,27 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     return initial_n;
 }
 
+bool ReadBufferFromS3::shouldRetryRead(size_t read_offset, size_t attempt) const
+{
+    if (!processException(read_offset, attempt))
+        return false;
+
+    const bool has_attempts_left = attempt < request_settings[S3RequestSetting::max_single_read_retries];
+    if (has_attempts_left)
+        FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_retry);
+    checkIfNotCancelled();
+    return has_attempts_left;
+}
+
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
     const auto exception = std::current_exception();
-    /// Explicit query cancellation is not an S3 read error and must not be retried. In particular,
-    /// `sendRequest` can throw it before issuing a request, so do not report it in S3 error telemetry.
-    if (CurrentThread::isQueryCancellationException(exception))
+    /// A background task can reach the same cancellation checks as a query without a `QueryStatus`.
+    if (CurrentThread::isQueryCancellationException(exception) || current_exception_cast<const BackgroundTaskCancellationException *>())
         return false;
 
     const auto exception_code = getExceptionErrorCode(exception);
 
-    /// Callers check mutable query cancellation state only after this function classifies the caught
-    /// exception as retryable. This preserves a real non-retryable S3 error if cancellation races with unwinding.
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
     LOG_DEBUG(
@@ -416,10 +417,6 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         "Attempt: {}/{}, Message: {}",
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries].value,
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
-
-
-    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
-    CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {

@@ -16,7 +16,7 @@ output="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.out"
 error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
 client_pid=""
 failpoints=(mt_pause_before_loading_outdated_part merge_tree_outdated_parts_loading_cancelled
-            merge_tree_load_outdated_parts_pause)
+            merge_tree_load_outdated_parts_pause s3_read_before_get_object)
 
 query()
 {
@@ -94,3 +94,36 @@ query --query "
     EXISTS TABLE ${database}.replica;
     SELECT n FROM ${database}.survival;
 "
+
+# Stop a background merge before its first `GetObject`. Its cancellation predicate throws
+# `ABORTED` without a `QueryStatus`. Read the counters for this merge from `system.part_log`.
+query --query "
+    CREATE TABLE ${database}.background_merge (n UInt64) ENGINE=MergeTree ORDER BY n
+    SETTINGS storage_policy='s3_no_cache', prewarm_mark_cache=0, prewarm_primary_key_cache=0,
+             min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=100;
+    SYSTEM STOP MERGES ${database}.background_merge;
+    INSERT INTO ${database}.background_merge VALUES (1);
+    INSERT INTO ${database}.background_merge VALUES (2);
+    SYSTEM ENABLE FAILPOINT s3_read_before_get_object;
+    SYSTEM START MERGES ${database}.background_merge;
+    SYSTEM WAIT FAILPOINT s3_read_before_get_object PAUSE;
+"
+part=$(query --query "SELECT result_part_name FROM system.merges
+    WHERE database='${database}' AND table='background_merge'")
+[[ -n "$part" ]]
+merge_paused_at=$(query --query "SYSTEM STOP MERGES ${database}.background_merge; SELECT now64(6)")
+query --query "SYSTEM DISABLE FAILPOINT s3_read_before_get_object"
+
+merge_result="SELECT errorCodeToName(error), ProfileEvents['S3GetObject'], ProfileEvents['ReadBufferFromS3RequestsErrors']
+    FROM system.part_log WHERE database='${database}' AND table='background_merge'
+        AND event_type='MergeParts' AND part_name='${part}' AND event_time_microseconds >= '${merge_paused_at}'"
+deadline=$((SECONDS + 60))
+while true; do
+    result=$(query --query "SYSTEM FLUSH LOGS part_log; ${merge_result}")
+    if [[ -n "$result" ]]; then
+        echo "$result"
+        break
+    fi
+    (( SECONDS < deadline ))
+    sleep 0.1
+done

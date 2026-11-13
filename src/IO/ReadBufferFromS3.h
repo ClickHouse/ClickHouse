@@ -123,7 +123,9 @@ private:
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
 
-    /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
+    bool shouldRetryRead(size_t read_offset, size_t attempt) const;
+
+    /// Called inside a catch block to classify a read failure and record its metrics.
     /// Returns true if the error looks retriable.
     bool processException(size_t read_offset, size_t attempt) const;
 
