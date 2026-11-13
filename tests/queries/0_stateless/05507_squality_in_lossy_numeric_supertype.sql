@@ -173,14 +173,18 @@ ORDER BY d
 SETTINGS allow_lossy_numeric_supertype = 1;
 
 
--- Nested numeric comparisons remain evaluable with the distributed-compatible rewrite.
+-- Nested numeric comparisons stay bounded with either `NULL` mode.
 SELECT d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x)))))))
 FROM values('d Decimal(18,0), x Float64', (1,1))
 SETTINGS max_expanded_ast_elements = 1000;
 
-SELECT toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x))))))))))
+SELECT toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x))))))))))))))))
 FROM values('d Decimal(18,0), x Float64', (1,1))
-SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1, max_expanded_ast_elements = 100000;
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1, max_expanded_ast_elements = 1000;
+
+SELECT toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x))))))))))))))))
+FROM values('d Decimal(18,0), x Float64', (1,1))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0, max_expanded_ast_elements = 1000;
 
 -- Generated helpers bind to built-ins rather than scoped lambdas.
 WITH (v -> v) AS trunc

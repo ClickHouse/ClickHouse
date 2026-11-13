@@ -1329,12 +1329,35 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     const QueryTreeNodePtr & right_argument,
     bool is_not_in,
     bool compare_nulls,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool bind_arguments = true)
 {
     const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
     const bool left_is_decimal = isDecimal(left_type);
     const bool right_is_decimal = isDecimal(right_type);
+
+    if (bind_arguments && left_is_decimal != right_is_decimal)
+    {
+        /// The exact comparison uses each operand in several branches. Bind both
+        /// operands once so nested `IN` expressions grow linearly and the query
+        /// can still be sent to older shards using existing function names.
+        const DataTypes argument_types{left_argument->getResultType(), right_argument->getResultType()};
+        auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_exact_left", "__in_exact_right"});
+        lambda_arguments->resolve(argument_types);
+        auto left_value = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_exact_left", argument_types[0]}, lambda_arguments);
+        auto right_value = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_exact_right", argument_types[1]}, lambda_arguments);
+        auto body = buildNumericScalarInComparison(left_value, right_value, is_not_in, compare_nulls, context, false);
+        auto lambda = std::make_shared<LambdaNode>(
+            lambda_arguments, body, false /*is_operator*/,
+            std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+        auto left_array = buildResolvedFunction("array", {left_argument}, context);
+        auto right_array = buildResolvedFunction("array", {right_argument}, context);
+        auto mapped = buildResolvedFunction("arrayMap", {lambda, std::move(left_array), std::move(right_array)}, context);
+        return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
+    }
 
     QueryTreeNodePtr result;
     if (left_is_decimal != right_is_decimal)
