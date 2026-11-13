@@ -3,6 +3,11 @@
 -- reach a `wait_for` unchecked, such as the plain UInt64 `interactive_delay`, is the clamp below.
 
 -- A query carrying a huge interactive_delay must still complete (lazy-output queue wait is clamped).
+
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 SELECT 1 SETTINGS interactive_delay = 100000000000000000;
 
 -- A huge lock_acquire_timeout must not overflow the table-lock acquire deadline (now() + timeout);
