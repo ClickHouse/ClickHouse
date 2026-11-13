@@ -1,24 +1,22 @@
 -- Tags: no-parallel, no-fasttest, no-flaky-check, shard
--- no-parallel, no-flaky-check: uses the global shard_0 / shard_1 databases of test_cluster_two_shards_different_databases.
+-- no-parallel, no-flaky-check: uses the global shard_1 database of test_cluster_two_shards_different_databases_with_local.
 -- no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- A shard-local table missing on a local shard is skipped with skip_unavailable_shards, and fails the query without it.
+-- The first shard is this server and has no table in the current database, the second one has it in shard_1.
 
 SET allow_experimental_time_series_table = 1;
 SET distributed_foreground_insert = 1;
 
 DROP TABLE IF EXISTS ts_dist;
 DROP TABLE IF EXISTS ts_dist_skip;
-DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
 
-CREATE DATABASE shard_0;
 CREATE DATABASE shard_1;
 CREATE TABLE shard_1.ts_local ENGINE = TimeSeries;
 INSERT INTO shard_1.ts_local (metric_name, tags, samples) VALUES ('m', map('job', 'a'), [(toDateTime64(140, 3), 7)]);
 
-CREATE TABLE ts_dist AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local);
-CREATE TABLE ts_dist_skip AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local) SETTINGS skip_unavailable_shards = 1;
+CREATE TABLE ts_dist AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases_with_local, '', ts_local);
+CREATE TABLE ts_dist_skip AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases_with_local, '', ts_local) SETTINGS skip_unavailable_shards = 1;
 
 SELECT '--- skip_unavailable_shards = 0';
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS prefer_localhost_replica = 0; -- { serverError UNKNOWN_TABLE }
@@ -36,5 +34,4 @@ SELECT count() FROM prometheusQuery(ts_dist_skip, 'm', 140) SETTINGS skip_unavai
 
 DROP TABLE ts_dist;
 DROP TABLE ts_dist_skip;
-DROP DATABASE shard_0;
 DROP DATABASE shard_1;
