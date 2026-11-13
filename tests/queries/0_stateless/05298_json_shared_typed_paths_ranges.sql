@@ -1,5 +1,7 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+-- no-msan: a median of 442 s under MSan against 7 s in a debug build, and it hits the 600 s per-test timeout;
+-- the test still runs under ASan, UBSan and TSan.
 
 -- Key ranges and the read patterns of a query: ranges starting and ending inside the part, two ranges in one task, a skip
 -- index on a sibling column and on the SHARED paths, PREWHERE, reading in order and in reverse, lazy materialization,

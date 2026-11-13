@@ -111,13 +111,13 @@ Remarque : ce paramètre n’entraîne pas le filtrage de données supplémenta
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Activé par défaut"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+Pousse une condition située au-dessus de la partie de la requête exécutée par les répliques parallèles vers cette partie, ainsi que dans la requête envoyée aux répliques, afin que celles-ci filtrent également selon cette condition.
 
-Permet le pushdown des filtres sur la partie de la requête que les répliques parallèles choisissent d&#39;exécuter
+Désactivez ce paramètre pour conserver la condition au-dessus de la lecture sur l&#39;initiateur, comme dans les versions antérieures à 26.10. C&#39;est la solution de repli si le pushdown pose problème : le résultat reste le même dans les deux cas ; seuls changent la quantité de travail effectuée par les répliques et le moment où elles l&#39;effectuent.
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ Ce paramètre ne concerne que les requêtes avec `JOIN`, dans lesquelles tous le
 
 L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel&#95;replicas&#95;local&#95;plan est activé
 
+Ce paramètre concerne l’analyse d’index qui sélectionne les plages de marks annoncées par une lecture, et à partir desquelles le coordinateur effectue ses affectations. Il ne couvre pas l’élagage effectué pendant la lecture des données, comme l’élagage des granules de `enable_join_runtime_filters_index_analysis` : un filtre d’exécution de JOIN n’existe qu’une fois le côté build lu ; chaque réplique évalue donc le sien et élague sa propre part, et aucun coordinateur ne pourrait le faire à leur place.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,6 +176,8 @@ Les parts de données sont divisées virtuellement en segments, qui sont répart
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limite le nombre de répliques utilisées dans une requête à (nombre estimé de lignes à lire / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). Le maximum reste toutefois limité par &#39;max&#95;parallel&#95;replicas&#39;
+
+Ignoré lorsque `automatic_parallel_replicas_mode` est activé : le mode automatique s&#39;appuie sur son propre modèle de coût pour décider.
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 

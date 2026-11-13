@@ -543,7 +543,6 @@ public:
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
         bool async_insert_,
-        size_t num_squashing_pipelines_,
         bool deduplicate_blocks_in_view_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
@@ -558,7 +557,6 @@ public:
         , inner_storage(inner_storage_)
         , context(context_)
         , async_insert(async_insert_)
-        , num_squashing_pipelines(num_squashing_pipelines_)
         , deduplicate_blocks_in_view(deduplicate_blocks_in_view_)
     {
     }
@@ -605,8 +603,6 @@ private:
     StoragePtr inner_storage;
     ContextPtr context;
     bool async_insert = false;
-    /// See `InsertDependenciesBuilder::getNumSquashesSharingViewsBudget`.
-    size_t num_squashing_pipelines = 1;
     bool deduplicate_blocks_in_view = false;
 
     struct State
@@ -735,7 +731,7 @@ private:
             pipeline.getSharedHeader(),
             squash_into_single_block ? std::numeric_limits<size_t>::max() : settings[Setting::min_insert_block_size_rows],
             squash_into_single_block ? std::numeric_limits<size_t>::max()
-                                     : capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], num_squashing_pipelines),
+                                     : capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1030,7 +1026,7 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
-    ContextPtr context, size_t num_concurrent_copies_)
+    ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
     , init_query(query)
@@ -1038,7 +1034,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     , init_context(context)
     , async_insert(async_insert_)
     , skip_destination_table(skip_destination_table_)
-    , num_concurrent_copies(std::max<size_t>(1, num_concurrent_copies_))
     , views_error_registry(std::make_shared<ViewErrorsRegistry>())
     , logger(getLogger("InsertDependenciesBuilder"))
 {
@@ -1237,7 +1232,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], getNumSquashesSharingViewsBudget()) : 0ULL,
+                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings) : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));
@@ -1525,9 +1520,20 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         }
     }
 
-    storages[current] = storage;
-    metadata_snapshots[current] = metadata;
-    storage_locks[current] = std::move(lock);
+    /// A node is observed once per path, so keep the first observation: everything derived below, in
+    /// particular `output_headers`, is paired with this storage and snapshot when the sink is built.
+    auto [snapshot_it, snapshot_inserted] = metadata_snapshots.try_emplace(current, metadata);
+    if (snapshot_inserted)
+    {
+        storages[current] = storage;
+        storage_locks[current] = std::move(lock);
+    }
+    else
+    {
+        metadata = snapshot_it->second;
+        /// Re-derive from the pinned handle, so the branch below describes the object it came from.
+        materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
+    }
 
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {
@@ -1722,7 +1728,6 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             async_insert,
-            getNumSquashesSharingViewsBudget(),
             deduplicate_blocks_in_dependent_materialized_views);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
@@ -1739,7 +1744,6 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             async_insert,
-            getNumSquashesSharingViewsBudget(),
             deduplicate_blocks_in_dependent_materialized_views);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));

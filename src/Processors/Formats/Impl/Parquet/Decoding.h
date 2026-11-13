@@ -21,6 +21,14 @@ namespace DB::Parquet
 
 struct PageDecoderInfo;
 
+/// Unpacks `count` values of `bit_width` bits each, stored back to back starting at bit
+/// `bit_offset` of `in`, least significant bits first, as in Parquet's bit-packed encodings.
+/// The values must lie within [`in`, `in_end`). The input does not have to be padded: the values
+/// whose 9-byte loads would cross `in_end` are unpacked from a zero-padded copy of the tail.
+/// Instantiated for `UInt32` and `UInt64`.
+template <typename T>
+void unpackBits(const UInt8 * in, const UInt8 * in_end, size_t bit_offset, size_t bit_width, T * out, size_t count);
+
 struct Dictionary
 {
     enum class Mode
@@ -457,6 +465,12 @@ extern template struct BigEndianDecimalStringConverter<Int256>;
 
 struct Int96Converter : public FixedSizeConverter
 {
+    /// Output is `DateTime64(scale)` ticks, rounded toward zero, or down if `round_down`. A value outside the range
+    /// that type holds is clamped to it with Saturate, otherwise throws.
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+    UInt32 scale = 9;
+    bool round_down = false;
+
     Int96Converter();
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;

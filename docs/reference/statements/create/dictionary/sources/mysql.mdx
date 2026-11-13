@@ -82,6 +82,7 @@ Setting fields:
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. |
 
 <Note>
@@ -100,7 +101,11 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
 </Note>
 
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
+MySQL can be connected to on a local host via sockets. To do this, set `host` to `localhost` and `socket`. For any other `host`, `socket` is ignored and the connection goes over TCP. Without `socket`, the connection goes over TCP to `port`, also for `localhost`.
+
+<Note>
+`remote_url_allow_hosts` checks only `host` and `port`: the path in `socket` is not checked.
+</Note>
 
 Example of settings:
 

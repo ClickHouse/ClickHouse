@@ -46,3 +46,10 @@ SELECT '-- WITH alias arrayJoin in WHERE only, old analyzer';
 SELECT '-- WITH alias arrayJoin unreferenced: pushdown still valid';
 WITH arrayJoin([10, 20, 30]) AS unused SELECT number FROM numbers(100) LIMIT 3;
 SELECT '-- WITH alias arrayJoin unreferenced, old analyzer';
+
+-- More than one `ARRAY JOIN` clause must not fail the query. Rows below 3 (primes below 7) produce
+-- no output, so a row budget given to the source would make the count 0.
+SELECT '-- two ARRAY JOIN clauses';
+SELECT count() FROM (SELECT number FROM numbers(100) ARRAY JOIN if(number < 3, [], [number]) AS x ARRAY JOIN [1, 2] AS y LIMIT 3);
+SELECT '-- LEFT ARRAY JOIN and ARRAY JOIN, primes';
+SELECT count() FROM (SELECT prime FROM primes(100) LEFT ARRAY JOIN [1] AS x ARRAY JOIN if(prime < 7, [], [prime]) AS y LIMIT 3);
