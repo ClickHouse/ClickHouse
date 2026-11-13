@@ -19,7 +19,6 @@ enum class ProgramHeaderType : uint32_t
 {
     NOTE = 4,
     DYNAMIC = 2,
-    LOAD = 1,
 };
 
 enum class NameHeaderType : uint32_t

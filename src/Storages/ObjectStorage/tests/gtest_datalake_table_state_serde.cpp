@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <gtest/gtest.h>
@@ -73,8 +71,7 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     info.schema_id_relevant_to_iterator = 7;
     info.sequence_number = 123456;
     info.file_format = "PARQUET";
-    info.position_deletes_objects = {{"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 0}};
-    info.deletion_vector = Iceberg::DeletionVectorObject{"s3://bucket/deletes/dv.puffin", 123, 456};
+    info.position_deletes_objects = {{"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet"}};
     info.equality_deletes_objects = {{"s3://bucket/deletes/eq1.parquet", "PARQUET", std::vector<Int32>{1, 2, 3}, 42}};
     info.record_count = 100500;
     info.file_size_in_bytes = 999888777;
@@ -95,10 +92,6 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     ASSERT_EQ(deserialized.sequence_number, info.sequence_number);
     ASSERT_EQ(deserialized.file_format, info.file_format);
     ASSERT_EQ(deserialized.position_deletes_objects.size(), 1);
-    ASSERT_TRUE(deserialized.deletion_vector.has_value());
-    ASSERT_EQ(deserialized.deletion_vector->file_path, "s3://bucket/deletes/dv.puffin");
-    ASSERT_EQ(deserialized.deletion_vector->content_offset, 123);
-    ASSERT_EQ(deserialized.deletion_vector->content_size_in_bytes, 456);
     ASSERT_EQ(deserialized.equality_deletes_objects.size(), 1);
     ASSERT_TRUE(deserialized.record_count.has_value());
     ASSERT_EQ(*deserialized.record_count, 100500);
@@ -163,24 +156,3 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
     ASSERT_FALSE(deserialized.file_size_in_bytes.has_value());
 }
 
-
-#if USE_AVRO
-TEST(DatalakeStateSerde, PaimonStateSerde)
-{
-    for (const auto & index_manifest : {std::optional<String>{}, std::optional<String>{"index-manifest-1"}})
-    {
-        DataLakeTableStateSnapshot initial_state
-            = Paimon::TableStateSnapshot(3, 1, "base", "delta", "COMPACT", 42, 10, 2, std::nullopt, 7, index_manifest);
-        String str;
-        {
-            WriteBufferFromString write_buffer{str};
-            serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
-        }
-        ReadBufferFromMemory read_buffer(str);
-        DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
-        ASSERT_TRUE(read_buffer.eof());
-        ASSERT_EQ(initial_state, serde_state);
-        ASSERT_EQ(std::get<Paimon::TableStateSnapshot>(serde_state).index_manifest, index_manifest);
-    }
-}
-#endif

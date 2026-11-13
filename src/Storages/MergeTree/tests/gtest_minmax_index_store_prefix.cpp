@@ -1,5 +1,4 @@
 #include <Core/Field.h>
-#include <Formats/FormatSettings.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -205,11 +204,25 @@ TEST_F(MinMaxIndexStoreFixture, StopsBeforeANullableColumnThatFollowsAnUnknownRa
     const NamesAndTypesList nullable_column = {{"n", makeNullable(std::make_shared<DataTypeUInt64>())}};
     ASSERT_EQ(store("all_1_3_1_6", nullable_only, nullable_column), (std::set<String>{"minmax_n.idx"}));
 
+    ReadBufferFromFile in((tmp_dir / "all_1_3_1_6" / "minmax_n.idx").string());
+    auto serialization = nullable_column.front().type->getDefaultSerialization();
+    Field min_val;
+    Field max_val;
+    serialization->deserializeBinary(min_val, in, {});
+    serialization->deserializeBinary(max_val, in, {});
+
+    EXPECT_TRUE(min_val.isNull());
+    EXPECT_TRUE(max_val.isNull());
+
     /// `load` maps a `NULL` bound to `+inf`, so the whole universe comes back as the range of a part that
     /// holds nothing but `NULL`s, and a predicate on that column would prune the part away from queries its
     /// rows belong to. The prefix rule is what keeps this state unreachable.
-    ReadBufferFromFile in((tmp_dir / "all_1_3_1_6" / "minmax_n.idx").string());
-    const Range reloaded = IMergeTreeDataPart::MinMaxIndex::readRange(*nullable_column.front().type, in);
+    if (min_val.isNull())
+        min_val = POSITIVE_INFINITY;
+    if (max_val.isNull())
+        max_val = POSITIVE_INFINITY;
+
+    const Range reloaded(min_val, true, max_val, true);
     EXPECT_TRUE(reloaded.left.isPositiveInfinity());
     EXPECT_TRUE(reloaded.right.isPositiveInfinity());
     EXPECT_FALSE(reloaded.intersectsRange(Range(Field(UInt64(0)), true, Field(UInt64(100)), true)));

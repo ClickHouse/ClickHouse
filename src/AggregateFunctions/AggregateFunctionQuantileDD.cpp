@@ -51,7 +51,7 @@ void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees.
@@ -79,7 +79,7 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
         )",
         R"(
 ┌─quantileDD(0.01, 0.75)(a)─┬─quantileDD(0.01, 0.75)(b)─┐
-│        2.9742334234767016 │                      1.01 │
+│        2.974233423476717  │                      1.01 │
 └───────────────────────────┴───────────────────────────┘
         )"
     }
@@ -88,7 +88,7 @@ SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileDD::name, {createAggregateFunctionQuantile<FuncQuantileDD>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileDD::name, {createAggregateFunctionQuantile<FuncQuantileDD>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees at different levels simultaneously.

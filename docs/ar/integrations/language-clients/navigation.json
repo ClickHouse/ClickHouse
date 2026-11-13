@@ -32,12 +32,13 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "عملاء الجهات الخارجية",
+      "group": "برامج عميلة تابعة لجهات خارجية",
       "icon": "users",
       "pages": [
         "ar/integrations/language-clients/third-party/client-libraries"
       ]
     }
   ],
+  "icon": "/images/icons/icon-language-clients.svg",
   "item": "مكتبات العملاء للغات البرمجة"
 }

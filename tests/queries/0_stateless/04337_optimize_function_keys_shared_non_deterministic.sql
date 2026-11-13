@@ -6,6 +6,7 @@
 -- verify the shared evaluation: the partitioning (LIMIT BY) and the grouping (GROUP BY) are the same
 -- with and without the rewrite.
 
+SET enable_analyzer = 1;
 SET optimize_limit_by_function_keys = 1;
 SET optimize_group_by_function_keys = 1;
 

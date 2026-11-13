@@ -1,7 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
-#include <algorithm>
 #include <climits>
 #include <optional>
 #include <Poco/JSON/Array.h>
@@ -30,19 +29,14 @@ namespace DB
 namespace
 {
 
-/// Only the incremental refreshable-MV append supplies a new cursor; every other snapshot must carry the parent's forward, else the next refresh re-appends already-materialized rows.
-void carryForwardRefreshCursor(
-    Poco::JSON::Object::Ptr summary, Poco::JSON::Object::Ptr parent_snapshot, const std::optional<String> & new_cursor)
+Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
 {
-    std::optional<String> cursor = new_cursor;
-    if (!cursor.has_value() && parent_snapshot && parent_snapshot->has(Iceberg::f_summary))
-    {
-        auto parent_summary = parent_snapshot->get(Iceberg::f_summary).extract<Poco::JSON::Object::Ptr>();
-        if (parent_summary->has(Iceberg::f_refresh_cursor))
-            cursor = parent_summary->getValue<String>(Iceberg::f_refresh_cursor);
-    }
-    if (cursor.has_value())
-        summary->set(Iceberg::f_refresh_cursor, *cursor);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    obj->stringify(oss);
+
+    Poco::JSON::Parser parser;
+    auto result = parser.parse(oss.str());
+    return result.extract<Poco::JSON::Object::Ptr>();
 }
 
 /// Read a numeric `total-*` field from the parent snapshot's summary, returning std::nullopt when absent or null.
@@ -76,29 +70,19 @@ void setSnapshotTotals(
             summary->set(field_name, std::to_string(added));
             return;
         }
+        /// The parent omits this data total, so the new table-wide total cannot be derived: fail the rewrite instead of corrupting the summary.
         auto parent_value = readParentTotal(parent_snapshot, field_name);
         if (!parent_value.has_value())
-        {
-            /// A zero delta leaves the total exactly as the parent had it, so an absent counter is carried
-            /// forward by staying absent; a non-zero delta genuinely cannot be derived from a missing total.
-            if (added == 0)
-                return;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot derive Iceberg snapshot total '{}': the parent snapshot's summary omits it",
                 field_name);
-        }
         summary->set(field_name, std::to_string(*parent_value + added));
     };
-    /// Delete-family totals: a counter the parent omits is unknown, not "no deletes", so it stays absent.
+    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe.
     auto set_delete_total = [&](const char * field_name, Int64 added)
     {
-        std::optional<Int64> parent_value = 0;
-        if (parent_snapshot)
-            parent_value = readParentTotal(parent_snapshot, field_name);
-        if (!parent_value.has_value())
-            return;
-        summary->set(field_name, std::to_string(std::max<Int64>(0, *parent_value + added)));
+        summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name).value_or(0) + added));
     };
     set_data_total(Iceberg::f_total_records, added_records);
     set_data_total(Iceberg::f_total_files_size, added_files_size);
@@ -190,11 +174,6 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
     return nullptr;
 }
 
-Int64 MetadataGenerator::generateSnapshotId()
-{
-    return static_cast<Int64>(dis(gen));
-}
-
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
@@ -207,9 +186,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp,
-    SnapshotOperation operation,
-    const std::optional<String> & refresh_cursor,
-    const SnapshotRemovals & removals)
+    SnapshotOperation operation)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -239,7 +216,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = user_defined_snapshot_id.value_or(generateSnapshotId());
+    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -261,7 +238,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else if (num_deleted_rows != 0)
         operation_name = Iceberg::f_overwrite;
     summary->set(Iceberg::f_operation, operation_name);
-    carryForwardRefreshCursor(summary, parent_snapshot, refresh_cursor);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
@@ -273,27 +249,14 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
     }
 
-    if (removals.data_files != 0)
-    {
-        summary->set(Iceberg::f_deleted_data_files, std::to_string(removals.data_files));
-        summary->set(Iceberg::f_deleted_records, std::to_string(removals.records));
-        summary->set(Iceberg::f_removed_files_size, std::to_string(removals.files_size));
-    }
-    if (removals.position_delete_files != 0)
-    {
-        summary->set(Iceberg::f_removed_delete_files, std::to_string(removals.position_delete_files));
-        summary->set(Iceberg::f_removed_position_delete_files, std::to_string(removals.position_delete_files));
-        summary->set(Iceberg::f_removed_position_deletes, std::to_string(removals.position_deletes));
-    }
-
     setSnapshotTotals(
         summary,
         parent_snapshot,
-        /*added_records=*/added_records - removals.records,
-        /*added_files_size=*/added_files_size - removals.files_size,
-        /*added_data_files=*/added_files - removals.data_files,
-        /*added_delete_files=*/added_delete_files - removals.position_delete_files,
-        /*added_position_deletes=*/num_deleted_rows - removals.position_deletes,
+        /*added_records=*/added_records,
+        /*added_files_size=*/added_files_size,
+        /*added_data_files=*/added_files,
+        /*added_delete_files=*/added_delete_files,
+        /*added_position_deletes=*/num_deleted_rows,
         /*added_equality_deletes=*/0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
@@ -305,8 +268,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
             : 0;
-        /// `added-rows` and the table's `next-row-id` are set by `generateManifestList`, which assigns the row ids.
         new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
+        new_snapshot->set(Iceberg::f_added_rows, added_records);
+        metadata_object->set(Iceberg::f_next_row_id, next_row_id + added_records);
     }
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
@@ -352,7 +316,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         properties->set("write.merge.mode", "merge-on-read");
         properties->set("write.update.mode", "merge-on-read");
     }
-    Iceberg::setFormatVersion1SchemaAndPartitionSpec(metadata_object);
     return {new_snapshot, manifest_list_path};
 }
 
@@ -386,7 +349,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = generateSnapshotId();
+    Int64 snapshot_id = static_cast<Int64>(dis(gen));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -403,7 +366,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     /// Manifest-only rewrite: all added-* deltas are zero so `total-*` counters are inherited unchanged from the parent.
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set(Iceberg::f_operation, Iceberg::f_replace);
-    carryForwardRefreshCursor(summary, parent_snapshot, std::nullopt);
     summary->set(Iceberg::f_added_data_files, "0");
     summary->set(Iceberg::f_added_records, "0");
     summary->set(Iceberg::f_added_files_size, "0");
@@ -426,10 +388,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
-    /// `refs` is optional per the Iceberg spec. Seed it as Object::Ptr, not as a raw pointer:
-    /// `getObject` below matches on typeid(Object::Ptr) and returns null for any other type tag.
     if (!metadata_object->has(Iceberg::f_refs))
-        metadata_object->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+        metadata_object->set(Iceberg::f_refs, new Poco::JSON::Object);
 
     if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
     {
@@ -477,7 +437,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
 
     auto fields = current_schema->getArray(Iceberg::f_fields);
     UInt32 index_to_drop = static_cast<UInt32>(fields->size());
@@ -516,7 +476,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
 
     auto existing_fields = current_schema->getArray(Iceberg::f_fields);
     for (UInt32 i = 0; i < existing_fields->size(); ++i)
@@ -563,7 +523,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
@@ -578,7 +538,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
             if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
-            auto old_type = Iceberg::deepCopy(current_field);
+            auto old_type = deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
             if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
@@ -613,7 +573,7 @@ void MetadataGenerator::generateRenameColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
 
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 

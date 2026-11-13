@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -10,9 +9,7 @@
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
@@ -26,12 +23,15 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 
 namespace DB::QueryPlanOptimizations
 {
-class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting>
+constexpr bool debug_logging_enabled = false;
+
+class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>
 {
     /// stack with nodes which affect order
     /// nodes added when traversing top-down
@@ -39,7 +39,7 @@ class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting>
     std::vector<QueryPlan::Node *> nodes_affect_order;
 
 public:
-    explicit RemoveRedundantSorting(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantSorting>(root_) { }
+    explicit RemoveRedundantSorting(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>(root_) { }
 
     bool visitTopDownImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
@@ -51,6 +51,9 @@ public:
         {
             if (tryRemoveSorting(current_node, parent_node))
             {
+                logStep("step affect sorting", nodes_affect_order.back());
+                logStep("removed from plan", current_node);
+
                 auto & frame = stack.back();
                 /// mark removed node as visited
                 frame.next_child = frame.node->children.size();
@@ -58,13 +61,13 @@ public:
                 /// current sorting step has been removed from plan, its parent has new children, need to visit them
                 auto next_frame = FrameWithParent{.node = parent_node->children[0], .parent_node = parent_node};
                 stack.push_back(next_frame);
+                logStep("push", next_frame.node);
                 return false;
             }
         }
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<LimitRangeStep *>(current_step) /// LIMIT AFTER/UNTIL depends on stream order
             || typeid_cast<NegativeLimitStep *>(current_step) /// negative LIMIT depends on order, so the ORDER BY is non-removable
             || typeid_cast<NegativeLimitByStep *>(current_step) /// negative LIMIT BY depends on order, so the ORDER BY is non-removable
             || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
@@ -76,6 +79,7 @@ public:
             || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
             )
         {
+            logStep("nodes_affect_order/push", current_node);
             nodes_affect_order.push_back(current_node);
         }
 
@@ -87,7 +91,10 @@ public:
         /// we come here when all children of current_node are visited,
         /// so, if it's a node which affect order, remove it from the corresponding stack
         if (!nodes_affect_order.empty() && nodes_affect_order.back() == current_node)
+        {
+            logStep("nodes_affect_order/pop", current_node);
             nodes_affect_order.pop_back();
+        }
     }
 
 private:
@@ -126,16 +133,24 @@ private:
             if (typeid_cast<const SortingStep *>(step) && node != nodes_affect_order.back())
                 continue;
 
+            logStep("update sorting traits", node);
+
             auto * trans = dynamic_cast<ITransformingStep *>(step);
             if (!trans)
+            {
+                logStep("stop update sorting traits: node is not transforming step", node);
                 break;
+            }
 
             trans->updateInputHeader(*input_header);
             input_header = &trans->getOutputHeader();
 
             /// update sorting properties though stack until reach node which affects order (inclusive)
             if (node == nodes_affect_order.back())
+            {
+                logStep("stop update sorting traits: reached node which affect order", node);
                 break;
+            }
         }
 
         return true;
@@ -220,6 +235,7 @@ private:
             if (typeid_cast<const SortingStep*>(step))
                 continue;
 
+            logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
                 if (expr->getExpression().hasStatefulFunctions())
@@ -254,6 +270,8 @@ private:
             if (typeid_cast<const SortingStep *>(step))
                 continue;
 
+            logStep("checking path from current sorting", node);
+
             /// (2) for window function we do ORDER BY in 2 Sorting steps,
             /// so do not delete Sorting if window function step is on top
             if (typeid_cast<const WindowStep *>(step))
@@ -263,15 +281,7 @@ private:
             {
                 if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
                     return false;
-
-                /// PASTE JOIN aligns rows from both sides by position, so sorting of its inputs is not redundant
-                if (join_step->getJoin()->getTableJoin().kind() == JoinKind::Paste)
-                    return false;
             }
-
-            if (const auto * logical_join = typeid_cast<const JoinStepLogical *>(step);
-                logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste)
-                return false;
 
             /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
             if (typeid_cast<const IEJoinStep *>(step))

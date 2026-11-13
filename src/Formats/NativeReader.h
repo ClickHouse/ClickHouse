@@ -1,15 +1,13 @@
 #pragma once
 
+#include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
-#include <Formats/NativeReaderTypeCache.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Core/Block.h>
 #include <Core/BlockMissingValues.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <map>
-#include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -17,7 +15,6 @@ namespace DB
 using ValueSizeMap = std::map<std::string, double>;
 
 class CompressedReadBufferFromFile;
-struct FormatSettings;
 
 /** Deserializes the stream of blocks from the native binary format (with names and column types).
   * Designed for communication between servers.
@@ -34,24 +31,20 @@ public:
         = ISerialization::KindSet::all().without(ISerialization::Kind::DETACHED);
 
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
-    /// The overloads without FormatSettings exist so that this header does not need its definition.
-    NativeReader(ReadBuffer & istr_, UInt64 server_revision_);
     NativeReader(
         ReadBuffer & istr_,
         UInt64 server_revision_,
-        std::optional<FormatSettings> format_settings_,
+        std::optional<FormatSettings> format_settings_ = std::nullopt,
         ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
-    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
     NativeReader(
         ReadBuffer & istr_,
         const Block & header_,
         UInt64 server_revision_,
-        std::optional<FormatSettings> format_settings_,
-        BlockMissingValues * block_missing_values_ = nullptr,
-        NativeReaderTypeCache * type_cache_ = nullptr);
+        std::optional<FormatSettings> format_settings_ = std::nullopt,
+        BlockMissingValues * block_missing_values_ = nullptr);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -74,15 +67,11 @@ public:
         ValueSizeMap * avg_value_size_hints_);
 
 private:
-    /// The type for a type name read from the stream, from `type_cache` when it has the name.
-    DataTypePtr getTypeByName(const String & type_name);
-
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
-    std::shared_ptr<const FormatSettings> format_settings;
+    std::optional<FormatSettings> format_settings = std::nullopt;
     BlockMissingValues * block_missing_values = nullptr;
-    NativeReaderTypeCache * type_cache = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
 
     bool use_index = false;

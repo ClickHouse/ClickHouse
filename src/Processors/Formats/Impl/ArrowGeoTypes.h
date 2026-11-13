@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/WKB.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
@@ -9,7 +8,7 @@
 #include <Poco/JSON/Parser.h>
 #include <base/types.h>
 
-#if USE_ARROW_LIBRARY
+#if USE_ARROW
 #    include <arrow/util/key_value_metadata.h>
 #    include <arrow/array/array_binary.h>
 #endif
@@ -20,13 +19,7 @@ namespace DB
 enum class GeoEncoding : uint8_t
 {
     WKB,
-    WKT,
-    /// One of the native (GeoArrow) encodings of GeoParquet 1.1: `point`, `linestring`, `polygon`,
-    /// `multipoint`, `multilinestring`, `multipolygon`. The geometry is stored as nested lists of
-    /// `struct<x: double, y: double>`, which have the same layout as the corresponding geo type
-    /// (e.g. `Polygon` is `Array(Array(Tuple(Float64, Float64)))`), so the column is read as a
-    /// regular nested column with the geo type requested, instead of being decoded from bytes.
-    Native,
+    WKT
 };
 
 enum class GeoType : uint8_t
@@ -58,11 +51,11 @@ struct GeoColumnMetadata
     std::optional<BboxCovering> covering_bbox;
 };
 
-#if USE_ARROW_LIBRARY
+#if USE_ARROW
 const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
 #endif
 
-UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str);
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str);
 
 DataTypePtr getGeoDataType(GeoType type);
 

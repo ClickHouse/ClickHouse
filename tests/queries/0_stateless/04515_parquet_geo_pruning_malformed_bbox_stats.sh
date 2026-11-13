@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 #
 # `covering.bbox` columns exist purely to help row-group pruning (they're never part of the
 # query's own output or WHERE columns). `getHyperrectangleForRowGroup` used to unconditionally

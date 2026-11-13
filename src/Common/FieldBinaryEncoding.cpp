@@ -70,7 +70,6 @@ public:
     void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const CustomType & x, WriteBuffer & buf) const;
-    [[noreturn]] void operator() (const NumberLiteral & x, WriteBuffer & buf) const;
     void operator() (const bool & x, WriteBuffer & buf) const;
 };
 
@@ -250,12 +249,6 @@ void FieldVisitorEncodeBinary::operator()(const bool & x, WriteBuffer & buf) con
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with custom type is not supported");
 }
 
-[[noreturn]] void FieldVisitorEncodeBinary::operator()(const NumberLiteral &, WriteBuffer &) const
-{
-    /// NumberLiteral should be resolved to a concrete type before binary encoding.
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with NumberLiteral is not supported");
-}
-
 template <typename T>
 Field decodeBigInteger(ReadBuffer & buf)
 {
@@ -347,7 +340,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::String:
         {
             String value;
-            readStringBinaryGrowing(value, buf);
+            readStringBinary(value, buf);
             return value;
         }
         case FieldBinaryTypeIndex::UUID:
@@ -392,7 +385,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             for (size_t i = 0; i != size; ++i)
             {
                 String name;
-                readStringBinaryGrowing(name, buf);
+                readStringBinary(name, buf);
                 value[name] = decodeFieldImpl(buf, complexity, max_complexity);
             }
             return value;
@@ -400,9 +393,9 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::AggregateFunctionState:
         {
             String name;
-            readStringBinaryGrowing(name, buf);
+            readStringBinary(name, buf);
             String data;
-            readStringBinaryGrowing(data, buf);
+            readStringBinary(data, buf);
             return AggregateFunctionStateData{.name = name, .data = data};
         }
     }

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <config.h>
 
-#if USE_AWS_S3 && USE_RDKAFKA
+#if USE_AWS_S3
 
 #include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <IO/S3/Credentials.h>
@@ -262,9 +262,8 @@ private:
 
 TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
 {
-    // Kafka AWS_MSK_IAM resolves the server's ambient identity only behind the operator-set
-    // `kafka.use_environment_credentials` config (documented as unsafe). The S3 credential restriction
-    // (`forbid_implicit_credentials`, default true) must not apply here: with
+    // Kafka AWS_MSK_IAM is server-side, operator-configured authentication, not a user S3 query. The S3
+    // credential restriction (`forbid_implicit_credentials`, default true) must not apply here: with
     // `kafka.use_environment_credentials = 1` the provider chain must still resolve the environment credentials.
     // Declared before the variable scopes so it runs after their restores: the profile cache is read
     // once process-wide, so it has to be re-read after the original files are reachable again.
@@ -408,4 +407,4 @@ TEST(AWSMSKIAMAuth, SetupAutoDetectsRegionFromBrokerList)
     }
 }
 
-#endif // USE_AWS_S3 && USE_RDKAFKA
+#endif // USE_AWS_S3

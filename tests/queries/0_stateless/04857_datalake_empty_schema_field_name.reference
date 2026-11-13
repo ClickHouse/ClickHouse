@@ -6,7 +6,9 @@ alive
 nested-rejected
 nested-rejected-again
 alive
-delta: Column name in DeltaLake table schema cannot be empty (field at position 1)
+delta_kernel_rs_1: Column name in DeltaLake table schema cannot be empty (field at position 1)
+5
+delta_kernel_rs_0: Column name in DeltaLake table schema cannot be empty (field at position 1)
 5
 alive
 paimon: Column name in Paimon table schema cannot be empty (field at position 1)

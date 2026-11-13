@@ -23,8 +23,6 @@ namespace DB
 {
 
 class Context;
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
 
 /// Wrapper for rocksdb storage.
 /// Operates with rocksdb data structures via rocksdb API (holds pointer to rocksdb::DB inside for that).
@@ -36,7 +34,6 @@ class StorageEmbeddedRocksDB final : public StorageWithCommonVirtualColumns, pub
     friend class EmbeddedRocksDBSink;
     friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
-    friend class EmbeddedRocksDBBackup;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -74,8 +71,7 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
-    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &, DDLGuardPtr &) override;
+    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -123,30 +119,12 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void finalizeRestoreFromBackup() override;
-
-    /// A snapshot: `ALTER ... MODIFY SETTING` installs a new version (`setSettings`) and frees the old one once no snapshot
-    /// holds it, so hold it while reading.
-    MultiVersion<RocksDBSettings>::Version getSettings() const { return storage_settings.get(); }
+    const RocksDBSettings & getSettings() const { return *storage_settings.get(); }
 
     void setSettings(std::unique_ptr<RocksDBSettings> && settings_) { storage_settings.set(std::move(settings_)); }
 
 private:
     SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);
-
-    /// Identifier used to elect a single owner among tables sharing one rocksdb_dir for backup/restore.
-    String backupElectionId() const;
-
-    /// Canonical description of the on-disk byte layout (physical columns in order + primary-key order).
-    /// Restore rejects a backup whose fingerprint differs, so raw bytes are never replayed into a table
-    /// whose schema would decode them incorrectly.
-    String backupSchemaFingerprint() const;
-
-    /// Runs (only on the elected owner) the read_only / non-empty checks and then replays the shared data.
-    void restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables);
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     LoggerPtr log;
 
@@ -156,26 +134,14 @@ private:
     DataTypes primary_key_types;
     std::vector<size_t> value_column_pos;
 
-    /// Shared, not unique: a full scan iterates outside rocksdb_ptr_mx, and RocksDB requires every
-    /// iterator to be released before its database is closed, so the reading source keeps the handle
-    /// it took the iterator from alive even if the table replaces rocksdb_ptr meanwhile.
-    using RocksDBPtr = std::shared_ptr<rocksdb::DB>;
+    using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
-    /// Set when a rename left the table without a usable handle: the data is on disk
-    /// but this object cannot serve it. Reads must refuse rather than report zero rows.
-    bool handle_unusable TSA_GUARDED_BY(rocksdb_ptr_mx) = false;
-    /// True when the directory was derived from the table's location instead of being given
-    /// explicitly in the engine arguments. Only such a directory may be moved on rename.
-    const bool implicit_path;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
 
     void initDB() TSA_NO_THREAD_SAFETY_ANALYSIS;
-    /// initDB() plus a fault-injection point that only rename() can trip.
-    void initDBForRename() TSA_NO_THREAD_SAFETY_ANALYSIS;
-    void throwIfHandleUnusable() const TSA_REQUIRES_SHARED(rocksdb_ptr_mx);
 };
 }

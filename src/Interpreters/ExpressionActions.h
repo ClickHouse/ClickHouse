@@ -1,16 +1,12 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
-#include <atomic>
-#include <optional>
-#include <unordered_map>
+#include <functional>
 
 namespace DB
 {
@@ -26,6 +22,8 @@ using JoinPtr = std::shared_ptr<IJoin>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+using CheckCancelled = std::function<bool()>;
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -56,15 +54,6 @@ public:
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool is_lazy_executed;
-
-        /// Set for a lazy executed argument of `and`/`or` that can be executed before the arguments preceding it.
-        /// Passed to the ColumnFunction, see `ShortCircuitArgumentStatistics`.
-        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics = nullptr;
-
-        /// Set for a short-circuit function with commutative arguments (`and`, `or`) if another argument than
-        /// the one from `arguments_with_disabled_lazy_execution` is executed first. Passed to the ColumnFunction
-        /// if the action is lazy executed.
-        std::optional<size_t> short_circuit_eager_argument = {};
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -97,7 +86,7 @@ public:
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const ActionsDAG::Nodes & getNodes() const { return actions_dag.getNodes(); }
+    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
     const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
@@ -113,16 +102,16 @@ public:
     /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
-    /// @param is_cancelled - optional flag checked after each action.
+    /// @param check_cancelled - optional callback to check for cancellation after each action.
     void execute(
         Block & block,
         size_t & num_rows,
         bool dry_run = false,
         bool allow_duplicates_in_input = false,
-        const std::atomic<bool> * is_cancelled = nullptr) const;
+        CheckCancelled check_cancelled = nullptr) const;
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
     void
-    execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false, const std::atomic<bool> * is_cancelled = nullptr) const;
+    execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false, CheckCancelled check_cancelled = nullptr) const;
 
     /// Positional execution for callers whose input structure is fixed (e.g. ExpressionTransform).
     ///
@@ -133,14 +122,14 @@ public:
     ///
     /// `executeOnColumns` consumes `columns` (chunk data, in `header` order) and returns the result
     /// columns in `getSampleBlock()` order. It assumes `allow_duplicates_in_input == false`.
-    VectorWithMemoryTracking<ssize_t> getInputPositions(const Block & header) const;
+    std::vector<ssize_t> getInputPositions(const Block & header) const;
     Columns executeOnColumns(
         Columns columns,
         const Block & header,
-        const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
+        const std::vector<ssize_t> & input_positions_for_header,
         size_t & num_rows,
         bool dry_run = false,
-        const std::atomic<bool> * is_cancelled = nullptr) const;
+        CheckCancelled check_cancelled = nullptr) const;
 
     bool hasArrayJoin() const;
     void assertDeterministic() const;
@@ -166,10 +155,7 @@ private:
     ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions(
-        const std::unordered_set<const Node *> & lazy_executed_nodes,
-        const std::unordered_set<const Node *> & reorderable_short_circuit_arguments,
-        const std::unordered_map<const Node *, size_t> & short_circuit_eager_arguments);
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 namespace ExpressionActionsChainSteps

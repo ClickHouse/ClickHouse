@@ -15,7 +15,9 @@ ClickHouse поддерживает типы данных для предста�
 
 * [Представление простых географических объектов](https://en.wikipedia.org/wiki/GeoJSON).
 
-## Точка {#point}
+<div id="point">
+  ## Точка
+</div>
 
 `Point` задаётся координатами X и Y и хранится как [Tuple](/ru/reference/data-types/tuple)([Float64](/ru/reference/data-types/float), [Float64](/ru/reference/data-types/float)).
 
@@ -33,10 +35,11 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-## MultiPoint {#multipoint}
+<div id="multipoint">
+  ## MultiPoint
+</div>
 
 `MultiPoint` — это множество точек, хранящееся в виде массива точек: [Array](/ru/reference/data-types/array)([Point](#point)).
-Значение типа `Point` можно привести к типу `MultiPoint`; в результате получится `MultiPoint`, единственным элементом которого будет эта точка.
 
 **Пример**
 
@@ -52,7 +55,9 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-## Ring {#ring}
+<div id="ring">
+  ## Ring
+</div>
 
 `Ring` — это простой полигон без отверстий, представленный в виде массива точек: [Array](/ru/reference/data-types/array)([Point](#point)).
 
@@ -70,7 +75,9 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-## LineString {#linestring}
+<div id="linestring">
+  ## LineString
+</div>
 
 `LineString` — это линия, представленная в виде массива точек: [Array](/ru/reference/data-types/array)([Point](#point)).
 
@@ -88,10 +95,11 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-## MultiLineString {#multilinestring}
+<div id="multilinestring">
+  ## MultiLineString
+</div>
 
 `MultiLineString` представляет собой набор линий, хранящихся в виде массива `LineString`: [Array](/ru/reference/data-types/array)([LineString](#linestring)).
-Значение `LineString` можно привести к типу `MultiLineString`; результат будет содержать эту линию в качестве единственного элемента.
 
 **Пример**
 
@@ -107,7 +115,9 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Polygon {#polygon}
+<div id="polygon">
+  ## Polygon
+</div>
 
 `Polygon` — это полигон с отверстиями, хранящийся в виде массива колец: [Array](/ru/reference/data-types/array)([Ring](#ring)). Первый элемент внешнего массива задаёт внешний контур полигона, а все последующие элементы — отверстия.
 
@@ -127,10 +137,11 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-## MultiPolygon {#multipolygon}
+<div id="multipolygon">
+  ## MultiPolygon
+</div>
 
 `MultiPolygon` состоит из нескольких полигонов и хранится как массив полигонов: [Array](/ru/reference/data-types/array)([Polygon](#polygon)).
-Значение `Polygon` можно привести к типу `MultiPolygon`; результат будет содержать этот полигон в качестве единственного элемента.
 
 **Пример**
 
@@ -148,7 +159,9 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Geometry {#geometry}
+<div id="geometry">
+  ## Geometry
+</div>
 
 `Geometry` — это общий тип для всех перечисленных выше типов. Он эквивалентен `Variant` этих типов.
 
@@ -192,7 +205,9 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Связанные материалы {#related-content}
+<div id="related-content">
+  ## Связанные материалы
+</div>
 
 * [Изучение огромных массивов реальных данных: более 100 лет метеонаблюдений в ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

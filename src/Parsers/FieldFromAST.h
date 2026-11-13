@@ -21,7 +21,7 @@ struct FieldFromASTImpl : public CustomType::CustomTypeImpl
     bool operator <= (const CustomTypeImpl &) const override { throwNotImplemented("<="); }
     bool operator > (const CustomTypeImpl &) const override { throwNotImplemented(">"); }
     bool operator >= (const CustomTypeImpl &) const override { throwNotImplemented(">="); }
-    bool operator == (const CustomTypeImpl & rhs) const override;
+    bool operator == (const CustomTypeImpl &) const override { throwNotImplemented("=="); }
 
     ASTPtr ast;
 };

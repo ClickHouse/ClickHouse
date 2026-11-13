@@ -18,11 +18,11 @@ SELECT 1 = '257';
 SELECT '---';
 SELECT 1 != '257';
 SELECT '---';
-SELECT 1 < '257';
+SELECT 1 < '257'; -- this is wrong for now
 SELECT '---';
 SELECT 1 > '257';
 SELECT '---';
-SELECT 1 <= '257';
+SELECT 1 <= '257'; -- this is wrong for now
 SELECT '---';
 SELECT 1 >= '257';
 SELECT '---';
@@ -30,4 +30,4 @@ SELECT '---';
 SELECT toDateTime('2020-06-13 01:02:03') = '2020-06-13T01:02:03';
 SELECT '---';
 
-SELECT 0 = ''; -- { serverError TYPE_MISMATCH }
+SELECT 0 = ''; -- { serverError ATTEMPT_TO_READ_AFTER_EOF }

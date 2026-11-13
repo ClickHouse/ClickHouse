@@ -1,0 +1,7 @@
+<clickhouse>
+    <jemalloc_merge_tree_arenas>4</jemalloc_merge_tree_arenas>
+    <!-- Keep the MergeTree pool as the only manually-created arenas on this node, so the sharding
+         test can attribute per-arena growth to the pool (the cache arena would otherwise also be a
+         "manual" arena and could satisfy the assertion). -->
+    <use_separate_cache_arena>0</use_separate_cache_arena>
+</clickhouse>

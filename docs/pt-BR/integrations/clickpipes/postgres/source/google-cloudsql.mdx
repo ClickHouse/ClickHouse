@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { CloudSQLIAMAuthentication } from "/snippets/pt-BR/clickpipes/_cloudsql_iam_authentication.mdx";
 
 <Info>
   Se você usar um dos provedores compatíveis (na barra lateral), consulte o guia específico desse provedor.
@@ -23,7 +22,9 @@ import { CloudSQLIAMAuthentication } from "/snippets/pt-BR/clickpipes/_cloudsql_
 
 Postgres 12 ou posterior
 
-## Habilitar a replicação lógica {#enable-logical-replication}
+<div id="enable-logical-replication">
+  ## Habilitar a replicação lógica
+</div>
 
 **Você não precisa** seguir as etapas abaixo se a configuração `cloudsql. logical_decoding` estiver ativada. Em geral, essa configuração já vem pré-configurada se você estiver migrando de outra ferramenta de replicação de dados.
 
@@ -37,7 +38,9 @@ Postgres 12 ou posterior
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="Reiniciar servidor" size="lg" border />
 
-## Criando o usuário do ClickPipes e concedendo permissões {#creating-clickpipes-user-and-granting-permissions}
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## Criando o usuário do ClickPipes e concedendo permissões
+</div>
 
 Conecte-se ao Cloud SQL Postgres usando o usuário admin e execute os comandos abaixo:
 
@@ -73,21 +76,19 @@ Conecte-se ao Cloud SQL Postgres usando o usuário admin e execute os comandos a
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-* Para criar uma publicação para todas as tabelas em um schema específico:
+  * Para criar uma publicação para todas as tabelas em um schema específico:
 
-  ```sql
-  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-  ```
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
 
 A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
-## Uso da autenticação de banco de dados via IAM (opcional, Beta) {#iam-database-authentication}
+[//]: # "TODO Add SSH Tunneling"
 
-<CloudSQLIAMAuthentication engine="postgres" />
-
-[//]: # "TODO Adicionar tunelamento SSH"
-
-## Adicione os IPs do ClickPipes ao firewall {#add-clickpipes-ips-to-firewall}
+<div id="add-clickpipes-ips-to-firewall">
+  ## Adicione os IPs do ClickPipes ao firewall
+</div>
 
 Siga as etapas abaixo para adicionar os IPs do ClickPipes à sua rede.
 

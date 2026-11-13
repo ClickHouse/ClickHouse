@@ -11,10 +11,8 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Common/HiddenSecret.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
-#include <Storages/System/extractTablesFilter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -62,7 +60,7 @@ static String hideSecretsInCommand(const ContextPtr & context, const String & co
             && e.code() != ErrorCodes::TOO_DEEP_RECURSION
             && e.code() != ErrorCodes::TOO_SLOW_PARSING)
             throw;
-        return String(HIDDEN_SECRET);
+        return "[HIDDEN]";
     }
 
     return ast->formatWithPossiblyHidingSensitiveData(
@@ -93,7 +91,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
         { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
-            "Only parts that contain blocks with numbers less than this number will be mutated in the partition. "
+            "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
             "In non-replicated tables, block numbers in all partitions form a single sequence. "
             "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
         },
@@ -107,9 +105,9 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "0 if the mutation is still in process. "
         },
         { "is_killed", std::make_shared<DataTypeUInt8>(),
-            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud. "
-            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized. "
-            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period. "
+            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud."
+            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized."
+            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period."
             "This can occur if another long-running mutation is blocking the killed mutation. This is a normal situation."
         },
         { "latest_failed_part",           std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
@@ -135,24 +133,15 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
-    /// Conditions on `database` and `table` act like an index: they keep the enumeration below
-    /// from resolving every table of every database just to throw the rows away afterwards.
-    const auto database_name_filter = extractNameFilter(predicate, "database", context);
-    const auto table_name_filter = extractNameFilter(predicate, "table", context);
-
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
-        if (database_name_filter && !database_name_filter(db.first))
-            continue;
-
         /// Check if database can contain MergeTree tables
         if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
-        for (; iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)

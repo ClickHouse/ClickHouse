@@ -1,5 +1,4 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -78,7 +77,7 @@ void SelectPartitionTransform::transform(Chunk & chunk)
     size_t max_parts = 0; // do not limit here part count
     BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts, metadata_snapshot, context);
 
-    VectorWithMemoryTracking<std::string> all_partitions;
+    std::vector<std::string> all_partitions;
     for (const auto & current_block : part_blocks)
         all_partitions.push_back(current_block.partition_id + "size=" + DB::toString(current_block.block->rows()));
 

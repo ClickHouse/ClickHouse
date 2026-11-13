@@ -156,7 +156,7 @@ ORDER BY tuple()
 COMMENT 'Optimized types'
 ```
 
-We can populate this with a simple `INSERT INTO SELECT`, reading the data from PostgreSQL and inserting into ClickHouse:
+We can populate this with a simple `INSERT INTO SELECT`, reading the data from PostgresSQL and inserting into ClickHouse:
 
 ```sql title="Query"
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')

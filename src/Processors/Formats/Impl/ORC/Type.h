@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Processors/Formats/Impl/ORC/Proto.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace DB::ORC
 {
@@ -58,7 +58,7 @@ public:
     bool hasAttributeKey(const std::string & key) const { return attributes.contains(key); }
     const std::string & getAttributeValue(const std::string & key) const { return attributes.at(key); }
     void setAttribute(const std::string & key, const std::string & value) { attributes[key] = value; }
-    const MapWithMemoryTracking<std::string, std::string> & getAttributes() const { return attributes; }
+    const std::map<std::string, std::string> & getAttributes() const { return attributes; }
 
     /// The type name in the same format as in the reference implementation (Hive type names).
     std::string toString() const;
@@ -74,7 +74,7 @@ public:
     UInt64 assignIds(UInt64 start);
 
     /// Appends the types of this subtree to `out` in pre-order. The ids must be assigned.
-    void toProto(VectorWithMemoryTracking<Proto::Type> & out) const;
+    void toProto(std::vector<Proto::Type> & out) const;
 
     static std::unique_ptr<Type> createPrimitiveType(TypeKind kind);
     static std::unique_ptr<Type> createCharType(TypeKind kind, UInt64 maximum_length);
@@ -86,29 +86,29 @@ public:
 
     /// Builds the type tree from the types in the file footer. Throws `INCORRECT_DATA` if they do
     /// not form a tree with the ids in pre-order.
-    static std::unique_ptr<Type> fromProto(const VectorWithMemoryTracking<Proto::Type> & types);
+    static std::unique_ptr<Type> fromProto(const std::vector<Proto::Type> & types);
 
     /// Builds a copy of the tree with only the selected columns (by id). The parent of every
     /// selected column must also be selected. Returns nullptr if the root is not selected.
-    static std::unique_ptr<Type> buildSelectedType(const Type & type, const VectorWithMemoryTracking<bool> & selected);
+    static std::unique_ptr<Type> buildSelectedType(const Type & type, const std::vector<bool> & selected);
 
 private:
     TypeKind kind;
     UInt64 column_id = 0;
     UInt64 maximum_column_id = 0;
-    VectorWithMemoryTracking<std::unique_ptr<Type>> subtypes;
-    VectorWithMemoryTracking<std::string> field_names;
+    std::vector<std::unique_ptr<Type>> subtypes;
+    std::vector<std::string> field_names;
     UInt64 maximum_length = 0;
     UInt64 precision = 0;
     UInt64 scale = 0;
     std::string crs;
     UInt32 algorithm = 0;
-    MapWithMemoryTracking<std::string, std::string> attributes;
+    std::map<std::string, std::string> attributes;
 };
 
 /// The column selection with the same semantics as in the reference implementation:
 /// selecting a column selects its whole subtree, and then all parents of the selected columns
 /// are selected. If only some branches of a UNION are selected, all its branches are selected.
-VectorWithMemoryTracking<bool> selectColumnsByTypeIds(const Type & root, const VectorWithMemoryTracking<UInt64> & type_ids);
+std::vector<bool> selectColumnsByTypeIds(const Type & root, const std::vector<UInt64> & type_ids);
 
 }

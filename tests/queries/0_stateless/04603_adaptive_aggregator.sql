@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 -- Random settings limits: index_granularity=(8192, None)
 -- A tiny index_granularity over S3 storage explodes the per-granule read count
 -- (one S3 GET per granule for multi-column reads), making this long test time out.
@@ -12,6 +12,7 @@
 
 SET max_threads = 4;
 SET max_block_size = 8192;
+SET enable_sharding_aggregator = 0;
 SET adaptive_aggregator_freeze_threshold = 128;
 -- The adaptive gate requires two-level aggregation to be permitted.
 SET group_by_two_level_threshold = 100000;

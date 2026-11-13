@@ -38,22 +38,26 @@ GCS ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 启用持续摄取后，ClickPipes 会持续从指定路径摄取数据。默认情况下，GCS ClickPipe 依赖文件的隐式[词典序](#continuous-ingestion-lexicographical-order)来确定摄取顺序。也可以将其配置为通过已[配置为针对存储桶提供通知](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line)的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅，以按[任意顺序](#continuous-ingestion-any-order)摄取文件。
 
-#### 词典序 {#continuous-ingestion-lexicographical-order}
+<div id="continuous-ingestion-lexicographical-order">
+  #### 词典序
+</div>
 
 GCS ClickPipe 假定文件会按词典序添加到存储桶中，并依赖这种隐含顺序依次摄取文件。这意味着，任何新文件的名称**都必须**在词典序上大于最后一个已摄取的文件。例如，名为 `file1`、`file2` 和 `file3` 的文件会依次被摄取；但如果向存储桶中新增一个 `file 0`，它将被**忽略**，因为该文件名在词典序上并不大于最后一个已摄取的文件。
 
 在这种模式下，GCS ClickPipe 会先对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认每 30 秒一次) 。若要在某个特定文件之后开始持续摄取，请配置 **Start after**。ClickPipes 将跳过在词典序上小于或等于配置值的文件，并从该点继续摄取较新的文件。
 
-#### 任意顺序 {#continuous-ingestion-any-order}
+<div id="continuous-ingestion-any-order">
+  #### 任意顺序
+</div>
 
 <Tip>
-  请参阅[为持续摄取配置无序模式](/zh/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)了解分步说明。
+  请参阅[为持续摄取配置 unordered 模式](/zh/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)了解分步说明。
 </Tip>
 
-可以通过设置一个接收桶通知的 [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) 订阅，将 GCS ClickPipe 配置为摄取不具有隐式顺序的文件。这样一来，ClickPipes 就可以监听对象创建事件，并摄取任何新文件，而无需依赖文件命名约定。
+可以通过设置一个接收存储桶通知的 [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) 订阅，将 GCS ClickPipe 配置为摄取不具有隐式顺序的文件。这样一来，ClickPipes 就可以监听对象创建事件，并摄取任何新文件，而无需依赖文件命名约定。
 
 <Note>
-  公共桶**不**支持无序模式。该模式要求使用服务账号身份验证 (可使用上传的私钥或 GCP Workload Identity) ，并且需要一个连接到该桶的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅。
+  公共存储桶**不**支持 unordered 模式。该模式要求使用**服务账号**身份验证，并且需要一个连接到该存储桶的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅。
 </Note>
 
 在此模式下，GCS ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后通过 Pub/Sub 订阅监听与指定路径匹配的 `OBJECT_FINALIZE` 通知。对于先前已处理过的文件、不匹配该路径的文件，或其他类型事件的任何消息，都会被**忽略**。若要仅摄取通过订阅传递的文件，请启用**跳过初始加载**。启用后，ClickPipes 会跳过对所选路径中现有文件的初始扫描，只处理通过 Pub/Sub 订阅传递的文件。
@@ -147,12 +151,9 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 使用带有 Pub/Sub 通知的[无序模式](#continuous-ingestion-any-order)时，必须使用服务账号进行身份验证。选择 **服务账号** 作为身份验证方法，并上传服务账号密钥 JSON 文件。
 
-#### GCP Workload Identity (Beta) {#gcp-workload-identity}
-
-按照 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)，从 ClickPipes 服务上下文中获取托管服务账号。在源桶上为该账号授予 `roles/storage.objectViewer` 角色，然后使用 `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 身份验证方式创建管道。如需以 unordered 模式摄取，还需在现有的通知订阅上为该账号授予 `roles/pubsub.subscriber` 和 `roles/pubsub.viewer` 角色，并使用该订阅的完全限定名称：`projects/<project-id>/subscriptions/<subscription-id>`。
-
-<a id="hmac-credentials" />
-#### HMAC 凭据
+<div id="hmac-credentials">
+  #### HMAC 凭据
+</div>
 
 要使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)进行身份验证，请在设置 ClickPipe 连接时，在 **身份验证方法** 中选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 (例如 `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) 和秘密密钥 (例如 `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`)。
 
@@ -160,8 +161,9 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 请按照[本指南](/zh/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret)创建带有 HMAC 密钥的服务账号。
 
-<a id="network-access" />
-### 网络访问
+<div id="network-access">
+  ### 网络访问
+</div>
 
 GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和数据摄取：对应为 ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外配置一层网络安全措施 (例如出于合规原因) ，则**必须为这两条路径都配置网络访问**。
 
@@ -172,8 +174,9 @@ GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<a id="advanced-settings" />
-## 高级设置
+<div id="advanced-settings">
+  ## 高级设置
+</div>
 
 ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的需求。如果您的场景需要进一步微调，可以调整以下设置：
 

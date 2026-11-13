@@ -8,18 +8,18 @@ doc_type: 'guide'
 
 Rust library integration will be described based on BLAKE3 hash-function integration.
 
-The first step of integration is to create an empty Rust project in `contrib/<library>-cmake` and include the required library in its Cargo.toml. The project is a member of the cargo workspace in `contrib/rust-contrib-workspace`: add `workspace = "../rust-contrib-workspace"` under `[package]`, and list the folder in `members` of `contrib/rust-contrib-workspace/Cargo.toml`. Keep it a plain library, without `crate-type`. The members are not built as libraries of their own: the root package of the workspace, `_ch_rust_workspace`, re-exports every enabled member and is the one static library that ClickHouse links. In `contrib/rust-contrib-workspace/Cargo.toml`, give the root package a feature and an optional dependency for the member (`blake3 = ["dep:_ch_rust_blake3"]` and `_ch_rust_blake3 = { path = "../blake3-cmake", optional = true }`), and re-export it in `contrib/rust-contrib-workspace/src/lib.rs` (`#[cfg(feature = "blake3")] pub use _ch_rust_blake3;`).
+The first step of integration is to add the library to /rust folder. To do this, you need to create an empty Rust project and include the required library in Cargo.toml. It is also necessary to configure new library compilation as static by adding `crate-type = ["staticlib"]` ​​to Cargo.toml.
 
-Next, you need to link the library to CMake using Corrosion library. The first step is to add the library folder to `contrib/CMakeLists.txt` with `add_contrib`, next to the other members of the workspace. After that, you should add the CMakeLists.txt file to the library directory. In it, you need to add the member with `clickhouse_add_rust_member`: it creates an interface target that links the static library of the workspace, and enables the feature of the root package, which `contrib/rust-contrib-workspace/CMakeLists.txt` imports with Corrosion after every member. For BLAKE3 these lines would be:
+Next, you need to link the library to CMake using Corrosion library. The first step is to add the library folder in the CMakeLists.txt inside the /rust folder. After that, you should add the CMakeLists.txt file to the library directory. In it, you need to call the Corrosion import function. These lines were used to import BLAKE3:
 
 ```CMake
-clickhouse_add_rust_member(_ch_rust_blake3 FEATURE blake3)
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
 
 target_include_directories(_ch_rust_blake3 INTERFACE include)
 add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
 ```
 
-Thus, we will create a CMake target for the member, and then give it a more convenient name. Note that the name `_ch_rust_blake3` comes from Cargo.toml, where it is used as project name (`name = "_ch_rust_blake3"`).
+Thus, we will create a correct CMake target using Corrosion, and then rename it with a more convenient name. Note that the name `_ch_rust_blake3` comes from Cargo.toml, where it is used as project name (`name = "_ch_rust_blake3"`).
 
 Since Rust data types are not compatible with C/C++ data types, we will use our empty library project to create shim methods for conversion of data received from C/C++, calling library methods, and inverse conversion for output data. For example, this method was written for BLAKE3:
 
@@ -74,18 +74,6 @@ An example of a build script that can auto-generate a header file:
         }
     }
 ```
-
-## Generating the header in this repository {#generating-the-header-in-this-repository}
-
-The build script above writes the header into the source tree on every build, which leaves nothing to check: a committed header that no longer matches the Rust side is simply overwritten locally and stays wrong for everyone else. The crates here use one of two arrangements instead:
-
-* generate the header into the build directory and point `target_include_directories` at it, the way `contrib/delta-kernel-rs` does. Nothing is committed, so nothing can go stale;
-* commit the header and have the build script compare it with the freshly generated one, failing the build when they differ, the way `contrib/vortex-cmake` does. The two halves of an FFI are separate translation units linked by symbol name, so a signature changed on one side only is silent undefined behaviour rather than a compile error - the comparison is what makes forgetting to regenerate impossible. Keep an environment variable that rewrites the committed file, so that updating it stays one command.
-
-Two things to know before adding `cbindgen` to a crate of `contrib/rust-contrib-workspace`:
-
-* pin the version exactly. Its output changes between patch releases, so with a loose requirement the check starts reporting the generator's version rather than a real difference. The version also has to be one that `contrib/rust_vendor` carries, otherwise `contrib/rust-contrib-workspace/vendor.sh` has to be re-run and the submodule updated;
-* parse the source file with `Builder::with_src` rather than the crate with `cbindgen::generate`. The crate path makes cbindgen run `cargo metadata` in a nested process, and that process does not inherit the `--config` that points cargo at the vendored sources.
 
 Also, you should use attribute #[no_mangle] and `extern "C"` for every C-compatible attribute. Without it library can compile incorrectly and cbindgen won't launch header autogeneration.
 

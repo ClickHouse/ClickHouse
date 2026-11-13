@@ -77,7 +77,6 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, RelativeF
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
     , relative_flags(is_add_ ? std::move(relative_flags_) : std::vector<UInt8>{})
-    , serialization_hash(SerializationEnum<Type>::getHash(this->getValues()))
 {
     if (is_add && relative_flags.size() != this->getValues().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -329,8 +328,8 @@ static std::vector<UInt8> autoAssignNumberForEnum(const ASTPtr & arguments, bool
 
     if (assign_count != 0 && assign_count != arguments->children.size() - 1)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                        "All elements of Enum data type after the first one must be of the same form: "
-                        "either all 'name' = number, or all 'name'");
+                        "All elements of Enum data type must be of form: "
+                        "'name' = number or 'name', where name is string literal and number is an integer");
 
     arguments->children = assign_number_child;
     return relative_flags;
