@@ -7,8 +7,6 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 DataStore는 chDB의 pandas-compatible API로, 익숙한 pandas DataFrame 인터페이스에 SQL 쿼리 최적화 기능을 결합해 pandas 스타일의 코드를 작성하면서도 ClickHouse의 성능을 활용할 수 있게 합니다.
 
 <div id="key-features">
@@ -25,7 +23,15 @@ DataStore는 chDB의 pandas-compatible API로, 익숙한 pandas DataFrame 인터
   ## 아키텍처
 </div>
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore 아키텍처" />
+<div className="ch-image-md">
+
+<Frame>
+
+![DataStore 아키텍처](/images/chdb/datastore_architecture.png)
+
+</Frame>
+
+</div>
 
 DataStore는 **지연 실행**과 **이중 엔진 실행**을 사용합니다:
 

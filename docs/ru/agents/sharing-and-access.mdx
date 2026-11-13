@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
@@ -55,11 +54,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Нажмите значок **share** в нижней части Конструктора агентов. Бейдж на значке показывает, сколько пользователей или групп сейчас имеют доступ.
 
-<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="Нижняя часть панели Конструктора агентов с выделенным значком share и бейджем, показывающим один субъект, которому предоставлен общий доступ" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Нижняя часть панели Конструктора агентов с выделенным значком share и бейджем, показывающим один субъект, которому предоставлен общий доступ](/images/cloud/agent-builder/sharing/sharing.webp)
+
+</Frame>
+
+</div>
 
 Откроется модальное окно **Share**. Найдите пользователя или группу по имени или адресу электронной почты, выберите уровень доступа (**Viewer**, **Editor** или **Owner**) и нажмите **Save Changes**. Чтобы открыть доступ для всей организации, включите переключатель **Share with everyone in ClickHouse**.
 
-<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="Модальное окно Share с разделом User and Group Permissions, полем поиска, существующим пользователем с ролью Owner, переключателем Share with everyone in ClickHouse и кнопками Cancel и Save Changes" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Модальное окно Share с разделом User and Group Permissions, полем поиска, существующим пользователем с ролью Owner, переключателем Share with everyone in ClickHouse и кнопками Cancel и Save Changes](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+
+</Frame>
+
+</div>
 
 Получатель увидит агента в списке доступных агентов при следующем обновлении. Чтобы отозвать доступ, удалите строку в том же модальном окне. Получатель сразу потеряет доступ; текущие диалоги завершатся, но новые открыть не получится.
 

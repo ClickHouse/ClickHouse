@@ -338,7 +338,7 @@ void BlockNestedLoopJoinStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-std::vector<size_t> BlockNestedLoopJoinStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> BlockNestedLoopJoinStep::getStepGroups() const
 {
     return {static_cast<size_t>(Stage::Build), static_cast<size_t>(Stage::Probe)};
 }

@@ -101,6 +101,7 @@ html:not(.dark) .ch-usecase-arrow {
 .ch-image-sm,
 .ch-image-md,
 .ch-image-lg {
+    display: block;
     width: 100%;
     margin-inline: auto;
 }
@@ -122,6 +123,14 @@ html:not(.dark) .ch-usecase-arrow {
 .ch-image-lg img {
     width: 100%;
     height: auto;
+}
+
+.ch-image-background-white img {
+    background-color: white;
+}
+
+.ch-image-background-black img {
+    background-color: rgb(31 31 28);
 }
 /* MCP icon — mask-size/repeat extracted from inline style; URL stays inline */
 .ch-mcp-icon {

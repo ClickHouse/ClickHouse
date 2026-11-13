@@ -119,7 +119,7 @@ void CustomSeparatedRowInputFormat::resetReadBuffer()
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
+    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_), default_csv_delimiter(format_settings_.csv.delimiter)
 {
 }
 
@@ -398,6 +398,9 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+    columns = 0;
+    format_settings.csv.delimiter = default_csv_delimiter;
+    format_settings.csv.custom_delimiter.clear();
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
@@ -461,7 +464,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
-            });
+            }, /*supports_reset_parser=*/ true);
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);

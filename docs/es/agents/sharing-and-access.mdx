@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge />
 
@@ -55,11 +54,27 @@ La visibilidad para toda la organización es lo que hace que un recurso pueda en
 
 Haz clic en el icono **share** en la parte inferior de Agent Builder. Una insignia en el icono muestra cuántos usuarios o grupos tienen acceso actualmente.
 
-<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="Parte inferior del panel de Agent Builder con el icono share resaltado y una insignia que muestra una entidad principal compartida" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Parte inferior del panel de Agent Builder con el icono share resaltado y una insignia que muestra una entidad principal compartida](/images/cloud/agent-builder/sharing/sharing.webp)
+
+</Frame>
+
+</div>
 
 Se abre el modal **Share**. Busca un usuario o grupo por nombre o correo electrónico, elige el nivel de acceso (**Viewer**, **Editor** o **Owner**) y haz clic en **Save Changes**. Para compartirlo con toda la organización, activa el interruptor **Share with everyone in ClickHouse**.
 
-<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="Modal Share con la sección User and Group Permissions, un campo de búsqueda, un usuario existente con el rol Owner, un interruptor Share with everyone in ClickHouse y los botones Cancel y Save Changes" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Modal Share con la sección User and Group Permissions, un campo de búsqueda, un usuario existente con el rol Owner, un interruptor Share with everyone in ClickHouse y los botones Cancel y Save Changes](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+
+</Frame>
+
+</div>
 
 El destinatario verá el agente en su lista de agentes disponibles la próxima vez que la actualice. Para revocar el acceso, elimina la fila en el mismo modal. El destinatario pierde el acceso de inmediato; sus conversaciones en curso terminan, pero no podrá abrir nuevas.
 

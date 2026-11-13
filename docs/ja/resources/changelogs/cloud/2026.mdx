@@ -8,8 +8,6 @@ keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Clou
 rss: true
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 この ClickHouse Cloud の変更履歴に加えて、[Cloud 互換性](/ja/products/cloud/guides/cloud-compatibility) ページもあわせてご参照ください。
 
 <Update label="2026年10月19日">
@@ -518,7 +516,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     * GCP us-east1 (サウスカロライナ)
   * クラッシュレポート収集の設定を組織レベルで構成できるようになりました。この設定は以前はサービスレベルでのみ利用可能でした。組織レベルで無効にすると、既存および今後のすべてのサービスで自動的に無効化されます。
 
-  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="クラッシュレポート収集" />
+  <div className="ch-image-md">
+
+  <Frame>
+
+  ![クラッシュレポート収集](/images/cloud/reference/crash-reports-collection.webp)
+
+  </Frame>
+
+  </div>
 </Update>
 
 <Update label="2026年1月23日">
