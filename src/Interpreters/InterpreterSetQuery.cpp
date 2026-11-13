@@ -110,15 +110,9 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 
     /// `make_distributed_plan` may be inferred from `distributed_plan_workers_num`/`distributed_plan_worker_cluster`,
     /// and this clause is applied again later, so an in-query reset counts as an explicit 0, not "unset".
-    std::vector<String> default_settings;
-    default_settings.reserve(ast.default_settings.size());
-    for (const auto & name : ast.default_settings)
-    {
-        if (name == "make_distributed_plan")
-            changes.setSetting(name, Field(false));
-        else
-            default_settings.push_back(name);
-    }
+    auto default_settings = ast.default_settings;
+    if (std::erase(default_settings, "make_distributed_plan"))
+        changes.setSetting("make_distributed_plan", false);
 
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
