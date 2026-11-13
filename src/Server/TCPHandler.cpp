@@ -147,6 +147,9 @@ namespace FailPoints
 {
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
+extern const char remote_query_executor_exception_after_sending_data[];
+extern const char remote_query_executor_exception_after_sending_progress[];
+extern const char remote_query_executor_exception_after_sending_announcement[];
 extern const char tcp_handler_fail_connection_setup[];
 }
 }
@@ -193,6 +196,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -1819,7 +1823,23 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    {
+                        fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_progress, {
+                            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                            {
+                                sendProgress(state);
+                                throw Exception(
+                                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected retryable error after sending progress");
+                            }
+                        });
+
                         sendData(state, block);
+
+                        fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_data, {
+                            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && block.rows() > 0)
+                                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error after sending data");
+                        });
+                    }
 
                     out->sync();
                 }
@@ -2009,6 +2029,10 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 
     out->finishChunk();
     out->sync();
+
+    fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_announcement, {
+        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected error after announcing parts");
+    });
 }
 
 

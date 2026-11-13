@@ -526,6 +526,10 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 {
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     Packet packet = std::move(last_received_packet);
+    /// Save the exception's origin before invalidating the connection. Ordinary
+    /// data packets do not need a pool lookup or shared-pointer reference counting.
+    if (packet.type == Protocol::Server::Exception)
+        replica_pool = hedged_connections_factory.getReplicaPool(replica.connection);
     switch (packet.type)
     {
         case Protocol::Server::Data:

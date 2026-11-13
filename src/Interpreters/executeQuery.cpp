@@ -285,6 +285,8 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -295,6 +297,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int FAULT_INJECTED;
@@ -309,6 +312,9 @@ namespace FailPoints
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
+    extern const char remote_query_executor_exception_retryable[];
+    extern const char remote_query_executor_cannot_open_file_once[];
+    extern const char remote_query_executor_cannot_read_from_file_descriptor[];
     extern const char trigger_sanitizer_error[];
     extern const char segfault_read_access[];
     extern const char segfault_write_access[];
@@ -2543,6 +2549,19 @@ static BlockIO executeQueryImpl(
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
     const auto & client_info = context->getClientInfo();
+
+    if (!internal && client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        fiu_do_on(FailPoints::remote_query_executor_exception_retryable, {
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error (retryable)");
+        });
+        fiu_do_on(FailPoints::remote_query_executor_cannot_open_file_once, {
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Injected CANNOT_OPEN_FILE error (retryable)");
+        });
+        fiu_do_on(FailPoints::remote_query_executor_cannot_read_from_file_descriptor, {
+            throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Injected CANNOT_READ_FROM_FILE_DESCRIPTOR error (retryable)");
+        });
+    }
 
     if (client_info.initial_query_start_time == 0)
     {

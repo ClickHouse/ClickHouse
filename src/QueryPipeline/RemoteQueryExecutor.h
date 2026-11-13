@@ -132,6 +132,13 @@ public:
         std::optional<Extension> extension_ = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
+    /// Use the lazy reader's already selected connections for the first attempt.
+    /// Further attempts select fresh connections from the failover pool.
+    void setInitialConnections(std::vector<ConnectionPoolWithFailover::TryResult> connections_) // STYLE_CHECK_ALLOW_STD_CONTAINERS: matches the pool API.
+    {
+        initial_connections = std::move(connections_);
+    }
+
     ~RemoteQueryExecutor();
 
     /// Create connection and send query, external tables and scalars.
@@ -386,6 +393,20 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
+    size_t retry_count = 0;
+    int last_retry_error_code = 0;
+    bool should_retry = false;
+    bool retry_on_assigned_replica = false;
+
+    /// Progress, totals, profile information and task assignments cannot be rolled back.
+    bool retry_forbidden = false;
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+
+    /// Resolves the actual packet producer for hedged reads; captures the selected pool
+    /// for single-connection multiplexed reads. No pool bookkeeping in `IConnections`.
+    std::function<ConnectionPoolPtr()> get_replica_pool;
+    std::optional<std::vector<ConnectionPoolWithFailover::TryResult>> initial_connections; // STYLE_CHECK_ALLOW_STD_CONTAINERS: matches the pool API.
+
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;
 #endif
@@ -422,6 +443,11 @@ private:
 
     /// The body of finish(): cancels the query and drains the remaining packets.
     void finishUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Reset the failed attempt so the read loop selects a connection again.
+    void retryQuery() TSA_REQUIRES(was_cancelled_mutex);
+
+    bool isRetryableError(int error_code) const;
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);

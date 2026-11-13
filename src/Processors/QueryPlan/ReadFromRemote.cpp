@@ -825,18 +825,24 @@ void ReadFromRemote::addLazyPipe(
         if (exception_ptr)
             std::rethrow_exception(exception_ptr);
 
-        std::vector<IConnectionPool::Entry> connections;
-        connections.reserve(try_results.size());
-        for (auto & try_result : try_results)
-            connections.emplace_back(std::move(try_result.entry));
-
         String query_string = formattedAST(remote_query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
-            my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+            my_shard.shard_info.pool,
+            query_string,
+            header,
+            my_context,
+            my_throttler,
+            my_scalars,
+            my_external_tables,
+            stage_to_use,
+            my_shard.query_plan);
+        remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+        if (!my_table_func_ptr)
+            remote_query_executor->setMainTable(my_shard.main_table ? my_shard.main_table : my_main_table);
+        remote_query_executor->setInitialConnections(std::move(try_results));
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);

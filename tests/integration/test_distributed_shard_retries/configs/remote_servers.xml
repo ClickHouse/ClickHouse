@@ -1,0 +1,39 @@
+<clickhouse>
+    <!-- Prevent background DNS refreshes from replacing pools during error-count assertions. -->
+    <disable_internal_dns_cache>true</disable_internal_dns_cache>
+    <process_query_plan_packet>true</process_query_plan_packet>
+    <logger>
+        <level>trace</level>
+    </logger>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+        <hedged_retry_cluster>
+            <shard>
+                <replica><host>node1</host><port>9000</port></replica>
+                <replica><host>node2</host><port>9000</port></replica>
+                <replica><host>node3</host><port>9000</port></replica>
+            </shard>
+        </hedged_retry_cluster>
+    </remote_servers>
+</clickhouse>
