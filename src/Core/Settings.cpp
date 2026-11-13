@@ -2077,9 +2077,13 @@ When disabled, row policies are applied before FINAL, which can cause different 
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
 If the row policy expression is deterministic and depends only on non-floating-point columns in ORDER BY, it will still be
-applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns
+applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. A value computed
+once for the whole query, such as `currentUser()`, `now()` or the set of `IN (subquery)`, does not prevent this
+optimization; the set of a `Set` table, which can change while the query runs, does. Floating-point columns
 or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
+`GraphiteMergeTree` rolls up rows with different times into one row, so for it only the path column counts, and only
+when it is the first `ORDER BY` column.
 
 Possible values:
 
@@ -5273,6 +5277,10 @@ Note that it disables `read_in_order_use_buffering` optimization and preliminary
         {"26.4", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."}) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
+
+It also applies to a single `uniqExact` (or `count(DISTINCT)`) without `GROUP BY` over a table sorted by its argument: the distinct values are counted as they arrive in order, so they are not kept in memory. With several threads, the read is split into ranges of the sorting key that are counted in parallel; when it cannot be split (for example, for a floating-point argument or a function of the sorting key), the usual aggregation is used.
+
+Projections are chosen before the order of aggregation. If a [projection](/reference/engines/table-engines/mergetree-family/mergetree#projections) reads fewer granules than the table, it is used even when it is not sorted by the `GROUP BY` key, and the aggregation then keeps all the groups in memory instead of aggregating in order.
 
 Possible values:
 
@@ -9852,12 +9860,12 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 Skip the Iceberg data files that cannot contain a key of a JOIN runtime filter applied to the read (see `enable_join_runtime_filters`). Once the build side of the join has finished, the key values recorded by the runtime filter (or their minimum/maximum range when the exact set was too large) are checked against the column bounds of each data file in its manifest file, in the same way as a query filter. Data files requested before then are read in full. Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). The Parquet row groups of the data files that are read are skipped the same way by their column statistics (requires [input_format_parquet_filter_push_down](#input_format_parquet_filter_push_down)).
 )", 0, \
         {"26.11", false, true, "New setting to prune Iceberg data files and Parquet row groups by JOIN runtime filters."}) \
-    DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
-With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+    DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
+With [`use_statistics`](#use_statistics) enabled, estimate a data lake read for join reordering from the table metadata, without reading data. Only Iceberg is supported: the estimate comes from the manifest files of its data files left after partition and min-max pruning by the query filter, the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
-        {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
+        {"26.11", false, false, "New setting to estimate the rows and column statistics of data lake reads (Iceberg for now) for join reordering from the table metadata."}) \
     DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
-With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
+With [`use_datalake_metadata_statistics`](#use_datalake_metadata_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
 )", 0, \
         {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
@@ -10784,6 +10792,10 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
+    DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
+)", 0, \
+        {"26.11", true, false, "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode when they became large, which saves memory but can make large joins slower."}) \
     DECLARE(Bool, enable_packed_string_keys_in_hash_join, true, R"(
 In `hash`, `parallel_hash` and `grace_hash` joins on a single `String` key, store each key in the hash table as a 16-byte value. This includes a join with `OR` whose every condition has a single `String` key. It also includes a `hash` or `parallel_hash` join after it is converted to `grace_hash` to spill to disk.
 

@@ -1,0 +1,14 @@
+offset compact storage	Compact	Full	1200000
+offset compact first delete rows	1188118	1188118	0
+offset compact first delete parent-offset matches	1188118	1188118
+offset compact second delete rows	1176582	1176582	0
+offset compact second delete parent-offset matches	1176582	1176582
+offset compact merged rows	1	1177582	1177582	0
+offset compact merged parent-offset matches	1177582	1177582
+offset wide storage	Wide	Full	1200000
+offset wide first delete rows	1188118	1188118	0
+offset wide first delete parent-offset matches	1188118	1188118
+offset wide second delete rows	1176582	1176582	0
+offset wide second delete parent-offset matches	1176582	1176582
+offset wide merged rows	1	1177582	1177582	0
+offset wide merged parent-offset matches	1177582	1177582

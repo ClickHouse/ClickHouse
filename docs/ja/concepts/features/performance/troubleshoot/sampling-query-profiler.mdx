@@ -13,7 +13,7 @@ ClickHouse では、クエリ実行を分析するためのサンプリングプ
 ClickHouse Cloud では、クエリプロファイラは自動的に有効になります。
 次のクエリ例では、関数名とソースコード上の位置を解決したうえで、プロファイル対象のクエリで最も頻出するスタックトレースを特定します。
 
-デフォルトでは、プロファイラは収集時にスタックトレースをシンボル化し、結果を [`system.trace_log`](/ja/reference/system-tables/trace_log) の `symbols` および `lines` カラムに保存します。そのため、以下の例ではこれらのカラムを直接読み取り、イントロスペクション関数は必要ありません。シンボル化は `trace_log` サーバー設定セクションの `symbolize` 設定によって制御されます (デフォルトで有効)。ELF プラットフォーム (Linux など) および macOS でサポートされています。FreeBSD では `symbols` および `lines` カラムは常に空です。`symbols` 内の関数名はバイナリのシンボルテーブルから取得され、デフォルトで利用できます。`lines` 内のソースコード上の位置はベストエフォートで提供されます。デバッグ情報が必要であり (macOS ではバイナリの隣にある `.dSYM` バンドル)、ELF プラットフォームではメインの ClickHouse バイナリ内のフレームのみが解決されるため、解決できないフレーム (共有ライブラリ内のフレームなど) のエントリは空のままとなります。シンボル化が無効な場合は、`trace` カラム内の生のアドレスを解決するために、`addressToSymbol`、`demangle`、`addressToLine` の[イントロスペクション関数](/ja/reference/functions/regular-functions/introspection)を使用してください。これらの関数はシンボル化と同じプラットフォーム (Linux などの ELF プラットフォームおよび macOS) で利用できます。FreeBSD ではこれらもコンパイルされていないため、`trace` 内のアドレスはサーバー外部で解決する必要があります。
+デフォルトでは、プロファイラは収集時にスタックトレースをシンボル化し、結果を [`system.trace_log`](/ja/reference/system-tables/trace_log) の `symbols` および `lines` カラムに保存します。そのため、以下の例ではこれらのカラムを直接読み取り、イントロスペクション関数は必要ありません。シンボル化は `trace_log` サーバー設定セクションの `symbolize` 設定によって制御されます (デフォルトで有効)。ELF プラットフォーム (Linux など) および macOS でサポートされています。FreeBSD では `symbols` および `lines` カラムは常に空です。`symbols` 内の関数名はバイナリのシンボルテーブルから取得され、デフォルトで利用できます。`lines` 内のソースコード上の位置はベストエフォートで提供されます。デバッグ情報が必要であり (macOS ではバイナリの隣にある `.dSYM` バンドル)、フレームのアドレスを含むロード済みオブジェクト (メインの ClickHouse バイナリまたは共有ライブラリ) がどれであっても、そのオブジェクトを対象に解決されます。そのため、デバッグ情報を持たないフレームのエントリは空のままとなります。シンボル化が無効な場合は、`trace` カラム内の生のアドレスを解決するために、`addressToSymbol`、`demangle`、`addressToLine` の[イントロスペクション関数](/ja/reference/functions/regular-functions/introspection)を使用してください。これらの関数はシンボル化と同じプラットフォーム (Linux などの ELF プラットフォームおよび macOS) で利用できます。FreeBSD ではこれらもコンパイルされていないため、`trace` 内のアドレスはサーバー外部で解決する必要があります。
 
 <Tip>
   `query_id` の値は、プロファイルしたいクエリの ID に置き換えてください。
@@ -51,9 +51,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
   </Tab>
 </Tabs>
 
-<div id="self-managed-query-profiler">
-  ## セルフマネージド環境でクエリプロファイラを使用する
-</div>
+## セルフマネージド環境でクエリプロファイラを使用する {#self-managed-query-profiler}
 
 セルフマネージド環境でクエリプロファイラを使用するには、以下の手順に従ってください。
 
@@ -90,7 +88,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
 
     このセクションでは、プロファイラの動作結果を含む [trace&#95;log](/ja/reference/system-tables/trace_log) システムテーブルを設定します。
     デフォルトで有効な `symbolize` オプションを指定すると、ClickHouse は収集時に各スタックフレームを解決し、デマングルされた関数名とソースコード上の位置を `symbols` および `lines` カラムに保存します。
-    `symbols` の関数名はシンボルテーブルから取得され、デフォルトで利用できます。一方、`lines` のソースコード上の位置にはデバッグ情報 (macOS では `.dSYM` バンドル) が必要です。ELF プラットフォームでは、メインの ClickHouse バイナリ内のフレームに対してのみ解決され、解決できないフレームの `lines` エントリは空になります。
+    `symbols` の関数名はシンボルテーブルから取得され、デフォルトで利用できます。一方、`lines` のソースコード上の位置にはデバッグ情報 (macOS では `.dSYM` バンドル) が必要で、フレームのアドレスを含む読み込み済みオブジェクト (メインの ClickHouse バイナリまたは共有ライブラリ) に対して解決されます。解決できないフレームの `lines` エントリは空になります。
 
     `trace` カラム内の生のアドレスは、あらかじめシンボル化されたカラムに比べて、再起動やアップグレードをまたいだ安定性が低い点に注意してください。
     FreeBSD を除く ELF プラットフォームでは、メインの ClickHouse バイナリ内のフレームは物理ファイルオフセットとして保存されるため、バイナリが変更されない限り、再起動後も解決可能です。一方、macOS および FreeBSD では、再起動後に無効になる可能性がある実行時仮想アドレスとして保存されます。
@@ -111,11 +109,11 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
     個々のクエリごとにプロファイルを取得する必要がある場合は、より高いサンプリング頻度を使用してください。
   </Step>
 
-  <Step title={<>`trace_log` システムテーブルを分析する</>} id="analyze-trace-log-system-table">
+  <Step title={<><code>trace_log</code> システムテーブルを分析する</>} id="analyze-trace-log-system-table">
     特定のクエリのプロファイルを取得するには、`trace_log` テーブルのデータを集計する必要があります。
     データは個々の関数単位でも、スタックトレース全体単位でも集計できます。
 
-    シンボル化が有効な場合 (デフォルト) 、復元された関数名とソースコード内の位置はすでに `symbols` および `lines` カラムで利用できるため、追加のセットアップは必要ありません。FreeBSD ではシンボル化はサポートされておらず、これらのカラムは常に空です。デバッグ情報がないフレームや、メインの ClickHouse バイナリの範囲外にあるフレームでは、`lines` エントリが空になる場合があります ([上記](#server-config)を参照) 。
+    シンボル化が有効な場合 (デフォルト) 、復元された関数名とソースコード内の位置はすでに `symbols` および `lines` カラムで利用できるため、追加のセットアップは必要ありません。FreeBSD ではシンボル化はサポートされておらず、これらのカラムは常に空です。デバッグ情報がないフレームでは、`lines` エントリが空になる場合があります ([上記](#server-config)を参照) 。
 
     シンボル化が無効になっている場合、または `trace` カラム内の生のアドレスをオンザフライで解決する場合 (たとえば、インラインフレームを展開するため) は、[`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) 設定でイントロスペクション関数を有効にします。
 
@@ -135,9 +133,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
   </Step>
 </Steps>
 
-<div id="flamegraph">
-  ## `flameGraph` 関数でフレームグラフを生成する
-</div>
+## `flameGraph` 関数でフレームグラフを生成する {#flamegraph}
 
 ClickHouse には、`trace_log` に保存されたスタックトレースから直接フレームグラフを生成する集約関数 [`flameGraph`](/ja/reference/functions/aggregate-functions/flame_graph) があります。
 出力は、[flamegraph.pl](https://github.com/brendangregg/FlameGraph) と互換性のあるフォーマットの文字列配列です。
@@ -158,9 +154,7 @@ flameGraph(traces, [size = 1], [ptr = 0])
 表示されるのは、解放されていない割り当てだけです。
 対応する割り当てがない解放は無視されます。
 
-<div id="cpu-flame-graph">
-  ### CPU フレームグラフ
-</div>
+### CPU フレームグラフ {#cpu-flame-graph}
 
 <Note>
   以下のクエリを実行するには、[flamegraph.pl](https://github.com/brendangregg/FlameGraph) がインストールされている必要があります。
@@ -190,9 +184,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl > flame_cpu.svg
 ```
 
-<div id="memory-flame-graph-all">
-  ### メモリフレームグラフ — 全割り当て
-</div>
+### メモリフレームグラフ — 全割り当て {#memory-flame-graph-all}
 
 ```sql
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
@@ -208,9 +200,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
 ```
 
-<div id="memory-flame-graph-unfreed">
-  ### メモリ フレームグラフ — 未解放の割り当て
-</div>
+### メモリ フレームグラフ — 未解放の割り当て {#memory-flame-graph-unfreed}
 
 この種類では、ポインタを基準に割り当てと解放を照合し、クエリ中に解放されなかったメモリのみを表示します。
 
@@ -231,9 +221,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
 ```
 
-<div id="memory-flame-graph-time-point">
-  ### メモリフレームグラフ — ある時点でのアクティブなメモリ割り当て
-</div>
+### メモリフレームグラフ — ある時点でのアクティブなメモリ割り当て {#memory-flame-graph-time-point}
 
 この方法を使うと、ピークメモリ使用量を特定し、その時点で何が割り当てられていたかを可視化できます。
 
@@ -241,9 +229,7 @@ clickhouse client --allow_introspection_functions=1 \
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
 ```
 
-<div id="find-memory-usage-over-time">
-  #### メモリ使用量の推移を確認する
-</div>
+#### メモリ使用量の推移を確認する {#find-memory-usage-over-time}
 
 ```sql
 SELECT
@@ -260,9 +246,7 @@ GROUP BY event_time
 ORDER BY event_time;
 ```
 
-<div id="find-time-point-maximum-memory-usage">
-  #### メモリ使用量が最大となる時点を特定する
-</div>
+#### メモリ使用量が最大となる時点を特定する {#find-time-point-maximum-memory-usage}
 
 ```sql
 SELECT
@@ -277,9 +261,7 @@ FROM (
 );
 ```
 
-<div id="build-flame-graph">
-  #### その時点でアクティブな割り当てのフレームグラフを作成する
-</div>
+#### その時点でアクティブな割り当てのフレームグラフを作成する {#build-flame-graph}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -294,9 +276,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
 ```
 
-<div id="build-flame-graph-deallocations">
-  #### その時点以降の解放処理のフレームグラフを作成する (後から何が解放されたのかを把握するため)
-</div>
+#### その時点以降の解放処理のフレームグラフを作成する (後から何が解放されたのかを把握するため) {#build-flame-graph-deallocations}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -311,9 +291,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
 ```
 
-<div id="example">
-  ## 例
-</div>
+## 例 {#example}
 
 以下のコードスニペットでは、次の処理を行います。
 
