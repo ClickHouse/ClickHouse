@@ -491,7 +491,7 @@ void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) con
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
 
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr /*new_snapshot*/, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
@@ -500,6 +500,7 @@ bool ICatalog::updateSchema(
     const String & /*namespace_name*/,
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr /*new_schema*/,
     Int32 /*previous_schema_id*/) const
 {

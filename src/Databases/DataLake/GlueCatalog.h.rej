@@ -1,0 +1,27 @@
+diff a/src/Databases/DataLake/GlueCatalog.h b/src/Databases/DataLake/GlueCatalog.h	(rejected hunks)
+@@ -10,6 +10,7 @@
+ #include <Poco/LRUCache.h>
+ 
+ #include <Common/CacheBase.h>
++#include <Common/SecretString.h>
+ #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+ #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+ 
+@@ -100,7 +101,7 @@ public:
+     /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.
+     static String resolveTimestampTypeFromMetadata(
+         const Poco::JSON::Object::Ptr & metadata_object,
+-        const String & column_name,
++        std::string_view column_name,
+         const String & glue_column_type);
+ 
+     using FieldTypes = std::unordered_map<String, String>;
+@@ -130,7 +131,7 @@ private:
+     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
+     /// This method allows to clarify the actual type of the timestamp column.
+     /// `glue_column_type` is the raw Glue type (`"timestamp"` or `"timestamp_nano"`) used as a fallback when the column is not found in Iceberg metadata.
+-    String getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
++    String getActualTimestampType(std::string_view column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
+ 
+     String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
+ 
