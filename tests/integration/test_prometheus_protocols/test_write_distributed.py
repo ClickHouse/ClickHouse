@@ -547,6 +547,34 @@ def test_remote_write_refuses_a_distributed_table_swapped_after_the_check():
     node.query("DROP TABLE shard_1.ts_nested SYNC")
 
 
+def test_remote_write_refuses_a_wrapper_altered_after_the_block_is_built():
+    """The wrapper itself retyped between building the block and inserting it: the write is refused
+    before any row is pushed, instead of handing the old columns to a pipeline of the new types."""
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    altered = False
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        pending = pool.submit(write, "/dist/write", "altered_wrapper_metric", ("h3",))
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query("ALTER TABLE prom_dist MODIFY COLUMN metric_name Array(UInt8)")
+        altered = True
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code >= 500, response.text
+        assert "INCOMPATIBLE_SCHEMA" in response.text
+        assert "changed its columns during the remote write" in response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        if altered:
+            node.query("ALTER TABLE prom_dist MODIFY COLUMN metric_name String")
+
+    # The server is still up, nothing reached a shard, and the retry lands once the wrapper is back.
+    assert count_on_the_shards("prom_dist", "altered_wrapper_metric") == 0
+    assert write("/dist/write", "altered_wrapper_metric", ("h3",)).status_code == 204
+    assert count_on_the_shards("prom_dist", "altered_wrapper_metric") == 1
+
+
 def test_the_cluster_user_needs_no_temporary_table_grant():
     """The read ships `timeSeriesSelector(...)` to every shard, where it runs as the cluster's user:
     a selector that is not readonly would ask that user for CREATE TEMPORARY TABLE on every read.

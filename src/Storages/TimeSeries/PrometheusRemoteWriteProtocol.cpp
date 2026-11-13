@@ -389,6 +389,16 @@ void insertBlock(Block block, const IStorage & storage, const ContextMutablePtr 
         else
         {
             PushingPipelineExecutor executor(io.pipeline);
+            /// The table may have been altered since the block was built, and the pipeline does not check types.
+            const auto header_columns = executor.getHeader().getNamesAndTypesList();
+            const auto block_columns = block.getNamesAndTypesList();
+            if (header_columns != block_columns)
+                throw Exception(
+                    ErrorCodes::INCOMPATIBLE_SCHEMA,
+                    "Table {} changed its columns during the remote write, retry it: the write has {}, the table now takes {}",
+                    storage.getStorageID().getNameForLogs(),
+                    block_columns.toString(),
+                    header_columns.toString());
             executor.start();
             executor.push(std::move(block));
             executor.finish();
