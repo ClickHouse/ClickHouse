@@ -15,17 +15,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-
-namespace DB::FailPoints
-{
-    extern const char object_iterator_split_by_buckets_publish_throw[];
-}
-
-namespace DB::ErrorCodes
-{
-    extern const int FAULT_INJECTED;
-}
 
 namespace ProfileEvents
 {
@@ -171,21 +160,13 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             ++objects_being_split;
         }
 
+        ObjectInfoPtr object_info;
+        ObjectInfos buckets;
         try
         {
-            auto object_info = iterator->next(id);
-            auto buckets = object_info ? splitToBuckets(object_info) : ObjectInfos{};
-
-            std::lock_guard lock(mutex);
-            if (!object_info)
-                iterator_exhausted = true;
-            fiu_do_on(FailPoints::object_iterator_split_by_buckets_publish_throw,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint object_iterator_split_by_buckets_publish_throw");
-            });
-            for (auto & bucket : buckets)
-                pending_objects_info.push(std::move(bucket));
-            --objects_being_split;
+            object_info = iterator->next(id);
+            if (object_info)
+                buckets = splitToBuckets(object_info);
         }
         catch (...)
         {
@@ -194,6 +175,13 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             objects_split_cv.notify_all();
             throw;
         }
+
+        std::lock_guard lock(mutex);
+        --objects_being_split;
+        if (!object_info)
+            iterator_exhausted = true;
+        for (auto & bucket : buckets)
+            pending_objects_info.push(std::move(bucket));
         objects_split_cv.notify_all();
     }
 }

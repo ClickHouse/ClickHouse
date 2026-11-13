@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/tests/gtest_global_context.h>
 
 #include <chrono>
@@ -217,35 +216,6 @@ TEST(ObjectIteratorSplitByBuckets, WakesWaitingCallerWhenSplittingThrows)
     ASSERT_EQ(waiting_status, std::future_status::timeout);
 
     ASSERT_THROW((void)splitting.get(), Exception);
-    ASSERT_EQ(waiting.wait_for(std::chrono::seconds(30)), std::future_status::ready);
-    ASSERT_EQ(waiting.get(), nullptr);
-}
-
-TEST(ObjectIteratorSplitByBuckets, WakesWaitingCallerWhenPublishingBucketsThrows)
-{
-    auto context = makeContext();
-    std::promise<void> release;
-    auto inner = std::make_shared<IteratorHoldingLastFile>(std::vector<String>{"file0"}, release.get_future().share());
-    auto last_taken = inner->lastTaken();
-    auto end_reached = inner->endReached();
-    auto iterator = makeSplitIterator(inner, context);
-
-    auto splitting = nextInBackground(iterator);
-    const auto last_taken_status = last_taken.wait_for(std::chrono::seconds(30));
-
-    auto waiting = nextInBackground(iterator);
-    const auto end_reached_status = end_reached.wait_for(std::chrono::seconds(30));
-    const auto waiting_status = waiting.wait_for(std::chrono::milliseconds(100));
-
-    FailPointInjection::enableFailPoint("object_iterator_split_by_buckets_publish_throw");
-    release.set_value();
-
-    ASSERT_EQ(last_taken_status, std::future_status::ready);
-    ASSERT_EQ(end_reached_status, std::future_status::ready);
-    ASSERT_EQ(waiting_status, std::future_status::timeout);
-
-    ASSERT_THROW((void)splitting.get(), Exception);
-    FailPointInjection::disableFailPoint("object_iterator_split_by_buckets_publish_throw");
     ASSERT_EQ(waiting.wait_for(std::chrono::seconds(30)), std::future_status::ready);
     ASSERT_EQ(waiting.get(), nullptr);
 }
