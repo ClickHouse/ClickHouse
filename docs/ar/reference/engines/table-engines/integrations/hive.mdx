@@ -20,9 +20,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 * Parquet: يدعم جميع أنواع الأعمدة القياسية البسيطة؛ ويدعم فقط الأنواع المعقدة مثل `array`
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -50,39 +48,11 @@ PARTITION BY expr
 
 * `table` — اسم الجدول البعيد.
 
-<div id="usage-example">
-  ## مثال للاستخدام
-</div>
+## مثال للاستخدام {#usage-example}
 
-<div id="how-to-use-local-cache-for-hdfs-filesystem">
-  ### كيفية استخدام ذاكرة التخزين المؤقت المحلية لنظام ملفات HDFS
-</div>
+### الاستعلام عن جدول Hive باستخدام تنسيق الإدخال ORC {#query-hive-table-with-orc-input-format}
 
-ننصح بشدة بتمكين ذاكرة التخزين المؤقت المحلية لأنظمة الملفات البعيدة. تُظهر اختبارات الأداء أنها تكون أسرع بما يقارب الضعف عند استخدام ذاكرة التخزين المؤقت.
-
-قبل استخدام ذاكرة التخزين المؤقت، أضِفها إلى `config.xml`
-
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-* enable: سيحتفظ ClickHouse بذاكرة تخزين مؤقت محلية لنظام الملفات البعيد (HDFS) بعد بدء التشغيل إذا كانت القيمة `true`.
-* root&#95;dir: مطلوب. الدليل الجذر لتخزين ملفات ذاكرة التخزين المؤقت المحلية الخاصة بنظام الملفات البعيد.
-* limit&#95;size: مطلوب. الحد الأقصى لحجم ملفات ذاكرة التخزين المؤقت المحلية (بالبايت).
-* bytes&#95;read&#95;before&#95;flush: يتحكم في عدد البايتات المقروءة قبل التفريغ إلى نظام الملفات المحلي عند تنزيل ملف من نظام الملفات البعيد. القيمة الافتراضية هي 1MB.
-
-<div id="query-hive-table-with-orc-input-format">
-  ### الاستعلام عن جدول Hive باستخدام تنسيق الإدخال ORC
-</div>
-
-<div id="create-table-in-hive">
-  #### إنشاء جدول في Hive
-</div>
+#### إنشاء جدول في Hive {#create-table-in-hive}
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -130,9 +100,7 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### إنشاء جدول في ClickHouse
-</div>
+#### إنشاء جدول في ClickHouse {#create-table-in-clickhouse}
 
 جدول في ClickHouse يجلب البيانات من جدول Hive الذي أُنشئ أعلاه:
 
@@ -204,13 +172,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-<div id="query-hive-table-with-parquet-input-format">
-  ### الاستعلام عن جدول Hive باستخدام تنسيق الإدخال Parquet
-</div>
+### الاستعلام عن جدول Hive باستخدام تنسيق الإدخال Parquet {#query-hive-table-with-parquet-input-format}
 
-<div id="create-table-in-hive">
-  #### إنشاء جدول في Hive
-</div>
+#### إنشاء جدول في Hive {#create-table-in-hive-1}
 
 ```text
 hive >
@@ -259,9 +223,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### إنشاء جدول في ClickHouse
-</div>
+#### إنشاء جدول في ClickHouse {#create-table-in-clickhouse-1}
 
 جدول في ClickHouse يسترجع البيانات من جدول Hive الذي أُنشئ أعلاه:
 
@@ -334,13 +296,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-<div id="query-hive-table-with-text-input-format">
-  ### الاستعلام عن جدول Hive باستخدام تنسيق الإدخال Text
-</div>
+### الاستعلام عن جدول Hive باستخدام تنسيق الإدخال Text {#query-hive-table-with-text-input-format}
 
-<div id="create-table-in-hive">
-  #### إنشاء جدول في Hive
-</div>
+#### إنشاء جدول في Hive {#create-table-in-hive-2}
 
 ```text
 hive >
@@ -388,9 +346,7 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### إنشاء جدول في ClickHouse
-</div>
+#### إنشاء جدول في ClickHouse {#create-table-in-clickhouse-2}
 
 جدول في ClickHouse يسترجع البيانات من جدول Hive الذي أُنشئ أعلاه:
 

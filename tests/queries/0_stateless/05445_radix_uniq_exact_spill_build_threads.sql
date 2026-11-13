@@ -2,7 +2,7 @@
 -- spilled keys back, in at most `aggregation_memory_efficient_merge_threads` threads, as the ordinary aggregation merges
 -- its temporary data.
 
-SET max_threads = 4, count_distinct_optimization = 0, optimize_uniq_exact_radix_partitioning = 1,
+SET max_threads = 4, optimize_uniq_exact_radix_partitioning = 1,
     max_bytes_before_external_group_by = '8Mi';
 
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(1000))

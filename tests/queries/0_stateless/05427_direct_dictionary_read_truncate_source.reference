@@ -1,0 +1,4 @@
+reader started: 1
+truncate: ok
+reader alive after truncate: 1
+0

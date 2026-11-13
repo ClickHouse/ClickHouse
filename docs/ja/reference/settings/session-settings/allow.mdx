@@ -191,7 +191,7 @@ delta-kernel の書き込み機能を有効にします。
 
 パーティション式が `DISTINCT` カラムの決定論的関数である場合、ストリーム間のマージを省略し、パーティションごとの `DISTINCT` を別スレッドで独立して評価します。パーティション数がコア数に近く、各パーティションのサイズがほぼ同じ場合に有効です。それ以外の場合は、コストヒューリスティックによりこの最適化は省略されます。[max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ja/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) および [force&#95;distinct&#95;partitions&#95;independently](/ja/reference/settings/session-settings/force#force_distinct_partitions_independently) を参照してください。`FINAL` または並列レプリカでは適用されません。
 
-[max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) または [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) が設定されている場合は適用されません。これらの上限は、マージ後の結果全体を対象とする単一の `DISTINCT` 変換によって適用されるため、グローバルな意味を維持するためにストリーム間のマージは保持されます。
+ストリームが分離されている間、[max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) および [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) は、全パーティションの集合を合計したサイズに対して適用されます。
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -449,6 +449,20 @@ toTimeZone()、fromUnixTimestamp*()、snowflakeIDToDateTime*() などの一部�
 ClickHouse は、サーバー起動時に読み込まれたこの設定値を使用します。
 `SET` またはクエリレベルの `SETTINGS` による変更では、抽出されたサブカラムの動作は変わりません。
 抽出されたサブカラムの動作を変更するには、起動時プロファイル設定 (たとえば users.xml) で `allow_nullable_tuple_in_extracted_subcolumns` を更新し、サーバーを再起動してください。
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "ハッシュパーティション化を使用して最終的な `DISTINCT` を並列に評価するための新しい設定。"}]}]} />
+
+入力ストリームを `DISTINCT` カラムのハッシュでパーティション化し、最終的な `DISTINCT` を複数のスレッドで評価します。同じキーは必ず同じストリームに振り分けられるため、各パーティションで独立して重複を排除できます。
+
+[allow&#95;distinct&#95;partitions&#95;independently](/ja/reference/settings/session-settings/allow#allow_distinct_partitions_independently) とは異なり、この設定ではテーブルのパーティションキーと `DISTINCT` カラムの間に関連がある必要はありません。ブロックの分割とストリームの接続にかかるコストを抑えるため、入力ストリーム数とハッシュパーティション数には、`max_threads` とは別に上限が設けられています。
+
+グローバルにソート済みの入力については、`DISTINCT` がその順序を保持するため、ハッシュパーティション化は適用されません。[max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) と [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) は、すべてのハッシュパーティションを合計したサイズに対して適用されます。
+
+`ORDER BY` を伴わない `DISTINCT` では行の順序が定義されていないため、この最適化により、同じ異なる値が異なる順序で返される場合があります。そのため、順序付けされていない `DISTINCT` の結果に `LIMIT`、`OFFSET`、または `LIMIT BY` を適用すると、選択される行の部分集合が変わる可能性があります。
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
