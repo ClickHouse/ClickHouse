@@ -1250,7 +1250,9 @@ bool buildScenarios(
             : part_data.rows;
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
-        if (uneven_rows && !(widest_fits && part_data.wide && !part_data.both_formats))
+        /// the writer counts the indexes and the dictionary of `LowCardinality` or a nested state for each block, so rows of one size do
+        /// not show one width
+        if ((uneven_rows || part_data.block_over_rows) && !(widest_fits && part_data.wide && !part_data.both_formats))
             ++out.uneven_width_parts;
         out.scenarios[0]->parts[part->name] = parts[primary];
         /// without a filter every layout reads all its marks, so the layouts bound the marks of a granule size between them
