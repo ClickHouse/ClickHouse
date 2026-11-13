@@ -7,6 +7,7 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Interpreters/Context.h>
 #include <IO/S3/Credentials.h>
 #include <IO/WriteHelpers.h>
@@ -281,9 +282,15 @@ void KeeperContext::initializeDataDisk(const String & config_elem, const Poco::U
         /// be picked up.
         /// (removeRecursiveWithLimit rather than removeRecursive because on plain object storage
         ///  disks the latter doesn't remove files, only directory contents.)
+        /// The internal directory of a `local` metadata storage holds the persistent queue of blobs pending
+        /// removal, not file metadata, so it is neither a leftover of Keeper nor removable as a disk file.
         auto data_disk = getDisk(data_storage);
         for (auto it = data_disk->iterateDirectory(""); it->isValid(); it->next())
+        {
+            if (it->name() == MetadataStorageFromDisk::SYSTEM_METADATA_DIR)
+                continue;
             data_disk->removeRecursiveWithLimit(it->path());
+        }
     }
 }
 

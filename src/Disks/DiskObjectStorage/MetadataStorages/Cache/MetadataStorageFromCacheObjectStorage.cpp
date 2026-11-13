@@ -232,15 +232,6 @@ int64_t MetadataStorageFromCacheObjectStorage::recordAsRemoved(const StoredObjec
     return objects_to_remove.markAsRemoved(blobs);
 }
 
-bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredObjects & blobs) const
-{
-    if (underlying->hasPendingRemovalBlobs(blobs))
-        return true;
-
-    std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
-}
-
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
 {
     std::lock_guard guard(removed_objects_mutex);

@@ -20,9 +20,6 @@ public:
     /// Remove blobs from the queue. Returns the number actually removed.
     int64_t markAsRemoved(const StoredObjects & blobs);
 
-    /// Check if any of the given blobs are still in the queue.
-    bool containsAny(const StoredObjects & blobs) const;
-
     /// Return current number of entries in the queue.
     size_t size() const { return index.size(); }
 

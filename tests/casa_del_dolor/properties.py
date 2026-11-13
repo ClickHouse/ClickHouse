@@ -292,7 +292,6 @@ possible_properties = {
     "disk_connections_soft_limit": threshold_generator(0.2, 0.2, 0, 10000),
     "disk_connections_store_limit": threshold_generator(0.2, 0.2, 0, 20000),
     "disk_connections_warn_limit": threshold_generator(0.2, 0.2, 0, 15000),
-    "disk_transaction_wait_for_blob_removal": true_false_lambda,
     "display_secrets_in_show_and_select": true_false_lambda,
     "distributed_cache_apply_throttling_settings_from_client": true_false_lambda,
     "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
@@ -924,7 +923,6 @@ object_storage_disk_properties = {
         "threads_count": no_zero_threads_lambda,
     },
     "copy_object_thread_pool_size": no_zero_threads_lambda,
-    "wait_for_blob_removal": true_false_lambda,
 }
 
 

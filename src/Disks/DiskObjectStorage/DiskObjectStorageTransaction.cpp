@@ -16,13 +16,11 @@
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Logger.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadStatus.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -32,11 +30,6 @@
 #include <memory>
 #include <ranges>
 #include <vector>
-
-namespace ProfileEvents
-{
-    extern const Event DiskObjectStorageWaitBlobRemovalMicroseconds;
-}
 
 namespace DB
 {
@@ -54,36 +47,15 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
-void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) const
-{
-    try
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
-        for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
-            blob_killer->triggerAndWait();
-
-        if (watch.elapsed() > 100'000)
-            LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Waiting for blob removal took {} ms", watch.elapsed() / 1000);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("DiskObjectStorageTransaction"));
-    }
-}
-
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_,
-    BlobKillerThreadPtr blob_killer_,
-    std::shared_ptr<ThreadPool> copy_object_pool_,
-    bool wait_blob_removal_)
+    std::shared_ptr<ThreadPool> copy_object_pool_)
     : cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
-    , blob_killer(std::move(blob_killer_))
     , copy_object_pool(std::move(copy_object_pool_))
-    , wait_blob_removal(wait_blob_removal_)
     , metadata_transaction(metadata_storage->createTransaction())
 {
 }
@@ -96,7 +68,7 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     MetadataStoragePtr destination_metadata_storage_,
     ObjectStorageRouterPtr destination_object_storages_,
     std::shared_ptr<ThreadPool> copy_object_pool_)
-    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, std::move(copy_object_pool_), /*wait_blob_removal=*/false)
+    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, std::move(copy_object_pool_))
     , source_cluster(std::move(source_cluster_))
     , source_metadata_storage(std::move(source_metadata_storage_))
     , source_object_storages(std::move(source_object_storages_))
@@ -664,9 +636,6 @@ void DiskObjectStorageTransaction::commit()
         throw;
     }
 
-    if (wait_blob_removal)
-        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs());
-
     operations_to_execute.clear();
     written_blobs.clear();
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
@@ -738,9 +707,6 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
         return outcome;
     }
-
-    if (wait_blob_removal)
-        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs());
 
     operations_to_execute.clear();
     written_blobs.clear();

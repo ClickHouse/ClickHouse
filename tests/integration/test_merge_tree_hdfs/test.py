@@ -311,6 +311,8 @@ def test_move_partition_to_another_disk(cluster):
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
+    # The blobs of the moved part are removed in background.
+    node.query("SYSTEM WAIT BLOBS CLEANUP 'hdfs'")
     assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdfs'")
