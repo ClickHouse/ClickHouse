@@ -259,7 +259,6 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
-            { "href": "agents/index", "item": "Agents" },
             "products/cloud/features/ai-ml/langfuse",
             {
               "expanded": false,
