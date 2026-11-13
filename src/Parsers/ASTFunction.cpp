@@ -544,6 +544,7 @@ static bool functionNameNeedsQuoting(const String & name, const ASTPtr & argumen
 
 /// A compound name (`db.view(...)`) is written part by part: one quoted `db.view` token parses back as a one-part name.
 /// A keyword part is quoted: `1 IN partition.pv(1)` does not parse.
+/// A part may contain dots, so a dot splits only between non-empty parts: an empty quoted identifier does not parse.
 static void writeFunctionName(
     WriteBuffer & ostr, const IAST::FormatSettings & settings, const String & name, bool is_compound_name, const ASTPtr & arguments)
 {
@@ -554,17 +555,22 @@ static void writeFunctionName(
     }
 
     const auto & keywords = getKeyWordSet();
-    std::string_view rest = name;
-    while (true)
+    auto write_part = [&](size_t begin, size_t end)
     {
-        const size_t dot = rest.find('.');
-        const String part(rest.substr(0, dot));
+        const String part = name.substr(begin, end - begin);
         settings.writeIdentifier(ostr, part, /*ambiguous=*/keywords.contains(Poco::toUpper(part)));
-        if (dot == std::string_view::npos)
-            break;
+    };
+
+    size_t begin = 0;
+    for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+    {
+        if (dot == begin || dot + 1 == name.size())
+            continue;
+        write_part(begin, dot);
         ostr << '.';
-        rest.remove_prefix(dot + 1);
+        begin = dot + 1;
     }
+    write_part(begin, name.size());
 }
 
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -638,7 +644,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
+
+    /// `f | g` stays an operator also where operators are written as calls (e.g. in `CODEC`):
+    /// `__compose(f, g)` is an ordinary call, see `updateTreeHashImpl`. The name must stay in sync with
+    /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
+    if (isOperator() && arguments && !parameters && getNullsAction() == NullsAction::EMPTY && !isWindowFunction()
+        && arguments->children.size() == 2 && name == "__compose"sv)
+    {
+        if (frame.need_parens)
+            ostr << '(';
+        arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+        ostr << " | ";
+        arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+        if (frame.need_parens)
+            ostr << ')';
+        written = true;
+    }
+
+    if (!written && isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
         && !isWindowFunction())
     {
         /// Unary prefix operators.
@@ -1017,22 +1040,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
                 written = true;
             }
-        }
-
-        /// The function composition operator `f | g`. `__compose` is an ordinary (if unusual)
-        /// function name a user can define a function with, so only a call the parser marked as
-        /// operator syntax is formatted back as the operator. The name must stay in sync with
-        /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
-        if (!written && arguments->children.size() == 2 && name == "__compose"sv && isOperator())
-        {
-            if (frame.need_parens)
-                ostr << '(';
-            arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-            ostr << " | ";
-            arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-            if (frame.need_parens)
-                ostr << ')';
-            written = true;
         }
 
         if (!written && name == "array"sv && isOperator())
