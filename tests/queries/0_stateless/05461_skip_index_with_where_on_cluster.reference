@@ -1,11 +1,19 @@
-1. ALTER ADD INDEX with WHERE is refused.
-1
-2. CREATE INDEX with WHERE is refused.
-1
-3. CREATE TABLE with such an index is refused.
-1
-4. An index copied by CREATE AS is refused, on the legacy entry format too.
-1
-1
-5. An index without WHERE is unaffected.
-plain
+1. A condition the user may run is accepted.
+ok
+ok
+ok
+dst	i
+tab	i
+tab	j
+2. An index copied by CREATE AS is accepted, on the legacy entry format too.
+ok
+ok
+copy_2	i
+copy_8	i
+3. A condition the user may not run is refused.
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+4. A table this host does not have is refused.
+refused
+0

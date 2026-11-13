@@ -4115,7 +4115,7 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
-    params.additional_access_check = [captured_query_ptr = query_ptr](const String &, bool throw_if_unresolved)
+    params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String &, bool throw_if_unresolved)
     {
         /// `throw_if_unresolved` means the hosts do not run the query as this user.
         if (!throw_if_unresolved)
@@ -4125,11 +4125,21 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
         if (!captured_create.columns_list || !captured_create.columns_list->indices)
             return;
 
+        std::optional<ColumnsDescription> columns;
         for (const auto & index : captured_create.columns_list->indices->children)
         {
-            if (const auto * declaration = index->as<ASTIndexDeclaration>())
-                rejectTextIndexTransformWithoutInitiatorUser(*declaration);
-            rejectPartialIndexConditionWithoutInitiatorUser(index);
+            const auto * declaration = index->as<ASTIndexDeclaration>();
+            if (!declaration)
+                continue;
+            rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+            if (!declaration->getWhere())
+                continue;
+            /// The condition is checked as the user against the declared columns instead.
+            if (!captured_create.columns_list->columns)
+                rejectPartialIndexConditionWithoutInitiatorUser(index);
+            if (!columns)
+                columns = getColumnsDescription(*captured_create.columns_list, context, LoadingStrictnessLevel::CREATE);
+            checkPartialIndexConditionAsUser(index, *columns, context);
         }
     };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -4223,10 +4233,7 @@ BlockIO InterpreterCreateQuery::execute()
                         if (index.isImplicitlyCreated())
                             continue;
                         if (!workers_use_initiator_user)
-                        {
                             rejectTextIndexTransformWithoutInitiatorUser(index);
-                            rejectPartialIndexConditionWithoutInitiatorUser(index.definition_ast);
-                        }
                         checkTextIndexPreAndPostProcessorPermissions(index, getContext());
                         if (index.where_expression)
                             checkPartialIndexConditionAsUser(index.definition_ast, as_storage_metadata->getColumns(), getContext());

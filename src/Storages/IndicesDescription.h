@@ -125,7 +125,7 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
 void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
 void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index);
 
-/// Refuses a partial index condition when the other hosts of an `ON CLUSTER` query do not run it as the initiator.
+/// Refuses a partial index condition that an `ON CLUSTER` query cannot check as the user on the initiator.
 void rejectPartialIndexConditionWithoutInitiatorUser(const ASTPtr & definition_ast);
 
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.

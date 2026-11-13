@@ -106,9 +106,9 @@ namespace ErrorCodes
 namespace
 {
 
-/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
-/// not reach this: it is refused unless its hosts run as the initiating user.
-void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+/// A `Replicated`-database or `ON CLUSTER` host applies the statement without the submitting user.
+/// Returns false when an added transform or index condition could not be checked on this host.
+bool checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
     StorageMetadataHandle metadata;
     if (table)
@@ -128,8 +128,10 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
 
     /// Against the schema the whole statement produces: a command of the same statement can change what
     /// an alias in a transform expands to. Transforms and index conditions only, so other statements get no extra analysis.
-    if (!adds_transform || !metadata)
-        return;
+    if (!adds_transform)
+        return true;
+    if (!metadata)
+        return false;
 
     AlterCommands commands;
     /// Runs of consecutive metadata commands; `runCommandSegments` commits each run on its own.
@@ -154,7 +156,7 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
     /// Applying every command at once would reject statements the executor, which commits segment by
     /// segment, accepts. `AlterCommands::apply` authorizes each segment as the user anyway.
     if (metadata_segments > 1)
-        return;
+        return false;
 
     /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it.
     commands.validate(table, context);
@@ -169,7 +171,7 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
     /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
     removeImplicitStatistics(metadata_copy.columns);
     commands.apply(metadata_copy, context, share_nested);
-
+    return true;
 }
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
@@ -673,7 +675,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
 
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext(), table](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -689,6 +691,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
             /// `throw_if_unresolved` means the hosts do not run the query as this user.
             if (throw_if_unresolved)
+            {
                 for (const auto & child : captured_alter.command_list->children)
                 {
                     const auto & command = child->as<const ASTAlterCommand &>();
@@ -696,8 +699,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                         continue;
                     if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
                         rejectTextIndexTransformWithoutInitiatorUser(*declaration);
-                    rejectPartialIndexConditionWithoutInitiatorUser(command.index_decl);
                 }
+                /// Index conditions are checked as the user against this host's table instead.
+                if (!checkAddedIndexPermissions(captured_alter, table, context))
+                    for (const auto & child : captured_alter.command_list->children)
+                        if (const auto & command = child->as<const ASTAlterCommand &>(); command.type == ASTAlterCommand::ADD_INDEX)
+                            rejectPartialIndexConditionWithoutInitiatorUser(command.index_decl);
+            }
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
