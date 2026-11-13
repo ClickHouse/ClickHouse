@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsBool allow_reserved_column_names;
     extern const SettingsBool cloud_mode;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
@@ -1539,12 +1540,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
 namespace
 {
-    void checkTemporaryTableEngineName(const String & name)
-    {
-        if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
-    }
-
     void setDefaultTableEngine(ASTStorage & storage, DefaultTableEngine engine)
     {
         if (engine == DefaultTableEngine::None)
@@ -1745,7 +1740,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (!create.storage->engine)
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_temporary_table_engine].value);
 
-        checkTemporaryTableEngineName(create.storage->engine->name);
+        StorageFactory::instance().checkTemporaryTableEngine(create.storage->engine->name, getContext());
         return;
     }
 
@@ -2705,9 +2700,13 @@ void checkForUnsupportedColumns(
     }
 }
 
-void validateVirtualColumns(IStorage & storage, ContextPtr context)
+void validateVirtualColumns(IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context)
 {
     const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    /// A stored definition is not checked, so existing tables keep loading.
+    /// NOLINT(storage-cast): the storage `StorageFactory` has just built, never a proxy.
+    const bool reject_reserved_names = dynamic_cast<const MergeTreeData *>(&storage)
+        && !context->getSettingsRef()[Setting::allow_reserved_column_names] && !isReplayedTableDefinition(mode, create, context);
     for (const auto & storage_column : metadata->columns)
     {
         if (metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
@@ -2728,13 +2727,21 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
                 "because it conflicts with a virtual column of the same name",
                 storage_column.name, storage.getName());
         }
+
+        if (reject_reserved_names && metadata->virtuals.has(storage_column.name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for a virtual column. "
+                "Use another name or enable the setting `allow_reserved_column_names`",
+                storage_column.name, storage.getName());
+        }
     }
 }
 
 void validateStorage(IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
-    validateVirtualColumns(storage, context);
+    validateVirtualColumns(storage, create, mode, context);
     checkForUnsupportedColumns(storage, create, mode, context, is_temporary);
 }
 catch (...)

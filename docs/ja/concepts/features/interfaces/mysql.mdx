@@ -6,8 +6,6 @@ title: 'MySQL インターフェイス'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse は MySQL wire protocol をサポートしています。これにより、ネイティブな ClickHouse コネクタを持たない一部のクライアントでも、代わりに MySQL プロトコルを利用できます。以下の BI ツールで動作確認されています。
 
 * [Looker Studio](/ja/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -36,23 +34,55 @@ ClickHouse は MySQL wire protocol をサポートしています。これによ
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="認証情報画面 - Prompt" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![認証情報画面 - Prompt](/images/interfaces/mysql0.webp)
+
+</Frame>
+
+</div>
 
 2. `Connect with` ドロップダウンを `MySQL` に変更します。
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="認証情報画面 - MySQL を選択" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![認証情報画面 - MySQL を選択](/images/interfaces/mysql1.webp)
+
+</Frame>
+
+</div>
 
 3. このサービスで MySQL インターフェイスを有効にするには、スイッチをオンにします。これにより、このサービスでポート `3306` が開放され、専用の MySQL ユーザー名が表示された MySQL 接続画面が表示されます。パスワードは、このサービスのデフォルトユーザーのパスワードと同じです。
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="認証情報画面 - MySQL が有効" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![認証情報画面 - MySQL が有効](/images/interfaces/mysql2.webp)
+
+</Frame>
+
+</div>
 
 表示されている MySQL 接続文字列をコピーします。
 
-<Image img="/images/interfaces/mysql3.webp" alt="認証情報画面 - 接続文字列" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![認証情報画面 - 接続文字列](/images/interfaces/mysql3.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## ClickHouse Cloud で複数の MySQL ユーザーを作成する
