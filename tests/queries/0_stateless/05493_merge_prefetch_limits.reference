@@ -1,0 +1,4 @@
+filesystem_prefetches_limit = 1000, filesystem_prefetch_max_memory_usage = \'1Gi\'	1
+filesystem_prefetches_limit = 10, filesystem_prefetch_max_memory_usage = \'1Gi\'	0
+filesystem_prefetches_limit = 0, filesystem_prefetch_max_memory_usage = \'1Gi\'	1
+filesystem_prefetches_limit = 1000, filesystem_prefetch_max_memory_usage = 1	0

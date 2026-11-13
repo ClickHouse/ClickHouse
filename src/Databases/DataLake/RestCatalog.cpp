@@ -40,6 +40,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -188,6 +189,26 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
+/// The levels that `parseNamespaces` joins with a dot. The last one can be empty: `a.` is `["a", ""]`.
+std::vector<String> splitNamespaceLevels(const String & namespace_name)
+{
+    std::vector<String> levels;
+    splitInto<'.'>(levels, namespace_name);
+    if (namespace_name.ends_with('.'))
+        levels.emplace_back();
+    return levels;
+}
+
+Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
+{
+    /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+    /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
+    Poco::JSON::Array::Ptr result = new Poco::JSON::Array;
+    for (const auto & level : splitNamespaceLevels(namespace_name))
+        result->add(level);
+    return result;
+}
+
 /// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
 /// not serve: both answer the same status. Only the Iceberg REST error `type` names the cause, so a
 /// body that is absent, unparseable or typed as anything else is not a vanished namespace.
@@ -249,7 +270,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -258,6 +280,7 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -285,7 +308,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -294,6 +318,7 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
 }
 
@@ -315,16 +340,29 @@ RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, 
     Config result;
 
     auto defaults_object = object->get("defaults").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(defaults_object, result);
+    parseCatalogConfigurationSettings(defaults_object, result, result.default_snapshot_loading_mode);
 
     auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(overrides_object, result);
+    parseCatalogConfigurationSettings(overrides_object, result, result.override_snapshot_loading_mode);
+
+    auto warn_if_unknown = [&](std::string_view section, const std::string & mode)
+    {
+        if (!mode.empty() && mode != "all" && mode != "refs")
+            LOG_WARNING(
+                log,
+                "Unknown `snapshot-loading-mode` '{}' in the `{}` of the catalog configuration, it is treated as `all`",
+                mode,
+                section);
+    };
+    warn_if_unknown("defaults", result.default_snapshot_loading_mode);
+    warn_if_unknown("overrides", result.override_snapshot_loading_mode);
 
     LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
 }
 
-void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result)
+void RestCatalog::parseCatalogConfigurationSettings(
+    const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode)
 {
     if (!object)
         return;
@@ -334,6 +372,8 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
     if (object->has("default-base-location"))
         result.default_base_location = object->get("default-base-location").extract<String>();
+
+    snapshot_loading_mode = Poco::toLower(object->optValue<std::string>("snapshot-loading-mode", ""));
 }
 
 void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
@@ -397,8 +437,11 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
+    : RestCatalog(
+        warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
+        snapshot_loading_mode_)
 {
     CatalogState initial_state;
     initial_state.tenant_id = onelake_tenant_id;
@@ -715,8 +758,11 @@ HorizonCatalog::HorizonCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
+    : RestCatalog(
+        warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
+        snapshot_loading_mode_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -1003,9 +1049,11 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
+    const std::string & google_service_account_key_,
     DB::ContextPtr context_,
-    bool allow_server_credentials_in_user_queries_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
+    bool allow_server_credentials_in_user_queries_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_, snapshot_loading_mode_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
     , google_metadata_service(google_metadata_service_)
@@ -1013,11 +1061,19 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , google_service_account_key(google_service_account_key_)
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
+    if (!google_service_account_key.empty()
+        && (!google_adc_client_id.empty() || !google_adc_client_secret.empty() || !google_adc_refresh_token.empty()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake credentials are ambiguous: specify either google_service_account_key or the ADC credentials "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token), not both");
+
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
@@ -1030,9 +1086,9 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id or google_adc_client_id).
+    /// Only use Google OAuth if explicitly configured (`google_project_id`, `google_adc_client_id` or `google_service_account_key`).
     /// https://developers.google.com/identity/protocols/oauth2
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         auto current = access_token.get();
         if (!current || update_token || current->isExpired())
@@ -1078,15 +1134,34 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
     return token;
 }
 
+AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromServiceAccountKey() const
+{
+    const auto & context = getContext();
+    auto [assertion, token_endpoint] = DB::makeGCPServiceAccountAssertion(google_service_account_key, DB::GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
+    /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
+    context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
+
+    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+    auto result = DB::fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
+
+    AccessToken token;
+    token.token = std::move(result.access_token);
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10);
+    return token;
+}
+
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
     const auto & context = getContext();
 
-    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
-    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
-    /// mint a token with the server's own identity.
+    /// An explicit Application Default Credentials triple or a service account key is a user-supplied credential,
+    /// so it is honored. Fail closed if it does not work: do not fall back to the server's GCP metadata service,
+    /// which would mint a token with the server's own identity.
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    if (!google_service_account_key.empty())
+        return retrieveGoogleCloudAccessTokenFromServiceAccountKey();
 
     /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
     /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
@@ -1096,8 +1171,8 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
-            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token)"
+            "metadata service. Provide google_service_account_key or an explicit Google ADC triple "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token)"
 #if CLICKHOUSE_CLOUD
             ".");
 #else
@@ -1348,18 +1423,23 @@ void RestCatalog::getNamespacesRecursive(
 
 Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::string & base_namespace) const
 {
-    std::vector<std::string_view> parts;
-    splitInto<'.'>(parts, base_namespace);
-    std::string parent_param;
-    for (const auto & part : parts)
-    {
-        /// 0x1F is a unit separator
-        /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
-        if (!parent_param.empty())
-            parent_param += static_cast<char>(0x1F);
-        parent_param += part;
-    }
-    return {{"parent", parent_param}};
+    /// 0x1F is a unit separator
+    /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
+    return {{"parent", fmt::format("{}", fmt::join(splitNamespaceLevels(base_namespace), "\x1F"))}};
+}
+
+Poco::URI::QueryParameters RestCatalog::getLoadTableParams(const Config & config) const
+{
+    /// The REST spec merge order: server overrides, then the client configuration, then server defaults.
+    std::string mode = config.override_snapshot_loading_mode;
+    if (mode.empty() && snapshot_loading_mode != DB::DatabaseDataLakeSnapshotLoadingMode::AUTO)
+        mode = DB::SettingFieldDatabaseDataLakeSnapshotLoadingModeTraits::toString(snapshot_loading_mode);
+    if (mode.empty())
+        mode = config.default_snapshot_loading_mode;
+
+    if (mode == "refs")
+        return {{"snapshots", "refs"}};
+    return {};
 }
 
 bool RestCatalog::hasFlatNamespaces() const
@@ -1506,10 +1586,14 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         {
             auto current_namespace_array = namespaces_object->get(static_cast<int>(i)).extract<Poco::JSON::Array::Ptr>();
             if (current_namespace_array->size() == 0)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg REST catalog listed an empty namespace");
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
+            /// An empty name at the root would denote the root itself.
+            if (base_namespace.empty() && current_namespace.empty())
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg REST catalog listed a top-level namespace with an empty name");
+
             /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
             /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
             /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
@@ -1737,7 +1821,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
+    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, getLoadTableParams(state_snapshot->config), headers, /* auth_headers */ std::nullopt);
 
     if (buf->eof())
     {
@@ -1782,6 +1866,7 @@ bool RestCatalog::getTableMetadataImpl(
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
+        DB::Iceberg::IcebergSchemaProcessor::checkTableSchemas(*metadata_object);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -1888,16 +1973,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     /// The request body takes the namespace as a list of levels, unlike the URL form above.
     /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        std::vector<String> levels;
-        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
-        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
-        splitInto<'.'>(levels, namespace_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        for (const auto & level : levels)
-            namespaces->add(level);
-        request_body->set("namespace", namespaces);
-    }
+    request_body->set("namespace", namespaceToJSON(namespace_name));
 
     try
     {
@@ -1955,15 +2031,18 @@ std::optional<std::string> RestCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(*namespace_location) / table_name);
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+std::string RestCatalog::getCreateTableEndpoint(const CatalogState & catalog_state, const String & namespace_name) const
 {
-    const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+    return (base_url / catalog_state.config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+}
 
+Poco::JSON::Object::Ptr RestCatalog::buildCreateTableRequestBody(
+    const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const
+{
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
-    if (!managesTableLocation())
-        request_body->set("location", metadata_content->getValue<String>("location"));
+    if (location)
+        request_body->set("location", *location);
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
@@ -1989,6 +2068,18 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 
     request_body->set("properties", properties);
+    return request_body;
+}
+
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = getCreateTableEndpoint(*state_snapshot, namespace_name);
+
+    std::optional<String> location;
+    if (!managesTableLocation())
+        location = metadata_content->getValue<String>("location");
+    auto request_body = buildCreateTableRequestBody(table_name, location, metadata_content);
 
     try
     {
@@ -2026,8 +2117,27 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 }
 
+void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = getCreateTableEndpoint(*state_snapshot, namespace_name);
+    auto request_body = buildCreateTableRequestBody(table_name, /* location */ std::nullopt, metadata_content);
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+    try
+    {
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw DB::Exception(
+                DB::ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog: {}", namespace_name, table_name, ex.displayText());
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}.{}: {}", namespace_name, table_name, ex.displayText());
+    }
+}
+
+
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -2036,9 +2146,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2123,9 +2231,7 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2232,6 +2338,7 @@ bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
@@ -2242,9 +2349,7 @@ bool RestCatalog::updateSchema(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2391,7 +2496,7 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         const auto & table = storage_id.getTableName();
         auto [namespace_name, table_name] = DataLake::parseTableName(table);
         const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
+        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, getLoadTableParams(state_snapshot->config), headers, /* auth_headers */ std::nullopt);
 
         if (buf->eof())
         {

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
-#include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/IAggregateWindowFunction.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/Peers.h>
+#include <Processors/Transforms/Window/SlidingArguments.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
@@ -17,33 +17,28 @@
 #include <Processors/Port.h>
 
 #include <Common/AlignedBuffer.h>
-#include <Common/Arena.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 
-#include <deque>
 #include <optional>
 
 namespace DB
 {
 
-struct WindowFunctionWorkspace
-{
-    AggregateFunctionPtr aggregate_function;
-    bool is_aggregate_function_state = false;
-    size_t result_column = 0;
-    VectorWithMemoryTracking<size_t> argument_column_indices;
-    mutable AlignedBuffer aggregate_function_state;
-    VectorWithMemoryTracking<const IColumn *> argument_columns;
-    Int64 cached_block_number = -1;
-};
-
 struct GeneralWindowFunctionSlot
 {
     GeneralWindowFunctionPtr function;
-    char * state = nullptr;
-    size_t result_column = 0;
-    WindowArguments arguments;
+    AlignedBuffer state;
+    DataTypePtr result_type;
+    size_t function_index = 0;
+};
+
+struct AggregateWindowFunctionSlot
+{
+    AggregateWindowFunctionPtr function;
+    DataTypePtr result_type;
+    size_t function_index = 0;
 };
 
 /* Computes several window functions that share one window. The input is sorted by PARTITION BY, then by
@@ -68,15 +63,13 @@ class WindowTransform final : public IProcessor
     void recordCurrentRowBounds();
     void evaluateRowsBatch();
     void packReadyBlock();
-    void updateAggregationState();
-    void writeOutCurrentRow();
     void startNextPartition();
     void releaseUnusedBlocks();
 
 public:
     WindowTransform(
         SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
+        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
@@ -86,36 +79,30 @@ public:
     void work() override;
 
 private:
-    /// Everything fixed at construction.
     const WindowTransformParams params;
 
+    /// Processors contract.
     std::optional<Chunk> pending_input;
-    std::deque<Chunk> pending_outputs;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
-    /// The general functions with their states, and the aggregates; each names its output column.
-    std::vector<GeneralWindowFunctionSlot> general_functions;
-    std::vector<WindowFunctionWorkspace> workspaces;
-    Arena states_arena;
-    WindowFunctionRequirements required;
-
-    /// The batch being collected, starting at `batch_start`.
-    WindowBounds bounds;
-    RowNumber batch_start;
-
-    /// Shared by the aggregate states of the current partition and replaced with it, so it does not grow across
-    /// partitions. No result lives in it: a -State result is merged into the arena of the output column.
-    std::unique_ptr<Arena> arena;
-
+    /// Row walk.
     SlidingBlocks blocks;
     SlidingIndexes indexes;
-
+    SlidingArguments arguments;
     Partition partition;
-    Frame frame;
     Peers peers;
+    Frame frame;
 
-    /// The frame the aggregate states hold; the next frame is compared with it to add only the new rows.
-    FrameBounds prev_frame;
+    /// Functions.
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
+    VectorWithMemoryTracking<AggregateWindowFunctionSlot> aggregate_functions;
+    MutableColumns current_results;
+    Int64 first_row_read_by_functions = 0;
+
+    /// Pending batch for evaluation.
+    WindowBounds bounds;
+    RowNumber batch_start;
 };
 
 }

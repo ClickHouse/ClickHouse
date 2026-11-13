@@ -357,7 +357,9 @@ public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
     virtual HTTPConnectionGroupType getGroupType() const = 0;
-    virtual size_t wipeExpired() = 0;
+    /// Appends expired connections to `expired_connections` for the caller to destroy after releasing its locks:
+    /// closing a TLS connection may do socket I/O. Returns the number of connections left.
+    virtual size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) = 0;
 };
 
 
@@ -883,7 +885,7 @@ public:
     /// in order to inherit the socket's identity from the connection it takes over.
     ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
-        std::vector<ConnectionPtr> expired_connections;
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
             MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -935,24 +937,19 @@ public:
         return group->getType();
     }
 
-    size_t wipeExpired() override
+    size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) override
     {
-        std::vector<ConnectionPtr> expired_connections;
-
-        SCOPE_EXIT({
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
-            expired_connections.clear();
-        });
-
         std::lock_guard lock(mutex);
         return wipeExpiredImpl(expired_connections);
     }
 
-    size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
+    size_t wipeExpiredImpl(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
+        const size_t expired_before = expired_connections.size();
         SCOPE_EXIT({
-            group->releaseStoredConnections(expired_connections.size());
-            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+            const size_t wiped = expired_connections.size() - expired_before;
+            group->releaseStoredConnections(wiped);
+            ProfileEvents::increment(getMetrics().expired, wiped);
         });
 
         auto is_soft_limit_reached = group->isSoftLimitReached();
@@ -963,9 +960,10 @@ public:
             if (!isExpired(connection, is_soft_limit_reached) && !isStale(*connection))
                 return stored_connections.size();
 
-            stored_connections.pop();
-            connection->markAsExpired();
+            /// Appended before it is removed: if `push_back` throws, the connection stays stored and accounted.
             expired_connections.push_back(connection);
+            connection->markAsExpired();
+            stored_connections.pop();
         }
 
         return stored_connections.size();
@@ -1420,11 +1418,20 @@ public:
     {
         Poco::Timestamp now;
 
+        /// Destroyed after `mutex` is released.
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
+        std::vector<IExtendedPool::Ptr> dropped_pools;
+        SCOPE_EXIT({
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            dropped_pools.clear();
+            expired_connections.clear();
+        });
+
         std::lock_guard lock(mutex);
 
         if (now - last_wipe_time > wipe_timeout)
         {
-            wipeExpired();
+            wipeExpired(expired_connections, dropped_pools);
             last_wipe_time = now;
         }
 
@@ -1476,8 +1483,15 @@ public:
 
     void dropCache()
     {
+        /// The pools and their stored connections are destroyed after `mutex` is released.
+        decltype(endpoints_pool) dropped_pools;
+        SCOPE_EXIT({
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            dropped_pools.clear();
+        });
+
         std::lock_guard lock(mutex);
-        endpoints_pool.clear();
+        dropped_pools.swap(endpoints_pool);
     }
 
     HTTPConnectionPools::PoolSocketInodes getSocketInodes()
@@ -1520,19 +1534,25 @@ protected:
         return it->second;
     }
 
-    void wipeExpired() TSA_REQUIRES(mutex)
+    /// A pool found empty can store a returned connection before it is erased, so erased pools
+    /// go to `dropped_pools` for the caller to destroy after releasing `mutex`, like expired connections.
+    void wipeExpired(
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections,
+        std::vector<IExtendedPool::Ptr> & dropped_pools) TSA_REQUIRES(mutex)
     {
-        std::vector<EndpointPoolKey> keys_to_drop;
-
-        for (auto & [key, pool] : endpoints_pool)
+        for (auto it = endpoints_pool.begin(); it != endpoints_pool.end();)
         {
-            auto left_connections = pool->wipeExpired();
-            if (left_connections == 0 && pool->getGroupType() != HTTPConnectionGroupType::DISK)
-                keys_to_drop.push_back(key);
-        }
+            const auto & pool = it->second;
+            auto left_connections = pool->wipeExpired(expired_connections);
+            if (left_connections != 0 || pool->getGroupType() == HTTPConnectionGroupType::DISK)
+            {
+                ++it;
+                continue;
+            }
 
-        for (const auto & key : keys_to_drop)
-            endpoints_pool.erase(key);
+            dropped_pools.push_back(pool);
+            it = endpoints_pool.erase(it);
+        }
     }
 
     static bool useSecureConnection(const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)

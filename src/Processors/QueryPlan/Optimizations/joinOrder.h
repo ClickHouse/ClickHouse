@@ -1,8 +1,10 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
 #include <vector>
 #include <Core/Joins.h>
+#include <Core/Names.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
@@ -163,6 +165,25 @@ struct QueryGraph
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
+
+    /// DPsub chooses between hash and sort-merge joins by the sort order of their inputs; set from the graph's join settings.
+    bool use_interesting_orders = false;
+    /// The order of a sort-merge join result is used by the sort of a later join (`optimize_sorting_by_input_stream_properties`).
+    bool reuse_join_output_order = false;
+    /// A hash join's runtime filter prunes the granules of the probe side by its primary key (`enable_join_runtime_filters_index_analysis`).
+    bool runtime_filter_prunes_probe = false;
+    /// A sort-merge join of inputs read in order by their primary key runs sharded by key ranges (`query_plan_join_shard_by_pk_ranges`).
+    bool shard_merge_by_pk_ranges = false;
+
+    /// How a relation can be read in order: the longest sequence of its `candidates`, and how many of its leading columns
+    /// are the leading primary key columns themselves, which a sharded merge splits by (`optimizeJoinByShards`).
+    struct ReadInOrder
+    {
+        Names prefix;
+        size_t primary_key_prefix = 0;
+    };
+    /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
+    std::function<std::vector<ReadInOrder>(const std::vector<NameSet> & candidates)> find_read_in_order_prefixes;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

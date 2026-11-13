@@ -72,6 +72,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -175,7 +176,6 @@ void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
     const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
     const bool fill_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1 && part_info.level == 0 && part_info.mutation == 0;
 
-    FormatSettings format_settings;
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
     {
         const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
@@ -207,25 +207,34 @@ void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
             continue;
         }
 
-        auto serialization = column_type->getDefaultSerialization();
-
-        Field min_val;
-        serialization->deserializeBinary(min_val, *file, format_settings);
-        Field max_val;
-        serialization->deserializeBinary(max_val, *file, format_settings);
-
-        normalizeBoolFields(min_val);
-        normalizeBoolFields(max_val);
-
-        // NULL_LAST
-        if (min_val.isNull())
-            min_val = POSITIVE_INFINITY;
-        if (max_val.isNull())
-            max_val = POSITIVE_INFINITY;
-
-        hyperrectangle.emplace_back(min_val, true, max_val, true);
+        hyperrectangle.push_back(readRange(*column_type, *file));
     }
     initialized = true;
+}
+
+void MergeTreePartMinMaxIndex::writeRange(const Range & range, const IDataType & type, WriteBuffer & out)
+{
+    auto serialization = type.getDefaultSerialization();
+    serialization->serializeBinary(range.left, out, {});
+    serialization->serializeBinary(range.right, out, {});
+}
+
+Range MergeTreePartMinMaxIndex::readRange(const IDataType & type, ReadBuffer & in)
+{
+    auto serialization = type.getDefaultSerialization();
+    auto read_bound = [&]
+    {
+        Field bound;
+        serialization->deserializeBinary(bound, in, {});
+        normalizeBoolFields(bound);
+        // NULL_LAST
+        if (bound.isNull())
+            bound = POSITIVE_INFINITY;
+        return bound;
+    };
+    Field min_val = read_bound();
+    Field max_val = read_bound();
+    return Range(min_val, true, max_val, true);
 }
 
 MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
@@ -286,12 +295,9 @@ MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
             continue;
         }
 
-        auto serialization = column_type->getDefaultSerialization();
-
         auto out = part_storage.writeFile(file_name, 4096, {});
         HashingWriteBuffer out_hashing(*out);
-        serialization->serializeBinary(hyperrectangle[i].left, out_hashing, {});
-        serialization->serializeBinary(hyperrectangle[i].right, out_hashing, {});
+        writeRange(hyperrectangle[i], *column_type, out_hashing);
         out_hashing.finalize();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -1179,6 +1185,9 @@ void IMergeTreeDataPart::removeIfNeeded()
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
         return;
 
+    /// Keep the retries of this cleanup when the query or merge is cancelled (`plain_rewritable` removes synchronously).
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     try
     {
         if (!getDataPartStorage().exists()) // path
@@ -1639,6 +1648,49 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & re
         }
     }
     return estimates;
+}
+
+bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const
+{
+    /// A part whose caches are cleared does not use the cache any more, see `loadStatistics`.
+    if (!cache || cleared_data_in_caches || required_columns.empty())
+        return false;
+
+    /// The index of the packed archive must not be read here: if it is not loaded yet, the statistics
+    /// of the part have not been read and the files of the uncached columns are assumed to exist.
+    const bool is_packed = checksums.has(String(ColumnsStatistics::FILENAME));
+    const PackedFilesReader * packed_reader = nullptr;
+    if (is_packed)
+    {
+        std::lock_guard lock(statistics_reader_mutex);
+        packed_reader = statistics_reader.get();
+    }
+
+    const auto & all_columns = getColumnsDescription();
+    const String part_path = getPathForCacheKey();
+
+    auto is_cached = [&](const String & column_name)
+    {
+        if (!all_columns.tryGet(column_name) || cache->contains(StatisticsCache::hash(part_path, column_name)))
+            return true;
+
+        const String filename = getStatisticsFilename(column_name);
+        if (is_packed)
+            return packed_reader && !packed_reader->exists(filename);
+        return !checksums.has(filename);
+    };
+
+    for (const auto & column_name : required_columns)
+    {
+        if (!is_cached(column_name))
+            return false;
+        /// `loadStatistics` also loads the statistics of the parent column of a `.null` subcolumn.
+        if (column_name.ends_with(".null")
+            && !is_cached(column_name.substr(0, column_name.size() - std::string_view(".null").size())))
+            return false;
+    }
+
+    return true;
 }
 
 std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const
@@ -2997,6 +3049,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     SerializationInfoByName infos({});
     if (auto serialization_file = readFileIfExists(SERIALIZATION_FILE_NAME))
         infos = SerializationInfoByName::readJSON(loaded_columns, *serialization_file);
+
+    if (auto index_types_file = readFileIfExists(SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME))
+        secondary_index_column_types = SecondaryIndexColumnTypes::readJSON(*index_types_file);
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)

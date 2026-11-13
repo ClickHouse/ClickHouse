@@ -1,38 +1,34 @@
 ---
-title: 快速入门 CLI
+title: 快速入门 命令行客户端
 ---
 
-本页介绍如何仅通过命令行，使用 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 和 `psql` 完成 ClickHouse Managed Postgres 的预配、数据加载、将数据复制到 ClickHouse 以及查询。命令均为非交互式；`clickhousectl` 可通过 `--json` 输出 JSON。
+本页介绍如何仅通过命令行，使用 [clickhousectl](/zh/concepts/features/interfaces/cli) 和 `psql` 完成 ClickHouse Managed Postgres 的预配、数据加载、将数据复制到 ClickHouse 以及查询。除可选的 `--interactive` 登录外，命令均为非交互式。`clickhousectl` 可通过 `--json` 输出 JSON，在检测到 coding agent 时也会自动输出 JSON；为 `cloud service query` 指定 `--format` 即可获取纯文本值。
 
-<div id="prerequisites">
-  ## 前置条件
-</div>
+## 前置条件 {#prerequisites}
 
-安装 ClickHouse 命令行客户端：
+安装 clickhousectl：
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-你还需要 `psql` (PostgreSQL 客户端工具；在 macOS 上，使用 `brew install libpq`) 和 `jq`。
+该脚本会安装 `~/.local/bin/clickhousectl` 以及别名 `chctl`。请确保 `~/.local/bin` 已加入您的 `PATH`。
 
-写操作 (创建、删除) 需要通过 [API key 身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅支持只读访问：
+您还需要安装 `psql` (PostgreSQL 客户端工具；在 macOS 上可运行 `brew install libpq` 安装) 和 `jq`。
+
+写操作 (创建、删除) 需要 [API key](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录 (不带任何标志运行 `clickhousectl cloud auth login`) 仅具有只读权限。请使用您的 API key 登录；使用 `--interactive` 时会提示您输入 key 和 secret，这样 secret 就不会留在命令行环境的历史记录中：
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。可使用 `clickhousectl cloud auth status` 进行验证；应看到一条作用域为 `read/write` 的条目。
+或者，通过 `--api-key` 和 `--api-secret` 将 API 密钥和密钥 secret 传给 `clickhousectl cloud auth login`，也可以设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。登录时会验证凭证并输出当前身份；之后可随时运行 `clickhousectl cloud auth whoami` 再次确认。如果您属于多个组织，请在每条命令中添加 `--org-id <id>` (或 `--org-name <name>`) 。
 
-<div id="part-1-create-and-load">
-  ## 第 1 部分：创建 Postgres 并加载数据
-</div>
+## 第 1 部分：创建 Postgres 并加载数据 {#part-1-create-and-load}
 
-<div id="create-postgres-service">
-  ### 创建 Postgres 服务
-</div>
+### 创建 Postgres 服务 {#create-postgres-service}
 
-创建该服务并保存响应；密码仅显示一次：
+创建服务并保存返回的响应；密码仅显示一次：
 
 ```bash
 clickhousectl cloud postgres create \
@@ -43,41 +39,49 @@ clickhousectl cloud postgres create \
   --json > pg.json
 ```
 
-响应中包含服务 ID、主机名以及可直接使用的连接字符串：
+AWS 是默认的提供商。GCP 目前处于私有预览阶段；如需使用，请传入 `--provider gcp`，并指定 GCP 区域和规格，例如 `--region us-central1 --size c4-standard-lssd-4`。
+
+如果未传入访问控制标志，该服务将在 Postgres (5432) 和 PgBouncer (6432) 端口上接受来自任意 IPv4 或 IPv6 地址的连接。如需限制访问，请针对每个 CIDR 和端口范围各传入一条 `--ip-allow` 规则，例如 `--ip-allow '203.0.113.0/24:5432..6432=office'`。传入规则后，仅所列规则生效。之后如需更改规则，请运行 `clickhousectl cloud postgres update <postgres-id>`，并附带 `--add-ip-allow <rule>` 或 `--remove-ip-allow <rule-id>`；可通过 `cloud postgres get` 查看规则 ID。
+
+响应中包含服务 ID、主机名以及可直接使用的连接字符串 (已截断) ：
 
 ```json
 {
-  "id": "3b5a3112-bf02-82d0-bd02-fbe67d5caa7a",
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@quickstart-pg-c959cbf0.pgn9sre8vvsp3qnej7awh00y0a.c0.us-east-1.aws.pg.clickhouse.cloud:5432/postgres?sslmode=require&channel_binding=require",
+  "createdAt": "2026-10-23T11:13:21Z",
+  "haType": "none",
+  "hostname": "quickstart-pg-c959cbf0.pgn9sre8vvsp3qnej7awh00y0a.c0.us-east-1.aws.pg.clickhouse.cloud",
+  "id": "aa738723-7bcd-86d0-bd5d-23ab91003c05",
+  "ipAccessList": [
+    {"description": "", "id": "frshr7cvsgke0h42aphabk7zc2", "portRange": "5432", "source": "0.0.0.0/0"},
+    {"description": "", "id": "fr5tjdsywqpj4qhhe76dzjv3a6", "portRange": "6432", "source": "0.0.0.0/0"}
+  ],
+  "isPrimary": true,
   "name": "quickstart-pg",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
+  "postgresVersion": "18",
   "provider": "aws",
   "region": "us-east-1",
-  "postgresVersion": "18",
   "size": "m6gd.large",
-  "storageSize": 118,
-  "haType": "none",
   "state": "creating",
-  "createdAt": "2026-07-22T13:21:22Z",
-  "hostname": "quickstart-pg-c1406b50.pg7dd324nz0a1qm1fqskxbjn7m.c0.us-east-1.aws.pg.clickhouse.cloud",
-  "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@quickstart-pg-c1406b50.pg7dd324nz0a1qm1fqskxbjn7m.c0.us-east-1.aws.pg.clickhouse.cloud:5432/postgres?channel_binding=require",
-  "isPrimary": true,
-  "tags": []
+  "storageSize": 118,
+  "tags": [],
+  "username": "postgres"
 }
 ```
 
-提取本指南后续部分所需的信息：
+提取本指南后续步骤所需的信息：
 
 ```bash
 PG_ID=$(jq -r .id pg.json)
-PG_URL=$(jq -r .connectionString pg.json)
+PG_URL="$(jq -r .connectionString pg.json | sed 's/sslmode=require/sslmode=verify-full/')&sslrootcert=pg-ca.pem"
 ```
 
-如果密码遗失，请使用 `clickhousectl cloud postgres reset-password $PG_ID --generate` 生成新密码。
+将 `sslmode` 改为 `verify-full` 并添加 `sslrootcert` 后，`psql` 会使用下文下载的 CA 来验证服务器证书。在默认的 `sslmode=require` 设置下，`psql` 只会加密连接，而不会检查服务器的身份。
 
-<div id="wait-for-provisioning">
-  ### 等待服务预配完成
-</div>
+如果密码丢失，可以运行 `clickhousectl cloud postgres reset-password "$PG_ID" --generate` 生成新密码。
+
+### 等待服务预配完成 {#wait-for-provisioning}
 
 预配需要几分钟。持续轮询，直到状态变为 `running`：
 
@@ -87,9 +91,15 @@ while [ "$(clickhousectl cloud postgres get "$PG_ID" --json | jq -r .state)" != 
 done
 ```
 
-<div id="load-sample-data">
-  ### 加载示例数据
-</div>
+### 下载 CA 证书 {#download-ca-certificate}
+
+每个 ClickHouse Managed Postgres 实例都有自己的 CA，该 CA 并非公开受信任的 CA。请将其保存到文件中，`psql` 和第 2 部分中的 ClickPipe 都会用它来验证 TLS：
+
+```bash
+clickhousectl cloud postgres certs get "$PG_ID" --output pg-ca.pem
+```
+
+### 加载示例数据 {#load-sample-data}
 
 创建两个表，并通过 `psql` 插入 100 万条事件：
 
@@ -175,19 +185,15 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-得益于 NVMe 存储，在 `m6gd.large` (最小规格) 上插入 100 万行数据大约只需 7 秒。可通过查询验证；由于数据是用 `random()` 生成的，每次运行得到的行数可能会有所不同：
+得益于 NVMe 存储，在 `m6gd.large` (最小规格之一) 上插入 100 万行数据大约需要 20 秒。可通过查询验证；由于数据是用 `random()` 生成的，每次运行得到的行数可能会有所不同：
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
 ```
 
-<div id="part-2-replicate">
-  ## 第 2 部分：复制到 ClickHouse
-</div>
+## 第 2 部分：复制到 ClickHouse {#part-2-replicate}
 
-<div id="create-clickhouse-service">
-  ### 创建 ClickHouse 服务
-</div>
+### 创建 ClickHouse 服务 {#create-clickhouse-service}
 
 在同一区域创建一个服务并保存响应；密码仅会显示在创建时返回的响应中：
 
@@ -211,11 +217,9 @@ done
 
 若要改用现有服务，请将 `CH_ID` 设置为 `clickhousectl cloud service list` 中显示的值，并将 `CH_PASSWORD` 设置为该服务 `default` 用户的密码，`pg_clickhouse` 步骤需要用到它。
 
-<div id="replicate-to-clickhouse">
-  ### 将表复制到 ClickHouse
-</div>
+### 将表复制到 ClickHouse {#replicate-to-clickhouse}
 
-在 ClickHouse 服务上创建一个 Postgres CDC ClickPipe，并将其指向 ClickHouse Managed Postgres 的主机名。该管道会先复制现有行，然后持续将后续变更同步到 ClickHouse：
+在 ClickHouse 服务上创建一个 Postgres CDC ClickPipe，并将其指向 ClickHouse Managed Postgres 的主机名。该管道会先复制现有行，随后持续将新的变更同步到 ClickHouse。ClickPipes 默认会验证源端证书，因此请使用 `--ca-certificate` 传入您在第 1 部分中下载的 CA：
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -227,6 +231,7 @@ clickhousectl cloud clickpipe create postgres "$CH_ID" \
   --pg-database postgres \
   --username postgres \
   --password "$PG_PASSWORD" \
+  --ca-certificate pg-ca.pem \
   --table-mapping public.events:public_events \
   --table-mapping public.users:public_users \
   --json > pipe.json
@@ -234,15 +239,14 @@ clickhousectl cloud clickpipe create postgres "$CH_ID" \
 PIPE_ID=$(jq -r .id pipe.json)
 ```
 
-注意：
+说明：
 
-* 复制表会落在 ClickHouse 服务的 `default` 数据库中，名称由 `--table-mapping` 的目标决定
-* publication 和 replication slot 会自动创建，其中 publication 的作用范围仅限于映射的表；传入 `--publication-name` 可改用你自行管理的 publication
-* 请直接使用 Postgres 主机名；不支持通过 PgBouncer 进行复制
+* 复制表会写入 ClickHouse 服务上的 `default` 数据库，表名由 `--table-mapping` 中指定的目标决定。如需使用其他数据库，请传入 `--destination-database <name>`
+* `--table-mapping` 会创建 `ReplacingMergeTree` 表。更新和删除会以新的行版本写入，因此请参照下方查询，使用 `FINAL` 和 `WHERE _peerdb_is_deleted = 0` 读取当前状态
+* publication 和 replication slot 会自动创建，且 publication 的作用范围仅限于已映射的表；如需使用自行管理的 publication，请传入 `--publication-name`
+* 请使用 Postgres 的直连主机名；不支持通过 PgBouncer 进行复制
 
-<div id="wait-for-pipe">
-  ### 等待管道进入 Running 状态
-</div>
+### 等待管道进入 Running 状态 {#wait-for-pipe}
 
 管道在进入 `Running` 之前，会依次经过 `Provisioning`、`Setup`，以及 (对于较大的表) `Snapshot` 状态。在一个服务上创建的第一个管道通常需要约 4 分钟。`Failed` 和 `InternalError` 为终态：
 
@@ -251,25 +255,25 @@ while :; do
   STATE=$(clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json | jq -r .state)
   case "$STATE" in
     Running) break ;;
-    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; exit 1 ;;
+    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; break ;;
   esac
   sleep 15
 done
 ```
 
-<div id="query-clickhouse">
-  ### 在 ClickHouse 中查询复制的数据
-</div>
+### 在 ClickHouse 中查询复制的数据 {#query-clickhouse}
 
-直接通过命令行客户端向 ClickHouse 服务执行 SQL。首次调用会自动预配一个 Query API 端点和一个服务级作用域的 API 密钥：
+直接通过命令行客户端向 ClickHouse 服务执行 SQL。首次调用时，clickhousectl 会将您现有的 API key 添加到该服务的查询 API 端点 (如该端点尚不存在，则会先行创建) ，而不会新建 key。如果希望此时直接报错，请传入 `--no-auto-enable`。`--format TabSeparated` 仅输出纯值，下方的比较正是基于这一点：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
-  --query "SELECT count() FROM public_events"
+clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+  --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0"
 ```
 
+第一行输出到 stderr，且仅在 clickhousectl 更改端点时才会出现：
+
 ```text
-Provisioning Query API endpoint + key for service 'quickstart-ch'...
+Binding the authenticated API key to the Query API endpoint for service 'quickstart-ch'...
 1000000
 ```
 
@@ -278,15 +282,13 @@ Postgres 中的新写入会持续复制。插入一行，然后轮询，直到�
 ```bash
 psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
 
-while [ "$(clickhousectl cloud service query --id "$CH_ID" \
-  --query "SELECT count() FROM public_events")" != "1000001" ]; do
+while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+  --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0")" != "1000001" ]; do
   sleep 10
 done
 ```
 
-<div id="query-clickhouse-from-postgres">
-  ### 从 Postgres 查询 ClickHouse
-</div>
+### 从 Postgres 查询 ClickHouse {#query-clickhouse-from-postgres}
 
 [`pg_clickhouse`](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction) 扩展可让 Postgres 作为事务型数据和分析型数据的统一查询层。获取 ClickHouse 的 HTTPS 主机名，然后通过 `psql` 配置该扩展：
 
@@ -309,25 +311,17 @@ SQL
 
 在使用该数据集的 `m6gd.large` 上测得，通过 foreign tables 运行分析查询的速度可提升 6-9 倍 (例如，一个包含 5 个聚合的 GROUP BY：通过 ClickHouse 为 176 ms，本地执行为 1,133 ms；一个带聚合的 JOIN：298 ms，而本地为 2,764 ms) 。
 
-<div id="cleanup-resources">
-  ## 清理
-</div>
+## 清理 {#cleanup-resources}
 
-请先删除 ClickPipe，再删除 Postgres 服务。删除服务会永久清除其中的所有数据：
+请先删除 ClickPipe，再删除 Postgres 服务。删除服务会永久清除其中的所有数据。Postgres 服务在运行状态下也可以直接删除：
 
 ```bash
 clickhousectl cloud clickpipe delete "$CH_ID" "$PIPE_ID"
 clickhousectl cloud postgres delete "$PG_ID"
 ```
 
-运行中的 ClickHouse 服务无法直接删除。请先将其停止，等待状态变为 `stopped`，然后再删除：
+运行中的 ClickHouse 服务无法直接删除。使用 `--force` 会先将其停止，等待停止完成，然后再删除：
 
 ```bash
-clickhousectl cloud service stop "$CH_ID"
-
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "stopped" ]; do
-  sleep 10
-done
-
-clickhousectl cloud service delete "$CH_ID"
+clickhousectl cloud service delete "$CH_ID" --force
 ```

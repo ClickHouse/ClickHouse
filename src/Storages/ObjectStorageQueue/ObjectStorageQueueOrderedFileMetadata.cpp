@@ -11,6 +11,7 @@
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -1030,41 +1031,74 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
 
     chassert(prev_value == 0 || prev_value == 1);
 
+    if (!DB::useBucketsForProcessing(value))
+    {
+        LOG_TRACE(log, "New number of buckets is {}, keeping the metadata structure without buckets", value);
+        return;
+    }
+
+    const auto buckets_path = std::filesystem::path(zk_path) / "buckets";
+    const auto table_metadata_path = std::filesystem::path(zk_path) / "metadata";
+
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
         requests.clear();
 
-        const auto old_processed_path = prev_value == 0
-            ? getProcessedPathWithoutBucket(zk_path)
-            : getProcessedPathWithBucket(zk_path, 0);
+        /// The table metadata gets the new number of buckets only after a migration. Before it, bucket 0 may hold
+        /// the pointer of the whole queue, put there by older versions for `buckets = 1`.
+        Coordination::Stat table_metadata_stat;
+        const auto table_metadata = ObjectStorageQueueTableMetadata::parse(zk_client->get(table_metadata_path, &table_metadata_stat));
+        const bool use_legacy_bucket_0 = prev_value == 1 && !DB::useBucketsForProcessing(table_metadata.getBucketsNum());
 
-        NodeMetadata processed_node;
-        Coordination::Stat processed_node_stat;
-        bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
-            processed_node,
-            &processed_node_stat,
-            old_processed_path,
-            log,
-            zookeeper_name_);
-
-        if (!has_processed_node)
+        std::vector<std::string> missing_bucket_paths;
+        if (!zk_client->exists(buckets_path))
+            missing_bucket_paths.push_back(buckets_path);
+        for (size_t i = 0; i < value; ++i)
         {
-            LOG_TRACE(log, "Processed node does not exist at path {}", old_processed_path);
+            const std::string bucket_path = buckets_path / toString(i);
+            if (!zk_client->exists(bucket_path))
+                missing_bucket_paths.push_back(bucket_path);
+        }
+
+        std::vector<std::string> candidate_paths{getProcessedPathWithoutBucket(zk_path)};
+        if (use_legacy_bucket_0)
+            candidate_paths.push_back(getProcessedPathWithBucket(zk_path, 0));
+
+        /// Every file up to the greatest pointer is processed.
+        std::vector<std::string> old_processed_paths;
+        NodeMetadata processed_node;
+        for (const auto & path : candidate_paths)
+        {
+            NodeMetadata node;
+            Coordination::Stat stat;
+            if (!ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(node, &stat, path, log, zookeeper_name_))
+                continue;
+
+            requests.push_back(zkutil::makeRemoveRequest(path, stat.version));
+            if (old_processed_paths.empty() || processed_node.file_path < node.file_path)
+                processed_node = node;
+            old_processed_paths.push_back(path);
+        }
+
+        if (old_processed_paths.empty())
+        {
+            for (const auto & path : missing_bucket_paths)
+                zk_client->createIfNotExists(path, "");
+            LOG_TRACE(log, "Processed node does not exist at paths {}", fmt::join(candidate_paths, ", "));
             return;
         }
 
-        requests.push_back(zkutil::makeRemoveRequest(old_processed_path, processed_node_stat.version));
+        for (const auto & path : missing_bucket_paths)
+            requests.push_back(zkutil::makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
 
         for (size_t i = 0; i < value; ++i)
         {
-            const auto new_processed_path = getProcessedPathWithBucket(zk_path, /* bucket */i);
-            zk_client->createAncestors(new_processed_path);
-
             requests.push_back(zkutil::makeCreateRequest(
-                                new_processed_path,
+                                getProcessedPathWithBucket(zk_path, /* bucket */i),
                                 processed_node.toString(),
                                 zkutil::CreateMode::Persistent));
         }
+        requests.push_back(zkutil::makeCheckRequest(table_metadata_path, table_metadata_stat.version));
 
         responses.clear();
         code = zk_client->tryMulti(requests, responses);
@@ -1072,7 +1106,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         {
             LOG_TRACE(log,
                       "Successfully migrated metadata from {} to {} buckets",
-                      old_processed_path, value);
+                      fmt::join(old_processed_paths, ", "), value);
             return;
         }
 
@@ -1088,30 +1122,37 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
                 throw zkutil::KeeperMultiException(code, requests, responses);
         }
 
-        if (responses[0]->error != Coordination::Error::ZOK)
+        const auto failed_idx = zkutil::getFailedOpIndex(code, responses);
+        if (failed_idx < old_processed_paths.size())
         {
+            if (code == Coordination::Error::ZNONODE)
+            {
+                LOG_TRACE(log,
+                          "Old processed node no longer exists, "
+                          "metadata must have been migrated concurrently by another replica, will recheck");
+                continue;
+            }
+
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot change old metadata structure, "
                             "because someone is modifying it concurrently");
         }
 
-        if (responses[0]->error == Coordination::Error::ZNONODE)
+        if (code == Coordination::Error::ZNODEEXISTS
+            && failed_idx < old_processed_paths.size() + missing_bucket_paths.size())
         {
-            LOG_TRACE(log,
-                      "Old processed node no longer exists, "
-                      "metadata must have been migrated concurrently by another replica, will recheck");
+            LOG_TRACE(log, "Bucket node {} was created concurrently by another replica, will recheck",
+                      requests[failed_idx]->getPath());
             continue;
         }
 
-        const auto failed_idx = zkutil::getFailedOpIndex(code, responses);
-        if (prev_value != 0
-            /// idx=0 - for delete node request
-            /// idx=1 - for create bucket 0 request
-            /// idx=2 - for create bucket 1 request
-            /// Failed idx=2 means that metadata was updated concurrently by another replica,
-            /// in this case we just quit.
-            && failed_idx == 2
-            && code == Coordination::Error::ZNODEEXISTS)
+        if (failed_idx == requests.size() - 1)
+        {
+            LOG_TRACE(log, "Table metadata was changed concurrently, will recheck");
+            continue;
+        }
+
+        if (code == Coordination::Error::ZNODEEXISTS)
         {
             LOG_TRACE(log,
                       "Bucket node already exists, "
