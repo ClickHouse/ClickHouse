@@ -1778,14 +1778,17 @@ public:
     /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost).
     const size_t and_compare_chain_max_hash_work = 0;
     const size_t and_compare_chain_hash_work_start = 0;
+    /// Hash work charged by the compare-chain DFS for the precomputed keys it reuses.
+    size_t and_compare_chain_reused_hash_work = 0;
 
-    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
-    /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
+    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all getTreeHash calls) since this visitor
+    /// started plus the hash work the DFS charges for reused keys. Used by tryOptimizeAndCompareChain to back off.
     /// A budget of 0 means unlimited, so the optimization is never stopped early.
     bool andCompareChainHashBudgetExceeded() const
     {
         return and_compare_chain_max_hash_work != 0
-            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start + and_compare_chain_reused_hash_work
+                > and_compare_chain_max_hash_work;
     }
 
     /// `and` nodes the compare chain appended conjuncts to, with their state before the first append.
@@ -2354,10 +2357,22 @@ private:
         const auto function_before = function_node.getFunctionOrThrow();
 
         /// Hashing an operand walks the table expression it reads from, so each operand is hashed once.
-        std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtrWithHash> operand_keys;
+        struct OperandKey
+        {
+            QueryTreeNodePtrWithHash key;
+            size_t hash_work; /// nodes `getTreeHash` visited to compute `key`
+        };
+        std::unordered_map<const IQueryTreeNode *, OperandKey> operand_keys;
         auto key_of = [&](const QueryTreeNodePtr & operand) -> const QueryTreeNodePtrWithHash &
         {
-            return operand_keys.try_emplace(operand.get(), operand).first->second;
+            auto it = operand_keys.find(operand.get());
+            if (it == operand_keys.end())
+            {
+                const size_t hash_work_before = getTreeHashWorkCounter();
+                QueryTreeNodePtrWithHash key(operand);
+                it = operand_keys.emplace(operand.get(), OperandKey{std::move(key), getTreeHashWorkCounter() - hash_work_before}).first;
+            }
+            return it->second.key;
         };
 
         enum CompareType
@@ -2587,6 +2602,11 @@ private:
             {
                 for (const auto & left : it->second)
                 {
+                    /// Each step looks `left` up by its precomputed key; charge the hashing that key took.
+                    const auto work_it = operand_keys.find(left.key.node.get());
+                    chassert(work_it != operand_keys.end());
+                    and_compare_chain_reused_hash_work += work_it->second.hash_work;
+
                     if (andCompareChainHashBudgetExceeded())
                         return;
 
