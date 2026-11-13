@@ -89,6 +89,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -225,6 +226,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     ProxyConfiguration proxy_config_,
     ReadSettings read_settings_,
     ConnectionTimeouts timeouts_,
+    std::optional<std::chrono::steady_clock::time_point> deadline_,
     const Poco::Net::HTTPBasicCredentials & credentials_,
     const RemoteHostFilter * remote_host_filter_,
     size_t buffer_size_,
@@ -246,6 +248,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , proxy_config(std::move(proxy_config_))
     , read_settings(std::move(read_settings_))
     , timeouts(std::move(timeouts_))
+    , deadline(deadline_)
     , credentials(credentials_)
     , remote_host_filter(remote_host_filter_)
     , buffer_size(buffer_size_)
@@ -313,7 +316,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, range, with_request_body);
 
-    auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
+    auto session = makeHTTPSession(connection_group, current_uri, getTimeoutsForTry(), proxy_config);
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
@@ -384,12 +387,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
     bool is_retriable = true;
     std::exception_ptr exception = nullptr;
+    String error_message;
 
     for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
     {
         [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
-
-        String error_message;
 
         /// The callers cannot protect the interval after their last cancellation check and before
         /// this attempt starts. Do not issue a request after cancellation in that interval. A
@@ -416,6 +418,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             if (retry_soft_time_limit_reached || isReadCancelled())
                 throw ReadInterruptedException(exception);
         }
+
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throwDeadlineExceeded(error_message);
 
         try
         {
@@ -458,7 +463,10 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
         chassert(exception);
 
-        if (last_attempt || !is_retriable)
+        const bool no_time_for_retry
+            = deadline && std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_to_wait) >= *deadline;
+
+        if (last_attempt || !is_retriable || no_time_for_retry)
         {
             if (!mute_logging)
                 LOG_DEBUG(log,
@@ -490,6 +498,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             if (final_attempt_soft_time_limit_reached || isReadCancelled())
                 throw ReadInterruptedException(exception);
+
+            if (is_retriable && no_time_for_retry)
+                throwDeadlineExceeded(error_message);
 
             std::rethrow_exception(exception);
         }
@@ -543,6 +554,37 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             }
         }
     }
+}
+
+
+ConnectionTimeouts ReadWriteBufferFromHTTP::getTimeoutsForTry() const
+{
+    if (!deadline)
+        return timeouts;
+
+    const auto left = std::chrono::duration_cast<std::chrono::microseconds>(*deadline - std::chrono::steady_clock::now());
+    if (left.count() <= 0)
+        throwDeadlineExceeded({});
+
+    /// Zero means no timeout, so it is capped too.
+    const Poco::Timespan limit(left.count());
+    ConnectionTimeouts result = timeouts;
+    for (auto * timeout : {&result.connection_timeout, &result.send_timeout, &result.receive_timeout})
+    {
+        if (*timeout == 0 || *timeout > limit)
+            *timeout = limit;
+    }
+    return result;
+}
+
+
+void ReadWriteBufferFromHTTP::throwDeadlineExceeded(const String & error_message) const
+{
+    throw Exception(
+        ErrorCodes::TIMEOUT_EXCEEDED,
+        "Request to '{}' did not complete by its deadline{}",
+        maskedURI(initial_uri),
+        error_message.empty() ? String() : fmt::format(". Last error: {}", error_message));
 }
 
 
@@ -1108,6 +1150,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration,
         read_settings,
         timeouts,
+        deadline,
         bearer_token_.empty() ? fallback_credentials_ : no_credentials,
         remote_host_filter,
         buffer_size,

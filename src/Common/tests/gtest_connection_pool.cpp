@@ -26,6 +26,7 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <limits>
 
@@ -34,6 +35,11 @@
 namespace DB::FailPoints
 {
 extern const char http_connection_socket_inode_unavailable[];
+}
+
+namespace DB::ErrorCodes
+{
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -1102,6 +1108,48 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 
     ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// The code of the `DB::Exception` a request with `deadline` fails with, 0 if it succeeds.
+static int requestWithDeadline(const Poco::URI & uri, std::chrono::steady_clock::time_point deadline)
+{
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    try
+    {
+        DB::BuilderRWBufferFromHTTP(uri)
+            .withBypassProxy(true)
+            .withDeadline(deadline)
+            .withOutCallback([] (DB::WriteBuffer & out) { DB::writeString("Hello", out); })
+            .withDelayInit(false)
+            .create(empty_creds);
+    }
+    catch (const DB::Exception & e)
+    {
+        return e.code();
+    }
+    return 0;
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPEndsAtDeadline)
+{
+    setSlowDown(2);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(Poco::URI(getServerUrl()), start + std::chrono::milliseconds(500)));
+
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    ASSERT_GE(elapsed, std::chrono::milliseconds(400));
+    ASSERT_LT(elapsed, std::chrono::milliseconds(1500));
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
+{
+    auto metrics = getPool()->getMetrics();
+
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(Poco::URI(getServerUrl()), std::chrono::steady_clock::now()));
+
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
 }
 
 TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
