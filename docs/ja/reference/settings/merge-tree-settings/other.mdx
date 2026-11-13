@@ -448,6 +448,30 @@ LZ4 または ZSTD の圧縮率は、平均で 20～40% 改善します。
 `DateTime64` の timestamp カラムを含む主キーでは、この設定の恩恵は
 期待できません。
 
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "sorting key を持たない通常の MergeTree ファミリーのテーブルで、行順序の最適化を自動的に有効化するための新しい設定。"}]}]} />
+
+sorting key が空のテーブル、つまり `ORDER BY ()` または `ORDER BY tuple()` で宣言されたテーブルに対して、
+INSERT 時に行順序の最適化 (`optimize_row_order` を参照) を自動的に適用するかどうかを制御します。
+
+デフォルトでは無効です。挿入順序や挿入スループットの維持よりも、
+新たに挿入されたパーツの LZ4 や ZSTD による圧縮効率の向上を重視するテーブルで有効化してください。
+
+`optimize_row_order` と同様に、挿入処理の際には新しいデータの行順序を分析・最適化するための
+追加の CPU コストが発生します。圧縮よりも、行の元の挿入順序の維持や挿入スループットの最大化を
+重視する場合は、この設定を無効化してください。
+
+`optimize_row_order = 0` が明示的に設定されている場合はそちらが優先され、
+そのテーブルではこの設定に関係なく行順序の最適化は一切行われません。
+
+`optimize_row_order` と同様に、この最適化は `ReplicatedMergeTree` を含む通常の
+`MergeTree` ファミリーのテーブルにのみ適用されます。`ReplacingMergeTree`、
+`CollapsingMergeTree`、`AggregatingMergeTree` など、ファミリー内の特殊なエンジンでは
+行順序の最適化は行われず、挿入された行の順序がそのまま維持されます。
+
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
