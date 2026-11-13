@@ -750,6 +750,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             filtering_projections.push_back(FilteringProjectionUse{
                 .name = projection->name,
                 .pruned_parts = true,
+                .row_filtered_parts = {},
             });
         }
 
