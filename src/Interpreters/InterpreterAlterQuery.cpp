@@ -565,6 +565,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
+                /// An entry replayed from the DDL log may have been accepted by an older version for a column
+                /// with explicitly declared statistics, which are ignored now: it must not block the replay.
+                mutation_settings.skip_materialize_statistics_without_statistics = context->isDDLOrOnClusterInternal();
                 auto validation_context = Context::createCopy(context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();

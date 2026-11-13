@@ -13,6 +13,7 @@
 #include <Interpreters/misc.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
@@ -170,6 +171,24 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         validate_callback(*type_to_check);
 }
 
+namespace
+{
+
+/// Statistics can no longer be declared per column. Table functions and the engines that take a structure
+/// string (`file`, `s3`, `url`, ...) never collected them, but older versions accepted the clause, and it can
+/// remain in a stored structure string, e.g. in `CREATE TABLE ... AS file(..., 'a UInt64 STATISTICS(tdigest)')`.
+/// The clause is ignored, so that such tables can still be loaded.
+void removeStatisticsDeclarations(const ASTPtr & columns_list)
+{
+    for (const auto & child : columns_list->children)
+    {
+        if (auto * column_declaration = child->as<ASTColumnDeclaration>())
+            column_declaration->resetStatisticsDesc();
+    }
+}
+
+}
+
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
 {
     ParserColumnDeclarationList parser(true, true);
@@ -186,6 +205,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
+    removeStatisticsDeclarations(columns_list_raw);
     auto columns_list = make_intrusive<ASTColumns>();
     columns_list->set(columns_list->columns, columns_list_raw);
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
@@ -225,6 +245,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
+        removeStatisticsDeclarations(columns_list_raw);
         auto columns_list = make_intrusive<ASTColumns>();
         columns_list->set(columns_list->columns, columns_list_raw);
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);

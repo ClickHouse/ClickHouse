@@ -1420,7 +1420,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 /// The same for a column without statistics: a mutation queued by an older version for a column
                 /// with explicitly declared statistics, which are ignored now, must not block the queue.
-                if (!dry_run && columns_desc.has(stat_column_name) && columns_desc.get(stat_column_name).statistics.empty())
+                /// Such a command can also wait in the DDL log to be replayed, then it is not rejected either.
+                if ((!dry_run || settings.skip_materialize_statistics_without_statistics) && columns_desc.has(stat_column_name) && columns_desc.get(stat_column_name).statistics.empty())
                 {
                     LOG_WARNING(logger, "Column {} has no statistics, skipping statistics materialization", stat_column_name);
                     continue;

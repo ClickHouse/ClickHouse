@@ -97,6 +97,10 @@ public:
         /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
         /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
         bool apply_on_fly_for_read = false;
+        /// Whether `MATERIALIZE STATISTICS` of a column without statistics is skipped instead of rejected
+        /// during validation. Set for the replay of a DDL entry (distributed DDL queue, `Replicated` database log),
+        /// which may have been accepted by an older version for a column with explicitly declared statistics.
+        bool skip_materialize_statistics_without_statistics = false;
         /// Number of threads for resulting pipeline.
         size_t max_threads = 1;
     };
