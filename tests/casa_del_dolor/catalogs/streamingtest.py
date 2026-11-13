@@ -143,6 +143,22 @@ class StreamingHandler:
         self.spark = spark_handler
         self.tables: dict[str, StreamingTable] = {}
         self.logger = logging.getLogger(__name__)
+        # The settings of the client binary that allow the suspicious and experimental types BuzzHouse creates
+        names = subprocess.run(
+            [
+                cluster.client_bin_path,
+                "local",
+                "--query",
+                "SELECT name FROM system.settings WHERE type = 'Bool' AND (name LIKE 'allow_suspicious%'"
+                " OR (name LIKE '%type%' AND (name LIKE 'allow_experimental%' OR name LIKE 'enable_%')))",
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        ).stdout.split()
+        self.allow_all_types = [f"--{name}=1" for name in names]
 
     def next_messages(self, table: StreamingTable) -> list:
         """Messages for `table` in its format: mostly valid rows, some broken on purpose."""
@@ -205,7 +221,7 @@ class StreamingHandler:
             f"LIMIT {random.randint(1, 10)} FORMAT {fmt}"
         )
         result = subprocess.run(
-            [self.cluster.client_bin_path, "local", "--query", query],
+            [self.cluster.client_bin_path, "local", *self.allow_all_types, "--query", query],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=60,

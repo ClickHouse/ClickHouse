@@ -8,7 +8,7 @@ import time
 import threading
 
 from pathlib import Path
-from tests.integration.helpers.client import Client
+from tests.integration.helpers.client import Client, QueryRuntimeException
 from pyiceberg.catalog import load_catalog
 from .streamingtest import KafkaHandler, NATSHandler, RabbitMQHandler
 from .filetables import FileHandler
@@ -1096,14 +1096,27 @@ logger.jetty.level = warn
                             (data["catalog_name"], data["table_name"])
                         )
                 for _ in range(nloops):
+                    if self.worker.is_paused():
+                        # The update is over, and BuzzHouse may drop the table from now on
+                        break
                     if file_table is not None:
                         # Recompute per probe to rotate the reader/decoder choices
                         settings = f" SETTINGS {self.file_handler._full_decode_settings(file_table)}"
                     elif is_file:
                         settings = " SETTINGS engine_file_skip_empty_files = 1"
+                    elif data["engine"] in self.STREAMING_ENGINES:
+                        # Consumes the messages, racing with the views that read the table
+                        settings = " SETTINGS stream_like_engine_allow_direct_select = 1"
                     else:
                         settings = ""
-                    client.query(f"SELECT * FROM {tbl} LIMIT 100{settings};")
+                    query = f"SELECT * FROM {tbl} LIMIT 100{settings};"
+                    try:
+                        client.query(query, timeout=60)
+                    except QueryRuntimeException as e:
+                        # Broken messages and data files fail some reads on purpose, the next ones still run
+                        lines = str(e).splitlines()
+                        error = next((line for line in lines if line.startswith("Code:")), lines[0])
+                        self.logger.info(f"Background read failed: {query} {error}")
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
