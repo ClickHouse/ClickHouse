@@ -51,8 +51,7 @@ jobs:
 
   dockers_build_amd:
     runs-on: [self-hosted, amd-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
     outputs:
@@ -86,8 +85,7 @@ jobs:
 
   dockers_build_arm:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
     outputs:
@@ -120,11 +118,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci --timestamp
 
   build_amd_binary:
-    runs-on: [self-hosted, arm-medium-cpu]
-    needs:
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
+    runs-on: [self-hosted, arm-large]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
@@ -158,11 +153,7 @@ jobs:
 
   clickhouse_keeper_jepsen:
     runs-on: [self-hosted, amd-tiny]
-    needs:
-    - build_amd_binary
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
+    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q2xpY2tIb3VzZSBLZWVwZXIgSmVwc2Vu') }}
     name: "ClickHouse Keeper Jepsen"
     outputs:
@@ -196,12 +187,7 @@ jobs:
 
   clickhouse_server_jepsen:
     runs-on: [self-hosted, amd-tiny]
-    needs:
-    - build_amd_binary
-    - clickhouse_keeper_jepsen
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
+    needs: [build_amd_binary, clickhouse_keeper_jepsen, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q2xpY2tIb3VzZSBTZXJ2ZXIgSmVwc2Vu') }}
     name: "ClickHouse Server Jepsen"
     outputs:
@@ -235,13 +221,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - build_amd_binary
-    - clickhouse_keeper_jepsen
-    - clickhouse_server_jepsen
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
+    needs: [build_amd_binary, clickhouse_keeper_jepsen, clickhouse_server_jepsen, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

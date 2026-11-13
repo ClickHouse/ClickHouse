@@ -102,6 +102,10 @@ public:
 
     String getName() const override { return Data::name; }
 
+    /// The window size accepts both Int64 and UInt64, so the printed type name needs the type
+    /// suffix to round-trip: without it 42::Int64 reparses as UInt64.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     /// The window size only affects finalization, not the serialized state, so parameterized and
     /// parameterless states share one representation and stay Merge-/CAST-compatible.
     DataTypePtr getNormalizedStateType() const override
@@ -306,7 +310,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     FunctionDocumentation::Description description_sum = R"(
 Calculates the moving sum of input values.

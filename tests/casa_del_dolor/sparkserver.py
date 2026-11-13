@@ -9,9 +9,9 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-from tests.integration.helpers.cluster import is_port_free
-from tests.casa_del_dolor.utils.httpserver import DolorHTTPServer
-from tests.casa_del_dolor.catalogs.datalakes import SparkHandler
+from integration.helpers.cluster import is_port_free
+from utils.httpserver import DolorHTTPServer
+from catalogs.datalakes import SparkHandler
 
 
 def get_unique_free_ports(total: int) -> list[int]:
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     all_running = True
     while all_running:
-        start = time.monotonic()
+        start = time.time()
         finish = start + 1
 
         while all_running and start < finish:

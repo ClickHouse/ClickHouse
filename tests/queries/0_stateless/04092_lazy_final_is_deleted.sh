@@ -13,7 +13,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+settings="--enable_analyzer=1"
+
+$CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_lazy_final_del;
     CREATE TABLE t_lazy_final_del
     (
@@ -62,12 +64,12 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 1: Correctness — optimization OFF vs ON (true path, min_filtered_ratio=0)
 echo "=== Correctness: all rows ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     WHERE category = 'target'
     SETTINGS query_plan_optimize_lazy_final = 0
 "
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     WHERE category = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -77,19 +79,19 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 2: Correctness — without filter (is_deleted rows still filtered by FINAL)
 echo "=== Correctness: no WHERE filter ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     SETTINGS query_plan_optimize_lazy_final = 0
 "
 
 ## Test 3: Correctness — check specific deleted rows are gone
 echo "=== Correctness: deleted rows absent ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_del FINAL
     WHERE key >= 200 AND key < 250
     SETTINGS query_plan_optimize_lazy_final = 0
 "
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_del FINAL
     WHERE key >= 200 AND key < 250
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -99,12 +101,12 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 4: Correctness — non-intersecting deleted rows (keys 1400..1499)
 echo "=== Correctness: non-intersecting deleted rows ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_del FINAL
     WHERE key >= 1400 AND key < 1500
     SETTINGS query_plan_optimize_lazy_final = 0
 "
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_del FINAL
     WHERE key >= 1400 AND key < 1500
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -114,7 +116,7 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 5: True path — verify LazyFinalKeyAnalysisTransform logs "enabled"
 echo "=== True path: optimization enabled ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_del FINAL
     WHERE category = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -125,14 +127,14 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 6: False path (set truncated) — results still correct
 echo "=== False path: set truncated ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     WHERE category = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1,
              max_rows_for_lazy_final = 10
 "
 # Verify it logged "disabled: set was truncated"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_del FINAL
     WHERE category = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -142,7 +144,7 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 7: Plan check — optimization ON has InputSelector and Union (non-intersecting split)
 echo "=== Plan: optimization ON ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     EXPLAIN actions = 0
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     WHERE category = 'target'
@@ -151,7 +153,7 @@ $CLICKHOUSE_CLIENT -q "
              min_filtered_ratio_for_lazy_final = 0
 " | grep -c 'InputSelector'
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     EXPLAIN actions = 0
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     WHERE category = 'target'
@@ -162,7 +164,7 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 8: Plan check — optimization OFF has no InputSelector
 echo "=== Plan: optimization OFF ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     EXPLAIN actions = 0
     SELECT count(), sum(value) FROM t_lazy_final_del FINAL
     WHERE category = 'target'
@@ -171,7 +173,7 @@ $CLICKHOUSE_CLIENT -q "
 
 ## Test 9: All non-intersecting (separate table, no overlapping keys, with is_deleted)
 echo "=== All non-intersecting with is_deleted ==="
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_lazy_final_del_nooverlap;
     CREATE TABLE t_lazy_final_del_nooverlap
     (
@@ -193,13 +195,13 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # Without optimization
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count(), sum(value) FROM t_lazy_final_del_nooverlap FINAL
     WHERE value > 0
     SETTINGS query_plan_optimize_lazy_final = 0
 "
 # With optimization — should take the all-non-intersecting fast path
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count(), sum(value) FROM t_lazy_final_del_nooverlap FINAL
     WHERE value > 0
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -207,7 +209,7 @@ $CLICKHOUSE_CLIENT -q "
              min_filtered_ratio_for_lazy_final = 0
 "
 # Plan should have NO InputSelector (all non-intersecting → simple non-FINAL read)
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     EXPLAIN actions = 0
     SELECT count(), sum(value) FROM t_lazy_final_del_nooverlap FINAL
     WHERE value > 0
@@ -216,17 +218,17 @@ $CLICKHOUSE_CLIENT -q "
              min_filtered_ratio_for_lazy_final = 0
 " | grep -c 'InputSelector'
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_del_nooverlap"
+$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_del_nooverlap"
 
 ## Test 10: is_deleted column explicitly requested in query
 echo "=== is_deleted in SELECT ==="
 # Intersecting parts — is_deleted should appear in output, only rows with is_deleted=0
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT key, is_deleted FROM t_lazy_final_del FINAL
     WHERE key IN (200, 250, 1000, 1400) ORDER BY key
     SETTINGS query_plan_optimize_lazy_final = 0
 "
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT key, is_deleted FROM t_lazy_final_del FINAL
     WHERE key IN (200, 250, 1000, 1400) ORDER BY key
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -234,4 +236,4 @@ $CLICKHOUSE_CLIENT -q "
              min_filtered_ratio_for_lazy_final = 0
 "
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_del"
+$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_del"

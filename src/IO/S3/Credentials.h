@@ -21,13 +21,10 @@
 #    include <aws/core/internal/AWSHttpResourceClient.h>
 #    include <aws/core/config/AWSProfileConfigLoader.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
-#    include <aws/core/auth/GeneralHTTPCredentialsProvider.h>
 #    include <aws/core/auth/bearer-token-provider/SSOBearerTokenProvider.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3Defines.h>
-
-#    include <Common/Silk/FiberMutex.h>
 
 class SipHash;
 namespace DB::S3
@@ -160,7 +157,6 @@ public:
         String tmp_region);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
-    void SetNeedRefresh() override;
 
     struct CacheKey
     {
@@ -174,8 +170,6 @@ public:
     };
 
 protected:
-    bool IsTimeToRefresh(long reload_frequency) override; // NOLINT(google-runtime-int)
-    bool IsSetNeedRefresh() override;
     void Reload() override;
 
 private:
@@ -187,8 +181,6 @@ private:
     Aws::String token;
     LoggerPtr logger;
     uint64_t expiration_window_seconds;
-    std::atomic<Int64> last_loaded_ms{0};
-    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -247,14 +239,6 @@ struct CredentialsConfiguration
     bool anonymous_fallback_for_server_credentials = false;
 };
 
-class GeneralHTTPCredentialsProvider : public Aws::Auth::GeneralHTTPCredentialsProvider
-{
-public:
-    using Aws::Auth::GeneralHTTPCredentialsProvider::GeneralHTTPCredentialsProvider;
-
-    Aws::Auth::AWSCredentials GetAWSCredentials() override;
-};
-
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
@@ -262,35 +246,26 @@ public:
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const CredentialsConfiguration & credentials_configuration);
-
-    Aws::Auth::AWSCredentials GetAWSCredentials() override;
-    void SetNeedRefresh() override;
-
-private:
-    Silk::FiberMutex mutex;
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
 };
 
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
-    /// `policy_` is an optional IAM session policy (JSON) that narrows the permissions of the assumed role.
-    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_);
+    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
 
     const char * GetServiceRequestName() const override { return "AssumeRole"; }
 
-    /// The parameters go into a form-encoded POST body, as the AWS SDK does. A session policy is too long for a URL.
-    Aws::String SerializePayload() const override;
+    Aws::String SerializePayload() const override { return {}; }
+
+    void AddQueryStringParameters(Aws::Http::URI & uri) const override;
 
 private:
     std::string role_arn;
     std::string role_session_name;
     std::string external_id;
-    std::string policy;
 };
-
 class AssumeRoleResult
 {
 public:
@@ -319,12 +294,6 @@ using AssumeRoleOutcome = Aws::Utils::Outcome<AssumeRoleResult, Aws::S3::S3Error
 class AWSAssumeRoleClient : public Aws::Client::AWSXMLClient
 {
 public:
-    /// Builds a client with bounded retries and timeouts for the credential request.
-    static std::shared_ptr<AWSAssumeRoleClient> create(
-        const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-        const DB::S3::PocoHTTPClientConfiguration & client_configuration,
-        const std::string & sts_endpoint_override = "");
-
     AWSAssumeRoleClient(
         const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
         const Aws::Client::ClientConfiguration & client_configuration,

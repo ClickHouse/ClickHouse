@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -125,7 +124,7 @@ public:
     }
 
 private:
-    const FormatSettingsEnums::DateTimeOverflowBehavior overflow_behavior;
+    const FormatSettings::DateTimeOverflowBehavior overflow_behavior;
 
     static Int128 nanosecondsAt(const IColumn & column, const IDataType & type, size_t row)
     {
@@ -159,13 +158,13 @@ private:
 
             if (value < min || value > max)
             {
-                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
+                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                     throw Exception(
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "The result of {} is out of bounds of type DateTime64({})",
                         getName(),
                         datetime64->getScale());
-                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
+                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
                     value = std::clamp<Int128>(value, min, max);
             }
 
@@ -201,7 +200,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
@@ -226,11 +224,10 @@ private:
         return std::move(plan).finish(name, arguments);
     }
 
-    /// `LowCardinality(Nullable(T))` reports itself as not nullable, so strip the wrapper first.
     static DataTypePtr retypedAsTicks(const DataTypePtr & original)
     {
         const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
-        return removeLowCardinality(original)->isNullable() ? makeNullable(ticks) : ticks;
+        return original->isNullable() ? makeNullable(ticks) : ticks;
     }
 
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
@@ -238,9 +235,9 @@ private:
         if (arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires exactly 3 arguments", getName());
 
-        const DataTypePtr value_type = removeLowCardinalityAndNullable(arguments[0].type);
-        const DataTypePtr bin_type = removeLowCardinalityAndNullable(arguments[1].type);
-        const DataTypePtr fixed_type = removeLowCardinalityAndNullable(arguments[2].type);
+        const DataTypePtr value_type = removeNullable(arguments[0].type);
+        const DataTypePtr bin_type = removeNullable(arguments[1].type);
+        const DataTypePtr fixed_type = removeNullable(arguments[2].type);
 
         /// A NULL literal argument makes the whole result a NULL literal; the numeric chain
         /// below short-circuits it, so it must get the query regardless of the other types.
@@ -248,10 +245,8 @@ private:
 
         /// KQL datetime values are `DateTime64`. The other ClickHouse date carriers cannot
         /// faithfully represent the full KQL result range: in particular, `DateTime` is an
-        /// unsigned epoch-second type, while a valid `bin_at` result may precede 1970. A table
-        /// column may still have such a type, so it is widened to `DateTime64` first.
-        const auto is_datetime = [](const DataTypePtr & type) { return isDateTime64(type) || KQLPlanBuilder::isNarrowDateTime(type); };
-        if (!value_is_null_literal && is_datetime(value_type))
+        /// unsigned epoch-second type, while a valid `bin_at` result may precede 1970.
+        if (!value_is_null_literal && isDateTime64(value_type))
         {
             if (!isInterval(bin_type))
                 throw Exception(
@@ -259,7 +254,7 @@ private:
                     "Function {} rounds a datetime by a timespan, but the second argument has type {}",
                     getName(),
                     arguments[1].type->getName());
-            if (!is_datetime(fixed_type))
+            if (!isDateTime64(fixed_type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} rounds a datetime from a datetime fixed point, but the third argument has type {}",
@@ -285,19 +280,7 @@ private:
                 return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
             }
 
-            if (!KQLPlanBuilder::isNarrowDateTime(value_type) && !KQLPlanBuilder::isNarrowDateTime(fixed_type))
-                return FunctionFactory::instance().get(FunctionKQLDateTimeBinAt::name, getContext())->build(arguments);
-
-            KQLPlanBuilder plan(getContext());
-            size_t value_slot = plan.argument(arguments[0].type);
-            const size_t bin_slot = plan.argument(arguments[1].type);
-            size_t fixed_slot = plan.argument(arguments[2].type);
-            if (KQLPlanBuilder::isNarrowDateTime(value_type))
-                value_slot = plan.widenToDateTime64(value_slot);
-            if (KQLPlanBuilder::isNarrowDateTime(fixed_type))
-                fixed_slot = plan.widenToDateTime64(fixed_slot);
-            plan.step(FunctionKQLDateTimeBinAt::name, {value_slot, bin_slot, fixed_slot});
-            return std::move(plan).finish(name, arguments);
+            return FunctionFactory::instance().get(FunctionKQLDateTimeBinAt::name, getContext())->build(arguments);
         }
 
         if (!value_is_null_literal && isInterval(value_type))
@@ -388,16 +371,16 @@ Language's `bin_at()` does. The bins may align before or after the fixed point.
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan from a timespan, and a datetime is rounded by a
-timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; a value or a
-fixed point of the narrower `DateTime`, `Date` or `Date32` types is converted to `DateTime64`
-first, because they cannot represent every bin a KQL datetime can produce.
+timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; the narrower
+`DateTime` and `Date` carriers are rejected, because they cannot represent every bin a KQL
+datetime can produce.
 
 This function backs `bin_at()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
 )",
         .syntax = "kqlBinAt(value, binSize, fixedPoint)",
         .arguments
-        = {{"value", "A number, a timespan, or a datetime (a `DateTime64`, `DateTime`, `Date` or `Date32`)."},
+        = {{"value", "A number, a timespan, or a datetime (a `DateTime64`)."},
            {"binSize", "The bin size."},
            {"fixedPoint", "The point the bins are counted from."}},
         .returned_value = {"`value` rounded down to the nearest multiple of `binSize` counted from `fixedPoint`."},

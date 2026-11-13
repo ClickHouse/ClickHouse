@@ -4,10 +4,7 @@
 #include <Core/TypeId.h>
 #include <Common/COW.h>
 #include <DataTypes/IDataType_fwd.h>
-#include <DataTypes/Serializations/SerializationSubstream.h>
-#include <Core/Types.h>
-#include <Common/typeid_cast.h>
-#include <base/demangle.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
 #include <optional>
@@ -103,16 +100,13 @@ public:
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
     DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    /// The same, resolved against the given serialization of this type instead of the default one.
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
-
     ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
     ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
-    using SubstreamData = SerializationSubstreamData;
-    using SubstreamPath = SerializationSubstreamPath;
+    using SubstreamData = ISerialization::SubstreamData;
+    using SubstreamPath = ISerialization::SubstreamPath;
 
     /// A resolved subcolumn: everything needed to read it, plus the path saying which substream it is.
     /// The name alone does not, because subcolumn names are flat and several substreams can claim one -
@@ -125,8 +119,6 @@ public:
     };
 
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name) const;
-    /// Resolved against the given serialization of this type.
-    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubcolumnCallback = std::function<void(
         const SubstreamPath &,
@@ -135,40 +127,11 @@ public:
 
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
-        const SubstreamData & data,
-        size_t initial_array_level = 0);
+        const SubstreamData & data);
 
-    /// Names of the subcolumns the type declares but resolves dynamically, which the stream enumeration does not
-    /// emit: the typed paths of JSON and the subcolumns under them. forEachSubcolumn asks every type it reaches,
-    /// at that type's array level, resolves each name as a query does and lists it with the static ones. A type
-    /// whose nested type is not a named subcolumn, Array or Nullable, delegates to it.
-    using SubcolumnNameCallback = std::function<void(const String &)>;
-    virtual void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback &, size_t /*array_level*/) const {}
-
-    /// The number of types nested directly in this one. Zero for a type that has none.
-    virtual size_t getNumberOfChildren() const { return 0; }
-
-    /// The `index`-th type nested directly in this one, `index < getNumberOfChildren()`, in a canonical
-    /// order that `cloneWithChildren` accepts back.
-    /// The order is part of the contract - a walker may zip the children of two types of the same kind
-    /// positionally - so an implementation must never derive it from the iteration order of a hash
-    /// table. It returns a reference to a member the type already holds, so enumerating the children
-    /// allocates nothing and touches no reference count: the walks in `DataTypes/TypeTree.h` run once
-    /// per block header and per query-analysis check, and are written on top of these two methods.
-    virtual const DataTypePtr & getChild(size_t index) const;
-
-    /// All the children in one container, for a caller that needs them as a whole. This allocates, so
-    /// a walk over the tree should enumerate them with `getNumberOfChildren` and `getChild` instead.
-    DataTypes getChildren() const;
-
-    /// Rebuild this type with `new_children`, given in the same order and number as `getChild`,
-    /// in place of its current children. Everything about the type that is not a child is kept:
-    /// `Tuple` element names and explicit-name mode, `Variant` discriminator order, `Object` path names
-    /// and limits.
-    /// The result carries no customization even when this type has one, because a custom name is not
-    /// generally still correct for different children; re-deriving it is the caller's decision, see
-    /// `IDataTypeCustomName::rederiveFor` and `CustomizationPolicy` in `DataTypes/TypeTree.h`.
-    DataTypePtr cloneWithChildren(const DataTypes & new_children) const;
+    /// Call callback for each nested type recursively.
+    using ChildCallback = std::function<void(const IDataType &)>;
+    virtual void forEachChild(const ChildCallback &) const {}
 
     Names getSubcolumnNames() const;
 
@@ -191,7 +154,7 @@ public:
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
 
-    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const SerializationKindStack & kind_stack, const SerializationInfoSettings & settings) const;
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
@@ -203,7 +166,6 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
-    virtual DataTypePtr doCloneWithChildren(const DataTypes & new_children) const;
     virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }
@@ -629,13 +591,6 @@ inline bool isBool(const DataTypePtr & data_type)
 inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 {
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
-}
-
-/// A type that holds no value other than NULL. onlyNull() alone is not enough:
-/// it is true for Nullable(Nothing) but false for bare Nothing.
-inline bool isNothingOrNullableNothing(const DataTypePtr & data_type)
-{
-    return isNothing(data_type) || data_type->onlyNull();
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

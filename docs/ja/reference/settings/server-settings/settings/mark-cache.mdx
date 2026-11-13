@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouse serverを設定するためのもので、ClickHouseのソースコードから自動生成されています。
 
-## mark_cache_policy {#mark_cache_policy}
+<div id="mark_cache_policy">
+  ## mark_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />mark cache のエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />mark cache のポリシー名。
 
-## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
+<div id="mark_cache_prewarm_ratio">
+  ## mark_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />プリウォーム時に補完する mark cache の総サイズに対する割合です。
 
-## mark_cache_size {#mark_cache_size}
+<div id="mark_cache_size">
+  ## mark_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -30,7 +36,9 @@ marks ([`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/index)
   この設定は実行時に変更でき、変更内容は即座に反映されます。
 </Note>
 
-## mark_cache_size_ratio {#mark_cache_size_ratio}
+<div id="mark_cache_size_ratio">
+  ## mark_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />mark cache 全体のサイズに対する、保護キュー (SLRU ポリシーの場合) のサイズの割合です。
 

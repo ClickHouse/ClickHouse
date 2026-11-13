@@ -7,13 +7,13 @@ export function renderMath(inputString)
     if (!katexLoaded)
     {
         const katexScript = document.createElement('script');
-        katexScript.src = new URL('./vendor/katex.min.js', import.meta.url).href;
+        katexScript.src = 'https://cdn.jsdelivr.net/npm/katex@0.15.2/dist/katex.min.js';
         katexScript.defer = true;
         document.head.appendChild(katexScript);
         window.katexScript = katexScript;
 
         const katexStyle = document.createElement('link');
-        katexStyle.href = new URL('./vendor/katex.min.css', import.meta.url).href;
+        katexStyle.href = 'https://cdn.jsdelivr.net/npm/katex@0.15.2/dist/katex.min.css';
         katexStyle.rel = 'stylesheet';
         document.head.appendChild(katexStyle);
 

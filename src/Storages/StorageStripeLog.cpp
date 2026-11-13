@@ -1,10 +1,8 @@
-#include <Formats/FormatSettings.h>
 #include <sys/types.h>
 
 #include <optional>
 
 #include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -236,12 +234,6 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
-                /// It must not be interrupted by the memory limit: otherwise the table is left with
-                /// unsaved indices in memory, which are written by the next `INSERT`.
-                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-                /// Remove excessive indices first: it cannot fail, unlike the truncation of files below.
-                storage.removeUnsavedIndices(lock);
 
                 /// No more writing.
                 data_out->cancel();
@@ -252,6 +244,9 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
+
+                /// Remove excessive indices.
+                storage.removeUnsavedIndices(lock);
             }
         }
         catch (...)
@@ -782,14 +777,10 @@ void registerStorageStripeLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
-        .stores_data_on_disk = true,
-        .supports_temporary = true,
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
-
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
@@ -806,7 +797,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
-    }, SecretArgumentsSpec{}, features, Documentation{
+    }, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

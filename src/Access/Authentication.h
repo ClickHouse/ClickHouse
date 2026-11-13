@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 class Credentials;
 class ExternalAuthenticators;
-class OneTimePasswordUsageTracker;
 class SettingsChanges;
 
 /// TODO: Try to move this checking to Credentials.
@@ -43,11 +42,7 @@ struct Authentication
     /// of the codes (RFC 6238, Section 5.2). Returns false if the code has already been used before.
     /// Must be called exactly once after the whole authentication succeeds, so that a failed attempt
     /// (e.g. a wrong password combined with a valid code) cannot consume the code.
-    static bool consumeOneTimePassword(
-        const Credentials & credentials,
-        const String & user_name,
-        const AuthenticationData & authentication_method,
-        OneTimePasswordUsageTracker & usage_tracker);
+    static bool consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method);
 
     /** The `mysql_native_password` auth response (`MySQLNative41Credentials`) is a hash of the password alone, so it can be
       * verified only against `plaintext_password` and `double_sha1_password` methods, and it cannot carry a one-time password.

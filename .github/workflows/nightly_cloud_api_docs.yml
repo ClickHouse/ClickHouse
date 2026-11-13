@@ -51,8 +51,7 @@ jobs:
 
   sync_cloud_api_docs:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Sync Cloud API docs"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

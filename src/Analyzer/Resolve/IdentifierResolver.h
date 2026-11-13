@@ -7,17 +7,12 @@
 
 #include <Interpreters/Context_fwd.h>
 
-#include <Storages/IStorage_fwd.h>
-
 namespace DB
 {
 
 struct GetColumnsOptions;
 struct IdentifierResolveScope;
 struct AnalysisTableExpressionData;
-struct StorageID;
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class QueryNode;
 class JoinNode;
@@ -28,38 +23,6 @@ using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 
 struct Settings;
-
-/// Checks whether access to a specific side of a SEMI/ANTI JOIN is allowed.
-/// Used both during identifier resolution and qualified matcher resolution.
-struct SemiAntiJoinSideChecker
-{
-    bool is_semi = false;
-    bool is_anti = false;
-    bool skip_left = false;
-    bool skip_right = false;
-
-    SemiAntiJoinSideChecker() = default;
-
-    SemiAntiJoinSideChecker(
-        const JoinNode & join_node,
-        JoinStrictness strictness,
-        JoinKind kind,
-        const ContextPtr & context,
-        const IQueryTreeNode * resolving_join_on_expression);
-
-    bool shouldSkipSide(JoinTableSide side) const;
-
-    /// The side that stays visible when the compatibility settings hide the other one.
-    /// Returns nullopt when both sides remain visible.
-    std::optional<JoinTableSide> preservedSideOrNone() const;
-
-    /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
-    /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
-    void throwIfTableAccessDenied(
-        JoinTableSide side,
-        const IQueryTreeNode & node_for_error_message,
-        const IQueryTreeNode & scope_node) const;
-};
 
 class IdentifierResolver
 {
@@ -95,30 +58,18 @@ public:
         const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
-    /// Check whether the identifier binds to any table expression of the scope other than `table_expression_node`.
-    /// A table expression which a SEMI/ANTI JOIN hides from the current context (see `isTableExpressionHiddenBySemiAntiJoin`)
-    /// is not a competing binder: its columns are not visible, so they cannot make another name ambiguous.
     static bool tryBindIdentifierToTableExpressions(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
-        const IdentifierResolveScope & scope);
-
-    /// Returns true if `table_expression_node` is on the non-preserved side of a SEMI/ANTI JOIN of the nearest
-    /// query scope's join tree and a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides that side from
-    /// everything outside that join's own ON expression (see `SemiAntiJoinSideChecker`).
-    static bool isTableExpressionHiddenBySemiAntiJoin(
-        const IQueryTreeNode * table_expression_node,
         const IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToArrayJoinExpressions(
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
-    /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context,
-        const StoragePtr & replaced_storage = nullptr);
+        const ContextPtr & context);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
@@ -130,14 +81,6 @@ public:
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const ContextPtr & context,
-        const StoragePtr & replaced_storage = nullptr);
-
-    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
-    static void checkAccessToTableMetadata(
-        const StoragePtr & storage,
-        const StorageID & storage_id,
-        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,

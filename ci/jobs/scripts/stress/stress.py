@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """This script is used in docker images for stress tests and upgrade tests"""
 import argparse
-import json
 import logging
 import os
 import random
@@ -15,7 +14,7 @@ import threading
 from multiprocessing import cpu_count
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
@@ -53,47 +52,14 @@ def escape_tsv_info(text: str) -> str:
     )
 
 
-HUNG_CHECK_INFO_BUDGET = 32 * 1024
-
-
-def build_hung_check_info(hung_check_log: Path) -> str:
-    """Build the `info` cell of the `Hung check failed` row from `hung_check.log`.
-
-    Bounded, and read from the head: `clickhouse-test --hung-check` prints the
-    verdict and the longest-running queries first, so the head is the diagnostic
-    region. The whole log is uploaded as a CI artifact.
-    """
-    with open(hung_check_log, "rb") as f:
-        # The extra byte separates "exactly the budget" from "there was more".
-        chunk = f.read(HUNG_CHECK_INFO_BUDGET + 1)
-    log_text = chunk[:HUNG_CHECK_INFO_BUDGET].decode("utf-8", errors="replace")
-    if len(chunk) > HUNG_CHECK_INFO_BUDGET:
-        # Keep the trailing fragment: one hung query is one unescaped line of
-        # arbitrary length, so dropping a partial last line can erase the whole
-        # processlist.
-        log_text = (
-            "(truncated; see the hung_check.log artifact for the full output;"
-            " showing the first 32 KiB, whose last line may be cut)\n"
-            + log_text
-            + "\n..."
-        )
-    return log_text
-
-
-def quote_identifier(name: str) -> str:
-    """`name` as a back-quoted ClickHouse identifier, escaped as `readBackQuotedString` expects."""
-    return "`" + name.replace("\\", "\\\\").replace("`", "\\`") + "`"
-
-
 class RandomDisruptor:
-    """Background thread that randomly kills queries, client processes and mutations,
-    briefly stops background operations such as merges, empties caches and restarts
-    replicas, during stress tests.
+    """Background thread that randomly kills queries, client processes and mutations, and
+    briefly stops background operations such as merges, during stress tests.
 
     This helps test that queries and mutations are cancelled correctly, handles
     scenarios where the client unexpectedly disconnects (issue #39803), and exercises
     operations that run while one of the background activities in `_SYSTEM_STATEMENT_PAIRS`
-    is unavailable, or while the data they cache disappears.
+    is unavailable.
     """
 
     # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
@@ -126,45 +92,6 @@ class RandomDisruptor:
         ("STOP DISTRIBUTED SENDS", "START DISTRIBUTED SENDS"),
         ("STOP REPLICATED SENDS", "START REPLICATED SENDS"),
         ("STOP REPLICATION QUEUES", "START REPLICATION QUEUES"),
-        ("STOP CLEANUP", "START CLEANUP"),
-        ("STOP PULLING REPLICATION LOG", "START PULLING REPLICATION LOG"),
-    )
-    # Server-wide statements the one-shot branch runs: a lost Keeper session, objects that the
-    # running queries use going away and loading again, and memory returned to the system.
-    _ONE_SHOT_STATEMENTS = (
-        "RECONNECT ZOOKEEPER",
-        "FLUSH ASYNC INSERT QUEUE",
-        "UNLOAD DICTIONARIES",
-        "RELOAD FUNCTIONS",
-        "RELOAD USERS",
-        "JEMALLOC PURGE",
-        # Every refreshable materialized view at once, and the background activity of streaming tables.
-        "REFRESH ALL BACKGROUND",
-    )
-    # Statements that throw `SUPPORT_IS_DISABLED` in some builds: sanitizer builds have no jemalloc.
-    _OPTIONAL_STATEMENTS = ("JEMALLOC PURGE",)
-    # Caches the cache branch empties, one per iteration, while queries are reading through them.
-    _CACHES = (
-        "MARK CACHE",
-        "UNCOMPRESSED CACHE",
-        "INDEX MARK CACHE",
-        "INDEX UNCOMPRESSED CACHE",
-        "PRIMARY INDEX CACHE",
-        "COLUMNS CACHE",
-        "MMAP CACHE",
-        "PAGE CACHE",
-        "QUERY CACHE",
-        "QUERY CONDITION CACHE",
-        "COMPILED EXPRESSION CACHE",
-        "FILESYSTEM CACHE",
-        "SCHEMA CACHE",
-        "STATISTICS CACHE",
-        "VECTOR SIMILARITY INDEX CACHE",
-        "TEXT INDEX CACHES",
-        "ICEBERG METADATA CACHE",
-        "PARQUET METADATA CACHE",
-        "DNS CACHE",
-        "CONNECTIONS CACHE",
     )
     # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
     # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
@@ -239,13 +166,11 @@ class RandomDisruptor:
             logging.warning("Random query kill failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_client(self) -> None:
-        """Kill a random client process."""
+        """Kill a random clickhouse-client process."""
         try:
-            # Get list of clickhouse-test child processes: clickhouse client, and `protocol_client.py`,
-            # which runs the tests over the other protocols (see `--protocols`), so that the server
-            # sees the client of every protocol disconnect in the middle of a query.
+            # Get list of clickhouse-test child processes (clickhouse client)
             result = check_output(
-                "pgrep -f 'clickhouse-client|clickhouse client|protocol_client[.]py' 2>/dev/null || true",
+                "pgrep -f 'clickhouse-client|clickhouse client' 2>/dev/null || true",
                 shell=True,
                 timeout=5,
             )
@@ -326,63 +251,26 @@ class RandomDisruptor:
         except Exception as e:
             logging.warning("Random mutation kill failed: %s: %s", type(e).__name__, e)
 
-    def _run_query(
-        self,
-        query: str,
-        params: Optional[Dict[str, str]] = None,
-        quiet: bool = False,
-        timeout: Optional[float] = None,
-    ) -> Tuple[bool, str]:
-        """Run `query`, returning whether it succeeded and its output. `quiet` logs a failure at
-        debug level, for a query that a concurrent test routinely makes fail, for example by
-        dropping its table."""
-        timeout = self._SYSTEM_STATEMENT_TIMEOUT if timeout is None else timeout
-        # Keep the subprocess cap above --receive_timeout so the client's own timeout is the one
-        # that governs, as in the mutation kill above.
-        # No AST fuzzing: the stress profile enables it, and a fuzzed `STOP` run after a successful `START` would undo it.
-        command = ["clickhouse", "client", f"--receive_timeout={max(timeout - 5, 5)}", "--ast_fuzzer_runs=0"]
-        # Values are passed as query parameters instead of interpolating them, as in the kills above.
-        for name, value in (params or {}).items():
-            command += [f"--param_{name}", value]
-        command += ["-q", query]
-        try:
-            result = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
-        except subprocess.TimeoutExpired as e:
-            logging.debug("%s timed out: %s", query, e)
-            return False, ""
-        except Exception as e:
-            logging.warning("%s failed: %s: %s", query, type(e).__name__, e)
-            return False, ""
-        if result.returncode:
-            # The first line of the client's error names the exception.
-            error = result.stderr.decode("utf-8", errors="replace").strip().split("\n", 1)[0]
-            logging.log(
-                logging.DEBUG if quiet else logging.WARNING,
-                "%s exited %s: %s",
-                query,
-                result.returncode,
-                error,
-            )
-            return False, ""
-        return True, result.stdout.decode("utf-8")
-
-    def _select_rows(self, query: str, params: Optional[Dict[str, str]] = None) -> List[Dict]:
-        """The rows of a `SELECT`, empty if it did not succeed."""
-        succeeded, output = self._run_query(
-            f"{query} FORMAT JSONEachRow", params, timeout=self._SELECT_TIMEOUT
-        )
-        if not succeeded:
-            return []
-        return [json.loads(line) for line in output.splitlines() if line]
-
-    @staticmethod
-    def _keep_databases_param() -> str:
-        """`KEEP_DATABASES` as an `Array(String)` parameter."""
-        return "[" + ",".join("'" + name.replace("\\", "\\\\").replace("'", "\\'") + "'" for name in KEEP_DATABASES) + "]"
-
     def _run_system_statement(self, statement: str) -> bool:
         """Run `SYSTEM <statement>`, reporting whether it succeeded."""
-        return self._run_query(f"SYSTEM {statement}", quiet=statement in self._OPTIONAL_STATEMENTS)[0]
+        query = f"SYSTEM {statement}"
+        try:
+            # Keep the subprocess cap above --receive_timeout so the client's own timeout is
+            # the one that governs, as in the mutation kill above.
+            returncode = call(
+                ["clickhouse", "client", "--receive_timeout=10", "-q", query],
+                stderr=subprocess.DEVNULL,
+                timeout=self._SYSTEM_STATEMENT_TIMEOUT,
+            )
+            if returncode:
+                logging.warning("%s exited %s", query, returncode)
+            return returncode == 0
+        except subprocess.TimeoutExpired as e:
+            logging.debug("%s timed out: %s", query, e)
+            return False
+        except Exception as e:
+            logging.warning("%s failed: %s: %s", query, type(e).__name__, e)
+            return False
 
     def _pause_random_operation(self) -> None:
         """Stop a background operation server-wide for a short interval, then start it again."""
@@ -417,77 +305,6 @@ class RandomDisruptor:
                 # Interruptible, so shutdown does not wait out the full backoff.
                 self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
 
-    def _drop_random_cache(self) -> None:
-        """Empty one of the caches server-wide."""
-        cache = random.choice(self._CACHES)
-        if self._run_system_statement(f"DROP {cache}"):
-            logging.info("SYSTEM DROP %s", cache)
-
-    def _run_one_shot_statement(self) -> None:
-        """Run one of `_ONE_SHOT_STATEMENTS`."""
-        statement = random.choice(self._ONE_SHOT_STATEMENTS)
-        if self._run_system_statement(statement):
-            logging.info("SYSTEM %s", statement)
-
-    def _refresh_or_cancel_random_view(self) -> None:
-        """Start a refresh of a random refreshable materialized view now, or cancel the running one."""
-        rows = self._select_rows(
-            "SELECT database, view FROM system.view_refreshes "
-            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
-            {"keep": self._keep_databases_param()},
-        )
-        if not rows or self._stop_event.is_set():
-            return
-        name = f"{quote_identifier(rows[0]['database'])}.{quote_identifier(rows[0]['view'])}"
-        statement = f"{random.choice(('REFRESH', 'CANCEL'))} VIEW {name}"
-        # Quiet: a test may drop the view at any moment.
-        if self._run_query(f"SYSTEM {statement}", quiet=True)[0]:
-            logging.info("SYSTEM %s", statement)
-
-    def _reload_random_dictionary(self) -> None:
-        """Reload a random dictionary while queries read from it."""
-        rows = self._select_rows(
-            "SELECT database, name FROM system.dictionaries "
-            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
-            {"keep": self._keep_databases_param()},
-        )
-        if not rows or self._stop_event.is_set():
-            return
-        # A dictionary from the server configuration has no database.
-        name = quote_identifier(rows[0]["name"])
-        if rows[0]["database"]:
-            name = f"{quote_identifier(rows[0]['database'])}.{name}"
-        # Quiet: the source of a test's dictionary may be gone, or fail on purpose.
-        if self._run_query(f"SYSTEM RELOAD DICTIONARY {name}", quiet=True)[0]:
-            logging.info("SYSTEM RELOAD DICTIONARY %s", name)
-
-    def _restart_random_replica(self) -> None:
-        """Reinitialize the Keeper session and the state of a random replicated table, or of all of them."""
-        rows = self._select_rows(
-            "SELECT database, table FROM system.replicas "
-            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand()",
-            {"keep": self._keep_databases_param()},
-        )
-        if not rows or self._stop_event.is_set():
-            return
-        names = [f"{quote_identifier(row['database'])}.{quote_identifier(row['table'])}" for row in rows]
-        if random.random() < 0.26:
-            statement = "RESTART REPLICAS"
-        else:
-            statement, names = f"RESTART REPLICA {names[0]}", names[:1]
-        if self._run_query(f"SYSTEM {statement}", quiet=True)[0]:
-            logging.info("SYSTEM %s", statement)
-            return
-        # A restart that fails after detaching the table leaves it detached (`doRestartReplica`), also when
-        # killed. `ATTACH` waits for the restart to end, as both take the table's DDL guard, and fails if it is back.
-        for name in names:
-            # On shutdown leave the rest: the teardown must not overlap these queries.
-            if self._stop_event.is_set():
-                logging.warning("Shutting down, not attaching back the tables of a failed SYSTEM %s", statement)
-                break
-            if self._run_query(f"ATTACH TABLE {name}", quiet=True)[0]:
-                logging.warning("Attached %s back after a failed SYSTEM %s", name, statement)
-
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
         logging.info("Random disruptor started (interval: %.1fs)", self._interval)
@@ -499,19 +316,9 @@ class RandomDisruptor:
             self._kill_random_client,
             self._kill_random_mutation,
             self._pause_random_operation,
-            self._drop_random_cache,
-            self._run_one_shot_statement,
-            self._reload_random_dictionary,
-            self._refresh_or_cancel_random_view,
-            self._restart_random_replica,
         )
         while not self._stop_event.is_set():
-            disruption = random.choice(disruptions)
-            try:
-                disruption()
-            except Exception as e:
-                # A broken disruption must not end the thread and with it every other one.
-                logging.warning("Random disruption %s failed: %s: %s", disruption.__name__, type(e).__name__, e)
+            random.choice(disruptions)()
             self._stop_event.wait(self._interval)
         logging.info("Random disruptor stopped")
 
@@ -538,21 +345,6 @@ class RandomDisruptor:
             logging.error("Random disruptor did not stop in time")
             return
         self._thread = None
-
-
-# The protocols for `clickhouse-test --protocols`.
-STRESS_PROTOCOLS = [
-    "native",
-    "native_tls",
-    "http",
-    "https",
-    "mysql",
-    "postgresql",
-    "grpc",
-    "arrowflight",
-    "ssh",
-    "webterminal",
-]
 
 
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
@@ -784,13 +576,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         )
 
     if random.random() < 0.2:
-        # Sleep before each `MergeTree` storage snapshot, widening the window in which the
-        # concurrent merges, mutations and `ALTER`s change the parts under the query.
-        client_options.append(
-            f"merge_tree_storage_snapshot_sleep_ms={random.choice([1, 5, 20])}"
-        )
-
-    if random.random() < 0.2:
         # Dependent materialized views are written in parallel instead of sequentially.
         client_options.append("parallel_view_processing=1")
 
@@ -944,11 +729,6 @@ def run_func_test(
     # clickhouse-test exits on its own within the execute_bash timeout (180s).
     smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
     smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
-    # Every `.sql` test of the stress run goes over a random protocol, to send the randomized and
-    # fuzzed load to every protocol handler of the server. Not in the smoke check, which compares
-    # results with the references. Not in the upgrade check: its load runs against the previous
-    # release, which may lack a protocol (and its server configuration).
-    protocols_option = "" if upgrade_check else f"--protocols={','.join(STRESS_PROTOCOLS)}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -964,7 +744,7 @@ def run_func_test(
             f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
-        full_command = f"{base_command} {global_time_limit_option} {protocols_option} "
+        full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
         # Smoke check: disable AST fuzzer (fuzzed queries produce expected
         # errors in stderr) and cap global_time_limit so clickhouse-test
@@ -1177,9 +957,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START REPLICATED SENDS"))
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
     call_with_retry(make_query_command("SYSTEM START VIEWS"))
-    # Stopped only by the random disruptor.
-    call_with_retry(make_query_command("SYSTEM START CLEANUP"))
-    call_with_retry(make_query_command("SYSTEM START PULLING REPLICATION LOG"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
     # Kill other queries which known to be slow
@@ -1307,9 +1084,8 @@ def parse_args() -> argparse.Namespace:
         dest="no_random_disruptor",
         action="store_true",
         default=False,
-        help="Disable the random disruptor during stress test: query/client/mutation kills, "
-        "pauses of background operations and listeners, cache drops, Keeper reconnects, "
-        "replica restarts, dictionary reloads and view refreshes",
+        help="Disable the random disruptor (query/client/mutation kills, merge pauses) "
+        "during stress test",
     )
     return parser.parse_args()
 
@@ -1444,14 +1220,44 @@ def run_stress_test(args: argparse.Namespace) -> None:
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
-                # Embed part of the hung-check output in test_results.tsv so the
-                # verdict and the processlist are visible in CIDB. The whole log
-                # is also a CI artifact (process_results in stress_job.py).
+                # Embed a tail of the captured hung-check output in
+                # test_results.tsv so the processlist and thread stacktraces
+                # are visible in CIDB. The full log is also kept as a CI
+                # artifact (see process_results in stress_job.py), giving
+                # investigators access to the complete diagnostic output.
+                #
+                # Read only the last 32 KiB rather than the whole file: on
+                # deadlock failures `hung_check.log` can be very large (a
+                # full processlist plus a `gdb` backtrace for every server
+                # process), and the stress-test machine is already under
+                # memory pressure. The diagnostic content we need
+                # (`Found hung queries`, the processlist with stacktraces,
+                # the `gdb` backtraces) is printed at the end of the log,
+                # so the tail is exactly the relevant region.
                 info_field = ""
                 try:
+                    tail_bytes_size = 32 * 1024
+                    with open(hung_check_log, "rb") as f:
+                        f.seek(0, os.SEEK_END)
+                        size = f.tell()
+                        offset = max(0, size - tail_bytes_size)
+                        f.seek(offset)
+                        tail_bytes = f.read()
+                    log_text = tail_bytes.decode("utf-8", errors="replace")
+                    if offset > 0:
+                        # Drop the (likely partial) first line so the tail
+                        # always starts on a line boundary.
+                        nl = log_text.find("\n")
+                        if nl >= 0:
+                            log_text = log_text[nl + 1 :]
+                        log_text = (
+                            "(truncated; see hung_check.log artifact for"
+                            " the full output; showing last 32 KiB)\n...\n"
+                            + log_text
+                        )
                     # Escape so NUL, tab, and newline survive the TSV encoding,
                     # matching the decoder in read_test_results().
-                    info_field = escape_tsv_info(build_hung_check_info(hung_check_log))
+                    info_field = escape_tsv_info(log_text)
                 except OSError as ex:
                     logging.warning(
                         "Failed to read hung_check.log to embed in"

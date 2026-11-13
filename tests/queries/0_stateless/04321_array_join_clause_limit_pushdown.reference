@@ -26,7 +26,3 @@
 1
 2
 -- WITH alias arrayJoin unreferenced, old analyzer
--- two ARRAY JOIN clauses
-3
--- LEFT ARRAY JOIN and ARRAY JOIN, primes
-3

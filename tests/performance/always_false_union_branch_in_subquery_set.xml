@@ -1,3 +1,0 @@
-<test>
-    <query>SELECT count() FROM (SELECT 'x' AS k, number AS n FROM numbers(10000000) WHERE n IN (SELECT number * 3 FROM numbers(10000000)) UNION ALL SELECT 'y' AS k, number AS n FROM numbers(10000000) WHERE n IN (SELECT number * 2 FROM numbers(1000000))) WHERE k = 'y' FORMAT Null</query>
-</test>

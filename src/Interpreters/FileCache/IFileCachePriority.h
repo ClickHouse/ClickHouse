@@ -239,17 +239,13 @@ public:
     /// Check correctness of cache state.
     virtual void check(const CacheStateGuard::Lock &) const;
 
-    /// `reservee_queue_type` is the queue where the space is needed (for example `SLRU_Protected`),
-    /// when the caller cannot pass `reservee`, because the reservee belongs to another priority object.
-    /// `None` means that the queue follows from `reservee`.
-    virtual EvictionInfoPtr collectEvictionInfo( /// NOLINT
+    virtual EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) = 0;
+        const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
     {
@@ -319,8 +315,7 @@ public:
 
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
-    /// Pass the same `reservee_queue_type` as to `collectEvictionInfo`: both must target the same queue.
-    virtual bool collectCandidatesForEviction( /// NOLINT
+    virtual bool collectCandidatesForEviction(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -329,8 +324,7 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) = 0;
+        CacheStateGuard &) = 0;
 
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.
@@ -459,12 +453,8 @@ public:
     virtual std::vector<std::pair<UserID, CacheUsagePtr>> collectIdleClients(std::chrono::seconds) const { return {}; }
 
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
-    /// segment. `disk_accounted_size` is the size that was freed from
-    /// `FilesystemCacheSize` (aligned to the filesystem block when
-    /// `use_real_disk_size` is on); it is captured before the segment is
-    /// detached, because `FileSegment::getDiskAccountedSize` would fall back to
-    /// the raw reserved size once the segment loses its key metadata.
-    using OnEvictCallback = std::function<void(const FileSegment & segment, size_t disk_accounted_size, const UserID & user_id)>;
+    /// segment.
+    using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
     virtual void setOnEvictCallback(OnEvictCallback callback)
     {
         chassert(!on_evict_callback, "on_evict_callback cannot be set twice");

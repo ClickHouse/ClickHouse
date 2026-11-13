@@ -10,7 +10,9 @@ doc_type: 'reference'
 
 Um array de itens do tipo `T`, cujo índice inicial é 1. `T` pode ser qualquer tipo de dado, incluindo um array.
 
-## Criando um array {#creating-an-array}
+<div id="creating-an-array">
+  ## Criando um array
+</div>
 
 Você pode usar uma função para criar um array:
 
@@ -23,9 +25,6 @@ Você também pode usar `[]`.
 ```sql
 []
 ```
-
-A sintaxe de construtor de array do padrão SQL, do PostgreSQL e do Trino também é compatível: `ARRAY[1, 2]` equivale a `[1, 2]`.
-O tipo de dado também pode ser escrito como `ARRAY(T)`.
 
 Exemplo de criação de um array:
 
@@ -49,7 +48,9 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Trabalhando com Tipos de Dados {#working-with-data-types}
+<div id="working-with-data-types">
+  ## Trabalhando com Tipos de Dados
+</div>
 
 Ao criar um array dinamicamente, o ClickHouse define automaticamente o tipo do argumento como o tipo de dado mais específico capaz de armazenar todos os argumentos listados. Se houver valores [Nullable](/pt-BR/reference/data-types/nullable) ou literais [NULL](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default), o tipo de um elemento do array também se torna [Nullable](/pt-BR/reference/data-types/nullable).
 
@@ -78,7 +79,9 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-## Tamanho do Array {#array-size}
+<div id="array-size">
+  ## Tamanho do Array
+</div>
 
 É possível determinar o tamanho de um array usando a subcoluna `size0` sem ler a coluna inteira. Para arrays multidimensionais, você pode usar `sizeN-1`, em que `N` é a dimensão desejada.
 
@@ -98,7 +101,9 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 └───────────┴───────────┴───────────┘
 ```
 
-## Leitura de subcolunas aninhadas de Array {#reading-nested-subcolumns-from-array}
+<div id="reading-nested-subcolumns-from-array">
+  ## Leitura de subcolunas aninhadas de Array
+</div>
 
 Se o tipo aninhado `T` dentro de `Array` tiver subcolunas (por exemplo, se for uma [tupla nomeada](/pt-BR/reference/data-types/tuple)), você poderá ler essas subcolunas de um tipo `Array(T)` com os mesmos nomes de subcoluna. O tipo de uma subcoluna será um `Array` do tipo da subcoluna original.
 

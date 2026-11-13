@@ -6,7 +6,6 @@
 #include <base/defines.h>
 #include <Common/PODArray.h>
 #include <Interpreters/RowDataStore.h>
-#include <Interpreters/RowRefs.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -28,7 +27,7 @@ extern const int LOGICAL_ERROR;
 namespace detail
 {
 
-/// Splitting an input block into sub-blocks by hash with IColumn::scatter would copy every column.
+/// Previously ConcurrentHashJoin used IColumn::scatter method to split input blocks to sub-blocks by hash.
 /// To avoid copying of columns, we introduce a new class ScatteredBlock that holds a block and a selector.
 /// So now each threads get a copy of the source input block and a selector that tells which rows are meant for the given thread.
 /// Selector can be seen as just a list of indexes or rows that belong to the given thread.
@@ -369,6 +368,30 @@ private:
 };
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;
+
+/// Describes how a join output column is read from a `StoredBlock`: directly from `columns[index]`
+/// (`Columns`), or as a `(field_offset, field_size)` slice of the block's row store (`RowStore`).
+struct ColumnAccessIndex
+{
+    enum Type : uint8_t { Columns, RowStore };
+
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    {
+    }
+
+    Type type;
+    size_t index;
+
+    /// Valid only when type is RowStore.
+    size_t field_offset;
+    size_t field_size;
+    bool is_nullable;
+
+    bool operator==(const ColumnAccessIndex &) const = default;
+};
+
+using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
 
 /// A right-side block as stored by HashJoin for the build/probe lifetime. Owns the (already projected)
 /// columns together with the partition `selector` and the `block_no` that row refs (`RowRef`)

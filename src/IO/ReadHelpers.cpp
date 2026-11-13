@@ -1,6 +1,5 @@
 #include <Core/Defines.h>
-#include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -44,7 +43,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
@@ -216,11 +214,6 @@ void throwNumberWithoutDigits()
     throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
-void throwIntegerTextOverflow()
-{
-    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Integer is out of range of the destination type");
-}
-
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
@@ -352,12 +345,6 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
-template <typename Vector>
-void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
-}
-
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -372,12 +359,6 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
-}
-
-void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -1313,10 +1294,6 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         return error("Cannot parse JSON string: expected opening quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
-    /// `s` is an append target already holding previous values (for a column, all previous rows of the block),
-    /// so the size of the current value is the growth of `s`.
-    const size_t initial_size = s.size();
-
     while (!buf.eof())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
@@ -1324,12 +1301,8 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1374,9 +1347,6 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != opening_bracket)
         return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
 
-    /// See the comment about `initial_size` in readJSONStringInto.
-    const size_t initial_size = s.size();
-
     s.push_back(*buf.position());
     ++buf.position();
 
@@ -1389,12 +1359,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -2115,27 +2081,6 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
-template <typename Allocator>
-void readStringGrowing(std::basic_string<char, std::char_traits<char>, Allocator> & s, size_t size, ReadBuffer & buf)
-{
-    while (s.size() < size)
-    {
-        if (buf.eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", s.size(), size);
-
-        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
-        if (s.capacity() < s.size() + bytes_to_copy)
-            s.reserve(std::min(size, std::max(s.size() + bytes_to_copy, 2 * s.capacity())));
-        s.append(buf.position(), bytes_to_copy);
-        buf.position() += bytes_to_copy;
-    }
-}
-
-template void readStringGrowing<std::allocator<char>>(String & s, size_t size, ReadBuffer & buf);
-template void readStringGrowing<AllocatorWithMemoryTracking<char>>(
-    std::basic_string<char, std::char_traits<char>, AllocatorWithMemoryTracking<char>> & s, size_t size, ReadBuffer & buf);
-
 void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
 {
     size_t size = 0;
@@ -2331,12 +2276,13 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// Nothing to append, and `in.position()` may be null.
-    if (additional_bytes == 0)
+    /// There are no new bytes to add to memory.
+    /// No need to do extra stuff.
+    if (new_bytes == 0)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resizeAmortized(new_bytes);
+    memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }

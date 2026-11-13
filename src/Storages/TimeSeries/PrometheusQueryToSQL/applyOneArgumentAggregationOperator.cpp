@@ -58,35 +58,35 @@ namespace
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
             {"sum",
              {
-                 [](ASTPtr && v) -> ASTPtr
+                 [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
                  { return makeASTFunction("sumForEach", std::move(v)); },
              }},
 
             {"min",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
                 { return makeASTFunction("minForEach", std::move(v)); },
             }},
 
             {"max",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
                 { return makeASTFunction("maxForEach", std::move(v)); },
             }},
 
             {"avg",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
                 { return makeASTFunction("avgForEach", std::move(v)); },
             }},
 
             {"count",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr & scalar_data_type) -> ASTPtr
                 {
                     /// countForEach is special: it returns UInt64 and not Nullable: if all the inputs at any specific position are NULLs,
                     /// countForEach produces 0 at this position instead of NULL. So we need to convert it to NULL with arrayMap.
-                    /// Cast to Float64: a subquery like `rate(count(m)[5m:1m])` feeds this grid into a
+                    /// Cast to the scalar type: a subquery like `rate(count(m)[5m:1m])` feeds this grid into a
                     /// `timeSeries*ToGrid` aggregate, which accepts only floats.
                     return makeASTFunction(
                         "CAST",
@@ -97,27 +97,27 @@ namespace
                                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
                                 makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
                             makeASTFunction("countForEach", std::move(v))),
-                        make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
+                        make_intrusive<ASTLiteral>("Array(Nullable(" + scalar_data_type->getName() + "))"));
                 },
             }},
 
             {"stddev",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
                 { return makeASTFunction("stddevPopStableForEach", std::move(v)); },
             }},
 
             {"stdvar",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
                 { return makeASTFunction("varPopStableForEach", std::move(v)); },
             }},
 
             {"group",
              {
-                [](ASTPtr && v) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr & scalar_data_type) -> ASTPtr
                 {
-                    /// arrayMap(x -> if(isNotNull(x), 1., NULL), anyForEach(values))
+                    /// arrayMap(x -> if(isNotNull(x), 1::scalar_data_type, NULL), anyForEach(values))
                     return makeASTFunction(
                         "arrayMap",
                         makeASTFunction(
@@ -126,7 +126,7 @@ namespace
                             makeASTFunction(
                                 "if",
                                 makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
-                                timeSeriesScalarToAST(1),
+                                timeSeriesScalarToAST(1, scalar_data_type),
                                 make_intrusive<ASTLiteral>(Field{} /* NULL */))),
                         makeASTFunction("anyForEach", std::move(v)));
                 },
@@ -190,7 +190,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)

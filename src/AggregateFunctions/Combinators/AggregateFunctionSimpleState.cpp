@@ -11,9 +11,6 @@ namespace
     public:
         String getName() const override { return "SimpleState"; }
 
-        /// The rows are passed to the nested function one by one, so the arguments are converted around.
-        VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
-
         DataTypes transformArguments(const DataTypes & arguments) const override { return arguments; }
 
         AggregateFunctionPtr transformAggregateFunction(

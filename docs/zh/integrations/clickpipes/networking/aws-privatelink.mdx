@@ -12,6 +12,7 @@ integration:
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 您可以使用 [AWS PrivateLink](https://aws.amazon.com/privatelink/) 在 ClickPipes 与托管在 AWS 上的数据源之间建立安全连接。ClickPipes 会在其 VPC 中创建**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的专用终结点服务，确保流量不会暴露于公网。
 
@@ -19,7 +20,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   开始前，请查看[支持的 AWS 区域](#aws-privatelink-regions)。
 </Note>
 
-## 支持的 ClickPipes 数据源 {#supported-sources}
+<div id="supported-sources">
+  ## 支持的 ClickPipes 数据源
+</div>
 
 ClickPipes 反向专用终结点功能仅支持以下
 数据源类型：
@@ -33,7 +36,9 @@ ClickPipes 反向专用终结点功能仅支持以下
   对于 Kafka，[与 Confluent 兼容的 Schema Registry](/zh/integrations/clickpipes/kafka/schema-registries#confluent-compatible-registries) 可通过与消息代理相同的反向专用终结点访问，无需暴露在公网；前提是其主机名解析为该端点的私网 IP 地址。
 </Note>
 
-## 支持的 AWS PrivateLink 端点类型 {#aws-privatelink-endpoint-types}
+<div id="aws-privatelink-endpoint-types">
+  ## 支持的 AWS PrivateLink 端点类型
+</div>
 
 ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLink 方式：
 
@@ -41,7 +46,9 @@ ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLin
 * [适用于 MSK ClickPipe 的 MSK 多 VPC 连接](#msk-multi-vpc)
 * [VPC endpoint service](#vpc-endpoint-service)
 
-### VPC 资源 {#vpc-resource}
+<div id="vpc-resource">
+  ### VPC 资源
+</div>
 
 <Info>
   不支持跨区域。
@@ -158,7 +165,9 @@ ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLin
   </Step>
 </Steps>
 
-### MSK 多 VPC 连接 {#msk-multi-vpc}
+<div id="msk-multi-vpc">
+  ### MSK 多 VPC 连接
+</div>
 
 [Multi-VPC connectivity](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) 是 AWS MSK 的内置功能，可将多个 VPC 连接到同一个 MSK 集群。
 原生支持私有 DNS，无需进行额外配置。
@@ -174,7 +183,9 @@ ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLin
 
 请参阅我们的 [ClickPipes MSK 设置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes)，了解如何设置连接。
 
-### VPC endpoint service {#vpc-endpoint-service}
+<div id="vpc-endpoint-service">
+  ### VPC endpoint service
+</div>
 
 [VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) 是与 ClickPipes 共享数据源的另一种方式。
 这种方式需要在数据源前部署 NLB (Network Load Balancer) ，
@@ -209,23 +220,36 @@ AWS PrivateLink 托管的私有 DNS 并不总是可行：
 对于 MSK 集群，请参阅 [MSK 集群的 AWS PrivateLink VPC endpoint service](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)，
 了解使用自定义私有 DNS 名称、为每个 broker 配置一个 endpoint service 的设置。
 
-## 自定义私有 DNS {#custom-private-dns}
+<div id="custom-private-dns">
+  ## 自定义私有 DNS
+</div>
+
+<PrivatePreviewBadge />
+
+<Info>
+  自定义私有 DNS 目前处于**私有预览**阶段。请联系 [ClickHouse 支持团队](https://clickhouse.com/support/program)，为您的服务启用此功能。
+</Info>
 
 AWS PrivateLink 可为具有已验证域名的 [VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
 提供托管私有 DNS。某些服务要求每个消费者在各自的 VPC 中管理 DNS 解析。例如，Confluent Cloud 要求消费者将 broker 主机名解析为 PrivateLink 端点。
 
-对于此类情况，ClickPipes 支持将自定义私有 DNS 名称附加到反向专用
+对于此类情况，ClickPipes 支持将自定义私有 DNS name 附加到反向专用
 终结点。ClickPipes 会将这些名称解析为该端点的私有地址，使您可通过私有连接使用数据
 源自身的主机名访问数据源。
 
 自定义私有 DNS 是对托管私有 DNS 的补充，而非替代。如果您的
-PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
+PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 [VPC endpoint service](#vpc-endpoint-service)
-和 [VPC 资源](#vpc-resource)端点类型支持自定义私有 DNS 名称。MSK 多 VPC 原生提供托管私有 DNS，
+和 [VPC 资源](#vpc-resource)端点类型支持自定义私有 DNS name。MSK multi-VPC 原生提供托管私有 DNS，
 且不支持自定义名称。
 
-自定义私有 DNS 名称需遵循以下规则：
+<Note>
+  ClickHouse Cloud 控制台目前每个反向专用终结点仅支持一个自定义私有 DNS name。
+  如果需要在同一端点上管理多个自定义私有 DNS name，请使用 OpenAPI 或 Terraform。
+</Note>
+
+自定义私有 DNS name 需遵循以下规则：
 
 * 支持精确名称 (`kafka.internal.example.com`) 和通配符名称 (`*.example.com`) 。通配符可匹配单个 DNS 标签。例如，
   `*.abcde12345.us-east-1.aws.confluent.cloud` 可匹配
@@ -235,10 +259,10 @@ PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
 * 使用保留后缀的名称 (例如 `local`、`localhost`、`internal`、`corp`、
   `private`) 将被拒绝。
 
-要配置自定义私有 DNS 名称：
+要配置自定义私有 DNS name：
 
-* 在 ClickHouse Cloud 控制台中，[创建反向专用终结点](#creating-clickpipe)时填写 `Custom private DNS name` 字段。点击 `Add DNS name` 可将
-  多个名称附加到同一端点。
+* 在 ClickHouse Cloud 控制台中，[创建反向专用终结点](#creating-clickpipe)时填写 `Custom private DNS name` 字段。为您的
+  服务启用该功能后，此字段才会显示。
 * 使用 [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger) 时，创建反向专用终结点时请设置
   `customPrivateDnsMappings`，或通过 `PATCH` 请求更新现有
   端点。更新会替换完整的映射列表；空列表
@@ -247,7 +271,9 @@ PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
   [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
   资源管理现有反向专用终结点的映射。
 
-## 使用反向专用终结点创建 ClickPipe {#creating-clickpipe}
+<div id="creating-clickpipe">
+  ## 使用反向专用终结点创建 ClickPipe
+</div>
 
 1. 打开 ClickHouse Cloud 服务的 SQL 控制台。
 
@@ -281,9 +307,9 @@ PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="选择反向专用终结点" size="lg" border />
 
 * 对于 VPC 资源，请提供配置共享 ARN 和配置 ID。
-* 对于 MSK 多 VPC，请提供集群 ARN，以及已创建端点使用的身份验证方法。
-* 对于 VPC endpoint service，请提供服务名称。
-* 也可以选择提供[自定义私有 DNS](#custom-private-dns) 名称。
+  * 对于 MSK multi-VPC，请提供集群 ARN，以及已创建端点使用的身份验证方法。
+  * 对于 VPC endpoint service，请提供服务名称。
+  * 也可以选择提供[自定义私有 DNS](#custom-private-dns) 名称。
 
 7. 点击 `Create`，然后等待反向专用终结点就绪。
 
@@ -305,7 +331,9 @@ PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
 
    要查看完整的 DNS name 列表，请前往 Cloud 服务设置。
 
-## 管理反向专用终结点 {#managing-rpes}
+<div id="managing-rpes">
+  ## 管理反向专用终结点
+</div>
 
 您可以在 ClickHouse Cloud 服务设置中管理现有的反向专用终结点：
 
@@ -321,14 +349,18 @@ PrivateLink 服务已提供私有 DNS 名称，则无需使用自定义名称。
 
    端点创建后无法编辑。您可以点击端点上的 `×` 并确认删除。删除操作不可恢复，并会中断所有当前使用该端点的 ClickPipe。
 
-## 支持的 AWS 区域 {#aws-privatelink-regions}
+<div id="aws-privatelink-regions">
+  ## 支持的 AWS 区域
+</div>
 
 ClickPipes 对 AWS PrivateLink 的支持仅限于特定 AWS 区域。
 请参阅 [ClickPipes 区域列表](/zh/integrations/clickpipes/networking/static-ips)，查看可用区域。
 
 启用了跨区域连接的 PrivateLink VPC endpoint service 不受此限制。
 
-## 限制 {#limitations}
+<div id="limitations">
+  ## 限制
+</div>
 
 无法保证在 ClickHouse Cloud 中为 ClickPipes 创建的 AWS PrivateLink 端点
 与 ClickHouse Cloud 服务位于同一 AWS 区域。
@@ -341,18 +373,9 @@ ClickPipes 对 AWS PrivateLink 的支持仅限于特定 AWS 区域。
 
 对于每个 MSK 集群的每种身份验证类型 (SASL&#95;IAM 或 SASL&#95;SCRAM) ，AWS MSK 仅支持一个 PrivateLink (VPC 端点) 。因此，多个 ClickHouse Cloud 服务或组织无法使用相同的身份验证类型为同一 MSK 集群分别创建 PrivateLink 连接。
 
-### 每个反向专用终结点的副本数量限制 {#rpe-replica-limit}
-
-每个反向专用终结点最多支持 190 个 ClickPipe 副本 (总计) 。使用同一终结点的所有 ClickPipes 的副本均计入此限制，已暂停的 ClickPipes 也不例外。
-
-如果创建或扩容 ClickPipe 会导致该终结点的副本总数超出限制，ClickPipes 将拒绝该操作。错误消息中会包含反向专用终结点 ID、其他 ClickPipes 已占用的副本数以及本次请求的副本数。缩容操作则始终允许。
-
-如需释放容量，您可以：
-
-* 缩容使用同一终结点的其他 ClickPipes。
-* 为新增的 ClickPipes 单独创建一个反向专用终结点。
-
-### 非活动端点的自动清理 {#automatic-cleanup}
+<div id="automatic-cleanup">
+  ### 非活动端点的自动清理
+</div>
 
 处于终止状态的反向专用终结点会在规定的宽限期后自动删除。
 这可确保未使用或配置不当的端点不会被无限期保留。

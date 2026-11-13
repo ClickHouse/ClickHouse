@@ -28,7 +28,6 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
-The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 
 **Syntax**
@@ -118,7 +117,6 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
-The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 
 **Syntax**

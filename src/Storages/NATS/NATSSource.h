@@ -4,7 +4,6 @@
 #include <Processors/ISource.h>
 #include <Storages/NATS/INATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
-#include <Common/Logger.h>
 
 #include <optional>
 
@@ -39,9 +38,6 @@ public:
 
     void setCommitOnSelect(bool value) { commit_on_select = value; }
 
-    /// A source of a streaming cycle into the materialized views rather than of a direct `SELECT`.
-    void setBackgroundStreaming(bool value) { background_streaming = value; }
-
     bool wasConsumptionAborted() const { return consumption_aborted; }
 
 private:
@@ -51,7 +47,6 @@ private:
     StorageNATS & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    LoggerPtr log;
     Names column_names;
     const size_t max_block_size;
     StreamingHandleErrorMode handle_error_mode;
@@ -70,7 +65,6 @@ private:
     Poco::Timespan max_execution_time = 0;
     bool wait_for_flush_interval = false;
     bool commit_on_select = false;
-    bool background_streaming = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(

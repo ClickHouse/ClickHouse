@@ -17,7 +17,7 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     , executor(std::move(executor_))
     , read_position(executor->getPosition())
 {
-    clearBufferPadding();
+    padded = false;
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 
@@ -56,7 +56,7 @@ bool PipelineReadBuffer::nextImpl()
     }
 
     internal_buffer = Buffer(span.data, span.data + span.size);
-    working_buffer = Buffer(span.data, span.data + span.size);
+    working_buffer = internal_buffer;
     pos = working_buffer.begin();
     read_position = span.logical_offset + span.size;
     return true;
@@ -137,11 +137,6 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
 void PipelineReadBuffer::setReadUntilEnd()
 {
     executor->setReadUntil(std::nullopt);
-}
-
-void PipelineReadBuffer::setRequestMap(ByteRangeSet ranges)
-{
-    executor->setRequestMap(std::move(ranges));
 }
 
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()

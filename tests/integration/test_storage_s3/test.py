@@ -1447,70 +1447,6 @@ def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
     assert int(result) > 140
 
 
-def _write_wide_parquet(instance, started_cluster, shape):
-    # 20 rows carrying ~12 MB each, so ~240 MB of payload in one object, laid
-    # out either as a single row group or as one row group per row.
-    rows_per_row_group = 1000000 if shape == "one_row_group" else 1
-    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/wide_{shape}.parquet"
-    table_function = f"s3('{url}', 'minio', '{minio_secret_key}', 'Parquet')"
-    exec_query_with_retry(
-        instance,
-        f"INSERT INTO TABLE FUNCTION {table_function} "
-        "SELECT toString(number) AS id, "
-        "arrayStringConcat(arrayMap(i -> repeat('a', 1000000), range(12))) AS payload "
-        "FROM numbers(20) SETTINGS s3_truncate_on_insert=1, "
-        f"output_format_parquet_row_group_size={rows_per_row_group}, "
-        "output_format_parquet_row_group_size_bytes=8000000000",
-        timeout=300,
-    )
-    return table_function
-
-
-# Limits sit above what the reader needs on a healthy build and below the peaks
-# these shapes used to reach. Measured on 26.2.19.43 from system.query_log:
-# reads 1.25 GiB from one row group and 257-337 MiB from many, inserts 1.25 GiB
-# and 871 MiB.
-READ_MEMORY_LIMIT = {"one_row_group": "1Gi", "many_row_groups": "512Mi"}
-INSERT_MEMORY_LIMIT = {"one_row_group": "1Gi", "many_row_groups": "720Mi"}
-
-# Empty in tree: master has one Parquet reader, and
-# `input_format_parquet_use_native_reader_v3` no longer selects between two.
-# wide_rows_memory_matrix.sh rewrites this in its checkout of an older release,
-# where the setting still picks Arrow or v3, to compare the two.
-WIDE_ROWS_EXTRA_SETTINGS = ""
-
-
-@pytest.mark.parametrize("shape", ["one_row_group", "many_row_groups"])
-def test_parquet_wide_rows_read_memory(started_cluster, shape):
-    instance = started_cluster.instances["dummy"]
-    source = _write_wide_parquet(instance, started_cluster, shape)
-    assert (
-        int(
-            instance.query(
-                f"SELECT max(length(payload)) FROM {source} "
-                f"SETTINGS max_memory_usage='{READ_MEMORY_LIMIT[shape]}'"
-                + WIDE_ROWS_EXTRA_SETTINGS
-            )
-        )
-        == 12000000
-    )
-
-
-@pytest.mark.parametrize("shape", ["one_row_group", "many_row_groups"])
-def test_parquet_wide_rows_insert_memory(started_cluster, shape):
-    instance = started_cluster.instances["dummy"]
-    source = _write_wide_parquet(instance, started_cluster, shape)
-    dest_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/wide_out_{shape}.parquet"
-    dest = f"s3('{dest_url}', 'minio', '{minio_secret_key}', 'Parquet')"
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION {dest} SELECT * FROM {source} "
-        f"SETTINGS max_memory_usage='{INSERT_MEMORY_LIMIT[shape]}', s3_truncate_on_insert=1, "
-        "output_format_parquet_row_group_size=1, "
-        "output_format_parquet_row_group_size_bytes=33554432" + WIDE_ROWS_EXTRA_SETTINGS
-    )
-    assert int(instance.query(f"SELECT count() FROM {dest}")) == 20
-
-
 @pytest.mark.parametrize("format_name", ["Parquet", "ORC"])
 def test_seekable_formats_url(started_cluster, format_name):
     bucket = started_cluster.minio_bucket
@@ -1668,29 +1604,6 @@ def test_create_new_files_on_insert(started_cluster):
     result = instance.query("select count() from test_multiple_inserts")
     assert int(result) == 60
     instance.query("drop table test_multiple_inserts")
-
-
-def test_create_new_files_on_insert_multipart_gcs(started_cluster):
-    instance = started_cluster.instances["dummy"]
-    # The S3 client deduces the GCS provider from the endpoint, so reach MinIO under the GCS host name.
-    instance.exec_in_container(
-        ["bash", "-c", f"echo '{started_cluster.minio_ip} storage.googleapis.com' >> /etc/hosts"],
-        privileged=True,
-        user="root",
-    )
-    bucket = started_cluster.minio_bucket
-    name = f"gcs_new_file_{generate_random_string()}"
-    url = f"http://storage.googleapis.com:{started_cluster.minio_port}/{bucket}/{name}"
-    settings = {"s3_max_single_part_upload_size": 1048576}
-    for path, partition_by in [(f"{url}.csv", ""), (f"{url}_{{_partition_id}}.csv", "PARTITION BY 'p'")]:
-        insert = f"INSERT INTO FUNCTION s3('{path}', 'minio', '{minio_secret_key}', 'CSV', 's String') {partition_by} SELECT repeat('a', 1000) FROM numbers(2000)"
-        instance.query(insert, settings=settings)
-        instance.query(insert, settings={**settings, "s3_create_new_file_on_insert": 1})
-
-    result = instance.query(
-        f"SELECT _file, count() FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{name}*.csv', 'minio', '{minio_secret_key}', 'CSV', 's String') GROUP BY _file ORDER BY _file"
-    )
-    assert result == f"{name}.1.csv\t2000\n{name}.csv\t2000\n{name}_p.1.csv\t2000\n{name}_p.csv\t2000\n"
 
 
 def test_format_detection(started_cluster):
@@ -2462,18 +2375,6 @@ def test_dynamic_s3_disk_user_marker_is_not_honored(started_cluster):
         f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
         f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
         f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', _server_credentials_allowed = 1)"
-    )
-    create_query = instance.query(
-        "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
-    )
-    assert "_server_credentials_allowed" not in create_query, create_query
-    instance.query("DROP TABLE t_user_marker SYNC")
-
-    # The disk configuration parser accepts and ignores extra values, so a marker with one is stripped too.
-    instance.query(
-        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
-        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
-        f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', equals(_server_credentials_allowed, 1, 'extra'))"
     )
     create_query = instance.query(
         "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
@@ -3737,6 +3638,7 @@ def test_query_condition_cache(started_cluster):
     select_query = f"SELECT * FROM {table_name} WHERE id < 100 ORDER BY id"
     settings = {
         "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
     }
 
     query_id_first = f"qcc_s3_first_{generate_random_string()}"
@@ -3840,6 +3742,7 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
     settings = {
         "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
     }
 
     def profile_event(query_id, event):

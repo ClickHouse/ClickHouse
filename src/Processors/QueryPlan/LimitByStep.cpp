@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -201,7 +200,7 @@ void LimitByStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        ctx.writeColumnName(column);
+        writeStringBinary(column, ctx.out);
 }
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
