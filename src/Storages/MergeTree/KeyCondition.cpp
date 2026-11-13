@@ -7277,6 +7277,7 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * sparse_left_keys,
     const FieldRef * sparse_right_keys,
     const DataTypes & sparse_data_types,
+    const DataTypes & key_types,
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds) const
@@ -7285,6 +7286,7 @@ BoolMask KeyCondition::checkInRange(
 
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
+    chassert(key_types.size() == num_key_columns);
 
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
@@ -7339,7 +7341,7 @@ BoolMask KeyCondition::checkInRange(
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
-            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types, key_types);
         });
 }
 
@@ -8055,9 +8057,10 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 }
 
 /// The same over the sparse representation of the primary index, where a key column is addressed by
-/// its position among the columns the index resolves.
+/// its position among the columns the index resolves. A key column it does not resolve is checked as the
+/// whole universe, except by a range atom, which answers `(true, true)` for such a column.
 bool KeyCondition::mayReadNullKeyValue(
-    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & sparse_key_types) const
+    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & key_types) const
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
@@ -8067,11 +8070,16 @@ bool KeyCondition::mayReadNullKeyValue(
         for (size_t key_column : element.key_columns)
         {
             if (key_column >= key_col_to_sparse_pos.size() || key_col_to_sparse_pos[key_column] == -1)
+            {
+                if (element.function != RPNElement::FUNCTION_IN_RANGE && element.function != RPNElement::FUNCTION_NOT_IN_RANGE
+                    && rangeOfKeyColumnMayHoldNull(element, Range::createWholeUniverse(), key_types, key_column))
+                    return true;
                 continue;
+            }
 
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
             if (sparse_pos < sparse_hyperrectangle.size()
-                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
+                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], key_types, key_column))
                 return true;
         }
     }
@@ -8608,7 +8616,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<int> & key_col_to_sparse_pos,
     const Hyperrectangle & sparse_hyperrectangle,
-    const DataTypes & sparse_data_types) const
+    const DataTypes & sparse_data_types,
+    const DataTypes & key_types) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -9085,7 +9094,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
-    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types)))
+    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, key_types)))
         rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
