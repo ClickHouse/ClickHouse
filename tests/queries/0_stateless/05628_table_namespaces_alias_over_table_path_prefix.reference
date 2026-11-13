@@ -1,0 +1,23 @@
+-- 1. alias equals the first path component, the alias qualifies the subcolumn
+2
+2
+-- 2. same in WHERE
+0
+0
+-- 3. alias equals the database name, table path starts with it
+2
+2
+-- 4. longer matcher qualifier
+2
+2
+-- 5. unrelated alias, the table path still qualifies
+1
+1
+-- 6. no alias
+1
+1
+-- 7. alias reading fails, the compatibility setting prefers the table path over the subcolumn
+2
+1
+-- 8. table path is tried after a failed alias lookup
+5
