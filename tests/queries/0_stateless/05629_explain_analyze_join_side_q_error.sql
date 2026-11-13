@@ -3,7 +3,7 @@
 
 -- `EXPLAIN ANALYZE` prints the q-error of each join side's estimated rows next to `rows estimated` and `rows`.
 -- The side `d` is a filtered table read, so its estimate is the filter estimate from the `uniq` statistics:
--- 1000 rows, `v` has 10 distinct values (100 rows each), `s` has 2 ('rare' is 20 rows, estimated 500).
+-- 1000 rows, `v` has 10 distinct values (100 rows each), `s` has 2 ('rare' is 20 rows, 'common' 980, both estimated 500).
 
 SET use_statistics = 1, materialize_statistics_on_insert = 1;
 SET enable_join_runtime_filters = 0; -- a runtime filter would lower the actual rows of a side without any estimation error
@@ -33,6 +33,12 @@ SELECT
     countIf(explain LIKE '%: rows estimated 500.00 · rows 20.00 · q-error 25.00 · matched%') = 1,
     countIf(explain LIKE '%: rows estimated 1.00 thousand · rows 1.00 thousand · q-error 1.00 · matched%') = 1
 FROM (EXPLAIN ANALYZE SELECT * FROM f JOIN d ON f.k = d.k WHERE d.s = 'rare');
+
+-- An underestimated filter: 500 estimated, 980 actual.
+SELECT
+    countIf(explain LIKE '%: rows estimated 500.00 · rows 980.00 · q-error 1.96 · matched%') = 1,
+    countIf(explain LIKE '%: rows estimated 1.00 thousand · rows 1.00 thousand · q-error 1.00 · matched%') = 1
+FROM (EXPLAIN ANALYZE SELECT * FROM f JOIN d ON f.k = d.k WHERE d.s = 'common');
 
 -- No q-error for a side with 0 actual rows.
 SELECT
