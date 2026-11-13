@@ -2582,11 +2582,8 @@ class SettingsRandomizer:
         # in sync with use_skip_indexes_if_final even after it was forced to False).
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
-        # DPsub allocates its 2^n DP table before any budget check (`max_searched_plans` is not passed
-        # to it), so bound n when it runs first: 16 relations keep the table around 9 MiB.
-        if random_settings["query_plan_optimize_join_order_algorithm"].startswith("dpsub"):
-            limit = random_settings["query_plan_optimize_join_order_limit"]
-            random_settings["query_plan_optimize_join_order_limit"] = 16 if limit == 0 else min(limit, 16)
+        # No clamp for DPsub: it bails at DPSUB_MAX_RELATIONS (12) before allocating its 2^n table, so a large
+        # or zero limit cannot blow up memory; keeping limit=0 lets the "reordering disabled" draw be exercised.
         SettingsRandomizer.disable_distributed_cache_if_needed(args, tags, random_settings)
 
         SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
