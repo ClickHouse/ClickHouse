@@ -134,11 +134,6 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
             /// bounded by every input's NDV at the same position. Without this the `Distinct`
             /// above would estimate from the first input's NDVs alone.
             const auto & input_headers = intersect_or_except_step->getInputHeaders();
-            const auto & output_header = *input_headers.at(0);
-            std::unordered_map<String, size_t> output_name_counts;
-            for (const auto & output_column : output_header)
-                ++output_name_counts[output_column.name];
-
             for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
             {
                 const auto & other = input_statistics(input_index);
@@ -150,18 +145,13 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
                 /// The distinct output rows cannot exceed any input, with or without NDVs.
                 result.estimated_distinct_bound = std::min(
                     {result.estimated_distinct_bound, other.estimated_row_count, other.estimated_distinct_bound});
-                for (size_t position = 0; position < output_header.columns(); ++position)
+                for (size_t position = 0; position < input_headers.at(0)->columns(); ++position)
                 {
-                    const auto & output_name = output_header.getByPosition(position).name;
-                    /// Name-keyed statistics cannot represent two same-named output positions.
-                    if (output_name_counts.at(output_name) > 1)
-                        continue;
-
                     auto other_ndv = knownDistinctValues(other, input_headers.at(input_index)->getByPosition(position).name);
                     if (!other_ndv)
                         continue;
 
-                    auto & output_ndv = result.column_statistics[output_name].num_distinct_values;
+                    auto & output_ndv = result.column_statistics[input_headers.at(0)->getByPosition(position).name].num_distinct_values;
                     output_ndv = output_ndv == 0 ? *other_ndv : std::min(output_ndv, *other_ndv);
                 }
             }
