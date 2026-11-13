@@ -7,6 +7,7 @@
 
 #include <Poco/Exception.h>
 #include <Poco/Glob.h>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <fmt/format.h>
@@ -80,6 +81,13 @@ bool hasWildcard(const std::string & component)
     return component.find_first_of("*?[{") != std::string::npos;
 }
 
+/// The value of a path setting as `getCanonicalPath` in `Server.cpp` reads it: without the whitespace around it, so
+/// that `<path> /srv/data/ </path>` and a value on its own lines mean the same as without it.
+std::string getPathSetting(const Poco::Util::AbstractConfiguration & config, const std::string & key, const std::string & default_value)
+{
+    return Poco::trim(config.getString(key, default_value));
+}
+
 class Collector
 {
 public:
@@ -94,7 +102,7 @@ public:
         , is_daemon(config.getBool("application.runAsDaemon", false))
         , config_file(absolute(config_path, startup_directory))
         , config_directory(config_file.parent_path())
-        , data_path(absolute(config.getString("path", DBMS_DEFAULT_PATH), working_directory))
+        , data_path(absolute(getPathSetting(config, "path", DBMS_DEFAULT_PATH), working_directory))
         , runtime_directory(is_daemon ? coreDirectory() : working_directory)
     {
     }
@@ -309,6 +317,13 @@ private:
                 add(absolute(value, base), access, fmt::format("`{}`", key));
     }
 
+    /// A writable directory relative to `path`, read as `getCanonicalPath` does.
+    void addCanonicalPathKey(const std::string & key)
+    {
+        if (const auto value = getPathSetting(config, key, ""); !value.empty())
+            add(absolute(value, data_path), Access::ReadWrite, fmt::format("`{}`", key));
+    }
+
     void addKeyLocation(const std::string & key, Access access, const fs::path & base)
     {
         if (config.has(key))
@@ -436,11 +451,11 @@ private:
     void addDataPaths()
     {
         add(data_path, Access::ReadWrite, "`path`");
-        addKey("tmp_path", Access::ReadWrite, data_path);
-        addKey("user_files_path", Access::ReadWrite, data_path);
-        addKey("format_schema_path", Access::ReadWrite, data_path);
-        addKey("dynamic_user_defined_executable_functions_path", Access::ReadWrite, data_path);
-        addKey("filesystem_caches_path", Access::ReadWrite, data_path);
+        addCanonicalPathKey("tmp_path");
+        addCanonicalPathKey("user_files_path");
+        addCanonicalPathKey("format_schema_path");
+        addCanonicalPathKey("dynamic_user_defined_executable_functions_path");
+        addCanonicalPathKey("filesystem_caches_path");
         addKey("custom_cached_disks_base_directory", Access::ReadWrite, runtime_directory);
         addKey("custom_local_disks_base_directory", Access::ReadWrite, runtime_directory);
         addKey("access_control_path", Access::ReadWrite, runtime_directory);
@@ -454,13 +469,13 @@ private:
 
         /// They are inside `path` by default, which is not executable, and are mounted separately to be read-only and,
         /// for the scripts, executable.
-        const fs::path user_scripts_path = absolute(config.getString("user_scripts_path", "user_scripts"), data_path);
+        const fs::path user_scripts_path = absolute(getPathSetting(config, "user_scripts_path", "user_scripts"), data_path);
         add(user_scripts_path, Access::ReadOnly, "`user_scripts_path`");
         /// Except the WebAssembly modules, which `WasmModuleManager` keeps in the subdirectory `wasm` and writes when
         /// they are inserted into or deleted from `system.webassembly_modules`. It is created before the mount.
         if (config.getBool("allow_experimental_webassembly_udf", false))
             add(user_scripts_path / "wasm", Access::ReadWrite, "the WebAssembly modules in `user_scripts_path`");
-        add(absolute(config.getString("top_level_domains_path", "top_level_domains"), data_path), Access::ReadOnly, "`top_level_domains_path`");
+        add(absolute(getPathSetting(config, "top_level_domains_path", "top_level_domains"), data_path), Access::ReadOnly, "`top_level_domains_path`");
         add(absolute(config.getString("google_protos_path", "/usr/share/clickhouse/protos/"), runtime_directory), Access::ReadOnly, "`google_protos_path`");
 
         addKeyLocation("path_to_regions_hierarchy_file", Access::ReadOnly, runtime_directory);
@@ -487,7 +502,7 @@ private:
     /// empty `filesystem_caches_path` is the same as none.
     fs::path getCachesBase() const
     {
-        const std::string value = config.getString("filesystem_caches_path", "");
+        const std::string value = getPathSetting(config, "filesystem_caches_path", "");
         return value.empty() ? data_path / "caches" : absolute(value, data_path);
     }
 
