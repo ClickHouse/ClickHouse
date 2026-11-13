@@ -11,18 +11,18 @@ CREATE TABLE ts ENGINE = TimeSeries;
 INSERT INTO ts (metric_name, tags, samples)
 SELECT 'm', map('l', 'a'), arrayMap(i -> (toDateTime64(1000020 + 60 * i, 3), 1.0), range(11));
 
-SELECT 'subquery without step, default step 15s:';
+SELECT 'subquery without step, default step 1m:';
 SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620);
 SELECT value FROM prometheusQuery(ts, 'sum_over_time(m[5m:])', 1000620);
 SELECT tags, arrayMap(x -> x.2, samples) FROM prometheusQueryRange(ts, 'count_over_time(m[5m:])', 1000320, 1000620, 60) ORDER BY ALL;
 
-SELECT 'subquery without step, promql_default_subquery_step = 60:';
-SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620) SETTINGS promql_default_subquery_step = 60;
-SELECT value FROM prometheusQuery(ts, 'sum_over_time(m[5m:])', 1000620) SETTINGS promql_default_subquery_step = 60;
-SELECT tags, arrayMap(x -> x.2, samples) FROM prometheusQueryRange(ts, 'count_over_time(m[5m:])', 1000320, 1000620, 60) ORDER BY ALL SETTINGS promql_default_subquery_step = 60;
+SELECT 'subquery without step, promql_default_subquery_step = 15:';
+SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620) SETTINGS promql_default_subquery_step = 15;
+SELECT value FROM prometheusQuery(ts, 'sum_over_time(m[5m:])', 1000620) SETTINGS promql_default_subquery_step = 15;
+SELECT tags, arrayMap(x -> x.2, samples) FROM prometheusQueryRange(ts, 'count_over_time(m[5m:])', 1000320, 1000620, 60) ORDER BY ALL SETTINGS promql_default_subquery_step = 15;
 
 SELECT 'an explicit subquery step wins:';
-SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:30s])', 1000620) SETTINGS promql_default_subquery_step = 60;
+SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:30s])', 1000620) SETTINGS promql_default_subquery_step = 15;
 
 SELECT 'instant selector two minutes after the last sample, default lookback 5m:';
 SELECT tags, value FROM prometheusQuery(ts, 'm', 1000740);
@@ -75,7 +75,7 @@ SELECT count() FROM pq;
 SELECT count() FROM pq SETTINGS promql_lookback_delta = 60;
 SELECT count() FROM pq_created_with_60;
 SELECT value FROM pq_subquery;
-SELECT value FROM pq_subquery SETTINGS promql_default_subquery_step = 60;
+SELECT value FROM pq_subquery SETTINGS promql_default_subquery_step = 15;
 DROP TABLE pq;
 DROP TABLE pq_subquery;
 DROP TABLE pq_created_with_60;
@@ -88,7 +88,7 @@ m;
 SET promql_lookback_delta = 60;
 m;
 SET promql_evaluation_time = 1000620;
-SET promql_default_subquery_step = 60;
+SET promql_default_subquery_step = 15;
 count_over_time(m[5m:]);
 SET dialect = 'clickhouse';
 

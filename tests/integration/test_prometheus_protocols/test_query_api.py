@@ -272,7 +272,9 @@ def test_query_default_subquery_step_setting():
     def count_points(params):
         return execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params=params)
 
-    assert count_points({}) == '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "2"]}]}'
+    # The default step is 1 minute, as in Prometheus, so no step lies in (120, 150].
+    assert count_points({}) == '{"resultType": "vector", "result": []}'
+    assert count_points({"promql_default_subquery_step": "15"}) == '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "2"]}]}'
     assert count_points({"promql_default_subquery_step": "10"}) == '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "3"]}]}'
     assert count_points({"promql_default_subquery_step": "0"}) == count_points({})
     error = execute_query_via_http_api(

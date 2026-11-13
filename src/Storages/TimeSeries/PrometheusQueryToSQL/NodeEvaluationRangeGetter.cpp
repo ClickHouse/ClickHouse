@@ -21,8 +21,8 @@ namespace
     /// By default the lookback period is 5 minutes.
     constexpr const Int64 DEFAULT_INSTANT_SELECTOR_WINDOW_SECONDS = 5 * 60;
 
-    /// The default subquery step is 15 seconds.
-    constexpr const Int64 DEFAULT_SUBQUERY_STEP_SECONDS = 15;
+    /// The default subquery step is 1 minute, like the default `evaluation_interval` of Prometheus.
+    constexpr const Int64 DEFAULT_SUBQUERY_STEP_SECONDS = 60;
 }
 
 NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
@@ -42,7 +42,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
     else
         instant_selector_window = DEFAULT_INSTANT_SELECTOR_WINDOW_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(time_scale);
 
-    /// The default subquery step is 15 seconds.
+    /// The default subquery step is 1 minute.
     if (settings_.default_subquery_step)
         default_subquery_step = *settings_.default_subquery_step;
     else
