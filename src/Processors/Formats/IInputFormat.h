@@ -186,7 +186,7 @@ public:
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
-    /// The format skipped row groups of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
+    /// The format skipped row groups or pages of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
     virtual bool isJoinRuntimeFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }

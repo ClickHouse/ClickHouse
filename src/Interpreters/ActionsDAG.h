@@ -600,6 +600,8 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
+      * @param keep_runtime_filters_out_of_left_stream - the left stream is only matched against (RIGHT OUTER or ANTI join).
+      * @param keep_runtime_filters_out_of_right_stream - the right stream is only matched against (LEFT OUTER or ANTI join).
       * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
@@ -613,6 +615,8 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
         const NameSet & cross_type_equivalent_columns,
+        bool keep_runtime_filters_out_of_left_stream,
+        bool keep_runtime_filters_out_of_right_stream,
         bool filter_is_always_false);
 
     /** Build filter dag from multiple filter dags.
