@@ -4,8 +4,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <utility>
-
 
 namespace DB
 {
@@ -13,19 +11,6 @@ namespace DB
 S3Capabilities::S3Capabilities(const S3Capabilities & src)
     : S3Capabilities(src.isBatchDeleteSupported(), src.support_proxy)
 {
-    delete_md5_rejected = src.isDeleteMD5Rejected();
-}
-
-bool S3Capabilities::isDeleteMD5Rejected() const
-{
-    std::lock_guard lock{mutex};
-    return delete_md5_rejected;
-}
-
-bool S3Capabilities::setDeleteMD5Rejected()
-{
-    std::lock_guard lock{mutex};
-    return !std::exchange(delete_md5_rejected, true);
 }
 
 std::optional<bool> S3Capabilities::isBatchDeleteSupported() const
@@ -50,17 +35,6 @@ void S3Capabilities::setIsBatchDeleteSupported(bool support_batch_delete_)
     support_batch_delete = support_batch_delete_;
 }
 
-bool S3Capabilities::setBatchDeleteUnsupportedUnlessSupported()
-{
-    std::lock_guard lock{mutex};
-
-    if (support_batch_delete == true)
-        return false;
-
-    support_batch_delete = false;
-    return true;
-}
-
 S3Capabilities getCapabilitiesFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::optional<bool> support_batch_delete;
@@ -74,8 +48,8 @@ S3Capabilities getCapabilitiesFromConfig(const Poco::Util::AbstractConfiguration
 
 void S3Capabilities::serialize(WriteBuffer & out) const
 {
-    int my_support_batch_delete = 0;
-    bool my_support_proxy = false;
+    int my_support_batch_delete;
+    bool my_support_proxy;
     {
         std::lock_guard lock(mutex);
         if (support_batch_delete.has_value())
@@ -93,12 +67,12 @@ void S3Capabilities::serialize(WriteBuffer & out) const
 S3Capabilities S3Capabilities::deserialize(ReadBuffer & in)
 {
     std::optional<bool> support_batch_deletes;
-    int support_batch_deletes_int = 0;
+    int support_batch_deletes_int;
     readBinary(support_batch_deletes_int, in);
     if (support_batch_deletes_int != 2)
         support_batch_deletes = support_batch_deletes_int;
 
-    bool my_support_proxy = false;
+    bool my_support_proxy;
     readBinary(my_support_proxy, in);
 
     return S3Capabilities(support_batch_deletes, my_support_proxy);

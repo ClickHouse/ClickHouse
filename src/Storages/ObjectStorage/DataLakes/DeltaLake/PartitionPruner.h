@@ -32,9 +32,6 @@ public:
 private:
     std::optional<DB::KeyCondition> key_condition;
     DB::KeyDescription partition_key;
-    /// The same key over the schema's Nullable types, for a partition tuple that holds NULL.
-    std::optional<DB::KeyCondition> nullable_key_condition;
-    DB::KeyDescription nullable_partition_key;
     DB::Names physical_partition_columns;
 };
 

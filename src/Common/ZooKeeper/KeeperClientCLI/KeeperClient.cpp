@@ -1,4 +1,5 @@
 #include <Common/StringUtils.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -7,8 +8,6 @@
 
 namespace DB
 {
-
-std::map<String, Command> KeeperClientBase::commands;
 
 namespace ErrorCodes
 {
@@ -91,7 +90,11 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
 
 fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    String result = (cwd / relative).lexically_normal();
+    String result;
+    if (relative.starts_with('/'))
+        result = fs::weakly_canonical(relative);
+    else
+        result = fs::weakly_canonical(cwd / relative);
 
     if (result.ends_with('/') && result.size() > 1)
         result.pop_back();
@@ -169,7 +172,6 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),
-        std::make_shared<LSRCommand>(),
         std::make_shared<CDCommand>(),
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),
@@ -193,7 +195,6 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
         std::make_shared<MVCommand>(),
         std::make_shared<MVRCommand>(),
         std::make_shared<GetAclCommand>(),
-        std::make_shared<WaitWatchCommand>(),
     });
 }
 

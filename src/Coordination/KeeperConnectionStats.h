@@ -29,7 +29,7 @@ public:
     void incrementPacketsReceived();
     void incrementPacketsSent();
 
-    void updateLatency(uint64_t latency_ms);
+    void updateLatency(uint64_t latency_ms, uint64_t subrequests = 1);
     void reset();
 
 private:

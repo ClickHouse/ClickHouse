@@ -100,7 +100,7 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
 
     for (auto range = parts_ranges.begin(); range != parts_ranges.end(); ++range)
     {
-        chassert(!range->empty());
+        assert(!range->empty());
         const auto & range_partition = range->front().info.getPartitionId();
 
         if (needToPostponePartition(range_partition))
@@ -254,28 +254,7 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
     if (!part.general_ttl_info.has_value())
         return false;
 
-    return part.general_ttl_info->has_any_non_finished_row_ttls;
-}
-
-TTLColumnDeleteMergeSelector::TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
-{
-}
-
-time_t TTLColumnDeleteMergeSelector::getTTLForPart(const PartProperties & part) const
-{
-    return part.general_ttl_info->column_min_ttl;
-}
-
-bool TTLColumnDeleteMergeSelector::canConsiderPart(const PartProperties & part) const
-{
-    if (part.is_in_volume_where_merges_avoid)
-        return false;
-
-    if (!part.general_ttl_info.has_value())
-        return false;
-
-    return part.general_ttl_info->has_any_non_finished_column_ttls;
+    return part.general_ttl_info->has_any_non_finished_ttls;
 }
 
 TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)

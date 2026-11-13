@@ -1,4 +1,3 @@
-#include <IO/CompressionLibraryErrors.h>
 #include <IO/LZMAInflatingReadBuffer.h>
 #include <IO/WithFileName.h>
 
@@ -23,11 +22,12 @@ LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
     uint64_t memlimit = 500ULL << 20;
 
     lzma_ret ret = lzma_stream_decoder(&lstr, memlimit, LZMA_CONCATENATED);
+    // lzma does not provide api for converting error code to string unlike zlib
     if (ret != LZMA_OK)
         throw Exception(
             ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-            "lzma_stream_decoder initialization failed: {}; lzma version: {}",
-            lzmaErrorToString(ret, /* is_encoder= */ false),
+            "lzma_stream_decoder initialization failed: error code: {}; lzma version: {}",
+            ret,
             LZMA_VERSION_STRING);
 }
 
@@ -42,7 +42,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
         return false;
 
     lzma_action action = LZMA_RUN;
-    lzma_ret ret = {};
+    lzma_ret ret;
 
     do
     {
@@ -86,15 +86,17 @@ bool LZMAInflatingReadBuffer::nextImpl()
 
         throw Exception(
             ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-            "Trailing data after the end of the xz stream{}",
+            "lzma decoder finished, but input stream has not exceeded: error code: {}; lzma version: {}{}",
+            ret,
+            LZMA_VERSION_STRING,
             getExceptionEntryWithFileName(*in));
     }
 
     if (ret != LZMA_OK)
         throw Exception(
             ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-            "lzma_stream_decoder failed: {}; lzma version: {}{}",
-            lzmaErrorToString(ret, /* is_encoder= */ false),
+            "lzma_stream_decoder failed: error code: error code {}; lzma version: {}{}",
+            ret,
             LZMA_VERSION_STRING,
             getExceptionEntryWithFileName(*in));
 

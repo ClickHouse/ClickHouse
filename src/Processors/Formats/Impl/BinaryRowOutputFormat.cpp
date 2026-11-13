@@ -1,6 +1,5 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -57,7 +56,6 @@ void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerializat
 }
 
 
-void registerOutputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)

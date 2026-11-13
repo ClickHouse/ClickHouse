@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database
+# Tags: long, no-ordinary-database, no-encrypted-storage
 
 # shellcheck disable=SC2015
 # shellcheck disable=SC2119
@@ -46,7 +46,7 @@ function thread_insert_rollback()
 
 function thread_select()
 {
-    while clickhouse_test_time_left; do
+    while true; do
         [[ $SECONDS -ge $TIMEOUT ]] && break
         # The first and the last queries must get the same result
         $CLICKHOUSE_CLIENT --query "

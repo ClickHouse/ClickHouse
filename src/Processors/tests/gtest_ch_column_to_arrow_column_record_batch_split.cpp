@@ -22,8 +22,8 @@
 /// to rebase those offsets against the row before it. Reaching the real limit needs more than 2 GiB of
 /// data, so these tests lower it.
 ///
-/// `CHColumnToArrowColumn` is the Apache Arrow library writer, used by `ArrowFlight`,
-/// `StorageArrowFlight` and Delta Lake writes rather than by the `Arrow` output format.
+/// `CHColumnToArrowColumn` is the Apache Arrow library writer, used by the `Arrow` output format,
+/// `ArrowFlight`, `StorageArrowFlight` and Delta Lake writes.
 
 namespace DB
 {
@@ -54,7 +54,7 @@ std::shared_ptr<arrow::Table> convertToArrow(const DataTypePtr & type, MutableCo
     Columns columns;
     columns.emplace_back(std::move(column));
 
-    Chunks chunks;
+    std::vector<Chunk> chunks;
     chunks.emplace_back(std::move(columns), NUM_ROWS);
 
     CHColumnToArrowColumn converter(header_columns, "Arrow", settingsWithLimit(max_record_batch_bytes));

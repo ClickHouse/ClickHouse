@@ -164,7 +164,7 @@ TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) 
     return flushToFile(tmp_data, sample_block, std::move(pipeline));
 }
 
-class TemporaryFileLazySource final : public ISource
+class TemporaryFileLazySource : public ISource
 {
 public:
     explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
@@ -195,7 +195,7 @@ private:
     bool done;
 };
 
-static Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
+Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
 {
     return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
 }
@@ -272,12 +272,6 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
 SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
 {
     PremergedFiles files = premerge();
-
-    /// A writer that never received a block has nothing to merge: the pipe is empty and could
-    /// not even initialize a pipeline.
-    if (files.pipe.empty())
-        return {};
-
     QueryPipelineBuilder pipeline;
     pipeline.init(std::move(files.pipe));
 

@@ -90,7 +90,7 @@ struct DataTypeDecimalTrait
 /// Calculates result = x * multiplier + delta.
 /// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
 template <typename T, bool throw_on_error>
-ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
 {
     T multiplied = 0;
     if (common::mulOverflow(x, multiplier, multiplied))
@@ -111,7 +111,7 @@ ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T
 }
 
 template <typename T>
-ALWAYS_INLINE inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
+inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
 {
     T res;
     multiplyAdd<T, true>(x, multiplier, delta, res);
@@ -156,7 +156,7 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         const typename DecimalType::NativeType & fractional,
         typename DecimalType::NativeType scale_multiplier)
 {
-    DecimalType result{};
+    DecimalType result;
     decimalFromComponentsWithMultiplierImpl<DecimalType, true>(whole, fractional, scale_multiplier, result);
     return result;
 }
@@ -248,7 +248,7 @@ inline bool dateTimeFromComponentsWithMultiplierImpl(
     DateTime64 & result)
 {
     using T = DateTime64::NativeType;
-    T result_value = 0;
+    T result_value;
 
     if (!multiplyAdd<T, throw_on_error>(
             T(whole_seconds), scale_multiplier, fractional % scale_multiplier, result_value))

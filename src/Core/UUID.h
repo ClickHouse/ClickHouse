@@ -59,8 +59,6 @@
 namespace DB
 {
 
-using UUIDs = std::vector<UUID>;
-
 namespace UUIDHelpers
 {
     /// Generate random UUID.

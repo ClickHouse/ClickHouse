@@ -18,7 +18,8 @@ done
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/bad/0.parquet', format = Parquet) SELECT number AS x FROM numbers(100)"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/bad/1.parquet', format = RawBLOB) SELECT 'not a parquet file'"
 
-SETTINGS="--max_threads 1 --use_parquet_metadata_cache 1"
+# The footer is read in advance only by the native Parquet reader, which CI randomizes on this branch.
+SETTINGS="--max_threads 1 --use_parquet_metadata_cache 1 --input_format_parquet_use_native_reader_v3 1"
 ${CLICKHOUSE_CLIENT} $SETTINGS --query_id "${Q}1" --query "SELECT count(x), sum(x), min(x), max(x) FROM s3(s3_conn, filename = '${DIR}/good/*.parquet')"
 ${CLICKHOUSE_CLIENT} $SETTINGS --query_id "${Q}2" --query "SELECT count(x), sum(x) FROM s3(s3_conn, filename = '${DIR}/good/*.parquet') WHERE x % 7 = 0"
 

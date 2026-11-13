@@ -1,5 +1,4 @@
 SET allow_suspicious_low_cardinality_types=1;
-SET optimize_trivial_insert_select = 0;
 
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_table__fuzz_3;

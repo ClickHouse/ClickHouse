@@ -1,18 +1,7 @@
--- use_query_cache = 0 CONST: a nested use_query_cache = 1 runs but caches nothing
+-- use_query_cache = 0 CONST: a nested use_query_cache = 1 is clamped and the query runs
 3
-0	0
--- readonly = 1: a nested use_query_cache = 1 runs but caches nothing
+-- readonly = 1: a nested use_query_cache = 1 is clamped and the query runs
 3
-0	0
--- unconstrained: a nested use_query_cache = 1 caches the subquery
-3
-1	0
--- unconstrained: a nested use_query_cache = 1 equal to the outer value still caches the subquery, next to the outer query
-3
-1	1
--- unconstrained: a nested use_query_cache = 'true' given as a string is applied
-3
-1	0
 -- a nested unknown setting still throws
 1
 -- a nested value the setting cannot take still throws
@@ -24,8 +13,6 @@
 -- a view with an invalid nested setting in its stored body fails on a direct read
 1
 -- and on a remote shard through Distributed
-1
--- also when the shard inlines the view
 1
 -- a parameterized view with an invalid nested setting fails on a direct read
 1

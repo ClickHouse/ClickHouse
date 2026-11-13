@@ -1,6 +1,6 @@
 #include <Functions/FunctionBase64Conversion.h>
 
-#if USE_SIMDUTF
+#if USE_BASE64
 #include <Functions/FunctionFactory.h>
 
 namespace DB

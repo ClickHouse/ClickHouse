@@ -1,5 +1,4 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -78,7 +77,7 @@ void SelectPartitionTransform::transform(Chunk & chunk)
     size_t max_parts = 0; // do not limit here part count
     BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts, metadata_snapshot, context);
 
-    VectorWithMemoryTracking<std::string> all_partitions;
+    std::vector<std::string> all_partitions;
     for (const auto & current_block : part_blocks)
         all_partitions.push_back(current_block.partition_id + "size=" + DB::toString(current_block.block->rows()));
 
@@ -118,32 +117,41 @@ AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(
     InsertDependenciesBuilderConstPtr insert_dependencies_,
     StorageIDMaybeEmpty root_view_id_,
     std::string user_token_,
+    InsertDeduplicationVersions unification_stage_,
     SharedHeader header_)
     : ISimpleTransform(header_, header_, true)
     , insert_dependencies(std::move(insert_dependencies_))
     , root_view_id(std::move(root_view_id_))
     , user_token(std::move(user_token_))
+    , unification_stage(unification_stage_)
 {
 }
 
 
 void AddDeduplicationInfoTransform::transform(Chunk & chunk)
 {
-    const bool has_deduplication_info = chunk.getChunkInfos().has<DeduplicationInfo>();
-    if (!has_deduplication_info)
+    if (!chunk.getChunkInfos().has<DeduplicationInfo>())
     {
-        auto info = DeduplicationInfo::create(false);
+        auto info = DeduplicationInfo::create(false, unification_stage);
         info->setUserToken(user_token, chunk.getNumRows());
         chunk.getChunkInfos().add(info);
     }
 
     auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     info->setInsertDependencies(insert_dependencies);
-    if (info->getVisitedViews().empty())
-    {
-        info->setRootViewID(root_view_id);
-        info->setSourceBlockNumber(block_number++);
-    }
+    info->setRootViewID(root_view_id);
+    info->setSourceBlockNumber(block_number++);
     info->updateOriginalBlock(chunk, getInputPort().getSharedHeader());
+}
+
+RedefineDeduplicationInfoWithDataHashTransform::RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
+{
+}
+
+void RedefineDeduplicationInfoWithDataHashTransform::transform(Chunk & chunk)
+{
+    auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
+    info->redefineTokensWithDataHash(getOutputPort().getSharedHeader()->cloneWithColumns(chunk.getColumns()));
 }
 }

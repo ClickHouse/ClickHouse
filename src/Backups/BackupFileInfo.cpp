@@ -8,10 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/ThreadPoolTaskTracker.h>
 #include <Interpreters/ProcessList.h>
-
-#include <atomic>
 
 
 namespace ProfileEvents
@@ -185,8 +182,8 @@ BackupFileInfo buildFileInfoForBackupEntry(
             if (info.checksum == base_backup_file_info->second)
             {
                 LOG_TRACE(log, "Found whole file {} in base backup", adjusted_path);
-                chassert(check_base == CheckBackupResult::HasFull);
-                chassert(info.size == base_backup_file_info->first);
+                assert(check_base == CheckBackupResult::HasFull);
+                assert(info.size == base_backup_file_info->first);
 
                 info.base_size = base_backup_file_info->first;
                 info.base_checksum = base_backup_file_info->second;
@@ -230,60 +227,41 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    /// A task per entry, so that a slow one holds up nothing, bounded so that millions of them do not keep a task
-    /// each: `TaskTracker::add` admits one while fewer than this are in flight, and rethrows the first failure.
-    const size_t max_tasks_inflight = 2 * std::max<size_t>(1, thread_pool.getMaxThreads());
-
-    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
-
-    /// The tracker rethrows the first failure, which stops the loop below from adding more tasks, but the tasks
-    /// already given to the pool still run. Calculating a checksum reads a whole file, so without this they go on
-    /// reading - up to `max_tasks_inflight` of them - after the backup has failed or been cancelled.
     std::atomic_bool failed = false;
 
-    /// Capturing by reference is fine: everything captured outlives the tracker, being created before it.
-    TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
-
-    try
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
+    for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        for (size_t i = 0; i != backup_entries.size(); ++i)
+        if (failed)
+            break;
+
+        /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
+        /// of an exception
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed, current_component = Coordination::getCurrentComponent()]()
         {
-            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &failed, i, log,
-                              current_component = Coordination::getCurrentComponent()]
+            if (failed)
+                return;
+
+            auto component_guard = Coordination::setCurrentComponent(current_component);
+            try
             {
-                if (failed)
-                    return;
-
-                auto component_guard = Coordination::setCurrentComponent(current_component);
-
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                try
-                {
-                    if (process_list_element)
-                        process_list_element->checkTimeLimit();
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
-                    infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
-                }
-                catch (...)
-                {
-                    /// Stop the other tasks, as `copyS3File` does.
-                    failed = true;
-                    throw;
-                }
-            });
-        }
+                infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+            }
+            catch (...)
+            {
+                failed = true;
+                throw;
+            }
+        });
+    }
 
-        task_tracker.waitAll();
-    }
-    catch (...)
-    {
-        /// `~TaskTracker` asserts that no task is left before it waits, so a failed or cancelled backup has to
-        /// drain it here, as `copyS3File` does, or the assertion aborts a debug build while it unwinds.
-        task_tracker.safeWaitAll();
-        throw;
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     return infos;
 }

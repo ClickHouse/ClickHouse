@@ -477,7 +477,7 @@
   */
 
 let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
-let user = '';
+let user = 'default';
 let password = '';
 let add_http_cors_header = (location.protocol != 'file:');
 
@@ -1016,25 +1016,18 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 let metrics_editor_active = false;
 const metric_column_regex = /\b(?:ProfileEvent|CurrentMetric)_[A-Za-z0-9_]+\b/;
-/// The whole asynchronous metric condition of a chart: the `metric` predicate together with the
-/// `key` predicate that a key-value metric adds after it, and the parenthesized legacy-name
-/// alternative that `buildQueryFromTemplate` generates for a key-value metric. All are matched
-/// as a unit, so that generating a chart from a template that is already keyed replaces the
-/// previous key (and legacy-name branch) instead of leaving it behind.
-const async_metric_condition_regex = /\(\s*metric\s*(?:=|LIKE)\s*'(?:[^'\\]|\\.)*'\s+AND\s+key\s*=\s*'(?:[^'\\]|\\.)*'\s+OR\s+metric\s*=\s*'(?:[^'\\]|\\.)*'\s*\)|\bmetric\s*(?:=|LIKE)\s*'(?:[^'\\]|\\.)*'(?:\s+AND\s+key\s*=\s*'(?:[^'\\]|\\.)*')?/i;
+const async_metric_condition_regex = /\bmetric\s*(?:=|LIKE)\s*'[^']+'/;
 
-/// Extracts an ordered list of {kind, name, key?} from a pasted text, ignoring unrecognized lines. Accepted lines:
+/// Extracts an ordered list of {kind, name} from a pasted text, ignoring unrecognized lines. Accepted lines:
 ///     extern const Event RejectedInserts;
 ///     extern const Metric DelayedInserts;
 ///     M(RejectedInserts, "description", ValueType::Number)
 ///     M(DelayedInserts, "description")
-///     ClickHouseAsyncMetrics_KeeperPacketsSent 67                 (the Prometheus endpoint format)
-///     ClickHouseAsyncMetrics_BlockReadBytes{device="sda"} 123     (a key-value asynchronous metric)
+///     ClickHouseAsyncMetrics_KeeperPacketsSent 67    (the Prometheus endpoint format)
 function parseMetricsInput(text) {
     const extern_regex = /\bextern\s+const\s+(Event|Metric)\s+([A-Za-z_][A-Za-z0-9_]*)/;
     const macro_regex = /\bM\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/;
-    const async_regex = /\bClickHouseAsyncMetrics_([A-Za-z0-9_]+)(?:\{([^}]*)\})?/;
-    const prometheus_label_regex = /[A-Za-z_][A-Za-z0-9_]*="((?:[^"\\]|\\.)*)"/g;
+    const async_regex = /\bClickHouseAsyncMetrics_([A-Za-z0-9_]+)/;
 
     let result = [];
     let seen = new Set();
@@ -1058,26 +1051,15 @@ function parseMetricsInput(text) {
         if (match === null && (match = line.match(async_regex))) {
             kind = 'AsyncMetric';
             name = match[1];
-            if (match[2]) {
-                /// The Prometheus exporter appends the key-value metric label after constant labels.
-                let label_match = null;
-                let key = null;
-                while ((label_match = prometheus_label_regex.exec(match[2])) !== null) {
-                    key = label_match[1].replaceAll(/\\(.)/g, (unused, c) => c == 'n' ? '\n' : c);
-                }
-                if (key !== null) {
-                    match.key = key;
-                }
-            }
         }
 
         if (match !== null) {
-            const deduplication_key = `${kind}_${name}_${match.key ?? ''}`;
-            if (seen.has(deduplication_key)) {
+            const key = `${kind}_${name}`;
+            if (seen.has(key)) {
                 continue;
             }
-            seen.add(deduplication_key);
-            result.push({kind: kind, name: name, key: match.key});
+            seen.add(key);
+            result.push({kind: kind, name: name});
         }
     }
 
@@ -1106,43 +1088,11 @@ function metricChartTemplates() {
     return templates;
 }
 
-/// The flat per-entity name a key-value asynchronous metric had before the per-entity metrics
-/// were collapsed into key-value metrics, e.g. `BlockReadBytes_sda` for `BlockReadBytes` with
-/// the key `sda`. The inverse of the family-specific mapping the performance report uses.
-function legacyAsyncMetricName(name, key) {
-    if (name.startsWith('OS') && name.endsWith('CPU')) {
-        return name + key;
-    }
-    if (name == 'Temperature' && /^[0-9]+$/.test(key)) {
-        return name + key;
-    }
-    if (name == 'EDACCorrectable' || name == 'EDACUncorrectable') {
-        return 'EDAC' + key + '_' + name.substring(4);
-    }
-    if (name == 'DeadBlobsQueueEstimate' || name == 'MissingBlobsQueueEstimate') {
-        return key + name;
-    }
-    if (name == 'AsyncLoggingQueueSize') {
-        return 'AsyncLogging' + key + 'QueueSize';
-    }
-    return name + '_' + key;
-}
-
-function buildQueryFromTemplate(template, kind, name, key) {
+function buildQueryFromTemplate(template, kind, name) {
     if (kind == 'AsyncMetric') {
         const token = template.match(async_metric_condition_regex)[0];
-        const escape = s => s.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
-        let condition = `metric LIKE '${escape(name)}'`;
-        if (key !== undefined) {
-            /// The default charts read `merge('system', '^asynchronous_metric_log')`, which also
-            /// includes the pre-upgrade log tables renamed by the schema migration. Their rows
-            /// keep the flat per-entity names and have no `key` column (the merge fills it with
-            /// an empty string), so the chart also matches the legacy name to keep the history
-            /// continuous across the upgrade.
-            condition = `(metric LIKE '${escape(name)}' AND key = '${escape(key)}'`
-                + ` OR metric = '${escape(legacyAsyncMetricName(name, key))}')`;
-        }
-        return template.replaceAll(token, condition);
+        const escaped_name = name.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+        return template.replaceAll(token, `metric LIKE '${escaped_name}'`);
     }
 
     const token = template.match(metric_column_regex)[0];
@@ -1175,7 +1125,7 @@ function metricsEditorParse() {
     let metrics = 0;
     let asyncs = 0;
     for (const metric of parsed) {
-        const query = buildQueryFromTemplate(templates[metric.kind], metric.kind, metric.name, metric.key);
+        const query = buildQueryFromTemplate(templates[metric.kind], metric.kind, metric.name);
         if (existing.has(query)) {
             ++skipped;
             continue;
@@ -1186,8 +1136,7 @@ function metricsEditorParse() {
         else if (metric.kind == 'CurrentMetric') { ++metrics; }
         else { ++asyncs; }
 
-        const title = metric.key === undefined ? metric.name : `${metric.name} (${metric.key})`;
-        new_charts.push({title: title, query: query});
+        new_charts.push({title: metric.name, query: query});
     }
 
     return {new_charts: new_charts, skipped: skipped, events: events, metrics: metrics, asyncs: asyncs, error: null};
