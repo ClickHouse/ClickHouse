@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
@@ -348,6 +349,9 @@ namespace
 
         void abortMultipartUpload()
         {
+            /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+            ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
             LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
             S3::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dest_bucket);

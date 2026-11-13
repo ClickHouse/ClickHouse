@@ -101,6 +101,8 @@ Funciona con tablas de la familia MergeTree.
 
 Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condición sobre la clave primaria que pueda usarse para restringir los rangos de datos. Si no hay ninguna condición adecuada, lanza una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos que se deben leer. Para obtener más información sobre los rangos de datos en las tablas MergeTree, consulte [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
+La comprobación se aplica a la clave primaria de la propia tabla. Una proyección solo se usa para resolver la consulta cuando esta también restringe los rangos de datos mediante la clave de la propia proyección; de lo contrario, la proyección se omite y se lee la tabla. Si se fuerza una proyección con [force&#95;optimize&#95;projection](/es/reference/settings/session-settings/force-optimize#force_optimize_projection) y su clave no se utiliza, la consulta lanza una excepción.
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />

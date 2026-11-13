@@ -56,6 +56,10 @@ provider "clickhouse" {
 
 `id` 和 `state` 属性为只读，创建后由 ClickHouse Cloud 填充。
 
+## GCP Workload Identity (Beta) {#gcp-workload-identity}
+
+在使用下方的 Workload Identity 示例之前，请先按照 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity#terraform) 获取由 ClickPipes 托管的服务账号，并授予其访问您数据源的权限。
+
 ## 目标端 {#destination}
 
 `destination` 块适用于所有源类型：
@@ -92,7 +96,7 @@ destination {
 
 ### Kafka {#kafka}
 
-支持的 `type` 取值：`kafka`、`confluent`、`msk`、`azureeventhub`、`redpanda`、`warpstream`。
+支持的 `type` 取值：`kafka`、`confluent`、`msk`、`azureeventhub`、`redpanda`、`warpstream`，以及处于私有预览阶段的 `gcmk`。
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_clickpipe" {
@@ -150,6 +154,58 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
       type = "DateTime"
     }
   }
+}
+```
+
+#### 使用 GCP Workload Identity 的 Google Managed Kafka {#gcmk-workload-identity}
+
+创建 ClickPipe 之前，请先为 ClickPipes 服务账号授予 `roles/managedkafka.client` 角色。Google Managed Kafka 要求启用 TLS。Kafka 访问控制列表必须授予该服务账号 (`User:<service-account-email>`) 对所选主题和消费者组的 `READ` 和 `DESCRIBE` 访问权限。
+
+```hcl
+resource "google_project_iam_member" "gcmk_client" {
+  project = var.gcp_project_id
+  role    = "roles/managedkafka.client"
+  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
+}
+
+resource "clickhouse_clickpipe" "gcmk_clickpipe" {
+  name       = "My Google Managed Kafka ClickPipe"
+  service_id = var.service_id
+
+  source = {
+    kafka = {
+      type           = "gcmk"
+      format         = "JSONEachRow"
+      brokers        = "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092"
+      topics         = "events"
+      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+    }
+  }
+
+  destination = {
+    table         = "events"
+    managed_table = true
+    table_definition = {
+      engine = {
+        type = "MergeTree"
+      }
+    }
+    columns = [
+      {
+        name = "id"
+        type = "String"
+      }
+    ]
+  }
+
+  field_mappings = [
+    {
+      source_field      = "id"
+      destination_field = "id"
+    }
+  ]
+
+  depends_on = [google_project_iam_member.gcmk_client]
 }
 ```
 
@@ -478,6 +534,75 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
+#### 通过 GCP Workload Identity 访问 GCS {#gcs-workload-identity}
+
+为 ClickPipes 服务账号授予[所需的 GCS 权限](/zh/integrations/clickpipes/object-storage/gcs/overview#permissions)后，将上面的 `source` 块替换为：
+
+```hcl
+source = {
+  object_storage = {
+    type           = "gcs"
+    url            = "gs://my-bucket/data/*.json"
+    format         = "JSONEachRow"
+    authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+如需使用 unordered 模式摄取，还需设置 `is_continuous = true`，并使用 `projects/<project-id>/subscriptions/<subscription-id>` 格式的完全限定 `queue_url`。
+
+### Google Cloud Pub/Sub {#pubsub}
+
+以下示例使用 Workload Identity。创建 ClickPipe 之前，请先为 ClickPipes 服务账号授予[所需的 Pub/Sub 权限](/zh/integrations/clickpipes/pubsub/auth#required-permissions)。
+
+```hcl
+resource "google_project_iam_member" "pubsub_access" {
+  project = var.gcp_project_id
+  role    = "roles/pubsub.editor"
+  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
+}
+
+resource "clickhouse_clickpipe" "pubsub_clickpipe" {
+  name       = "My Pub/Sub ClickPipe"
+  service_id = var.service_id
+
+  source = {
+    pubsub = {
+      format         = "JSONEachRow"
+      project_id     = var.gcp_project_id
+      topic          = "events"
+      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+      seek_type      = "latest"
+    }
+  }
+
+  destination = {
+    table         = "events"
+    managed_table = true
+    table_definition = {
+      engine = {
+        type = "MergeTree"
+      }
+    }
+    columns = [
+      {
+        name = "id"
+        type = "String"
+      }
+    ]
+  }
+
+  field_mappings = [
+    {
+      source_field      = "id"
+      destination_field = "id"
+    }
+  ]
+
+  depends_on = [google_project_iam_member.pubsub_access]
+}
+```
+
 ### Azure Blob 存储 {#abs}
 
 ```hcl
@@ -766,6 +891,30 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 
   destination {
     database = "default"
+  }
+}
+```
+
+#### 通过 GCP Workload Identity 使用 BigQuery {#bigquery-workload-identity}
+
+为 ClickPipes 服务账号授予[所需的 BigQuery 和 GCS 权限](/zh/integrations/clickpipes/bigquery/overview#permissions)后，将上述 `source` 块替换为：
+
+```hcl
+source = {
+  bigquery = {
+    authentication        = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+    project_id            = var.gcp_project_id
+    snapshot_staging_path = "gs://my-staging-bucket/staging/"
+
+    settings = {
+      replication_mode = "snapshot"
+    }
+
+    table_mappings = [{
+      source_dataset_name = "my_dataset"
+      source_table        = "my_table"
+      target_table        = "my_bigquery_table"
+    }]
   }
 }
 ```
