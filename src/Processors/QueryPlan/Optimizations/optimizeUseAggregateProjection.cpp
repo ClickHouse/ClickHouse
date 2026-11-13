@@ -316,6 +316,9 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 {
     auto source_columns = metadata_snapshot->getColumns().getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns);
+    /// a projection that only counts rows can need no column, but the planner needs a table with a column
+    if (source_columns.empty())
+        source_columns = metadata_snapshot->getColumns().getAllPhysical();
     ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), context);
 
     AggregateProjectionInfo info;
