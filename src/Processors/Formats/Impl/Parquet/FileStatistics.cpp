@@ -14,6 +14,7 @@
 
 #include <Poco/String.h>
 
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <vector>
@@ -88,9 +89,16 @@ std::optional<UInt64> readDictionaryPageValues(Parquet::Prefetcher & prefetcher,
 
 /// The indices of the column chunks of the top-level primitive columns by their names. The schema is a tree flattened
 /// in pre-order, and column chunks are its leaves in this order.
-std::unordered_map<String, size_t> getTopLevelLeafColumns(const parq::FileMetaData & metadata, bool case_insensitive)
+struct LeafColumn
 {
-    std::unordered_map<String, size_t> result;
+    size_t index = 0;
+    /// A `REQUIRED` column has no NULLs, and writers may omit its NULL count.
+    bool required = false;
+};
+
+std::unordered_map<String, LeafColumn> getTopLevelLeafColumns(const parq::FileMetaData & metadata, bool case_insensitive)
+{
+    std::unordered_map<String, LeafColumn> result;
     if (metadata.schema.empty())
         return result;
 
@@ -106,10 +114,11 @@ std::unordered_map<String, size_t> getTopLevelLeafColumns(const parq::FileMetaDa
 
         if (is_leaf)
         {
-            const bool is_repeated
-                = element.__isset.repetition_type && thriftEnumValue(element.repetition_type) == parq::FieldRepetitionType::REPEATED;
-            if (is_top_level && element.__isset.type && !is_repeated)
-                result.emplace(case_insensitive ? Poco::toLower(element.name) : element.name, leaf_index);
+            const Int32 repetition = element.__isset.repetition_type ? thriftEnumValue(element.repetition_type) : -1;
+            if (is_top_level && element.__isset.type && repetition != parq::FieldRepetitionType::REPEATED)
+                result.emplace(
+                    case_insensitive ? Poco::toLower(element.name) : element.name,
+                    LeafColumn{.index = leaf_index, .required = repetition == parq::FieldRepetitionType::REQUIRED});
             ++leaf_index;
         }
         else
@@ -123,6 +132,32 @@ std::unordered_map<String, size_t> getTopLevelLeafColumns(const parq::FileMetaDa
     return result;
 }
 
+}
+
+UInt64 estimateDistinctValuesFromSample(UInt64 sample_rows, UInt64 sample_distinct_values, UInt64 max_distinct_values)
+{
+    max_distinct_values = std::max(max_distinct_values, sample_distinct_values);
+    if (sample_distinct_values == 0 || sample_rows == 0)
+        return std::max<UInt64>(sample_distinct_values, 1);
+
+    const double n = static_cast<double>(sample_rows);
+    const double d = static_cast<double>(sample_distinct_values);
+    auto expected_distinct_values = [n](double values) { return values * -std::expm1(-n / values); };
+
+    /// The expected number of distinct values of the sample grows with `D` towards `n`.
+    double high = static_cast<double>(max_distinct_values);
+    if (expected_distinct_values(high) <= d)
+        return max_distinct_values;
+    double low = d;
+    for (size_t i = 0; i < 100 && high - low > 0.5; ++i)
+    {
+        const double middle = (low + high) / 2;
+        if (expected_distinct_values(middle) < d)
+            low = middle;
+        else
+            high = middle;
+    }
+    return std::clamp<UInt64>(static_cast<UInt64>(std::llround(high)), sample_distinct_values, max_distinct_values);
 }
 
 ParquetFileSummary summarizeParquetFile(
@@ -164,10 +199,10 @@ ParquetFileSummary summarizeParquetFile(
     const auto leaves = getTopLevelLeafColumns(metadata, case_insensitive);
 
     /// The requested columns by their column chunk index, sorted, as `deserializeColumnChunks` needs.
-    std::map<size_t, String> columns_by_index;
+    std::map<size_t, std::pair<String, bool>> columns_by_index;
     for (const auto & column_name : column_names)
         if (auto it = leaves.find(case_insensitive ? Poco::toLower(column_name) : column_name); it != leaves.end())
-            columns_by_index.emplace(it->second, column_name);
+            columns_by_index.emplace(it->second.index, std::pair{column_name, it->second.required});
     if (columns_by_index.empty())
         return result;
 
@@ -180,8 +215,9 @@ ParquetFileSummary summarizeParquetFile(
     const bool written_by_old_duckdb = metadata.created_by == "DuckDB";
     const size_t file_size = buf.getFileSize();
     size_t k = 0;
-    for (const auto & [index, column_name] : columns_by_index)
+    for (const auto & [index, column] : columns_by_index)
     {
+        const auto & [column_name, required] = column;
         auto & summary = result.columns[column_name];
         size_t dictionary_pages_read = 0;
         auto & chunks = parsed[k++].chunks;
@@ -195,10 +231,13 @@ ParquetFileSummary summarizeParquetFile(
 
             summary.rows += static_cast<UInt64>(std::max<Int64>(metadata.row_groups[row_group].num_rows, 0));
             summary.compressed_bytes += static_cast<UInt64>(std::max<Int64>(meta.total_compressed_size, 0));
-            if (summary.nulls && meta.__isset.statistics && meta.statistics.__isset.null_count && meta.statistics.null_count >= 0)
-                *summary.nulls += static_cast<UInt64>(meta.statistics.null_count);
-            else
-                summary.nulls.reset();
+            if (!required)
+            {
+                if (summary.nulls && meta.__isset.statistics && meta.statistics.__isset.null_count && meta.statistics.null_count >= 0)
+                    *summary.nulls += static_cast<UInt64>(meta.statistics.null_count);
+                else
+                    summary.nulls.reset();
+            }
 
             if (!summary.fully_dictionary_encoded)
                 continue;
@@ -210,8 +249,12 @@ ParquetFileSummary summarizeParquetFile(
             if (dictionary_pages_read < max_dictionary_pages_to_read)
             {
                 ++dictionary_pages_read;
+                /// The row group is taken as a random sample of the rows of the file.
                 if (auto values = readDictionaryPageValues(prefetcher, meta, file_size))
-                    summary.max_dictionary_values = std::max(summary.max_dictionary_values.value_or(0), *values);
+                    summary.max_dictionary_values = std::max(
+                        summary.max_dictionary_values.value_or(0),
+                        estimateDistinctValuesFromSample(
+                            static_cast<UInt64>(std::max<Int64>(metadata.row_groups[row_group].num_rows, 0)), *values, result.rows));
             }
         }
     }

@@ -311,8 +311,8 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
     {
         if (!target.has_statistics)
             continue;
-        /// A dictionary page has the distinct values of its column chunk; the row groups and the files mostly share their
-        /// values, so the largest dictionary counts them. Otherwise, the compressed size.
+        /// A dictionary page has the distinct values of its column chunk, a sample of the rows; the files mostly share their
+        /// values, so the largest estimate from a dictionary counts them. Otherwise, the compressed size.
         std::optional<UInt64> distinct_values;
         if (target.fully_dictionary_encoded && target.max_dictionary_values)
             distinct_values = *target.max_dictionary_values;

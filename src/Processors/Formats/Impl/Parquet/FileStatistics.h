@@ -30,10 +30,16 @@ struct ParquetColumnSummary
     /// Every column chunk is dictionary-encoded in all its data pages (by `encoding_stats`), so its dictionary page has
     /// all its distinct values.
     bool fully_dictionary_encoded = true;
-    /// The largest number of values of a dictionary page of the column chunks whose dictionary page header was read;
-    /// nullopt if none was.
+    /// The largest number of distinct values of the column estimated from a dictionary page of a column chunk whose
+    /// header was read, see `estimateDistinctValuesFromSample`; nullopt if none was read.
     std::optional<UInt64> max_dictionary_values;
 };
+
+/// The number of equally frequent values `D` of a column of which a random sample of `sample_rows` rows has
+/// `sample_distinct_values` distinct values: the solution of `D * (1 - exp(-sample_rows / D)) = sample_distinct_values`.
+/// A sample with (almost) as many distinct values as rows tells no number, then the result is `max_distinct_values`.
+/// Clamped to `[sample_distinct_values, max_distinct_values]`.
+UInt64 estimateDistinctValuesFromSample(UInt64 sample_rows, UInt64 sample_distinct_values, UInt64 max_distinct_values);
 
 struct ParquetFileSummary
 {
