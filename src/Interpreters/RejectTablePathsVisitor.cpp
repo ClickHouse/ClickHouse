@@ -12,8 +12,10 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
@@ -164,6 +166,29 @@ std::optional<FoldedPath> getFoldedPath(const IAST & node)
     return {};
 }
 
+/// ASTs a node holds outside `children`.
+ASTs getExtraChildren(const IAST & node)
+{
+    ASTs result;
+    auto add = [&](const ASTPtr & ast)
+    {
+        if (ast)
+            result.push_back(ast);
+    };
+    if (const auto * show_tables = node.as<ASTShowTablesQuery>())
+        add(show_tables->where_expression);
+    else if (const auto * show_columns = node.as<ASTShowColumnsQuery>())
+        add(show_columns->where_expression);
+    else if (const auto * show_indexes = node.as<ASTShowIndexesQuery>())
+        add(show_indexes->where_expression);
+    else if (const auto * policy = node.as<ASTCreateRowPolicyQuery>())
+    {
+        for (const auto & filter : policy->filters)
+            add(filter.second);
+    }
+    return result;
+}
+
 bool containsFoldedPath(const ASTPtr & ast)
 {
     checkStackSize();
@@ -171,6 +196,9 @@ bool containsFoldedPath(const ASTPtr & ast)
         return true;
     for (const auto & child : ast->children)
         if (containsFoldedPath(child))
+            return true;
+    for (const auto & extra : getExtraChildren(*ast))
+        if (containsFoldedPath(extra))
             return true;
     return false;
 }
@@ -199,6 +227,8 @@ void visitScoped(const ASTPtr & ast, const ContextPtr & context)
 
     for (const auto & child : ast->children)
         visitScoped(child, child_context);
+    for (const auto & extra : getExtraChildren(*ast))
+        visitScoped(extra, child_context);
 }
 
 }

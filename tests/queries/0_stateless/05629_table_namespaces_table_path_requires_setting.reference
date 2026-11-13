@@ -53,6 +53,14 @@ S8d: Code: 344
 S8e: Code: 344
 S9: Code: 703
 S10: 1
+-- P: subqueries in `SHOW ... WHERE` and row policy conditions
+P1a: Code: 344
+P1b: Code: 344
+P1c: Code: 344
+P1d: Code: 344
+P1e: Code: 344
+P2a: plain
+P2b: ok
 -- V: stored definitions
 V1a: 1
 CREATE VIEW db.v\n(\n    `x` UInt64\n)\nAS SELECT x\nFROM db.`ns.t`

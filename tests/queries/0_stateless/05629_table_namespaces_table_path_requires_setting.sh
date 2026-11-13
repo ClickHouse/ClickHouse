@@ -87,6 +87,18 @@ run S8e "$OFF" "ALTER TABLE ${db}.\`ns.u\` DELETE WHERE x IN (SELECT x FROM ${db
 run S9 "$OFF" "SELECT 1 IN ${db}.ns.t"
 run S10 "$ON" "SELECT 1 IN ${db}.ns.t"
 
+echo '-- P: subqueries in `SHOW ... WHERE` and row policy conditions'
+run P1a "$OFF" "SHOW TABLES FROM ${db} WHERE name IN (SELECT 'plain' FROM ${db}.ns.t)"
+run P1b "$OFF" "SHOW COLUMNS FROM ${db}.plain WHERE field IN (SELECT 'x' FROM ${db}.ns.t)"
+run P1c "$OFF" "SHOW INDEXES FROM ${db}.plain WHERE 1 IN (SELECT x FROM ${db}.ns.t)"
+run P1d "$OFF" "CREATE ROW POLICY rp_${db} ON ${db}.plain USING x IN (SELECT x FROM ${db}.ns.t) TO NONE"
+$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY rp_${db} ON ${db}.plain USING x IN (SELECT x FROM ${db}.\`ns.t\`) TO NONE"
+run P1e "$OFF" "ALTER ROW POLICY rp_${db} ON ${db}.plain USING x IN (SELECT x FROM ${db}.ns.t)"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY rp_${db} ON ${db}.plain"
+run P2a "$OFF" "SHOW TABLES FROM ${db} WHERE name IN (SELECT 'plain' FROM ${db}.\`ns.t\`)"
+run P2b "$OFF" "CREATE ROW POLICY rp2_${db} ON ${db}.plain USING x IN (SELECT x FROM ${db}.\`ns.t\`) TO NONE"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY rp2_${db} ON ${db}.plain"
+
 echo '-- V: stored definitions'
 $CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "CREATE VIEW ${db}.v AS SELECT x FROM ${db}.ns.t"
 run V1a "$OFF" "SELECT * FROM ${db}.v"
