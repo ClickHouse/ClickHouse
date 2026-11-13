@@ -461,7 +461,7 @@ namespace
         }
 
         /// How many source cells `unit` has.
-        size_t count(size_t unit) const
+        [[nodiscard]] size_t count(size_t unit) const
         {
             const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
             size_t cells = routed[unit].size();

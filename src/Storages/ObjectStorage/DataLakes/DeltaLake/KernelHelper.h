@@ -45,7 +45,7 @@ public:
 
     /// Object storage path of a data file from its `add.path`: a path relative to the table root,
     /// or an absolute URI, which a shallow clone uses for the files of its source table.
-    virtual std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const;
+    [[nodiscard]] virtual std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const;
 
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions

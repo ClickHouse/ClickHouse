@@ -131,9 +131,9 @@ struct StringStatistics
     std::optional<std::string> upper_bound;
 
     /// The minimum, or the bound that the writer stored instead of a long minimum.
-    const std::optional<std::string> & getLowerBound() const { return minimum ? minimum : lower_bound; }
+    [[nodiscard]] const std::optional<std::string> & getLowerBound() const { return minimum ? minimum : lower_bound; }
     /// The maximum, or the bound that the writer stored instead of a long maximum.
-    const std::optional<std::string> & getUpperBound() const { return maximum ? maximum : upper_bound; }
+    [[nodiscard]] const std::optional<std::string> & getUpperBound() const { return maximum ? maximum : upper_bound; }
 };
 
 struct BucketStatistics

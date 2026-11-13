@@ -493,7 +493,7 @@ public:
         const std::atomic<UInt32> * taken = nullptr;
         UInt32 total = 0;
 
-        size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
+        [[nodiscard]] size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
     };
 
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time, as a step of `task`.

@@ -156,7 +156,7 @@ public:
     /// Whether all `producers` handed their bins or their tables over, which the bounds rely on: if some
     /// producer handed over neither, the pruning cannot be used. Called after the finish barrier, before the
     /// merge starts.
-    bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
+    [[nodiscard]] bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
 
     /// Orders the buckets for the merge by their bounds, `count_bound_per_bucket`. A table without the
     /// largest counts of its buckets is not in this order, which only lets the threshold rise later. Called
