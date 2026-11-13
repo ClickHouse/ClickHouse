@@ -148,6 +148,9 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        /// Projection used for part-level and/or mark-level filtering (optimize_use_projection_filtering).
+        /// Surfaced in EXPLAIN indexes = 1 so pruned reads are not mistaken for full scans.
+        Projection,
     };
 
     struct DistributedIndexStat
@@ -165,14 +168,14 @@ public:
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
     {
-        IndexType type;
+        IndexType type = IndexType::None;
         std::string name = {};
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};
-        size_t num_parts_after;
-        size_t num_granules_after;
+        size_t num_parts_after = 0;
+        size_t num_granules_after = 0;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
         std::vector<DistributedIndexStat> distributed = {};
@@ -205,6 +208,11 @@ public:
         SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
+        /// Part-pruning projection stats carried from a parent read this step replaced.
+        /// Their part and granule counts describe that parent read, so they are not a stage of
+        /// this step's granule funnel: `describeActions`, row estimates, and predicate statistics
+        /// skip them. `describeIndexes` prints them on their own, without a ratio against this read.
+        IndexStats part_level_projection_index_stats;
         ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
@@ -235,6 +243,7 @@ public:
             , split_parts(other.split_parts)
             , sampling(other.sampling)
             , index_stats(other.index_stats)
+            , part_level_projection_index_stats(other.part_level_projection_index_stats)
             , projection_stats(other.projection_stats)
             , column_names_to_read(other.column_names_to_read)
             , read_type(other.read_type)
@@ -258,6 +267,7 @@ public:
             , split_parts(std::move(other.split_parts))
             , sampling(std::move(other.sampling))
             , index_stats(std::move(other.index_stats))
+            , part_level_projection_index_stats(std::move(other.part_level_projection_index_stats))
             , projection_stats(std::move(other.projection_stats))
             , column_names_to_read(std::move(other.column_names_to_read))
             , read_type(other.read_type)

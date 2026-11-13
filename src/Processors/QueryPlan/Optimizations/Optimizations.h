@@ -6,6 +6,7 @@
 #include <array>
 #include <expected>
 #include <unordered_map>
+#include <unordered_set>
 
 class SipHash;
 
@@ -422,6 +423,11 @@ struct UseProjectionsResult
 {
     std::optional<String> applied_projection;
     std::unordered_map<String, String> projection_reject_reasons;
+    /// Filtering projections that still affect the plan after this rewrite.
+    /// Part pruning counts as soon as the parts are gone. A row filter on parts the parent read
+    /// still owns is included only when that read will not be rewritten again, so a later full
+    /// projection cannot leave the name in `force_optimize_projection_name`.
+    std::unordered_set<String> used_filtering_projections;
 };
 
 UseProjectionsResult optimizeUseAggregateProjections(

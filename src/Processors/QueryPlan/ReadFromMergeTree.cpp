@@ -6404,6 +6404,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKeyExpand";
         case ReadFromMergeTree::IndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case ReadFromMergeTree::IndexType::Projection:
+            return "Projection";
     }
 }
 
@@ -6631,150 +6633,160 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     const auto & result = getAnalysisResult();
     const auto & index_stats = result.index_stats;
+    const auto & part_level_stats = result.part_level_projection_index_stats;
 
     const std::string & prefix = format_settings.detail_prefix;
-    if (!index_stats.empty())
+    const bool only_placeholder = index_stats.size() == 1 && index_stats.front().type == IndexType::None;
+    if ((index_stats.empty() || only_placeholder) && part_level_stats.empty())
+        return;
+
+    std::string indent(format_settings.base_indent, format_settings.indent_char);
+    format_settings.out << prefix << "Indexes:\n";
+
+    /// `previous` is the preceding funnel stage. Part-level projection stats pass nullptr:
+    /// their counts belong to the replaced parent read and must not form a ratio with this one.
+    auto write_stat = [&](const IndexStat & stat, const IndexStat * previous)
     {
-        /// Do not print anything if no indexes is applied.
-        if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
+        if (stat.type == IndexType::None)
             return;
 
-        std::string indent(format_settings.base_indent, format_settings.indent_char);
-        format_settings.out << prefix << "Indexes:\n";
+        format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
 
-        for (size_t i = 0; i < index_stats.size(); ++i)
+        if (!stat.name.empty())
+            format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
+
+        if (!stat.description.empty())
+            format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
+
+        if (!stat.used_keys.empty())
         {
-            const auto & stat = index_stats[i];
-            if (stat.type == IndexType::None)
-                continue;
-
-            format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
-
-            if (!stat.name.empty())
-                format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
-
-            if (!stat.description.empty())
-                format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
-
-            if (!stat.used_keys.empty())
-            {
-                format_settings.out << prefix << indent << indent << "Keys:" << '\n';
-                for (const auto & used_key : stat.used_keys)
-                    format_settings.out << prefix << indent << indent << indent << used_key << '\n';
-            }
-
-            if (!stat.condition.empty())
-                format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
-
-            format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after;
-            if (i)
-                format_settings.out << '/' << index_stats[i - 1].num_parts_after;
-            format_settings.out << '\n';
-
-            format_settings.out << prefix << indent << indent << "Granules: " << stat.num_granules_after;
-            if (i)
-                format_settings.out << '/' << index_stats[i - 1].num_granules_after;
-            format_settings.out << '\n';
-
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
-            if (!search_algorithm.empty())
-                format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
-
-            if (!stat.distributed.empty())
-            {
-                format_settings.out << prefix << indent << indent << "Distributed:" << '\n';
-                for (const auto & node_stat : stat.distributed)
-                {
-                    format_settings.out << prefix << indent << indent << indent << "Address: " << node_stat.address << '\n';
-                    format_settings.out << prefix << indent << indent << indent << "Parts send: " << node_stat.num_parts_send << '\n';
-                    format_settings.out << prefix << indent << indent << indent << "Parts received: " << node_stat.num_parts_received << '\n';
-                    format_settings.out << prefix << indent << indent << indent << "Granules send: " << node_stat.num_granules_send << '\n';
-                    format_settings.out << prefix << indent << indent << indent << "Granules received: " << node_stat.num_granules_received << '\n';
-                }
-            }
+            format_settings.out << prefix << indent << indent << "Keys:" << '\n';
+            for (const auto & used_key : stat.used_keys)
+                format_settings.out << prefix << indent << indent << indent << used_key << '\n';
         }
 
-        format_settings.out << prefix << indent << "Ranges: " << result.selected_ranges << '\n';
-    }
+        if (!stat.condition.empty())
+            format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
+
+        format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after;
+        if (previous)
+            format_settings.out << '/' << previous->num_parts_after;
+        format_settings.out << '\n';
+
+        format_settings.out << prefix << indent << indent << "Granules: " << stat.num_granules_after;
+        if (previous)
+            format_settings.out << '/' << previous->num_granules_after;
+        format_settings.out << '\n';
+
+        auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+        if (!search_algorithm.empty())
+            format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
+
+        if (!stat.distributed.empty())
+        {
+            format_settings.out << prefix << indent << indent << "Distributed:" << '\n';
+            for (const auto & node_stat : stat.distributed)
+            {
+                format_settings.out << prefix << indent << indent << indent << "Address: " << node_stat.address << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Parts send: " << node_stat.num_parts_send << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Parts received: " << node_stat.num_parts_received << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Granules send: " << node_stat.num_granules_send << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Granules received: " << node_stat.num_granules_received << '\n';
+            }
+        }
+    };
+
+    for (size_t i = 0; i < index_stats.size(); ++i)
+        write_stat(index_stats[i], i ? &index_stats[i - 1] : nullptr);
+
+    for (const auto & stat : part_level_stats)
+        write_stat(stat, nullptr);
+
+    format_settings.out << prefix << indent << "Ranges: " << result.selected_ranges << '\n';
 }
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
     const auto & result = getAnalysisResult();
     const auto & index_stats = result.index_stats;
+    const auto & part_level_stats = result.part_level_projection_index_stats;
 
-    if (!index_stats.empty())
+    const bool only_placeholder = index_stats.size() == 1 && index_stats.front().type == IndexType::None;
+    if ((index_stats.empty() || only_placeholder) && part_level_stats.empty())
+        return;
+
+    auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    /// `previous` is the preceding funnel stage. Part-level projection stats pass nullptr so their
+    /// parent-read counts are not reported as this read's initial parts or granules.
+    auto write_stat = [&](const IndexStat & stat, const IndexStat * previous)
     {
-        /// Do not print anything if no indexes is applied.
-        if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
+        if (stat.type == IndexType::None)
             return;
 
-        auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+        auto index_map = std::make_unique<JSONBuilder::JSONMap>();
 
-        for (size_t i = 0; i < index_stats.size(); ++i)
+        index_map->add("Type", indexTypeToString(stat.type));
+
+        if (!stat.name.empty())
+            index_map->add("Name", stat.name);
+
+        if (!stat.description.empty())
+            index_map->add("Description", stat.description);
+
+        if (!stat.used_keys.empty())
         {
-            const auto & stat = index_stats[i];
-            if (stat.type == IndexType::None)
-                continue;
+            auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
 
-            auto index_map = std::make_unique<JSONBuilder::JSONMap>();
+            for (const auto & used_key : stat.used_keys)
+                keys_array->add(used_key);
 
-            index_map->add("Type", indexTypeToString(stat.type));
-
-            if (!stat.name.empty())
-                index_map->add("Name", stat.name);
-
-            if (!stat.description.empty())
-                index_map->add("Description", stat.description);
-
-            if (!stat.used_keys.empty())
-            {
-                auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
-
-                for (const auto & used_key : stat.used_keys)
-                    keys_array->add(used_key);
-
-                index_map->add("Keys", std::move(keys_array));
-            }
-
-            if (!stat.condition.empty())
-                index_map->add("Condition", stat.condition);
-
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
-            if (!search_algorithm.empty())
-                index_map->add("Search Algorithm", search_algorithm);
-
-            if (i)
-                index_map->add("Initial Parts", index_stats[i - 1].num_parts_after);
-            index_map->add("Selected Parts", stat.num_parts_after);
-
-            if (i)
-                index_map->add("Initial Granules", index_stats[i - 1].num_granules_after);
-            index_map->add("Selected Granules", stat.num_granules_after);
-
-            if (!stat.distributed.empty())
-            {
-                auto distributed_index_array = std::make_unique<JSONBuilder::JSONArray>();
-
-                for (const auto & node_stat : stat.distributed)
-                {
-                    auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
-                    node_stat_map->add("Address", node_stat.address);
-                    node_stat_map->add("Parts send", node_stat.num_parts_send);
-                    node_stat_map->add("Parts received", node_stat.num_parts_received);
-                    node_stat_map->add("Granules send", node_stat.num_granules_send);
-                    node_stat_map->add("Granules received", node_stat.num_granules_received);
-                    distributed_index_array->add(std::move(node_stat_map));
-                }
-
-                index_map->add("Distributed", std::move(distributed_index_array));
-            }
-
-            indexes_array->add(std::move(index_map));
+            index_map->add("Keys", std::move(keys_array));
         }
 
-        map.add("Indexes", std::move(indexes_array));
-    }
+        if (!stat.condition.empty())
+            index_map->add("Condition", stat.condition);
+
+        auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+        if (!search_algorithm.empty())
+            index_map->add("Search Algorithm", search_algorithm);
+
+        if (previous)
+            index_map->add("Initial Parts", previous->num_parts_after);
+        index_map->add("Selected Parts", stat.num_parts_after);
+
+        if (previous)
+            index_map->add("Initial Granules", previous->num_granules_after);
+        index_map->add("Selected Granules", stat.num_granules_after);
+
+        if (!stat.distributed.empty())
+        {
+            auto distributed_index_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & node_stat : stat.distributed)
+            {
+                auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
+                node_stat_map->add("Address", node_stat.address);
+                node_stat_map->add("Parts send", node_stat.num_parts_send);
+                node_stat_map->add("Parts received", node_stat.num_parts_received);
+                node_stat_map->add("Granules send", node_stat.num_granules_send);
+                node_stat_map->add("Granules received", node_stat.num_granules_received);
+                distributed_index_array->add(std::move(node_stat_map));
+            }
+
+            index_map->add("Distributed", std::move(distributed_index_array));
+        }
+
+        indexes_array->add(std::move(index_map));
+    };
+
+    for (size_t i = 0; i < index_stats.size(); ++i)
+        write_stat(index_stats[i], i ? &index_stats[i - 1] : nullptr);
+
+    for (const auto & stat : part_level_stats)
+        write_stat(stat, nullptr);
+
+    map.add("Indexes", std::move(indexes_array));
 }
 
 void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) const

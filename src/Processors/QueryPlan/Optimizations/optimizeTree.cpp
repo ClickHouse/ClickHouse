@@ -639,8 +639,13 @@ void optimizeTreeSecondPass(
         const auto * reading = typeid_cast<const ReadFromMergeTree *>(stack.back().node->step.get());
         if (reading && optimization_settings.optimize_projection)
         {
+            /// Projection optimization relies on PK optimization
             auto result = optimizeUseNormalProjections(stack, nodes, optimization_settings);
             projection_reject_reasons.merge(result.projection_reject_reasons);
+            /// Names arrive only for filters that survived this rewrite. Row filters whose parts may
+            /// still be replaced are omitted until the parent read is final, so they are not stuck
+            /// in `applied_projection_names` after a later rewrite drops them.
+            applied_projection_names.insert(result.used_filtering_projections.begin(), result.used_filtering_projections.end());
             if (result.applied_projection)
             {
                 applied_projection_names.insert(*result.applied_projection);

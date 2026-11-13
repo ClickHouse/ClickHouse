@@ -6,7 +6,9 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <expected>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -105,6 +107,15 @@ void recordHypotheticalOutcome(
 size_t filterPartsByProjection(
     ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
 
+/// Records a Projection `IndexStat` on the parent read so `EXPLAIN indexes = 1` shows part pruning
+/// that already happened, including when a covering candidate is later rejected as a read.
+void recordProjectionFilteringIndexStat(
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const String & projection_name,
+    String description,
+    String condition,
+    MarkRanges::SearchAlgorithm search_algorithm);
+
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
 /// `parent_mutations_snapshot` is the snapshot of the parent read: a part with a pending
@@ -127,9 +138,19 @@ bool analyzeProjectionCandidate(
     const ContextPtr & context,
     const HypotheticalProjection * hypothetical_projection = nullptr);
 
+/// What `filterPartsAndCollectProjectionCandidates` changed on the parent read.
+/// Part pruning is already applied to the part list. Row filtering is only executed for
+/// `row_filtered_parts` that the parent read still contains when the plan is finished.
+struct ProjectionFilteringEffect
+{
+    bool pruned_parts = false;
+    std::unordered_set<const IMergeTreeDataPart *> row_filtered_parts;
+};
+
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
-void filterPartsAndCollectProjectionCandidates(
+/// Returns the effect when the projection pruned parts or built a row filter, and `std::nullopt` when it had no effect.
+std::optional<ProjectionFilteringEffect> filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
