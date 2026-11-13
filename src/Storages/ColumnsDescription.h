@@ -240,13 +240,19 @@ public:
     /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
     /// containing a dot, or unknown names such as virtual columns) are returned unchanged. A column of a flattened
     /// `Nested` structure without a grant or revoke of its own is checked as the structure name when that name is
-    /// denied, so `REVOKE SELECT(n)` applies to its columns. The result is deduplicated while preserving the order
-    /// of first appearance.
-    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
+    /// denied, so `REVOKE SELECT(n)` applies to its columns. The structures are those of `checked_columns`, the
+    /// columns of `table_id` when they are not these. The result is deduplicated while preserving the order of
+    /// first appearance.
+    Names getColumnNamesForSelectAccessCheck(
+        const Names & column_names,
+        const ContextPtr & context,
+        const StorageID & table_id,
+        const ColumnsDescription * checked_columns = nullptr) const;
 
-    /// Returns `n` for an `Array` column `n.x` of a flattened `Nested` structure `n` (grouped by the first dot, like
-    /// `Nested::collect`), unless `n` is itself a column.
-    std::optional<String> tryGetFlattenedNestedName(const String & column_name) const;
+    /// Returns the names `n` of the flattened `Nested` structures the column `n.x` may belong to: every prefix of its
+    /// name ending before a dot that is not itself a column, as the name of a `Nested` column may contain a dot. None
+    /// for a column whose type is not `Array`; a name that is not a column here may belong to any of them.
+    Names getFlattenedNestedNames(const String & column_name) const;
 
     /// Returns the names of the real subcolumns of the column `column_name` that have a grant of `flags` on their exact
     /// name which they do not inherit from the column (e.g. ``GRANT SELECT(`json.a`)`` without a grant on `json`).

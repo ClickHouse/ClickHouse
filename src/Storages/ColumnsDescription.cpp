@@ -875,7 +875,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 }
 
 Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
-    const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
+    const Names & column_names, const ContextPtr & context, const StorageID & table_id, const ColumnsDescription * checked_columns) const
 {
     Names result;
     result.reserve(column_names.size());
@@ -923,13 +923,18 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
         }
 
         /// A `REVOKE` on the name of a flattened `Nested` structure applies to its columns that have no grant or revoke of their own.
-        if (auto nested_name = tryGetFlattenedNestedName(name_to_check))
+        if (auto nested_names = (checked_columns ? *checked_columns : *this).getFlattenedNestedNames(name_to_check); !nested_names.empty())
         {
             init_access_rights();
             if (access_rights->isGranted(AccessType::SELECT, database, table, name_to_check)
-                && access_rights->isGrantedInherited(AccessType::SELECT, database, table, name_to_check)
-                && !access_rights->isGranted(AccessType::SELECT, database, table, *nested_name))
-                name_to_check = std::move(*nested_name);
+                && access_rights->isGrantedInherited(AccessType::SELECT, database, table, name_to_check))
+            {
+                auto denied = std::ranges::find_if(
+                    nested_names,
+                    [&](const String & nested_name) { return !access_rights->isGranted(AccessType::SELECT, database, table, nested_name); });
+                if (denied != nested_names.end())
+                    name_to_check = std::move(*denied);
+            }
         }
 
         if (seen.insert(name_to_check).second)
@@ -939,15 +944,15 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
     return result;
 }
 
-std::optional<String> ColumnsDescription::tryGetFlattenedNestedName(const String & column_name) const
+Names ColumnsDescription::getFlattenedNestedNames(const String & column_name) const
 {
-    auto column = tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), column_name);
-    if (!column || !isArray(column->type))
-        return {};
-    auto [nested_name, element_name] = Nested::splitName(column_name);
-    if (element_name.empty() || tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), nested_name))
-        return {};
-    return nested_name;
+    Names result;
+    if (auto column = tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), column_name); column && !isArray(column->type))
+        return result;
+    for (auto [nested_name, _] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+        if (String name(nested_name); !tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), name))
+            result.push_back(std::move(name));
+    return result;
 }
 
 Names ColumnsDescription::getSubcolumnsWithExplicitGrant(

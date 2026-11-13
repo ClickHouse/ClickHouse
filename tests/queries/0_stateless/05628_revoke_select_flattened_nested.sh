@@ -9,13 +9,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user="u_05628_${CLICKHOUSE_DATABASE}"
 role="r_05628_${CLICKHOUSE_DATABASE}"
+definer="d_05628_${CLICKHOUSE_DATABASE}"
 db="$CLICKHOUSE_DATABASE"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user; DROP ROLE IF EXISTS $role; CREATE USER $user; CREATE ROLE $role;"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user, $definer; DROP ROLE IF EXISTS $role; CREATE USER $user; CREATE USER $definer; CREATE ROLE $role;"
 $CLICKHOUSE_CLIENT --flatten_nested 1 -m -q "
 CREATE TABLE t (id UInt8, nt Nested(public String, secret String)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE tn (nt Nested(public String, secret String)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE s (nt Nested(a String)) ENGINE = Set;
+CREATE TABLE td (id UInt8, \`n.name\` Nested(secret String)) ENGINE = MergeTree ORDER BY tuple();
 "
 $CLICKHOUSE_CLIENT --flatten_nested 0 -q "CREATE TABLE t0 (id UInt8, nt Nested(public String, secret String)) ENGINE = MergeTree ORDER BY tuple()"
 $CLICKHOUSE_CLIENT -m -q "
@@ -81,4 +83,24 @@ check "carriers, no revoke" "${carriers[@]}"
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT(nt) ON $db.tn FROM $user; REVOKE SELECT(nt) ON $db.s FROM $user; REVOKE SELECT(nt) ON $db.v FROM $user"
 check "carriers, REVOKE(nt)" "${carriers[@]}"
 
-$CLICKHOUSE_CLIENT -q "DROP USER $user; DROP ROLE $role; DROP VIEW v; DROP TABLE al; DROP TABLE m; DROP TABLE s; DROP TABLE tn; DROP TABLE t; DROP TABLE t0;"
+# The name of a `Nested` column may contain a dot.
+reads_td=("SELECT id FROM td" "SELECT n.name.secret FROM td" "SELECT n FROM td")
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.td TO $user; REVOKE SELECT(\`n.name\`) ON $db.td FROM $user"; check "td GRANT table, REVOKE(n.name)" "${reads_td[@]}"
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.td TO $user; REVOKE SELECT(n) ON $db.td FROM $user"; check "td GRANT table, REVOKE(n)" "${reads_td[@]}"
+
+# A materialized view checks its definer's grants on the source-table columns named like the view's. The view may store
+# an element of the source's `Nested` structure with another type, and may outlive its source table.
+$CLICKHOUSE_CLIENT --flatten_nested 1 -m -q "
+CREATE TABLE ts (id UInt8, nt Nested(secret String), \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tgt (id UInt8, \`nt.secret\` String, \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
+GRANT SELECT ON $db.ts TO $definer;
+GRANT SELECT ON $db.tgt TO $definer;
+CREATE MATERIALIZED VIEW mv TO tgt DEFINER = $definer SQL SECURITY DEFINER AS SELECT id, arrayJoin(nt.secret) AS \`nt.secret\`, \`x.y\` FROM ts;
+"
+reads_mv=("SELECT id FROM mv" "SELECT nt.secret FROM mv" "SELECT x.y FROM mv")
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.mv TO $user"; check "mv, no revoke" "${reads_mv[@]}"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT(nt) ON $db.ts FROM $definer; REVOKE SELECT(x) ON $db.ts FROM $definer"
+check "mv, definer REVOKE(nt), REVOKE(x)" "${reads_mv[@]}"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ts"; check "mv, definer REVOKE(nt), REVOKE(x), source dropped" "${reads_mv[@]}"
+
+$CLICKHOUSE_CLIENT -q "DROP VIEW mv; DROP TABLE tgt; DROP USER $user, $definer; DROP ROLE $role; DROP VIEW v; DROP TABLE al; DROP TABLE m; DROP TABLE s; DROP TABLE td; DROP TABLE tn; DROP TABLE t; DROP TABLE t0;"

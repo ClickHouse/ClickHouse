@@ -11,3 +11,8 @@ role: GRANT table, REVOKE(nt): + - - - - - +
 t0 GRANT table, REVOKE(nt): - - -
 carriers, no revoke: + + + + + +
 carriers, REVOKE(nt): - - - - - -
+td GRANT table, REVOKE(n.name): + - -
+td GRANT table, REVOKE(n): + - -
+mv, no revoke: + + +
+mv, definer REVOKE(nt), REVOKE(x): + - +
+mv, definer REVOKE(nt), REVOKE(x), source dropped: + - -
