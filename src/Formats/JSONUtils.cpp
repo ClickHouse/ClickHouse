@@ -326,16 +326,16 @@ namespace JSONUtils
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization, type.get());
 
                 serialization->deserializeWholeText(column, buf, format_settings);
                 return true;
             }
 
-            auto deserialize = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf) -> bool
+            auto deserialize = [as_nullable, &format_settings, &serialization, &type](IColumn & column_, ReadBuffer & buf) -> bool
             {
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization, type.get());
 
                 serialization->deserializeTextJSON(column_, buf, format_settings);
                 return true;

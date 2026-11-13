@@ -425,7 +425,7 @@ bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, con
         && !isCSVSeparateColumnsTuple(type, format_settings))
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, istr, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, istr, format_settings, serialization, type.get());
     }
 
     /// Read the column normally.
