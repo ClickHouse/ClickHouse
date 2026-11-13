@@ -7,7 +7,7 @@ This directory contains integration tests for ClickHouse, involving multiple ins
 You can reproduce CI integration test jobs locally using the same orchestration as CI.
 
 ### Prerequisites
-- Python 3 with the `requests` module
+- Python 3 (standard library only)
 - Docker
 - ClickHouse server binary available to the job. The runner searches in this order and uses the first found:
   - `./ci/tmp/clickhouse`
