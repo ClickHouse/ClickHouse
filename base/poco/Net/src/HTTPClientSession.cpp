@@ -466,7 +466,9 @@ HTTPClientSession::BodyInfo HTTPClientSession::onResponseHeadersReceived(const H
 	/// Keep in sync with the second half of receiveResponse() above.
 	_responseReceived = true;
 
-	_mustReconnect = getKeepAlive() && !response.getKeepAlive();
+	/// A request body that was not sent to the end, as after an early error response, leaves the
+	/// connection in the middle of the request: the server would take the next request for a part of it.
+	_mustReconnect = (getKeepAlive() && !response.getKeepAlive()) || !isRequestBodyComplete();
 
 	if (!_mustReconnect)
 	{
@@ -571,7 +573,9 @@ std::istream& HTTPClientSession::receiveResponse(HTTPResponse& response)
 		while (response.getStatus() == HTTPResponse::HTTP_CONTINUE);
 	}
 
-	_mustReconnect = getKeepAlive() && !response.getKeepAlive();
+	/// A request body that was not sent to the end leaves the connection in the middle of the
+	/// request: the server would take the next request for a part of it.
+	_mustReconnect = (getKeepAlive() && !response.getKeepAlive()) || !isRequestBodyComplete();
 
     if (!_mustReconnect)
     {

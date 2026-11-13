@@ -164,3 +164,22 @@ TEST_F(HTTPEarlyResponseTest, AnswerWhileTheSendWaits)
     auto response_body = DB::receiveHTTPResponse(session, response);
     EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
 }
+
+/// After an early error, the body of the request was not sent to the end. The next request on the
+/// same session must go to a new connection: the server would take it for a part of that body.
+TEST_F(HTTPEarlyResponseTest, NextRequestAfterAnEarlyErrorUsesANewConnection)
+{
+    /// As the sessions of the connection pool.
+    session.setKeepAlive(true);
+    auto body = sendAndAnswer("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+    DB::writeString(std::string(body_size, 'x'), *body);
+    body->finalize();
+
+    Poco::Net::HTTPResponse response;
+    auto response_body = DB::receiveHTTPResponse(session, response);
+    ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+
+    Poco::Net::HTTPRequest next(Poco::Net::HTTPRequest::HTTP_GET, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+    DB::sendHTTPRequest(session, next)->finalize();
+    EXPECT_TRUE(listener.poll(Poco::Timespan(2, 0), Poco::Net::Socket::SELECT_READ)) << "The next request went to the old connection";
+}
