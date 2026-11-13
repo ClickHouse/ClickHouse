@@ -56,7 +56,9 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -121,6 +123,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char storage_buffer_fail_capturing_flush_identity[];
+    extern const char storage_buffer_pause_flush_for_other_identity[];
 }
 
 /// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
@@ -1570,9 +1573,31 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         });
         flushed_for_other_identity = !buffer.write_identity->hasSameAccess(*captureWriteIdentity(triggering_context));
     }
+
+    /// Such a flush runs in a thread group of its own: a child of the triggering query's group without its client
+    /// logs queue (`createForExplainAnalyze` makes a plain child), so its records and those of any thread it starts,
+    /// e.g. the workers of a foreground `Distributed` insert, do not reach that client, while memory and profile
+    /// events are still accounted to the query. Detaching the query's own group instead would race with flushes of
+    /// other shards that run in it in parallel: whichever finished first would restore the queue for the others.
+    std::optional<ThreadGroupSwitcher> flush_thread_group_switcher;
     std::optional<CurrentThread::HideLogsFromClientScope> hide_logs_from_client;
     if (flushed_for_other_identity)
-        hide_logs_from_client.emplace();
+    {
+        if (auto query_thread_group = CurrentThread::getGroup())
+        {
+            auto flush_thread_group = ThreadGroup::createForExplainAnalyze(query_thread_group);
+            flush_thread_group->attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+            flush_thread_group_switcher.emplace(flush_thread_group, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, /*allow_existing_group=*/ true);
+            if (CurrentThread::getGroup() != flush_thread_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot run a flush for another identity in a thread group of its own");
+        }
+        else
+        {
+            /// Without a thread group no other thread can inherit the queue, so hiding the current thread's is enough.
+            hide_logs_from_client.emplace();
+        }
+        FailPointInjection::pauseFailPoint(FailPoints::storage_buffer_pause_flush_for_other_identity);
+    }
 
     Stopwatch watch;
     /// Set once writeBlockToDestination has restored the captured identity, to classify a failure below: before
