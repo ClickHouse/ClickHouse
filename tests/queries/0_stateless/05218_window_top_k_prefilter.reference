@@ -29,7 +29,7 @@
 3c rk < 4	1
 3d 4 >= rk	1
 4b row_number() <= 1	1
-5b the smaller of two bounds	1
+5b the smallest of three bounds	1
 -- no PARTITION BY: the whole input is one partition
 10
 10

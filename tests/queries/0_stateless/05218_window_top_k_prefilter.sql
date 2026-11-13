@@ -39,7 +39,8 @@ SELECT '3b rk = 1', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p,
 SELECT '3c rk < 4', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk < 4) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '3';
 SELECT '3d 4 >= rk', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE 4 >= rk) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '4';
 SELECT '4b row_number() <= 1', count() FROM (EXPLAIN actions=1 SELECT p, rn FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn <= 1) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '1';
-SELECT '5b the smaller of two bounds', count() FROM (EXPLAIN actions=1 SELECT p, rk, rn FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rk <= 5 AND rn <= 2) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '2';
+-- `optimize_redundant_comparisons` would fold the three bounds into `rk <= 2` before the plan is built.
+SELECT '5b the smallest of three bounds', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 5 AND rk <= 2 AND rk <= 7 SETTINGS optimize_redundant_comparisons = 0) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '2';
 
 SELECT '-- no PARTITION BY: the whole input is one partition';
 SELECT o FROM (SELECT o, rank() OVER (ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 2 ORDER BY o;
