@@ -50,15 +50,6 @@ INSERT INTO t_now_nullable_prewhere SELECT number, NULL, now64(3) + 5 FROM numbe
 ALTER TABLE t_now_nullable_prewhere MODIFY COLUMN v DateTime64(3) DEFAULT now64(3);
 SELECT count() FROM t_now_nullable_prewhere PREWHERE v >= thr FORMAT Null;
 
--- A default that reads such a column.
-CREATE TABLE t_now_nullable_dependent (k UInt64, v Nullable(DateTime64(3)), thr DateTime64(3)) ENGINE = MergeTree ORDER BY k
-    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
-SYSTEM STOP MERGES t_now_nullable_dependent;
-INSERT INTO t_now_nullable_dependent SELECT number, NULL, now64(3) + 5 FROM numbers(100000);
-ALTER TABLE t_now_nullable_dependent MODIFY COLUMN v DateTime64(3) DEFAULT now64(3);
-ALTER TABLE t_now_nullable_dependent ADD COLUMN w DateTime64(3) DEFAULT v;
-SELECT count() FROM t_now_nullable_dependent WHERE w >= thr FORMAT Null;
-
 -- The same after `KILL MUTATION`: the part keeps the `Nullable` column, and reads still replace its NULLs.
 CREATE TABLE t_now_nullable_killed (k UInt64, v Nullable(DateTime64(3)), thr DateTime64(3)) ENGINE = MergeTree ORDER BY k
     SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
@@ -67,6 +58,16 @@ INSERT INTO t_now_nullable_killed SELECT number, NULL, now64(3) + 5 FROM numbers
 ALTER TABLE t_now_nullable_killed MODIFY COLUMN v DateTime64(3) DEFAULT now64(3);
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_now_nullable_killed' SYNC FORMAT Null;
 SELECT count() FROM t_now_nullable_killed WHERE v >= thr FORMAT Null;
+
+-- A default that reads such a column. Its mutation is killed too: a pending one turns the cache off.
+CREATE TABLE t_now_nullable_dependent (k UInt64, v Nullable(DateTime64(3)), thr DateTime64(3)) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+SYSTEM STOP MERGES t_now_nullable_dependent;
+INSERT INTO t_now_nullable_dependent SELECT number, NULL, now64(3) + 5 FROM numbers(100000);
+ALTER TABLE t_now_nullable_dependent MODIFY COLUMN v DateTime64(3) DEFAULT now64(3);
+ALTER TABLE t_now_nullable_dependent ADD COLUMN w DateTime64(3) DEFAULT v;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_now_nullable_dependent' SYNC FORMAT Null;
+SELECT count() FROM t_now_nullable_dependent WHERE w >= thr FORMAT Null;
 
 SELECT sleep(3) FORMAT Null;
 SELECT sleep(3) FORMAT Null;
