@@ -133,7 +133,7 @@ private:
     /// swallowed on purpose - the fail-closed default takes over.
     String postProcessResponse(const String & raw_response) const override
     {
-        if (raw_response.empty() || raw_response.front() != '{')
+        if (!trimWhitespace(raw_response).starts_with('{'))
             return raw_response;
 
         try

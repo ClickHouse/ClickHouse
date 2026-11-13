@@ -109,6 +109,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint whose structured reply starts with whitespace.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_mock_leading_whitespace AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_leading_whitespace', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Slow endpoints, used to observe how many requests an AI function has in flight at once.
         instance.query(
             f"CREATE NAMED COLLECTION ai_slow AS "
@@ -1306,6 +1314,19 @@ def test_extract_null_input(started_cluster):
     lines = result.strip().split("\n")
     assert "\\N" in lines
     assert len(lines) == 2
+
+
+def test_structured_output_leading_whitespace(started_cluster):
+    """A structured reply that starts with whitespace is still unwrapped by
+    aiClassify, aiFilter and aiExtract."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('The checkout page crashes')")
+    result = instance.query(
+        "SELECT aiClassify(x, ['bug', 'question'], map('credentials', 'ai_mock_leading_whitespace')), "
+        "aiFilter(x, 'is a bug report', map('credentials', 'ai_mock_leading_whitespace')), "
+        "aiExtract(x, 'the page', map('credentials', 'ai_mock_leading_whitespace')) FROM test_input",
+    )
+    assert result.strip() == "bug\t1\tThe checkout page crashes"
 
 
 # ---------------------------------------------------------------------------
