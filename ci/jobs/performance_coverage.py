@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -39,6 +40,38 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
 EXPORT_RESERVE = 20 * 60
+
+
+def stop_server(server, grace_seconds=10):
+    """Wait for the dedicated server group, not just its launching shell."""
+    process = server.proc
+    # CHServer starts a new session. Keep this ID even after its shell exits.
+    group = process.pid
+    try:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(group, sig)
+            except ProcessLookupError:
+                return
+            deadline = time.monotonic() + grace_seconds
+            while time.monotonic() < deadline:
+                process.poll()  # Reap the shell if it has exited.
+                states = subprocess.check_output(
+                    ["ps", "-eo", "pgid=,stat="], text=True, timeout=5
+                )
+                # Container PID 1 may not reap orphaned zombies promptly.
+                # They cannot hold the data-directory lock or execute queries.
+                if not any(
+                    int(pgid) == group and not state.startswith("Z")
+                    for pgid, state in (line.split() for line in states.splitlines())
+                ):
+                    return
+                time.sleep(0.1)
+        raise RuntimeError(f"Coverage server process group {group} did not stop")
+    finally:
+        process.poll()
+        if server.log_fd:
+            server.log_fd.close()
 
 
 def record_phase_manifests(output, manifest):
@@ -501,7 +534,7 @@ def main():
             # A failed query, mutation or failpoint must not survive into the
             # next test. Preserve the stopped process's log before restarting.
             client.disconnect()
-            server.terminate()
+            stop_server(server)
             shutil.copyfile(server.log_file, output / f"{path.stem}.server.log")
             if not server.start():
                 raise RuntimeError(
@@ -552,7 +585,16 @@ def main():
                 )
         save_manifest()
         if server and hasattr(server, "proc"):
-            server.terminate()
+            try:
+                stop_server(server)
+            except Exception as error:
+                results.append(
+                    Result(
+                        name="Coverage server shutdown",
+                        status=Result.Status.ERROR,
+                        info=str(error),
+                    )
+                )
         if needs_s3:
             s3_service.stop()
     # Even a failed test or exhausted job budget must not discard completed
