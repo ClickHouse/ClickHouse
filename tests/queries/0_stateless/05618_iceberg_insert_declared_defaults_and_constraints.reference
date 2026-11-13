@@ -1,0 +1,32 @@
+insert
+VIOLATED_CONSTRAINT
+1	x	100
+2	x	200
+definition
+k			
+s	DEFAULT	\'x\'	sc
+e	DEFAULT	k * 100	
+tc
+prewhere
+2
+constraint is not used by reads
+1
+alter
+-5	\N
+1	\N
+3	42
+older snapshot
+1
+1
+ILLEGAL_COLUMN
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+0
+VIOLATED_CONSTRAINT
+4	x	400	42	43
+materialized view
+6	x	600
+schema changed by another writer
+7	
+comment of a table that is not a data lake
+updated

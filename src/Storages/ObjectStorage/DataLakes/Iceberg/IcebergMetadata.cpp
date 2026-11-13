@@ -844,9 +844,13 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
     Iceberg::validateMutationWriteFormat(write_format);
 }
 
-void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
+void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context)
 {
     checkTableRootIsQueriedPath("ALTER");
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::iceberg_snapshot_id].changed || settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER is not supported with iceberg_snapshot_id or iceberg_timestamp_ms");
 
     if (std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
     {

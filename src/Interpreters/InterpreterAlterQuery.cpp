@@ -497,6 +497,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
                 cache->clear();
             }
+            /// The commands are validated against the current schema of a table whose schema is external (a data lake).
+            if (table->isDataLake())
+                table->updateExternalDynamicMetadataIfExists(context);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 

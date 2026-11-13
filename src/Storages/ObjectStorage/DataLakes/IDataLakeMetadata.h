@@ -208,7 +208,7 @@ public:
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
-    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
     virtual void checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/) const { throwNotImplemented("alterPartition"); }
     virtual void alter(
         const AlterCommands & /*params*/,
