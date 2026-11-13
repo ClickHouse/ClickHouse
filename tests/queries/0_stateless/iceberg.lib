@@ -2,6 +2,13 @@
 
 # Helpers for Iceberg tests that read or hand-edit table metadata. Source after shell_config.sh.
 
+# Snapshot ids span the whole Int64 range. jq keeps integers above 2^53 exact only from 1.7 on; an older
+# jq rounds them and the edited metadata no longer matches its manifest list.
+if [ "$(jq -n 9007199254740993)" != 9007199254740993 ]; then
+    echo "iceberg.lib needs jq >= 1.7 (lossless 64-bit integers)" >&2
+    exit 1
+fi
+
 # Prints the version N of a v<N>[-<uuid>].metadata.json path.
 function iceberg_metadata_version()
 {
