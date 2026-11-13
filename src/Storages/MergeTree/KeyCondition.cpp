@@ -3652,6 +3652,12 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if ((key_which.isInteger() || key_which.isFloat()) && (set_which.isInteger() || set_which.isFloat()))
         return false;
 
+    /// `IPv4` with `UInt32`, `UInt64` or `IPv6`, and `IPv6` with `UInt128`, are cast into each other exactly or not at all.
+    const auto is_exact_address_pair = [](const WhichDataType & ip, const WhichDataType & other)
+    { return (ip.isIPv4() && (other.isUInt32() || other.isUInt64() || other.isIPv6())) || (ip.isIPv6() && other.isUInt128()); };
+    if (is_exact_address_pair(key_which, set_which) || is_exact_address_pair(set_which, key_which))
+        return false;
+
     /// A value has one spelling, except a local `DateTime` (clocks going back), an out-of-range `Date32`, `Time` or `Time64`
     /// (saturated) and a `Bool` (every nonzero byte is `true`).
     if (set_which.isString())

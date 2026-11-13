@@ -76,6 +76,10 @@ CREATE TABLE t_i64e (x Int64) ENGINE = MergeTree ORDER BY x SETTINGS index_granu
 INSERT INTO t_i64e VALUES (1), (257);
 SELECT count() FROM t_i64e WHERE x IN (SELECT CAST(1, 'Enum8(''a'' = 1)'));
 
+CREATE TABLE t_ip (k IPv4) ENGINE = MergeTree PARTITION BY k ORDER BY k;
+INSERT INTO t_ip VALUES ('1.2.3.4'), ('1.2.3.5');
+SELECT count() FROM t_ip WHERE k IN (SELECT toUInt128(16909060));
+
 CREATE TABLE t_apia (d Date) ENGINE = MergeTree PARTITION BY d ORDER BY tuple();
 INSERT INTO t_apia VALUES ('2011-12-29'), ('2011-12-30'), ('2011-12-31');
 SELECT count() FROM t_apia WHERE d IN (SELECT toDateTime('2011-12-31 00:00:00', 'Pacific/Apia'));
@@ -151,6 +155,7 @@ DROP TABLE t_f32;
 DROP TABLE t_dst;
 DROP TABLE t_arr;
 DROP TABLE t_i64e;
+DROP TABLE t_ip;
 DROP TABLE t_enum;
 DROP TABLE t_apia;
 DROP TABLE t_dt64s;
