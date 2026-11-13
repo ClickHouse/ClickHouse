@@ -121,8 +121,14 @@ public:
         if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
             add(notify_socket, Access::ReadOnly, "the environment variable NOTIFY_SOCKET");
 
+        /// If it is a link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target, so
+        /// that a socket that a restarted service binds anew there is seen. A socket directly in `/dev` that the syslog
+        /// daemon binds anew is not seen until a restart: the `/dev` of the host is not visible.
         if (config.getBool("logger.use_syslog", false))
+        {
             add("/dev/log", Access::ReadOnly, "`logger.use_syslog`");
+            addLinkTargetDirectories("/dev/log", Access::ReadOnly, "`logger.use_syslog`");
+        }
 
         addConfigFiles();
         addDataPaths();

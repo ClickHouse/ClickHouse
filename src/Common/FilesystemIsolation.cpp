@@ -82,6 +82,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <set>
 
 #include <dirent.h>
 #include <elf.h>
@@ -455,13 +456,14 @@ std::string decodeMountInfoPath(std::string_view encoded)
 
 struct MountInfo
 {
+    uint64_t id = 0;
+    uint64_t parent_id = 0;
     std::string mount_point;
     std::string filesystem_type;
 };
 
-/// The mounts at `path` and inside it, in the order of `/proc/self/mountinfo`, in which a mount comes after the one it
-/// is mounted on.
-std::vector<MountInfo> getMountsInside(const std::string & path)
+/// Every mount in `/proc/self/mountinfo`.
+std::vector<MountInfo> readMountInfo()
 {
     std::vector<MountInfo> mounts;
     const std::string mount_info = readFile("/proc/self/mountinfo");
@@ -474,31 +476,72 @@ std::vector<MountInfo> getMountsInside(const std::string & path)
         const std::string_view line(mount_info.data() + line_begin, line_end - line_begin);
         line_begin = line_end + 1;
 
-        /// The fifth field is the mount point.
+        /// The fields: the ID of the mount, the ID of its parent, the device, the root, the mount point, ...
+        std::array<std::string_view, 5> fields;
         size_t field_begin = 0;
-        for (size_t field = 0; field < 4 && field_begin != std::string_view::npos; ++field)
+        bool complete = true;
+        for (auto & field : fields)
         {
-            field_begin = line.find(' ', field_begin);
-            if (field_begin != std::string_view::npos)
-                ++field_begin;
+            const size_t field_end = line.find(' ', field_begin);
+            if (field_end == std::string_view::npos)
+            {
+                complete = false;
+                break;
+            }
+            field = line.substr(field_begin, field_end - field_begin);
+            field_begin = field_end + 1;
         }
-        if (field_begin == std::string_view::npos)
-            continue;
-        const size_t field_end = line.find(' ', field_begin);
-        std::string mount_point = decodeMountInfoPath(line.substr(field_begin, field_end - field_begin));
-        if (!isSameOrInside(mount_point, path))
+        if (!complete)
             continue;
 
+        MountInfo mount;
+        mount.id = parseFromString<uint64_t>(fields[0]);
+        mount.parent_id = parseFromString<uint64_t>(fields[1]);
+        mount.mount_point = decodeMountInfoPath(fields[4]);
         /// The type of the filesystem is the field after the separator ` - `, which follows the optional fields.
-        std::string filesystem_type;
-        if (const size_t separator = line.find(" - ", field_end); separator != std::string_view::npos)
+        if (const size_t separator = line.find(" - ", field_begin); separator != std::string_view::npos)
         {
             const size_t type_begin = separator + 3;
-            filesystem_type = std::string(line.substr(type_begin, line.find(' ', type_begin) - type_begin));
+            mount.filesystem_type = std::string(line.substr(type_begin, line.find(' ', type_begin) - type_begin));
         }
-        mounts.push_back({std::move(mount_point), std::move(filesystem_type)});
+        mounts.push_back(std::move(mount));
     }
     return mounts;
+}
+
+/// The mount that is visible at the mount point `path` and the mounts reachable inside it, a mount before the mounts
+/// on it. Not the mounts at the same paths that it covers, as the ones that a bind mount of a directory over itself
+/// hides, which are not mount roots for a lookup of their paths. The visible mount at `path` is the one that no other
+/// mount at `path` is mounted on: a mount on top of another one at the same mount point has it as its parent.
+std::vector<MountInfo> getMountsInside(const std::string & path)
+{
+    const std::vector<MountInfo> all = readMountInfo();
+
+    const MountInfo * top = nullptr;
+    for (const auto & mount : all)
+    {
+        if (mount.mount_point != path)
+            continue;
+        const bool covered = std::any_of(all.begin(), all.end(), [&](const MountInfo & other)
+            { return other.mount_point == path && other.parent_id == mount.id && other.id != mount.id; });
+        if (!covered)
+            top = &mount;
+    }
+    if (!top)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no mount at {} in the isolated filesystem", path);
+
+    std::vector<MountInfo> result = {*top};
+    std::set<uint64_t> reachable = {top->id};
+    /// The children of the reachable mounts, until there are no new ones.
+    for (size_t checked = 0; checked < result.size(); ++checked)
+    {
+        const uint64_t parent_id = result[checked].id;
+        for (const auto & mount : all)
+            if (mount.parent_id == parent_id && mount.id != parent_id && isSameOrInside(mount.mount_point, path)
+                && reachable.insert(mount.id).second)
+                result.push_back(mount);
+    }
+    return result;
 }
 
 /// The mount points at `path` and inside it.
