@@ -26,6 +26,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1292,4 +1293,39 @@ TEST(ComputeHashInto, ReprIndependenceDynamicSharedVariant)
         EXPECT_EQ(finalizedRow(*shared_str, 1), leafHashOfString("abcdefghijk"))
             << "A String in the shared variant must hash as a String, not as its serialized blob";
     }
+}
+
+/// The overrides hash the bytes the `IColumn` default hashes, from any `row_begin`.
+TEST(ComputeMurmurHash3Into, OverridesMatchDefault)
+{
+    auto strings = ColumnString::create();
+    for (const auto * value : {"", "a", "iceberg", "", "theta sketch"})
+        strings->insertData(value, strlen(value));
+    auto numbers = ColumnInt64::create();
+    for (Int64 value : {Int64{0}, Int64{42}, Int64{-1}, std::numeric_limits<Int64>::min(), Int64{7}})
+        numbers->insertValue(value);
+
+    for (const IColumn * column : {static_cast<const IColumn *>(strings.get()), static_cast<const IColumn *>(numbers.get())})
+    {
+        std::vector<UInt64> hashes(4);
+        std::vector<UInt64> expected(4);
+        column->computeMurmurHash3Into(1, 5, 9001, hashes.data());
+        column->IColumn::computeMurmurHash3Into(1, 5, 9001, expected.data());
+        EXPECT_EQ(hashes, expected) << column->getName();
+    }
+}
+
+/// The first half of `MurmurHash3_x64_128` with seed 9001 over the value's bytes.
+TEST(ComputeMurmurHash3Into, KnownAnswer)
+{
+    auto strings = ColumnString::create();
+    strings->insertData("iceberg", 7);
+    auto numbers = ColumnInt64::create();
+    numbers->insertValue(42);
+
+    UInt64 hash = 0;
+    strings->computeMurmurHash3Into(0, 1, 9001, &hash);
+    EXPECT_EQ(hash, 0x065c84ecd525c232ULL);
+    numbers->computeMurmurHash3Into(0, 1, 9001, &hash);
+    EXPECT_EQ(hash, 0x908033afcdd0bc1aULL);
 }

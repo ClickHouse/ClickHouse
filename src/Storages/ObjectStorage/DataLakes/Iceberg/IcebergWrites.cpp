@@ -230,12 +230,7 @@ std::vector<uint8_t> dumpDecimalValue(const Field & field)
             bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & Int256(0xFF)));
     }
 
-    size_t first = 0;
-    while (first + 1 < bytes.size()
-           && ((bytes[first] == 0x00 && (bytes[first + 1] & 0x80) == 0) || (bytes[first] == 0xFF && (bytes[first + 1] & 0x80) != 0)))
-        ++first;
-
-    return std::vector<uint8_t>(bytes.begin() + first, bytes.end());
+    return std::vector<uint8_t>(bytes.begin() + minimalTwosComplementOffset(bytes.data(), bytes.size()), bytes.end());
 }
 
 template <typename DecimalType>
@@ -1364,6 +1359,9 @@ IcebergStorageSink::IcebergStorageSink(
             break;
         }
     }
+
+    if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
+        column_sketches.emplace(*sample_block, current_schema->getArray(Iceberg::f_fields));
 }
 
 IcebergStorageSink::~IcebergStorageSink()
@@ -1379,6 +1377,8 @@ void IcebergStorageSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
     total_rows += chunk.getNumRows();
+    if (column_sketches)
+        column_sketches->update(chunk.getColumns());
 
     size_t start_columns_size = chunk.getNumColumns();
     if (!sort_description.column_names.empty())
@@ -1604,6 +1604,7 @@ bool IcebergStorageSink::initializeMetadata()
         MetadataGenerator::SnapshotOperation::Append,
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
+    std::optional<String> statistics_file_path;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -1624,6 +1625,8 @@ bool IcebergStorageSink::initializeMetadata()
             removeDataFilesAndManifests();
 
         best_effort_remove(storage_manifest_list_name);
+        if (statistics_file_path)
+            best_effort_remove(*statistics_file_path);
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1815,6 +1818,11 @@ bool IcebergStorageSink::initializeMetadata()
                 throw;
             }
         }
+
+        if (column_sketches)
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                &*column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
+                context);
 
         {
             std::string json_representation = stringifyJSON(metadata, 4);

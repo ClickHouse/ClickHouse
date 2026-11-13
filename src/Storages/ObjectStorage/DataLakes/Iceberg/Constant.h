@@ -181,6 +181,14 @@ DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
 DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_file_size_in_bytes, file-size-in-bytes);
+DEFINE_ICEBERG_FIELD_ALIAS(file_footer_size_in_bytes, file-footer-size-in-bytes);
+/// Fields of a Puffin file footer.
+DEFINE_ICEBERG_FIELD(blobs);
+DEFINE_ICEBERG_FIELD(offset);
+DEFINE_ICEBERG_FIELD(length);
+DEFINE_ICEBERG_FIELD_ALIAS(compression_codec, compression-codec);
+DEFINE_ICEBERG_FIELD_ALIAS(created_by, created-by);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
@@ -225,4 +233,6 @@ constexpr Int32 last_updated_sequence_number_field_id = 2147483539;
 constexpr Int32 default_min_snapshots_to_keep = 1;
 constexpr Int64 default_max_snapshot_age_ms = 432000000; // 5 days
 constexpr Int64 default_max_ref_age_ms = std::numeric_limits<Int64>::max(); // forever, main branch never expires
+
+constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
 }

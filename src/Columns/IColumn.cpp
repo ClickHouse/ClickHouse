@@ -36,6 +36,8 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 
+#include <MurmurHash3.h>
+
 using Hash = CityHash_v1_0_2::uint128;
 using HashState = SipHash;
 
@@ -105,6 +107,17 @@ void IColumn::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash)
 {
     for (size_t i = begin; i < end; ++i)
         updateHashWithValue(i, hash);
+}
+
+void IColumn::computeMurmurHash3Into(size_t row_begin, size_t row_end, UInt32 seed, UInt64 * hash_out) const
+{
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        const auto value = getDataAt(i);
+        UInt64 hash[2];
+        MurmurHash3_x64_128(value.data(), value.size(), seed, hash);
+        hash_out[i - row_begin] = hash[0];
+    }
 }
 
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const

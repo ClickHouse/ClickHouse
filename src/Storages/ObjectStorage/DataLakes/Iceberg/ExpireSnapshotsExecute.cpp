@@ -452,6 +452,69 @@ ExpiredFiles collectExpiredFiles(
     return result;
 }
 
+/// Calls `callback(snapshot_id, path)` for each `statistics` and `partition-statistics` entry.
+template <typename Callback>
+void forEachStatisticsEntry(const Poco::JSON::Object::Ptr & metadata, Callback && callback)
+{
+    for (const char * field : {Iceberg::f_statistics, Iceberg::f_partition_statistics})
+    {
+        const auto entries = metadata->getArray(field);
+        for (UInt32 i = 0; entries && i < entries->size(); ++i)
+        {
+            const auto entry = entries->getObject(i);
+            callback(
+                entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
+                Iceberg::IcebergPathFromMetadata::deserialize(entry->getValue<String>(Iceberg::f_statistics_path)));
+        }
+    }
+}
+
+/// The statistics files of the expired snapshots that no retained snapshot's entry shares.
+ExpiredFiles collectExpiredStatisticsFiles(const Poco::JSON::Object::Ptr & metadata, const std::set<Int64> & expired_snapshot_ids)
+{
+    std::set<Iceberg::IcebergPathFromMetadata> expired_paths;
+    std::set<Iceberg::IcebergPathFromMetadata> retained_paths;
+    forEachStatisticsEntry(metadata, [&](Int64 snapshot_id, Iceberg::IcebergPathFromMetadata path)
+    {
+        (expired_snapshot_ids.contains(snapshot_id) ? expired_paths : retained_paths).insert(std::move(path));
+    });
+
+    ExpiredFiles result;
+    for (const auto & path : expired_paths)
+        if (!retained_paths.contains(path))
+            result.push_back({path, FileCategory::STATISTICS_FILE});
+    return result;
+}
+
+/// Erases from `files` the statistics files that an entry of `metadata` still references.
+void eraseStatisticsFilesReferencedBy(const Poco::JSON::Object::Ptr & metadata, ExpiredFiles & files)
+{
+    std::set<Iceberg::IcebergPathFromMetadata> referenced_paths;
+    forEachStatisticsEntry(metadata, [&](Int64, Iceberg::IcebergPathFromMetadata path)
+    {
+        referenced_paths.insert(std::move(path));
+    });
+    std::erase_if(files, [&](const ExpiredFile & file) { return referenced_paths.contains(file.path); });
+}
+
+void removeExpiredStatisticsEntries(Poco::JSON::Object::Ptr metadata, const std::set<Int64> & expired_snapshot_ids)
+{
+    for (const char * field : {Iceberg::f_statistics, Iceberg::f_partition_statistics})
+    {
+        const auto entries = metadata->getArray(field);
+        if (!entries)
+            continue;
+        Poco::JSON::Array::Ptr retained_entries = new Poco::JSON::Array;
+        for (UInt32 i = 0; i < entries->size(); ++i)
+        {
+            const auto entry = entries->getObject(i);
+            if (!expired_snapshot_ids.contains(entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id)))
+                retained_entries->add(entry);
+        }
+        metadata->set(field, retained_entries);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot partitioning
 // ---------------------------------------------------------------------------
@@ -593,6 +656,7 @@ void updateMetadataForExpiration(
 
     metadata->set(Iceberg::f_snapshots, retained_snapshots);
     trimSnapshotLog(metadata, expired_snapshot_ids);
+    removeExpiredStatisticsEntries(metadata, expired_snapshot_ids);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
@@ -741,12 +805,15 @@ ExpireSnapshotsResult expireSnapshots(
         ExpiredFiles expired_files;
         if (!catalog_commits_metadata || options.dry_run)
             expired_files = collect_expired_files(partition.retained_snapshots);
+        auto expired_statistics_files = collectExpiredStatisticsFiles(metadata, partition.expired_snapshot_ids);
 
         if (options.dry_run)
         {
             LOG_INFO(log, "Dry-run mode: skip metadata commit and file deletion");
             ExpireSnapshotsResult result{.dry_run = true};
             for (const auto & file : expired_files)
+                countFile(result, file.category);
+            for (const auto & file : expired_statistics_files)
                 countFile(result, file.category);
             return result;
         }
@@ -771,6 +838,7 @@ ExpireSnapshotsResult expireSnapshots(
             expired_files = collect_expired_files(
                 committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
                                                               : Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+            eraseStatisticsFilesReferencedBy(committed_metadata, expired_statistics_files);
         }
         else
         {
@@ -808,6 +876,7 @@ ExpireSnapshotsResult expireSnapshots(
         }
         persistent_table_components.invalidateMetadataCache();
 
+        expired_files.insert(expired_files.end(), expired_statistics_files.begin(), expired_statistics_files.end());
         LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.size(), partition.expired_snapshot_ids.size());
         auto result = deleteExpiredFiles(expired_files, persistent_table_components.path_resolver, object_storage, log);
         LOG_INFO(log, "Expired {} snapshots, deleted {} of {} files ({} failed)", partition.expired_snapshot_ids.size(),

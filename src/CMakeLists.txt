@@ -970,6 +970,11 @@ if (TARGET ch_contrib::datasketches)
     target_link_libraries(dbms PUBLIC ch_contrib::datasketches)
 endif ()
 
+# Only the columns that hash with MurmurHash3 see its header: it has the name of the DataSketches one.
+target_link_libraries(dbms PRIVATE $<LINK_ONLY:ch_contrib::murmurhash>)
+set_source_files_properties(Columns/IColumn.cpp Columns/ColumnString.cpp Columns/ColumnVector.cpp
+    TARGET_DIRECTORY dbms PROPERTIES INCLUDE_DIRECTORIES "${ClickHouse_SOURCE_DIR}/contrib/murmurhash/include")
+
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)

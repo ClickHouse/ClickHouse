@@ -34,6 +34,8 @@
 #include <cmath>
 #include <cstring>
 
+#include <MurmurHash3.h>
+
 #include "config.h"
 
 #if USE_X86_64_MULTITARGET_CODE || defined(__SSSE3__)
@@ -104,6 +106,17 @@ void ColumnVector<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 *
     else
         for (size_t i = 0; i < n; ++i)
             hash_out[i] = combineWeakHash32(weakHashValue32(src[i]), hash_out[i]);
+}
+
+template <typename T>
+void ColumnVector<T>::computeMurmurHash3Into(size_t row_begin, size_t row_end, UInt32 seed, UInt64 * hash_out) const
+{
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        UInt64 hash[2];
+        MurmurHash3_x64_128(&data[i], sizeof(T), seed, hash);
+        hash_out[i - row_begin] = hash[0];
+    }
 }
 
 template <typename T>

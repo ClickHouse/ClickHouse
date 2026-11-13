@@ -25,6 +25,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Common/randomSeed.h>
@@ -46,6 +47,18 @@ namespace DB
 String removeEscapedSlashes(const String & json_str);
 
 String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
+
+/// The offset of the first byte of two's-complement big-endian `data` that the value needs: Iceberg serializes a
+/// decimal's unscaled value in the minimum number of bytes.
+inline size_t minimalTwosComplementOffset(const void * data, size_t size)
+{
+    const auto * bytes = static_cast<const uint8_t *>(data);
+    size_t first = 0;
+    while (first + 1 < size
+           && ((bytes[first] == 0x00 && (bytes[first + 1] & 0x80) == 0) || (bytes[first] == 0xFF && (bytes[first + 1] & 0x80) != 0)))
+        ++first;
+    return first;
+}
 
 /// Per-file column statistics carried over verbatim from a source manifest entry during a manifest-only rewrite.
 struct DataFileColumnStatistics
@@ -206,6 +219,7 @@ private:
     KeyDescription sort_description;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
+    std::optional<IcebergColumnSketches> column_sketches;
 
     void finalizeBuffers();
     void releaseBuffers();

@@ -87,6 +87,12 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateManifestEntryName()
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}.avro", table_location, uuid_str));
 }
 
+Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateStatisticsFileName(Int64 snapshot_id)
+{
+    auto uuid_str = uuid_generator.createRandom().toString();
+    return Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}-{}.stats", table_location, snapshot_id, uuid_str));
+}
+
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateManifestListName(Int64 snapshot_id, Int32 format_version)
 {
     auto uuid_str = uuid_generator.createRandom().toString();

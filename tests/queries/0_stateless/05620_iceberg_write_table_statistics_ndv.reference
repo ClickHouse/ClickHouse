@@ -1,0 +1,21 @@
+two inserts union their sketches
+id:1 s:150/150 d:75/75 n:30/30 dec:300/300 ts:600/600 f:750/750 b:2/2
+an insert with the setting off writes no statistics
+no statistics
+nor does the next insert, whose parent has rows but no sketches
+no statistics
+a delete keeps the parent's sketches
+id:0 s:100/50 d:50/25 n:20/10 dec:200/100 ts:400/200 f:500/250 b:2/2
+an update adds the new values
+id:1 s:101/101 d:50/50 n:21/21 dec:200/200 ts:400/400 f:500/500 b:2/2
+optimize after a delete rebuilds exact sketches
+id:1 s:50/50 d:25/25 n:10/10 dec:100/100 ts:200/200 f:250/250 b:2/2
+optimize ... manifest keeps the parent's sketches
+id:2000/2000 s:20/20 p:2/2
+drop partition keeps the parent's sketches
+id:2000/1000 s:20/10 p:2/1
+expire_snapshots removes the statistics of the expired snapshots
+deleted_statistics_files_count	2
+statistics entries: 1
+statistics files: 1
+id:1 s:151/151 d:76/76 n:31/31 dec:301/301 ts:602/602 f:753/753 b:2/2

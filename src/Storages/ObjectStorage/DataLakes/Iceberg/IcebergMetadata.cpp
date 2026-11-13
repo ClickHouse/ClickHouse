@@ -1694,8 +1694,6 @@ std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
 /// entries and the blobs that the file keeps from an earlier snapshot.
 std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
 {
-    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
-
     std::unordered_map<Int32, UInt64> distinct_values;
     if (!statistics)
         return distinct_values;
@@ -1715,7 +1713,7 @@ std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::
 
             const auto type = blob->get(f_type);
             const auto fields = blob->getArray(f_fields);
-            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+            if (!type.isString() || type.convert<String>() != Iceberg::theta_sketch_blob_type || !fields || fields->size() != 1
                 || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
                 continue;
 
