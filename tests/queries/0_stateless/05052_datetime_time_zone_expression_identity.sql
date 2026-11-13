@@ -295,6 +295,14 @@ ORDER BY toString(arrayElement(['{"a":"1970-01-01 05:04:22"}'::JSON, '{"a":"2020
 LIMIT 2
 SETTINGS optimize_read_in_order = 1;
 
+SELECT 'JSON sorting key is still read in order for its own types', count() FROM (
+    EXPLAIN actions = 1
+    SELECT x FROM tz_json
+    ORDER BY toString(arrayElement(['{"a":"2020-01-01"}'::JSON, '{"a":"1970-01-01 05:04:22"}'::JSON], x))
+    LIMIT 2
+    SETTINGS optimize_read_in_order = 1
+) WHERE explain ILIKE '%Read type: InOrder%';
+
 DROP TABLE tz_json;
 
 -- A time zone left out of the type means the session time zone, so leaving it out and spelling it out
