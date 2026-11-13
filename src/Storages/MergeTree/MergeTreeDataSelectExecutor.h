@@ -89,8 +89,7 @@ public:
         /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
         /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
         bool allow_top_k_prewhere_query_condition_cache = false,
-        /// Only which parts may contain matching rows matters to the caller; the ranges returned are
-        /// then a coarse superset of the matching marks.
+        /// The caller needs only which parts may match; the returned ranges are then a coarse superset.
         bool stop_at_first_match = false) const;
 
     static MarkRanges markRangesFromPKRange(
