@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import signal
 import traceback
 from pathlib import Path
 
@@ -331,6 +332,35 @@ def get_run_command(
     )
 
 
+# The signals the client's own handlers report (`setupCommonDeadlySignalHandlers`), to its stderr,
+# which `run-fuzzer.sh` sends to `fuzzer.log`. `timeout --preserve-status` exits with 128 + signal.
+CLIENT_DEADLY_SIGNALS = frozenset(
+    {
+        signal.SIGABRT,
+        signal.SIGSEGV,
+        signal.SIGILL,
+        signal.SIGBUS,
+        signal.SIGSYS,
+        signal.SIGFPE,
+        signal.SIGTRAP,
+    }
+)
+CLIENT_FAILURE_NAME = "Client failure"
+
+
+def _client_failure(fuzzer_log: Path, fuzzer_exit_code: int) -> Result | None:
+    """The client's own failure, when it died of a deadly signal: no server log holds its report."""
+    if fuzzer_exit_code - 128 not in CLIENT_DEADLY_SIGNALS:
+        return None
+    return Result(
+        name=CLIENT_FAILURE_NAME,
+        info=f"The client died of {signal.Signals(fuzzer_exit_code - 128).name} "
+        f"(exit code {fuzzer_exit_code}). End of `fuzzer.log`:\n"
+        + _log_tail(fuzzer_log, max_lines=100),
+        status=Result.Status.FAIL,
+    )
+
+
 # What La Casa del Dolor's load generator may exit with when the run ends normally: it is
 # killed (negative codes from Python's `subprocess`) or loses the server it was talking to.
 # Same set as `BuzzHouseGenerator.validate_exit_code` in `tests/casa_del_dolor/generators.py`.
@@ -495,6 +525,13 @@ def analyze_job_logs(
                 )
             )
 
+    # A dead server skips the client's exit code above, but a client that died of a signal failed
+    # on its own. La Casa del Dolor names a failed generator itself.
+    if server_died and not server_fuzzer and (
+        client_failure := _client_failure(fuzzer_log, fuzzer_exit_code)
+    ):
+        results.append(client_failure)
+
     result = Result.create_from(
         results=(extra_results or []) + results,
         status=status if not results else None,
@@ -523,6 +560,51 @@ def analyze_job_logs(
         result.set_files(jemalloc_profiles)
 
     return result
+
+
+def triage_failure(
+    result: Result,
+    job_kind: str,
+    paths: list[Path],
+    repro_hint: str,
+    report_logs: tuple[list[Path], Path] | None = None,
+) -> None:
+    """Let the AI triage a failed `result` before it is reported, see `ai_fuzz_triage.py`.
+    `report_logs` are the server logs and the stderr log whose failure reports `result` names,
+    when its caller has not checked that it names them all."""
+    if not result.is_failure():
+        return
+    from ci.jobs.scripts.ai_fuzz_triage import triage_and_apply
+
+    failures = [(r.name, r.info) for r in result.results if not r.is_ok()] or [
+        (f"{job_kind} failure", result.info)
+    ]
+    if report_logs is not None:
+        err_logs, stderr_log = report_logs
+        inventory = FuzzerLogParser.incomplete_inventory(
+            [
+                (
+                    "the server and the client",
+                    err_logs,
+                    stderr_log,
+                    # The client's own failure is in `fuzzer.log`, not in these logs.
+                    FuzzerLogParser.named_reports(
+                        info for name, info in failures if name != CLIENT_FAILURE_NAME
+                    ),
+                )
+            ]
+        )
+        if inventory:
+            failures.append(inventory)
+    triage_and_apply(
+        result,
+        job_kind=job_kind,
+        failures=failures,
+        evidence_paths=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+        repro_hint="The tested ClickHouse binary is at `./ci/tmp/clickhouse` "
+        "(already executable). Use `./ci/tmp/clickhouse local` for "
+        "repro attempts. " + repro_hint,
+    )
 
 
 def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
@@ -726,6 +808,22 @@ def run_fuzz_job(check_name: str):
         WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log,
         extra_results,
     )
+
+    # BuzzHouse runs in CI under La Casa del Dolor, which triages its own failures
+    if not buzzhouse:
+        triage_failure(
+            result,
+            "AST Fuzzer",
+            paths,
+            "The failing query is in the terminal block of `fuzzer.log`: "
+            "the text after the last `Fuzzing step <n> out of <m>` marker, "
+            "with the fuzzed AST dump and the exception. Earlier steps ran "
+            "against the same server, so a repro may also need tables from "
+            "`fuzzer.log` context above the failing query.",
+            # The server and the client write their sanitizer reports to `stderr.log`, and the
+            # parser names the first one only.
+            report_logs=([server_log], stderr_log),
+        )
 
     result.complete_job()
 

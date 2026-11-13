@@ -1,7 +1,10 @@
+import gzip
 import itertools
 import re
 import string
+import subprocess
 import sys
+from pathlib import Path
 
 sys.path.append(".")
 from ci.praktika.utils import Shell
@@ -9,6 +12,9 @@ from ci.praktika.utils import Shell
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    INCOMPLETE_INVENTORY = "Incomplete failure inventory"
+    # Frames of `qualified_stack`: the STID keeps 5 (`get_stack_trace_id`).
+    QUALIFIED_STACK_MAX_FRAMES = 16
     # Exception messages carry the trailing ", Stack trace (when copying this message,
     # always include the lines below):" marker, but the frames it promises are on the
     # following log lines. The failure name is built from the first line only, so the
@@ -18,6 +24,37 @@ class FuzzerLogParser:
         ", Stack trace (when copying this message, always include the lines below):"
     )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
+    # The first line of the report of a fatal signal (`SignalHandlers.cpp`): one per crash.
+    CRASH_REPORT_START = "########################################"
+    SANITIZER_REPORT_START_RE = re.compile(
+        r"^(==\d+==)?(ERROR|WARNING): [a-zA-Z]+Sanitizer:|[a-zA-Z]+Sanitizer: CHECK failed:|: runtime error: "
+    )
+    # The first line of a report of a deadly signal, which the sanitizer writes straight to stderr,
+    # also when the rest of the report goes to `log_path` (`StartReportDeadlySignal`).
+    SANITIZER_DEADLY_SIGNAL_RE = re.compile(r"[a-zA-Z]+Sanitizer:DEADLYSIGNAL")
+    # The header of a report of a deadly signal (`ReportDeadlySignal`).
+    SANITIZER_DEADLY_REPORT_RE = re.compile(
+        r"Sanitizer: (?:\S+ on unknown address|stack-overflow on address)"
+    )
+    # A sanitizer OOM, which the log analysis passes the run for.
+    SANITIZER_OOM_RE = re.compile(
+        r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
+    )
+    # A `<Fatal>` or `<Error>` record of a server log: its thread and query ids, its level,
+    # its logger and its message.
+    FAILURE_RECORD_RE = re.compile(
+        r"\[ *(\d+) *\] \{([^}]*)\} <(Fatal|Error)> ([^:]*): ?(.*)"
+    )
+    # A logical exception the server survived is logged at `<Error>` with this in its message.
+    LOGICAL_ERROR_MARKER = "Logical error:"
+    # Where the exception message ends: the error code in parentheses follows it.
+    EXCEPTION_MESSAGE_END_RE = re.compile(r"\. \([A-Z_]+\)")
+    # The thread and the query a crash report is about (`SignalListener::onFault`).
+    FAULTING_QUERY_RE = re.compile(
+        r"\(from thread (\d+)\) (?:\(no query\)|\(query_id: ([^)]*)\))"
+    )
+    # How the watchdog logs the end of the server it runs: a consequence of a crash or a kill.
+    WATCHDOG_RECORD_START = "Child process "
     # A server log line quotes the query it is about after one of these markers, so a
     # failure pattern matching after such a marker matched the query text, not a
     # failure: a test comment or a fuzzed query may contain any text, e.g. the literal
@@ -831,6 +868,205 @@ class FuzzerLogParser:
         lines = [line.strip().replace("\n", "") for line in lines]
         return "\n".join(lines) if lines else None
 
+    @staticmethod
+    def _open_log(path):
+        return (gzip.open if str(path).endswith(".gz") else open)(
+            path, "rt", encoding="utf-8", errors="replace"
+        )
+
+    @staticmethod
+    def count_server_log_failures(log) -> int:
+        """The failures that the records of one server log hold. At `<Fatal>`: one per crash
+        report, and one per run of other records of a thread and query, such as an oracle
+        mismatch. At `<Error>`: one per distinct message of a logical exception the server
+        survived, which is logged again on every retry. The records of the thread that writes a
+        crash report belong to it, and so do those of the query and thread it is about, such as
+        the message of the logical exception that aborted."""
+        records = []
+        logical_errors = []
+        report_threads = set()
+        faulting_queries = set()
+        crashes = 0
+        # Only the candidate lines are read: the log itself can be gigabytes.
+        candidate_lines = subprocess.run(
+            [
+                "rg",
+                "--text",
+                "--search-zip",
+                "--fixed-strings",
+                "-e",
+                "<Fatal>",
+                "-e",
+                FuzzerLogParser.LOGICAL_ERROR_MARKER,
+                str(log),
+            ],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+        if candidate_lines.returncode > 1:
+            raise RuntimeError(f"Cannot read {log}: {candidate_lines.stderr}")
+        for line in candidate_lines.stdout.splitlines():
+            m = FuzzerLogParser.FAILURE_RECORD_RE.search(line)
+            if not m:
+                continue
+            thread, query, level, logger, message = m.groups()
+            if level == "Error":
+                # Only the record's own message: the query it quotes may contain any text.
+                for marker in FuzzerLogParser.QUERY_TEXT_MARKERS:
+                    message = message.split(marker, 1)[0]
+                _, found, text = message.partition(FuzzerLogParser.LOGICAL_ERROR_MARKER)
+                if found:
+                    text = FuzzerLogParser.EXCEPTION_MESSAGE_END_RE.split(text, 1)[0]
+                    logical_errors.append((thread, query, re.sub(r"\d+", "N", text.strip())))
+            elif FuzzerLogParser.CRASH_REPORT_START in message:
+                crashes += 1
+                report_threads.add(thread)
+            elif fault := FuzzerLogParser.FAULTING_QUERY_RE.search(message):
+                faulting_queries.add((fault.group(1), fault.group(2) or ""))
+            elif not (
+                logger == "Application"
+                and message.startswith(FuzzerLogParser.WATCHDOG_RECORD_START)
+            ):
+                records.append((thread, query))
+        standalone = 0
+        previous = None
+        for record in records:
+            if record[0] not in report_threads and record not in faulting_queries:
+                standalone += record != previous
+            previous = record
+        survived = {
+            text
+            for thread, query, text in logical_errors
+            if thread not in report_threads and (thread, query) not in faulting_queries
+        }
+        return crashes + standalone + len(survived)
+
+    @staticmethod
+    def count_failure_reports(err_logs, stderr_log) -> int:
+        """The failures that the logs of one process hold over all its restarts: those of the
+        `<Fatal>` and logical-exception `<Error>` records in each of its `err_logs`, and one per
+        sanitizer report in `stderr_log`. A sanitizer report never comes with a crash report: the sanitizer resets the signal
+        handlers before it aborts (`sanitizerDeathCallback`), so the two count different failures."""
+        total = 0
+        for path in err_logs:
+            if path and Path(path).is_file():
+                total += FuzzerLogParser.count_server_log_failures(path)
+        if stderr_log and Path(stderr_log).is_file():
+            total += FuzzerLogParser.count_sanitizer_reports(stderr_log)
+        return total
+
+    @staticmethod
+    def count_sanitizer_reports(stderr_log) -> int:
+        """The sanitizer reports in `stderr_log`, but a sanitizer OOM. A report of a deadly signal
+        starts with a `DEADLYSIGNAL` line, which may be far from the rest of the report, so one
+        without a header is counted as an unfinished report: one per line or header, whichever
+        is more."""
+        deadly_signals = deadly_reports = other_reports = 0
+        with FuzzerLogParser._open_log(stderr_log) as f:
+            for line in f:
+                if FuzzerLogParser.SANITIZER_DEADLY_SIGNAL_RE.search(line):
+                    deadly_signals += 1
+                elif FuzzerLogParser.SANITIZER_REPORT_START_RE.search(
+                    line
+                ) and not FuzzerLogParser.SANITIZER_OOM_RE.search(line):
+                    if FuzzerLogParser.SANITIZER_DEADLY_REPORT_RE.search(line):
+                        deadly_reports += 1
+                    else:
+                        other_reports += 1
+        return other_reports + max(deadly_signals, deadly_reports)
+
+    @staticmethod
+    def incomplete_inventory(processes):
+        """The failure that keeps a run red when a process logged more failure reports than were
+        named: the parser names one report per log, and the AI triage may pass the run on a known
+        issue of a named one. `processes` holds `(label, err_logs, stderr_log, named)`. Returns
+        `(name, info)`, or None when every report was named."""
+        unnamed = []
+        for label, err_logs, stderr_log, named in processes:
+            count = FuzzerLogParser.count_failure_reports(err_logs, stderr_log)
+            if count > named:
+                unnamed.append(f"{label} logged {count} reports, {named} named")
+        if not unnamed:
+            return None
+        return (
+            FuzzerLogParser.INCOMPLETE_INVENTORY,
+            "Not every failure report of the run was named, so no known issue can pass it: "
+            + "; ".join(unnamed)
+            + ". Check the logs of those processes.",
+        )
+
+    @staticmethod
+    def named_reports(infos) -> int:
+        """How many distinct failure records the failures with these `info`s name, one per stack.
+        A failure without a stack, such as an oracle mismatch, may name one too: it is counted, as
+        it has no stable signature, so it keeps the run red anyway."""
+        stacks = [FuzzerLogParser.qualified_stack(info) for info in infos]
+        return len({s for s in stacks if s}) + sum(1 for s in stacks if not s)
+
+    @staticmethod
+    def qualified_stack(info):
+        """The frames of the `Stack trace:` section of a failure's `info`, like the STID's but deeper
+        and with template arguments, so two failures sharing a name can still be told apart."""
+        _, sep, stack = (info or "").rpartition("Stack trace:\n")
+        if not sep:
+            return ()
+        return tuple(
+            FuzzerLogParser.stack_trace_functions(
+                stack, FuzzerLogParser.QUALIFIED_STACK_MAX_FRAMES, keep_templates=True
+            )
+        )
+
+    @staticmethod
+    def stack_trace_functions(stack_trace, max_depth, keep_templates=False):
+        """
+        The top `max_depth` functions of `stack_trace` in the `DB::` namespace, without arguments.
+
+        Template arguments are dropped too, unless `keep_templates`. Like for the stack trace ID,
+        `DB::Exception` functions and everything above them are skipped: the issue typically
+        occurs before the exception is thrown.
+        """
+        functions = []
+        for line in stack_trace.splitlines():
+            # Normalize multiple DB:: occurrences
+            line = line.replace(", DB::", "")
+            if " DB::" in line:
+                substring = line[line.find(" DB::") + 1 :]
+            elif line.startswith("DB::"):
+                substring = line
+            else:
+                continue
+            if keep_templates:
+                functions.append(FuzzerLogParser._function_with_templates(substring))
+            else:
+                functions.append(FuzzerLogParser._function_without_templates(substring))
+
+        for i, func in enumerate(functions):
+            if "DB::Exception" in func:
+                functions = functions[i + 1 :]
+                break
+        functions = [f for f in functions if "DB::Exception" not in f]
+        return functions[:max_depth]
+
+    @staticmethod
+    def _function_without_templates(frame):
+        """`frame` up to its first `(` or `<`."""
+        ends = [i for i in (frame.find("("), frame.find("<")) if i != -1]
+        return frame[: min(ends)] if ends else frame
+
+    @staticmethod
+    def _function_with_templates(frame):
+        """`frame` up to the `(` of its arguments, skipping parentheses inside template arguments."""
+        name, depth = [], 0
+        frame = frame.split(" @ ")[0].replace("(anonymous namespace)", "{anonymous}")
+        for ch in frame:
+            if ch == "(" and depth == 0:
+                break
+            depth += (ch == "<") - (ch == ">")
+            name.append(ch)
+        return " ".join("".join(name).split())
+
     def get_stack_trace_id(self, stack_trace):
         """
         Generate a stack trace ID (hash) to match and connect related stack traces.
@@ -849,49 +1085,7 @@ class FuzzerLogParser:
         if not stack_trace:
             return None
 
-        lines = stack_trace.splitlines()
-        functions = []
-
-        for line in lines:
-            # Normalize multiple DB:: occurrences
-            line = line.replace(", DB::", "")
-
-            # Check if line contains DB:: namespace
-            if " DB::" in line:
-                start_idx = line.find(" DB::")
-                substring = line[start_idx + 1 :]  # Skip the leading space
-            elif line.startswith("DB::"):
-                substring = line
-            else:
-                continue
-
-            # Truncate at first '(' or '<' to keep only function name
-            paren_idx = substring.find("(")
-            angle_idx = substring.find("<")
-
-            if paren_idx != -1 and angle_idx != -1:
-                end_idx = min(paren_idx, angle_idx)
-            elif paren_idx != -1:
-                end_idx = paren_idx
-            elif angle_idx != -1:
-                end_idx = angle_idx
-            else:
-                end_idx = len(substring)
-
-            substring = substring[:end_idx]
-            functions.append(substring)
-
-        # Remove exception functions and everything above them
-        for i, func in enumerate(functions):
-            if "DB::Exception" in func:
-                functions = functions[i + 1 :]
-                break
-        # Remove all remaining DB::Exception functions
-        functions = [f for f in functions if "DB::Exception" not in f]
-
-        # Limit to top ST_MAX_DEPTH functions for broader matching
-        functions = functions[:ST_MAX_DEPTH]
-
+        functions = FuzzerLogParser.stack_trace_functions(stack_trace, ST_MAX_DEPTH)
         if not functions:
             return None
 

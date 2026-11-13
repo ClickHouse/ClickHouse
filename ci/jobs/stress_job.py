@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -28,6 +28,29 @@ CRASH_CONSEQUENCE_RESULT_NAMES = frozenset(
         "Test script failed",
     }
 )
+# A failed restart can be independent of the named crash, e.g. a later hang loading
+# the metadata, so the triage still sees these rows: no issue of the crash may pass them.
+RESTART_FAILURE_RESULT_NAMES = frozenset(
+    {
+        "Cannot start clickhouse-server",
+        "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)",
+    }
+)
+
+
+def drop_crash_consequences(failed_results, triage_only_failures):
+    """The rows of `failed_results` that are not consequences of a named crash.
+
+    The dropped restart failures are appended to `triage_only_failures` as
+    (name, info) pairs.
+    """
+    kept = []
+    for result in failed_results:
+        if result.name not in CRASH_CONSEQUENCE_RESULT_NAMES:
+            kept.append(result)
+        elif result.name in RESTART_FAILURE_RESULT_NAMES:
+            triage_only_failures.append((result.name, result.info or ""))
+    return kept
 
 
 def container_memory_limit() -> int:
@@ -285,6 +308,7 @@ def process_results(
 
 def select_replica_failures(
     replica_log_pairs: List[Tuple[str, Path, Path]],
+    omitted: Optional[List[Tuple[str, str, List[str]]]] = None,
 ) -> List[Tuple[str, str, List[str]]]:
     """Pick the failures to report from every replica's (server, stderr) log pair.
 
@@ -298,13 +322,27 @@ def select_replica_failures(
     Returns a list of `(name, description, files)` tuples: all distinct specific
     findings; otherwise a single generic-fatal finding; otherwise a single
     "Unknown error" finding; otherwise an empty list (nothing parsed at all).
+
+    `omitted`, when given, receives every distinct generic `<Fatal>` finding that is
+    not returned, so a caller that may pass the run on the returned ones (the AI
+    triage) still accounts for them. The parser names one report per pair, so when a
+    replica logged more reports than were named, `omitted` also receives a failure no
+    issue covers, which keeps the run red.
     """
     specific_results: List[Tuple[str, str, List[str]]] = []
-    seen_specific_names = set()
-    generic_fatal_result = None
+    seen_specific = set()
+    generic_fatal_results: List[Tuple[str, str, List[str]]] = []
+    seen_generic = set()
     fallback_result = None
+    # Per replica: its server logs, its stderr log and the distinct failures named in them.
+    replica_logs: Dict[str, Tuple[List[Path], Path]] = {}
+    named_by_replica: Dict[str, set] = {}
 
     for replica_name, server_log_file, stderr_log in replica_log_pairs:
+        replica_logs.setdefault(replica_name, ([], stderr_log))[0].append(
+            server_log_file
+        )
+        named_by_replica.setdefault(replica_name, set())
         log_parser = FuzzerLogParser(
             server_log=server_log_file,
             stderr_log=str(stderr_log) if stderr_log.exists() else "",
@@ -316,16 +354,22 @@ def select_replica_failures(
             if stderr_log.exists():
                 file_pair_info += f", {stderr_log.name}"
             description = f"{file_pair_info}\n{description}"
+            # The name keeps only the STID's frames, so two bugs can share one: the
+            # qualified stack tells them apart, and the AI triage must see both.
+            key = (name, FuzzerLogParser.qualified_stack(description))
+            if name != FuzzerLogParser.UNKNOWN_ERROR:
+                named_by_replica[replica_name].add(key)
             if name == FuzzerLogParser.UNKNOWN_ERROR:
                 if fallback_result is None:
                     fallback_result = (name, description, files)
             elif log_parser.is_generic_fatal:
-                if generic_fatal_result is None:
-                    generic_fatal_result = (name, description, files)
-            elif name not in seen_specific_names:
+                if key not in seen_generic:
+                    seen_generic.add(key)
+                    generic_fatal_results.append((name, description, files))
+            elif key not in seen_specific:
                 # The same failure often surfaces on several replicas (shared
-                # storage / replication); report each distinct classification once.
-                seen_specific_names.add(name)
+                # storage / replication); report each distinct one once.
+                seen_specific.add(key)
                 specific_results.append((name, description, files))
         except Exception as e:
             print(
@@ -334,13 +378,20 @@ def select_replica_failures(
                 f"Server logs should still be collected."
             )
 
-    if specific_results:
-        return specific_results
-    if generic_fatal_result:
-        return [generic_fatal_result]
-    if fallback_result:
-        return [fallback_result]
-    return []
+    selected = (
+        specific_results
+        or generic_fatal_results[:1]
+        or ([fallback_result] if fallback_result else [])
+    )
+    if omitted is not None:
+        omitted.extend(r for r in generic_fatal_results if r not in selected)
+        inventory = FuzzerLogParser.incomplete_inventory(
+            (name, server_logs, stderr_log, len(named_by_replica[name]))
+            for name, (server_logs, stderr_log) in replica_logs.items()
+        )
+        if inventory:
+            omitted.append((*inventory, []))
+    return selected
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
@@ -432,6 +483,11 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     server_died = False
     crash_named = False
     failed_results = []
+    # Failures of the server logs that the report leaves out: generic `<Fatal>` reports
+    # of other replicas and reports the parser did not name
+    omitted_failures = []
+    # Restart failures the report drops as consequences of the named crash
+    restart_failures = []
     for test_result in test_results:
         if test_result.name == "Server died":
             server_died = True
@@ -473,7 +529,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            results = select_replica_failures(replica_log_pairs)
+            results = select_replica_failures(replica_log_pairs, omitted_failures)
             if results:
                 # The crash named in the server logs is the cause, so drop the rows
                 # about its consequences to report it once.
@@ -481,11 +537,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     name != FuzzerLogParser.UNKNOWN_ERROR for name, _, _ in results
                 )
                 if crash_named:
-                    failed_results = [
-                        r
-                        for r in failed_results
-                        if r.name not in CRASH_CONSEQUENCE_RESULT_NAMES
-                    ]
+                    failed_results = drop_crash_consequences(
+                        failed_results, restart_failures
+                    )
                 for name, description, files in results:
                     failed_results.append(
                         Result.create_from(
@@ -538,6 +592,70 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     if r.is_ok() and exit_code != 0 and not is_oom:
         r.set_failed().set_info(
             f"Unknown error: Test script failed with exit code {exit_code}"
+        )
+
+    if r.is_failure():
+        from ci.jobs.scripts.ai_fuzz_triage import triage_and_apply
+
+        evidence = [
+            str(p)
+            for p in (fatal_log, result_path, server_log_path)
+            if p.exists()
+        ]
+        binary_hint = (
+            "The tested build is the set of `.deb` packages in `./ci/tmp`. "
+            "Extract the binary with "
+            "`dpkg-deb -x ./ci/tmp/clickhouse-common-static_*.deb <scratch dir>` "
+            "and use `<scratch dir>/usr/bin/clickhouse local` for repro "
+            "attempts. Server logs are under "
+            "`./ci/tmp/server_log`, test outputs under `./ci/tmp/result_path`. "
+        )
+        if upgrade_check:
+            job_kind = "Upgrade check"
+            repro_hint = binary_hint + (
+                "This run installed the previous ClickHouse release, ran tests "
+                "on it, then upgraded to the tested build and restarted on the "
+                "old data - failures are usually old->new incompatibilities "
+                "(on-disk formats, settings, log errors after the upgrade), "
+                "not single-query bugs. Find which phase failed in the runner "
+                "output under `./ci/tmp/result_path`. A repro needs the same "
+                "sequence: create the state on the old version, then read it "
+                "with the tested binary. Settings randomization is disabled "
+                "in this mode."
+            )
+        else:
+            job_kind = "Stress test"
+            repro_hint = binary_hint + (
+                "The run executes the stateless suite "
+                "(`tests/queries/0_stateless/`) via `clickhouse-test "
+                "--stress-tests` in several parallel streams; stream `i` logs "
+                "to `./ci/tmp/result_path/stress_test_run_<i>.txt` and streams "
+                "differ in options (random order, shared or Replicated "
+                "databases, `join_use_nulls`, `join_algorithm`), with "
+                "per-test randomized settings including stress-only ones. The "
+                "server profile also sets `ast_fuzzer_runs=5`, so every test "
+                "query is additionally mutated by the AST fuzzer: a crashing "
+                "query may be a fuzzed variant that exists only in the server "
+                "log, not in any test file. For a crash, start from the query "
+                "in the server log next to the fatal entry, not from the test "
+                "file. Random query/client/mutation killers and server "
+                "restarts run in the background, so some failures need "
+                "concurrency and will not replay standalone - saying so with "
+                "`not_reproduced` is a valid outcome."
+            )
+        triage_and_apply(
+            r,
+            job_kind=job_kind,
+            # The issue of a reported failure must not pass the run over a fatal report
+            # or a failed restart the report leaves out, so the triage sees those too.
+            failures=[(fr.name, fr.info or "") for fr in failed_results]
+            + [(name, description) for name, description, _ in omitted_failures]
+            + restart_failures,
+            evidence_paths=evidence,
+            repro_hint=repro_hint,
+            # The Upgrade check job has a 2h timeout and its run phases are
+            # long; keep triage small enough to never push it over.
+            agent_timeout_sec=1200 if upgrade_check else 2400,
         )
 
     r.set_files(additional_logs).set_files(core_files).complete_job()

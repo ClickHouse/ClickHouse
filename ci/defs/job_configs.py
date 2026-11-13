@@ -278,6 +278,8 @@ common_stress_job_config = Job.Config(
         include_paths=[
             "./tests/queries/0_stateless/",
             "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/ai_fuzz_triage.py",
+            "./ci/jobs/scripts/agent.py",
             # stress_runner.sh drives the log export through clickhouse_proc.py
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/s3_key_lifecycle.py",
@@ -1466,6 +1468,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/upgrade_job.py",
                 "./ci/jobs/stress_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent.py",
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/jobs/scripts/s3_key_lifecycle.py",
@@ -1776,6 +1780,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent.py",
                 "./ci/jobs/scripts/log_parser.py",
                 # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
                 "./ci/jobs/scripts/clickhouse_proc.py",
@@ -1840,6 +1846,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent.py",
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
@@ -1891,6 +1899,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/integration",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent.py",
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/lacasadeldolor_job.py",
                 "./ci/jobs/scripts/cidb_cluster.py",
@@ -1922,8 +1932,9 @@ class JobConfigs:
         # Same DinD containment contract as `common_integration_test_job_config`: Dolor's servers
         # are nested containers too, so without `--cgroupns=private` and the `CI_DIND_*` budgets
         # `docker_in_docker.sh` starts an uncontained daemon, `--memory` bounds only the harness,
-        # and a nested OOM spills onto the runner instead of being classified here.
-        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
+        # and a nested OOM spills onto the runner instead of being classified here. AI triage runs
+        # in this container, so its kill switch and timeout overrides are forwarded too.
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}+-e AI_FUZZ_TRIAGE+-e AI_FUZZ_TRIAGE_TIMEOUT",
         # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
         # this its containers, images and volumes outlive the run and the next job on the runner
         # inherits them. Same hook the other integration-tests-runner jobs register.

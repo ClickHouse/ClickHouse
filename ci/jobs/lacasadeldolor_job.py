@@ -11,7 +11,12 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from ci.jobs.ast_fuzzer_job import JOB_ARTIFACTS, WORKSPACE_PATH, analyze_job_logs
+from ci.jobs.ast_fuzzer_job import (
+    JOB_ARTIFACTS,
+    WORKSPACE_PATH,
+    analyze_job_logs,
+    triage_failure,
+)
 from ci.jobs.buzzhouse_job import generate_buzz_config
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
@@ -54,12 +59,27 @@ DOLOR_FAILURES = (
 SERVER_LOG_FAILURES = ("Crash in instance", "Sanitizer error in instance")
 LOGICAL_ERROR_FAILURE = "Logical error in instance"
 # Teardown failures, which fail the run on their own. Such an OOM explains one only when it is
-# the teardown re-raising the OOM's sanitizer report (a Keeper's is reported by `_keeper_failure`).
+# the teardown re-raising the OOM's sanitizer report (a Keeper's is reported by `_keeper_failures`).
 CLEANUP_FAILURES = (
     "Cluster shutdown failed or found a problem",
     "Failed to close the Spark HTTP server",
 )
 CLEANUP_SANITIZER_ASSERT = "Exception: Sanitizer assert found for instance"
+# What the watchdog logs as `<Fatal>` when Dolor SIGKILLs the server (`EXPECTED_KILL_FATAL` of `dolor.py`).
+EXPECTED_KILL_FATAL = "Child process was terminated by signal 9 (KILL)"
+
+# What the AI triage of a failure is told about reproducing it
+TRIAGE_REPRO_HINT = (
+    "`fuzzerout.sql` is the full log of the statements BuzzHouse sent; the last ones "
+    "before the failure are the suspects. They often depend on tables, settings or "
+    "dictionaries created by earlier statements, so replay the tail first and grow the "
+    "replayed prefix until the failure reproduces. Unlike a plain BuzzHouse run, the "
+    "servers run with a randomized configuration (`effective_config<N>.xml`, "
+    "`effective_users<N>.xml`, `keeper<N>.xml`) and are restarted during the run, as "
+    "`dolor.log` records; `buzzhouse.json` holds the BuzzHouse configuration and "
+    "`server.sh` the server command line. When a repro with default settings fails, "
+    "start a server with the effective configuration."
+)
 
 
 def _start_docker_in_docker():
@@ -204,13 +224,18 @@ def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
     return copied
 
 
-def _parse_logs(server_log: Path, stderr_log: Path, fuzzer_out: Path):
+def _parse_logs(
+    server_log: Path,
+    stderr_log: Path | None,
+    fuzzer_out: Path,
+    parser_class: type[FuzzerLogParser] = FuzzerLogParser,
+):
     """The log parser's verdict on one process's logs, or None when it names nothing."""
     if not server_log.is_file():
         return None
-    name, description, files = FuzzerLogParser(
+    name, description, files = parser_class(
         server_log=str(server_log),
-        stderr_log=str(stderr_log) if stderr_log.is_file() else "",
+        stderr_log=str(stderr_log) if stderr_log and stderr_log.is_file() else "",
         fuzzer_log=str(fuzzer_out),
     ).parse_failure()
     if not name or name == FuzzerLogParser.UNKNOWN_ERROR:
@@ -230,36 +255,70 @@ def _rotated_logs(log: Path) -> list[Path]:
     return [p for _, p in sorted(numbered, reverse=True)]
 
 
+def _concatenate(parts: list[Path], combined: Path, skip: bytes = b"") -> Path:
+    """`parts` decompressed one after another into `combined`, without the lines holding `skip`."""
+    with open(combined, "wb") as out:
+        for part in parts:
+            if not part.is_file():
+                continue
+            with (gzip.open if part.suffix == ".gz" else open)(part, "rb") as f:
+                if skip:
+                    out.writelines(line for line in f if skip not in line)
+                else:
+                    shutil.copyfileobj(f, out)
+    return combined
+
+
 def _log_with_rotations(log: Path, combined: Path) -> Path:
     """`log` with its rotations decompressed in front of it, written to `combined`, or `log`
     itself when it has none. A process that aborted and was restarted can have its fatal
     record only in a rotation."""
     rotated = _rotated_logs(log)
-    if not rotated:
-        return log
-    with open(combined, "wb") as out:
-        for part in [*rotated, log]:
-            if not part.is_file():
-                continue
-            with (gzip.open if part.suffix == ".gz" else open)(part, "rb") as f:
-                shutil.copyfileobj(f, out)
-    return combined
+    return _concatenate([*rotated, log], combined) if rotated else log
 
 
-def _rotated_node_failure(workspace_path: Path, stderr_log: Path, fuzzer_out: Path):
-    """Name a failure that `dolor.py` found in a rotated server log. The analysis parses the
-    current log only, which belongs to the last server, not to one that crashed before a
-    restart. The main log comes first: the parser looks up the query there."""
+class _RotatedLogParser(FuzzerLogParser):
+    """A parser for the logs of a server restarted by Dolor, which did not necessarily fail: a
+    memory limit exception there was recovered from, so it names no failure."""
+
+    ERROR_PATTERNS = [
+        p for p in FuzzerLogParser.ERROR_PATTERNS if p[1] != "is_memory_limit_exceeded"
+    ]
+
+
+def _has_fatal_record(log: Path) -> bool:
+    pattern = re.compile(FuzzerLogParser.GENERIC_FATAL_PATTERN)
+    with open(log, "r", encoding="utf-8", errors="replace") as f:
+        return any(pattern.search(line) for line in f)
+
+
+def _rotated_node_failure(workspace_path: Path, fuzzer_out: Path):
+    """A failure in the rotated server logs, which belong to the servers before the last restart:
+    the analysis parses the current logs only. Without `stderr.log`, which every server appends to,
+    so that the parser names a failure of those servers, not the sanitizer report of the last one.
+    Nor the `<Fatal>` the watchdog logs for every restart `--kill-server-prob` makes.
+    Those servers may have been restarted healthy, so only logs with a `<Fatal>` record fail the run.
+    The main log comes first: the parser looks up the query there."""
     for name in ("server.log", "server.err.log"):
         log = workspace_path / name
-        combined = _log_with_rotations(log, workspace_path / f"{log.stem}.combined.log")
-        if combined != log and (failure := _parse_logs(combined, stderr_log, fuzzer_out)):
+        rotated = _rotated_logs(log)
+        if not rotated:
+            continue
+        combined = _concatenate(
+            rotated,
+            workspace_path / f"{log.stem}.rotated.log",
+            skip=EXPECTED_KILL_FATAL.encode(),
+        )
+        if _has_fatal_record(combined) and (
+            failure := _parse_logs(combined, None, fuzzer_out, _RotatedLogParser)
+        ):
             return failure
     return None
 
 
-def _keeper_failure(workspace_path: Path, fuzzer_out: Path):
-    """A failure report in a Keeper log, which nothing else reads."""
+def _keeper_failures(workspace_path: Path, fuzzer_out: Path) -> dict[int, Result]:
+    """The failure report of each Keeper whose logs hold one, which nothing else reads."""
+    failures: dict[int, Result] = {}
     for i in KEEPER_INDEXES:
         _, err_log, stderr_log = get_keeper_workspace_logs(workspace_path, i)
         err_log = _log_with_rotations(
@@ -273,13 +332,13 @@ def _keeper_failure(workspace_path: Path, fuzzer_out: Path):
             f"|[a-zA-Z]+Sanitizer: CHECK failed:|[a-zA-Z]+Sanitizer:DEADLYSIGNAL|: runtime error: ' {files}"
             " | rg --text -v 'Child process was terminated by signal 9'"
         ):
-            return _parse_logs(err_log, stderr_log, fuzzer_out) or Result(
+            failures[i] = _parse_logs(err_log, stderr_log, fuzzer_out) or Result(
                 name="Keeper",
                 info=f"A failure report in keeper{i} the log parser cannot name. "
                 "Check the keeper*.log artifacts.",
                 status=Result.Status.FAIL,
             )
-    return None
+    return failures
 
 
 def _dolor_failure_records(dolor_log: Path) -> list[str]:
@@ -318,10 +377,11 @@ def _classify_dolor_failure(
     server_log: Path,
     stderr_log: Path,
     fuzzer_out: Path,
+    server_failure_named: bool = False,
 ):
-    """Name why `dolor.py` failed a run that the log analysis passed, or return None when
-    the analysis already explains it (an OOM it passed the run for, with no teardown
-    failure the OOM does not account for)."""
+    """Name why `dolor.py` failed the run, or return None when the log analysis already
+    explains it: an OOM it passed the run for, with no teardown failure the OOM does not
+    account for, or a server failure it named (`server_failure_named`)."""
     if watchdog_expired:
         return Result(
             name="Watchdog timeout",
@@ -336,6 +396,9 @@ def _classify_dolor_failure(
             return Result(
                 name=name, info="\n".join(matching[:20]), status=Result.Status.FAIL
             )
+    if server_failure_named:
+        # The server-log reports and the non-zero exit below are that failure's.
+        return None
     found_in_server_logs = [
         r
         for r in records
@@ -367,16 +430,67 @@ def _classify_dolor_failure(
     )
 
 
+def _all_failures(
+    failures: list[Result | None],
+    rotated_failure: Result | None,
+    workspace_path: Path,
+    stderr_log: Path,
+    fuzzer_out: Path,
+) -> list[Result]:
+    """Every failure of the run, each name and stack once: the triage may pass a run on a known
+    issue, so it must see them all, also two sharing a name (it keeps only the STID's frames) but
+    not the qualified stack. `failures` are those of the current server logs and of `dolor.py`,
+    `rotated_failure` the one of the rotated server logs. The parser names one report per log, so
+    when a process logged more reports than were named, a failure no issue covers keeps the run red."""
+    keeper_failures = _keeper_failures(workspace_path, fuzzer_out)
+    distinct: dict[tuple, Result] = {}
+    for failure in [*failures, rotated_failure, *keeper_failures.values()]:
+        if failure is not None:
+            key = (failure.name, FuzzerLogParser.qualified_stack(failure.info))
+            distinct.setdefault(key, failure)
+    if not distinct:
+        return []
+
+    # A failure without a stack, such as one of `dolor.py`, keeps the run red anyway.
+    server_err_log = workspace_path / "server.err.log"
+    processes = [
+        (
+            "the server",
+            [*_rotated_logs(server_err_log), server_err_log],
+            stderr_log,
+            FuzzerLogParser.named_reports(f.info for f in failures if f)
+            + (rotated_failure is not None),
+        )
+    ]
+    for i in KEEPER_INDEXES:
+        _, err_log, keeper_stderr = get_keeper_workspace_logs(workspace_path, i)
+        processes.append(
+            (f"keeper{i}", [*_rotated_logs(err_log), err_log], keeper_stderr, int(i in keeper_failures))
+        )
+    result = list(distinct.values())
+    if inventory := FuzzerLogParser.incomplete_inventory(processes):
+        name, info = inventory
+        result.append(Result(name=name, info=info, status=Result.Status.FAIL))
+    return result
+
+
 def _complete_with_artifacts(
-    failure: Result, sw: Utils.Stopwatch, workspace_path: Path, paths: list[Path]
+    failures: list[Result],
+    sw: Utils.Stopwatch,
+    workspace_path: Path,
+    paths: list[Path],
+    info: str = "",
 ) -> None:
-    """Report a failure this wrapper found itself, with the artifacts `analyze_job_logs`
+    """Report the failures this wrapper collected, with the artifacts `analyze_job_logs`
     attaches to the failures it reports."""
-    result = Result.create_from(results=[failure], info=failure.name, stopwatch=sw)
+    result = Result.create_from(
+        results=failures, info=info or failures[0].name, stopwatch=sw
+    )
     result.set_files(ClickHouseService.collect_cores(workspace_path))
     for file in paths:
         if file.exists() and file.stat().st_size > 0:
             result.set_files(file)
+    triage_failure(result, "La Casa del Dolor", paths, TRIAGE_REPRO_HINT)
     result.complete_job()
 
 
@@ -684,7 +798,18 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             # A server that aborted (e.g. on a sanitizer report during startup) makes `dolor.py`
             # raise too: name the server's failure rather than the exception it caused.
             if (failure := _parse_logs(server_log, stderr_log, buzz_out)) is not None:
-                _complete_with_artifacts(failure, sw, workspace_path, paths)
+                _complete_with_artifacts(
+                    _all_failures(
+                        [failure],
+                        _rotated_node_failure(workspace_path, buzz_out),
+                        workspace_path,
+                        stderr_log,
+                        buzz_out,
+                    ),
+                    sw,
+                    workspace_path,
+                    paths,
+                )
             tb_start = tail.rfind("Traceback (most recent call last):")
             tb_snippet = tail[tb_start:].strip()
             Result.create_from(
@@ -745,19 +870,23 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         buzz_out,
         server_fuzzer=True,
     )
-    if server_died and not result.is_ok() and not result.results:
-        # The analysis failed the run without naming it from the current logs.
-        failure = _rotated_node_failure(workspace_path, stderr_log, buzz_out)
-        if failure is not None:
-            _complete_with_artifacts(failure, sw, workspace_path, paths)
-    if result.is_ok():
-        # Nothing above reads the Keeper logs, and `dolor.py` can exit 0 with one of them
-        # holding a report.
-        failure = _keeper_failure(workspace_path, buzz_out)
-        if failure is None and not cmd_ok:
-            # The analysis reads no log when the generator ended normally and the server
-            # survived, so whatever `dolor.py` failed the run on is named here.
-            failure = _classify_dolor_failure(
+    failures: list[Result | None] = [r for r in result.results if not r.is_ok()]
+    # A server that failed before a restart can be in the rotated logs only, whatever the current
+    # ones show, so it is reported whenever they hold a failure.
+    rotated_failure = _rotated_node_failure(workspace_path, buzz_out)
+    # Unless the analysis failed the run without naming it from the current logs, the rotated
+    # failure is another server's, which leaves those logs to be classified below.
+    server_failure_named = any(failures) or (
+        server_died and not result.is_ok() and rotated_failure is not None
+    )
+    # An error the analysis names nothing for stays one: the triage never passes it.
+    collect = server_failure_named or not result.is_error()
+    if collect and not cmd_ok:
+        # The analysis reads no log when the generator ended normally and the server
+        # survived, and a failure it names may hide another, so whatever `dolor.py` failed
+        # the run on is named here.
+        failures.append(
+            _classify_dolor_failure(
                 dolor_log,
                 "test considered passed" in result.info
                 or "stayed alive" in result.info,
@@ -765,10 +894,24 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 server_log,
                 stderr_log,
                 buzz_out,
+                server_failure_named,
             )
-        if failure is not None:
-            _complete_with_artifacts(failure, sw, workspace_path, paths)
+        )
+    # `dolor.py` can exit 0 with a Keeper log holding a report.
+    if collect and (
+        failures := _all_failures(
+            failures, rotated_failure, workspace_path, stderr_log, buzz_out
+        )
+    ):
+        _complete_with_artifacts(
+            failures,
+            sw,
+            workspace_path,
+            paths,
+            info=result.info if not result.is_ok() else "",
+        )
 
+    triage_failure(result, "La Casa del Dolor", paths, TRIAGE_REPRO_HINT)
     result.complete_job()
 
 
