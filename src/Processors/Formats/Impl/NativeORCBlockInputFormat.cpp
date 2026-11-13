@@ -1111,13 +1111,15 @@ static const ORC::Type * traverseDownORCTypeByName(
     auto search_struct_field = [&](const std::string & target_, const ORC::Type * type_, const IcebergORCFieldNames * names)
         -> std::pair<std::string, const ORC::Type *>
     {
+        /// A top-level field named like the whole request wins over an earlier one whose name is a dotted prefix of it, as a column
+        /// does over a subcolumn. Nested fields are matched in file order, as `Tuple` elements are.
+        const bool whole_name_first = type_->getColumnId() == 0;
         auto search_pass = [&](bool fold) -> std::pair<std::string, const ORC::Type *>
         {
             auto target_copy = target_;
             if (fold)
                 boost::to_lower(target_copy);
 
-            /// A field named like the whole request wins over an earlier one whose name is a dotted prefix of it.
             std::pair<std::string, const ORC::Type *> prefix_match{"", nullptr};
             for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
             {
@@ -1137,7 +1139,11 @@ static const ORC::Type * traverseDownORCTypeByName(
                 if (target_copy == field_name)
                     return {"", type_->getSubtype(i)};
                 if (!prefix_match.second && startsWith(target_copy, field_name) && target_copy[field_name.size()] == '.')
+                {
                     prefix_match = {target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    if (!whole_name_first)
+                        break;
+                }
             }
             return prefix_match;
         };
