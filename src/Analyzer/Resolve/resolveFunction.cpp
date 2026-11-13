@@ -1468,6 +1468,12 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
         auto same_length = buildResolvedFunction("equals", {std::move(left_length), std::move(right_length)}, context);
         result = buildResolvedFunction("and", {std::move(same_length), buildResolvedFunction("not", {std::move(has_mismatch)}, context)}, context);
     }
+    else if (left_map && right_map && left_type->equals(*right_type))
+    {
+        /// Whole-value `Map` equality already compares nullable values and `NaN`
+        /// with container semantics. Keep the vectorized comparison for equal types.
+        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    }
     else if (left_map && right_map)
     {
         auto left_keys = buildResolvedFunction("mapKeys", {left_argument}, context);
@@ -1708,10 +1714,7 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                     auto within_exact_range = buildResolvedFunction(
                         "less", {std::move(raw_magnitude), std::make_shared<ConstantNode>(Field{UInt64{1} << 51})}, context);
                     auto fast_equal = buildResolvedFunction("equals", {decimal_argument, numeric_argument}, context);
-                    auto fast_match = buildResolvedFunction("and", {within_exact_range, std::move(fast_equal)}, context);
-                    auto precise_match = buildResolvedFunction(
-                        "and", {buildResolvedFunction("not", {std::move(within_exact_range)}, context), std::move(result)}, context);
-                    result = buildResolvedFunction("or", {std::move(fast_match), std::move(precise_match)}, context);
+                    result = buildResolvedFunction("if", {std::move(within_exact_range), std::move(fast_equal), std::move(result)}, context);
                 }
             }
         }
