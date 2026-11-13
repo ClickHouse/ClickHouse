@@ -164,7 +164,7 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
         share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     StorageInMemoryMetadata metadata_copy = *metadata;
-    commands.prepare(metadata_copy, share_nested);
+    commands.prepare(metadata_copy, context, share_nested);
     table->checkAlterIsPossible(commands, context);
     /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
     removeImplicitStatistics(metadata_copy.columns);
@@ -504,7 +504,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
-            alter_commands->prepare(*metadata_snapshot, share_nested);
+            alter_commands->prepare(*metadata_snapshot, context, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
