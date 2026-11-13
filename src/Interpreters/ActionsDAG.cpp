@@ -5146,9 +5146,8 @@ static void serializeConstant(
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
 
-/// The maximum number of nodes in a deserialized `ActionsDAG`. The nodes have to be preallocated
-/// (children may reference nodes that come later in the stream), so the declared count must be
-/// bounded before it sizes the allocation.
+/// The maximum number of nodes in a deserialized `ActionsDAG`. The nodes are preallocated,
+/// so the declared count must be bounded before it sizes the allocation.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_NODES = 1'000'000;
 
 static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
@@ -5395,6 +5394,13 @@ ActionsDAG ActionsDAG::deserialize(
     for (size_t i = 0; i < nodes_size; ++i)
         id_to_node.push_back(&nodes.emplace_back());
 
+    auto get_node = [&](size_t id, size_t limit)
+    {
+        if (id >= limit)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", id, limit);
+        return id_to_node[id];
+    };
+
     for (size_t i = 0; i < nodes_size; ++i)
     {
         Node & node = *id_to_node.at(i);
@@ -5420,7 +5426,8 @@ ActionsDAG ActionsDAG::deserialize(
         {
             size_t child_id = 0;
             readVarUInt(child_id, in);
-            children.push_back(id_to_node.at(child_id));
+            /// `serialize` writes every node after its children.
+            children.push_back(get_node(child_id, i));
         }
         node.children.assign(children.begin(), children.end());
 
@@ -5538,7 +5545,7 @@ ActionsDAG ActionsDAG::deserialize(
     {
         size_t input_id = 0;
         readVarUInt(input_id, in);
-        const auto * input = id_to_node.at(input_id);
+        const auto * input = get_node(input_id, nodes_size);
 
         if (input->type != ActionType::INPUT)
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -5565,7 +5572,7 @@ ActionsDAG ActionsDAG::deserialize(
     {
         size_t output_id = 0;
         readVarUInt(output_id, in);
-        outputs.push_back(id_to_node.at(output_id));
+        outputs.push_back(get_node(output_id, nodes_size));
     }
 
     for (const auto & node : nodes)
