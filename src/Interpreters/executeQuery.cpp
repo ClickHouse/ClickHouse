@@ -27,6 +27,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/copyData.h>
 
 #include <Processors/ProcessorsProfileLogInfo.h>
@@ -207,6 +208,7 @@ namespace Setting
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 log_query_plans_max_size;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -909,6 +911,28 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 }
 
 
+/// The document is written into a buffer that grows from here up to the limit, rather than
+/// starting at `DBMS_DEFAULT_BUFFER_SIZE`, which every plan would then allocate in full.
+static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
+
+/// A row whose plan could not be written says why, in place of the plan.
+static void writeQueryPlanError(String & query_plan, const String & reason)
+{
+    query_plan.clear();
+    try
+    {
+        WriteBufferFromString out(query_plan);
+        FlatJSONPlanRenderer::renderError(reason, out);
+        out.finalize();
+    }
+    catch (...)
+    {
+        /// Ok to swallow: writing the error itself failed. An empty column takes its default of an
+        /// empty JSON object; a half-written document would not be valid JSON.
+        query_plan.clear();
+    }
+}
+
 static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
 {
     auto plan_log_capture = context->getPlanLogCapture();
@@ -924,31 +948,35 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     /// profiling that allocates in proportion to the plan, hence the blocker.
     MemoryTrackerBlockerInThread block_memory_tracker;
 
+    const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
+
     try
     {
-        WriteBufferFromString out(elem.query_plan);
+        /// A query decides how much text its own plan contains, so the document is written into a
+        /// buffer that cannot grow past the limit rather than measured once it already has.
+        /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
+        MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
         FlatJSONPlanRenderer renderer;
-        renderer.render(*captured, out);
+        renderer.render(*captured, plan_buffer);
+        plan_buffer.finalize();
+
+        WriteBufferFromString out(elem.query_plan);
+        copyData(*plan_buffer.tryGetReadBuffer(), out);
         out.finalize();
+    }
+    catch (const WriteBuffer::CurrentBufferExhausted &)
+    {
+        /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
+        /// and the row carries the reason. The exception says only that a buffer ran out, naming
+        /// neither the plan nor the setting, so the message is written here instead.
+        writeQueryPlanError(
+            elem.query_plan,
+            fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Replace the half-written document with the reason it could not be written.
-        elem.query_plan.clear();
-        try
-        {
-            WriteBufferFromString out(elem.query_plan);
-            FlatJSONPlanRenderer::renderError(getCurrentExceptionMessage(/*with_stacktrace=*/ false), out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            /// Ok to swallow: writing the error itself failed. An empty column takes its default
-            /// of an empty JSON object; a half-written document would not be valid JSON.
-            elem.query_plan.clear();
-        }
+        writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
     }
 }
 static void logQueryFinishImpl(

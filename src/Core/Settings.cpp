@@ -3320,6 +3320,16 @@ Maximum length, in bytes, of a query plan step description. Longer descriptions 
 )", 0, \
         {"25.9", 1000000000, 500, "New setting"}) \
     \
+    DECLARE(UInt64, log_query_plans_max_size, 1048576, R"(
+Maximum size, in bytes, of the document written to the `query_plan` column of [`system.query_log`](/reference/system-tables/query_log) by [`log_query_plans`](/reference/settings/session-settings/log#log_query_plans).
+
+A query decides how much text its own plan contains: a large `IN` list, a long alias or a folded constant are all rendered into it. This bounds what one query can store on its row, and the document is written into a buffer of this size, so it also bounds what rendering one plan can allocate.
+
+A plan that does not fit is not stored truncated, because half a document is not a plan. The column holds the reason instead, as `{"Error": ...}`.
+
+`0` means no limit.
+)", 0) \
+    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \

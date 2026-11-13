@@ -24,11 +24,11 @@ namespace
 /// Cuts a captured string to `max_bytes`, which is `query_plan_max_step_description_length`. Zero
 /// means no limit.
 ///
-/// Every piece of text a step renders goes through here. A step renders its literals, so a query
-/// carrying a large `IN` list or a folded constant produces a correspondingly large string, and
-/// this one is stored on a `system.query_log` row rather than streamed to the client as `EXPLAIN`
-/// does. The capture also runs with the memory tracker blocked, so without the cut the size of a
-/// row would answer to nothing.
+/// A step renders its literals into the text it describes itself with, so a query carrying a large
+/// `IN` list produces a correspondingly large string, and this one is stored on a
+/// `system.query_log` row rather than streamed to the client as `EXPLAIN` does. The capture also
+/// runs with the memory tracker blocked, so without the cut the size of a row would answer to
+/// nothing.
 ///
 /// The cut is moved back to a UTF-8 boundary: the bytes end up in a `JSON` column, and half of a
 /// multi-byte character is not a character.
@@ -102,38 +102,24 @@ String stepDescription(
 
 /// Only a `ReadFromMergeTree` analyses indexes, and the analysis is data it already holds --
 /// `describeIndexes` is one rendering of it, this capture is another.
-PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
+PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.indexes || !read_from_merge_tree)
         return {};
 
-    PlanIndexStats stats = read_from_merge_tree->getIndexStats();
-    for (auto & stat : stats)
-    {
-        stat.description = truncateCapturedText(stat.description, max_description_length);
-        stat.condition = truncateCapturedText(stat.condition, max_description_length);
-    }
-
-    return stats;
+    return read_from_merge_tree->getIndexStats();
 }
 
 /// See `stepIndexes`: the same data, from the same step. A query served from a projection says so
 /// here, as `EXPLAIN` does.
-PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
+PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.projections || !read_from_merge_tree)
         return {};
 
-    PlanProjectionStats stats = read_from_merge_tree->getProjectionStats();
-    for (auto & stat : stats)
-    {
-        stat.description = truncateCapturedText(stat.description, max_description_length);
-        stat.condition = truncateCapturedText(stat.condition, max_description_length);
-    }
-
-    return stats;
+    return read_from_merge_tree->getProjectionStats();
 }
 
 /// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
@@ -174,8 +160,8 @@ CapturedStep captureStep(
     captured.type = step.getName();
     captured.description = stepDescription(step, options, max_description_length);
     captured.details = stepDetails(step, options, max_description_length, plan_pretty_names);
-    captured.indexes = stepIndexes(step, options, max_description_length);
-    captured.projections = stepProjections(step, options, max_description_length);
+    captured.indexes = stepIndexes(step, options);
+    captured.projections = stepProjections(step, options);
     captured.statistics = stepStatistics(step, steps_to_stats);
 
     return captured;
@@ -222,8 +208,7 @@ CapturedPlan CapturedPlan::capture(
         const auto & root_step = *walk.plan->getRootNode()->step;
         if (root_step.hasOutputHeader() && root_step.getOutputHeader())
             for (const auto & column : *root_step.getOutputHeader())
-                result.output.push_back(
-                    truncateCapturedText(QueryPlanFormat::formatColumnPretty(column.name, names), max_description_length));
+                result.output.push_back(QueryPlanFormat::formatColumnPretty(column.name, names));
     }
 
     return result;
