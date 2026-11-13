@@ -125,6 +125,26 @@ leak=$(${trace_client} --user "${ok}" --async-insert 0 --query "INSERT INTO ${db
 echo -n "flush hidden from the triggering user: "
 if ! echo "$leak" | grep -qE "${low}|secret_05621|Not enough privileges|can no longer be flushed"; then echo "OK"; else echo "UNEXPECTED"; fi
 echo -n "undeliverable batch discarded:         "; ${CH} --query "SELECT countIf(s = 'from_low') FROM ${db}.single_hop"
+# The same between two credentials of one user: a credential limited to the buffer and its destination flushes a
+# batch of the full credential, and must not see the full credential's grant on secret_05621.
+cred="user_05621_cred_${CLICKHOUSE_DATABASE}"
+${CH} --multiquery <<EOF
+DROP USER IF EXISTS ${cred};
+CREATE TABLE ${victim_db}.cred_dst (s String) ENGINE = MergeTree ORDER BY s;
+CREATE TABLE ${db}.cred_buf (s String) ENGINE = Buffer(${victim_db}, cred_dst, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+CREATE USER ${cred} IDENTIFIED WITH plaintext_password BY 'full_05621', plaintext_password BY 'limited_05621'
+    GRANTS (INSERT ON ${db}.cred_buf, INSERT ON ${victim_db}.cred_dst);
+GRANT INSERT ON ${db}.cred_buf TO ${cred};
+GRANT INSERT ON ${victim_db}.cred_dst TO ${cred};
+GRANT SELECT ON ${victim_db}.secret_05621 TO ${cred};
+EOF
+${CLICKHOUSE_CLIENT} --user "${cred}" --password full_05621 --async-insert 0 --query "INSERT INTO ${db}.cred_buf VALUES ('full')"
+# Make the flush recompute the user's access, which logs its grants.
+${CH} --query "REVOKE SELECT ON ${victim_db}.secret_05621 FROM ${cred}"
+${CH} --query "GRANT SELECT ON ${victim_db}.secret_05621 TO ${cred}"
+leak=$(${trace_client} --user "${cred}" --password limited_05621 --async-insert 0 --query "INSERT INTO ${db}.cred_buf VALUES ('limited')" 2>&1)
+echo -n "hidden from another credential of the same user: "
+if ! echo "$leak" | grep -q "secret_05621"; then echo "OK"; else echo "UNEXPECTED"; fi
 
 echo "## Part G: a non-authorization flush failure is retained, and its error is not leaked cross-identity"
 # low buffers a value that violates the destination's CHECK constraint: a non-authorization failure, so (unlike
@@ -182,6 +202,6 @@ ${CH} --query "OPTIMIZE TABLE ${db}.home_alias_buf"
 echo -n "home_buf: delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${victim_db}.home_dst"
 echo -n "home_alias_buf: delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${home_db}.alias_dst"
 
-${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}; DROP USER IF EXISTS ${home}" 2>/dev/null
+${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}; DROP USER IF EXISTS ${home}; DROP USER IF EXISTS ${cred}" 2>/dev/null
 ${CH} --query "DROP DATABASE IF EXISTS ${home_db}"
 ${CH} --query "DROP DATABASE IF EXISTS ${victim_db}"

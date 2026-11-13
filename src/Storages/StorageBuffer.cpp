@@ -185,13 +185,27 @@ struct BufferWriteIdentity
         if (!sameClientHost(current_address, other.current_address) || !sameClientHost(initial_address, other.initial_address))
             return false;
 
-        /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
-        /// identity comparison would wrongly split two equal limits coming from different sessions.
+        return sameAuthenticationGrants(other);
+    }
+
+    /// Whether a context with this identity has the same access as one with `other`: the same user, effective and
+    /// external roles, and credential grant limit. Only then may a query under one see the diagnostics of a flush
+    /// under the other; two credentials of one user may grant different rights.
+    bool hasSameAccess(const BufferWriteIdentity & other) const
+    {
+        if (std::tie(user_id, current_roles, external_roles) != std::tie(other.user_id, other.current_roles, other.external_roles))
+            return false;
+        return sameAuthenticationGrants(other);
+    }
+
+private:
+    /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
+    /// identity comparison would wrongly split two equal limits coming from different sessions.
+    bool sameAuthenticationGrants(const BufferWriteIdentity & other) const
+    {
         if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
             return false;
-        if (authentication_grants && authentication_grants->toStringPrecise() != other.authentication_grants->toStringPrecise())
-            return false;
-        return true;
+        return !authentication_grants || authentication_grants->toStringPrecise() == other.authentication_grants->toStringPrecise();
     }
 };
 
@@ -1518,14 +1532,15 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
 
-    /// A flush triggered by a different user's operation (an insert under another identity, `OPTIMIZE`, `DROP`) must
-    /// show that user nothing of the buffering identity: neither the log records of rebuilding its access (its name,
-    /// roles and grants are logged at trace level) or of the write, nor the exception, which is replaced below.
+    /// A flush triggered by an operation with different access (another user, or another credential or roles of the
+    /// same user; an insert, `OPTIMIZE`, `DROP`) must show it nothing of the buffering identity: neither the log
+    /// records of rebuilding its access (its name, roles and grants are logged at trace level) or of the write, nor the
+    /// exception, which is replaced below.
     const auto triggering_context = CurrentThread::tryGetQueryContext();
-    const bool flushed_for_other_user = flushed_under_user_identity && triggering_context
-        && triggering_context->getUserID() != buffer.write_identity->user_id;
+    const bool flushed_for_other_identity = flushed_under_user_identity && triggering_context
+        && !buffer.write_identity->hasSameAccess(*captureWriteIdentity(triggering_context));
     std::optional<CurrentThread::HideLogsFromClientScope> hide_logs_from_client;
-    if (flushed_for_other_user)
+    if (flushed_for_other_identity)
         hide_logs_from_client.emplace();
 
     /// The block is out of `buffer.data` now: put it back on any exit unless it was delivered or deliberately
@@ -1596,8 +1611,8 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
             block_settled = true;
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
-            /// Omits the exception text and the buffering user name, which the client of a flush triggered by
-            /// another user does not see anyway.
+            /// Omits the exception text and the buffering user name, which the client of a flush triggered under
+            /// different access does not see anyway.
             LOG_INFO(
                 log,
                 "Discarding {} rows ({} bytes) buffered for destination table {}: it can no longer be flushed "
@@ -1608,9 +1623,9 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         /// Downstream/transient failure, with the local identity still able to deliver: the block goes back to its
         /// place in the buffer (see above) and is retried later. Do not surface the buffering identity's exception
-        /// (its name, required grants, table names) to a different user who triggered the flush; the background
-        /// flush records the cause server-side.
-        if (flushed_for_other_user)
+        /// (its name, required grants, table names) to an operation with different access that triggered the flush;
+        /// the background flush records the cause server-side.
+        if (flushed_for_other_identity)
             throw Exception(
                 getCurrentExceptionCode(),
                 "Could not flush a buffered batch to destination table {}; it is retained for retry.",
