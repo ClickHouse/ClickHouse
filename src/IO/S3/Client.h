@@ -43,6 +43,8 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+#include <Common/Silk/FiberMutex.h>
+
 namespace DB::S3
 {
 
@@ -61,7 +63,7 @@ struct ClientCache
 
     void clearCache();
 
-    mutable std::mutex region_cache_mutex;
+    mutable Silk::FiberMutex region_cache_mutex;
     UnorderedMapWithMemoryTracking<std::string, std::string, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>
         region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
@@ -238,7 +240,7 @@ public:
 
     bool isClientForDisk() const
     {
-        return client_configuration.for_disk_s3;
+        return client_configuration.group == HTTPConnectionGroupType::DISK;
     }
 
     ProviderType getProviderType() const { return provider_type; }
@@ -391,7 +393,7 @@ public:
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
-        bool for_disk_s3,
+        HTTPConnectionGroupType group,
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
@@ -405,7 +407,7 @@ public:
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
-        bool for_disk_s3,
+        HTTPConnectionGroupType group,
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https") = delete;

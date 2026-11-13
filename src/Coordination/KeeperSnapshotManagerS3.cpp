@@ -121,7 +121,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             s3_slow_all_threads_after_network_error,
             s3_slow_all_threads_after_retryable_error,
             enable_s3_requests_logging,
-            /* for_disk_s3 = */ false,
+            /* group = */ HTTPConnectionGroupType::STORAGE,
             /* opt_disk_name = */ {},
             /* request_throttler = */ {},
             new_uri.uri.getScheme());
