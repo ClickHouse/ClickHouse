@@ -2077,9 +2077,13 @@ When disabled, row policies are applied before FINAL, which can cause different 
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
 If the row policy expression is deterministic and depends only on non-floating-point columns in ORDER BY, it will still be
-applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns
+applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. A value computed
+once for the whole query, such as `currentUser()`, `now()` or the set of `IN (subquery)`, does not prevent this
+optimization; the set of a `Set` table, which can change while the query runs, does. Floating-point columns
 or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
+`GraphiteMergeTree` rolls up rows with different times into one row, so for it only the path column counts, and only
+when it is the first `ORDER BY` column.
 
 Possible values:
 
@@ -10788,6 +10792,10 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
+    DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
+)", 0, \
+        {"26.11", true, false, "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode when they became large, which saves memory but can make large joins slower."}) \
     DECLARE(Bool, enable_packed_string_keys_in_hash_join, true, R"(
 In `hash`, `parallel_hash` and `grace_hash` joins on a single `String` key, store each key in the hash table as a 16-byte value. This includes a join with `OR` whose every condition has a single `String` key. It also includes a `hash` or `parallel_hash` join after it is converted to `grace_hash` to spill to disk.
 

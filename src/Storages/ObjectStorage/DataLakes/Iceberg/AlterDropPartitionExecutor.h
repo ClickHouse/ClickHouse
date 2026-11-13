@@ -62,6 +62,8 @@ private:
     {
         IcebergDataSnapshotPtr snapshot;
         TableStateSnapshot table_state;
+        /// The catalog pointer `table_state` was read from, empty without a catalog.
+        String catalog_metadata_location;
         Poco::JSON::Object::Ptr metadata_object;
         Poco::JSON::Object::Ptr partition_spec;
         Int64 partition_spec_id = 0;

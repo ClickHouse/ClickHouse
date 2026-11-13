@@ -659,7 +659,7 @@ ExpireSnapshotsResult expireSnapshots(
             CompressionMethod::None,
             write_format);
         auto log = getLogger("IcebergExpireSnapshots");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
@@ -796,12 +796,13 @@ ExpireSnapshotsResult expireSnapshots(
             {
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+                /// Nothing is deleted yet, so a conflict is retried like the metadata file conflict above.
+                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, base_catalog_metadata_location, nullptr, metadata))
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Failed to update catalog metadata after writing new metadata file. "
-                        "The table metadata may be in an inconsistent state");
+                    if (!catalog->isTransactional())
+                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                    LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+                    continue;
                 }
             }
         }
