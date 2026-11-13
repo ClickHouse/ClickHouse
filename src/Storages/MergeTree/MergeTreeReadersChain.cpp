@@ -486,32 +486,41 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
 
-    /// Account the granules this block read and dropped by PREWHERE. `entering` is the rows that reached
-    /// PREWHERE (survivors at the first query-PREWHERE reader's input, or the raw rows read when PREWHERE is
-    /// the first reader); a granule is read by PREWHERE only when `entering > 0`, so marks pruned before
-    /// PREWHERE and granules emptied by an earlier mutation/row-policy filter are excluded. A granule counts as
-    /// dropped only when the user predicate alone emptied it: empty after the last user step
-    /// (`prewhere_prev_surviving == 0`, measured before any later dynamic filter) and never thinned by a dynamic
-    /// filter (`!prewhere_dynamic_touched`). Feed them in mark order; a granule split across blocks is reassembled
-    /// by `feedPrewhereGranuleMark`, which OR-s the markers, so it is dropped only when every fragment was cleanly
-    /// emptied by the user predicate.
+    /// Account the granules this block read and dropped by PREWHERE. For each granule, feed three flags to the
+    /// mark combiner: whether rows reached the user predicate (`read`), whether any survived it (`survived`),
+    /// and whether a synthesized dynamic filter removed rows from it (`contaminated`). `read` is `entering > 0`
+    /// -- the survivors reaching the first query-PREWHERE reader, or the raw rows read when PREWHERE is first --
+    /// so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy filter are not
+    /// read. A granule is counted as dropped only when it was read, nothing survived the last user step
+    /// (`prewhere_prev_surviving == 0`, measured before any later dynamic filter), and no dynamic filter
+    /// contaminated it. We also feed granules that a dynamic filter emptied before the user step (`read` false
+    /// but `contaminated` true): they carry the contamination to the mark without being counted as read, which
+    /// matters when another fragment of the same granule was cleanly emptied by the user predicate. Feeding is
+    /// in mark order; `feedPrewhereGranuleMark` OR-s the flags of a granule split across blocks.
     if (prewhere_granule_stats_enabled)
     {
-        const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
-
-        /// Pass 0 for a granule the user predicate alone emptied (dropped), and a non-zero marker otherwise, so
-        /// `forEachGranuleMark` reports it survived. `prewhere_tracking_started` is false only when no rows ever
-        /// reached PREWHERE, in which case `entering` is all zeros and no granule is reported anyway.
-        std::vector<size_t> surviving_prewhere(entering.size(), 1);
+        /// Feed this block's granules only when tracking ran (it does whenever any row reached PREWHERE in this
+        /// block). When it did not, the per-granule vectors are empty; a pending mark from an earlier block is
+        /// still finalized below once the cursor passes it.
         if (prewhere_tracking_started)
-            for (size_t granule = 0; granule < surviving_prewhere.size(); ++granule)
-                if (prewhere_prev_surviving[granule] == 0 && !prewhere_dynamic_touched[granule])
-                    surviving_prewhere[granule] = 0;
-
-        read_result.forEachGranuleMark(entering, surviving_prewhere, [this](size_t mark, size_t surviving_rows)
         {
-            feedPrewhereGranuleMark(mark, surviving_rows > 0);
-        });
+            const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
+
+            /// Visit a granule if it was read, or if a dynamic filter touched it (so its contamination reaches
+            /// the mark even when no row of this fragment reached the user predicate).
+            std::vector<size_t> visit(entering.size(), 0);
+            for (size_t granule = 0; granule < visit.size(); ++granule)
+                if (entering[granule] > 0 || prewhere_dynamic_touched[granule])
+                    visit[granule] = 1;
+
+            read_result.forEachGranuleMark(visit, [&](size_t mark, size_t granule)
+            {
+                const bool read = entering[granule] > 0;
+                const bool survived = read && prewhere_prev_surviving[granule] > 0;
+                const bool contaminated = prewhere_dynamic_touched[granule] != 0;
+                feedPrewhereGranuleMark(mark, read, survived, contaminated);
+            });
+        }
 
         /// Finalize the pending granule once the first reader's cursor has advanced past its mark, which
         /// proves it was read in full. Comparing the mark (not `numReadRowsInCurrentGranule() == 0`) is needed
@@ -526,14 +535,19 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     return read_result;
 }
 
-void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
+void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool was_read, bool survived, bool contaminated)
 {
     /// Marks arrive in non-decreasing order across the whole part read. The only repeat is the trailing
     /// granule of one block continuing as the leading granule of the next, so an equal mark means the same
-    /// granule split across blocks: combine the survivor flags instead of counting it twice.
+    /// granule split across blocks: combine the flags instead of counting it twice.
     if (prewhere_pending_mark && *prewhere_pending_mark == mark)
     {
-        prewhere_pending_mark_survived |= survived;
+        /// Count the granule as read the first time a fragment of it reached the user predicate.
+        if (was_read && !prewhere_pending_read)
+            ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
+        prewhere_pending_read |= was_read;
+        prewhere_pending_survived |= survived;
+        prewhere_pending_contaminated |= contaminated;
         return;
     }
 
@@ -542,21 +556,29 @@ void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
         finalizeCompletedPrewhereGranule();
 
     prewhere_pending_mark = mark;
-    prewhere_pending_mark_survived = survived;
+    prewhere_pending_read = was_read;
+    prewhere_pending_survived = survived;
+    prewhere_pending_contaminated = contaminated;
 
-    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still
-    /// reports the granules it read; whether it is also dropped is decided once the granule is complete.
-    ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
+    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still reports
+    /// the granules it read; whether it is also dropped is decided once the granule is complete. A fragment a
+    /// dynamic filter emptied before the user step (`was_read` false) does not count as read.
+    if (was_read)
+        ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
 }
 
 void MergeTreeReadersChain::finalizeCompletedPrewhereGranule()
 {
-    /// The pending granule has been read in full. If no row survived, PREWHERE dropped it entirely.
-    if (!prewhere_pending_mark_survived)
+    /// The pending granule has been read in full. It was dropped by PREWHERE only if the user predicate read
+    /// it, rejected every surviving row, and no synthesized dynamic filter contaminated it (which would mean
+    /// the user predicate alone cannot be shown to empty the granule).
+    if (prewhere_pending_read && !prewhere_pending_survived && !prewhere_pending_contaminated)
         ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders);
 
     prewhere_pending_mark.reset();
-    prewhere_pending_mark_survived = false;
+    prewhere_pending_read = false;
+    prewhere_pending_survived = false;
+    prewhere_pending_contaminated = false;
 }
 
 void MergeTreeReadersChain::executeActionsBeforePrewhere(

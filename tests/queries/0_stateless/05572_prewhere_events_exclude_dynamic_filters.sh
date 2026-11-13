@@ -43,6 +43,14 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, index_granularity=8192, add_minmax_index_for_numeric_columns=0;
   INSERT INTO t_prefix SELECT number, if(number < 65536, number, number % 8192), number < 65536 OR number % 8192 >= 10 FROM numbers(200000)
     SETTINGS min_insert_block_size_rows = 200001, min_insert_block_size_bytes = 0;
+  -- Within each granule (except granule 0) the first half has b = 0, c = 0 and the second half has b = 200,
+  -- c = 1. At index_granularity 8192 with max_block_size 4096 the two halves fall in separate read blocks, so
+  -- the leading top-K (smallest b) keeps the first half and empties the second-half block before the user step.
+  DROP TABLE IF EXISTS t_split_fragment;
+  CREATE TABLE t_split_fragment(a UInt32, b UInt32, c UInt8) ENGINE=MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, index_granularity=8192, add_minmax_index_for_numeric_columns=0;
+  INSERT INTO t_split_fragment SELECT number, if(number < 8192, 100, if(number % 8192 < 4096, 0, 200)), number < 8192 OR number % 8192 >= 4096 FROM numbers(81920)
+    SETTINGS min_insert_block_size_rows = 81921, min_insert_block_size_bytes = 0;
 "
 
 # -------- ORDER BY <non-key> LIMIT: the top-K dynamic threshold filter is not PREWHERE --------
@@ -127,6 +135,17 @@ ${CLICKHOUSE_CLIENT} --use_top_k_dynamic_filtering 1 --enable_multiple_prewhere_
   --max_threads 1 --max_block_size 65536 --preferred_block_size_bytes 0 --use_query_condition_cache 0 \
   --query_id "$qid_topk_lead" -q "SELECT a FROM t_prefix PREWHERE c = 1 ORDER BY b LIMIT 10 FORMAT Null"
 
+# -------- A leading top-K that empties one whole block-fragment of a granule is not counted ------------------
+# The granule spans two read blocks. Top-K keeps the first-half fragment (b = 0) and empties the second-half
+# fragment (b = 200) before the user step, so the fragment carrying the user-surviving rows (c = 1) has zero rows
+# entering `c = 1`. Its contamination must still reach the granule's mark; otherwise the first fragment, which
+# `c = 1` cleanly empties, would make the granule count as dropped. Every granule keeps 4096 rows with c = 1, so
+# the user predicate empties none: 10 read, 0 dropped, 36864 rows dropped.
+qid_topk_frag="${CLICKHOUSE_DATABASE}_topk_frag_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --use_top_k_dynamic_filtering 1 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --max_block_size 4096 --preferred_block_size_bytes 0 --use_query_condition_cache 0 \
+  --query_id "$qid_topk_frag" -q "SELECT a FROM t_split_fragment PREWHERE c = 1 ORDER BY b LIMIT 10 FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # granules read / granules dropped / rows dropped by PREWHERE.
@@ -139,6 +158,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 #   RF partial small:25, 0, 100002   (same, with the granule split into block fragments)
 #   topK fused:     0, 0, 0          (mixed fused step not separable, not attributed)
 #   topK leading:  25, 0, 170        (top-K before the user step thinned the granule; user step emptied remnant)
+#   topK fragment: 10, 0, 36864      (top-K emptied one block-fragment of the granule; contamination kept per mark)
 dump_events "$qid_topk"
 dump_events "$qid_rf"
 dump_events "$qid_pw"
@@ -148,5 +168,6 @@ dump_events "$qid_rf_partial_big"
 dump_events "$qid_rf_partial_small"
 dump_events "$qid_topk_fused"
 dump_events "$qid_topk_lead"
+dump_events "$qid_topk_frag"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim; DROP TABLE t_prefix"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim; DROP TABLE t_prefix; DROP TABLE t_split_fragment"
