@@ -296,7 +296,7 @@ public:
     /// Updates metadata in catalog.
     /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it.
     /// Catalogs that only store a pointer (e.g. Glue) reject the commit unless the pointer still names it.
-    virtual bool updateMetadata(
+    [[nodiscard]] virtual bool updateMetadata(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
