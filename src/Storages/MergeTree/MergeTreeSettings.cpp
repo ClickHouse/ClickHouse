@@ -2835,9 +2835,8 @@ Possible values:
 )", 0, \
         {"24.8", "ignore", "throw", "Do not allow to create inconsistent projection"}) \
     DECLARE(Bool, allow_vector_similarity_index_in_specialized_merge_tree, false, R"(
-Whether a `vector_similarity` index may be created (`CREATE TABLE`, `ALTER TABLE ... ADD INDEX`)
-on a `MergeTree`-family engine other than `MergeTree` / `ReplicatedMergeTree`, e.g. `ReplacingMergeTree`
-or `CollapsingMergeTree`. With such engines, `SELECT ... FINAL` that uses the index may return wrong results.
+Whether a `vector_similarity` index may be created on a `MergeTree`-family engine other than `MergeTree` / `ReplicatedMergeTree`,
+e.g. `ReplacingMergeTree` or `CollapsingMergeTree`. With such engines, `SELECT ... FINAL` that uses the index may return wrong results.
 The setting is checked only when an index is created, so existing tables and `ATTACH` are not affected.
 )", 0, \
         {"26.11", true, false, "New setting. Vector similarity indexes are no longer allowed on specialized MergeTree engines by default"}) \

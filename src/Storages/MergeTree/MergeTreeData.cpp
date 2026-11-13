@@ -622,9 +622,9 @@ void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & c
     }
 }
 
-/// The index selects candidates in each part before `FINAL` merges the row versions across parts.
 void MergeTreeData::checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings)
 {
+    /// Vector similarity indexes must only be created on ordinary merge tree tables unless the user gives permission via a setting
     if (merging_params.mode != MergingParams::Ordinary && !settings[MergeTreeSetting::allow_vector_similarity_index_in_specialized_merge_tree])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Vector similarity indexes are not supported for {}MergeTree, because SELECT ... FINAL may return wrong results with them. "
