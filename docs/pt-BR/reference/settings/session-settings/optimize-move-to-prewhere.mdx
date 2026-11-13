@@ -35,7 +35,9 @@ Valores possíveis:
 Ativa ou desativa a otimização automática de [PREWHERE](/pt-BR/reference/statements/select/prewhere) em consultas [SELECT](/pt-BR/reference/statements/select/index) com o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier).
 
 Apenas condições que dependem exclusivamente da sorting key e são determinísticas dentro da consulta são movidas,
-portanto o resultado de `FINAL` não é afetado.
+portanto o resultado de `FINAL` não é afetado. Para [GraphiteMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/graphitemergetree),
+`FINAL` mescla linhas adjacentes de um mesmo caminho em uma única linha. Por isso, a otimização move apenas condições sobre a coluna de caminho,
+e somente se o caminho for a primeira coluna da sorting key.
 
 Funciona apenas para tabelas [*MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
 

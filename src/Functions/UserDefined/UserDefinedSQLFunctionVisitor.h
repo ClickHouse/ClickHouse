@@ -3,6 +3,7 @@
 #include <Interpreters/Aliases.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {

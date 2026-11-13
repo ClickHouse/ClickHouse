@@ -87,6 +87,19 @@ struct IBucketSplitter
         const FormatSettings & format_settings_,
         const ContextPtr & context) = 0;
 
+    /// Splits a file into at most `max_buckets` buckets of similar size, to be read in parallel by
+    /// separate input formats within one query. Unlike `splitToBuckets`, the buckets may carry state
+    /// that is not serialized, e.g. the parsed file metadata, so that their readers don't have to
+    /// read it again. `object_with_metadata` identifies the version of the file for the format's
+    /// metadata cache, as in `FormatFactory::getInputWithMetadata`. Returns less than two buckets if
+    /// the file can't be split. The buckets are ordered from the largest.
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitForParallelReading(
+        size_t max_buckets,
+        ReadBuffer & buf,
+        const FormatSettings & format_settings_,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context) = 0;
+
     virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const VectorWithMemoryTracking<UInt64> & /*split_offsets*/)
     {
         return {};
@@ -173,6 +186,8 @@ public:
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
+    /// The format skipped row groups or pages of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
+    virtual bool isJoinRuntimeFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
     /// Called after the file was read, if its version provably did not change during the read.
