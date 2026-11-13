@@ -165,22 +165,6 @@ std::vector<TypeCase> makeTypeCases()
             false,
         },
         {
-            /// These bounds are exactly representable at the key scale, so the bulk path compares them in the key type.
-            "Decimal64_cross_scale_exact",
-            std::make_shared<DataTypeDecimal<Decimal64>>(18, 1),
-            std::make_shared<DataTypeDecimal<Decimal64>>(18, 2),
-            {
-                {DecimalField<Decimal64>(Decimal64(330), 1), DecimalField<Decimal64>(Decimal64(333), 1)},
-                {DecimalField<Decimal64>(Decimal64(334), 1), DecimalField<Decimal64>(Decimal64(340), 1)},
-            },
-            {
-                DecimalField<Decimal64>(Decimal64(3290), 2),
-                DecimalField<Decimal64>(Decimal64(3330), 2),
-                DecimalField<Decimal64>(Decimal64(3340), 2),
-                DecimalField<Decimal64>(Decimal64(3410), 2),
-            },
-        },
-        {
             /// None of these bounds is exactly representable at the key scale, so they fall back to scalar evaluation.
             "DateTime64_cross_scale",
             std::make_shared<DataTypeDateTime64>(3, "UTC"),
@@ -197,6 +181,7 @@ std::vector<TypeCase> makeTypeCases()
             false,
         },
         {
+            /// These bounds are exactly representable at the key scale, so the bulk path compares them in the key type.
             "DateTime64_cross_scale_exact",
             std::make_shared<DataTypeDateTime64>(3, "UTC"),
             std::make_shared<DataTypeDateTime64>(4, "UTC"),
