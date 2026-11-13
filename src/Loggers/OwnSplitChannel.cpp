@@ -557,6 +557,7 @@ void OwnAsyncSplitChannel::flushTextLogs()
 AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 {
     AsyncLogQueueSizes metrics;
+    std::lock_guard lock(registration_mutex);
     for (const auto & [name, channel] : name_to_channels)
     {
         for (size_t i = 0; i < channels.size(); i++)
@@ -795,6 +796,7 @@ void OwnAsyncSplitChannel::addChannel(
     if (is_open)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel '{}' while the split channel is open", name);
 
+    std::lock_guard lock(registration_mutex);
     auto element = name_to_channels.try_emplace(name, channel);
     if (!element.second)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
@@ -811,6 +813,7 @@ void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queu
 {
     if (is_open)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel for text_log while the split channel is open");
+    std::lock_guard lock(registration_mutex);
     text_log = log_queue;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
     text_log_thread = nullptr;
