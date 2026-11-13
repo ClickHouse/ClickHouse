@@ -3433,6 +3433,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     QueryTreeNodePtr right_argument = fn_args[1];
                     const auto & left_type = in_first_argument->getResultType();
                     const bool use_standard_null_semantics = scope.context->getSettingsRef()[Setting::in_null_as_unknown];
+                    const auto left_bare_type = removeNullable(removeLowCardinality(left_type));
+                    const auto right_bare_type = removeNullable(removeLowCardinality(non_const_set_candidate->getResultType()));
+                    if (use_standard_null_semantics
+                        && (isArray(left_bare_type) || isMap(left_bare_type))
+                        && canContainNull(*non_const_set_candidate->getResultType())
+                        && (isNumber(right_bare_type) || isBool(right_bare_type)))
+                    {
+                        auto source_is_null = std::make_shared<FunctionNode>("isNull");
+                        source_is_null->getArguments().getNodes().push_back(fn_args[1]);
+                        auto unknown = std::make_shared<ConstantNode>(
+                            Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+                        auto no_match = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
+                        auto result = std::make_shared<FunctionNode>("if");
+                        result->getArguments().getNodes() = {std::move(source_is_null), std::move(unknown), std::move(no_match)};
+                        node = std::move(result);
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
                     bool right_argument_was_cast = false;
                     if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
                     {
