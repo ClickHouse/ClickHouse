@@ -39,7 +39,8 @@
           "item": "デプロイメント"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+        "$ref": "./products/cloud/navigation.json",
+        "href": "/ja/products/cloud/getting-started/cloud-get-started"
         },
         {
           "item": "BYOC",

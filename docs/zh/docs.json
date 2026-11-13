@@ -39,7 +39,8 @@
           "item": "部署"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+        "$ref": "./products/cloud/navigation.json",
+        "href": "/zh/products/cloud/getting-started/cloud-get-started"
         },
         {
           "item": "BYOC",

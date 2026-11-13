@@ -3415,12 +3415,9 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     grid-row: 5 !important;
 }
 /* Partner wordmarks have a separate line beneath their product names. Pull the
-   Open source items back into the compact rows that follow them. */
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
-    transform: translateY(-16px);
-}
+   final Open source item back into the compact row that follows them. */
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(13) {
-    transform: translateY(-32px);
+    transform: translateY(-16px);
     display: grid !important;
     grid-template-columns: max-content 14px;
     column-gap: 6px;
