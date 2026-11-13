@@ -24,29 +24,29 @@ public:
     virtual ~IUserDefinedSQLObjectsStorage() = default;
 
     /// Whether this loader can replicate SQL objects to another node.
-    virtual bool isReplicated() const { return false; }
-    virtual String getReplicationID() const { return ""; }
+    [[nodiscard]] virtual bool isReplicated() const { return false; }
+    [[nodiscard]] virtual String getReplicationID() const { return ""; }
 
     /// Loads all objects. Can be called once - if objects are already loaded the function does nothing.
     virtual void loadObjects() = 0;
 
     /// Get object by name. If no object stored with object_name throws exception.
-    virtual ASTPtr get(const String & object_name) const = 0;
+    [[nodiscard]] virtual ASTPtr get(const String & object_name) const = 0;
 
     /// Get object by name. If no object stored with object_name return nullptr.
-    virtual ASTPtr tryGet(const String & object_name) const = 0;
+    [[nodiscard]] virtual ASTPtr tryGet(const String & object_name) const = 0;
 
     /// Check if object with object_name is stored.
-    virtual bool has(const String & object_name) const = 0;
+    [[nodiscard]] virtual bool has(const String & object_name) const = 0;
 
     /// Get all user defined object names.
-    virtual VectorWithMemoryTracking<String> getAllObjectNames() const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<String> getAllObjectNames() const = 0;
 
     /// Get all user defined objects.
-    virtual VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const = 0;
 
     /// Check whether any UDFs have been stored.
-    virtual bool empty() const = 0;
+    [[nodiscard]] virtual bool empty() const = 0;
 
     /// Stops watching.
     virtual void stopWatching() {}

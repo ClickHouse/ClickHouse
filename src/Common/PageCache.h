@@ -34,9 +34,9 @@ struct PageCacheFile
     /// This function returns SipHash state with PageCacheFile hashed.
     /// It can then be finalized with a PageCacheByteRange to produce a key.
     /// The intermediate SipHash can be copied and reused for different blocks of the same file.
-    SipHash baseHash() const;
+    [[nodiscard]] SipHash baseHash() const;
 
-    size_t heapMemoryUsage() const { return path.capacity() + file_version.capacity(); }
+    [[nodiscard]] size_t heapMemoryUsage() const { return path.capacity() + file_version.capacity(); }
 };
 
 struct PageCacheByteRange
@@ -55,7 +55,7 @@ struct PageCacheByteRange
     size_t size = 0;
 
     /// Computes full hash from a precomputed base hash state and block offset+size.
-    UInt128 hash(SipHash base) const;
+    [[nodiscard]] UInt128 hash(SipHash base) const;
 };
 
 class PageCacheCell
@@ -64,9 +64,9 @@ public:
     PageCacheFile file;
     PageCacheByteRange range;
 
-    size_t size() const { return m_size; }
-    size_t memoryUsage() const { return sizeof(*this) + file.heapMemoryUsage() + m_size; }
-    const char * data() const { return m_data; }
+    [[nodiscard]] size_t size() const { return m_size; }
+    [[nodiscard]] size_t memoryUsage() const { return sizeof(*this) + file.heapMemoryUsage() + m_size; }
+    [[nodiscard]] const char * data() const { return m_data; }
     char * data() { return m_data; }
 
     ~PageCacheCell();
@@ -137,16 +137,16 @@ public:
 
     MappedPtr get(UInt128 key_hash, bool inject_eviction);
 
-    bool contains(UInt128 key_hash, bool inject_eviction) const;
+    [[nodiscard]] bool contains(UInt128 key_hash, bool inject_eviction) const;
 
     /// Make the cache smaller by `memory_limit - memory_usage` bytes.
     /// Returns true if succeeded, false if cache size was reduced as much as possible but it wasn't enough.
     bool autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
-    size_t sizeInBytes() const;
-    size_t count() const;
-    size_t maxSizeInBytes() const;
+    [[nodiscard]] size_t sizeInBytes() const;
+    [[nodiscard]] size_t count() const;
+    [[nodiscard]] size_t maxSizeInBytes() const;
 
 private:
     /// Cache size is automatically adjusted by background thread, within this range,
@@ -165,7 +165,7 @@ private:
 
     std::vector<std::unique_ptr<Shard>> shards;
 
-    size_t getShardIdx(UInt128 key) const
+    [[nodiscard]] size_t getShardIdx(UInt128 key) const
     {
         /// UInt128TrivialHash uses the lower 64 bits, we use the upper 64 bits.
         return key.items[UInt128::_impl::little(1)] % shards.size();

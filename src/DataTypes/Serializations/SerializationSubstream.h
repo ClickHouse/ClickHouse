@@ -222,7 +222,7 @@ struct SerializationSubstream
 
 struct SerializationSubstreamPath : public std::vector<SerializationSubstream>
 {
-    String toString() const;
+    [[nodiscard]] String toString() const;
 };
 
 using SubstreamType = SerializationSubstream::Type;

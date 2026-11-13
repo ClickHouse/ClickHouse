@@ -35,13 +35,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesSliceSortedArray>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool isDeterministic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto & samples_type = arguments[0].type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(samples_type.get());
@@ -73,7 +73,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type->getElements()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// The array can be constant while the bounds are not.
         ColumnPtr samples_column_holder = arguments[0].column->convertToFullColumnIfConst();

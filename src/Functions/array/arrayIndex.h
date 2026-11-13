@@ -622,18 +622,18 @@ public:
     explicit FunctionArrayIndex(bool skip_null_typed_paths_ = false) : skip_null_typed_paths(skip_null_typed_paths_) {}
 
     /// Get function name.
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
             return "(Array, Any) -> UInt8"
@@ -643,7 +643,7 @@ public:
             return "(Array, Any) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto first_argument_type = arguments[0].type;
         auto second_argument_type = arguments[1].type;
@@ -700,7 +700,7 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         if (auto res = executeMap(arguments, result_type))
             return res;
@@ -784,7 +784,7 @@ private:
     /// and although the `Array(LowCardinality(Date))` encoding of the same haystack, which resolves
     /// the needle by a cast, did find it. Bring the pair to that type first, so that what is compared
     /// here is what `equals` compares, whichever way the haystack is encoded.
-    ColumnPtr executeDifferentDateTimeUnits(
+    [[nodiscard]] ColumnPtr executeDifferentDateTimeUnits(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
@@ -806,7 +806,7 @@ private:
         return executeInCommonType(arguments, result_type);
     }
 
-    ColumnPtr executeInCommonType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    [[nodiscard]] ColumnPtr executeInCommonType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         const auto & element_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const auto common_type = getLeastSupertype(DataTypes{element_type, arguments[1].type});
@@ -824,7 +824,7 @@ private:
     /// A constant array is searched by comparing `Field`s, and the `Field` of an `Enum` value is its number,
     /// while the non-constant path compares it with a `String` by name, in their common type.
     /// Cast before `executeArrayImpl` splits a `Nullable` needle: its `NULL` rows hold `0`, maybe not an enum value.
-    ColumnPtr executeEnumNeedleInConstantStrings(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    [[nodiscard]] ColumnPtr executeEnumNeedleInConstantStrings(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if (!isColumnConst(*arguments[0].column))
             return nullptr;
@@ -851,7 +851,7 @@ private:
       * (they are vectors of Fields, which may represent the NULL value),
       * they do not require any preprocessing.
       */
-    ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    [[nodiscard]] ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
             return res;
@@ -930,7 +930,7 @@ private:
 
 #define INTEGRAL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
 
-    ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    [[nodiscard]] ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         ColumnPtr res = executeNothing(arguments);
         if (!res)
@@ -1179,7 +1179,7 @@ private:
         return col_result;
     }
 
-    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    [[nodiscard]] ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
             return nullptr;
@@ -1306,7 +1306,7 @@ private:
      * @param arguments - [0] JSON column (or const JSON), [1] path column
      * @return ColumnUInt8 with 1 if path exists, 0 otherwise
     */
-    ColumnPtr executeObject(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/) const
+    [[nodiscard]] ColumnPtr executeObject(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/) const
     {
         if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
             return nullptr;

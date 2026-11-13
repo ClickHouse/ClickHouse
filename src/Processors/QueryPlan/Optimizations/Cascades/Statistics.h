@@ -48,17 +48,17 @@ struct ExpressionStatistics
     EquivalenceClasses<String> equivalences;
 
     void dump(WriteBuffer & out) const;
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 class IOptimizerStatistics
 {
 public:
     virtual ~IOptimizerStatistics() = default;
-    virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
-    virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
-    virtual std::optional<Float64> getAvgRowBytes(const String & table_name) const = 0;
-    virtual std::optional<Float64> getAvgColumnBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
+    [[nodiscard]] virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
+    [[nodiscard]] virtual std::optional<Float64> getAvgRowBytes(const String & table_name) const = 0;
+    [[nodiscard]] virtual std::optional<Float64> getAvgColumnBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
 };
 
 using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;

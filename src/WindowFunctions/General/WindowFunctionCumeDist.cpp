@@ -35,12 +35,12 @@ public:
     {
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.peers_end = true, .partition_end = true};
     }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
+    [[nodiscard]] std::optional<WindowFrame> getDefaultFrame() const override
     {
         return wholePartitionRangeFrame();
     }

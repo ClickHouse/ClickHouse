@@ -60,7 +60,7 @@ struct ReplicatedMergeTreeQuorumEntry
         }
     }
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         WriteBufferFromOwnString out;
         writeText(out);

@@ -136,7 +136,7 @@ private:
     size_t addToUnpackedBlock(std::span<const Key> keys);
 
     /// Returns the offset of `key` from the first pending key, or nothing when it does not fit `Offset`.
-    std::optional<Offset> getOffsetInPendingBlock(const Key & key) const;
+    [[nodiscard]] std::optional<Offset> getOffsetInPendingBlock(const Key & key) const;
 
     /// Writes the first `count` pending keys as the next block, in the layout of the pending block. The other
     /// keys stay pending.

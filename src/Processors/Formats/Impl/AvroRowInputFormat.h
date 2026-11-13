@@ -40,7 +40,7 @@ public:
 
     void skip(size_t len) override;
 
-    size_t byteCount() const override;
+    [[nodiscard]] size_t byteCount() const override;
 
 private:
     ReadBuffer & in;

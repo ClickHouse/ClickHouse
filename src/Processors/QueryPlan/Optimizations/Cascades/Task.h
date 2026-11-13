@@ -27,7 +27,7 @@ public:
     virtual ~IOptimizationTask() = default;
     virtual void execute(CascadesOptimizer & optimizer) = 0;
     /// One line for logs and the task-budget error: which task and on what.
-    virtual String describe() const = 0;
+    [[nodiscard]] virtual String describe() const = 0;
 };
 
 using OptimizationTaskPtr = std::unique_ptr<IOptimizationTask>;
@@ -44,7 +44,7 @@ public:
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
-    String describe() const override { return fmt::format("optimize group #{} for {}", group_id, required_properties.dump()); }
+    [[nodiscard]] String describe() const override { return fmt::format("optimize group #{} for {}", group_id, required_properties.dump()); }
 
 private:
     /// Stage 3: run the enforcer rules to a fixed point over the group's physical expressions
@@ -64,7 +64,7 @@ public:
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
-    String describe() const override { return fmt::format("explore group #{}", group_id); }
+    [[nodiscard]] String describe() const override { return fmt::format("explore group #{}", group_id); }
 
 private:
     GroupId group_id;
@@ -79,7 +79,7 @@ public:
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
-    String describe() const override;
+    [[nodiscard]] String describe() const override;
 
 private:
     GroupExpressionPtr expression;
@@ -95,7 +95,7 @@ public:
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
-    String describe() const override;
+    [[nodiscard]] String describe() const override;
 
 private:
     GroupExpressionPtr expression;
@@ -113,7 +113,7 @@ public:
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
-    String describe() const override;
+    [[nodiscard]] String describe() const override;
 
 private:
     void updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, CascadesOptimizer & optimizer);
@@ -133,7 +133,7 @@ public:
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
-    String describe() const override;
+    [[nodiscard]] String describe() const override;
 
 private:
     GroupExpressionPtr expression;

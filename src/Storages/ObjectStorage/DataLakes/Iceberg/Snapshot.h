@@ -27,7 +27,7 @@ struct IcebergDataSnapshot
     /// The `statistics` of `metadata.json`, which hold the statistics files of all snapshots; null when absent.
     Poco::JSON::Array::Ptr statistics;
 
-    std::optional<size_t> getTotalRows() const
+    [[nodiscard]] std::optional<size_t> getTotalRows() const
     {
         if (total_rows.has_value() && total_position_delete_rows == 0 && total_equality_delete_rows == 0)
             return total_rows;

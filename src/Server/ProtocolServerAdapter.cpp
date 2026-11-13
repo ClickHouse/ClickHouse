@@ -16,12 +16,12 @@ public:
 
     void start() override { tcp_server->start(); }
     void stop() override { tcp_server->stop(); }
-    bool isStopping() const override { return !tcp_server->isOpen(); }
-    bool bindsOnStart() const override { return false; }
-    UInt16 portNumber() const override { return tcp_server->portNumber(); }
-    size_t currentConnections() const override { return tcp_server->currentConnections(); }
-    size_t currentThreads() const override { return tcp_server->currentThreads(); }
-    size_t refusedConnections() const override { return tcp_server->refusedConnections(); }
+    [[nodiscard]] bool isStopping() const override { return !tcp_server->isOpen(); }
+    [[nodiscard]] bool bindsOnStart() const override { return false; }
+    [[nodiscard]] UInt16 portNumber() const override { return tcp_server->portNumber(); }
+    [[nodiscard]] size_t currentConnections() const override { return tcp_server->currentConnections(); }
+    [[nodiscard]] size_t currentThreads() const override { return tcp_server->currentThreads(); }
+    [[nodiscard]] size_t refusedConnections() const override { return tcp_server->refusedConnections(); }
 
 private:
     std::unique_ptr<TCPServer> tcp_server;
@@ -56,12 +56,12 @@ public:
         is_stopping = true;
         grpc_server->stop();
     }
-    bool isStopping() const override { return is_stopping; }
-    bool bindsOnStart() const override { return true; }
-    UInt16 portNumber() const override { return grpc_server->portNumber(); }
-    size_t currentConnections() const override { return grpc_server->currentConnections(); }
-    size_t currentThreads() const override { return grpc_server->currentThreads(); }
-    size_t refusedConnections() const override { return 0; }
+    [[nodiscard]] bool isStopping() const override { return is_stopping; }
+    [[nodiscard]] bool bindsOnStart() const override { return true; }
+    [[nodiscard]] UInt16 portNumber() const override { return grpc_server->portNumber(); }
+    [[nodiscard]] size_t currentConnections() const override { return grpc_server->currentConnections(); }
+    [[nodiscard]] size_t currentThreads() const override { return grpc_server->currentThreads(); }
+    [[nodiscard]] size_t refusedConnections() const override { return 0; }
 
 private:
     std::unique_ptr<IGRPCServer> grpc_server;

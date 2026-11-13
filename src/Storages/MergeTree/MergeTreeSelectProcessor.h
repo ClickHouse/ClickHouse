@@ -118,7 +118,7 @@ struct MergeTreeIndexBuildContext
         MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
-    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+    [[nodiscard]] MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 
     /// Replaces the whole-part ranges the skip indexes of a part are evaluated over with the analyzed ones. Later calls
     /// for the same part extend them: an in-order read splits a part between streams that share this context, and each

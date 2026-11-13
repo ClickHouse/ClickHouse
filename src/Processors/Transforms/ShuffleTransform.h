@@ -70,7 +70,7 @@ public:
     ColumnPtr generateNextOrderStatistics(pcg64 & rng, size_t num_rows, UInt64 population);
 
 private:
-    ColumnPtr makeColumn(const PaddedPODArray<UInt64> & keys) const;
+    [[nodiscard]] ColumnPtr makeColumn(const PaddedPODArray<UInt64> & keys) const;
 
     bool is_uint32 = false;
     int direction = 1;

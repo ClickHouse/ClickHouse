@@ -92,8 +92,8 @@ public:
         , optimize_if_transform_const_strings_to_lowcardinality(optimize_if_transform_const_strings_to_lowcardinality_)
     {}
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
         settings.arguments_with_disabled_lazy_execution.insert(0);
@@ -101,14 +101,14 @@ public:
         settings.force_enable_lazy_execution = false;
         return true;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
         for (size_t i = 0; i + 1 < number_of_arguments; i += 2)
@@ -116,7 +116,7 @@ public:
         return args;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Arguments: cond1, then1, cond2, then2, ..., else. The existing matcher engine
         /// walks back through the args before `...` and groups them by index coherence:
@@ -131,7 +131,7 @@ public:
     }
 
     /// Same as the `ColumnsWithTypeAndName` overload, without information about constant arguments.
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(args.size());
@@ -144,7 +144,7 @@ public:
     /// type-function always uses the strict mode), so when that setting is enabled, compute the common
     /// type explicitly, mirroring the legacy implementation. It also cannot express the `LowCardinality`
     /// result for constant string branches, which depends on the constness of the arguments.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
         /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
         auto for_conditions = [&args](auto && f)
@@ -362,7 +362,7 @@ public:
         bool source_is_constant = false;
     };
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);

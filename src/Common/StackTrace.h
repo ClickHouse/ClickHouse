@@ -141,10 +141,10 @@ public:
         SuspendedThread(const SuspendedThread &) = delete;
         SuspendedThread & operator=(const SuspendedThread &) = delete;
 
-        bool isSuspended() const { return suspended; }
+        [[nodiscard]] bool isSuspended() const { return suspended; }
 
         /// Frame-pointer walk from the stopped thread's registers. Empty if the registers cannot be read.
-        StackTrace captureStackTrace() const;
+        [[nodiscard]] StackTrace captureStackTrace() const;
 
     private:
         ThreadHandle handle;
@@ -152,10 +152,10 @@ public:
     };
 #endif
 
-    constexpr size_t getSize() const { return size; }
-    constexpr size_t getOffset() const { return offset; }
-    const FramePointers & getFramePointers() const { return frame_pointers; }
-    std::string toString() const;
+    [[nodiscard]] constexpr size_t getSize() const { return size; }
+    [[nodiscard]] constexpr size_t getOffset() const { return offset; }
+    [[nodiscard]] const FramePointers & getFramePointers() const { return frame_pointers; }
+    [[nodiscard]] std::string toString() const;
 
     static std::string toString(void * const * frame_pointers, size_t offset, size_t size);
     static void dropCache();

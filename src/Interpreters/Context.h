@@ -378,7 +378,7 @@ struct SharedContextHolder
 
     SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
-    ContextSharedPart * get() const { return shared.get(); }
+    [[nodiscard]] ContextSharedPart * get() const { return shared.get(); }
     void reset();
 
 private:
@@ -2118,7 +2118,7 @@ public:
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
-    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
     void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
@@ -2468,23 +2468,23 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override;
+    [[nodiscard]] uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override;
+    [[nodiscard]] uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override;
+    [[nodiscard]] uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override;
 
-    uint64_t getMaxRequestHeaderSize() const override;
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override;
 
-    Poco::Timespan getHeadersReadTimeout() const override;
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override;
 
-    Poco::Timespan getReceiveTimeout() const override;
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override;
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };

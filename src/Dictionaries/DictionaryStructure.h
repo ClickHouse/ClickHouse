@@ -113,17 +113,17 @@ struct DictionaryStructure final
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
-    DataTypes getKeyTypes() const;
+    [[nodiscard]] DataTypes getKeyTypes() const;
     void validateKeyTypes(const DataTypes & key_types) const;
 
-    bool hasAttribute(const std::string & attribute_name) const;
-    const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
-    const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
+    [[nodiscard]] bool hasAttribute(const std::string & attribute_name) const;
+    [[nodiscard]] const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
+    [[nodiscard]] const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
 
-    Strings getKeysNames() const;
-    size_t getKeysSize() const;
+    [[nodiscard]] Strings getKeysNames() const;
+    [[nodiscard]] size_t getKeysSize() const;
 
-    std::string getKeyDescription() const;
+    [[nodiscard]] std::string getKeyDescription() const;
 
 private:
     /// range_min and range_max have to be parsed before this function call

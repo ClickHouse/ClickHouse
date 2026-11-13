@@ -20,11 +20,11 @@ struct EnabledRolesInfo
     AccessRights access;
     SettingsProfileElements settings_from_enabled_roles;
 
-    std::vector<UUID> getCurrentRoles() const;
-    std::vector<UUID> getEnabledRoles() const;
+    [[nodiscard]] std::vector<UUID> getCurrentRoles() const;
+    [[nodiscard]] std::vector<UUID> getEnabledRoles() const;
 
-    Strings getCurrentRolesNames() const;
-    Strings getEnabledRolesNames() const;
+    [[nodiscard]] Strings getCurrentRolesNames() const;
+    [[nodiscard]] Strings getEnabledRolesNames() const;
 
     friend bool operator ==(const EnabledRolesInfo & lhs, const EnabledRolesInfo & rhs);
     friend bool operator !=(const EnabledRolesInfo & lhs, const EnabledRolesInfo & rhs) { return !(lhs == rhs); }

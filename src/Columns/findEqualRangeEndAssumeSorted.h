@@ -177,7 +177,7 @@ public:
     explicit SortedKeyRuns(size_t key_size) : runs(key_size) {}
 
     void reset(size_t key_size) { runs.assign(key_size, Run{}); }
-    size_t keySize() const { return runs.size(); }
+    [[nodiscard]] size_t keySize() const { return runs.size(); }
 
     template <typename Search>
     ALWAYS_INLINE size_t findRunEnd(size_t begin, size_t end, Search && search)

@@ -29,7 +29,7 @@ public:
     UInt32 master_id;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
@@ -46,7 +46,7 @@ public:
     String gtid_datas;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 

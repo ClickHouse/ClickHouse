@@ -20,11 +20,11 @@ struct Array;
 class IResolvedFunction
 {
 public:
-    virtual const DataTypePtr & getResultType() const = 0;
+    [[nodiscard]] virtual const DataTypePtr & getResultType() const = 0;
 
-    virtual const DataTypes & getArgumentTypes() const = 0;
+    [[nodiscard]] virtual const DataTypes & getArgumentTypes() const = 0;
 
-    virtual const Array & getParameters() const = 0;
+    [[nodiscard]] virtual const Array & getParameters() const = 0;
 
     virtual ~IResolvedFunction() = default;
 };

@@ -50,7 +50,7 @@ struct BoundaryColumnView
         mask.emplace(*column);
     }
 
-    bool isTrueAt(size_t row_num) const
+    [[nodiscard]] bool isTrueAt(size_t row_num) const
     {
         if (always_false)
             return false;
@@ -60,7 +60,7 @@ struct BoundaryColumnView
     }
 
     /// The first row in `[begin, end)` where the condition is true, or `end`.
-    size_t findTrue(size_t begin, size_t end) const
+    [[nodiscard]] size_t findTrue(size_t begin, size_t end) const
     {
         if (always_false)
             return end;

@@ -47,12 +47,12 @@ public:
 
     void put(const T * src, size_t count) { values.insert(src, src + count); }
 
-    size_t estimatedDataEncodedSize() const { return values.size() * sizeof(T); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return values.size() * sizeof(T); }
 
     /// Appends the encoded values to `out` and starts a new page.
     void flush(PODArray<char> & out);
 
-    parq::Encoding::type lastPageEncoding() const { return last_page_encoding; }
+    [[nodiscard]] parq::Encoding::type lastPageEncoding() const { return last_page_encoding; }
 
 private:
     struct PageEncoder;

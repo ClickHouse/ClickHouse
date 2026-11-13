@@ -14,13 +14,13 @@ class ReadFromTimeSeriesStep : public ISourceStep
 public:
     ReadFromTimeSeriesStep(QueryPlanPtr query_plan_, ContextPtr read_context_);
 
-    String getName() const override { return "ReadFromTimeSeries"; }
+    [[nodiscard]] String getName() const override { return "ReadFromTimeSeries"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     QueryPlanPtr extractQueryPlan();
 
-    ContextPtr getReadContext() const { return read_context; }
+    [[nodiscard]] ContextPtr getReadContext() const { return read_context; }
 
 private:
     QueryPlanPtr query_plan;

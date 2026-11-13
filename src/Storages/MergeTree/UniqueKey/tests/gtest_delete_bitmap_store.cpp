@@ -102,13 +102,13 @@ struct TableFixture
         std::filesystem::remove_all(std::filesystem::path(context->getPath()) / relative_path, ec);
     }
 
-    MergeTreePartInfo partInfo(const std::string & name) const
+    [[nodiscard]] MergeTreePartInfo partInfo(const std::string & name) const
     {
         return MergeTreePartInfo::fromPartName(name, table->format_version);
     }
 
     /// A real part in the Active set, under the name the caller asks for.
-    DataPartPtr addPart(const std::string & part_name, UInt64 first_id, size_t rows) const
+    [[nodiscard]] DataPartPtr addPart(const std::string & part_name, UInt64 first_id, size_t rows) const
     {
         auto id_column = ColumnUInt64::create();
         for (size_t i = 0; i < rows; ++i)

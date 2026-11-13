@@ -60,7 +60,7 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitSwapLastTwo>(context_); }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }

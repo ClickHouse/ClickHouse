@@ -46,7 +46,7 @@ public:
 
     MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(result_part, nullptr); }
 
-    const HardlinkedFiles & getHardlinkedFiles() const;
+    [[nodiscard]] const HardlinkedFiles & getHardlinkedFiles() const;
 
 private:
 

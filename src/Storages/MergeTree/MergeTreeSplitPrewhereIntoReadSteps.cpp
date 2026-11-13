@@ -33,7 +33,7 @@ struct NodeInfo
     bool may_throw = false;
 
     /// True if both nodes read the same columns and indexes, so their conditions may share a step.
-    bool readsSameColumns(const NodeInfo & other) const
+    [[nodiscard]] bool readsSameColumns(const NodeInfo & other) const
     {
         return required_table_columns == other.required_table_columns && required_indexes == other.required_indexes;
     }

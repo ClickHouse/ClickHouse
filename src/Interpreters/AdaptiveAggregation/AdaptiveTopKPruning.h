@@ -41,14 +41,14 @@ inline size_t ALWAYS_INLINE bucketCountBin(UInt64 hash)
 class AdaptiveTopKCountBins
 {
 public:
-    bool isAllocated() const { return bins != nullptr; }
+    [[nodiscard]] bool isAllocated() const { return bins != nullptr; }
 
     /// Allocates the zeroed bins.
     void allocate() { bins = std::make_unique<UInt16[]>(adaptive_count_bins); }
 
     /// The rows in the bins that hold fewer than `bound` rows each. A saturated bin holds an unknown number
     /// of rows, so it is never among them.
-    UInt64 rowsInBinsBelow(UInt64 bound) const
+    [[nodiscard]] UInt64 rowsInBinsBelow(UInt64 bound) const
     {
         UInt64 rows = 0;
         for (size_t bin = 0; bin < adaptive_count_bins; ++bin)
@@ -130,7 +130,7 @@ public:
     void addMergeCountedTable(const AggregatedDataVariants & table) { merge_counted_tables.push_back(&table); }
 
     /// Whether `table` is the table of a producer that never froze, whose groups the merge adds to the bounds.
-    bool isMergeCounted(const AggregatedDataVariants & table) const
+    [[nodiscard]] bool isMergeCounted(const AggregatedDataVariants & table) const
     {
         return std::ranges::find(merge_counted_tables, &table) != merge_counted_tables.end();
     }
@@ -142,11 +142,11 @@ public:
     bool prepare(size_t expected_producers);
 
     /// The bucket that the merge claim `claim` takes: the buckets with the largest bounds come first.
-    UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
+    [[nodiscard]] UInt32 bucketToMerge(UInt32 claim) const { return bucket_order[claim]; }
 
     /// The bounds of a bucket's bins: their sums over the producers' bins, unbounded where a producer's counter
     /// saturated. The merge adds the groups of the tables it counts.
-    BucketBounds boundsForBucket(size_t bucket) const;
+    [[nodiscard]] BucketBounds boundsForBucket(size_t bucket) const;
 
     /// Adds the count of a group of `hash` to the bounds of its bucket, saturating at the unbounded value.
     static ALWAYS_INLINE void addToBounds(std::span<UInt64> bounds, UInt64 hash, UInt64 count)

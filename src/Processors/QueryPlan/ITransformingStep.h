@@ -56,8 +56,8 @@ public:
     /// Step always has a single input stream, so we implement updatePipeline over this function.
     virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
-    const TransformTraits & getTransformTraits() const { return transform_traits; }
-    const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
+    [[nodiscard]] const TransformTraits & getTransformTraits() const { return transform_traits; }
+    [[nodiscard]] const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
     void describePipeline(FormatSettings & settings) const override;
 

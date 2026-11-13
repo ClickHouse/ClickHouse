@@ -88,7 +88,7 @@ struct AggregateFunctionTimeseriesSortedValues
 
     /// R-7 (quantileExactInclusive) quantile of the values, with the Prometheus edge cases of the level: NaN gives NaN,
     /// a level below 0 gives -Inf and a level above 1 gives +Inf. There is no result if there are no values.
-    std::optional<Float64> quantile(Float64 phi) const
+    [[nodiscard]] std::optional<Float64> quantile(Float64 phi) const
     {
         if (values.empty())
             return std::nullopt;

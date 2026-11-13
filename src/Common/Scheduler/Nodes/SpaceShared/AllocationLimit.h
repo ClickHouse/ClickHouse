@@ -16,14 +16,14 @@ public:
         ResourceCost soft_limit_ = default_max_allocated);
     ~AllocationLimit() override;
     void updateLimit(UInt64 new_max_allocated);
-    ResourceCost getLimit() const;
+    [[nodiscard]] ResourceCost getLimit() const;
     /// Sets the soft limit — the threshold above which the node asks reclaimable allocations to spill.
     /// Must run on the scheduler thread. A value >= `max_allocated` disables spilling (the default).
     void updateSoftLimit(ResourceCost new_soft_limit);
-    ResourceCost getSoftLimit() const;
+    [[nodiscard]] ResourceCost getSoftLimit() const;
 
     // ISchedulerNode
-    std::string_view getTypeName() const override;
+    [[nodiscard]] std::string_view getTypeName() const override;
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override;
     void removeChild(ISchedulerNode * child_) override;
     ISchedulerNode * getChild(const String & child_name) override;

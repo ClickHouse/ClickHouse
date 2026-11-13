@@ -1368,7 +1368,7 @@ public:
         server->start();
     }
     ~FixedETagServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     std::unique_ptr<Poco::Net::HTTPServer> server;
@@ -1438,7 +1438,7 @@ public:
         server->start();
     }
     ~IfMatchAwareServer() { server->stop(); }
-    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     std::unique_ptr<Poco::Net::HTTPServer> server;

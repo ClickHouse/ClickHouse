@@ -17,7 +17,7 @@ namespace DB
 class ParserShowAccessEntitiesQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "ShowAccessEntitiesQuery"; }
+    [[nodiscard]] const char * getName() const override { return "ShowAccessEntitiesQuery"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

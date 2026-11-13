@@ -31,7 +31,7 @@ public:
     void merge(const StatisticsBuilder & other);
     void reset();
 
-    Proto::ColumnStatistics toProto() const;
+    [[nodiscard]] Proto::ColumnStatistics toProto() const;
 
 private:
     TypeKind kind;

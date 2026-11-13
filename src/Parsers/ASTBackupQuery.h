@@ -110,7 +110,7 @@ public:
         void fillEmptyDatabaseNames(const String & current_database);
 
         /// Whether `fillEmptyDatabaseNames` would fill in anything.
-        bool hasEmptyDatabaseNames() const;
+        [[nodiscard]] bool hasEmptyDatabaseNames() const;
 
         /// Checks `except_data_database_name` against the element's own (now resolved) database name, and
         /// clears it once checked. See the field's comment for why the check cannot happen at parse time.

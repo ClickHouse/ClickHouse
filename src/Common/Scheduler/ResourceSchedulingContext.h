@@ -113,7 +113,7 @@ public:
     /// Non-owning pointer to the `index`-th per-resource slot (stable for the context's lifetime).
     ResourceQueryState * resourceState(size_t index) { return &per_resource[index]; }
 
-    size_t resourceCount() const { return count; }
+    [[nodiscard]] size_t resourceCount() const { return count; }
 
 private:
     std::unique_ptr<ResourceQueryState[]> per_resource;

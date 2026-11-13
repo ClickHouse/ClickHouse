@@ -46,7 +46,7 @@ struct GatherRange
     UInt64 begin = 0;
     UInt64 length = 0;
 
-    constexpr bool isDefault() const { return block_no == default_rows; }
+    [[nodiscard]] constexpr bool isDefault() const { return block_no == default_rows; }
 };
 
 using GatherRanges = PaddedPODArray<GatherRange>;

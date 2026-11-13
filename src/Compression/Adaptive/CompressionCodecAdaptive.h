@@ -36,23 +36,23 @@ class CompressionCodecAdaptive final : public ICompressionCodec
 public:
     CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default, UInt64 selection_period_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
     /// Compresses the block with the candidates the stream's selector picks. After a run the selector sees the size and may pick more.
     UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    String getDescription() const override { return "Resolve CODEC(Default) to the best per-block codec from a type-appropriate pool."; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] String getDescription() const override { return "Resolve CODEC(Default) to the best per-block codec from a type-appropriate pool."; }
 
     /// The stream's selector. It remembers the winner between blocks.
-    CompressionStatePtr createCompressionState() const override;
+    [[nodiscard]] CompressionStatePtr createCompressionState() const override;
 
 protected:
     /// Max across `NONE` and every codec and chain in the pool. Exceeds `uncompressed_size` as this reserves the memory codecs need while compressing.
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     /// Adaptive never appears on disk: it self-describes each block via the winner's method byte, so these must never be invoked directly.
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;

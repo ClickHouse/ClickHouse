@@ -26,29 +26,29 @@ namespace DB
     class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
-        String getName() const override
+        [[nodiscard]] String getName() const override
         {
             return "runningConcurrency";
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             return executeForType(arguments, input_rows_count);
         }
 
-        bool useDefaultImplementationForConstants() const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
 
-        bool isDeterministicInScopeOfQuery() const override
+        [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
         {
             return false;
         }
 
     private:
         template <typename ArgDataType>
-        ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        [[nodiscard]] ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             using ColVecArg = typename ArgDataType::ColumnType;
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
@@ -95,7 +95,7 @@ namespace DB
             return col_concurrency;
         }
 
-        ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        [[nodiscard]] ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             WhichDataType which(arguments[0].type);
             if (which.isDate())

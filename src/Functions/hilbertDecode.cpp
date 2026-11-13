@@ -17,9 +17,9 @@ public:
         return std::make_shared<FunctionHilbertDecode>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t num_dimensions = 0;
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());

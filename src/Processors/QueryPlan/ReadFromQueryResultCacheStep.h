@@ -10,9 +10,9 @@ class ReadFromQueryResultCacheStep : public ReadFromPreparedSource
 public:
     explicit ReadFromQueryResultCacheStep(Pipe pipe_);
 
-    String getName() const override { return "ReadFromQueryResultCacheStep"; }
+    [[nodiscard]] String getName() const override { return "ReadFromQueryResultCacheStep"; }
 
-    bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    [[nodiscard]] bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
 };
 
 }

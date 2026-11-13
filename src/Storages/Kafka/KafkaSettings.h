@@ -71,7 +71,7 @@ struct KafkaSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    SettingsChanges getFormatSettings() const;
+    [[nodiscard]] SettingsChanges getFormatSettings() const;
 
     void sanityCheck(ContextPtr global_context) const;
 

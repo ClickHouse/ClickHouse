@@ -676,7 +676,7 @@ public:
 
 protected:
     /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
-    bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+    [[nodiscard]] bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
 
     DataTypes argument_types;
     Array parameters;
@@ -1127,17 +1127,17 @@ public:
         data(place).~Data();
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }

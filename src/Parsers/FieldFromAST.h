@@ -11,9 +11,9 @@ struct FieldFromASTImpl : public CustomType::CustomTypeImpl
 
     explicit FieldFromASTImpl(ASTPtr ast_) : ast(ast_) {}
 
-    const char * getTypeName() const override { return name; }
-    String toString(bool show_secrets) const override;
-    bool isSecret() const override;
+    [[nodiscard]] const char * getTypeName() const override { return name; }
+    [[nodiscard]] String toString(bool show_secrets) const override;
+    [[nodiscard]] bool isSecret() const override;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const;
 

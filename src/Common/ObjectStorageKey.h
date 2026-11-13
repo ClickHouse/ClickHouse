@@ -10,10 +10,10 @@ namespace DB
     {
         ObjectStorageKey() = default;
 
-        bool hasPrefix() const { return is_relative; }
-        const String & getPrefix() const;
-        const String & getSuffix() const;
-        const String & serialize() const;
+        [[nodiscard]] bool hasPrefix() const { return is_relative; }
+        [[nodiscard]] const String & getPrefix() const;
+        [[nodiscard]] const String & getSuffix() const;
+        [[nodiscard]] const String & serialize() const;
 
         static ObjectStorageKey createAsRelative(String prefix_, String suffix_);
         static ObjectStorageKey createAsRelative(String key_);

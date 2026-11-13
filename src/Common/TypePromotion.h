@@ -58,7 +58,7 @@ public:
     }
 
     template <class Derived>
-    auto as() const -> std::invoke_result_t<decltype(&CastHelper<Derived, true>::value), CastHelper<Derived, true>, const Base *>
+    [[nodiscard]] auto as() const -> std::invoke_result_t<decltype(&CastHelper<Derived, true>::value), CastHelper<Derived, true>, const Base *>
     {
         // TODO: if we do downcast to base type, then just return |this|.
         return CastHelper<Derived, true>().value(static_cast<const Base *>(this));

@@ -42,7 +42,7 @@ struct QuantileLevels
     Levels levels;
     Permutation permutation;    /// Index of the i-th level in `levels`.
 
-    size_t size() const { return levels.size(); }
+    [[nodiscard]] size_t size() const { return levels.size(); }
 
     QuantileLevels(const Array & params, bool require_at_least_one_param)
     {

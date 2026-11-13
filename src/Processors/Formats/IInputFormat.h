@@ -45,7 +45,7 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 {
     explicit ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_ = std::nullopt);
 
-    Ptr clone() const override;
+    [[nodiscard]] Ptr clone() const override;
 
     const size_t row_num_offset;
     /// If nullopt, row numbers are consecutive.
@@ -67,9 +67,9 @@ struct FileBucketInfo
 
     virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
-    virtual String getIdentifier() const = 0;
-    virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
+    [[nodiscard]] virtual String getIdentifier() const = 0;
+    [[nodiscard]] virtual String getFormatName() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -187,7 +187,7 @@ public:
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
     /// The format skipped row groups of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
-    virtual bool isJoinRuntimeFilterApplied() const { return false; }
+    [[nodiscard]] virtual bool isJoinRuntimeFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
     /// Called after the file was read, if its version provably did not change during the read.

@@ -54,7 +54,7 @@ public:
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)

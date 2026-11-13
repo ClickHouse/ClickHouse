@@ -92,7 +92,7 @@ struct MultiReadResponses
         static_assert(try_multi, "A MultiRead awaited on the first access exists only for try-requests");
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return std::visit(
             [&]<typename TResponses>(const TResponses & resp) -> size_t
@@ -183,7 +183,7 @@ private:
             }
         }
 
-        size_t size() const { return future_responses.size(); }
+        [[nodiscard]] size_t size() const { return future_responses.size(); }
     };
 
     /// One MultiRead request in flight, awaited on the first access: the lazy counterpart of
@@ -212,7 +212,7 @@ private:
             return response->responses;
         }
 
-        size_t size() const { return num_requests; }
+        [[nodiscard]] size_t size() const { return num_requests; }
     };
 
     std::variant<std::monostate, RegularResponses, ResponsesWithFutures, MultiResponseWithFuture> responses;
@@ -845,23 +845,23 @@ public:
         }
     }
 
-    std::string getPath() const
+    [[nodiscard]] std::string getPath() const
     {
         return path;
     }
 
-    ZooKeeper & getZooKeeper() const
+    [[nodiscard]] ZooKeeper & getZooKeeper() const
     {
         return zookeeper;
     }
 
     /// Keeper removes the ephemeral nodes of an expired session.
-    bool isLost() const
+    [[nodiscard]] bool isLost() const
     {
         return zookeeper.expired();
     }
 
-    bool isCreated() const
+    [[nodiscard]] bool isCreated() const
     {
         return created;
     }

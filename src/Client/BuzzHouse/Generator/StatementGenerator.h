@@ -82,9 +82,9 @@ public:
     {
     }
 
-    SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
+    [[nodiscard]] SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
 
-    ColumnSpecial getSpecial() const { return col.has_value() ? col->special : ColumnSpecial::NONE; }
+    [[nodiscard]] ColumnSpecial getSpecial() const { return col.has_value() ? col->special : ColumnSpecial::NONE; }
 };
 
 class QueryLevel

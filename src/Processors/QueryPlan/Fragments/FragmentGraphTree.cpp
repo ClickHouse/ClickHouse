@@ -56,11 +56,11 @@ struct StepBox
     Int64 center = 0;
     size_t y = 0;
 
-    Int64 left() const { return center - static_cast<Int64>(width / 2); }
-    Int64 right() const { return left() + static_cast<Int64>(width) - 1; }
-    size_t height() const { return TextCanvas::boxHeight(lines.size(), details.size()); }
+    [[nodiscard]] Int64 left() const { return center - static_cast<Int64>(width / 2); }
+    [[nodiscard]] Int64 right() const { return left() + static_cast<Int64>(width) - 1; }
+    [[nodiscard]] size_t height() const { return TextCanvas::boxHeight(lines.size(), details.size()); }
     /// The line of the bottom border.
-    size_t bottom() const { return y + height() - 1; }
+    [[nodiscard]] size_t bottom() const { return y + height() - 1; }
 
     /// Sets `text`, wraps it into `lines` and updates `width`.
     void setText(String new_text)
@@ -182,7 +182,7 @@ private:
     /// (fragment index, exchange name) -> the receive step box of that exchange.
     std::map<std::pair<size_t, String>, size_t> receive_boxes;
 
-    size_t fragmentIndex(UInt32 id) const
+    [[nodiscard]] size_t fragmentIndex(UInt32 id) const
     {
         auto it = fragment_index_by_id.find(id);
         if (it == fragment_index_by_id.end())
@@ -192,7 +192,7 @@ private:
 
     /// The fragment that no exchange reads. The drawing hangs every other fragment under it, so it must be the only one:
     /// a second root would never be laid out.
-    size_t rootFragment() const
+    [[nodiscard]] size_t rootFragment() const
     {
         std::vector<bool> is_producer(graph.fragments.size(), false);
         for (const auto & exchange : graph.exchanges)
@@ -333,7 +333,7 @@ private:
     }
 
     /// The box of `consumer` that an exchange ends at: the receive step of the exchange.
-    size_t findReceiveBox(size_t consumer, const FragmentExchange & exchange) const
+    [[nodiscard]] size_t findReceiveBox(size_t consumer, const FragmentExchange & exchange) const
     {
         auto it = receive_boxes.find({consumer, exchange.name});
         if (it == receive_boxes.end())
@@ -387,9 +387,9 @@ private:
         }
     }
 
-    bool crossesFragments(size_t parent, size_t child) const { return boxes[parent].fragment != boxes[child].fragment; }
+    [[nodiscard]] bool crossesFragments(size_t parent, size_t child) const { return boxes[parent].fragment != boxes[child].fragment; }
 
-    std::vector<String> labelLines(size_t exchange_index) const
+    [[nodiscard]] std::vector<String> labelLines(size_t exchange_index) const
     {
         const auto & exchange = graph.exchanges[exchange_index];
         std::vector<String> lines;
@@ -408,7 +408,7 @@ private:
         return lines;
     }
 
-    size_t labelWidth(size_t exchange_index) const
+    [[nodiscard]] size_t labelWidth(size_t exchange_index) const
     {
         size_t width = 0;
         for (const auto & line : labelLines(exchange_index))
@@ -423,7 +423,7 @@ private:
             shiftSubtree(child, offset);
     }
 
-    Int64 frameLeft(size_t fragment) const
+    [[nodiscard]] Int64 frameLeft(size_t fragment) const
     {
         Int64 left = std::numeric_limits<Int64>::max();
         for (const auto & step_box : boxes)
@@ -438,7 +438,7 @@ private:
         return left;
     }
 
-    Int64 frameRight(size_t fragment) const
+    [[nodiscard]] Int64 frameRight(size_t fragment) const
     {
         Int64 right = std::numeric_limits<Int64>::min();
         for (const auto & step_box : boxes)

@@ -34,14 +34,14 @@ public:
     void addLayer(String path, KeyFinderFunc key_finder);
 
     /// No layers configured.
-    bool empty() const { return layers.empty(); }
+    [[nodiscard]] bool empty() const { return layers.empty(); }
 
     /// Total size of the encryption headers (one per layer): the logical data
     /// start offset in the physical stream.
-    size_t headerBytes() const { return layers.size() * FileEncryption::Header::kSize; }
+    [[nodiscard]] size_t headerBytes() const { return layers.size() * FileEncryption::Header::kSize; }
 
     /// `parseHeaders` has resolved the per-layer keys and headers.
-    bool initialized() const { return is_initialized; }
+    [[nodiscard]] bool initialized() const { return is_initialized; }
 
     /// Parse the already-fetched header bytes (no I/O). For each layer, peel the
     /// layers above it at their keystream offsets, read its `FileEncryption::Header`,

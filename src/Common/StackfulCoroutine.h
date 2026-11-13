@@ -90,7 +90,7 @@ public:
     static CoroutinePtr & getCurrentCoroutine();
 
     /// Empty during teardown (see `unwind`).
-    const CoroutineStack::Bounds & getStackBounds() const { return stack_bounds; }
+    [[nodiscard]] const CoroutineStack::Bounds & getStackBounds() const { return stack_bounds; }
 
 private:
     template <typename Fn>

@@ -28,13 +28,13 @@ public:
 
     ~StorageHiveMetadata() override = default;
 
-    String getName() const override { return "StorageHiveMetadata"; }
-    String getSchema() const { return schema; }
-    String getCluster() const { return cluster; }
+    [[nodiscard]] String getName() const override { return "StorageHiveMetadata"; }
+    [[nodiscard]] String getSchema() const { return schema; }
+    [[nodiscard]] String getCluster() const { return cluster; }
 
-    String toString() const override;
+    [[nodiscard]] String toString() const override;
     bool fromString(const String & buf) override;
-    String getVersion() const override;
+    [[nodiscard]] String getVersion() const override;
 private:
     String schema;
     String cluster;

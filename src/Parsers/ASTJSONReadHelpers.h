@@ -171,7 +171,7 @@ public:
     ASTPtr readExpressionChild(const char * key) const;
 
     /// `readExpressionChild`'s screen applied to every element of the "children" array.
-    ASTs readExpressionChildren() const;
+    [[nodiscard]] ASTs readExpressionChildren() const;
 
     /// `readChildOfType<ASTFunction>` with that screen applied to the restored function's ARGUMENTS and not to the function
     /// node itself, for a slot whose function is legitimately argument-less while its arguments are expressions.
@@ -206,7 +206,7 @@ public:
     ASTPtr readPartitionListChild(const char * key) const;
 
     /// Read the "children" array.
-    ASTs readChildren() const
+    [[nodiscard]] ASTs readChildren() const
     {
         ASTs result;
         if (!obj.has("children"))
@@ -235,7 +235,7 @@ public:
     /// malformed `clickhouse_json` must be rejected here instead of reaching a
     /// `typeid_cast`/internal-exception path (or being silently dropped) later.
     template <typename T>
-    ASTs readChildrenOfType(std::string_view node_name) const
+    [[nodiscard]] ASTs readChildrenOfType(std::string_view node_name) const
     {
         ASTs result = readChildren();
         for (const auto & child : result)
@@ -311,7 +311,7 @@ public:
     }
 
     /// Get the underlying Poco JSON object.
-    const Poco::JSON::Object & getObject() const { return obj; }
+    [[nodiscard]] const Poco::JSON::Object & getObject() const { return obj; }
 
     /// Get a nested JSON array.
     /// Returns nullptr when the key is absent.

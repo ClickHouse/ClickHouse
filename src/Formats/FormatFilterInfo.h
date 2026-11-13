@@ -64,8 +64,8 @@ public:
     /// even if the whole tuple was requested, because the names of the fields may be different.
     void setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_);
 
-    const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
-    const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
+    [[nodiscard]] const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
+    [[nodiscard]] const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
@@ -75,8 +75,8 @@ public:
         iceberg_string_paths = std::move(iceberg_string_paths_);
         has_iceberg_string_info = true;
     }
-    bool hasIcebergStringInfo() const { return has_iceberg_string_info; }
-    bool isIcebergStringPath(const String & path) const { return iceberg_string_paths.contains(path); }
+    [[nodiscard]] bool hasIcebergStringInfo() const { return has_iceberg_string_info; }
+    [[nodiscard]] bool isIcebergStringPath(const String & path) const { return iceberg_string_paths.contains(path); }
 
     /// Paths whose Iceberg field is `optional` (required=false). A complex container
     /// (list/map/struct) is never wrapped in Nullable in the ClickHouse type, so its optionality
@@ -87,8 +87,8 @@ public:
         iceberg_optional_paths = std::move(iceberg_optional_paths_);
         has_iceberg_required_info = true;
     }
-    bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
-    bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
+    [[nodiscard]] bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
+    [[nodiscard]] bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
     /// Paths whose lake type is a local (wall clock) timestamp, not an instant: Delta `timestamp_ntz`,
     /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64.
@@ -96,18 +96,18 @@ public:
     {
         local_timestamp_paths = std::move(local_timestamp_paths_);
     }
-    bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
+    [[nodiscard]] bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
 
     /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
     void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
     {
         iceberg_time_field_ids = std::move(iceberg_time_field_ids_);
     }
-    bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
-    bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
+    [[nodiscard]] bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
+    [[nodiscard]] bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
+    [[nodiscard]] std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
 private:
     ColumnNameToFieldId storage_encoding;
@@ -202,7 +202,7 @@ private:
 
 public:
     /// True if the format may skip rows of the file.
-    bool hasFilter() const;
+    [[nodiscard]] bool hasFilter() const;
 
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.

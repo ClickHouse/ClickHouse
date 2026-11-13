@@ -27,7 +27,7 @@ public:
     void deallocate(boost::context::stack_context & sctx) const;
 
     /// Empty before the first `allocate`.
-    Bounds lastAllocatedBounds() const { return last_allocated_bounds; }
+    [[nodiscard]] Bounds lastAllocatedBounds() const { return last_allocated_bounds; }
 
 private:
     const size_t stack_size;

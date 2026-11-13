@@ -167,13 +167,13 @@ public:
         explicit RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_);
 
         /// NOLINTNEXTLINE(google-runtime-int)
-        bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+        [[nodiscard]] bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
 
         /// NOLINTNEXTLINE(google-runtime-int)
-        long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+        [[nodiscard]] long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
 
         /// NOLINTNEXTLINE(google-runtime-int)
-        long GetMaxAttempts() const override;
+        [[nodiscard]] long GetMaxAttempts() const override;
 
         void RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome) override;
         void RequestBookkeeping(

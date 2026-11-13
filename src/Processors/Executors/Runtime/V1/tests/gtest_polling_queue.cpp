@@ -36,7 +36,7 @@ struct TestPipe
         ::close(fds[1]);
     }
 
-    int readFd() const { return fds[0]; }
+    [[nodiscard]] int readFd() const { return fds[0]; }
 
     void makeReady() const
     {

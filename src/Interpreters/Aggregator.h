@@ -193,14 +193,14 @@ public:
         /// `AdaptiveTopKPruning`): the count bins bound the ranks from above, which serves a descending
         /// order only. It prunes under a throw-mode group limit too: the merge checks the limit against the
         /// groups it builds (see `checkMergedGroupLimit`).
-        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
+        [[nodiscard]] bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
 
         /// Whether a frozen producer of the adaptive aggregation may thaw: not with
         /// `adaptive_aggregator_disable_thaw`. A thaw keeps the top-K pruning exact, because a producer that
         /// froze counts the groups of its table into its bins at its finish. Under the pruning, a lone
         /// `count()` also weighs what the pruning would free (see
         /// `Aggregator::adaptiveTopKPruningFreesStaging`).
-        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
+        [[nodiscard]] bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
 
         /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
         /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds
@@ -397,7 +397,7 @@ public:
             bool serialize_string_with_zero_byte_,
             bool enable_packed_string_keys_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -406,7 +406,7 @@ public:
             return new_params;
         }
 
-        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
         {
             Params new_params = cloneWithKeys(keys_, only_merge_);
             new_params.aggregates = aggregates_;
@@ -417,7 +417,7 @@ public:
         static Block
         getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
-        Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
+        [[nodiscard]] Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(ExplainFormatSettings & settings) const;
@@ -1584,7 +1584,7 @@ private:
     /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
     /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
     /// plan optimization admits.
-    std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
+    [[nodiscard]] std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
 
     /// `merged_group_count`, when non-null, receives the number of groups merged for the bucket:
     /// every group of the bucket (see `convertOneBucketToChunk`), or, with the top-K threshold

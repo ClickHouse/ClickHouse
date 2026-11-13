@@ -54,10 +54,10 @@ public:
 
     /// The threshold of the last selection, or the worst rank of the order before the first one. The read
     /// takes no lock, so it can lag the offers of other threads, which only drops fewer groups.
-    ALWAYS_INLINE UInt64 current() const { return threshold.load(std::memory_order_relaxed); }
+    [[nodiscard]] ALWAYS_INLINE UInt64 current() const { return threshold.load(std::memory_order_relaxed); }
 
     /// Whether the threshold reached `best_possible_rank`, so that the merge can skip every unit left.
-    bool settled() const { return best_possible_rank && current() == *best_possible_rank; }
+    [[nodiscard]] bool settled() const { return best_possible_rank && current() == *best_possible_rank; }
 
     /// Offers the ranks of the groups that a converted unit output. The caller guarantees that each rank is
     /// the final rank of its group, merged from every source, and that every group is offered at most once

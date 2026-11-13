@@ -40,7 +40,7 @@ public:
         StreamBaseManifestPtr stream_base_manifest,
         std::optional<FinishedColumns> finished_columns = {});
 
-    Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
+    [[nodiscard]] Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.
     void write(const Block & block) override;

@@ -33,10 +33,10 @@ namespace ErrorCodes
 class AggregationImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "Aggregation"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 3000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "Aggregation"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 3000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
     class StrategyEnumerator;
 
@@ -62,7 +62,7 @@ public:
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
-    bool isShuffleApplicable() const
+    [[nodiscard]] bool isShuffleApplicable() const
     {
         return !agg_step.getParams().keys.empty()
             && !agg_step.isGroupingSets()
@@ -70,7 +70,7 @@ public:
             && agg_step.getParams().max_rows_to_group_by == 0;
     }
 
-    bool hasMultipleKeys() const { return agg_step.getParams().keys.size() >= 2; }
+    [[nodiscard]] bool hasMultipleKeys() const { return agg_step.getParams().keys.size() >= 2; }
 
 private:
     /// Clones the aggregation step with the given description into a physical alternative
@@ -104,10 +104,10 @@ private:
 class TwoStageAggregationTransformation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "TwoStageAggregation"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 2000; }
-    bool isTransformation() const override { return true; }
+    [[nodiscard]] String getName() const override { return "TwoStageAggregation"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 2000; }
+    [[nodiscard]] bool isTransformation() const override { return true; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
@@ -403,10 +403,10 @@ OptimizationRulePtr createTwoStageAggregationTransformation() { return std::make
 class MergingAggregationImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "MergingAggregation"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 3000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "MergingAggregation"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 3000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;

@@ -164,7 +164,7 @@ public:
     {
     }
 
-    std::string getName() const override { return "ReadFromSystemDatabaseReplicas"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemDatabaseReplicas"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;

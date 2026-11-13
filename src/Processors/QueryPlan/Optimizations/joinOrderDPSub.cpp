@@ -99,82 +99,82 @@ private:
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
 
-    std::optional<UInt64> estimateCardinality(
+    [[nodiscard]] std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
-    std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Conflict-detector (CD) variant: decide validity and the resulting (kind, strictness) using the
     /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
     /// outer and semi/anti reordering. Returns nullopt to reject the split.
-    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Dispatch used by the DPsub acceptor: routes to the per-operator conflict-detector check when
     /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
     /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
-    std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// True when an inner-join condition joins the two sides here: all its tables are present and it
     /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
-    bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
     /// The join kind as the query wrote it (`Left` or `Right`) of the semi/anti join step applied where
     /// `left_mask` and `right_mask` are joined, if there is one.
-    std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
+    [[nodiscard]] std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
 
     /// True when a column equivalence ties the two sides together: some equivalence class has a
     /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
-    bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// Equivalence classes (a bit mask) on which an inner equi-join of the two sides may run as `full_sorting_merge`.
-    UInt64 mergeKeyClasses(
+    [[nodiscard]] UInt64 mergeKeyClasses(
         const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask, JoinKind kind, JoinStrictness strictness) const;
-    bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
+    [[nodiscard]] bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
 
     /// Cost model of a sort-merge join of two input plans on the equivalence class, see `computeMergeJoinCost`.
-    double mergeJoinCost(
+    [[nodiscard]] double mergeJoinCost(
         MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
         const SelectivityEstimate & selectivity) const;
     /// Whether a merge of the two inputs runs sharded by primary key ranges, as `optimizeJoinByShards` does.
-    bool isShardedMerge(const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const;
+    [[nodiscard]] bool isShardedMerge(const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const;
     /// Whether the statistics show that a table splits into one key range for a merge on the classes: each leading primary
     /// key column it is joined on has a single distinct value.
-    bool hasConstantShardKey(UInt32 relation_mask, UInt64 key_classes) const;
+    [[nodiscard]] bool hasConstantShardKey(UInt32 relation_mask, UInt64 key_classes) const;
     /// Whether a single relation read in order by the class can feed a sharded merge on it.
-    bool isShardableLeaf(UInt32 relation_mask, Int32 order_class) const
+    [[nodiscard]] bool isShardableLeaf(UInt32 relation_mask, Int32 order_class) const
     {
         return isReadInOrder(relation_mask, order_class) && (relation_mask & dpsub_data.shardable_relations);
     }
     /// The equivalence classes with columns on both sides: one key of the join each.
-    UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
     /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
     /// empty if it cannot be read in an order that covers them.
-    std::vector<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
+    [[nodiscard]] std::vector<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
     /// The number of distinct values of the class's columns in a set of relations, at most `rows`; 1 when unknown.
-    double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
+    [[nodiscard]] double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
     /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs
     /// count output rows only.
-    double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
+    [[nodiscard]] double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
     /// The overlap of the key range of the build side with the key range of a probe table sorted by a key of the join: what
     /// a hash join's runtime filter lets it read, and what a sharded merge reads. 1 when unknown.
-    double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
+    [[nodiscard]] double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
     /// Whether a later join may still use a result sorted by the equivalence class.
-    bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
+    [[nodiscard]] bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
     /// The column of the class that the result of a plan is sorted by, as `applyOrder` sees it: a merge join on the class
     /// is sorted by the key of its left input. For any other plan, the first column of the class in its relations.
     template <typename DPTable, std::unsigned_integral TUInt>
-    const JoinActionRef & orderColumn(const DPTable & dptable, TUInt S, Int32 plan_index, Int32 order_class) const;
+    [[nodiscard]] const JoinActionRef & orderColumn(const DPTable & dptable, TUInt S, Int32 plan_index, Int32 order_class) const;
 
-    bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
+    [[nodiscard]] bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
 
-    bool useConflictDetector() const
+    [[nodiscard]] bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
-    ConflictDetector conflictDetectorKind() const
+    [[nodiscard]] ConflictDetector conflictDetectorKind() const
     {
         return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }

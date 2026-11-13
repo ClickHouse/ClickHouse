@@ -1385,7 +1385,7 @@ public:
         : bucket(std::move(bucket_))
     {
     }
-    Field getParameter(const String &) const override { return Field(bucket); }
+    [[nodiscard]] Field getParameter(const String &) const override { return Field(bucket); }
 
 private:
     const String bucket;

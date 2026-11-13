@@ -33,7 +33,7 @@ struct FileFooter
     /// For each row group: where each serialized ColumnChunk starts in `serialized`, then where the last one ends.
     ColumnChunkOffsets column_chunk_offsets;
 
-    size_t numColumnChunks(size_t row_group_idx) const;
+    [[nodiscard]] size_t numColumnChunks(size_t row_group_idx) const;
 };
 
 /// One Parquet column's chunks in every row group of a file.

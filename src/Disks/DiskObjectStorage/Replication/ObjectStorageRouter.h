@@ -11,8 +11,8 @@ class ObjectStorageRouter
 public:
     explicit ObjectStorageRouter(std::unordered_map<Location, ObjectStoragePtr> object_storages_);
 
-    ObjectStoragePtr takePointingTo(const Location & location) const;
-    std::unordered_map<Location, ObjectStoragePtr> getRegistry() const;
+    [[nodiscard]] ObjectStoragePtr takePointingTo(const Location & location) const;
+    [[nodiscard]] std::unordered_map<Location, ObjectStoragePtr> getRegistry() const;
 
 private:
     std::unordered_map<Location, ObjectStoragePtr> object_storages;

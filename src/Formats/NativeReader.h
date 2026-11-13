@@ -58,7 +58,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
 
     void resetParser();
 

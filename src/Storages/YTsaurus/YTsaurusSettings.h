@@ -33,7 +33,7 @@ struct YTsaurusSettings
     ~YTsaurusSettings();
     YTSAURUS_SETTINGS_SUPPORTED_TYPES(YTsaurusSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);

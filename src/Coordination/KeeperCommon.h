@@ -118,8 +118,8 @@ struct KeeperRequestBatch
     /// Index of the log entry containing this batch. 0 if not known (yet). Not serialized.
     int64_t log_idx{0};
 
-    int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
-    int64_t getLastZxid() const { return getZxid(requests.size() - 1); }
+    [[nodiscard]] int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
+    [[nodiscard]] int64_t getLastZxid() const { return getZxid(requests.size() - 1); }
 
     /// Unfortunate historical quirk: in the past SessionID requests had zxid field assigned, but
     /// that zxid wasn't actually reserved/advanced; an old leader may write a SessionID request
@@ -128,9 +128,9 @@ struct KeeperRequestBatch
     /// uncommitted_batches, don't advance KeeperStorage::zxid, etc.
     /// This returns true if this batch should be handled normally, false if it consists of one
     /// SessionID request.
-    bool ownsZxids() const;
+    [[nodiscard]] bool ownsZxids() const;
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 };
 using KeeperRequestBatchPtr = std::shared_ptr<KeeperRequestBatch>;
 
@@ -220,12 +220,12 @@ struct KeeperNodeStats
     /// for sequentially named children (otherwise).
     int64_t ephemeral_or_seq_num_or_ttl = 0;
 
-    bool isEphemeral() const { return (ctime_and_flags & EPHEMERAL) != 0; }
-    bool isTTL() const { return (ctime_and_flags & TTL) != 0; }
-    bool isContainer() const { return (ctime_and_flags & CONTAINER) != 0; }
-    int64_t getCTime() const { return int64_t(ctime_and_flags << NUM_FLAGS) >> NUM_FLAGS; } // sign-extend
+    [[nodiscard]] bool isEphemeral() const { return (ctime_and_flags & EPHEMERAL) != 0; }
+    [[nodiscard]] bool isTTL() const { return (ctime_and_flags & TTL) != 0; }
+    [[nodiscard]] bool isContainer() const { return (ctime_and_flags & CONTAINER) != 0; }
+    [[nodiscard]] int64_t getCTime() const { return int64_t(ctime_and_flags << NUM_FLAGS) >> NUM_FLAGS; } // sign-extend
 
-    int32_t getNumChildren() const { return num_children; }
+    [[nodiscard]] int32_t getNumChildren() const { return num_children; }
 
     /// Sets EPHEMERAL flag in ctime_and_flags, and assigns ephemeral_or_seq_num_or_ttl.
     void makeEphemeral(int64_t ephemeral_owner);
@@ -241,7 +241,7 @@ struct KeeperNodeStats
     void setSeqNum(int64_t seq_num);
     void increaseSeqNum();
 
-    int64_t getEphemeralOwner() const
+    [[nodiscard]] int64_t getEphemeralOwner() const
     {
         if (isEphemeral())
             return ephemeral_or_seq_num_or_ttl;
@@ -249,16 +249,16 @@ struct KeeperNodeStats
             return CONTAINER_EPHEMERAL_OWNER;
         return 0;
     }
-    int64_t getTTL() const { return isTTL() ? ephemeral_or_seq_num_or_ttl : 0; }
-    int64_t getSeqNum() const { return (isEphemeral() || isTTL()) ? 0 : ephemeral_or_seq_num_or_ttl; }
+    [[nodiscard]] int64_t getTTL() const { return isTTL() ? ephemeral_or_seq_num_or_ttl : 0; }
+    [[nodiscard]] int64_t getSeqNum() const { return (isEphemeral() || isTTL()) ? 0 : ephemeral_or_seq_num_or_ttl; }
 
-    int64_t destroyTime() const
+    [[nodiscard]] int64_t destroyTime() const
     {
         chassert(isTTL());
         return mtime + getTTL();
     }
 
-    uint64_t calculateDigest(std::string_view path, std::string_view data) const;
+    [[nodiscard]] uint64_t calculateDigest(std::string_view path, std::string_view data) const;
 
     void setResponseStat(Coordination::Stat & response_stat) const;
 };
