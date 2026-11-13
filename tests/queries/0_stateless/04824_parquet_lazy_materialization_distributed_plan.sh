@@ -37,7 +37,6 @@ TABLE_FN="s3('${URL}/data_{1,2}.parquet', ${AUTH}, 'Parquet')"
 # `query_plan_max_limit_for_lazy_materialization = 0` because the CI settings randomizer may set it
 # to 1, and `s3_validate_etag_on_read = 1` because the lazy plan requires the ETag-pinned reread.
 SETTINGS_COMMON=(
-    --enable_analyzer=1
     --s3_validate_etag_on_read=1
     --query_plan_optimize_lazy_materialization=1
     --query_plan_max_limit_for_lazy_materialization=0

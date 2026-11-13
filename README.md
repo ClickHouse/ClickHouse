@@ -51,29 +51,38 @@ Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
+* [Observability with ClickStack Fundamentals (KubeCon Training)](https://luma.com/clickh-migc) – November 9th, 2026
+* [AI Builders Night](https://luma.com/clickh-z8rr) – November 9th, 2026
+* [ClickHouse ClubHouse - Atlanta](https://luma.com/clickh-hv90) – November 10th, 2026
+* [KubeCon NA 2026: Afterparty Social](https://luma.com/vgcotljq) – November 10th, 2026
+* [AprèsKube SLC: Keyboards & Keys](https://luma.com/apreskube-slc) – November 11th, 2026
+* [2026 Super Demo Day](https://luma.com/2a7wm1zs) – November 16th, 2026
+* [AI Infrastructure Night](https://luma.com/1ihtxydc) – November 17th, 2026
+* [San Francisco Data Engineering Meetup with ClickHouse](https://luma.com/clickh-z0ty) – November 17th, 2026
+* [Matinée de l'Observabilité — Paris](https://luma.com/clickh-bvnl) – November 17th, 2026
+* [Build it. Trace it. Ship it. — a Demo Night with Langfuse](https://luma.com/clickh-1tj5) – November 17th, 2026
+* [Hands-on training: Agent Observability with Langfuse](https://luma.com/clickh-1p8m) – November 18th, 2026
+* [Toronto Data Engineering Meetup with ClickHouse](https://luma.com/clickh-4120) – November 18th, 2026
+* [ClickHouse Meetup - Seattle: Real-Time Analytics in Production](https://luma.com/clickh-0alm) – November 19th, 2026
+* [Search Week After Party: Pub Quiz by Qdrant with ClickHouse](https://luma.com/londonsearchweek_2026) – November 24th, 2026
+* [ClickHouse x OliveYoung x NxtCloud 서울 밋업](https://luma.com/clickh-gb3i) – November 25th, 2026
+* [Maxa x ClickHouse: Data Developer Meetup MTL](https://luma.com/4812th4n) – November 26th, 2026
+* [Scaling Data Systems with ClickHouse Cyprus Meetup](https://luma.com/clickh-hs3o) – November 26th, 2026
+* [See What Your Agent Did: Trace it. Debug it. Ship it.](https://luma.com/clickh-k5ti) – November 26th, 2026
+* [House Party Las Vegas](https://luma.com/85fo8u3e) – December 1st, 2026
+* [AI Builders and Databases Munich](https://luma.com/clickh-rsxf) – December 3rd, 2026
+* [kickoff(): hack, demo, play FC27 at Fulham's Craven Cottage](https://luma.com/clickh-gqb5) – December 17th, 2026
 
-* [Open House London](https://luma.com/ggnwajnd) - September 30th, 2026
-* [Grok Bot Montreal Build Day](https://luma.com/ggnwajnd) - October 3rd, 2026
-* [Open House Munich](https://luma.com/6xorx3qw) - October 6th, 2026
-* [SF Tech Week AI Night](https://luma.com/clickh-zngw) - October 6th, 2026
-* [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
-* [Mountain View Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
-* [AI Builders and Databases Tel Aviv](https://luma.com/clickh-satv) - October 12th, 2026
-* [AI Builders and Databases London](https://luma.com/clickh-ykgp) - October 21st, 2026
-* [AI Builders and Databases Dubai](https://luma.com/clickh-vtzf)- October 23rd, 2026
 
 
 Recent meetups
-* [DET New York](https://luma.com/xf3wghdh) - September 17th, 2026
-* [The Agentic Data Stack: Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
-* [The Agentic Data Stack: Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
-* [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026
-* [Hands-on training: Building agents with ClickHouse and LibreChat Seattle](https://luma.com/clickh-0vvr) - September 23rd, 2026
-* [Hands-on training: Agent Observability with Langfuse in San Francisco](https://luma.com/gp4dehl2) - September 23rd, 2026
-* [PyData Seattle Meetup](https://luma.com/clickh-ttgg) - September 24th, 2026
-* [build fridays sf x clickhouse + langfuse - work on your startup alongside others](https://luma.com/bf925) - September 25th, 2026
-* [Chicago Meetup](https://luma.com/clickh-8tnc) - September 28th, 2026
-* [Paris Meetup](https://luma.com/clickh-gsz1) - September 29th, 2026
+* [AI Builders and Databases Tel Aviv](https://luma.com/clickh-satv) - October 12th, 2026
+* [Hands-on training: Agent Observability with Langfuse in New York](https://luma.com/piww2zyw) - October 15th, 2026
+* [Hands-on training: Agent Observability with Langfuse in Menlo Park](https://luma.com/clickh-3qe8) - October 19th, 2026
+* [AI Builders and Databases London](https://luma.com/clickh-ykgp) - October 21st, 2026
+* [AI Builders and Databases Dubai](https://luma.com/clickh-vtzf) - October 22nd, 2026
+* [AI Builders Night New York @ Modal](https://luma.com/clickh-qu9s) - November 3rd, 2026
+* [LibreChat Meetup New York](https://luma.com/clickh-3qx0) - November 5th, 2026
 
 
 ## Recent Recordings

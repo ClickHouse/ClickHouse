@@ -1,0 +1,20 @@
+-- LEFT JOIN
+1	1	11
+2	0	0
+-- RIGHT JOIN
+1	1	11
+2	0	0
+-- FULL JOIN
+1	1	11
+2	0	0
+-- computed column used by a later join
+2	0	0
+-- constant column
+1	1	1
+2	0	0
+-- renamed column
+1	10
+2	0
+-- LEFT JOIN, join_use_nulls = 1
+1	1	11
+2	\N	\N

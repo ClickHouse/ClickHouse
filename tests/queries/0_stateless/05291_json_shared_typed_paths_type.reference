@@ -1,0 +1,152 @@
+-- declarations
+CREATE TABLE default.t_mixed\n(\n    `x` UInt64,\n    `json` JSON(a UInt64, SHARED b String, SHARED c Array(UInt8))\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, min_compress_block_size = 1
+t_params	json	JSON(max_dynamic_types=4, max_dynamic_paths=2, SHARED a UInt64, SKIP s, SKIP REGEXP \'^z.*\')
+t_params	x	UInt64
+t_shared	json	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))
+t_shared	x	UInt64
+JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))
+JSON(max_dynamic_paths=2, SHARED `a.b` UInt64, `a.c` String, SKIP d)
+Array(JSON(SHARED a UInt64))	Tuple(Array(JSON(SHARED a UInt64)))	Map(String, JSON(SHARED a UInt64))
+4	6	4	4	4
+-- declaration errors
+-- parser: a path named shared or SHARED, keyword case, single- and multi-word types
+JSON(`shared` Float64)
+JSON(`SHARED` Float64)
+JSON(SHARED b String, `shared` String)
+JSON(`shared` Nullable(Int64))
+JSON(SHARED `shared` UInt64)
+JSON(`shared.x` UInt64)
+JSON(SHARED a Float64)
+JSON(max_dynamic_paths=2, SHARED `a.b` UInt64)
+JSON(`shared` Float64)
+JSON(SHARED `SKIP` UInt64, SKIP shared)
+JSON(SHARED a UInt64)
+JSON(`Shared` String, SHARED a UInt64)
+CREATE TABLE f\n(\n    `json` JSON(SHARED a UInt64, `shared` String, `shared.x` UInt64, SHARED `b.c` Array(UInt8))\n)\nENGINE = Memory
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function CAST (children 1)
+     ExpressionList (children 2)
+      Literal \'{}\'
+      Literal \'JSON(SHARED a UInt64, shared String)\'
+-- type operations
+JSON(a UInt64)
+JSON(SHARED a UInt64)
+Array(JSON(SHARED a UInt64, b String))
+Array(JSON)
+Array(JSON(SHARED a UInt64))
+JSON(a UInt64, b String, c Array(UInt8))	16
+JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	16
+8	280	12	12
+8	280	12	12
+JSON(a UInt64, b String, c Array(UInt8))	JSON(a UInt64, SHARED b String)	JSON(max_dynamic_paths=1, SHARED a UInt64)
+{"a":0,"b":"","c":[],"d":0}	{"a":0,"b":"","c":[],"d":0}	['b']
+{"a":10,"b":"x","c":[0]}	{"a":10,"b":"x","c":[0]}	['b']
+{"a":20,"b":"xx","c":[0,1],"d":2}	{"a":20,"b":"xx","c":[0,1],"d":2}	['b']
+1
+1
+{"a":7,"b":"q"}	JSON(SHARED a UInt64)
+{"a":8}	{"a":0,"c":[]}
+JSON(SHARED a UInt64)	7	{"a":7,"z":1}
+-- DESCRIBE lists the shared paths and their subcolumns like typed paths
+x	UInt64						0
+json	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))						0
+json.a	UInt64						1
+json.b	String						1
+json.b.size	UInt64						1
+json.c	Array(UInt8)						1
+json.c.size0	UInt64						1
+x	UInt64						0
+json	JSON(a UInt64, SHARED b String, SHARED c Array(UInt8))						0
+json.a	UInt64						1
+json.b	String						1
+json.b.size	UInt64						1
+json.c	Array(UInt8)						1
+json.c.size0	UInt64						1
+x	UInt64						0
+json	JSON(a UInt64, b String, c Array(UInt8))						0
+json.a	UInt64						1
+json.b	String						1
+json.b.size	UInt64						1
+json.c	Array(UInt8)						1
+json.c.size0	UInt64						1
+x	UInt64						0
+t	Tuple(\n    j JSON(SHARED a UInt64, SHARED n JSON(SHARED p String)),\n    s String)						0
+arr	Array(JSON(SHARED c Array(UInt8)))						0
+m	Map(String, JSON(SHARED a UInt64))						0
+v	Variant(JSON(SHARED a UInt64), String)						0
+aa	Array(Array(JSON(SHARED c Array(UInt8))))						0
+ma	Map(String, Array(JSON(SHARED a UInt64)))						0
+n.j	Array(JSON(SHARED a UInt64))						0
+n.k	Array(UInt8)						0
+t.j	JSON(SHARED a UInt64, SHARED n JSON(SHARED p String))						1
+t.j.a	UInt64						1
+t.j.n	JSON(SHARED p String)						1
+t.j.n.p	String						1
+t.j.n.p.size	UInt64						1
+t.s	String						1
+t.s.size	UInt64						1
+arr.size0	UInt64						1
+arr.c	Array(Array(UInt8))						1
+arr.c.size1	Array(UInt64)						1
+m.size0	UInt64						1
+m.keys	Array(String)						1
+m.keys.size	Array(UInt64)						1
+m.values	Array(JSON(SHARED a UInt64))						1
+m.values.a	Array(UInt64)						1
+v.JSON(SHARED a UInt64)	Nullable(JSON(SHARED a UInt64))						1
+v.JSON(SHARED a UInt64).a	Nullable(UInt64)						1
+v.String	Nullable(String)						1
+v.String.size	Nullable(UInt64)						1
+v.JSON(SHARED a UInt64).null	UInt8						1
+v.String.null	UInt8						1
+aa.size0	UInt64						1
+aa.size1	Array(UInt64)						1
+aa.c	Array(Array(Array(UInt8)))						1
+aa.c.size2	Array(Array(UInt64))						1
+ma.size0	UInt64						1
+ma.keys	Array(String)						1
+ma.keys.size	Array(UInt64)						1
+ma.values	Array(Array(JSON(SHARED a UInt64)))						1
+ma.values.a	Array(Array(UInt64))						1
+ma.values.size1	Array(UInt64)						1
+n.j.size0	UInt64						1
+n.j.a	Array(UInt64)						1
+n.k.size0	UInt64						1
+0	p0	s0	[]	[100]	200	[[]]	[[]]	[]
+1	p1	s1	[0]	[101]	\N	[[0]]	[[1]]	[0]
+2	p2	s2	[0,1]	[102]	202	[[0,1]]	[[2,3]]	[0,1]
+3	p3	s3	[]	[103]	\N	[[]]	[[]]	[]
+4	p4	s4	[0]	[104]	204	[[0]]	[[4]]	[0]
+5	p5	s5	[0,1]	[105]	\N	[[0,1]]	[[5,6]]	[0,1]
+-- system tables
+t_mixed	json	['a','b','b.size','c','c.size0']
+t_plain	json	['a','b','b.size','c','c.size0']
+t_shared	json	['a','b','b.size','c','c.size0']
+object_typed_shared_data_serialization_version	v1
+-- functions over the type
+{"a":0,"b":"","c":[],"d":0}	['a','b','c','d']	0	1
+{"a":10,"b":"x","c":[0]}	['a','b','c']	0	1
+['a','b','c','d']	30
+0	1
+10	1
+20	1
+[]	2
+[0]	2
+['a','b','c','d']	['d']	[]	{'a':'UInt64','b':'String','c':'Array(UInt8)','d':'Int64'}
+['a','b','c','d']	['d']	[]	{'a':'UInt64','b':'String','c':'Array(UInt8)','d':'Int64'}
+-- limits inherited from the plain type
+-- the stream name collision check sees typed paths; a shared path has no file
+5	Int64	('')
+6	Int64	('')
+7	Int64	('')
+0	Int64
+-- a column literally named json.a beside the path a: its file name is escaped, no collision in either form
+100	100	{"a":0}
+101	101	{"a":1}
+102	102	{"a":2}
+100	100	{"a":0}
+101	101	{"a":1}
+102	102	{"a":2}

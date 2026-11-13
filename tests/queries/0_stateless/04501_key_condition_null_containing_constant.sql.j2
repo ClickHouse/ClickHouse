@@ -1,0 +1,27 @@
+-- A constant that cannot be represented in the key column type (for example, a Map
+-- literal containing NULL values compared against a `Map(String, String)` key) must not
+-- fail index analysis when the constant is pushed through key-side transforms; the
+-- transform just produces no atom. See `canBeSafelyCast`: a cast from `Nullable` into a
+-- non-nullable type is never safe.
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_null_const_plain (a Map(String, String)) ENGINE = MergeTree ORDER BY a;
+INSERT INTO test_null_const_plain VALUES (map('a', 'b'));
+{{ check('test_null_const_plain', "a = map('name', NULL, '', NULL)") }}
+{{ check('test_null_const_plain', "a = map('a', 'b', 'c', NULL)") }}
+{{ check('test_null_const_plain', "a != map('a', NULL)") }}
+{{ check('test_null_const_plain', "a IN (map('a', NULL), map('a', 'b'))") }}
+
+-- The same through a non-identity deterministic key transform.
+CREATE TABLE test_null_const_wrapped (a Map(String, String)) ENGINE = MergeTree ORDER BY (mapKeys(a), a);
+INSERT INTO test_null_const_wrapped VALUES (map('a', 'b'));
+{{ check('test_null_const_wrapped', "a = map('name', NULL)") }}
+{{ check('test_null_const_wrapped', "a = map('a', 'b')") }}

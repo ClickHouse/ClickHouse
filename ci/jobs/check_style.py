@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from ci.jobs.scripts.settings_history import (
     violation_message as settings_violation_message,
     violations as settings_history_violations,
 )
+from ci.jobs.scripts.check_style.check_broken_links import check_pr as check_pr_links
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -183,11 +185,17 @@ def check_yamllint(file_paths):
 def check_xmllint(file_paths):
     if not isinstance(file_paths, list):
         file_paths = [file_paths]
-    file_paths = " ".join([f"'{file}'" for file in file_paths])
-    exit_code, out, err = Shell.get_res_stdout_stderr(
-        f"xmllint --noout --nonet {file_paths}", verbose=False
+    # Pass the files as separate arguments, without a shell. A `sh -c` command line is a
+    # single argument, limited to 128 KiB by the kernel (`MAX_ARG_STRLEN`), and the names
+    # of all XML files under `tests/` and `programs/` are about 260 KB, so with two CPUs
+    # (two chunks) it failed with `[Errno 7] Argument list too long: '/bin/sh'`.
+    proc = subprocess.run(
+        ["xmllint", "--noout", "--nonet", *file_paths],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    return out or err
+    return proc.stdout.strip() or proc.stderr.strip()
 
 
 def check_functional_test_cases(files):
@@ -356,8 +364,23 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: truncates one part metadata file (`checksums.txt`) to zero bytes, which is
+    # the exact state the fix has to survive, and does not copy or move anything - so the blob
+    # reference-counting hazard this check guards against cannot arise. The test is already tagged
+    # no-object-storage and no-shared-merge-tree, pins `part_storage_type = 'Full'`, asserts the
+    # path is absolute, and detaches the table around the edit.
+    "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
+    # False positive: no server is involved. The test runs `clickhouse-local` with `HOME` pointed
+    # at a per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is
+    # inside that directory, and the files it corrupts are the ones `clickhouse-local` itself
+    # wrote there a few lines earlier.
+    "05227_broken_persisted_table_does_not_block_clickhouse_local.sh",
+    # False positive: no server is involved. The test runs `clickhouse-local` with `--path` set to a
+    # per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is inside
+    # that directory, and the files it corrupts are the ones `clickhouse-local` itself wrote there.
+    "05407_clickhouse_local_buffer_flush_with_broken_table_load.sh",
 }
 
 
@@ -1122,6 +1145,150 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
+# Third-party JavaScript and CSS loaded from other hosts. A compromised or hijacked host runs its code in
+# the origin of the page - for the Web UI pages of the server that is the ClickHouse HTTP origin, which
+# handles the credentials of the user.
+#
+# Three kinds of references are checked, on any host:
+# - `<script src=...>` and `<link rel="stylesheet|preload|modulepreload" href=...>` tags;
+# - ES modules imported by URL;
+# - in code (not in Markdown), any other URL of a `.js`, `.mjs` or `.css` file, e.g. for a dynamically
+#   created `<script>`, and any URL on a known CDN, which also serves files without an extension
+#   (e.g. `https://unpkg.com/tippy.js@6`).
+_CDN_HOSTS = (
+    "jsdelivr.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com",
+    "cdn.skypack.dev",
+    "esm.sh",
+    "jspm.io",
+    "esm.run",
+    "d3js.org",
+    "bootstrapcdn.com",
+    "code.jquery.com",
+    "ajax.googleapis.com",
+    "cdn.plot.ly",
+    "cdn.tailwindcss.com",
+    "rawgit.com",
+    "githack.com",
+    "statically.io",
+)
+_HOST = r"(?:[\w-]+\.)+[a-z]{2,}(?::\d+)?"
+_URL_TAIL = r"""[^\s"'`)<>\]]*"""
+_CDN_URL = re.compile(
+    r"(?:https?:)?//(?:[\w-]+\.)*(?:" + "|".join(re.escape(h) for h in _CDN_HOSTS) + r")\b" + _URL_TAIL,
+    re.IGNORECASE,
+)
+_ASSET_URL = re.compile(
+    r"(?:https?:)?//" + _HOST + r"/" + r"""[^\s"'`)<>\]?#]*\.(?:m?js|css)(?=[?#\s"'`)<>\]]|$)""" + _URL_TAIL,
+    re.IGNORECASE,
+)
+_EXTERNAL_URL = r"""["']?(?:https?:)?//[^\s"'>]+"""
+_EXTERNAL_TAG = re.compile(
+    r"<script\b[^>]*\bsrc\s*=\s*" + _EXTERNAL_URL + r"[^>]*>"
+    r"|<link\b(?=[^>]*\brel\s*=\s*[\"']?[^\"'>]*\b(?:stylesheet|preload|modulepreload)\b)[^>]*\bhref\s*=\s*" + _EXTERNAL_URL + r"[^>]*>",
+    re.IGNORECASE,
+)
+_SRI_HASH = re.compile(r"\bsha(?:256|384|512)-[A-Za-z0-9+/]{43,}={0,2}")
+_INTEGRITY_ATTRIBUTE = re.compile(r"\bintegrity\s*=\s*[\"']sha(?:256|384|512)-", re.IGNORECASE)
+# ES modules imported by URL: browsers cannot check their integrity, so they must be vendored.
+_URL_IMPORT = re.compile(
+    r"""\bimport\b(?:[^;'"`]*?\bfrom)?\s*\(?\s*["'`](?:https?:)?//[^"'`]+""", re.MULTILINE
+)
+# Hosts that may be referenced without an integrity hash, with the reasons.
+_ALLOWED_WITHOUT_INTEGRITY = (
+    # Google Fonts generates the CSS depending on the browser, so it cannot have an integrity hash.
+    # The CSS only references font files.
+    "fonts.googleapis.com",
+    # Pages for humans, and raw files served as `text/plain` with `X-Content-Type-Options: nosniff`,
+    # which browsers refuse to run as scripts or apply as stylesheets.
+    "github.com",
+    "raw.githubusercontent.com",
+    # The Kapa AI assistant widget of the documentation website (`docs/_site/customizations/kapa-init.js`).
+    # It cannot have an integrity hash: the host sends no CORS headers, the bundle is unversioned and
+    # redeployed by Kapa, and it loads captcha scripts from other hosts by itself.
+    "widget.kapa.ai",
+)
+# Copies of third-party libraries; they mention CDN URLs in their banners.
+_VENDORED_PATHS = ("/vendor/", "./programs/server/js/", "./utils/trace-visualizer/js/", "./utils/trace-visualizer/css/")
+_MARKDOWN_SUFFIXES = (".md", ".mdx")
+# Generated regions of the documentation are checked at their source of truth.
+_AUTOGENERATED_REGION = re.compile(r"AUTOGENERATED_START.*?AUTOGENERATED_END", re.DOTALL)
+
+
+def _url_host(url):
+    return url.split("//", 1)[1].split("/", 1)[0].split(":", 1)[0].lower()
+
+
+def _is_allowed_without_integrity(url):
+    host = _url_host(url)
+    return any(host == h or host.endswith("." + h) for h in _ALLOWED_WITHOUT_INTEGRITY)
+
+
+def check_external_web_assets(files) -> str:
+    """JavaScript and CSS from third-party hosts must be vendored into the repository.
+
+    Vendoring is preferred: copy the file next to the page (e.g. to a `vendor` directory) and load it by
+    a relative URL. An external `<script>` or stylesheet that remains must have subresource integrity
+    (an `integrity` attribute), and so must any other reference to an external JavaScript or CSS file
+    (e.g. a dynamically created `<script>`, with the hash following the URL). ES modules imported by URL
+    cannot be checked by the browser, so they are not allowed at all.
+    """
+    violations = []
+    for file_path in files:
+        if any(v in file_path for v in _VENDORED_PATHS):
+            continue
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        if file_path.startswith("./docs/"):
+            text = _AUTOGENERATED_REGION.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+        def line_of(pos):
+            return text.count("\n", 0, pos) + 1
+
+        allowed_spans = []
+        for m in _EXTERNAL_TAG.finditer(text):
+            tag = m.group(0)
+            if _INTEGRITY_ATTRIBUTE.search(tag):
+                allowed_spans.append((m.start(), m.end()))
+            elif not _is_allowed_without_integrity(re.search(r"//[^\s\"'>]+", tag).group(0)):
+                violations.append(
+                    f"{file_path}:{line_of(m.start())}: external resource without subresource integrity: "
+                    f"{' '.join(tag.split())[:200]}. Vendor the file into the repository "
+                    "(preferred), or at least add an `integrity` attribute with its hash."
+                )
+                allowed_spans.append((m.start(), m.end()))  # Reported already.
+
+        for m in _URL_IMPORT.finditer(text):
+            violations.append(
+                f"{file_path}:{line_of(m.start())}: ES module imported by URL: {m.group(0)[:200]}. "
+                "Its integrity cannot be checked; vendor the module into the repository."
+            )
+            allowed_spans.append((m.start(), m.end()))
+
+        # In Markdown, URLs of files are mostly links and command examples; only the tags and imports above load code.
+        if file_path.endswith(_MARKDOWN_SUFFIXES):
+            continue
+
+        reported = set()
+        for pattern in (_CDN_URL, _ASSET_URL):
+            for m in pattern.finditer(text):
+                if m.start() in reported or any(begin <= m.start() < end for begin, end in allowed_spans):
+                    continue
+                if _is_allowed_without_integrity(m.group(0)) or _SRI_HASH.search(text, m.end(), m.end() + 300):
+                    continue
+                reported.add(m.start())
+                violations.append(
+                    f"{file_path}:{line_of(m.start())}: external JavaScript or CSS without subresource integrity: "
+                    f"{m.group(0)[:200]}. Vendor the file into the repository (preferred), "
+                    "or at least check its integrity hash."
+                )
+    return "\n".join(violations)
+
+
 # Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
 # taken from `DatabaseCatalog` may be the proxy rather than the engine.
 DEFERRABLE_STORAGE_CLASSES = (
@@ -1495,6 +1662,15 @@ def check_settings_changes_history():
     return settings_violation_message(found, version) if found else ""
 
 
+def check_broken_links_in_diff():
+    """The links added by the PR must be reachable. Not run outside of PRs: the merge queue and
+    master would only get flaky on unrelated sites going down, as every link was checked in its PR."""
+    info = Info()
+    if info.pr_number <= 0:
+        return ""
+    return check_pr_links(info.repo_name, info.pr_number)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -1540,6 +1716,18 @@ if __name__ == "__main__":
         exclude_paths=[],
         file_suffixes=[".yml", ".yaml"],
     )
+
+    # The translations of the documentation are generated from the English sources, which are checked.
+    with open("./docs/gt.config.json", encoding="utf-8") as fh:
+        docs_config = json.load(fh)
+    docs_locales = [l for l in docs_config["locales"] if l != docs_config["defaultLocale"]]
+    web_files = Utils.traverse_paths(
+        include_paths=["./programs", "./src", "./utils", "./ci", "./tests", "./base", "./.claude", "./docs"],
+        exclude_paths=[f"./docs/{l}/" for l in docs_locales] + [f"./docs/snippets/{l}/" for l in docs_locales],
+        file_suffixes=[".html", ".htm", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".css", ".vue", ".svelte", ".md", ".mdx"],
+    )
+    # Markdown is checked only in the documentation (elsewhere it does not load into a browser).
+    web_files = [f for f in web_files if f.startswith("./docs/") or not f.endswith((".md", ".mdx"))]
 
     testname = "whitespace_check"
     if testpattern.lower() in testname.lower():
@@ -1651,6 +1839,15 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
+    testname = "external_web_assets"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_external_web_assets,
+                files=web_files,
+            )
+        )
     testname = "compose_images_from_dockerhub"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -1674,6 +1871,14 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_settings_changes_history,
+            )
+        )
+    testname = "broken_links"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_broken_links_in_diff,
             )
         )
     testname = "cpp"

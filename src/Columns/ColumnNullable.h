@@ -67,6 +67,7 @@ public:
 
     bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
+    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
@@ -258,6 +259,10 @@ public:
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
     void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
+
+    size_t rowStoreOverflowBytes(size_t start, size_t count) const override { return nested_column->rowStoreOverflowBytes(start, count); }
+    void gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const override;
 
 private:
     WrappedPtr nested_column;

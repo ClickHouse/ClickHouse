@@ -76,10 +76,11 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_p
 (18 rows)
 ```
 
-[CREATE TABLE] 也可以从这样的 URL 推断出列结构，并加载其中的行：
+[CREATE TABLE] 也可以从这样的 URL 推断出列结构，并加载其中的行 (注意：此公开数据文件包含 4100 万行) ：
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -130,10 +131,17 @@ chdb 和 chdb&#95;hook 扩展依赖 `chdb_helper` 进程来执行 [chDB] 查询�
 
 ## 依赖项 {#dependencies}
 
-`chdb` 扩展 需要 PostgreSQL 15 或更高版本，以及 v26.7.0 或更高版本的 [chDB] library (目前仅支持 Linux 和 macOS) 。最简单的安装方式是使用 [lib.chdb.io] shell 脚本：
+`chdb` 扩展 需要 PostgreSQL 15 或更高版本，以及 v26.7.0 或更高版本的 [chDB] 库 (目前仅支持 Linux 和 macOS) 。最简单的安装方式是使用 [lib.chdb.io] shell 脚本：
 
 ```sh
 curl -sL https://lib.chdb.io | bash
+```
+
+在 macOS 上，构建扩展之前可能需要先对该库进行签名：
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
 ```
 
 若要将 [chDB] 静态编译进辅助应用，请在运行 [安装](#compile-from-source)
@@ -197,7 +205,7 @@ make CFLAGS=-I/usr/local/include \
      LDFLAGS=-L/usr/local/lib
 ```
 
-如果你遇到如下错误：
+如果遇到类似如下的错误：
 
 ```
 ERROR:  must be owner of database regression
@@ -208,6 +216,12 @@ ERROR:  must be owner of database regression
 
 ```sh
 make installcheck PGUSER=postgres
+```
+
+若要在 `COPY` 钩子中禁用 `file://` scheme，请定义 `NO_FILE_SCHEME`：
+
+```sh
+make NO_FILE_SCHEME=1
 ```
 
 若要在 PostgreSQL 18 或更高版本上将该 扩展 安装到 custom prefix 中，请向 `install` 传递 `prefix` argument (但不要传给其他 `make` 目标) ：

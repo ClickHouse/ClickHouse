@@ -13,6 +13,8 @@ doc_type: 'reference'
 
 ClickHouse Connect は、Native-format の挿入である `insert` および `insert_df` メソッドを、`InsertContext` 内で実行します。`insert_arrow`、`insert_df_arrow`、`raw_insert` の各メソッドはペイロードを直接送信するため、これを使用しません。`InsertContext` には、クライアントの `insert` メソッドに引数として渡すすべての値が含まれます。さらに、`InsertContext` の初回作成時には、効率的な Native format での挿入に必要な対象カラムのデータ型を ClickHouse Connect が取得します。複数回の挿入で `InsertContext` を再利用すると、この&quot;事前クエリ&quot;を省略できるため、挿入をより高速かつ効率的に実行できます。
 
+内部で実行される `DESCRIBE TABLE` にはサーバー側で生成された独自の query ID が使用されますが、`INSERT` では、挿入ごとの設定またはクライアントのデフォルトで指定された `query_id` がそのまま使用されます。
+
 `InsertContext` は、クライアントの `create_insert_context` メソッドを使って取得できます。このメソッドは、`context` 自体を除き、`insert` 関数と同じ引数を受け取ります。再利用時に変更すべきなのは、`InsertContext` の `data` プロパティだけである点に注意してください。これは、同じテーブルに新しいデータを繰り返し挿入するための再利用可能なオブジェクトを提供するという、本来の目的に沿ったものです。
 
 ```python
@@ -30,6 +32,16 @@ assert qr.first_row[0] == 113
 ```
 
 `InsertContext`には、挿入処理中に更新される可変状態が含まれているため、スレッドセーフではありません。
+
+### 挿入の再試行と重複排除 {#insert-retries-and-deduplication}
+
+どちらの HTTP クライアントも、特定のリモート接続クローズが発生した場合に `insert` および `insert_df` を 1 回だけ再試行できます。再試行時、クライアントは ネイティブ insertデータを再構築します。`raw_insert` に渡された文字列またはバイト列のペイロードも、同様に再試行の対象となります。ジェネレーターや開いたファイルは再送されません。これらの挿入の再試行には `query_retries` は使用されず、HTTP 429、503、504 のレスポンスにも適用されません。
+
+挿入の再試行は at-least-once のセマンティクスに従います。最初の試行がコミットされたにもかかわらずレスポンスが失われた場合、再試行によって同じ行が再度挿入される可能性があります。また、最初の試行がコミットされた後に例外が発生する場合もあります。クライアントは exactly-once の挿入を保証しません。
+
+重複排除が機能するかどうかは、テーブルエンジン、サーバーのバージョン、および設定によって異なります。通常の MergeTree テーブルでは、テーブル設定 `non_replicated_deduplication_window` に、再試行をカバーできるだけの十分に大きな 0 以外の値を設定してください。デフォルト値の `0` では重複排除は無効です。Replicated および Shared MergeTree は挿入の重複排除をサポートしていますが、これを前提とする前に、実際に適用されている設定を確認してください。特に、ClickHouse 26.2 より前のバージョン、または古い互換性設定を使用している場合、サーバー側の非同期挿入ではデフォルトで重複排除が行われません。重複排除によって保護されるのは、設定された重複排除ウィンドウ内の挿入のみです。
+
+query メソッドまたは command メソッド経由で送信される SQL の `INSERT` ステートメントには、別途 [HTTP 再試行ポリシー](/ja/integrations/language-clients/python/driver-api#http-retries) が適用されます。
 
 ### 書き込みフォーマット {#write-formats}
 
