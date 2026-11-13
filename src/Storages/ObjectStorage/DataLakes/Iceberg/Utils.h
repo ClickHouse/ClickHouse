@@ -82,6 +82,13 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Removes the metadata file written by `writeMetadataFileAndVersionHint` after the catalog definitively rejected
+/// the commit pointing to it, so that the next attempt, which takes the version from the catalog, can reuse its name.
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
 struct TransformAndArgument
 {
     String transform_name;
@@ -162,7 +169,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     bool force_fetch_latest_metadata = true,
     bool ignore_metadata_pointer_overrides = false);
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
+struct CatalogMetadataFilePath
+{
+    /// Exactly as the catalog returned it, for a commit to check that the catalog still points to it.
+    String location;
+    /// `location` relative to the table location, for reading the file.
+    String path;
+};
+
+CatalogMetadataFilePath getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,

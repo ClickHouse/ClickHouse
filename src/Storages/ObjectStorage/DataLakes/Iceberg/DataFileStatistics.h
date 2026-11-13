@@ -24,6 +24,9 @@ namespace DB
 
 #if USE_AVRO
 
+/// `Range::less`, except that -0.0 sorts before +0.0, as the Iceberg spec requires for bounds.
+bool icebergBoundLess(const Field & lhs, const Field & rhs);
+
 class DataFileStatistics
 {
 public:
@@ -40,6 +43,7 @@ public:
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
     std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    std::vector<std::pair<size_t, size_t>> getNanCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -52,6 +56,9 @@ private:
     std::unordered_set<Int64> required_field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
+    std::vector<Int64> nan_counts;
+    /// False if column is not `Float32`/`Float64`: then no `nan_value_counts` entry is written for it.
+    std::vector<bool> can_count_nan;
     Ranges ranges;
     VectorWithMemoryTracking<UInt64> split_offsets;
 };

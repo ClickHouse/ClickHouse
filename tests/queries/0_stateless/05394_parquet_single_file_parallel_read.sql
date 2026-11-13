@@ -16,6 +16,23 @@ SELECT trimLeft(explain) FROM (
     SETTINGS max_threads = 4, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0)
 WHERE trimLeft(explain) LIKE 'File %';
 
+-- The rows read by the sources are spread over all streams after the read.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN PIPELINE SELECT id FROM file(currentDatabase() || '_05394.parquet')
+    SETTINGS max_threads = 4, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0)
+WHERE trimLeft(explain) LIKE 'Resize %';
+-- In groups of 8 streams.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN PIPELINE SELECT id FROM file(currentDatabase() || '_05394.parquet')
+    SETTINGS max_threads = 16, max_threads_min_free_memory_per_thread = 0, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0)
+WHERE trimLeft(explain) LIKE 'Resize %';
+-- Not in groups if splitting a `Resize` is disabled.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN PIPELINE SELECT id FROM file(currentDatabase() || '_05394.parquet')
+    SETTINGS max_threads = 16, max_threads_min_free_memory_per_thread = 0, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0,
+        min_outstreams_per_resize_after_split = 0)
+WHERE trimLeft(explain) LIKE 'Resize %';
+
 -- Not split if the order of rows has to be preserved, or if the output must not be parallelized.
 SELECT trimLeft(explain) FROM (
     EXPLAIN PIPELINE SELECT sum(id) FROM file(currentDatabase() || '_05394.parquet')

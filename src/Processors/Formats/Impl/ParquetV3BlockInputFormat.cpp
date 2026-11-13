@@ -537,7 +537,8 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
 
 bool ParquetV3BlockInputFormat::isJoinRuntimeFilterApplied() const
 {
-    return reader && reader->reader.row_groups_pruned_by_join_runtime_filter > 0;
+    return reader
+        && (reader->reader.row_groups_pruned_by_join_runtime_filter > 0 || reader->reader.pages_pruned_by_join_runtime_filter > 0);
 }
 
 Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
