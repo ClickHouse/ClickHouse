@@ -376,7 +376,7 @@ void TabSeparatedFormatReader::skipRow()
 
 bool TabSeparatedFormatReader::checkForEndOfRow()
 {
-    return buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
+    return buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r' && isCRAtEndOfRow(*buf));
 }
 
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(

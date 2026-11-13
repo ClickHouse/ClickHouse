@@ -504,7 +504,8 @@ bool CSVFormatReader::checkForSuffix()
 bool CSVFormatReader::checkForEndOfRow()
 {
     skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
-    return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
+    return buf->eof() || *buf->position() == '\n'
+        || (*buf->position() == '\r' && (format_settings.csv.allow_cr_end_of_line || isCRAtEndOfRow(*buf)));
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
