@@ -127,6 +127,11 @@ public:
     /// `identifier-field-ids` entry that is not a required primitive field outside lists, maps and optional structs.
     static std::optional<String> findSchemaViolation(const Poco::JSON::Object & schema, bool is_table_schema);
 
+    /// The first field of the `partition-specs` of `metadata` that the Java implementation rejects when it binds the specs to
+    /// `schema`, or nullopt: a partition field named like a field of `schema` that is not its source field, while the source
+    /// field is still in `schema`.
+    static std::optional<String> findPartitionFieldNameConflict(const Poco::JSON::Object & metadata, const Poco::JSON::Object & schema);
+
     /// Throws ICEBERG_SPECIFICATION_VIOLATION for the first invalid schema of a metadata.json: an entry of `schemas`,
     /// or the legacy `schema` when there is no `schemas`.
     static void checkTableSchemas(const Poco::JSON::Object & metadata);

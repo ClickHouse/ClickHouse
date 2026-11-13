@@ -934,6 +934,10 @@ void alter(
         {
             if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
+
+            /// Other Iceberg implementations cannot load a table where a partition field has the name of another column.
+            if (auto conflict = IcebergSchemaProcessor::findPartitionFieldNameConflict(*metadata, *new_schema))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table: {}", *conflict);
         }
 
         std::string json_representation = stringifyJSON(metadata, 4);

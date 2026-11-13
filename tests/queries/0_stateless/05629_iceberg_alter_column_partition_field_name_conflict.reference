@@ -1,0 +1,6 @@
+ADD COLUMN ts_year Nullable(Int64): partition field name conflict
+RENAME COLUMN i TO ts_year: partition field name conflict
+metadata files unchanged: 1
+ADD COLUMN other Nullable(Int64): OK
+10	1	\N	54
+20	2	\N	53

@@ -643,6 +643,58 @@ std::optional<String> IcebergSchemaProcessor::findSchemaViolation(const Poco::JS
     return {};
 }
 
+std::optional<String> IcebergSchemaProcessor::findPartitionFieldNameConflict(const Poco::JSON::Object & metadata, const Poco::JSON::Object & schema)
+{
+    FieldIndex index;
+    if (auto violation = findStructViolation(schema, std::nullopt, "", index))
+        return violation;
+
+    std::unordered_map<String, Int64> path_to_id;
+    for (const auto & [id, field] : index)
+        path_to_id.emplace(field.path, id);
+
+    if (!metadata.isArray(f_partition_specs))
+        return fmt::format("'{}' is missing", f_partition_specs);
+
+    const auto specs = metadata.getArray(f_partition_specs);
+    for (UInt32 i = 0; i != specs->size(); ++i)
+    {
+        const auto spec = specs->getObject(i);
+        const auto fields = spec->getArray(f_fields);
+        for (UInt32 j = 0; j != fields->size(); ++j)
+        {
+            const auto field = fields->getObject(j);
+            const auto name = field->getValue<String>(f_name);
+
+            /// Format version 3 allows `source-ids` instead of `source-id`.
+            std::vector<Int64> source_ids;
+            if (hasMember(*field, f_source_id))
+            {
+                source_ids.push_back(field->getValue<Int64>(f_source_id));
+            }
+            else
+            {
+                const auto ids = field->getArray(f_source_ids);
+                for (UInt32 k = 0; k != ids->size(); ++k)
+                    source_ids.push_back(ids->getElement<Int64>(k));
+            }
+
+            /// Like the Java implementation, skip a field whose source fields were dropped: the spec may be historical.
+            const auto source = std::ranges::find_if(source_ids, [&](Int64 id) { return index.contains(id); });
+            if (source == source_ids.end())
+                continue;
+
+            if (const auto it = path_to_id.find(name); it != path_to_id.end() && std::ranges::find(source_ids, it->second) == source_ids.end())
+                return fmt::format(
+                    "column '{}' has the name of a field of partition spec {} that is derived from column '{}'",
+                    name,
+                    spec->getValue<Int64>(f_spec_id),
+                    index.at(*source).path);
+        }
+    }
+    return {};
+}
+
 void IcebergSchemaProcessor::checkTableSchemas(const Poco::JSON::Object & metadata)
 {
     if (metadata.has(f_schemas))
