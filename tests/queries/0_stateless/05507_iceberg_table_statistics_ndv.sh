@@ -31,7 +31,7 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --use_hash_table_stats_for_join_reordering=0 --collect_hash_table_stats_during_joins=0
     --enable_join_runtime_filters=0 --enable_parallel_replicas=0 --enable_join_transitive_predicates=0
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
-    --use_iceberg_manifest_statistics=1 --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1
+    --use_datalake_metadata_statistics=1 --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1
     --max_block_size=1000000 --allow_insert_into_iceberg=1"
 ON="--use_iceberg_table_statistics_ndv=1"
 OFF="--use_iceberg_table_statistics_ndv=0"

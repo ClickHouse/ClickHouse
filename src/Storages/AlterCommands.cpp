@@ -48,6 +48,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -220,7 +221,8 @@ DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
     if (!type_ast || !type_ast->as<ASTExpressionList>())
          return {};
 
-    return createEnumAdd(type_ast, is_enum16);
+    /// A copy, because `createEnumAdd` numbers the implicit elements in place and `prepare` can run again on this command.
+    return createEnumAdd(type_ast->clone(), is_enum16);
 }
 
 /// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
@@ -1859,6 +1861,33 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
+NameSet AlterCommands::getAddedIndexNames(const IndicesDescription & existing) const
+{
+    NameSet present;
+    for (const auto & index : existing)
+        present.insert(index.name);
+
+    NameSet added;
+    for (const AlterCommand & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::ADD_INDEX)
+        {
+            /// Otherwise `AlterCommand::apply` either skips it, with `IF NOT EXISTS`, or throws.
+            if (present.insert(command.index_name).second)
+                added.insert(command.index_name);
+        }
+        else if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
+        {
+            present.erase(command.index_name);
+            added.erase(command.index_name);
+        }
+    }
+    return added;
+}
+
 void AlterCommands::apply(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
@@ -1878,22 +1907,32 @@ void AlterCommands::apply(
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
 
+    /// Keys must be what CREATE and a reload resolve in the global context (parts persist their types),
+    /// so a session setting must not decide them here either.
+    ContextPtr key_context = context->getGlobalContext();
+    if (context->isAnalyzingBackgroundExpressions())
+    {
+        auto background_key_context = Context::createCopy(key_context);
+        background_key_context->setAnalyzingBackgroundExpressions(true);
+        key_context = background_key_context;
+    }
+
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
         metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
+            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, key_context);
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Derived inputs and types can change even when the partition key output structure does not.
     if (metadata_copy.minmax_count_projection && columns_changed)
@@ -1902,12 +1941,12 @@ void AlterCommands::apply(
         auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, key_context));
     }
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
@@ -1925,6 +1964,16 @@ void AlterCommands::apply(
         {
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
         }
+    }
+
+    /// Only the declared ones, and only now: the rebuild above resolves them against the schema every
+    /// command produced, which is what gets stored. Existing indices stay unauthorised on purpose.
+    const NameSet declared_indices = getAddedIndexNames(metadata.secondary_indices);
+
+    for (const auto & index : metadata_copy.secondary_indices)
+    {
+        if (declared_indices.contains(index.name))
+            checkTextIndexPreAndPostProcessorPermissions(index, context);
     }
 
     /// Changes in columns may lead to changes in projections
