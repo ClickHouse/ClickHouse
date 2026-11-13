@@ -261,3 +261,27 @@ Enum name key other spelling	0
 Enum name key other spelling	0
 Enum name key other spelling	16
 Enum name key other spelling	16
+FixedString key short index any	16
+FixedString key short index any	16
+FixedString key short index any	16
+FixedString key short index any	16
+FixedString key short index all	16
+FixedString key short index all	16
+FixedString key short index all	16
+FixedString key short index all	16
+FixedString key short index not any	48
+FixedString key short index not any	48
+FixedString key short index not any	48
+FixedString key short index not any	48
+FixedString key short query any	0
+FixedString key short query any	0
+FixedString key short query any	0
+FixedString key short query any	0
+FixedString key short query all	0
+FixedString key short query all	0
+FixedString key short query all	0
+FixedString key short query all	0
+FixedString key short query not any	64
+FixedString key short query not any	64
+FixedString key short query not any	64
+FixedString key short query not any	64

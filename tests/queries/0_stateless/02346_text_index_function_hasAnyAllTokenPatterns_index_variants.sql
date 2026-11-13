@@ -561,4 +561,59 @@ SELECT 'Enum name key other spelling', count() FROM tab WHERE hasAllTokenLike(m[
 
 DROP TABLE tab;
 
+-- A FixedString map key shorter than the type is a different key: m['k'] and m['k\0\0'] are not the same element.
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(FixedString(3), String),
+    INDEX idx_k(m['k']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab SELECT number, if(number < 16, map('k', 'env:prod-eu'), map('x', 'env:prod-eu')) FROM numbers(64);
+
+SELECT 'FixedString key short index any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array');
+SELECT 'FixedString key short index any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString key short index any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short index any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString key short index all', count() FROM tab WHERE hasAllTokenLike(m['k\0\0'], ['env:prod%'], 'array');
+SELECT 'FixedString key short index all', count() FROM tab WHERE hasAllTokenLike(m['k\0\0'], ['env:prod%'], 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString key short index all', count() FROM tab WHERE hasAllTokenLike(m['k\0\0'], ['env:prod%'], 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short index all', count() FROM tab WHERE hasAllTokenLike(m['k\0\0'], ['env:prod%'], 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString key short index not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array');
+SELECT 'FixedString key short index not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString key short index not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short index not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(FixedString(3), String),
+    INDEX idx_k(m['k\0\0']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab SELECT number, if(number < 16, map('k', 'env:prod-eu'), map('x', 'env:prod-eu')) FROM numbers(64);
+
+SELECT 'FixedString key short query any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array');
+SELECT 'FixedString key short query any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString key short query any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short query any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString key short query all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array');
+SELECT 'FixedString key short query all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString key short query all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short query all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString key short query not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k'], 'env:prod%', 'array');
+SELECT 'FixedString key short query not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString key short query not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short query not any', count() FROM tab WHERE NOT hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 SET optimize_functions_to_subcolumns = DEFAULT;

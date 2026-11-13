@@ -2445,6 +2445,11 @@ std::optional<String> getMapElementSubcolumnName(const String & map_column_name,
     if (isEnum(key_type))
         key = tryConvertFieldToType(key, *key_type);
 
+    /// A short `FixedString` key would be padded here, but the lookup compares it unpadded.
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(removeLowCardinality(key_type).get());
+        fixed_string_type && key.getType() == Field::Types::String && key.safeGet<String>().size() != fixed_string_type->getN())
+        return {};
+
     auto key_column = key_type->createColumn();
     if (key.isNull() || !key_column->tryInsert(key))
         return {};
