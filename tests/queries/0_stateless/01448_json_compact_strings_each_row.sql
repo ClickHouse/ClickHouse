@@ -62,6 +62,7 @@ SELECT 10;
 /* Check Header */
 TRUNCATE TABLE test_table;
 SET input_format_skip_unknown_fields = 1;
+SET input_format_warn_on_skipped_unknown_fields = 0;
 INSERT INTO test_table FORMAT JSONCompactStringsEachRowWithNamesAndTypes ["v1", "v2", "invalid_column"]["String", "UInt8", "UInt8"]["first", "1", "32"]["second", "2", "64"];
 
 INSERT INTO test_table FORMAT JSONCompactStringsEachRowWithNames ["v1", "v2", "invalid_column"]["first", "1", "32"]["second", "2", "64"];
