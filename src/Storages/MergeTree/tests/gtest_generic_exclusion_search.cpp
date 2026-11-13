@@ -662,6 +662,10 @@ TEST(GenericExclusionSearch, StopAtFirstMatch)
     std::vector<bool> last_mark_only(num_marks);
     last_mark_only.back() = true;
     patterns.emplace_back(std::move(last_mark_only), -1.0);
+    auto first_half = randomFlags(num_marks, 0.05, rng);
+    for (size_t mark = 0; mark != num_marks / 2; ++mark)
+        first_half[mark] = true;
+    patterns.emplace_back(std::move(first_half), -2.0);
 
     for (size_t coarse_index_granularity : {2, 8})
     {
@@ -705,6 +709,13 @@ TEST(GenericExclusionSearch, StopAtFirstMatch)
                     EXPECT_FALSE(first_match.reached_step_limit);
                     if (density == 0.05)
                         EXPECT_GT(full.num_steps, max_checks);
+                }
+
+                /// An exact range is accepted early here, so the step-limited search stops splitting as well.
+                if (density == -2.0)
+                {
+                    EXPECT_LE(first_match.num_steps, max_checks);
+                    EXPECT_GT(full.num_steps, max_checks);
                 }
             }
         }
