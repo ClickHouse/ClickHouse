@@ -69,6 +69,32 @@ ALTER TABLE t_shadow_existing RENAME COLUMN `a.x` TO `a.y`; -- { serverError ALT
 
 DROP TABLE t_shadow_existing;
 
+-- Nor may such a pair disappear while the column with the dotted name stays: the subcolumn `a.x.y` is a path
+-- of the `JSON` column `a`, and would become a path of the column `a.x`, while the primary index and the
+-- order of the parts were computed from the old one.
+SELECT 'ALTER that takes such a subcolumn away from the prefix column is refused';
+DROP TABLE IF EXISTS t_shadow_lost;
+CREATE TABLE t_shadow_lost (id UInt64, a JSON, `a.x` JSON, b Array(UInt64), `b.size0` UInt64)
+ENGINE = MergeTree ORDER BY toUInt64(`a.x.y`)
+SETTINGS index_granularity = 1, share_nested_offsets = 0;
+INSERT INTO t_shadow_lost VALUES (1, '{"x":{"y":11}}', '{"y":22}', [1, 2], 5), (2, '{"x":{"y":22}}', '{"y":11}', [3], 6);
+ALTER TABLE t_shadow_lost MODIFY COLUMN a String SETTINGS mutations_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_lost MODIFY COLUMN a String SETTINGS mutations_sync = 0; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_lost RENAME COLUMN a TO e; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_lost DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_lost MODIFY COLUMN b String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_lost DROP COLUMN b; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_shadow_lost MODIFY COLUMN a JSON(max_dynamic_paths = 10);
+SELECT id, `a.x.y` FROM t_shadow_lost ORDER BY toUInt64(`a.x.y`) SETTINGS optimize_read_in_order = 1;
+SELECT id, `a.x.y` FROM t_shadow_lost ORDER BY toUInt64(`a.x.y`) SETTINGS optimize_read_in_order = 0;
+SELECT count() FROM t_shadow_lost WHERE toUInt64(`a.x.y`) = 11;
+ALTER TABLE t_shadow_lost MODIFY COLUMN b Array(UInt32);
+SELECT id, b, `b.size0` FROM t_shadow_lost ORDER BY id;
+ALTER TABLE t_shadow_lost DROP COLUMN `b.size0`, DROP COLUMN b;
+SELECT count() FROM t_shadow_lost;
+
+DROP TABLE t_shadow_lost;
+
 -- A table created with such a column may still have parts that do not hold it: with
 -- `skip_empty_columns_on_insert`, an `INSERT` that omits the column records it as missing.
 SELECT 'a part that does not hold the column reads its default';

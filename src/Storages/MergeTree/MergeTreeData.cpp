@@ -6491,6 +6491,35 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         backQuoteIfNeed(other_column->name));
                 }
             }
+
+            /// The same holds in the other direction: a pair that existed before may not disappear while the column with
+            /// the dotted name stays. The names of its subcolumns (`a.x.y` of a column `a.x` next to a `JSON` column `a`)
+            /// were resolved through the prefix column, and would be resolved through the column itself after the prefix
+            /// column is dropped, renamed or changed to a type without this subcolumn (`MODIFY COLUMN a String`).
+            for (const auto & old_column : old_metadata.columns.getAllPhysical())
+            {
+                auto it = old_names.find(old_column.name);
+                if (it == old_names.end() || it->second != old_column.name || !new_columns.hasPhysical(old_column.name))
+                    continue;
+
+                for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(old_column.name))
+                {
+                    auto old_other_column = old_metadata.columns.tryGetPhysical(String(prefix));
+                    if (!old_other_column || !old_other_column->type->tryGetSubcolumnType(subcolumn))
+                        continue;
+
+                    auto other_column = was_stored_as_is(old_other_column->name) ? new_columns.tryGetPhysical(old_other_column->name) : std::nullopt;
+                    if (other_column && other_column->type->tryGetSubcolumnType(subcolumn))
+                        continue;
+
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot alter the table: the name of column {} would no longer be the name of a subcolumn of column {}, "
+                        "so the names of its subcolumns would be read from a different column",
+                        backQuoteIfNeed(old_column.name),
+                        backQuoteIfNeed(old_other_column->name));
+                }
+            }
         }
 
         bool changes_order_by = false;
