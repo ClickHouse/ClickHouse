@@ -166,6 +166,16 @@ TEST(ActionsDAGDeserialization, RejectsCycle)
     expectRejected(out.str());
 }
 
+TEST(ActionsDAGDeserialization, RejectsInputOutOfRange)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(1, out);
+    writeNode(out, ActionType::INPUT, "a", u8, {});
+    writeIds(out, {1});
+    writeIds(out, {0});
+    expectRejected(out.str());
+}
+
 TEST(ActionsDAGDeserialization, RejectsOutputOutOfRange)
 {
     expectRejected(plusStream("a", false, {2}));
