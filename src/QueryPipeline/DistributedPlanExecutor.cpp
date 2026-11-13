@@ -1467,8 +1467,8 @@ void applyDistributedPlanSettings(ContextMutablePtr context)
     if (make_plan.changed && !make_plan.value)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "`make_distributed_plan = 0` conflicts with {}, which {} a distributed query plan. Set "
-            "`make_distributed_plan = 1`, or set {} back to `DEFAULT`.",
-            fmt::join(wants, ", "), requests_verb, conflicting_settings);
+            "`make_distributed_plan` to 1 or omit it.",
+            fmt::join(wants, ", "), requests_verb);
 
     if (workers_num.changed && workers_num.value == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
