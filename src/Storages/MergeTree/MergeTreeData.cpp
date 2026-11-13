@@ -26,6 +26,8 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -5991,6 +5993,32 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     return {};
 }
 
+bool queryTreeReadsColumn(const IQueryTreeNode & node, const String & column)
+{
+    if (const auto * column_node = node.as<ColumnNode>(); column_node && column_node->getColumnName() == column)
+        return true;
+    /// A function folded into a constant, such as `toTypeName(j)`, keeps the expression it was computed from.
+    if (const auto * constant_node = node.as<ConstantNode>(); constant_node && constant_node->hasSourceExpression()
+        && queryTreeReadsColumn(*constant_node->getSourceExpression(), column))
+        return true;
+    return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumn(*child, column); });
+}
+
+/// Whether an expression reads the whole `column`, directly, through an ALIAS column or inside a folded constant.
+bool expressionReadsColumn(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, const String & column)
+{
+    if (!ast)
+        return false;
+
+    auto analysis_context = Context::createCopy(context);
+    auto expression = buildQueryTree(ast, analysis_context);
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
+    auto table_node = std::make_shared<TableNode>(storage, analysis_context);
+    QueryAnalyzer analyzer(/*only_analyze=*/ true);
+    analyzer.resolve(expression, table_node, analysis_context);
+    return queryTreeReadsColumn(*expression, column);
+}
+
 }
 
 void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
@@ -7219,7 +7247,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             for (const auto & ttl : ttls)
                 for (const auto & ast : {ttl.expression_ast, ttl.where_expression_ast})
-                    if (std::ranges::contains(expressionSourceColumns(ast, old_metadata.getColumns(), local_context), command.column_name))
+                    if (expressionReadsColumn(ast, old_metadata.getColumns(), local_context, command.column_name))
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "ALTER of column {} is forbidden because the TTL expression ({}) reads it. Drop the TTL first",
