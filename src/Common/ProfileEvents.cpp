@@ -654,6 +654,13 @@
     M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageExecuteMilliseconds, "Total busy time spent for execution of prewarm stage of background merges", ValueType::Milliseconds) \
+    M(MergeCheckpointsSaved, "Number of merge checkpoints saved.", ValueType::Number) \
+    M(MergeCheckpointSaveMicroseconds, "Total time spent saving merge checkpoints, including their commits.", ValueType::Microseconds) \
+    M(MergeCheckpointsResumed, "Number of merges resumed from a merge checkpoint.", ValueType::Number) \
+    M(MergeCheckpointsDiscarded, "Number of merge checkpoints removed because the merge could not resume from them.", ValueType::Number) \
+    M(MergeCheckpointsRemoved, "Number of merge checkpoints removed by their cleanup or by a drop of the table.", ValueType::Number) \
+    M(MergeCheckpointable, "Number of launched background merges with `enable_merge_checkpoints` that are checkpointed.", ValueType::Number) \
+    M(MergeNonCheckpointable, "Number of launched background merges with `enable_merge_checkpoints` that cannot be checkpointed, for example horizontal merges.", ValueType::Number) \
     \
     M(MergesRejectedByMemoryLimit, "Number of background merges rejected due to memory limit", ValueType::Number) \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \

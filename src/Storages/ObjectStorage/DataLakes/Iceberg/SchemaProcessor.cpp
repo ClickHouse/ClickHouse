@@ -844,7 +844,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser, const String & timezone_for_timestamptz)
 {
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
@@ -868,11 +868,11 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
-        return std::make_shared<DataTypeDateTime64>(6, "UTC");
+        return std::make_shared<DataTypeDateTime64>(6, timezone_for_timestamptz);
     if (type_name == f_timestamp_ns)
         return std::make_shared<DataTypeDateTime64>(9);
     if (type_name == f_timestamptz_ns)
-        return std::make_shared<DataTypeDateTime64>(9, "UTC");
+        return std::make_shared<DataTypeDateTime64>(9, timezone_for_timestamptz);
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
     if (type_name == f_variant)
@@ -983,7 +983,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name, allow_geo_parser, timezone_for_timestamptz);
         if (required && data_type->onlyNull())
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,

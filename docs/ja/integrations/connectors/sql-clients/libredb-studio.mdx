@@ -1,0 +1,169 @@
+---
+slug: /integrations/libredb-studio
+sidebarTitle: 'LibreDB Studio'
+description: 'オープンソースの Web ベース SQL IDE である LibreDB Studio を、HTTP インターフェース経由でセルフホスト型 ClickHouse サーバーに接続します。'
+title: 'LibreDB Studio を ClickHouse に接続する'
+doc_type: 'guide'
+keywords: ['libredb studio', 'sql client', 'sql ide', 'web', 'open source', 'self-hosted', 'monitoring']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio) は、ブラウザ上で動作するオープンソース (MIT) のセルフホスト型 SQL IDE です。
+JDBC やネイティブドライバーを使わずに HTTP インターフェース経由で ClickHouse に接続でき、SQL エディタ、データベースブラウザ、`EXPLAIN` による実行計画の表示、
+`system` テーブルを基盤とした監視ダッシュボードを利用できます。
+
+## はじめる前に {#before-you-begin}
+
+* LibreDB Studio を Docker (`docker run -p 3000:3000 ghcr.io/libredb/libredb-studio:latest`)
+  または Node.js 24 以降 (`npx @libredb/studio`) で起動し、`http://localhost:3000` を開きます。初回
+  起動時には、管理者パスワードがログに出力されます。
+* LibreDB Studio を実行するマシンから ClickHouse の HTTP または HTTPS ポートにアクセスできることを確認してください。
+* クエリ対象のデータベースへのアクセス権を持つ ClickHouse ユーザーを作成します。データベースブラウザを使用するには、
+  `system.dictionaries` と `system.data_skipping_indices` に対する `SELECT` 権限、およびDictionaryを含む
+  各データベースに対する `dictGet` 権限も必要です。ダッシュボードを使用する場合は、[ClickHouse の監視](#monitor-clickhouse) に記載されている
+  `system` テーブルに対する `SELECT` 権限を付与してください。
+
+たとえば、`uk` データベースに対してクエリを実行するユーザー `reader` の場合は、次のようになります。
+
+```sql
+GRANT SELECT ON uk.* TO reader;
+GRANT dictGet ON uk.* TO reader;
+GRANT SELECT ON system.dictionaries TO reader;
+GRANT SELECT ON system.data_skipping_indices TO reader;
+```
+
+| デプロイメント            | 検証済みバージョン | 注記                                                  |
+| ------------------ | --------- | --------------------------------------------------- |
+| セルフホスト型 ClickHouse | 26.7      | HTTP(S) インターフェイスを使用します (`8123`、HTTPS の場合は `8443`) 。 |
+
+## 仕組み {#how-it-works}
+
+1. ブラウザがステートメントを LibreDB Studio サーバーに送信します。
+2. サーバーはそのステートメントを HTTP `POST /` のボディとして ClickHouse に送信します。その際、
+   `default_format=JSONCompact` と選択したデータベースは URL パラメータとして、認証情報は
+   HTTP 基本認証で渡します。
+3. サーバーは、結果の行、ClickHouse が宣言したカラム型、ClickHouse が報告した経過時間を
+   返します。各ステートメントはそれぞれ独立したステートレスなリクエストとして処理され、session は固定されません。
+
+## セルフホスト型 ClickHouse に接続する {#connect-to-self-hosted-clickhouse}
+
+<Steps>
+  <Step title="接続情報を準備する" id="gather-your-connection-details">
+    ホスト、HTTP ポート (デフォルトは `8123`。HTTPS を使用する場合はサーバーの HTTPS ポートで、多くの場合
+    `8443`) 、ユーザー名とパスワード、および必要に応じてデータベース名を用意してください。データベースを指定しない
+    接続では `default` が使用されます。
+  </Step>
+
+  <Step title="接続を作成する" id="create-the-connection">
+    1. サイドバーで **+** (**New connection**) を選択します。
+    2. データベースの種類として **ClickHouse** を選択します。ポートには `8123` が自動入力されます。
+    3. 接続名、ホスト、ポート、ユーザー名、パスワード、および必要に応じてデータベース名を
+       入力します。
+    4. HTTPS を使用する場合は、**SSL / TLS** を開いて `disable` 以外の SSL モードを選択し、**Port** を
+       サーバーの HTTPS ポート (多くの場合 `8443`) に変更します。`disable` 以外のモードではいずれも、LibreDB Studio サーバーが信頼する CA を基にサーバー
+       証明書が検証されます。これは `verify-system` が示す動作です。
+       ClickHouse Cloud や、公的に信頼された CA が発行した証明書を使用するサーバーであれば、この設定で接続できます。自己署名証明書またはプライベート CA の証明書を使用する場合は、
+       [トラブルシューティング](#troubleshooting) を参照してください。
+    5. **Test Connection** を選択し、続いて **Establish Connection** を選択します。
+
+    各フィールドに入力する代わりに、**Paste URL** で URL を貼り付けることもできます (例:
+    `clickhouse://localhost:8123/default`、`https://reader:secret@ch.example.com:8443/analytics`) 。
+    `https://` の URL を指定すると TLS が有効になります。
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="ClickHouse が選択され、ホスト、ポート 8123、ユーザー名、データベースが入力され、接続テストに成功した LibreDB Studio の New Connection ダイアログ" />
+  </Step>
+
+  <Step title="クエリを実行する" id="run-a-query">
+    接続を開き、エディタでステートメントを記述して実行します。データベースブラウザには、各
+    データベースのテーブル、ビュー、materialized view、Dictionary、ユーザー定義関数が一覧表示され、
+    カラム、主キーカラム、データスキッピングインデックス、オブジェクト定義も確認できます。
+
+    この例では [英国不動産価格データセット](/ja/get-started/sample-datasets/uk-price-paid) を使用します。
+    同ガイドの手順に従って `uk.uk_price_paid` にデータをロードし、接続のデータベースを `uk` に設定してから、
+    次のクエリを実行します:
+
+    ```sql
+    SELECT
+        town,
+        count() AS sales,
+        round(avg(price)) AS average_price
+    FROM uk_price_paid
+    GROUP BY town
+    ORDER BY sales DESC
+    LIMIT 10
+    ```
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="uk_price_paid クエリと、宣言された ClickHouse のカラム型を含む結果グリッドを表示している LibreDB Studio の SQL エディタ" />
+  </Step>
+</Steps>
+
+## ClickHouse を監視する {#monitor-clickhouse}
+
+監視ダッシュボードは、接続に設定されたユーザーの権限で以下のソースを読み取ります。
+
+| 項目                        | ClickHouse のソース                                                     |
+| ------------------------- | ------------------------------------------------------------------- |
+| バージョン、連続稼働時間、接続数          | `version()`, `uptime()`, `system.metrics`, `system.server_settings` |
+| キャッシュヒット率、1 秒あたりのクエリ数、メモリ | `system.events`, `system.asynchronous_metrics`                      |
+| 低速クエリ (正規化クエリごとにグループ化)    | `system.query_log`                                                  |
+| 実行中のクエリ                   | `system.processes`                                                  |
+| テーブル、テーブルパーツ、行数とサイズ       | `system.tables`, `system.parts`                                     |
+| データスキッピングインデックス           | `system.data_skipping_indices`                                      |
+| ディスク                      | `system.disks`                                                      |
+
+ユーザーがこれらのテーブルのいずれかに対する権限を持っていない場合や、`query_log` が無効になっている場合でも、ダッシュボード全体がエラーになることはなく、該当するパネルが空のままになるだけです。`system.query_log` は非同期でフラッシュされるため、完了したばかりのステートメントが表示されるまでに数秒かかることがあります。
+
+LibreDB Studio では、テーブルに対する `OPTIMIZE TABLE ... FINAL` の実行、テーブルまたはデータベース単位での `system.parts` の概要表示、`KILL QUERY ... SYNC` による実行中クエリの停止も行えます。これらの操作には、それぞれに対応する権限が必要です。
+
+<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="ClickHouse 接続に対する LibreDB Studio の監視概要。サーバーバージョン、連続稼働時間、接続数、ストレージサイズ、キャッシュヒット率、テーブル数が表示されている" />
+
+## トラブルシューティング {#troubleshooting}
+
+<Accordion title="接続が拒否された、またはタイムアウトした">
+  リクエストを送信するのはブラウザーではなく LibreDB Studio のサーバーであるため、ホストは LibreDB Studio を実行しているマシンまたはコンテナから
+  接続可能である必要があります。LibreDB Studio を Docker で実行し、ClickHouse を同じマシン上で実行している場合、
+  `localhost` はホストではなくコンテナを指します。また、入力したポートがネイティブプロトコルのポート `9000` ではなく
+  HTTP ポートであることを確認してください。
+</Accordion>
+
+<Accordion title="自己署名証明書またはプライベート CA の証明書で HTTPS 接続が失敗する">
+  LibreDB Studio のサーバーは Node.js 上で動作しており、Node.js はサーバー証明書を自身に同梱された公開 CA の一覧と照合して検証します。
+  そのため、**SSL / TLS** に貼り付けた CA 証明書は無視され、CA をオペレーティングシステムの証明書ストアに追加するだけでも
+  不十分です。LibreDB Studio のサーバーを起動する際は、`NODE_EXTRA_CA_CERTS` 環境変数に、CA 証明書
+  (自己署名の場合はサーバー自身の証明書) を含む PEM ファイルのパスを指定してください。Docker を使用する場合は、
+  ファイルをコンテナにマウントし、たとえば `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem` を指定します。
+</Accordion>
+
+<Accordion title="データベースブラウザにオブジェクトが表示されない、または Dictionary がテーブルとして表示される">
+  データベースブラウザは、各データベースのオブジェクトを種類別に分類するために `system.dictionaries` を、
+  テーブルの詳細を表示するために `system.data_skipping_indices` を読み取ります。`system.dictionaries` に対する `SELECT` 権限がない場合は
+  オブジェクト一覧が読み込まれず、`system.data_skipping_indices` に対する `SELECT` 権限がない場合はテーブルの詳細が
+  開きません。また、ユーザーがそのデータベースに対する `dictGet` 権限を持っていない間は、Dictionary はテーブルとして一覧に表示されます。
+  [始める前に](#before-you-begin) に示すとおりにこれらの権限を付与し、ブラウザーを更新してください。
+</Accordion>
+
+<Accordion title="一部のダッシュボードパネルが空になる">
+  ClickHouse ユーザーが、[ClickHouse の監視](#monitor-clickhouse) に記載されている `system` テーブルの
+  いずれかを読み取れない状態です。必要なテーブルに対する `SELECT` 権限を付与し、再接続してください。
+</Accordion>
+
+<Accordion title="スロークエリビューが空になる">
+  スロークエリビューは `system.query_log` を読み取りますが、クエリのログ記録が無効になっている間は何も記録されません。
+  ユーザーの `log_queries` 設定を有効にし (たとえばそのユーザーの設定プロファイルで)、いくつかクエリを実行してください。
+  新しいエントリはログがフラッシュされると表示されますが、これには数秒かかる場合があります。
+  それでもビューが空のままの場合は、クエリのログ記録がユーザー単位ではなくサーバー全体で無効になっている可能性があります。
+  [system.query&#95;log](/ja/operations/system-tables/query_log) の説明に従い、
+  サーバー構成に `query_log` セクションが存在することを確認してください。
+</Accordion>
+
+## 次のステップ {#next-steps}
+
+* 動作の詳細については、[LibreDB Studio ClickHouse プロバイダーのドキュメント](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md)を参照してください。
+* サーバー構成については、[ClickHouse HTTP インターフェイスのドキュメント](/ja/concepts/features/interfaces/http)を参照してください。
