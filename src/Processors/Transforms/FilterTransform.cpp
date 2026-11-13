@@ -337,6 +337,14 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
+#if USE_EMBEDDED_COMPILER
+    if (node->is_function_compiled)
+    {
+        auto conjuncts = ActionsDAG::getCompiledConjuncts(*node);
+        return std::any_of(conjuncts.begin(), conjuncts.end(), isAlwaysFalseByEmptySet);
+    }
+#endif
+
     const auto & function_name = node->function_base->getName();
 
     if (function_name == "and")
