@@ -13,6 +13,8 @@ CREATE TABLE t_bad (x UInt32, _part_offset UInt64) ENGINE = ReplicatedMergeTree(
 CREATE TABLE t_src (x UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_src VALUES (1);
 CREATE TABLE t_bad ENGINE = MergeTree ORDER BY tuple() AS SELECT _part, x FROM t_src; -- { serverError ILLEGAL_COLUMN }
+CREATE MATERIALIZED VIEW t_bad ENGINE = MergeTree ORDER BY tuple() AS SELECT _part, x FROM t_src; -- { serverError ILLEGAL_COLUMN }
+CREATE TEMPORARY TABLE t_bad_tmp (x UInt32, _part_offset UInt64) ENGINE = MergeTree ORDER BY x; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE t_src ADD COLUMN _part_offset UInt64; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE t_src ADD COLUMN y UInt32;
 ALTER TABLE t_src RENAME COLUMN y TO _partition_id; -- { serverError ILLEGAL_COLUMN }
