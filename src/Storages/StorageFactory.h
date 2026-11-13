@@ -98,8 +98,6 @@ public:
         /// Whether a table of this engine can be deferred behind `StorageTableProxy` in a database
         /// with `lazy_load_tables`. Opting in also means listing its class in the storage-cast check.
         bool supports_deferred_load = false;
-        /// See also IStorage::storesDataOnDisk(). A deferred table answers from here until it loads.
-        bool stores_data_on_disk = false;
         /// The background job only feeds dependent views, so a table that has none is deferred like
         /// any other, while one that has some is loaded eagerly to keep them fed.
         bool defers_only_without_dependent_views = false;
@@ -107,6 +105,12 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
+
+        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
+        /// A deferred table answers from here until it loads.
+        bool stores_data_on_disk = false;
+        /// Whether the engine may back a temporary table (opt-in).
+        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -149,11 +153,12 @@ public:
         .supports_unique_key = false,
         .supports_sql_security = false,
         .supports_deferred_load = false,
-        .stores_data_on_disk = false,
         .defers_only_without_dependent_views = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
+        .stores_data_on_disk = false,
+        .supports_temporary = false,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
@@ -192,6 +197,9 @@ public:
     /// Null for an unregistered engine, so a caller that only wants to inspect an engine named in a
     /// `CREATE` query does not have to handle `UNKNOWN_STORAGE` itself.
     const StorageFeatures * tryGetStorageFeatures(const String & storage_name) const;
+
+    /// Throws if storage cannot be temporary
+    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.

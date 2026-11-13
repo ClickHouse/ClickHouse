@@ -595,8 +595,9 @@ void registerStorageJoin(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_deferred_load = true,
-            .stores_data_on_disk = true,
             .has_builtin_setting_fn = has_builtin_fn,
+            .stores_data_on_disk = true,
+            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(

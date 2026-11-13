@@ -482,18 +482,71 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
 
+## TLS and SASL with named collections {#kafka-tls-sasl-named-collections}
+
+The Kafka table engine exposes only a subset of [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) settings as table-level `kafka_*` parameters (for example `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`). **TLS certificate paths, private keys, and key passwords are not table settings**; configure them as extended `librdkafka` properties.
+
+For `ENGINE = Kafka(named_collection)`:
+
+- Top-level `kafka_*` keys in the named collection are Kafka table-engine settings (brokers, topic, format, and the protocol/SASL settings listed above).
+- Keys with the `kafka.` prefix in `CREATE NAMED COLLECTION`, or nested under `<kafka>` in XML, are forwarded to `librdkafka`. Underscores in the key name are converted to dots (for example `kafka.ssl_ca_location` → `ssl.ca.location`, or `<ssl_ca_location>` under `<kafka>` → `ssl.ca.location`).
+
+When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
+
+A common layout for `SASL_SSL` with client certificates: store TLS paths and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
+
+Example (certificate paths must exist on every ClickHouse server that runs consumers for the table):
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+The same extended settings in an XML-defined collection:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+See the [librdkafka configuration reference](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) for all TLS-related properties. For server-wide defaults without named collections, see [Configuration](#configuration) below.
+
 ## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
 
 `OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
 
 When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
 
-For `ENGINE = Kafka(named_collection)`, use two namespaces in the named collection:
-
-- Top-level `kafka_*` keys are Kafka table-engine settings, such as `kafka_security_protocol` and `kafka_sasl_mechanism`.
-- Keys nested under `<kafka>` are extended `librdkafka` settings, including the OIDC properties above.
-
-The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
+For `ENGINE = Kafka(named_collection)`, extended `librdkafka` settings (including OIDC) use the same `kafka.` / `<kafka>` namespace described in [TLS and SASL with named collections](#kafka-tls-sasl-named-collections). The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
 
 Examples:
 

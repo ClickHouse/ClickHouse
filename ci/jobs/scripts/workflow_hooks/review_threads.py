@@ -90,27 +90,48 @@ def should_limit_pipeline(unresolved_count, bypassed) -> bool:
     return unresolved_count > 0 and not bypassed
 
 
+# Also hard-coded in .github/workflows/rerun_on_review_threads.yml - keep them in sync.
+SEARCH_PRS_BY_COMMIT_QUERY = """
+query($q: String!) {
+  search(query: $q, type: ISSUE, first: 100) {
+    nodes { ... on PullRequest { number state headRefOid } }
+  }
+}
+"""
+
+
 def other_open_prs_on_head(info):
     """Other open PRs whose head is the commit of this run. Raises on API failure.
 
     Commit statuses are keyed by the commit and the context only, so every open
     PR with this head sees the `Review Threads` and `Mergeable Check` statuses
     written for any of them: one PR's success would clear another one's block.
+
+    `commits/<sha>/pulls` is empty for fork commits, so the PRs are also looked
+    up with a search by the commit, which finds fork PRs too.
     """
     output = GH.get_output_with_retries(
         f"gh api repos/{info.repo_name}/commits/{info.sha}/pulls",
         verbose=True,
         strict=True,
     )
-    return sorted(
-        {
-            pr["number"]
-            for pr in json.loads(output)
-            if pr["state"] == "open"
-            and pr["head"]["sha"] == info.sha
-            and pr["number"] != info.pr_number
-        }
+    prs = {
+        pr["number"]
+        for pr in json.loads(output)
+        if pr["state"] == "open" and pr["head"]["sha"] == info.sha
+    }
+    found = GH._gh_graphql_json(
+        SEARCH_PRS_BY_COMMIT_QUERY,
+        {"q": f"repo:{info.repo_name} is:pr is:open {info.sha}"},
+        verbose=True,
     )
+    prs |= {
+        pr["number"]
+        for pr in found["data"]["search"]["nodes"]
+        if pr["state"] == "OPEN" and pr["headRefOid"] == info.sha
+    }
+    prs.discard(info.pr_number)
+    return sorted(prs)
 
 
 def merge_gate_verdict(config_limited, unresolved_now, override_now, shared_with=()):

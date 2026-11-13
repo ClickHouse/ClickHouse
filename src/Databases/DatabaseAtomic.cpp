@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool fsync_metadata;
 }
 
 namespace FailPoints
@@ -430,7 +431,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       ContextPtr query_context)
+                                       const String & statement, ContextPtr query_context)
 {
     auto db_disk = getDisk();
 
@@ -456,13 +457,23 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// TODO better detection and recovery
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
-        db_disk->moveFile(table_metadata_tmp_path, table_metadata_path); /// Commit point (a sort of)
+        if (table_metadata_tmp_path.empty())
+        {
+            if (db_disk->existsFileOrDirectory(table_metadata_path))
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", table_metadata_path);
+            writeMetadataFile(db_disk, table_metadata_path, statement, query_context->getSettingsRef()[Setting::fsync_metadata]); /// Commit point (a sort of)
+        }
+        else
+        {
+            db_disk->moveFile(table_metadata_tmp_path, table_metadata_path); /// Commit point (a sort of)
+        }
         attachTableUnlocked(query.getTable(), table);   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
     {
-        db_disk->removeFileIfExists(table_metadata_tmp_path);
+        if (!table_metadata_tmp_path.empty())
+            db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
     if (table->storesDataOnDisk())

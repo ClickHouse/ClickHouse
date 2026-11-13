@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -102,6 +103,7 @@ public:
             nested = nested_storage;
         }
         get_nested = {};
+        is_loaded.store(true, std::memory_order_release);
         return nested;
     }
 
@@ -111,6 +113,22 @@ public:
         auto storage = nestedIfResolved();
         return storage ? storage->storesDataOnDisk() : stores_data_on_disk;
     }
+
+    /// The loaded storage, or nullptr if the table has not been loaded yet. Unlike `tryGetNested`,
+    /// never waits for a load in progress: the database calls this with its own mutex held, see
+    /// `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
+    StoragePtr getLoadedTable() const
+    {
+        if (!is_loaded.load(std::memory_order_acquire))
+            return nullptr;
+        /// Assigned once, before `is_loaded` is set, and never changed after that.
+        return nested;
+    }
+
+    /// Only asked about a table that is about to be read or written inside a transaction, or written
+    /// to on a read-only disk, so loading it costs nothing.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+    bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
 
     /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
     bool hasUnreplicatedTableDataOnDisk() const override
@@ -136,11 +154,11 @@ public:
     }
 
     /// Nothing was locked in a table that was never started, but a loaded one has to resume its background work.
+    /// Does not wait for a load in progress, see `getLoadedTable`.
     void onActionLockRemove(StorageActionBlockType action_type) override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->onActionLockRemove(action_type);
+        if (auto loaded = getLoadedTable())
+            loaded->onActionLockRemove(action_type);
     }
 
     /// The answers that exist only once the storage does. An observer that walks every table gets
@@ -404,6 +422,7 @@ private:
     const bool supports_replication; /// Whether the engine replicates, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     mutable StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
+    mutable std::atomic<bool> is_loaded{false}; /// Set once `nested` has been assigned, see `getLoadedTable`.
     LoggerPtr log;
 };
 

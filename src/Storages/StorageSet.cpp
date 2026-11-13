@@ -390,7 +390,7 @@ void registerStorageSet(StorageFactory & factory)
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
     }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .supports_deferred_load = true,
-        .stores_data_on_disk = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
+        .has_builtin_setting_fn = SetSettings::hasBuiltin, .stores_data_on_disk = true, .supports_temporary = true, },
     Documentation{
         .description = R"DOCS_MD(
 <Note>

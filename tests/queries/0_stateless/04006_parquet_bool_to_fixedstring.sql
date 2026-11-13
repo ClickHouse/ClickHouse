@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Parquet Bool to FixedString conversion should use string representation ("true"/"false"),
 -- not raw bytes. https://github.com/ClickHouse/ClickHouse/issues/78909
 

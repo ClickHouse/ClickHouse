@@ -187,12 +187,20 @@ TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & c
     return znode_info;
 }
 
+String DatabaseOrdinary::getConvertedMergeTreeEngineName(const String & engine_name, bool replicated)
+{
+    if (replicated)
+        return "Replicated" + engine_name;
+    chassert(engine_name.starts_with("Replicated"));
+    return engine_name.substr(strlen("Replicated"));
+}
+
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, const TableZnodeInfo * ordinary_znode_info)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
     auto engine = make_intrusive<ASTFunction>();
-    String engine_name;
+    const String engine_name = getConvertedMergeTreeEngineName(storage->engine->name, replicated);
 
     if (replicated)
     {
@@ -217,8 +225,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = "Replicated" + storage->engine->name;
     }
     else
     {
@@ -228,8 +234,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = storage->engine->name.substr(strlen("Replicated"));
     }
 
     /// Set new engine for the old query
