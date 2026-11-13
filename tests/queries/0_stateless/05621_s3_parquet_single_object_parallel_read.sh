@@ -15,19 +15,22 @@ SMALL="${PREFIX}/05621_small.parquet"
 MISSING="${PREFIX}/05621_missing.parquet"
 AUTH="'test', 'testtest'"
 
+# Uncompressed, so that objects of few rows still exceed the 8 MiB below which an object is not split.
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3('${OBJECT}', ${AUTH}, 'Parquet')
     SELECT number AS id, toString(number % 1000) AS s, [number, number + 1] AS arr, (number, toString(number)) AS t
-    FROM numbers(2000000)
-    SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 100000, output_format_parquet_use_custom_encoder = 1"
-
-${CLICKHOUSE_CLIENT} --query "
+    FROM numbers(200000)
+    SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 10000, output_format_parquet_use_custom_encoder = 1,
+        output_format_parquet_compression_method = 'none';
     INSERT INTO FUNCTION s3('${SMALL}', ${AUTH}, 'Parquet')
-    SELECT number AS id, toString(number) AS s FROM numbers(2000000)
-    SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 1000000, output_format_parquet_use_custom_encoder = 1"
+    SELECT number AS id, toString(number) AS s FROM numbers(500000)
+    SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 250000, output_format_parquet_use_custom_encoder = 1,
+        output_format_parquet_compression_method = 'none'"
 
-echo "-- the object is large enough to be split"
-${CLICKHOUSE_CLIENT} --query "SELECT _size >= 8388608 FROM s3('${OBJECT}', ${AUTH}, 'One')"
+echo "-- the objects are large enough to be split"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT _size >= 8388608 FROM s3('${OBJECT}', ${AUTH}, 'One');
+    SELECT _size >= 8388608 FROM s3('${SMALL}', ${AUTH}, 'One')"
 
 function sources()
 {
@@ -64,16 +67,16 @@ done
 
 function read_object()
 {
-    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id), sum(length(s)), sum(arr[2]), sum(t.1), max(t.2) FROM s3('${OBJECT}', ${AUTH}, 'Parquet')"
-    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE s = '123'"
     # The cluster variant of s3() that parallel replicas read through does not support PREWHERE.
     ${CLICKHOUSE_CLIENT} "$@" --query "
+        SELECT count(), sum(id), sum(length(s)), sum(arr[2]), sum(t.1), max(t.2) FROM s3('${OBJECT}', ${AUTH}, 'Parquet');
+        SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE s = '123';
         SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') PREWHERE id % 7 = 0 WHERE s LIKE '1%'
-        SETTINGS enable_parallel_replicas = 0"
-    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE id BETWEEN 25500 AND 74321"
-    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT sum(_row_number = id), sum(_row_number) FROM s3('${OBJECT}', ${AUTH}, 'Parquet')"
-    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT id, s FROM s3('${OBJECT}', ${AUTH}, 'Parquet') ORDER BY id DESC LIMIT 3"
-    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT _file, _size > 0, count() FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE _path LIKE '%05621.parquet' GROUP BY ALL"
+        SETTINGS enable_parallel_replicas = 0;
+        SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE id BETWEEN 2550 AND 7432;
+        SELECT sum(_row_number = id), sum(_row_number) FROM s3('${OBJECT}', ${AUTH}, 'Parquet');
+        SELECT id, s FROM s3('${OBJECT}', ${AUTH}, 'Parquet') ORDER BY id DESC LIMIT 3;
+        SELECT _file, _size > 0, count() FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE _path LIKE '%05621.parquet' GROUP BY ALL"
 }
 
 for threads in 8 1; do
@@ -112,8 +115,9 @@ AZURE_OBJECT="azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', '05621.parquet'
 
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION ${AZURE_OBJECT}
-    SELECT number AS id, toString(number % 1000) AS s, [number, number + 1] AS arr FROM numbers(2000000)
-    SETTINGS azure_truncate_on_insert = 1, output_format_parquet_row_group_size = 100000, output_format_parquet_use_custom_encoder = 1"
+    SELECT number AS id, toString(number % 1000) AS s, [number, number + 1] AS arr FROM numbers(400000)
+    SETTINGS azure_truncate_on_insert = 1, output_format_parquet_row_group_size = 20000, output_format_parquet_use_custom_encoder = 1,
+        output_format_parquet_compression_method = 'none'"
 read_objects azure "${AZURE_OBJECT}" ""
 ${CLICKHOUSE_CLIENT} --query "SELECT _size >= 8388608 FROM azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', '05621.parquet', 'One')"
 for etag in 1 0; do
