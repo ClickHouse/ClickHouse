@@ -541,7 +541,7 @@ std::vector<std::pair<std::string, std::vector<size_t>>> askOrders(size_t rows)
     orders.emplace_back("sparse", sparse);
 
     std::vector<size_t> random = ascending;
-    std::shuffle(random.begin(), random.end(), std::mt19937(42));
+    std::shuffle(random.begin(), random.end(), std::mt19937(42)); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     orders.emplace_back("random", random);
 
     return orders;
