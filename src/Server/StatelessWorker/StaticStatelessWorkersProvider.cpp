@@ -109,8 +109,8 @@ StatelessWorkersProviderPtr StaticStatelessWorkersProvider::tryGetQuerySnapshot(
 
     std::lock_guard lock(active_workers_mutex);
     active_workers = current_active_workers;
-    is_refresh_running = true;
-    refresh_task->scheduleAfter(refresh_period.count());
+    /// If the task is not scheduled, or the call throws, the next query does the read again.
+    is_refresh_running = refresh_task->scheduleAfter(refresh_period.count());
     return current_active_workers;
 }
 
@@ -131,7 +131,7 @@ void StaticStatelessWorkersProvider::refreshActiveWorkers()
 
         std::lock_guard lock(active_workers_mutex);
         active_workers = std::move(current_active_workers);
-        refresh_task->scheduleAfter(refresh_period.count());
+        is_refresh_running = refresh_task->scheduleAfter(refresh_period.count());
     }
     catch (...)
     {
