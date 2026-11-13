@@ -127,7 +127,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref, bool
 
     /// With `input_format_json_ignore_unnecessary_fields`, the fields after all columns are skipped without a lookup,
     /// so they can be duplicates of known columns.
-    if (check_name && name_map.get(name_ref) == CaseAwareBlockNameMap::NOT_FOUND)
+    if (check_name && !name_map.contains(name_ref))
         reportSkippedUnknownField(name_ref);
 
     skipJSONField(*in, name_ref, format_settings.json);

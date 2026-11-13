@@ -12,7 +12,8 @@ DB=${CLICKHOUSE_DATABASE}
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t (a UInt64, b String DEFAULT 'b_default') ENGINE = Memory;
     CREATE TABLE t_agg (k UInt64, s AggregateFunction(sum, UInt64)) ENGINE = Memory;
-    CREATE TABLE t_null (a UInt64) ENGINE = Null;"
+    CREATE TABLE t_null (a UInt64) ENGINE = Null;
+    CREATE TABLE t_case (Foo UInt64, foo UInt64) ENGINE = Memory;"
 
 # $1: table, $2: format, $3: more URL parameters. The data is read from stdin.
 function insert()
@@ -28,6 +29,7 @@ printf "INSERT INTO \`t\` (\`a\`, \`u_mysqldump_%s\`) VALUES (3, 'x');\n" "$DB" 
 printf '{"a":4,"u_optout_%s":1}' "$DB" | insert t JSONEachRow "input_format_warn_on_skipped_unknown_fields=0"
 printf '{"a":5,"b":"y","u_after_%s":1}' "$DB" | insert t JSONEachRow
 printf '{"a":6,"b":"y","a":7}' | insert t JSONEachRow "input_format_json_ignore_unnecessary_fields=1&query_id=${DB}_dup"
+printf '{"Foo":1,"foo":2,"FOO":3}' | insert t_case JSONEachRow "input_format_json_ignore_unnecessary_fields=1&input_format_parallel_parsing=0&query_id=${DB}_ambiguous"
 $CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_parallel_${DB} FROM numbers(100000) FORMAT JSONEachRow" \
     | insert t_null JSONEachRow "input_format_parallel_parsing=1&max_parsing_threads=4&min_chunk_bytes_for_parallel_parsing=1024"
 $CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_serial_${DB} FROM numbers(100000) FORMAT JSONEachRow" \
@@ -75,6 +77,7 @@ for f in u_Native u2_Native u_JSONEachRow u2_JSONEachRow u_TSKV u2_TSKV u_BSONEa
     echo "$f $(warnings "position(message, 'Field \`${f}_${DB}\` ') > 0")"
 done
 echo "dup $(warnings "query_id = '${DB}_dup' AND position(message, 'has no matching column') > 0")"
+echo "ambiguous $(warnings "query_id = '${DB}_ambiguous' AND position(message, 'has no matching column') > 0")"
 echo "cap fields $(warnings "query_id = '${DB}_cap' AND position(message, 'has no matching column') > 0")"
 echo "cap summary $(warnings "query_id = '${DB}_cap' AND position(message, 'more than 10 fields') > 0")"
 echo "async query id $(warnings "position(message, 'Field \`u_async_${DB}\` of the input data of query ${DB}_async in format JSONEachRow ') > 0")"
@@ -83,4 +86,4 @@ for i in 1 2; do
     echo "batch $i $(warnings "position(message, 'Field \`u_batch_${DB}\` of the input data of query ${DB}_batch$i ') > 0")"
 done
 
-$CLICKHOUSE_CLIENT -q "SELECT * FROM t ORDER BY a, b; SELECT k, sumMerge(s) FROM t_agg GROUP BY k"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM t ORDER BY a, b; SELECT k, sumMerge(s) FROM t_agg GROUP BY k; SELECT * FROM t_case"

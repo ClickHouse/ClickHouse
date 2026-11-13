@@ -28,6 +28,7 @@ u_async_fmt 1
 u_read 0
 u_insert_select 0
 dup 0
+ambiguous 0
 cap fields 10
 cap summary 1
 async query id 1
@@ -54,3 +55,4 @@ batch 2 1
 13	b_default
 14	b_default
 1	5
+1	2

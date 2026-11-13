@@ -36,6 +36,7 @@ public:
     virtual size_t size() const = 0;
     /// Gets the value for the given key, returns NOT_FOUND if key is not present
     virtual size_t get(std::string_view key) const = 0;
+    virtual bool contains(std::string_view key) const = 0;
     /// Method used by the map to compare strings
     virtual bool stringCompare(std::string_view left, std::string_view right) const = 0;
 };
@@ -95,6 +96,8 @@ public:
         return it->second;
     }
 
+    bool contains(const std::string_view key) const override { return map.find(key) != map.end(); }
+
     bool stringCompare(std::string_view left, std::string_view right) const override { return left == right; }
 
 private:
@@ -143,6 +146,8 @@ public:
         }
         return it->second;
     }
+
+    bool contains(const std::string_view key) const override { return map.find(key) != map.end(); }
 
     bool stringCompare(std::string_view left, std::string_view right) const override { return CaseInsensitiveEquality::equal(left, right); }
 
@@ -194,6 +199,8 @@ public:
         return i_map.get(key);
     }
 
+    bool contains(const std::string_view key) const override { return map.contains(key) || i_map.contains(key); }
+
     bool stringCompare(std::string_view left, std::string_view right) const override { return map.stringCompare(left, right); }
 
 private:
@@ -241,6 +248,11 @@ void CaseAwareBlockNameMap::add(std::string_view column_name, size_t idx)
 size_t CaseAwareBlockNameMap::get(std::string_view column_name) const
 {
     return map->get(column_name);
+}
+
+bool CaseAwareBlockNameMap::contains(std::string_view column_name) const
+{
+    return map->contains(column_name);
 }
 
 
