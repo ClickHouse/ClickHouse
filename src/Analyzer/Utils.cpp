@@ -372,19 +372,19 @@ bool checkCorrelatedColumn(
         if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
             break;
 
+        /// A qualifier may be discarded by a matcher transformer. Keep any
+        /// correlation already recorded in its nested query, and wait for the
+        /// transformed matcher output before propagating it beyond this scope.
+        if (scope_to_check == deferred_query_scope)
+            return true;
+
         if (isQueryOrUnionNode(scope_to_check->scope_node))
         {
             is_correlated = true;
-            /// A matcher may discard a qualifier's expression with `REPLACE` or
-            /// `EXCEPT`. Keep the nested query's own correlation, but register
-            /// it in the matcher query only after the transformed output survives.
-            if (scope_to_check != deferred_query_scope)
-            {
-                if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
-                    query_node->addCorrelatedColumn(column);
-                else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
-                    union_node->addCorrelatedColumn(column);
-            }
+            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
+                query_node->addCorrelatedColumn(column);
+            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
+                union_node->addCorrelatedColumn(column);
         }
         scope_to_check = scope_to_check->parent_scope;
     }

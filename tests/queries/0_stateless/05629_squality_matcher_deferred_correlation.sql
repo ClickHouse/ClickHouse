@@ -85,6 +85,22 @@ SELECT count(), (
 )
 FROM squality_matcher_defer_scalar AS s;
 
+SELECT count(), (
+    SELECT (
+        WITH (SELECT CAST(tuple(s.x), 'Tuple(x UInt64)')) AS q
+        SELECT q.* REPLACE (1 AS x)
+    )
+)
+FROM squality_matcher_defer_scalar AS s;
+
+SELECT count(), (
+    SELECT (
+        WITH (SELECT CAST(tuple(s.x), 'Tuple(x UInt64)')) AS q
+        SELECT 1, q.* EXCEPT x
+    )
+)
+FROM squality_matcher_defer_scalar AS s;
+
 DROP TABLE squality_matcher_defer_scalar;
 
 -- A lambda in a qualifier alias can refer to the preserved side of an outer join.
