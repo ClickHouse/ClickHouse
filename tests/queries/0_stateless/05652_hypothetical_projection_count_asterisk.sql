@@ -8,6 +8,7 @@ INSERT INTO t_count_star SELECT number % 10, number FROM numbers(1000);
 
 CREATE HYPOTHETICAL PROJECTION p_count ON t_count_star (SELECT a, count() GROUP BY a);
 CREATE HYPOTHETICAL PROJECTION p_count_star ON t_count_star (SELECT a, count(*) GROUP BY a);
+SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT a, count() FROM t_count_star GROUP BY a) WHERE explain LIKE 'With %' OR explain LIKE '  status:%';
 ALTER TABLE t_count_star ADD COLUMN c UInt64;
 SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT a, count() FROM t_count_star GROUP BY a) WHERE explain LIKE 'With %' OR explain LIKE '  status:%';
 
