@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/StringValueFilter.h>
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -223,6 +224,9 @@ struct Reader
             /// only under the same four-column zero-nulls guarantee the row-group path requires
             /// (see `spatialBboxStatsHaveNoNulls`).
             size_t spatial_key_condition_idx = SIZE_MAX;
+
+            /// The condition is a conjunct of `join_runtime_filter_key_condition`.
+            bool from_join_runtime_filter = false;
         };
 
         /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
@@ -664,6 +668,10 @@ struct Reader
     /// See FormatFilterInfo::join_runtime_filter_predicate.
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
     size_t row_groups_pruned_by_join_runtime_filter = 0;
+    /// Per-column conditions extracted from `join_runtime_filter_key_condition`, referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> join_runtime_filter_column_conditions;
+    std::atomic<size_t> pages_pruned_by_join_runtime_filter {0};
 
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
