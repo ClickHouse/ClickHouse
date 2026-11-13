@@ -41,7 +41,7 @@ SELECT extract(explain, 'nst\\.\\w+') FROM (EXPLAIN header = 1 SELECT n.x + 1, r
 
 DROP TABLE t_nested;
 
--- `k.a.b` can be the element `a.b` or a subcolumn of the element `a`: the query reads the two elements.
+-- the type resolves `k.a.b` to the element `a.b`, not to a subcolumn of the element `a`.
 DROP TABLE IF EXISTS t_dots;
 CREATE TABLE t_dots (`d.a` Array(String), `d.a.b` Array(UInt64), `d.c` Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_dots VALUES (['p', 'q'], [1, 2], [7, 8]);
