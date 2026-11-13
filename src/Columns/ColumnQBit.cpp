@@ -2,6 +2,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsView.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <IO/Operators.h>
@@ -155,13 +156,17 @@ void ColumnQBit::forEachSubcolumnRecursively(RecursiveColumnCallback callback) c
     tuple->forEachSubcolumnRecursively(callback);
 }
 
-void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+namespace
 {
-    VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
-    source_tuple_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        source_tuple_columns.push_back(assert_cast<const ColumnQBit &>(*source_column).getTuple());
-    tuple->prepareForSquashing(source_tuple_columns, factor);
+
+const IColumn * getQBitTupleSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnQBit &>(*source_column).getTuple().get();
+}
 }
 
+void ColumnQBit::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
+{
+    tuple->prepareForSquashing(source_columns.project(getQBitTupleSourceColumn), factor);
+}
 }
