@@ -1770,7 +1770,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
 
     if (!identifier_resolve_context.defer_matcher_correlation)
     {
-        CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
+        CorrelatedColumnsCollector correlated_columns_collector{
+            resolved_identifier,
+            identifier_resolve_context.scope_to_resolve_alias_expression,
+            node_to_scope_map,
+            defer_matcher_alias_query_scope};
         if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -3681,7 +3685,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     /// register outer columns. This also covers a tuple assembled from several scopes.
     if (!defer_matcher_alias_query_scope || defer_matcher_alias_query_scope != scope.getNearestQueryScope())
     {
-        CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map};
+        CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map, defer_matcher_alias_query_scope};
         if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Qualified matcher {} resolved to correlated columns"

@@ -338,7 +338,8 @@ bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
 
 bool checkCorrelatedColumn(
     const IdentifierResolveScope * scope_to_check,
-    const QueryTreeNodePtr & column
+    const QueryTreeNodePtr & column,
+    const IdentifierResolveScope * deferred_query_scope
 )
 {
     const auto * current_scope = scope_to_check;
@@ -374,10 +375,16 @@ bool checkCorrelatedColumn(
         if (isQueryOrUnionNode(scope_to_check->scope_node))
         {
             is_correlated = true;
-            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
-                query_node->addCorrelatedColumn(column);
-            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
-                union_node->addCorrelatedColumn(column);
+            /// A matcher may discard a qualifier's expression with `REPLACE` or
+            /// `EXCEPT`. Keep the nested query's own correlation, but register
+            /// it in the matcher query only after the transformed output survives.
+            if (scope_to_check != deferred_query_scope)
+            {
+                if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
+                    query_node->addCorrelatedColumn(column);
+                else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
+                    union_node->addCorrelatedColumn(column);
+            }
         }
         scope_to_check = scope_to_check->parent_scope;
     }

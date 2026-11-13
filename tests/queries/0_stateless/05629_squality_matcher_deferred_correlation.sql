@@ -77,6 +77,14 @@ SELECT x AS outer_x, q.* FROM squality_matcher_defer_scalar AS s ORDER BY outer_
 WITH (SELECT CAST(tuple(s.x AS x), 'Tuple(x UInt64)')) AS q
 SELECT x AS outer_x, q.* REPLACE (1 AS x) FROM squality_matcher_defer_scalar AS s ORDER BY outer_x;
 
+-- The scalar qualifier's own correlation must not reach the enclosing matcher
+-- query after `REPLACE` discards its field.
+SELECT count(), (
+    WITH (SELECT CAST(tuple(s.x), 'Tuple(x UInt64)')) AS q
+    SELECT q.* REPLACE (1 AS x) FROM squality_matcher_defer_scalar AS i LIMIT 1
+)
+FROM squality_matcher_defer_scalar AS s;
+
 DROP TABLE squality_matcher_defer_scalar;
 
 -- A lambda in a qualifier alias can refer to the preserved side of an outer join.
