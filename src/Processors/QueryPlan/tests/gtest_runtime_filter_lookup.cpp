@@ -268,6 +268,33 @@ TEST(RuntimeFilterLookup, SkipBudgetPreservesSerialExhaustionSemantics)
     EXPECT_FALSE(state.shouldSkip(100));
 }
 
+TEST(RuntimeFilterLookup, SortedPassFailRunsKeepFilterEnabled)
+{
+    RuntimeFilterEvaluationState state(RuntimeFilterConfig{});
+
+    /// Input sorted by the key: runs of blocks that the filter drops entirely alternate with runs it passes.
+    for (size_t block = 0; block < 100; ++block)
+    {
+        const bool passes = block / 5 % 2 == 1;
+        ASSERT_FALSE(state.shouldSkip(100)) << "block " << block;
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/passes ? 100 : 0);
+    }
+    EXPECT_EQ(state.getStats().blocks_skipped.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, UniformlyPoorFilterIsSkipped)
+{
+    RuntimeFilterEvaluationState state(RuntimeFilterConfig{});
+
+    for (size_t block = 0; block < 300; ++block)
+        if (!state.shouldSkip(100))
+            state.updateStats(/*rows_checked=*/100, /*rows_passed=*/90);
+
+    /// Each checked block buys a budget of 30 blocks' rows, which skips the 29 that follow it.
+    EXPECT_EQ(state.getStats().blocks_processed.load(), 10);
+    EXPECT_EQ(state.getStats().blocks_skipped.load(), 290);
+}
+
 TEST(RuntimeFilterLookup, SkipBudgetConsumptionIsLinearizable)
 {
     constexpr size_t iterations = 2000;
