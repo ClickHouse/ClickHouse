@@ -6,8 +6,6 @@ tags: ['Errors and Exceptions']
 keywords: ['OOM', 'memory limit exceeded']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Memory limit exceeded for query {#troubleshooting-out-of-memory-issues}
 As a new user, ClickHouse can often seem like magic - every query is super fast,
 even on the largest datasets and most ambitious queries. Invariably though,
@@ -57,7 +55,15 @@ impossible, e.g. a complex subquery. In this case, both the right and left side
 are sorted on disk if they do not fit in memory, allowing large tables to be
 joined.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Joins algorithms"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Joins algorithms](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</Frame>
+
+</div>
 
 Since 20.3, ClickHouse has supported an auto value for the `join_algorithm` setting.
 This instructs ClickHouse to apply an adaptive join approach, where the hash-join
