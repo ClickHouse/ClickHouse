@@ -92,7 +92,10 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
 -- `_part_offset` is read per part, so it must stay correct when whole parts drop out of the read.
 -- Disjoint key ranges make the worker prune two of the three parts while the third still has a row.
 -- Merges are stopped so the three parts cannot collapse into one and take the divergence out of play.
-CREATE TABLE t_probe_offset (k Int32, v UInt64) ENGINE = MergeTree ORDER BY k;
+-- Each part is a single granule, so the read volume below counts whole parts: with a granularity the
+-- runner randomizes, the worker would also prune the granules of the matching part.
+CREATE TABLE t_probe_offset (k Int32, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 SYSTEM STOP MERGES t_probe_offset;
 INSERT INTO t_probe_offset SELECT number, number FROM numbers(1000);
 INSERT INTO t_probe_offset SELECT 10000 + number, number FROM numbers(1000);
