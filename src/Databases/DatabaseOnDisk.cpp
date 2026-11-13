@@ -650,6 +650,10 @@ void DatabaseOnDisk::renameTable(
     to_database.createTable(local_context, to_table_name, table, attach_query);
 
     db_disk->removeFileIfExists(table_metadata_path);
+    {
+        std::lock_guard lock(mutex);
+        snapshot_detached_tables.erase(table_name);
+    }
 
     if (from_atomic_to_ordinary)
     {
