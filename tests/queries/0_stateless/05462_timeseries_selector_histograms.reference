@@ -22,7 +22,7 @@ samples	Array(Tuple(DateTime64(3), Float64))
 0	1
 0
 1
--- the rows of a series are merged with timeSeriesGroupArrayHistograms
+-- the rows of a series are merged with timeSeriesGroupArray
 [('1970-01-01 00:01:05.000',1)]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:03:20.000',3)]
 -- the same rows are returned regardless of which arrays are requested
 1	0

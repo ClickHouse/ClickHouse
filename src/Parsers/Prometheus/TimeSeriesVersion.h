@@ -51,7 +51,7 @@ namespace DB
 ///  12 - The "samples" and "recent samples" target tables store native histogram samples in the column `histograms` of the same
 ///       rows as the float samples: an array of tuples `(timestamp, flags, counter_reset_hint, schema, zero_threshold, sum,
 ///       count_int, zero_count_int, count_float, zero_count_float, positive_int, negative_int, positive_float, negative_float,
-///       custom_values)` sorted by timestamp and merged by `timeSeriesGroupArrayHistograms`. A histogram is stored as it was sent:
+///       custom_values)` sorted by timestamp and merged by `timeSeriesGroupArray`. A histogram is stored as it was sent:
 ///       integer and float histograms keep their own count types, the buckets are pairs of the bucket index and the count.
 ///       The outer columns `histograms.*` and the setting `histograms_max_buckets` were introduced. Tables of earlier
 ///       versions store no histograms.

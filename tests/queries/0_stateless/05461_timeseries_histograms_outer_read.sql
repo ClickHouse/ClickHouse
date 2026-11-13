@@ -1,7 +1,7 @@
 -- Reading native histogram samples from a TimeSeries table through the `histograms.*` outer columns (see makeASTSelectFromTimeSeries):
 -- the stored tuples of the `histograms` column of the samples table are returned flattened into one array per element, one outer row
 -- per row of the samples table (a series within a bucket), like `samples`. Without `FINAL` an outer column is a subcolumn of the
--- stored column; with `FINAL` the rows of a bucket which are not merged yet are merged by `timeSeriesGroupArrayHistograms`.
+-- stored column; with `FINAL` the rows of a bucket which are not merged yet are merged by `timeSeriesGroupArray`.
 -- Every case uses a metric name of its own, and background merges of the samples table are disabled, so the checks of the
 -- unmerged rows don't depend on when a merge happens.
 
@@ -68,26 +68,26 @@ SELECT count(samples) FROM ts;
 SELECT count(samples) FROM ts FINAL;
 
 SELECT '-- merging an aggregate state preserves ordering and deduplication, including after serialization';
-SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistogramsMerge(state))
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayMerge(state))
 FROM
 (
-    SELECT timeSeriesGroupArrayHistogramsState(histograms) AS state
+    SELECT timeSeriesGroupArrayState(histograms) AS state
     FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)
     WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'parts')
 )
 SETTINGS max_threads = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_histogram_states.native', Native)
-SELECT timeSeriesGroupArrayHistogramsState(histograms) AS state
+SELECT timeSeriesGroupArrayState(histograms) AS state
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)
 WHERE id IN (SELECT id FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_name = 'parts')
 SETTINGS engine_file_truncate_on_insert = 1, max_threads = 1;
 
-SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistogramsMerge(state))
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayMerge(state))
 FROM file(currentDatabase() || '_histogram_states.native', Native);
 
 SELECT '-- a single sorted input array is deduplicated, with the greatest count winning';
-SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistograms(histograms))
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArray(histograms))
 FROM
 (
     SELECT arraySort(h -> h.timestamp, arrayFlatten(groupArray(histograms))) AS histograms
@@ -97,7 +97,7 @@ FROM
 
 SELECT '-- disjoint input arrays can each contain duplicate timestamps';
 SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int),
-               timeSeriesGroupArrayHistograms(arraySort(h -> h.timestamp, arrayConcat(histograms, histograms))))
+               timeSeriesGroupArray(arraySort(h -> h.timestamp, arrayConcat(histograms, histograms))))
 FROM
 (
     SELECT histograms FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts)

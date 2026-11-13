@@ -1,6 +1,6 @@
 -- Histogram samples with the same timestamp whose payloads are identical except for the counter reset hint: the order of
 -- TimeSeriesDuplicateTimestampRule doesn't compare the counter hints, a gauge marker beats a counter hint, and the kept sample gets
--- the common hint of the two, or an unknown one if they differ. The sink (INSERT) and the aggregate `timeSeriesGroupArrayHistograms`
+-- the common hint of the two, or an unknown one if they differ. The sink (INSERT) and the aggregate `timeSeriesGroupArray`
 -- apply the same rule, whatever the input order. A payload difference (here the schema) decides the winner, which keeps its own
 -- hint, but not before the gauge marker.
 
@@ -39,9 +39,9 @@ FROM values('name String, a_hint UInt8, a_schema Int8, b_hint UInt8, b_schema In
 
 SELECT '-- the aggregate: two arrays in either order, and one array with both samples';
 SELECT name,
-       arrayMap(s -> (s.counter_reset_hint, s.schema), arrayReduce('timeSeriesGroupArrayHistograms', [a, b])) AS ab,
-       arrayMap(s -> (s.counter_reset_hint, s.schema), arrayReduce('timeSeriesGroupArrayHistograms', [b, a])) AS ba,
-       arrayMap(s -> (s.counter_reset_hint, s.schema), arrayReduce('timeSeriesGroupArrayHistograms', [arrayConcat(a, b)])) AS one_array
+       arrayMap(s -> (s.counter_reset_hint, s.schema), arrayReduce('timeSeriesGroupArray', [a, b])) AS ab,
+       arrayMap(s -> (s.counter_reset_hint, s.schema), arrayReduce('timeSeriesGroupArray', [b, a])) AS ba,
+       arrayMap(s -> (s.counter_reset_hint, s.schema), arrayReduce('timeSeriesGroupArray', [arrayConcat(a, b)])) AS one_array
 FROM hint_pairs
 ORDER BY name;
 

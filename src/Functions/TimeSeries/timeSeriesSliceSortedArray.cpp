@@ -68,9 +68,9 @@ public:
                     i + 1, (i == 1) ? "min_time" : "max_time", name, bound_type->getName());
         }
 
-        /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, value_type)))`
-        /// (or the `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, ...)` column) as the first argument, in this case it should
-        /// return the array type without the wrapper, e.g. `Array(Tuple(timestamp_type, value_type))`.
+        /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, ...)))` (the
+        /// `samples` or the `histograms` column) as the first argument, in this case it should return the array type without the
+        /// wrapper, e.g. `Array(Tuple(timestamp_type, value_type))`.
         if (!tuple_type)
             return std::make_shared<DataTypeArray>(timestamp_type);
         if (tuple_type->hasExplicitNames())

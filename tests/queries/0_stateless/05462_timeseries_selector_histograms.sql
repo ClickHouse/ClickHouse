@@ -64,8 +64,8 @@ SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_bucket
 SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 90, 'samples');
 SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 100, 'samples');
 
-SELECT '-- the rows of a series are merged with timeSeriesGroupArrayHistograms';
-SELECT timeSeriesGroupArray(samples), arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArrayHistograms(histograms))
+SELECT '-- the rows of a series are merged with timeSeriesGroupArray';
+SELECT timeSeriesGroupArray(samples), arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArray(histograms))
 FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples') GROUP BY id;
 
 SELECT '-- the same rows are returned regardless of which arrays are requested';

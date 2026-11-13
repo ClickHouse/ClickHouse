@@ -20,7 +20,7 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, h
     VALUES ('m', map('job', 'api'), [toDateTime64(101, 3)], [3], [[(0, 1), (1, 1), (2, 1)]]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [toDateTime64(102, 3)], [2], [[(0, 1), (1, 1)]]);
-SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), length(h.positive_int)), timeSeriesGroupArrayHistograms(histograms)) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), length(h.positive_int)), timeSeriesGroupArray(histograms)) FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts);
 
 SELECT '-- RESET SETTING removes the limit';
 ALTER TABLE ts RESET SETTING histograms_max_buckets;

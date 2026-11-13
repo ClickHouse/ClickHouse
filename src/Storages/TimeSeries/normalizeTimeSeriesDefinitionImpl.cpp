@@ -123,16 +123,6 @@ namespace
         return simple_aggregate_function && (simple_aggregate_function->getFunctionName() == "timeSeriesGroupArray");
     }
 
-    /// The aggregate function merging the rows of the same series and bucket in the `histograms` column of a samples table.
-    constexpr std::string_view histograms_merge_function_name = "timeSeriesGroupArrayHistograms";
-
-    /// Whether `type` is `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, ...)`.
-    bool isTimeSeriesGroupArrayHistogramsSimpleAggregate(const DataTypePtr & type)
-    {
-        const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
-        return simple_aggregate_function && (simple_aggregate_function->getFunctionName() == histograms_merge_function_name);
-    }
-
     /// Conflict-checking setter for `DataTypePtr`.
     /// Keeps the first non-null value, any subsequent non-null values must equal it.
     void setOrCheckDataType(
@@ -242,10 +232,10 @@ namespace
                 && getTimeSeriesVersion(query) >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS)
             {
                 auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(column_type);
-                if (!histograms_timestamp_type || !isTimeSeriesGroupArrayHistogramsSimpleAggregate(column_type))
+                if (!histograms_timestamp_type || !isTimeSeriesGroupArraySimpleAggregate(column_type))
                     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-                        "{}: Column `{}` must have type SimpleAggregateFunction({}, {}), got {}",
-                        table_id.getNameForLogs(), TimeSeriesColumnNames::Histograms, histograms_merge_function_name,
+                        "{}: Column `{}` must have type SimpleAggregateFunction(timeSeriesGroupArray, {}), got {}",
+                        table_id.getNameForLogs(), TimeSeriesColumnNames::Histograms,
                         TimeSeriesHistogramsColumns::makeHistogramsArrayType(std::make_shared<DataTypeDateTime64>(3))->getName(), column_type->getName());
                 setOrCheckDataType(timestamp_type, timestamp_src, histograms_timestamp_type, "samples inner column `histograms`", "timestamp", table_id);
             }
@@ -1043,7 +1033,7 @@ namespace
                     /// tuples: the column is generated if it has no codecs at all or exactly the generated ones.
                     if (name == TimeSeriesColumnNames::Histograms)
                     {
-                        if (!settings.hasHistogramsInSamples() || !isTimeSeriesGroupArrayHistogramsSimpleAggregate(type))
+                        if (!settings.hasHistogramsInSamples() || !isTimeSeriesGroupArraySimpleAggregate(type))
                             return false;
                         auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(type);
                         if (!histograms_timestamp_type || !is_timestamp_type(*histograms_timestamp_type))
@@ -1543,7 +1533,7 @@ namespace
                     if (time_series_settings.hasHistogramsInSamples())
                     {
                         auto histograms_type = TimeSeriesHistogramsColumns::makeHistogramsArrayType(resolved_types.timestamp_type);
-                        if (add_column_if_missing(TimeSeriesColumnNames::Histograms, makeSimpleAggregate(String{histograms_merge_function_name}, histograms_type)))
+                        if (add_column_if_missing(TimeSeriesColumnNames::Histograms, makeSimpleAggregate("timeSeriesGroupArray", histograms_type)))
                         {
                             for (const auto & [element_name, codec] : getDefaultHistogramsSubcolumnCodecs())
                                 add_codec_declaration(String{TimeSeriesColumnNames::Histograms} + "." + element_name, codec);
@@ -2322,24 +2312,23 @@ namespace
                 resolved_types.value_type->getName());
         };
 
-        /// Accepts `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp <timestamp type>, ...)))`
+        /// Accepts `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp <timestamp type>, ...)))`
         /// with the elements of TimeSeriesHistogramsColumns.
         auto check_column_histograms = [&](std::string_view column_name)
         {
             check_column(column_name);
             const auto * col = target_table_columns.tryGet(String(column_name));
             auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(col->type);
-            if (isTimeSeriesGroupArrayHistogramsSimpleAggregate(col->type) && histograms_timestamp_type
+            if (isTimeSeriesGroupArraySimpleAggregate(col->type) && histograms_timestamp_type
                 && histograms_timestamp_type->equals(*resolved_types.timestamp_type))
                 return;
             throw Exception(
                 ErrorCodes::BAD_TYPE_OF_FIELD,
-                "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction({}, {})",
+                "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction(timeSeriesGroupArray, {})",
                 table_id.getNameForLogs(),
                 column_name,
                 target_kind,
                 col->type->getName(),
-                histograms_merge_function_name,
                 TimeSeriesHistogramsColumns::makeHistogramsArrayType(resolved_types.timestamp_type)->getName());
         };
 

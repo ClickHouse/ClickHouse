@@ -86,13 +86,13 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples [, timeSeriesGroupArrayHistograms(histograms) AS histograms]
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples [, timeSeriesGroupArray(histograms) AS histograms]
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     /// The table function returns the columns `timestamp` and `value` instead of `samples` for a table storing one sample per row
     /// (see `TimeSeriesSettings::hasBucketedSamples`), then the samples are merged with timeSeriesGroupArray(timestamp, value).
     /// For a table storing histogram samples (`table_has_histograms`, see `TimeSeriesSettings::hasHistogramsInSamples`) the table
-    /// function returns the column `histograms` too, merged with timeSeriesGroupArrayHistograms(histograms).
+    /// function returns the column `histograms` too, merged with timeSeriesGroupArray(histograms).
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
         bool table_has_bucketed_samples,
@@ -129,7 +129,7 @@ namespace
             if (table_has_histograms)
             {
                 select_list_exp->children.push_back(
-                    makeASTFunction("timeSeriesGroupArrayHistograms", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Histograms)));
+                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Histograms)));
                 select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Histograms);
             }
 

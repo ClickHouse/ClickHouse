@@ -243,7 +243,7 @@ in the columns chosen by the argument `return_columns`:
   of the same rows: an array of the tuples of the `histograms` column of the samples table
   (see the [TimeSeries engine](/reference/engines/table-engines/integrations/time-series#samples-table)), sorted by timestamp and cut to
   the time range. A row has an empty `histograms` array when the series has no histogram samples in its bucket, and an empty `samples`
-  array when it has no float samples there. Use the aggregate function `timeSeriesGroupArrayHistograms` to merge the rows of a time series.
+  array when it has no float samples there. Use the same aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
   Only the requested columns are read from the samples table, except the timestamps of a column which isn't requested: they tell the
   rows with samples of either kind in the time range, so the rows returned don't depend on the requested columns.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one float sample per row; the histogram samples are not returned.
@@ -270,7 +270,7 @@ FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTE
 The float samples and the native histogram samples of each time series of a table storing histograms:
 
 ```sql
-SELECT id, timeSeriesGroupArray(samples) AS samples, timeSeriesGroupArrayHistograms(histograms) AS histograms
+SELECT id, timeSeriesGroupArray(samples) AS samples, timeSeriesGroupArray(histograms) AS histograms
 FROM timeSeriesSelector(mytable, 'http_request_duration_seconds{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'samples')
 GROUP BY id
 ```

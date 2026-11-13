@@ -432,7 +432,7 @@ namespace
 
     /// The histogram comparator also marks in `duplicate_hints_differ` (indexed like the nested columns of `view`) the kept sample
     /// of a pair the rule considers equal but with different counter hints: its stored hint is made unknown (see
-    /// detectTimeSeriesHistogramResets), as `timeSeriesGroupArrayHistograms` does, so that it doesn't depend on which one was kept.
+    /// detectTimeSeriesHistogramResets), as `timeSeriesGroupArray` does, so that it doesn't depend on which one was kept.
     auto makeHistogramSampleWins(const TimeSeriesHistogramsColumnsView & view, PaddedPODArray<UInt8> & duplicate_hints_differ)
     {
         return [&view, &duplicate_hints_differ](size_t kept_index, size_t new_index)

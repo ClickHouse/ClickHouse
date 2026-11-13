@@ -1,6 +1,6 @@
 SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
--- The hints are checked as the sink wrote them, before any merge by `timeSeriesGroupArrayHistograms` (05494 covers the merges).
+-- The hints are checked as the sink wrote them, before any merge by `timeSeriesGroupArray` (05494 covers the merges).
 SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS ts_reset_detection;

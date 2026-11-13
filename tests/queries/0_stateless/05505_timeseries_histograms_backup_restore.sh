@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BACKUP and RESTORE of a TimeSeries table storing native histograms: the `histograms` column of the samples table
-# (a `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, ...)`) and the histogram samples must survive the round trip
+# (a `SimpleAggregateFunction(timeSeriesGroupArray, ...)` of histogram tuples) and the histogram samples must survive the round trip
 # along with the float samples. 05214_timeseries_backup_restore covers the definition and the other inner tables.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -27,7 +27,7 @@ $CLIENT -q "RESTORE TABLE ts AS ts_restored FROM Disk('backups', '$BACKUP_NAME')
 
 echo '--- both samples tables have the histograms column ---'
 $CLIENT -q "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table LIKE '.inner\_id.samples.%' AND name = 'histograms'
-    AND type LIKE 'SimpleAggregateFunction(timeSeriesGroupArrayHistograms, %'"
+    AND type LIKE 'SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), flags UInt8, %'"
 
 echo '--- the restored table has the same samples of both kinds ---'
 $CLIENT -q "$SAMPLES_QUERY FROM ts_restored ORDER BY ALL"

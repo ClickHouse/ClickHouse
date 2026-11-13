@@ -188,7 +188,7 @@ namespace
     /// The type of the generated `histograms` column of the samples tables for the specified type of `timestamp`.
     String histogramsInnerType(const String & timestamp_type)
     {
-        return "SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp " + timestamp_type
+        return "SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp " + timestamp_type
             + ", flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, "
             "count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), "
             "negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), "

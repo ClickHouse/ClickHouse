@@ -9,8 +9,8 @@ namespace DB
 {
 
 /// The rules deciding which of two samples of one time series with the same timestamp is kept. TimeSeriesSink applies them to the
-/// duplicates within one INSERT, the aggregate functions `timeSeriesGroupArray` (through `timeseriesMaxValueForDuplicateTimestamp`)
-/// and `timeSeriesGroupArrayHistograms` to the duplicates across the rows of the samples tables, when parts are merged or read.
+/// duplicates within one INSERT, the aggregate function `timeSeriesGroupArray` (for float samples through
+/// `timeseriesMaxValueForDuplicateTimestamp`) to the duplicates across the rows of the samples tables, when parts are merged or read.
 /// Both must apply the same rule, or the stored result would depend on whether the duplicates arrived in one block or in two.
 /// The histogram rule doesn't compare the counter reset hints, which merging changes (see TimeSeriesHistogramCounterResetRule); of
 /// the hints only the gauge marker, which merging keeps, takes part. Where the kept one of two samples equal under the rule keeps

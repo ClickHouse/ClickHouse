@@ -38,7 +38,7 @@ SELECT '-- the rows of a bucket are merged by timestamp';
 INSERT INTO ts_uint32 (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [140], [4], [2], [[(0, 4)]]);
 SELECT histograms.timestamp, histograms.count_int FROM ts_uint32 FINAL ORDER BY histograms.timestamp;
-SELECT arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArrayHistograms(histograms)) FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 0, 1000, 'samples');
+SELECT arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArray(histograms)) FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 0, 1000, 'samples');
 
 SELECT '-- DateTime timestamps';
 INSERT INTO ts_datetime (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)

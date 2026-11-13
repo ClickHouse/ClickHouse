@@ -1,4 +1,4 @@
--- `timeSeriesGroupArrayHistograms` is associative, as `SimpleAggregateFunction` requires: the result doesn't depend on the order of
+-- `timeSeriesGroupArray` over histogram samples is associative, as `SimpleAggregateFunction` requires: the result doesn't depend on the order of
 -- the merges. Every sample whose predecessor may have changed gets its counter reset hint detected from the data against its
 -- predecessor in the result, whatever hint it had: an explicit or an earlier detected hint was about another predecessor. The hints
 -- of the other samples are kept: the sink detected them, so they are what detection would give. The counter hints don't take part in
@@ -39,8 +39,8 @@ WITH (SELECT h FROM histogram_arrays WHERE name = 'a') AS a,
      (SELECT h FROM histogram_arrays WHERE name = 'c') AS c,
      (SELECT h FROM histogram_arrays WHERE name = 'b') AS b,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints,
-     (x, y) -> arrayReduce('timeSeriesGroupArrayHistograms', [x, y]) AS merge
-SELECT hints(arrayReduce('timeSeriesGroupArrayHistograms', [a, c, b])) AS at_once,
+     (x, y) -> arrayReduce('timeSeriesGroupArray', [x, y]) AS merge
+SELECT hints(arrayReduce('timeSeriesGroupArray', [a, c, b])) AS at_once,
        hints(merge(merge(a, b), c)) = at_once,
        hints(merge(merge(a, c), b)) = at_once,
        hints(merge(merge(c, b), a)) = at_once,
@@ -53,17 +53,17 @@ WITH (SELECT h FROM histogram_arrays WHERE name = 'pair') AS pair,
      (SELECT h FROM histogram_arrays WHERE name = 'middle') AS middle,
      (SELECT h FROM histogram_arrays WHERE name = 'later') AS later,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints
-SELECT hints(arrayReduce('timeSeriesGroupArrayHistograms', [pair])),
-       hints(arrayReduce('timeSeriesGroupArrayHistograms', [pair, later])),
-       hints(arrayReduce('timeSeriesGroupArrayHistograms', [pair, middle]));
+SELECT hints(arrayReduce('timeSeriesGroupArray', [pair])),
+       hints(arrayReduce('timeSeriesGroupArray', [pair, later])),
+       hints(arrayReduce('timeSeriesGroupArray', [pair, middle]));
 
 SELECT '-- which of two equal samples wins does not change the hint of the sample after them';
 WITH (SELECT h FROM histogram_arrays WHERE name = 'reported_reset') AS reported,
      (SELECT h FROM histogram_arrays WHERE name = 'no_reset') AS equal,
      (SELECT h FROM histogram_arrays WHERE name = 'before') AS earlier,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints,
-     (x, y) -> arrayReduce('timeSeriesGroupArrayHistograms', [x, y]) AS merge
-SELECT hints(arrayReduce('timeSeriesGroupArrayHistograms', [reported, equal, earlier])) AS at_once,
+     (x, y) -> arrayReduce('timeSeriesGroupArray', [x, y]) AS merge
+SELECT hints(arrayReduce('timeSeriesGroupArray', [reported, equal, earlier])) AS at_once,
        hints(merge(merge(reported, earlier), equal)) = at_once,
        hints(merge(merge(reported, equal), earlier)) = at_once,
        hints(merge(merge(equal, earlier), reported)) = at_once,
@@ -73,15 +73,15 @@ SELECT '-- an equal duplicate of the predecessor does not change the hint of the
 WITH (SELECT h FROM histogram_arrays WHERE name = 'two') AS two,
      (SELECT h FROM histogram_arrays WHERE name = 'before') AS before,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints
-SELECT hints(arrayReduce('timeSeriesGroupArrayHistograms', [two, before])),
-       hints(arrayReduce('timeSeriesGroupArrayHistograms', [before, two]));
+SELECT hints(arrayReduce('timeSeriesGroupArray', [two, before])),
+       hints(arrayReduce('timeSeriesGroupArray', [before, two]));
 
 SELECT '-- the first sample keeps its hint if its equal duplicates agree, gets an unknown one if they differ, and a gauge marker wins';
 WITH (SELECT h FROM histogram_arrays WHERE name = 'no_reset') AS no_reset,
      (SELECT h FROM histogram_arrays WHERE name = 'with_reset') AS with_reset,
      (SELECT h FROM histogram_arrays WHERE name = 'gauge') AS gauge,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints,
-     (x, y) -> arrayReduce('timeSeriesGroupArrayHistograms', [x, y]) AS merge
+     (x, y) -> arrayReduce('timeSeriesGroupArray', [x, y]) AS merge
 SELECT hints(merge(no_reset, no_reset)),
        hints(merge(no_reset, with_reset)),
        hints(merge(with_reset, no_reset)),

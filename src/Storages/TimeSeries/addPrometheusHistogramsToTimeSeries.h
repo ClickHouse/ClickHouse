@@ -12,7 +12,7 @@ namespace DB
 class IColumn;
 
 /// Adds the histogram samples of one time series read by remote read to `time_series` as `prompb.Histogram`.
-/// `histograms_column` is `timeSeriesGroupArrayHistograms(histograms)` over `timeSeriesSelector` grouped by time series (an array of
+/// `histograms_column` is `timeSeriesGroupArray(histograms)` over `timeSeriesSelector` grouped by time series (an array of
 /// histogram tuples sorted and deduplicated by timestamp, see TimeSeriesHistogramsColumns), `row` is the time series.
 /// Its float samples must already be in `time_series`, sorted by timestamp.
 ///

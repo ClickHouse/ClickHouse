@@ -42,10 +42,10 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// The state of `timeSeriesGroupArrayHistograms`: the added arrays as references to ranges of their source tuple columns, so a merge
-/// of float-only rows allocates nothing and no array is copied before the result is built. Empty arrays are not recorded. With the
-/// first and last timestamp of the arrays the state tracks whether every array starts after the previous one ended and its own
-/// timestamps strictly increase (`appends_only`): then the result is their concatenation. The state lives on the heap.
+/// The state of `timeSeriesGroupArray` over histogram samples: the added arrays as references to ranges of their source tuple
+/// columns, so a merge of float-only rows allocates nothing and no array is copied before the result is built. Empty arrays are not
+/// recorded. With the first and last timestamp of the arrays the state tracks whether every array starts after the previous one ended
+/// and its own timestamps strictly increase (`appends_only`): then the result is their concatenation. The state lives on the heap.
 /// A deserialized state owns the column its ranges refer to.
 template <typename TimestampType>
 struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
@@ -199,7 +199,7 @@ public:
         size_t num_arrays = 0;
         readVarUInt(num_arrays, buf);
         /// Reserve smaller states once, bounding the initial allocation from the untrusted count.
-        /// Larger states grow as their offsets are read, like the samples in `timeSeriesGroupArray`.
+        /// Larger states grow as their offsets are read, like the float samples in `timeSeriesGroupArray`.
         PODArray<UInt64> array_ends;
         array_ends.reserve(std::min(num_arrays, MAX_ARRAYS_TO_RESERVE));
         UInt64 previous_end = 0;

@@ -52,7 +52,7 @@ namespace
     /// (see `makeMetricFamiliesFullJoinElement`).
     constexpr const char * metric_family_with_suffix_alias = "__metric_family_with_suffix";
 
-    /// Alias of `timeSeriesGroupArrayHistograms(histograms)` in the "samples" subquery of a read with `FINAL`,
+    /// Alias of `timeSeriesGroupArray(histograms)` in the "samples" subquery of a read with `FINAL`,
     /// from which the outer `histograms.*` columns are taken (see `makeSamplesTableElement`).
     constexpr const char * histograms_array_alias = "__histograms";
 
@@ -330,7 +330,7 @@ namespace
     /// With `FINAL` the rows of the same bucket are merged, the same as a merge of the table does:
     /// (
     ///     SELECT id, CAST(timeSeriesGroupArray(samples), 'Array(Tuple(...))') AS samples,
-    ///            timeSeriesGroupArrayHistograms(histograms) AS __histograms,
+    ///            timeSeriesGroupArray(histograms) AS __histograms,
     ///            tupleElement(__histograms, 'timestamp') AS `histograms.timestamp`, tupleElement(__histograms, 'flags') AS `histograms.flags`, ...
     ///     FROM <samples>
     ///     GROUP BY id, bucket
@@ -378,8 +378,8 @@ namespace
             {
                 if (final)
                 {
-                    /// timeSeriesGroupArrayHistograms(histograms) AS __histograms, tupleElement(__histograms, '<element>') AS `histograms.<element>`, ...
-                    auto merged_histograms = makeASTFunction("timeSeriesGroupArrayHistograms", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Histograms));
+                    /// timeSeriesGroupArray(histograms) AS __histograms, tupleElement(__histograms, '<element>') AS `histograms.<element>`, ...
+                    auto merged_histograms = makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Histograms));
                     merged_histograms->setAlias(histograms_array_alias);
                     select_list->children.push_back(std::move(merged_histograms));
 

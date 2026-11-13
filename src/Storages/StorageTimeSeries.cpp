@@ -953,7 +953,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
         "`histograms Nested(...)`: one array per element of the `histograms` column of the [samples](#samples-table) table, element k of every "
         "array being histogram sample k, so the arrays of a row must have the same length. A `SELECT` returns the stored histogram samples "
         "flattened the same way, one row per row of the [samples](#samples-table) table like `samples` (`SELECT ... FINAL` merges the rows of "
-        "the same bucket which are not merged yet with `timeSeriesGroupArrayHistograms`). Tables of [versions](#schema-versioning) before "}
+        "the same bucket which are not merged yet with `timeSeriesGroupArray`). Tables of [versions](#schema-versioning) before "}
         + histograms_version + " have no such columns");
     const String histograms_outer_create = TimeSeriesHistogramsColumns::describeOuterColumnsForCreateExample("DateTime64(3)");
     const String histograms_codecs_docs = TimeSeriesHistogramsColumns::describeInnerCodecsForDocs();
@@ -1123,7 +1123,7 @@ using the aggregate function `timeSeriesGroupArray`, which keeps the array of sa
 Because of that, reading the table before a merge can return several rows for the same `id` and `bucket`.
 
 From [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( a row also holds the native histogram samples of the time series within the bucket in the column
-`histograms`, an array of tuples sorted by timestamp and merged by the aggregate function `timeSeriesGroupArrayHistograms` (for histograms
+`histograms`, an array of tuples sorted by timestamp and merged by the same aggregate function `timeSeriesGroupArray` (for histograms
 with the same timestamp the one with the greatest total count is kept, on ties the greatest sum, then the other elements decide).
 An integer histogram keeps its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements;
 bit 0 of `flags` tells the flavour. The readers ignore the elements of the other flavour: remote write leaves them 0 and empty,
@@ -1146,7 +1146,7 @@ hint it was sent with: its predecessor is in an earlier insert, which is not con
 and other counter hints were dropped, its hint is unknown. Gauge markers are kept. A stale sample gets an unknown hint. A counter
 sample following a gauge sample, the sample following a stale one, and a sample of the other flavour than its predecessor (an integer
 histogram after a float one or the reverse) get an unknown hint whatever their counts.
-When rows are merged by `timeSeriesGroupArrayHistograms` (in background merges, in reads with `FINAL`, and when the aggregate is called
+When rows are merged by `timeSeriesGroupArray` (in background merges, in reads with `FINAL`, and when the aggregate is called
 directly), the hint of every sample whose predecessor may have changed (the first sample of every appended array but the first, every
 sample but the first of arrays overlapping in time) is detected again the same way against its predecessor in the result, and the hint
 of the first one is kept, or made unknown when dropped duplicates of it had other counter hints. So a stored hint depends only on the
@@ -1159,7 +1159,7 @@ The _samples_ table must have columns:
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
 | `samples` | [x] | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))` | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(X), value Float32 or Float64)))`, the elements must be named `timestamp` and `value` | The samples of a time series within the bucket sorted by timestamp |
-| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*`; the bits of `flags` other than bit 0 are reserved and are 0 |
+| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*`; the bits of `flags` other than bit 0 are reserved and are 0 |
 | `bucket` | [x] | `DateTime64(3)` | the type of the timestamps | The start of the bucket: the timestamps of the samples rounded down to a multiple of the bucket length |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `SimpleAggregateFunction(min, ...)` of the type of the timestamps | The minimum timestamp of the samples in the row |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `SimpleAggregateFunction(max, ...)` of the type of the timestamps | The maximum timestamp of the samples in the row |
@@ -1280,7 +1280,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-    `histograms` SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD(),
+    `histograms` SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD(),
     `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
@@ -1293,7 +1293,7 @@ RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-    `histograms` SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD(),
+    `histograms` SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD(),
     `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
@@ -1343,7 +1343,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-    `histograms` SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD(),
+    `histograms` SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD(),
     `bucket` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
@@ -1362,7 +1362,7 @@ CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
-    `histograms` SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD(),
+    `histograms` SimpleAggregateFunction(timeSeriesGroupArray, )DOCS_MD" + histograms_type + R"DOCS_MD(),
     `bucket` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
@@ -1681,7 +1681,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
 | 11 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples: a row keeps the samples of one time series within one time bucket (the columns `samples`, `bucket`, `min_time`, `max_time`) in an `AggregatingMergeTree` ordered by `(id, bucket)`. The settings [`samples_bucket_step_seconds`](#settings), [`samples_partition_by`](#settings), [`samples_index_granularity_bytes`](#settings), [`recent_samples_bucket_step_seconds`](#settings) and [`recent_samples_index_granularity_bytes`](#settings) were introduced, and the defaults of [`samples_index_granularity`](#settings) and [`recent_samples_index_granularity`](#settings) changed. Tables of earlier versions store one sample per row in the columns `timestamp` and `value`: they can still be read, written into and queried with PromQL, and the [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table function reads them without a conversion when its argument `return_columns` is `'timestamp_and_value'` |
-| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArrayHistograms`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
+| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArray`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
 
 # Functions {#functions}
 

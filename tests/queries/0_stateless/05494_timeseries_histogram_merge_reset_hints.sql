@@ -1,4 +1,4 @@
--- The counter reset hints after `timeSeriesGroupArrayHistograms` merges arrays of histogram samples: every sample whose predecessor
+-- The counter reset hints after `timeSeriesGroupArray` merges arrays of histogram samples: every sample whose predecessor
 -- may have changed (the first sample of every appended array but the first, every sample but the first of overlapping arrays) gets its
 -- hint detected again from the data against its predecessor in the result, as the sink does within one insert (a count decrease is a
 -- reset), whatever hint it had; the other hints and gauge markers are kept, a single array is returned as it is, the result doesn't
@@ -38,20 +38,20 @@ FROM values('scenario String, part UInt8, samples Array(Tuple(UInt32, Int64, UIn
 -- Appended arrays keep their hints but for their first sample (the sink detected them), sorted arrays get all of them detected;
 -- gauge markers are kept; the single array of `single` is returned as it is.
 SELECT scenario, arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), merged),
-       merged = arrayReduce('timeSeriesGroupArrayHistograms', arrayReverse(arrays))
+       merged = arrayReduce('timeSeriesGroupArray', arrayReverse(arrays))
 FROM
 (
     SELECT scenario, arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((part, h)))) AS arrays,
-           arrayReduce('timeSeriesGroupArrayHistograms', arrays) AS merged
+           arrayReduce('timeSeriesGroupArray', arrays) AS merged
     FROM histogram_hint_inputs GROUP BY scenario
 )
 ORDER BY scenario;
 
 -- Serialized states retain the input boundaries required for detecting hints after merging.
 CREATE TABLE histogram_hint_states ENGINE = MergeTree ORDER BY part AS
-SELECT part, timeSeriesGroupArrayHistogramsState(h) AS state
+SELECT part, timeSeriesGroupArrayState(h) AS state
 FROM histogram_hint_inputs WHERE scenario = 'conflict' GROUP BY part;
-SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), timeSeriesGroupArrayHistogramsMerge(state)) FROM histogram_hint_states;
+SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), timeSeriesGroupArrayMerge(state)) FROM histogram_hint_states;
 DROP TABLE histogram_hint_states;
 
 -- The counter hints don't take part in choosing which payload wins a conflict: the inner merge of parts 1 and 3 makes the hint of
@@ -60,9 +60,9 @@ INSERT INTO histogram_hint_inputs
 SELECT 'payload', part, arrayMap(s -> (s.1, 0, s.3, schema, 0., toFloat64(s.2), s.2, s.2, 0., 0., [], [], [], [], []), samples)
 FROM values('part UInt8, schema Int8, samples Array(Tuple(UInt32, Int64, UInt8))',
     (1, 0, [(100, 1, 2)]), (2, 0, [(101, 2, 2)]), (3, 1, [(101, 2, 2)]));
-SELECT arrayMap(s -> (s.schema, s.counter_reset_hint), arrayReduce('timeSeriesGroupArrayHistograms', [arrays[2], arrays[3]])),
-       arrayMap(s -> (s.schema, s.counter_reset_hint), arrayReduce('timeSeriesGroupArrayHistograms',
-           [arrayReduce('timeSeriesGroupArrayHistograms', [arrays[1], arrays[3]]), arrays[2]]))
+SELECT arrayMap(s -> (s.schema, s.counter_reset_hint), arrayReduce('timeSeriesGroupArray', [arrays[2], arrays[3]])),
+       arrayMap(s -> (s.schema, s.counter_reset_hint), arrayReduce('timeSeriesGroupArray',
+           [arrayReduce('timeSeriesGroupArray', [arrays[1], arrays[3]]), arrays[2]]))
 FROM
 (
     SELECT arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((part, h)))) AS arrays
