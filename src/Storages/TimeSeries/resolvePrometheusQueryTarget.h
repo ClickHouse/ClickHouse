@@ -17,7 +17,7 @@ struct PrometheusQueryDistributedTarget
 {
     String cluster_name;
     StorageID remote_time_series_storage_id = StorageID::createEmpty();
-    /// The shard-skip settings in effect: the table's declared ones, unless the query sets them.
+    /// The table's declared shard-skip settings, restated on the generated cluster() call.
     bool skip_unavailable_shards = false;
     String skip_unavailable_shards_mode;
 };

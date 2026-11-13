@@ -5,6 +5,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
@@ -12,6 +13,18 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool skip_unavailable_shards;
+    extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -92,7 +105,18 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     chassert(cluster);
-    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+
+    /// The function's own shard-skip settings apply to the structure discovery too, unless the query sets them.
+    DistributedSettings declared;
+    declared.applyChanges(settings_changes);
+    auto discovery_context = Context::createCopy(context);
+    const auto & query_settings = context->getSettingsRef();
+    if (declared[DistributedSetting::skip_unavailable_shards].changed && !query_settings[Setting::skip_unavailable_shards].changed)
+        discovery_context->setSetting("skip_unavailable_shards", declared[DistributedSetting::skip_unavailable_shards].value);
+    if (declared[DistributedSetting::skip_unavailable_shards_mode].changed && !query_settings[Setting::skip_unavailable_shards_mode].changed)
+        discovery_context->setSetting("skip_unavailable_shards_mode", declared[DistributedSetting::skip_unavailable_shards_mode].toString());
+
+    return getStructureOfRemoteTable(*cluster, remote_table_id, discovery_context, remote_table_function_ptr);
 }
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)

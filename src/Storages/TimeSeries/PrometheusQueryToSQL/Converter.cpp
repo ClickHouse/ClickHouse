@@ -1,9 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Common/Exception.h>
-
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
@@ -21,34 +17,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-}
-
 namespace DB::PrometheusQueryToSQL
 {
 
 namespace
 {
-    /// The analyzer resolves the table functions of the query with the settings of the query itself, see `cluster()` in fromSelector.cpp.
-    void addShardSkipSettings(ASTPtr & select_query, const PrometheusQueryDistributedTarget & target)
-    {
-        auto * select = typeid_cast<ASTSelectWithUnionQuery *>(select_query.get());
-        if (!select || select->settings_ast)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a SELECT query without settings");
-
-        auto settings = make_intrusive<ASTSetQuery>();
-        settings->is_standalone = false;
-        settings->changes.emplace_back("skip_unavailable_shards", target.skip_unavailable_shards);
-        settings->changes.emplace_back("skip_unavailable_shards_mode", target.skip_unavailable_shards_mode);
-        select->settings_ast = std::move(settings);
-        select->children.push_back(select->settings_ast);
-    }
-
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
     {
         switch (node->node_type)
@@ -163,10 +136,7 @@ ASTPtr Converter::getSQL() const
     ConverterContext context{promql_tree_to_convert, settings};
     auto query_piece = visitNode(promql_tree_to_convert->getRoot(), context);
     query_piece.type = result_type;
-    auto res = finalizeSQL(std::move(query_piece), context);
-    if (settings.distributed)
-        addShardSkipSettings(res, *settings.distributed);
-    return res;
+    return finalizeSQL(std::move(query_piece), context);
 }
 
 }

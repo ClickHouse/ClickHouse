@@ -28,8 +28,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace DistributedSetting
@@ -78,13 +76,6 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
     const auto & declared = distributed->getDistributedSettingsRef();
     target.skip_unavailable_shards = declared[DistributedSetting::skip_unavailable_shards].value;
     target.skip_unavailable_shards_mode = declared[DistributedSetting::skip_unavailable_shards_mode].toString();
-
-    /// The query's own setting wins over the declared one.
-    const auto & query_settings = context->getSettingsRef();
-    if (query_settings[Setting::skip_unavailable_shards].changed)
-        target.skip_unavailable_shards = query_settings[Setting::skip_unavailable_shards].value;
-    if (query_settings[Setting::skip_unavailable_shards_mode].changed)
-        target.skip_unavailable_shards_mode = query_settings[Setting::skip_unavailable_shards_mode].toString();
     return target;
 }
 
