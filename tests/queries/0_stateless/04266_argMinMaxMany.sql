@@ -220,3 +220,18 @@ FROM (SELECT number, number % 3 AS key, initializeAggregation('groupArrayState',
 GROUP BY key ORDER BY key SETTINGS max_block_size = 1000;
 SELECT finalizeAggregation(arrayJoin(argMaxManyMerge(1)(s)))
 FROM (SELECT argMaxManyState(1)(initializeAggregation('maxState', number), number) AS s FROM numbers(10000) GROUP BY number % 7);
+
+-- The state must not retain the source columns of an AggregateFunction arg: every group keeps the
+-- first row of its own block and rejects the rest, so a state referencing its source column would
+-- pin all 100 blocks (about 80 MiB of groupArray states), while the selected states take about 1 MiB.
+-- Covers a top-level arg, an arg nested in a Tuple, and an arg inside Dynamic, where the variant
+-- column for the aggregate state is created on the first insertion into the state.
+SELECT sum(length(finalizeAggregation(arrayJoin(r))[1]))
+FROM (SELECT argMinMany(1)(initializeAggregation('groupArrayState', range(toUInt64(1000 + number % 2))), number) AS r FROM numbers(10000) GROUP BY intDiv(number, 100))
+SETTINGS max_block_size = 100, max_memory_usage = '32Mi';
+SELECT sum(length(finalizeAggregation(arrayJoin(r).2)[1]))
+FROM (SELECT argMinMany(1)(tuple(number, initializeAggregation('groupArrayState', range(toUInt64(1000 + number % 2)))), number) AS r FROM numbers(10000) GROUP BY intDiv(number, 100))
+SETTINGS max_block_size = 100, max_memory_usage = '32Mi';
+SELECT sum(length(finalizeAggregation(dynamicElement(arrayJoin(r), 'AggregateFunction(groupArray, Array(UInt64))'))[1]))
+FROM (SELECT argMinMany(1)(CAST(initializeAggregation('groupArrayState', range(toUInt64(1000 + number % 2))) AS Dynamic), number) AS r FROM numbers(10000) GROUP BY intDiv(number, 100))
+SETTINGS max_block_size = 100, max_memory_usage = '32Mi';

@@ -176,6 +176,9 @@ class AggregateFunctionArgMinMaxMany final
     DataTypePtr data_type_val;
     SerializationPtr serialization_arg;
     SerializationPtr serialization_val;
+    /// Whether the `arg` column can grow new subcolumns while values are inserted into it: `Dynamic`
+    /// (also inside `JSON`) creates a variant column for a value of a new type on its first insertion.
+    bool arg_may_add_subcolumns;
 
     using Data = AggregateFunctionArgMinManyData<isMin>;
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMaxMany<isMin>>;
@@ -204,6 +207,17 @@ class AggregateFunctionArgMinMaxMany final
         return column;
     }
 
+    /// Copies row `row` of `column` into `args`. A subcolumn that `Dynamic` creates during the insertion
+    /// is new, so `ensureOwnership` on the empty column did not reach it, and its first `insertFrom`
+    /// of an aggregate state would again keep a reference to the whole source column. Enforce
+    /// ownership again in that case: it is cheap for the subcolumns that already own their data.
+    void insertArg(IColumn & args, const IColumn & column, size_t row) const
+    {
+        args.insertFrom(column, row);
+        if (arg_may_add_subcolumns)
+            args.ensureOwnership();
+    }
+
     IColumn & argsColumn(Data & data) const
     {
         if (!data.args)
@@ -223,7 +237,7 @@ class AggregateFunctionArgMinMaxMany final
         compacted->reserve(data.entries.size());
         for (auto & entry : data.entries)
         {
-            compacted->insertFrom(*data.args, entry.arg_index);
+            insertArg(*compacted, *data.args, entry.arg_index);
             entry.arg_index = compacted->size() - 1;
         }
         data.args = std::move(compacted);
@@ -239,7 +253,7 @@ class AggregateFunctionArgMinMaxMany final
         if (!data.is_heap)
         {
             auto & args = argsColumn(data);
-            args.insertFrom(arg_column, arg_row);
+            insertArg(args, arg_column, arg_row);
             data.entries.push_back(Entry{args.size() - 1, std::move(val)});
             if (data.entries.size() == max_elems)
             {
@@ -256,7 +270,7 @@ class AggregateFunctionArgMinMaxMany final
 
         std::pop_heap(data.entries.begin(), data.entries.end(), HeapComparator{});
         auto & args = argsColumn(data);
-        args.insertFrom(arg_column, arg_row);
+        insertArg(args, arg_column, arg_row);
         data.entries.back() = Entry{args.size() - 1, std::move(val)};
         std::push_heap(data.entries.begin(), data.entries.end(), HeapComparator{});
 
@@ -271,6 +285,7 @@ public:
         , data_type_val(argument_types_[1])
         , serialization_arg(argument_types_[0]->getDefaultSerialization())
         , serialization_val(argument_types_[1]->getDefaultSerialization())
+        , arg_may_add_subcolumns(anyInTypeTree(*data_type_arg, [](const IDataType & type) { return isDynamic(type) || isObject(type); }))
     {
         if (!data_type_val->isComparable())
             throw Exception(
