@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/assert_cast.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -456,6 +457,12 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+                /// It must not be interrupted by the memory limit: otherwise the table is left with
+                /// the in-memory marks out of sync, and the next `INSERT` fails with a logical error.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// Remove excessive marks first: it cannot fail, unlike the truncation of files below.
+                storage.removeUnsavedMarks(lock);
 
                 /// No more writing.
                 for (auto & [_, stream] : streams)
@@ -466,9 +473,6 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
-
-                /// Remove excessive marks.
-                storage.removeUnsavedMarks(lock);
             }
         }
         catch (...)
@@ -1462,6 +1466,8 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)
@@ -1473,7 +1479,7 @@ void registerStorageLog(StorageFactory & factory)
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         return std::make_shared<StorageLog>(
             args.engine_name,

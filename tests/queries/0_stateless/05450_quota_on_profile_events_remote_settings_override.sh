@@ -57,7 +57,7 @@ REMOTE_DST="remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.dst_05450, '${R}', '')"
 REMOTE_DST_CONSTRAINT="remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.dst_constraint_05450, '${R}', '')"
 
 echo "constraint of the remote user"
-${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM ${REMOTE_SRC}"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(a) FROM ${REMOTE_SRC} SETTINGS use_statistics_for_sum_avg_aggregation = 0"
 ${CLICKHOUSE_CLIENT} --user "${U}" --async_insert 0 -q "INSERT INTO FUNCTION ${REMOTE_DST} VALUES (1), (2), (3)"
 usage
 
