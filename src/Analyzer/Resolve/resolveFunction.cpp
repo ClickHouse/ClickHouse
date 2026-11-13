@@ -1375,26 +1375,32 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
     }
     else if (left_array && right_array)
     {
-        auto zipped = buildResolvedFunction("arrayZipUnaligned", {left_argument, right_argument}, context);
-        const auto * zipped_type = typeid_cast<const DataTypeArray *>(zipped->getResultType().get());
-        chassert(zipped_type);
-        const DataTypes argument_types{recursiveRemoveLowCardinality(zipped_type->getNestedType())};
-        auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_null_pair"});
+        /// `arrayZipUnaligned` pads missing elements with `Nullable(T)`, which cannot
+        /// contain an `Array` or `Map`. Compare the common prefix and lengths separately.
+        auto left_length = buildResolvedFunction("length", {left_argument}, context);
+        auto right_length = buildResolvedFunction("length", {right_argument}, context);
+        auto common_length = buildResolvedFunction("least", {left_length, right_length}, context);
+        auto left_slice = buildResolvedFunction(
+            "arraySlice", {left_argument, std::make_shared<ConstantNode>(Field{1u}), common_length}, context);
+        auto right_slice = buildResolvedFunction(
+            "arraySlice", {right_argument, std::make_shared<ConstantNode>(Field{1u}), common_length}, context);
+        const DataTypes argument_types{
+            recursiveRemoveLowCardinality(left_array->getNestedType()),
+            recursiveRemoveLowCardinality(right_array->getNestedType())};
+        auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_null_left_element", "__in_null_right_element"});
         lambda_arguments->resolve(argument_types);
-        auto pair = std::make_shared<ColumnNode>(
-            NameAndTypePair{"__in_null_pair", argument_types[0]}, lambda_arguments);
-        auto left_element = buildResolvedFunction("tupleElement", {pair, std::make_shared<ConstantNode>(Field{1u})}, context);
-        auto right_element = buildResolvedFunction("tupleElement", {pair, std::make_shared<ConstantNode>(Field{2u})}, context);
+        auto left_element = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_null_left_element", argument_types[0]}, lambda_arguments);
+        auto right_element = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__in_null_right_element", argument_types[1]}, lambda_arguments);
         auto body = buildPortableNullSafeEquals(left_element, right_element, context);
         auto lambda = std::make_shared<LambdaNode>(
             lambda_arguments, body, false /*is_operator*/,
             std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
-        auto mapped = buildResolvedFunction("arrayMap", {std::move(lambda), std::move(zipped)}, context);
+        auto mapped = buildResolvedFunction(
+            "arrayMap", {std::move(lambda), std::move(left_slice), std::move(right_slice)}, context);
         auto has_mismatch = buildResolvedFunction("has", {std::move(mapped), std::make_shared<ConstantNode>(Field{0u})}, context);
-        auto same_length = buildResolvedFunction(
-            "equals",
-            {buildResolvedFunction("length", {left_argument}, context), buildResolvedFunction("length", {right_argument}, context)},
-            context);
+        auto same_length = buildResolvedFunction("equals", {std::move(left_length), std::move(right_length)}, context);
         result = buildResolvedFunction("and", {std::move(same_length), buildResolvedFunction("not", {std::move(has_mismatch)}, context)}, context);
     }
     else if (left_map && right_map)
