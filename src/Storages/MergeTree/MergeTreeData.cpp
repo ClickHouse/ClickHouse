@@ -509,6 +509,8 @@ namespace FailPoints
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
+    extern const char merge_tree_load_outdated_parts_cannot_schedule[];
+    extern const char merge_tree_load_unexpected_parts_cannot_schedule[];
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
@@ -4112,6 +4114,7 @@ try
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     bool suspended = false;
+    std::exception_ptr scheduling_exception;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
@@ -4136,24 +4139,48 @@ try
         if (load_state.part)
             continue;
 
-        /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
-        runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
+        try
         {
-            /// This load was queued while the table was still writable. The pool runs a bounded
-            /// number of loads at a time, so the loop above can be far ahead of it, and a load that
-            /// starts after the table became read-only must not detach a part.
-            if (!areBackgroundWorkersEnabled())
-                return;
+            fiu_do_on(FailPoints::merge_tree_load_unexpected_parts_cannot_schedule,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure to schedule loading of unexpected part {}", load_state.loading_info->name);
+            });
 
-            auto local_component_guard = Coordination::setCurrentComponent(component_name);
-            loadUnexpectedDataPart(load_state);
+            /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
+            runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
+            {
+                /// This load was queued while the table was still writable. The pool runs a bounded
+                /// number of loads at a time, so the loop above can be far ahead of it, and a load that
+                /// starts after the table became read-only must not detach a part.
+                if (!areBackgroundWorkersEnabled())
+                    return;
 
-            chassert(load_state.part);
-            if (load_state.is_broken)
-                load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
-        }, Priority{});
+                auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                loadUnexpectedDataPart(load_state);
+
+                chassert(load_state.part);
+                if (load_state.is_broken)
+                    load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+            }, Priority{});
+        }
+        catch (...)
+        {
+            if (!isRetryableException(std::current_exception()))
+                throw;
+
+            scheduling_exception = std::current_exception();
+            break;
+        }
     }
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    if (scheduling_exception)
+    {
+        LOG_WARNING(log, "Loading of unexpected data parts was interrupted by a retryable error, will retry later. Error: {}",
+            getExceptionMessage(scheduling_exception, /*with_stacktrace=*/ false));
+        unexpected_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+        return;
+    }
 
     /// Either the loop stopped because the workers were disabled, or it handed out every part but
     /// some queued loads found the workers disabled and returned without loading.
@@ -4305,65 +4332,85 @@ try
             outdated_unloaded_data_parts.pop_back();
         }
 
-        /// The captured locals will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
-                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
+        try
         {
-            FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
-
-            /// This load was queued while the table was still writable. The pool runs a bounded
-            /// number of loads at a time, so the scheduling loop can be far ahead of it, and a load
-            /// that starts after the table became read-only must not touch the disk: the part goes
-            /// back to the unloaded ones, and the loop above accounts for it after the pool drained.
-            if (is_async && !areBackgroundWorkersEnabled())
+            fiu_do_on(FailPoints::merge_tree_load_outdated_parts_cannot_schedule,
             {
-                std::lock_guard lock(outdated_data_parts_mutex);
-                outdated_unloaded_data_parts.push_back(my_part);
-                return;
-            }
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure to schedule loading of outdated part {}", part->name);
+            });
 
-            auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
-
-            LoadPartResult res;
-            try
+            /// The captured locals will outlive runner, so capturing by reference is ok
+            runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                                        &retryable_exception, &has_retryable_exception, replicated, is_async]()
             {
-                FailPointInjection::pauseFailPoint(FailPoints::merge_tree_load_outdated_parts_pause);
+                FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
 
-                fiu_do_on(FailPoints::merge_tree_load_outdated_parts_retryable_error,
+                /// This load was queued while the table was still writable. The pool runs a bounded
+                /// number of loads at a time, so the scheduling loop can be far ahead of it, and a load
+                /// that starts after the table became read-only must not touch the disk: the part goes
+                /// back to the unloaded ones, and the loop above accounts for it after the pool drained.
+                if (is_async && !areBackgroundWorkersEnabled())
                 {
-                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable error while loading outdated part {}", my_part->name);
-                });
+                    std::lock_guard lock(outdated_data_parts_mutex);
+                    outdated_unloaded_data_parts.push_back(my_part);
+                    return;
+                }
 
-                res = loadDataPartWithRetries(
-                    my_part->info, my_part->name, my_part->disk,
-                    DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                    loading_parts_max_backoff_ms, loading_parts_max_tries);
-            }
-            catch (...)
-            {
-                if (!isRetryableException(std::current_exception()))
-                    throw;
+                auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-                /// The part is not added to the set of parts if the loading failed, so it can be loaded again from scratch.
-                std::lock_guard lock(failed_parts_mutex);
-                failed_parts.push_back(my_part);
-                if (!retryable_exception)
-                    retryable_exception = std::current_exception();
-                has_retryable_exception = true;
-                return;
-            }
+                LoadPartResult res;
+                try
+                {
+                    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_load_outdated_parts_pause);
 
-            ++num_loaded_parts;
-            if (res.is_broken)
-            {
-                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
-            }
-            else if (res.part->is_duplicate)
-                res.part->remove();
-            else
-                preparePartForRemoval(res.part);
-        }, Priority{});
+                    fiu_do_on(FailPoints::merge_tree_load_outdated_parts_retryable_error,
+                    {
+                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable error while loading outdated part {}", my_part->name);
+                    });
+
+                    res = loadDataPartWithRetries(
+                        my_part->info, my_part->name, my_part->disk,
+                        DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
+                        loading_parts_max_backoff_ms, loading_parts_max_tries);
+                }
+                catch (...)
+                {
+                    if (!isRetryableException(std::current_exception()))
+                        throw;
+
+                    /// The part is not added to the set of parts if the loading failed, so it can be loaded again from scratch.
+                    std::lock_guard lock(failed_parts_mutex);
+                    failed_parts.push_back(my_part);
+                    if (!retryable_exception)
+                        retryable_exception = std::current_exception();
+                    has_retryable_exception = true;
+                    return;
+                }
+
+                ++num_loaded_parts;
+                if (res.is_broken)
+                {
+                    forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                }
+                else if (res.part->is_duplicate)
+                    res.part->remove();
+                else
+                    preparePartForRemoval(res.part);
+            }, Priority{});
+        }
+        catch (...)
+        {
+            if (!isRetryableException(std::current_exception()))
+                throw;
+
+            std::lock_guard lock(failed_parts_mutex);
+            failed_parts.push_back(part);
+            if (!retryable_exception)
+                retryable_exception = std::current_exception();
+            has_retryable_exception = true;
+            break;
+        }
     }
 
     /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
