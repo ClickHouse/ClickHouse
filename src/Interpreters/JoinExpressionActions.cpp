@@ -20,6 +20,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 
@@ -448,6 +449,20 @@ bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
     return data_ptr.get() == other_data_ptr.get();
 }
 
+/// Whether `type` has a `FixedString` inside an `Array` or a `Map` (at any depth, including inside a `Tuple`).
+static bool hasFixedStringInsideArrayOrMap(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & t)
+    {
+        auto is_fixed_string = [](const IDataType & e) { return isFixedString(e); };
+        if (const auto * array = typeid_cast<const DataTypeArray *>(&t))
+            return anyInTypeTree(*array->getNestedType(), is_fixed_string);
+        if (const auto * map = typeid_cast<const DataTypeMap *>(&t))
+            return anyInTypeTree(*map->getKeyType(), is_fixed_string) || anyInTypeTree(*map->getValueType(), is_fixed_string);
+        return false;
+    });
+}
+
 static bool fixedStringInsideArrayComparedWithOtherType(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
 {
     const auto lhs = removeNullable(recursiveRemoveLowCardinality(lhs_type));
@@ -455,15 +470,7 @@ static bool fixedStringInsideArrayComparedWithOtherType(const DataTypePtr & lhs_
     if (lhs->equals(*rhs))
         return false;
 
-    auto has_fixed_string_inside_array = [](const DataTypePtr & type)
-    {
-        return anyInTypeTree(*type, [](const IDataType & t)
-        {
-            const auto * array = typeid_cast<const DataTypeArray *>(&t);
-            return array && anyInTypeTree(*array->getNestedType(), [](const IDataType & e) { return isFixedString(e); });
-        });
-    };
-    return has_fixed_string_inside_array(lhs) || has_fixed_string_inside_array(rhs);
+    return hasFixedStringInsideArrayOrMap(*lhs) || hasFixedStringInsideArrayOrMap(*rhs);
 }
 
 std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::asBinaryPredicate() const
@@ -478,7 +485,7 @@ std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::a
     if (op == JoinConditionOperator::Unknown)
         return {JoinConditionOperator::Unknown, nullptr, nullptr};
 
-    /// Arrays with `FixedString` elements are compared with arrays of another element type element by element,
+    /// Arrays (and maps) with `FixedString` elements are compared with arrays of another element type element by element,
     /// zero-padded like the scalars (`[toFixedString('a', 2)] = ['a\0']`), while the join keys, the runtime filters
     /// and the shuffle convert a `FixedString` key to `String` without its trailing zero bytes (see
     /// `predicateOperandsToCommonType`). Such a comparison is not an equality of the converted keys, so it is not
