@@ -42,8 +42,6 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
-#include <Common/Silk/FiberMutex.h>
-
 namespace DB::S3
 {
 
@@ -62,7 +60,7 @@ struct ClientCache
 
     void clearCache();
 
-    mutable Silk::FiberMutex region_cache_mutex;
+    mutable std::mutex region_cache_mutex;
     NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;

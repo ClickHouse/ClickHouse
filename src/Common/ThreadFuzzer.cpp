@@ -25,6 +25,10 @@
 
 #include "config.h" // USE_JEMALLOC
 
+#if defined(_LIBCPP_HAS_THREAD_API_EXTERNAL)
+#include <StdMutexHooks.h>
+#endif
+
 
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
 #if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
@@ -62,11 +66,16 @@ namespace ErrorCodes
 }
 
 
+static void installStdMutexHooks();
+
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
     if (isEffective())
+    {
         started.store(true, std::memory_order_relaxed);
+        installStdMutexHooks();
+    }
 }
 
 template <typename T>
@@ -478,6 +487,44 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #undef MAKE_WRAPPER_USING_INTERNAL_SYMBOLS
 #endif
 
+#endif
+
+#if THREAD_FUZZER_WRAP_PTHREAD && defined(_LIBCPP_HAS_THREAD_API_EXTERNAL)
+static void beforeStdMutexLock()
+{
+    INJECTION_BEFORE(pthread_mutex_lock)
+}
+
+static void afterStdMutexLock()
+{
+    INJECTION_AFTER(pthread_mutex_lock)
+}
+
+static void beforeStdMutexUnlock()
+{
+    INJECTION_BEFORE(pthread_mutex_unlock)
+}
+
+static void afterStdMutexUnlock()
+{
+    INJECTION_AFTER(pthread_mutex_unlock)
+}
+
+static constexpr StdMutexHooks std_mutex_hooks{
+    .before_lock = beforeStdMutexLock,
+    .after_lock = afterStdMutexLock,
+    .before_unlock = beforeStdMutexUnlock,
+    .after_unlock = afterStdMutexUnlock,
+};
+
+static void installStdMutexHooks()
+{
+    setStdMutexHooks(&std_mutex_hooks);
+}
+#else
+static void installStdMutexHooks()
+{
+}
 #endif
 }
 
