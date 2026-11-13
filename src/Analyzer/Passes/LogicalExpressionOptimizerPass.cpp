@@ -194,6 +194,19 @@ static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
     return index_hint && index_hint->isImplied();
 }
 
+/// Appends the arguments of `node`, lifting those of nested functions with the same name, recursively.
+static void collectFlattenedLogicalArguments(const FunctionNode & node, const String & function_name, QueryTreeNodes & result)
+{
+    for (const auto & argument : node.getArguments().getNodes())
+    {
+        auto * maybe_function = argument->as<FunctionNode>();
+        if (maybe_function && maybe_function->getFunctionName() == function_name)
+            collectFlattenedLogicalArguments(*maybe_function, function_name, result);
+        else
+            result.push_back(argument);
+    }
+}
+
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
 static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
 {
@@ -202,39 +215,18 @@ static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const Functio
         return nullptr;
 
     const auto & arguments = node.getArguments().getNodes();
-    QueryTreeNodes new_arguments;
-
-    bool flattened_anything = false;
-
-    for (const auto & argument : arguments)
+    bool flattened_anything = std::ranges::any_of(arguments, [&](const QueryTreeNodePtr & argument)
     {
-        auto * maybe_function = argument->as<FunctionNode>();
-        // If the nested function is not the same, just use it as is
-        if (!maybe_function || maybe_function->getFunctionName() != function_name)
-        {
-            new_arguments.push_back(argument);
-            continue;
-        }
-
-        flattened_anything = true;
-
-        // If the nested function is the same, just lift the its or its flattened form's arguments
-        auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context);
-        if (maybe_flattened)
-        {
-            auto & flattened_arguments = maybe_flattened->getArguments().getNodes();
-            std::move(flattened_arguments.begin(), flattened_arguments.end(), std::back_inserter(new_arguments));
-        }
-        else
-        {
-            const auto & nested_arguments = maybe_function->getArguments().getNodes();
-            std::copy(nested_arguments.begin(), nested_arguments.end(), std::back_inserter(new_arguments));
-        }
-    }
+        const auto * maybe_function = argument->as<FunctionNode>();
+        return maybe_function && maybe_function->getFunctionName() == function_name;
+    });
 
     // Nothing has changed, let's no create a flattened node
-    if (!flattened_anything && new_arguments.size() == arguments.size())
+    if (!flattened_anything)
         return {};
+
+    QueryTreeNodes new_arguments;
+    collectFlattenedLogicalArguments(node, function_name, new_arguments);
 
     auto flattened = std::make_shared<FunctionNode>(function_name);
 
@@ -2385,9 +2377,8 @@ private:
         /// this AND and could not remove e.g. `x < 3` derived for `(x < 2 AND x < y) AND y < 3`.
         ComparisonFilterMap derived_conjunct_filters;
 
-        auto flattened_and_node = getFlattenedLogicalExpression(function_node, getContext());
-        const auto & arguments = flattened_and_node ? flattened_and_node->getArguments().getNodes()
-                                                    : function_node.getArguments().getNodes();
+        QueryTreeNodes arguments;
+        collectFlattenedLogicalArguments(function_node, function_node.getFunctionName(), arguments);
 
         for (const auto & argument : arguments)
         {
