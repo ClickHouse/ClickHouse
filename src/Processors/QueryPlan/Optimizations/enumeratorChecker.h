@@ -134,9 +134,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     else if (kind == JoinKind::Inner && !connected)
         kind = JoinKind::Cross;
 
-    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     const auto & left_entry = dp_table[lhs_subset];
     const auto & right_entry = dp_table[rhs_subset];
+    auto selectivity = optimizer.computeSelectivityMask(
+        edge, left_mask, right_mask, left_entry.estimated_rows, right_entry.estimated_rows);
     const double joined_rows = estimateJoinedRows(selectivity, left_entry.estimated_rows, right_entry.estimated_rows);
     const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
     const double plan_cost = left_entry.cost + right_entry.cost + joined_rows

@@ -180,7 +180,9 @@ private:
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    SelectivityEstimate computeSelectivityMask(
+        const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask,
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -1036,9 +1038,22 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
 }
 
 SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
-    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
+    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask,
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows)
 {
-    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    const bool left_multi = std::popcount(left_mask) > 1;
+    const bool right_multi = std::popcount(right_mask) > 1;
+    auto side = [&](std::optional<UInt64> relation) -> JoinSideStats
+    {
+        if (!relation)
+            return {};
+        if (right_mask & (static_cast<UInt32>(1) << *relation))
+            return {.present = true, .on_left = false, .multi_relation = right_multi, .rows = right_rows};
+        if (left_mask & (static_cast<UInt32>(1) << *relation))
+            return {.present = true, .on_left = true, .multi_relation = left_multi, .rows = left_rows};
+        return {};
+    };
+    auto estimate = DB::computeDirectSelectivity(query_graph, dp_table, expression_selectivity, edges, side);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -1055,23 +1070,14 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 max_ndv = 0;
-            UInt64 max_ndv_upper_bound = 0;
-            bool has_left = false;
-            bool has_right = false;
+            EquivalenceClassSelectivity class_selectivity;
             for (const auto & equiv_member : dpsub_data.equiv_classes[class_idx])
             {
-                if (left_mask & equiv_member.relation_bit)
-                    has_left = true;
-                else if (right_mask & equiv_member.relation_bit)
-                    has_right = true;
-                else
-                    continue;
-                max_ndv = std::max(max_ndv, equiv_member.ndv.value_or(0));
-                max_ndv_upper_bound = std::max(max_ndv_upper_bound, equiv_member.ndv_upper_bound);
+                class_selectivity.add(
+                    side(static_cast<UInt64>(std::countr_zero(equiv_member.relation_bit))),
+                    {equiv_member.ndv, equiv_member.ndv_upper_bound});
             }
-            if (has_left && has_right)
-                applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+            class_selectivity.apply(estimate);
         }
     }
 
