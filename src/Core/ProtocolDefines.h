@@ -246,6 +246,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First global query-plan version that writes version 1 of `Filter`, which carries the late row-level filter mark.
+/// An older peer would ignore the mark, so `FilterStep::serialize` rejects a marked step for it.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK = 21;
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
 /// `JoinSettings::updatePlanSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;

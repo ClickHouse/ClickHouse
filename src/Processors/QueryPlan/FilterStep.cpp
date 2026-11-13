@@ -25,6 +25,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -44,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -294,6 +296,14 @@ static bool isTrivialSubtree(const ActionsDAG::Node * node)
     return node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
 }
 
+bool hasTrivialAndChainAtom(const ActionsDAG::Node * filter)
+{
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    return std::ranges::any_of(ActionsDAG::extractConjunctionAtoms(filter), isTrivialSubtree);
+}
+
 struct ActionsAndName
 {
     ActionsDAG dag;
@@ -344,6 +354,14 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
     });
 }
 
+bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter)
+{
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    return std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter), canBeMovedToTheFrontOfAndChain);
+}
+
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
 /// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
 static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
@@ -368,7 +386,7 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
 /// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
 /// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
 /// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
-static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom)
+bool hasOrderSensitiveFunctions(const ActionsDAG::Node * atom)
 {
     return anyReachableNode({atom}, [](const ActionsDAG::Node * node)
     {
@@ -671,6 +689,16 @@ void FilterStep::serialize(Serialization & ctx) const
         if (*optimize_constant_columns_after_filter)
             flags |= 4;
     }
+    /// Bit 4 marks a filter applying a row policy after the read.
+    if (row_level_filter_after_read)
+    {
+        if (ctx.step_version < 1)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "A Filter step applying a row policy after the read requires query plan serialization version >= {} "
+                "(Filter step version 1), but the peer only supports version {}; all nodes must be upgraded",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK, ctx.version);
+        flags |= 8;
+    }
     writeIntBinary(flags, ctx.out);
 
     /// A cache key must not depend on the name this plan build composed for the filter column
@@ -703,6 +731,8 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     auto step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
     if (flags & 2)
         step->setOptimizeConstantColumnsAfterFilter(bool(flags & 4));
+    if (flags & 8)
+        step->markAsRowLevelFilterAfterRead();
     return step;
 }
 
@@ -768,7 +798,8 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Filter", FilterStep::deserialize);
+    /// Version 1 carries the late row-level filter mark (bit 4 of the flags byte).
+    registry.registerStep("Filter", FilterStep::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK}});
 }
 
 }

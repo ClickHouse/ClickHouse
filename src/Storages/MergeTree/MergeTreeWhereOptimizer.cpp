@@ -140,6 +140,12 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
     return names;
 }
 
+bool canBeMovedBeforeRowLevelFilter(const RPNBuilderTreeNode & node)
+{
+    const auto * dag_node = node.getDAGNode();
+    return dag_node && canBeMovedToTheFrontOfAndChain(dag_node);
+}
+
 bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet & columns, const String & top_k_filter_column)
 {
     return !top_k_filter_column.empty() && columns.size() == 1 && *columns.begin() == top_k_filter_column
@@ -183,11 +189,13 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const ContextPtr & context,
     bool is_final,
     const NameSet & columns_read_before_filter,
-    const String & top_k_filter_column)
+    const String & top_k_filter_column,
+    bool row_level_filter_after_read)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
+    where_optimizer_context.row_level_filter_after_read = row_level_filter_after_read;
     where_optimizer_context.array_joined_names = {};
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
@@ -483,6 +491,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
             && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            && (!where_optimizer_context.row_level_filter_after_read || canBeMovedBeforeRowLevelFilter(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns,
@@ -689,6 +698,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
                 && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && (!where_optimizer_context.row_level_filter_after_read || canBeMovedBeforeRowLevelFilter(conjunct))
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
                     || isReadByTopKFilterOnly(conjunct, columns, where_optimizer_context.top_k_filter_column)

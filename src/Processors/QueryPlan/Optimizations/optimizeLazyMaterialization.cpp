@@ -337,6 +337,8 @@ struct MainFilterStep
     FilterDAGInfo filter_dag_info;
     /// See `FilterStep::getOptimizeConstantColumnsAfterFilter`.
     std::optional<bool> optimize_constant_columns_after_filter;
+    /// See `FilterStep::isRowLevelFilterAfterRead`.
+    bool is_row_level_filter_after_read = false;
 };
 
 struct SplitFilterResult
@@ -422,7 +424,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
     filter_dag_info.column_name = name;
     filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
 
-    MainFilterStep main_filter_step{std::move(filter_dag_info), filter_step.getOptimizeConstantColumnsAfterFilter()};
+    MainFilterStep main_filter_step{std::move(filter_dag_info), filter_step.getOptimizeConstantColumnsAfterFilter(), filter_step.isRowLevelFilterAfterRead()};
     return { std::move(main_filter_step), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
@@ -805,6 +807,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
                 main_plan.getCurrentHeader(),
                 std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column);
             new_filter_step->setOptimizeConstantColumnsAfterFilter(main_filter_step.optimize_constant_columns_after_filter);
+            if (main_filter_step.is_row_level_filter_after_read)
+                new_filter_step->markAsRowLevelFilterAfterRead();
             main_plan.addStep(std::move(new_filter_step));
         }
     }

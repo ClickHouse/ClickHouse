@@ -315,6 +315,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
 
+    const bool row_level_filter_after_read = source_step_with_filter->getQueryInfo().row_level_filter_after_read || filter_step->isRowLevelFilterAfterRead();
+    if (row_level_filter_after_read && hasOrderSensitiveFunctions(&filter_root_node))
+        return;
+
     /// Without statistics for a small read, the conditions are ordered by the sizes of their columns.
     ConditionSelectivityEstimatorPtr selectivity_estimator;
     if (has_multiple_conditions && read_from_merge_tree_step)
@@ -360,7 +364,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         source_step_with_filter->getContext(),
         is_final,
         columns_read_before_filter,
-        top_k_filter_column);
+        top_k_filter_column,
+        row_level_filter_after_read);
 
     if (optimize_result.prewhere_nodes.empty())
         return;
@@ -433,6 +438,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
         new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+        if (filter_step->isRowLevelFilterAfterRead())
+            new_filter_step->markAsRowLevelFilterAfterRead();
         new_step = std::move(new_filter_step);
     }
     else

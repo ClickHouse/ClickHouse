@@ -249,6 +249,8 @@ static size_t addNewFilterStepOrThrow(
     auto new_filter = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
     new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
+    if (filter->isRowLevelFilterAfterRead())
+        new_filter->markAsRowLevelFilterAfterRead();
     node.step = std::move(new_filter);
     node.step->setStepDescription(*filter);
 
@@ -1458,6 +1460,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
             new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
+            if (filter->isRowLevelFilterAfterRead())
+                new_filter->markAsRowLevelFilterAfterRead();
             filter_node.step = std::move(new_filter);
         }
 

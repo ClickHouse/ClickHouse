@@ -89,6 +89,8 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
             std::move(split_filter_name),
             remove_filter);
     new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+    if (filter_step->isRowLevelFilterAfterRead())
+        new_filter_step->markAsRowLevelFilterAfterRead();
     filter_node.step = std::move(new_filter_step);
 
     auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));

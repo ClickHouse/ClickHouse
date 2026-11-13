@@ -38,8 +38,8 @@ side-effecting conjunct inside a lambda over the aggregate	0
 non-deterministic conjunct	0
 non-deterministic conjunct over the aggregate	0
 array join in having	0
-stateful outer condition, merged	0
-stateful outer condition across a projection, merged	0
+stateful outer condition, not merged	1
+stateful outer condition across a projection, not merged	1
 serialized plan	0
 --- the skipped-group count is 0 or exact for every operator, in both conversion paths ---
 2000	8000
