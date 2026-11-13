@@ -3615,6 +3615,17 @@ def test_alignment_with_subquery_step():
         "vector(1)[19:20]", 9999, '{"resultType": "matrix", "result": []}', ""
     )
 
+    # The subquery starts before the epoch, even with a positive evaluation time.
+    do_query_test(
+        "vector(time())[40s:20s]",
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[-20, "-20"], [0, "0"]]}]}',
+        [[
+            "[]",
+            "[('1969-12-31 23:59:40.000',-20),('1970-01-01 00:00:00.000',0)]",
+        ]],
+    )
+
 
 def test_math_binary_operators():
     do_query_test(
