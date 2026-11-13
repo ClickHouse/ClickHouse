@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -1493,7 +1494,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     while (true)
     {
         /// types are equal, obviously pure metadata alter
-        if (from->equals(*to))
+        if (isIdentityConversion(*from, *to))
             return true;
 
         /// We just adding something to enum, nothing changed on disk

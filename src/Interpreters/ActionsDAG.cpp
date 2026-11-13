@@ -51,6 +51,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/Utils.h>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/inlined_vector.h>
@@ -2915,7 +2916,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         }
 
         /// Add CAST function to convert into result type if needed.
-        if (!res_elem.type->equals(*dst_node->result_type))
+        if (!isIdentityConversion(*dst_node->result_type, *res_elem.type))
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto type_name = res_elem.type->getName();

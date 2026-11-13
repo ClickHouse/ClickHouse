@@ -59,6 +59,7 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
+#include <DataTypes/Utils.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -6932,7 +6933,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     {
         for (size_t i = 0; i < view_columns.size(); ++i)
         {
-            if (!view_columns[i].type->equals(*subquery_columns[i].type))
+            if (!isIdentityConversion(*subquery_columns[i].type, *view_columns[i].type))
             {
                 needs_type_conversion = true;
                 break;
@@ -6955,7 +6956,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
             auto column_node = std::make_shared<ColumnNode>(subquery_columns[i], static_pointer_cast<ITableExpressionNode>(view_query_tree));
             QueryTreeNodePtr projection_node;
 
-            if (!view_columns[i].type->equals(*subquery_columns[i].type))
+            if (!isIdentityConversion(*subquery_columns[i].type, *view_columns[i].type))
             {
                 projection_node = buildCastFunction(column_node, view_columns[i].type, scope.context);
                 projection_node->setAlias(view_columns[i].name);

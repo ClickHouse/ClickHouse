@@ -519,7 +519,7 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
         {
             const auto & column_default = table_columns.getDefault(column.name).value_or(ColumnDefault{});
             const auto & [root_type, src_default_kind] = column_info[column.name];
-            if ((root_type && !root_type->equals(*column.type)) ||
+            if ((root_type && !isIdentityConversion(*column.type, *root_type)) ||
                 !columnDefaultKindHasSameType(src_default_kind, column_default.kind))
             {
                 supported_columns.erase(column.name);

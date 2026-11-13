@@ -1,6 +1,8 @@
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
+#include <DataTypes/Utils.h>
+
 #include <Storages/ColumnDefault.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -588,7 +590,7 @@ void StorageMaterializedView::readImpl(
         /// materialized view.
         removeNonCommonColumns(target_header, mv_header);
 
-        if (!blocksHaveEqualStructure(mv_header, target_header))
+        if (!isIdentityConversion(target_header, mv_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
@@ -1311,7 +1313,7 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
     for (const auto & [name, type] : view_columns_description.getAll())
     {
         auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (!target_column || !target_column->type->equals(*type))
+        if (!target_column || !isIdentityConversion(*target_column->type, *type))
             continue;
         /// The filter is forwarded into the raw target read, so the column must be physical there
         /// just like here (same rule as StorageMerge): an ALIAS twin has no input it binds to.

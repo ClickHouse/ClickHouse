@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -659,7 +660,7 @@ static NameSet collectIndicesRebuiltByMutation(
                      missing && !missing->type_name.empty())
                 old_type = DataTypeFactory::instance().get(missing->type_name);
 
-            if (old_type && command.data_type && !old_type->equals(*command.data_type))
+            if (old_type && command.data_type && !isIdentityConversion(*old_type, *command.data_type))
                 type_changed_columns.insert(command.column_name);
         }
 
@@ -4752,7 +4753,7 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     if (!to_nullable)
         return false;
 
-    if (!part_column->type->equals(*to_nullable->getNestedType()))
+    if (!isIdentityConversion(*part_column->type, *to_nullable->getNestedType()))
         return false;
 
     auto serialization = part->getSerialization(command.column_name);

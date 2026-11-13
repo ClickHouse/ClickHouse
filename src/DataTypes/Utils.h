@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class Block;
+
 /** Returns true if from_type can be safely cast to to_type.
   *
   * "Safely" means every value of from_type is representable in to_type, including NULL: a target that
@@ -39,5 +41,17 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   * From type FixedString(3) to type String returns true.
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
+
+/** Returns true if a column of type `from` can be used as a column of type `to` as is, so a conversion between them can be
+  * skipped. It is `from.equals(to)`, except that it is false when `to` has `Bool` where `from` has another type, at any
+  * nesting level (`Array(UInt8)` to `Array(Bool)`) other than inside a `JSON` typed path, a `Variant` alternative or the
+  * arguments of an `AggregateFunction` or `SimpleAggregateFunction`:
+  * `equals` compares only the representation, which `Bool` shares with `UInt8`, while converting a `UInt8` to `Bool`
+  * maps every nonzero value to 1.
+  */
+bool isIdentityConversion(const IDataType & from, const IDataType & to);
+
+/// The same for headers: `blocksHaveEqualStructure(from, to)` and an identity conversion at every position.
+bool isIdentityConversion(const Block & from, const Block & to);
 
 }

@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -115,7 +116,7 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
 {
     while (true)
     {
-        if (from->equals(*to))
+        if (isIdentityConversion(*from, *to))
             return true;
 
         /// Extending an enum's value set leaves the bytes alone. Shrinking it does not: a value on

@@ -58,6 +58,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
+#include <DataTypes/Utils.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -6914,6 +6915,46 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
 
+            /// The mutation keeps the parts of a projection it does not rebuild. Only a normal projection without `WHERE`
+            /// stores the column as is, to be converted on read, as long as its sorting key does not read the column.
+            if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type)
+            {
+                const auto old_type = old_types.find(command.column_name);
+                if (old_type != old_types.end() && old_type->second->equals(*command.data_type)
+                    && !isIdentityConversion(*old_type->second, *command.data_type))
+                {
+                    /// A name may be a subcolumn of the altered column, such as `t.x` of `t`.
+                    auto reads_column = [&](const Names & names)
+                    {
+                        return std::ranges::any_of(names, [&](const String & name)
+                        {
+                            const auto column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+                            return column && column->getNameInStorage() == command.column_name;
+                        });
+                    };
+
+                    for (const auto & projection : old_metadata.getProjections())
+                    {
+                        /// The mutation rebuilds a projection keyed on the column itself, and this ALTER may drop one.
+                        const auto pk_columns = projection.metadata->getPrimaryKeyColumns();
+                        if (!new_metadata.getProjections().has(projection.name)
+                            || std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                            continue;
+
+                        const bool stores_column_as_is = projection.type == ProjectionDescription::Type::Normal
+                            && !projection.where_clause_ast && !reads_column(projection.metadata->getColumnsRequiredForSortingKey());
+                        if (!stores_column_as_is && reads_column(projection.required_columns))
+                            throw Exception(
+                                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "ALTER of column {} from {} to {} is forbidden because projection {} is computed from its values",
+                                backQuoteIfNeed(command.column_name),
+                                old_type->second->getName(),
+                                command.data_type->getName(),
+                                backQuoteIfNeed(projection.name));
+                    }
+                }
+            }
+
             /// A column whose subcolumn feeds the primary/partition key may still be ALTERed as long as
             /// each key subcolumn keeps an on-disk-compatible type: a mutation does not re-sort data, so a
             /// key subcolumn must convert the same way a top-level key column does (isSafeForKeyConversion),
@@ -13737,6 +13778,12 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
+
+    /// `sizeOfDifference` compares the types with `equals`, which does not see a `Bool` over a `UInt8`.
+    const auto & src_columns = src_snapshot->getColumns();
+    for (const auto & column : my_snapshot->getColumns().getAllPhysical())
+        if (!isIdentityConversion(*src_columns.getPhysical(column.name).type, *column.type))
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
     /// The definitions are compared as text, so the text must not depend on whether the user has
     /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.

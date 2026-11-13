@@ -1,0 +1,46 @@
+INSERT SELECT
+1	0	0	[0]
+2	1	1	[1]
+3	1	1	[1]
+4	1	\N	[1,0]
+5	1	1	[1]
+4	4	5
+false	1
+true	4
+1	1
+MATERIALIZED VIEW
+[0,1,1]
+[0,1,1]
+2
+REFRESHABLE MATERIALIZED VIEW
+[0,1,1,1]
+[0,1,1,1]
+VIEW
+3
+3
+2
+3
+3
+Distributed INSERT
+[1,1,1]
+Merge
+3
+3
+MODIFY COLUMN, pending mutation
+1
+[0,1,1,1]
+3
+3
+MODIFY COLUMN
+3
+[0,1,1,1]	[[0],[1],[1],[1,0]]	[0,1,1,1]
+3
+1
+0
+ATTACH PARTITION FROM
+2	1
+Variant
+1	1	0
+Projection
+true	3
+1

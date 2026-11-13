@@ -1,6 +1,8 @@
 #include <DataTypes/Utils.h>
+#include <Core/Block.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -385,6 +387,49 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
     return false;
+}
+
+namespace
+{
+
+bool isBoolNode(const IDataType & type)
+{
+    const auto * custom_name = type.getCustomName();
+    return custom_name && custom_name->getName() == "Bool";
+}
+
+/// Whether `to` has a `Bool` at a position where `from` has another type; `from` and `to` are equal, so their trees match.
+bool convertsToBool(const IDataType & from, const IDataType & to)
+{
+    if (isBoolNode(to))
+        return !isBoolNode(from);
+    /// `CAST` copies a `JSON` typed path as is and matches `Variant` alternatives by name, so their children do not count.
+    if (to.getTypeId() == TypeIndex::Object || to.getTypeId() == TypeIndex::Variant)
+        return false;
+    const size_t num_children = to.getNumberOfChildren();
+    if (num_children != from.getNumberOfChildren())
+        return false;
+    for (size_t i = 0; i < num_children; ++i)
+        if (convertsToBool(*from.getChild(i), *to.getChild(i)))
+            return true;
+    return false;
+}
+
+}
+
+bool isIdentityConversion(const IDataType & from, const IDataType & to)
+{
+    return from.equals(to) && !convertsToBool(from, to);
+}
+
+bool isIdentityConversion(const Block & from, const Block & to)
+{
+    if (!blocksHaveEqualStructure(from, to))
+        return false;
+    for (size_t i = 0; i < from.columns(); ++i)
+        if (!isIdentityConversion(*from.getByPosition(i).type, *to.getByPosition(i).type))
+            return false;
+    return true;
 }
 
 }
