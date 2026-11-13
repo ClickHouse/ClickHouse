@@ -156,7 +156,7 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
     return result_chunk;
 }
 
-/// The type default differs from the column zero for an `Enum` (its first value) and for composites containing one.
+/// The type default differs from the column zero for an `Enum` (its smallest value) and for composites containing one.
 static void insertTypeDefaults(IColumn & column, const IDataType & type, size_t count)
 {
     if (type.isDefaultInsertTrivial())
