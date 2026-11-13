@@ -4,9 +4,10 @@
 # https://github.com/ClickHouse/clickhouse-private/issues/87440
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Flushing an undeliverable buffered batch logs it server-side; don't forward that to the client that
-# triggered the flush (it would appear on the test's stderr).
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+# Run the client at warning level: undeliverable-batch discards are logged below warning (server-side only),
+# so they do not reach this client, while Part E can still check that the Buffer -> Alias access check fires
+# before any schema-revealing warning would be emitted.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=warning
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -80,12 +81,20 @@ ${CH} --multiquery <<EOF
 CREATE TABLE ${db}.al ENGINE = Alias('${victim_db}', 'victim');
 CREATE TABLE ${db}.b_probe_real (s String) ENGINE = Buffer(${db}, al, 1, 1, 1, 1, 1, 1, 1);
 CREATE TABLE ${db}.b_probe_fake (absent_col String) ENGINE = Buffer(${db}, al, 1, 1, 1, 1, 1, 1, 1);
+CREATE TABLE ${db}.b_probe_partial (s String, absent_col String) ENGINE = Buffer(${db}, al, 1, 1, 1, 1, 1, 1, 1);
 GRANT INSERT ON ${db}.al TO ${low};
 GRANT INSERT ON ${db}.b_probe_real TO ${low};
 GRANT INSERT ON ${db}.b_probe_fake TO ${low};
+GRANT INSERT ON ${db}.b_probe_partial TO ${low};
 EOF
 echo -n "real column denied:     "; denied run_low --query "INSERT INTO ${db}.b_probe_real VALUES ('probe')"
 echo -n "absent column denied:   "; denied run_low --query "INSERT INTO ${db}.b_probe_fake VALUES ('probe')"
+# Partial intersection: declaring a real column (s) plus an absent one. At warning log level the
+# "columns discarded" warning would reveal that s exists in the protected target, but the alias access
+# check rejects the unauthorized user before any schema is read or warning emitted.
+part=$(run_low --query "INSERT INTO ${db}.b_probe_partial VALUES ('a', 'b')" 2>&1)
+echo -n "partial denied, no leak:"
+if echo "$part" | grep -q "ACCESS_DENIED" && ! echo "$part" | grep -qi "columns"; then echo " OK"; else echo " UNEXPECTED"; fi
 echo -n "victim after Part E:    "; victim
 
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}" 2>/dev/null

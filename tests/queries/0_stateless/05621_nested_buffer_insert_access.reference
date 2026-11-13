@@ -16,4 +16,5 @@ destinationless rows:   ['win_low','win_ok']
 ## Part E: a Buffer -> Alias chain does not leak target column names
 real column denied:     OK
 absent column denied:   OK
+partial denied, no leak: OK
 victim after Part E:    ['from_ok','legit_b','original']

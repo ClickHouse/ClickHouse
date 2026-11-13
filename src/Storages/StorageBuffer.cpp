@@ -1560,6 +1560,14 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /// destination schema is read so an `Alias` is resolved under that identity rather than the buffer context.
     restoreWriteIdentity(insert_context, *write_identity);
 
+    /// Authorize the forwarding chain under the restored identity before the destination schema is read,
+    /// intersected, or used to emit a "columns discarded" warning. Reading an `Alias`'s metadata follows it to
+    /// the (possibly protected) target with no access check, so without this an unauthorized user could tell a
+    /// real target column (a warning, then ACCESS_DENIED) from an absent one (zero intersection) and probe the
+    /// schema of a table it cannot see. This is the same table-level check the nested insert does on the chain.
+    if (auto * alias = table->as<StorageAlias>())
+        alias->getTargetTable(StorageAlias::TargetAccess{insert_context, AccessType::INSERT});
+
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(insert_context, false);
 
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -1580,23 +1588,6 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (block_to_write.columns() == 0)
     {
-        /// Authorize the destination under the restored identity even though nothing is written here, so this
-        /// "no common columns" discard cannot be told apart from the writing path's ACCESS_DENIED. Without it a
-        /// user with no access to an (aliased) target could probe its columns: a declared column that really
-        /// exists reaches the nested insert and is denied, while an absent one is discarded silently. A caller
-        /// with full table-level access already sees the schema, so for them this stays a silent discard. The
-        /// writing path below authorizes its columns through the interpreter, so column grants are not rejected.
-        if (const auto * alias = table->as<StorageAlias>())
-        {
-            if (!alias->isTargetTableGranted(insert_context, AccessType::INSERT, {}))
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED,
-                    "Not enough privileges to insert into the target of {}",
-                    destination_id.getNameForLogs());
-        }
-        else
-            insert_context->checkAccess(AccessType::INSERT, destination_id);
-
         LOG_ERROR(log, "Destination table {} have no common columns with block in buffer. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
