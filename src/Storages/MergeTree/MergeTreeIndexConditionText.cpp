@@ -36,6 +36,8 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeMap.h>
+#include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1330,7 +1332,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// The per-token pattern functions take the tokenizer of the index on their input, so they must find an index on `m['key']`
     /// also after `optimize_functions_to_subcolumns` makes `m.key_<key>` of it. Otherwise that setting changes their result.
     if (!has_index_column && isPerTokenPatternFunction(function_name))
-        has_index_column = hasIndexForMapElementSubcolumn(index_column_name);
+        has_index_column = hasIndexForMapElementSubcolumn(index_column_node);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
@@ -2436,10 +2438,46 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     return hasIndexForColumn(fmt::format("mapValues({})", map_column_name));
 }
 
-bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & column_name) const
+std::optional<String> getMapElementSubcolumnName(const String & map_column_name, const DataTypeMap & map_type, Field key)
 {
+    /// An Enum key is written either as its name or as its number, the subcolumn always has the name.
+    const auto & key_type = map_type.getKeyType();
+    if (isEnum(key_type))
+        key = tryConvertFieldToType(key, *key_type);
+
+    auto key_column = key_type->createColumn();
+    if (key.isNull() || !key_column->tryInsert(key))
+        return {};
+
+    WriteBufferFromOwnString buf;
+    key_type->getDefaultSerialization()->serializeText(*key_column, 0, buf, FormatSettings());
+    return fmt::format("{}.{}{}", map_column_name, DataTypeMap::KEY_SUBCOLUMN_PREFIX, buf.str());
+}
+
+bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const RPNBuilderTreeNode & node) const
+{
+    if (!map_element_subcolumn_name)
+        return false;
+
     /// A physical column of that name shadows the subcolumn.
-    return column_name == map_element_subcolumn_name && !is_column_shadowing_map_subcolumn(column_name);
+    String column_name = node.getColumnName();
+    if (column_name == map_element_subcolumn_name)
+        return !is_column_shadowing_map_subcolumn(column_name);
+
+    /// `m[1]` and `m['k']` are the same element of a map with the key `Enum8('k' = 1)`.
+    auto function = node.toFunctionNodeOrNull();
+    if (!function || function->getFunctionName() != "arrayElement" || function->getArgumentsSize() != 2)
+        return false;
+
+    auto map_node = function->getArgumentAt(0);
+    const auto * map_dag_node = map_node.getDAGNode();
+    const auto * map_type = map_dag_node ? typeid_cast<const DataTypeMap *>(map_dag_node->result_type.get()) : nullptr;
+    Field key;
+    DataTypePtr key_type;
+    if (!map_type || map_node.isConstant() || !function->getArgumentAt(1).tryGetConstant(key, key_type))
+        return false;
+
+    return getMapElementSubcolumnName(map_node.getColumnName(), *map_type, key) == map_element_subcolumn_name;
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(

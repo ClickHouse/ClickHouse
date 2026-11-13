@@ -529,6 +529,11 @@ SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']) S
 SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS use_skip_indexes = 0;
 SELECT 'Enum key', hasAnyTokenLike(m[1], 'prod%'), hasAllTokenLike(m[1], ['env:prod%']) FROM tab WHERE id = 0;
+-- Before the subcolumn rewrite, m['k'] still finds the index on m[1].
+SELECT 'Enum key other spelling', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Enum key other spelling', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'Enum key other spelling', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Enum key other spelling', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
 
 DROP TABLE tab;
 
@@ -549,6 +554,10 @@ SELECT 'Enum name key', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%');
 SELECT 'Enum name key', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'Enum name key', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']);
 SELECT 'Enum name key', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS use_skip_indexes = 0, optimize_functions_to_subcolumns = 0;
+SELECT 'Enum name key other spelling', count() FROM tab WHERE hasAnyTokenLike(m[1], 'prod%');
+SELECT 'Enum name key other spelling', count() FROM tab WHERE hasAnyTokenLike(m[1], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Enum name key other spelling', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']);
+SELECT 'Enum name key other spelling', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
 
 DROP TABLE tab;
 

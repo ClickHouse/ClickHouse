@@ -27,9 +27,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
-#include <Interpreters/convertFieldToType.h>
-#include <IO/WriteBufferFromString.h>
-#include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2425,19 +2422,7 @@ std::optional<String> getMapElementSubcolumnName(const IndexDescription & index)
     if (!map_type)
         return {};
 
-    /// An Enum key is written either as its name or as its number, the subcolumn always has the name.
-    const auto & key_type = map_type->getKeyType();
-    Field key = key_literal->value;
-    if (isEnum(key_type))
-        key = tryConvertFieldToType(key, *key_type);
-
-    auto key_column = key_type->createColumn();
-    if (key.isNull() || !key_column->tryInsert(key))
-        return {};
-
-    WriteBufferFromOwnString buf;
-    key_type->getDefaultSerialization()->serializeText(*key_column, 0, buf, FormatSettings());
-    return fmt::format("{}.{}{}", map_column->name, DataTypeMap::KEY_SUBCOLUMN_PREFIX, buf.str());
+    return DB::getMapElementSubcolumnName(map_column->name, *map_type, key_literal->value);
 }
 
 }

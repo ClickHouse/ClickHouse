@@ -142,6 +142,11 @@ using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPrep
 class MergeTreeIndexTextPostprocessor;
 using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
+class DataTypeMap;
+
+/// Returns the subcolumn `m.key_<key>` that `optimize_functions_to_subcolumns` reads for `m[key]`, or `std::nullopt`.
+std::optional<String> getMapElementSubcolumnName(const String & map_column_name, const DataTypeMap & map_type, Field key);
+
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
@@ -254,9 +259,9 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
-    /// Returns true if the column is the subcolumn `m.key_<key>`, which `optimize_functions_to_subcolumns`
-    /// makes of `m['key']`, and the index is built on `m['key']`.
-    bool hasIndexForMapElementSubcolumn(const String & column_name) const;
+    /// Returns true if the index is built on `m['key']` and the node reads the same element, as the subcolumn
+    /// `m.key_<key>` that `optimize_functions_to_subcolumns` makes, or as `m[key]` with an equal key.
+    bool hasIndexForMapElementSubcolumn(const RPNBuilderTreeNode & node) const;
 
     /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this
     /// index's column.
