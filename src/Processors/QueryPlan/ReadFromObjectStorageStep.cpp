@@ -86,38 +86,6 @@ namespace DataLakeStorageSetting
 }
 
 
-namespace
-{
-
-/// Returns `objects`, then the objects of `iterator`, if any.
-class ObjectIteratorWithPendingObjects : public IObjectIterator
-{
-public:
-    ObjectIteratorWithPendingObjects(ObjectInfos objects_, ObjectIterator iterator_)
-        : objects(std::move(objects_)), iterator(std::move(iterator_))
-    {
-    }
-
-    ObjectInfoPtr next(size_t id) override
-    {
-        size_t index = next_index.fetch_add(1, std::memory_order_relaxed);
-        if (index < objects.size())
-            return objects[index];
-        return iterator ? iterator->next(id) : nullptr;
-    }
-
-    size_t estimatedKeysCount() override { return iterator ? iterator->estimatedKeysCount() : objects.size(); }
-
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator ? iterator->getSnapshotVersion() : std::nullopt; }
-
-private:
-    const ObjectInfos objects;
-    const ObjectIterator iterator;
-    std::atomic<size_t> next_index{0};
-};
-
-}
-
 /// Splits a single object into parts (buckets), which the sources take one at a time. The object is split when the first
 /// source asks for its object rather than while the pipeline is built: building the pipeline (e.g. for `EXPLAIN PIPELINE`)
 /// must not read the object, and an error reading it must happen while reading, as without the split.
@@ -157,6 +125,17 @@ struct DeferredObjectSplit : public IObjectIterator
     size_t estimatedKeysCount() override { return 1; }
 
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
+
+    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override
+    {
+        iterator->setJoinRuntimeFilters(std::move(predicate));
+    }
 
 private:
     std::once_flag split_flag;
@@ -626,7 +605,7 @@ void DeferredObjectSplit::split()
     /// More than one object: the sources read them as without the split, the ones taken already first.
     if (another_object_info)
     {
-        fallback = std::make_shared<ObjectIteratorWithPendingObjects>(ObjectInfos{object_info, another_object_info}, iterator);
+        fallback = std::make_shared<ObjectIteratorWithPeekedObjects>(ObjectInfos{object_info, another_object_info}, iterator);
         return;
     }
 
@@ -647,7 +626,7 @@ void DeferredObjectSplit::split()
     }
 
     if (buckets.empty())
-        fallback = std::make_shared<ObjectIteratorWithPendingObjects>(ObjectInfos{object_info}, nullptr);
+        fallback = std::make_shared<SingleObjectIterator>(object_info, iterator);
 }
 
 ObjectInfos DeferredObjectSplit::splitObject(const ObjectInfoPtr & object_info)
