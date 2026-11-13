@@ -157,7 +157,7 @@ ARRAY JOIN arr AS a;
 DROP TABLE tz_identity;
 
 -- An aggregate projection is matched against the query by comparing the two expression trees, which
--- is a third place the zone has to survive. A separate table keeps the projection out of the arms
+-- is a third place the zone has to survive. A separate table keeps the projection out of the cases
 -- above.
 DROP TABLE IF EXISTS tz_projection;
 CREATE TABLE tz_projection (x UInt32,
@@ -232,10 +232,75 @@ SELECT 'Dynamic sorting key is still read in order in its own zone', count() FRO
 
 DROP TABLE tz_dynamic;
 
+-- So do the active member of a `Variant` and the paths of a `JSON` value: the same number is a
+-- `DateTime('UTC')` in one constant and a `Bool` in the other, a `Date` in one path and a `DateTime`
+-- in the other. A query on the partition key is answered by the minmax and count projection.
+DROP TABLE IF EXISTS tz_variant;
+CREATE TABLE tz_variant (x UInt64) ENGINE = MergeTree
+PARTITION BY variantType(arrayElement([toDateTime(0, 'UTC')::Variant(DateTime('UTC'), Bool)], x))
+ORDER BY variantType(arrayElement([toDateTime(0, 'UTC')::Variant(DateTime('UTC'), Bool), false::Variant(DateTime('UTC'), Bool)], x));
+INSERT INTO tz_variant VALUES (1), (2);
+
+SELECT 'Variant partition key holding another member', count() FROM tz_variant
+WHERE variantType(arrayElement([false::Variant(DateTime('UTC'), Bool)], x)) = 'Bool'
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT 'Variant partition key grouped by another member', variantType(arrayElement([false::Variant(DateTime('UTC'), Bool)], x)) AS v, count()
+FROM tz_variant GROUP BY v ORDER BY v
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT 'Variant partition key is still read from the projection for its own member', count() FROM (
+    EXPLAIN
+    SELECT variantType(arrayElement([toDateTime(0, 'UTC')::Variant(DateTime('UTC'), Bool)], x)) AS v, count() FROM tz_variant GROUP BY v
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+) WHERE explain ILIKE '%_minmax_count_projection%';
+
+SELECT 'Variant sorting key holding other members', x FROM tz_variant
+ORDER BY variantType(arrayElement([false::Variant(DateTime('UTC'), Bool), toDateTime(0, 'UTC')::Variant(DateTime('UTC'), Bool)], x))
+LIMIT 2
+SETTINGS optimize_read_in_order = 1;
+
+SELECT 'Variant sorting key is still read in order for its own members', count() FROM (
+    EXPLAIN actions = 1
+    SELECT x FROM tz_variant
+    ORDER BY variantType(arrayElement([toDateTime(0, 'UTC')::Variant(DateTime('UTC'), Bool), false::Variant(DateTime('UTC'), Bool)], x))
+    LIMIT 2
+    SETTINGS optimize_read_in_order = 1
+) WHERE explain ILIKE '%Read type: InOrder%';
+
+DROP TABLE tz_variant;
+
+DROP TABLE IF EXISTS tz_json;
+CREATE TABLE tz_json (x UInt64) ENGINE = MergeTree
+PARTITION BY toString(arrayElement(['{"a":"2020-01-01"}'::JSON], x))
+ORDER BY toString(arrayElement(['{"a":"2020-01-01"}'::JSON, '{"a":"1970-01-01 05:04:22"}'::JSON], x));
+INSERT INTO tz_json VALUES (1), (2);
+
+SELECT 'JSON partition key holding another type', count() FROM tz_json
+WHERE toString(arrayElement(['{"a":"1970-01-01 05:04:22"}'::JSON], x)) = '{"a":"1970-01-01 05:04:22"}'
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT 'JSON partition key grouped by another type', toString(arrayElement(['{"a":"1970-01-01 05:04:22"}'::JSON], x)) AS v, count()
+FROM tz_json GROUP BY v ORDER BY v
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT 'JSON partition key is still read from the projection for its own type', count() FROM (
+    EXPLAIN
+    SELECT toString(arrayElement(['{"a":"2020-01-01"}'::JSON], x)) AS v, count() FROM tz_json GROUP BY v
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+) WHERE explain ILIKE '%_minmax_count_projection%';
+
+SELECT 'JSON sorting key holding other types', x FROM tz_json
+ORDER BY toString(arrayElement(['{"a":"1970-01-01 05:04:22"}'::JSON, '{"a":"2020-01-01"}'::JSON], x))
+LIMIT 2
+SETTINGS optimize_read_in_order = 1;
+
+DROP TABLE tz_json;
+
 -- A time zone left out of the type means the session time zone, so leaving it out and spelling it out
 -- are one expression. Alias, `GROUP BY` and `GROUPING` analysis report a difference here as an error
--- rather than as a slower plan, so these are the arms where telling the two apart would reject valid
--- queries. `session_timezone` is randomized in CI, so each arm pins the zone it needs.
+-- rather than as a slower plan, so these are the cases where telling the two apart would reject valid
+-- queries. `session_timezone` is randomized in CI, so each case pins the zone it needs.
 SELECT 'implicit and explicit zone under one alias', toDateTime(0) AS a, toDateTime(0, 'UTC') AS a
 SETTINGS session_timezone = 'UTC';
 

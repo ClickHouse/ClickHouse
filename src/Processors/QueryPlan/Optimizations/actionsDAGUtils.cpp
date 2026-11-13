@@ -241,9 +241,12 @@ MatchedTrees::Matches matchTrees(
                                             {
                                                 all_children_matched = inner_col->getField() == outer_col->getField();
 
-                                                /// `Field` leaves out the type a `Dynamic` value holds, time zone included.
-                                                if (all_children_matched
-                                                    && anyInTypeTree(*children[i]->result_type, [](const IDataType & nested) { return isDynamic(nested); }))
+                                                /// `Field` leaves out the type a `Dynamic`, `Variant` or `JSON` value holds.
+                                                auto holds_a_type_of_its_own = [](const IDataType & nested)
+                                                {
+                                                    return isDynamic(nested) || isVariant(nested) || isObject(nested);
+                                                };
+                                                if (all_children_matched && anyInTypeTree(*children[i]->result_type, holds_a_type_of_its_own))
                                                 {
                                                     const auto & inner_data = inner_col->getDataColumn();
                                                     const auto & outer_data = outer_col->getDataColumn();

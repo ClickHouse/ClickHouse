@@ -30,6 +30,19 @@ Dynamic aggregate projection in another zone	9	1
 Dynamic aggregate projection is still read in its own zone	1
 Dynamic sorting key read in another zone	5
 Dynamic sorting key is still read in order in its own zone	1
+Variant partition key holding another member	1
+Variant partition key grouped by another member	None	1
+Variant partition key grouped by another member	Bool	1
+Variant partition key is still read from the projection for its own member	1
+Variant sorting key holding other members	1
+Variant sorting key holding other members	2
+Variant sorting key is still read in order for its own members	1
+JSON partition key holding another type	1
+JSON partition key grouped by another type	{"a":"1970-01-01 05:04:22"}	1
+JSON partition key grouped by another type	{}	1
+JSON partition key is still read from the projection for its own type	1
+JSON sorting key holding other types	1
+JSON sorting key holding other types	2
 implicit and explicit zone under one alias	1970-01-01 00:00:00	1970-01-01 00:00:00
 implicit and explicit zone under one alias, non-UTC session	1970-01-01 09:00:00	1970-01-01 09:00:00
 an omitted zone and that zone spelled out are one sort key	1
