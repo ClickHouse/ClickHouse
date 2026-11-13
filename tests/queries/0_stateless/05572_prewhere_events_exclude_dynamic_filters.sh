@@ -82,6 +82,24 @@ ${CLICKHOUSE_CLIENT} --optimize_prewhere_after_pushdown 1 --enable_join_runtime_
   --max_threads 1 --use_query_condition_cache 0 \
   --query_id "$qid_rf_interleaved" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x PREWHERE t.c % 2 = 0 WHERE t.a < 199999 FORMAT Null"
 
+# -------- A runtime filter that only partially empties a granule, then a user step empties the remnant --------
+# `c % 2 = 0` -> `__applyFilter(b)` -> `a > 100`. The runtime filter keeps only b in {42,100} of granule 0, then
+# `a > 100` rejects both, emptying the granule. But granule 0 has many rows satisfying both user predicates
+# (even a > 100), so the user predicate alone does NOT empty it -- the runtime filter did. The granule must not
+# be attributed to PREWHERE. Counting the last-emptying user step would wrongly credit it. Run at two block sizes
+# so a granule split into fragments is covered: the verdict must be the same, 25 read, 0 dropped.
+qid_rf_partial_big="${CLICKHOUSE_DATABASE}_rf_partial_big_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --optimize_prewhere_after_pushdown 1 --enable_join_runtime_filters 1 \
+  --enable_join_runtime_filters_index_analysis 0 --query_plan_join_swap_table 0 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --max_block_size 65409 --use_query_condition_cache 0 \
+  --query_id "$qid_rf_partial_big" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x PREWHERE t.c % 2 = 0 WHERE t.a > 100 FORMAT Null"
+
+qid_rf_partial_small="${CLICKHOUSE_DATABASE}_rf_partial_small_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --optimize_prewhere_after_pushdown 1 --enable_join_runtime_filters 1 \
+  --enable_join_runtime_filters_index_analysis 0 --query_plan_join_swap_table 0 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --max_block_size 4096 --use_query_condition_cache 0 \
+  --query_id "$qid_rf_partial_small" -q "SELECT t.a FROM t_facts t JOIN t_dim d ON t.b = d.x PREWHERE t.c % 2 = 0 WHERE t.a > 100 FORMAT Null"
+
 # -------- A fused step mixing a user predicate with top-K is not counted --------
 # With step splitting disabled the user `c % 2 = 0` and the top-K `__topKFilter` share one fused step whose
 # rejections cannot be separated, so nothing is attributed to PREWHERE rather than counting top-K's rejections.
@@ -98,12 +116,16 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 #   prewhere:      25, 24, 191808
 #   RF after user: 25, 0, 100000     (runtime filter's granule drops excluded; user predicate counted)
 #   RF interleaved:25, 0, 100000     (runtime filter between two user steps excluded; user predicates counted)
+#   RF partial big: 25, 0, 100002    (runtime filter thinned the granule; user step emptied only the remnant)
+#   RF partial small:25, 0, 100002   (same, with the granule split into block fragments)
 #   topK fused:     0, 0, 0          (mixed fused step not separable, not attributed)
 dump_events "$qid_topk"
 dump_events "$qid_rf"
 dump_events "$qid_pw"
 dump_events "$qid_rf_mixed"
 dump_events "$qid_rf_interleaved"
+dump_events "$qid_rf_partial_big"
+dump_events "$qid_rf_partial_small"
 dump_events "$qid_topk_fused"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim"

@@ -368,15 +368,18 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
     std::optional<std::vector<size_t>> rows_entering_prewhere;
 
-    /// Per-granule PREWHERE drop attribution. The query PREWHERE and any synthesized dynamic filters (a top-K
-    /// threshold filter, a join runtime filter) run as separate chain steps and may be interleaved. A granule is
-    /// dropped "by PREWHERE" only when a query-PREWHERE step empties it, never a dynamic filter -- the same rule
-    /// the per-step row counter in `executePrewhereActionsAndFilterColumns` follows. For each granule we find the
-    /// first step that empties it and record whether that step was a query PREWHERE (1) or a dynamic filter (2);
-    /// a granule still non-empty after the last query-PREWHERE step is not dropped by PREWHERE whatever a later
-    /// dynamic filter does to it.
-    std::vector<size_t> prewhere_prev_surviving;    /// survivors per granule after the previously tracked step
-    std::vector<char> prewhere_granule_empty_state; /// 0 = alive, 1 = emptied by PREWHERE, 2 = emptied by a dynamic filter
+    /// Per-granule PREWHERE drop attribution. Between the first and last query-PREWHERE reader the chain runs the
+    /// conjuncts of the query's PREWHERE: user predicate steps (`is_query_prewhere`) and any synthesized dynamic
+    /// filters that are not PREWHERE -- a top-K threshold filter, a join runtime filter. (Row-level policies,
+    /// on-fly mutations and lightweight deletes are separate readers that run before the first PREWHERE step, so
+    /// they only affect `entering` below, never this range.) A granule counts as dropped by PREWHERE only when the
+    /// user predicate alone empties it. We can assert that only if no dynamic filter removed any of its rows: once
+    /// a dynamic filter has thinned a granule, a later user step that empties the remnant is not emptying the
+    /// granule -- most of it was already gone -- so the drop cannot be attributed to PREWHERE (fail-closed).
+    /// `dynamic_touched[g]` records that such a non-user step reduced g's survivors; the final verdict also
+    /// requires g to be empty after the last user step, measured before any later dynamic filter.
+    std::vector<size_t> prewhere_prev_surviving; /// survivors per granule after the previously tracked step
+    std::vector<char> prewhere_dynamic_touched;  /// a non-user step between the user steps removed rows from this granule
     bool prewhere_tracking_started = false;
 
     /// Fold one chain step into the per-granule attribution above. Called for every step from the first to the
@@ -392,18 +395,20 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         if (!prewhere_tracking_started)
         {
             /// Survivors entering the first query-PREWHERE step: its input snapshot, or the raw rows read when
-            /// PREWHERE is the first reader. From here a granule can only lose rows, so the first step that
-            /// brings it to zero is the one that dropped it.
+            /// PREWHERE is the first reader.
             prewhere_prev_surviving = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
-            prewhere_granule_empty_state.assign(surviving.size(), 0);
+            prewhere_dynamic_touched.assign(surviving.size(), 0);
             prewhere_tracking_started = true;
         }
 
         const auto * step = range_readers[step_index].getPrewhereInfo();
         const bool is_query_prewhere_step = step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere;
-        for (size_t granule = 0; granule < surviving.size(); ++granule)
-            if (prewhere_granule_empty_state[granule] == 0 && prewhere_prev_surviving[granule] > 0 && surviving[granule] == 0)
-                prewhere_granule_empty_state[granule] = is_query_prewhere_step ? 1 : 2;
+        /// A non-user (dynamic filter) step that removes any row of a granule contaminates it: the user predicate
+        /// alone can no longer be shown to empty that granule. User steps only reduce the honest survivor count.
+        if (!is_query_prewhere_step)
+            for (size_t granule = 0; granule < surviving.size(); ++granule)
+                if (surviving[granule] < prewhere_prev_surviving[granule])
+                    prewhere_dynamic_touched[granule] = 1;
 
         prewhere_prev_surviving = std::move(surviving);
     };
@@ -487,21 +492,22 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     /// PREWHERE (survivors at the first query-PREWHERE reader's input, or the raw rows read when PREWHERE is
     /// the first reader); a granule is read by PREWHERE only when `entering > 0`, so marks pruned before
     /// PREWHERE and granules emptied by an earlier mutation/row-policy filter are excluded. A granule counts as
-    /// dropped only when a query-PREWHERE step emptied it (`empty_state == 1`); one emptied by an interleaved or
-    /// later dynamic filter (`== 2`), or still non-empty, survived from PREWHERE's standpoint, so a top-K or join
-    /// runtime filter's granule drops are not attributed to PREWHERE. Feed them in mark order; a granule split
-    /// across blocks is reassembled by `feedPrewhereGranuleMark`.
+    /// dropped only when the user predicate alone emptied it: empty after the last user step
+    /// (`prewhere_prev_surviving == 0`, measured before any later dynamic filter) and never thinned by a dynamic
+    /// filter (`!prewhere_dynamic_touched`). Feed them in mark order; a granule split across blocks is reassembled
+    /// by `feedPrewhereGranuleMark`, which OR-s the markers, so it is dropped only when every fragment was cleanly
+    /// emptied by the user predicate.
     if (prewhere_granule_stats_enabled)
     {
         const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
 
-        /// Pass 0 for a granule a query-PREWHERE step emptied (dropped), and a non-zero marker otherwise, so
+        /// Pass 0 for a granule the user predicate alone emptied (dropped), and a non-zero marker otherwise, so
         /// `forEachGranuleMark` reports it survived. `prewhere_tracking_started` is false only when no rows ever
         /// reached PREWHERE, in which case `entering` is all zeros and no granule is reported anyway.
         std::vector<size_t> surviving_prewhere(entering.size(), 1);
         if (prewhere_tracking_started)
             for (size_t granule = 0; granule < surviving_prewhere.size(); ++granule)
-                if (prewhere_granule_empty_state[granule] == 1)
+                if (prewhere_prev_surviving[granule] == 0 && !prewhere_dynamic_touched[granule])
                     surviving_prewhere[granule] = 0;
 
         read_result.forEachGranuleMark(entering, surviving_prewhere, [this](size_t mark, size_t surviving_rows)
