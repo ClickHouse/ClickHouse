@@ -90,7 +90,9 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
 
 Maximum query estimate execution time in seconds. Checked on every data block
 when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expires.
+expires. It operates based on extrapolation relative to the current query execution
+speed. If you set `timeout_before_checking_execution_speed` to 0, then this setting
+will not be checked.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 

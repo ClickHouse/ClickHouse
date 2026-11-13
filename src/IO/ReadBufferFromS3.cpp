@@ -224,7 +224,7 @@ bool ReadBufferFromS3::nextImpl()
                 else
                 {
                     /// use the buffer returned by `impl`
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    setWorkingBuffer(impl->buffer(), impl->offset());
                 }
             }
 
@@ -277,7 +277,7 @@ bool ReadBufferFromS3::nextImpl()
     /// `readMetadataFile`) inherits the corrupt bounds.
     if (use_external_buffer)
         assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
-    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    setWorkingBuffer(impl->buffer(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
