@@ -412,7 +412,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO tab SELECT number, multiIf(number < 16, map('k', if(number % 2 = 0, 'env:prod-eu', 'env:prod-us')), number < 24, map('k', 'env prod'), number < 32, map('x', 'env:prod-eu'), map('k', 'dev')) FROM numbers(64);
 
@@ -467,7 +468,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO tab SELECT number, multiIf(number < 16, map(1, if(number % 2 = 0, 'env:prod-eu', 'env:prod-us')), number < 24, map(1, 'env prod'), number < 32, map(2, 'env:prod-eu'), map(1, 'dev')) FROM numbers(64);
 
@@ -492,13 +494,61 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO tab SELECT number, if(number < 16, map(-1, 'env:prod-eu'), map(-1, 'dev')) FROM numbers(64);
 
 SELECT 'Int64 key', count() FROM tab WHERE hasAnyTokenLike(m[-1], 'env:prod%');
 SELECT 'Int64 key', count() FROM tab WHERE hasAnyTokenLike(m[-1], 'env:prod%') SETTINGS use_skip_indexes = 0;
 SELECT 'Int64 key', count() FROM tab WHERE hasAnyTokenLike(m[-1], 'env:prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE tab;
+
+-- An Enum key subcolumn is named by the Enum name, also for an index written with the number, e.g. m.key_k for m[1].
+-- Only bucketed map serialization lets optimize_functions_to_subcolumns read m[1] as m.key_k.
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(Enum8('k' = 1, 'x' = 2), String),
+    INDEX idx_1(m[1]) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
+INSERT INTO tab SELECT number, multiIf(number < 16, map('k', 'env:prod-eu'), number < 32, map('x', 'env:prod-eu'), map('k', 'dev')) FROM numbers(64);
+
+SELECT 'Enum key', count() FROM tab WHERE hasAnyTokenLike(m[1], 'prod%');
+SELECT 'Enum key', count() FROM tab WHERE hasAnyTokenLike(m[1], 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'Enum key', count() FROM tab WHERE hasAnyTokenLike(m[1], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Enum key', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%');
+SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']);
+SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Enum key', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'Enum key', hasAnyTokenLike(m[1], 'prod%'), hasAllTokenLike(m[1], ['env:prod%']) FROM tab WHERE id = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(Enum8('k' = 1, 'x' = 2), String),
+    INDEX idx_k(m['k']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
+INSERT INTO tab SELECT number, multiIf(number < 16, map('k', 'env:prod-eu'), number < 32, map('x', 'env:prod-eu'), map('k', 'dev')) FROM numbers(64);
+
+SELECT 'Enum name key', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%');
+SELECT 'Enum name key', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Enum name key', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']);
+SELECT 'Enum name key', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS use_skip_indexes = 0, optimize_functions_to_subcolumns = 0;
 
 DROP TABLE tab;
 

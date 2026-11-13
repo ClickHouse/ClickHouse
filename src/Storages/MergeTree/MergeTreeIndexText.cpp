@@ -27,6 +27,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
+#include <Interpreters/convertFieldToType.h>
+#include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2401,6 +2404,42 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
     return name;
 }
 
+/// Returns the name of the subcolumn `m.key_<key>` that `optimize_functions_to_subcolumns` reads instead of the index
+/// expression `m['key']`, built like `optimizeFunctionArrayElementForMap` does, or `std::nullopt` for another expression.
+std::optional<String> getMapElementSubcolumnName(const IndexDescription & index)
+{
+    if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
+        return {};
+
+    const auto * function = index.expression_list_ast->children.front()->as<ASTFunction>();
+    if (!function || function->name != "arrayElement" || !function->arguments || function->arguments->children.size() != 2)
+        return {};
+
+    const auto * map_identifier = function->arguments->children[0]->as<ASTIdentifier>();
+    const auto * key_literal = function->arguments->children[1]->as<ASTLiteral>();
+    if (!map_identifier || !key_literal)
+        return {};
+
+    const auto map_column = index.expression->getRequiredColumnsWithTypes().tryGetByName(map_identifier->name());
+    const auto * map_type = map_column ? typeid_cast<const DataTypeMap *>(map_column->type.get()) : nullptr;
+    if (!map_type)
+        return {};
+
+    /// An Enum key is written either as its name or as its number, the subcolumn always has the name.
+    const auto & key_type = map_type->getKeyType();
+    Field key = key_literal->value;
+    if (isEnum(key_type))
+        key = tryConvertFieldToType(key, *key_type);
+
+    auto key_column = key_type->createColumn();
+    if (key.isNull() || !key_column->tryInsert(key))
+        return {};
+
+    WriteBufferFromOwnString buf;
+    key_type->getDefaultSerialization()->serializeText(*key_column, 0, buf, FormatSettings());
+    return fmt::format("{}.{}{}", map_column->name, DataTypeMap::KEY_SUBCOLUMN_PREFIX, buf.str());
+}
+
 }
 
 MergeTreeIndexText::MergeTreeIndexText(
@@ -2416,6 +2455,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
     , normalized_index_column_name(getNormalizedIndexColumnName(index_))
+    , map_element_subcolumn_name(getMapElementSubcolumnName(index_))
 {
 }
 
@@ -2483,7 +2523,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionText>(
-        predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
+        predicate, context, index.sample_block, normalized_index_column_name, map_element_subcolumn_name, tokenizer.get(),
         preprocessor, postprocessor, params.enable_positions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
         automaton_budget);
 }
