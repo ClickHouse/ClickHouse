@@ -54,6 +54,7 @@ public:
     GeneratedMetadataFileWithInfo generateMetadataPathWithInfo();
     Iceberg::IcebergPathFromMetadata generateVersionHint();
     Iceberg::IcebergPathFromMetadata generatePositionDeleteFile();
+    Iceberg::IcebergPathFromMetadata generateStatisticsFileName(Int64 snapshot_id);
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }

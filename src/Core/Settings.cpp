@@ -10511,6 +10511,12 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(Bool, iceberg_write_table_statistics_ndv, false, R"(
+A commit to an Iceberg table records the number of distinct values of each column in the table statistics of its
+snapshot, for [`use_iceberg_table_statistics_ndv`](#use_iceberg_table_statistics_ndv). Not supported for tables in a
+REST or Unity catalog.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own

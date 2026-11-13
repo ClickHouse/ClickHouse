@@ -22,6 +22,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
@@ -92,6 +93,8 @@ struct WriteDataFilesResult
     DataFileWriteResultWithStats delete_file;
     /// Empty unless this is an UPDATE, which also writes new data files.
     DataFileWriteResultWithStats data_file;
+    /// Null without statistics.
+    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
 };
 
 static Block getPositionDeleteFileSampleBlock()
@@ -150,7 +153,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const Iceberg::IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    Poco::JSON::Object::Ptr data_schema)
+    Poco::JSON::Object::Ptr data_schema,
+    bool write_statistics)
 {
     chassert(commands.size() == 1);
     DataFileWriteResultByPartitionKey delete_data_result;
@@ -162,6 +166,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     DataFileStatisticsByPartitionKey update_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
+    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
 
     if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
     {
@@ -296,6 +301,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
         auto header = interpreter->getUpdatedHeader();
         auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
+        if (write_statistics)
+            updated_rows_sketches = std::make_unique<IcebergColumnSketches>(update_sample_block, data_schema->getArray(Iceberg::f_fields));
 
         Block block;
         while (executor.pull(block))
@@ -306,6 +313,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             /// Strip virtual columns and unwrap LowCardinality to ensure the
             /// block types are compatible with the Avro serializer schema.
             auto data_block = getNonVirtualColumns(block, /*remove_low_cardinality=*/ true);
+            if (updated_rows_sketches)
+                updated_rows_sketches->update(data_block.getColumns());
             Chunk chunk(data_block.getColumns(), data_block.rows());
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
@@ -365,9 +374,12 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     }
 
     if (commands[0].type == MutationCommand::DELETE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, {}};
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, {}, nullptr};
     else if (commands[0].type == MutationCommand::UPDATE)
-        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
+        return WriteDataFilesResult{
+            DataFileWriteResultWithStats{delete_data_result, delete_data_statistics},
+            DataFileWriteResultWithStats{update_data_result, update_data_statistics},
+            std::move(updated_rows_sketches)};
     else
         return {};
 }
@@ -375,6 +387,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 static bool writeMetadataFiles(
     const DataFileWriteResultWithStats & delete_files,
     const DataFileWriteResultWithStats & data_files,
+    IcebergColumnSketches * updated_rows_sketches,
+    bool write_statistics,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     FileNamesGenerator & filename_generator,
@@ -442,9 +456,10 @@ static bool writeMetadataFiles(
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
+    std::optional<String> statistics_file_path;
 
     auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
-                    storage_manifest_list_name]()
+                    storage_manifest_list_name, &statistics_file_path]()
     {
         try
         {
@@ -457,6 +472,8 @@ static bool writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            if (statistics_file_path)
+                object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
         }
         catch (...)
         {
@@ -556,6 +573,12 @@ static bool writeMetadataFiles(
                 manifest_entry_file_counts);
             buffer_manifest_list->finalize();
         }
+
+        /// An UPDATE adds the new versions of the updated rows, a DELETE keeps the parent's sketches.
+        if (write_statistics)
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                updated_rows_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, path_resolver,
+                object_storage, context);
 
         std::string json_representation = stringifyJSON(metadata, 4);
 
@@ -702,6 +725,7 @@ void mutate(
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
@@ -789,13 +813,16 @@ void mutate(
             persistent_table_components.path_resolver,
             format_settings,
             chunk_partitioner,
-            current_schema);
+            current_schema,
+            write_statistics);
 
         if (mutation_files)
         {
             if (!writeMetadataFiles(
                     mutation_files->delete_file,
                     mutation_files->data_file,
+                    mutation_files->updated_rows_sketches.get(),
+                    write_statistics,
                     object_storage,
                     context,
                     filename_generator,

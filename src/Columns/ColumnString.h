@@ -233,6 +233,8 @@ public:
 
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
+    void computeMurmurHash3Into(size_t row_begin, size_t row_end, UInt32 seed, UInt64 * hash_out) const override;
+
     void updateHashFast(SipHash & hash) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
