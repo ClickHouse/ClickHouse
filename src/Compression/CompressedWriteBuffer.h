@@ -62,6 +62,7 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+    CompressionStatePtr codec_state;
     /// Codec `NONE` if `storeIncompressibleBlocksUncompressed` was called.
     CompressionCodecPtr uncompressed_codec;
 

@@ -37,7 +37,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const ColumnDescription & column);
 
 /// Removes the `DEFAULT` of each column of `structure_hint` that reads a column of `insertion_columns` by a name the hint
-/// gives to other insertion table columns, and of each column whose `DEFAULT` reads a column whose `DEFAULT` is removed.
+/// gives to other insertion table columns.
 void removeMisboundDefaultsFromStructureHint(
     ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
 
