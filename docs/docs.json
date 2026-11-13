@@ -234,6 +234,9 @@
       "src": "/_site/customizations/galaxy.js"
     },
     {
+      "src": "/_site/customizations/image-backgrounds.js"
+    },
+    {
       "src": "/_site/customizations/scroll-reset.js"
     },
     {
