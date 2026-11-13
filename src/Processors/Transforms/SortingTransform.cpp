@@ -2,12 +2,16 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
+#include <cstring>
+#include <limits>
 #include <type_traits>
 
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/ColumnReplicated.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <Common/Exception.h>
+#include <Common/memcpySmall.h>
 
 
 namespace DB
@@ -17,6 +21,20 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Both arrays are padded, so a short run is copied with 16-byte moves that may read and write past its end.
+ALWAYS_INLINE inline void copyFixedSizeRows(char * __restrict to, const char * __restrict from, size_t bytes)
+{
+    if (bytes <= 64)
+        memcpySmallAllowReadWriteOverflow15(to, from, bytes);
+    else
+        memcpy(to, from, bytes);
+}
+
 }
 
 MergeSorter::MergeSorter(
@@ -78,6 +96,45 @@ MergeSorter::MergeSorter(
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
     });
+
+    initFixedSizeColumns();
+}
+
+void MergeSorter::initFixedSizeColumns()
+{
+    if (cursors.empty())
+        return;
+
+    size_t num_columns = chunks[0].getNumColumns();
+    for (size_t position = 0; position < num_columns; ++position)
+    {
+        const IColumn & first = *cursors[0].all_columns[position];
+        /// `ColumnVector`, `ColumnDecimal` and `ColumnFixedString`: padded arrays written with `insertRawUninitialized`.
+        bool is_fixed_size = dynamic_cast<const ColumnFixedSizeHelper *>(&first) != nullptr;
+
+        FixedSizeColumn column{.position = position, .value_size = is_fixed_size ? first.sizeOfValueIfFixed() : 0, .chunk_data = {}};
+        if (is_fixed_size)
+        {
+            column.chunk_data.reserve(cursors.size());
+            for (const auto & cursor : cursors)
+            {
+                const IColumn & chunk_column = *cursor.all_columns[position];
+                if (!first.structureEquals(chunk_column))
+                {
+                    is_fixed_size = false;
+                    break;
+                }
+                column.chunk_data.push_back(chunk_column.getRawData().data());
+            }
+        }
+
+        if (is_fixed_size)
+            fixed_size_columns.push_back(std::move(column));
+        else
+            other_columns.push_back(position);
+    }
+
+    fixed_size_output.resize(fixed_size_columns.size());
 }
 
 
@@ -123,13 +180,39 @@ Chunk MergeSorter::read()
 template <MergeSorter::Mode merge_mode, typename TSortingQueue>
 Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
-    size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = createMergedColumns();
 
     /// Reserve at most one output block because reserved capacity counts toward tracked memory.
     size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
     for (auto & column : merged_columns)
         column->reserve(size_to_reserve);
+
+    /// Fixed-size columns expose their capacity and are written in place below the smallest one. A run that does
+    /// not fit is inserted as into the other columns, so these columns grow exactly as the others do.
+    size_t fixed_size_capacity = 0;
+    auto expose_fixed_size_capacity = [&]
+    {
+        fixed_size_capacity = std::numeric_limits<size_t>::max();
+        for (size_t i = 0; i < fixed_size_columns.size(); ++i)
+        {
+            IColumn & column = *merged_columns[fixed_size_columns[i].position];
+            const size_t size = column.size();
+            const size_t capacity = column.capacity();
+            fixed_size_output[i] = column.insertRawUninitialized(capacity - size).data() - size * fixed_size_columns[i].value_size;
+            fixed_size_capacity = std::min(fixed_size_capacity, capacity);
+        }
+    };
+    auto drop_unwritten_rows = [&](size_t rows)
+    {
+        for (const auto & column : fixed_size_columns)
+        {
+            IColumn & merged = *merged_columns[column.position];
+            if (merged.size() > rows)
+                merged.popBack(merged.size() - rows);
+        }
+    };
+    if (!fixed_size_columns.empty())
+        expose_fixed_size_capacity();
 
     size_t consumed_rows = 0;
     size_t merged_rows = 0;
@@ -167,13 +250,46 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
         {
             /// Each input batch is internally unique in `MergeUniqueChunks` mode. Only its first row
             /// can repeat the last emitted key, so the remaining rows form one contiguous range.
-            for (size_t i = 0; i < num_columns; ++i)
+            const size_t row = first_row + skipped_rows;
+            auto insert_rows = [&](size_t position)
             {
                 if (rows_to_insert == 1)
-                    merged_columns[i]->insertFrom(*current->all_columns[i], first_row + skipped_rows);
+                    merged_columns[position]->insertFrom(*current->all_columns[position], row);
                 else
-                    merged_columns[i]->insertRangeFrom(*current->all_columns[i], first_row + skipped_rows, rows_to_insert);
+                    merged_columns[position]->insertRangeFrom(*current->all_columns[position], row, rows_to_insert);
+            };
+
+            if (!fixed_size_columns.empty())
+            {
+                if (merged_rows + rows_to_insert <= fixed_size_capacity)
+                {
+                    const size_t chunk_index = current.impl - cursors.data();
+                    const bool has_next_row = row + rows_to_insert < current->rows;
+                    for (size_t i = 0; i < fixed_size_columns.size(); ++i)
+                    {
+                        const auto & column = fixed_size_columns[i];
+                        const char * from = column.chunk_data[chunk_index] + row * column.value_size;
+                        const size_t bytes = rows_to_insert * column.value_size;
+                        copyFixedSizeRows(fixed_size_output[i] + merged_rows * column.value_size, from, bytes);
+
+                        /// Every chunk is read sequentially, but the merge alternates between all chunks, which is more
+                        /// streams than the hardware prefetcher follows. This cursor usually comes back only after runs
+                        /// of the other chunks, so its next cache line can be requested now.
+                        if (has_next_row)
+                            __builtin_prefetch(from + bytes + 64);
+                    }
+                }
+                else
+                {
+                    drop_unwritten_rows(merged_rows);
+                    for (const auto & column : fixed_size_columns)
+                        insert_rows(column.position);
+                    expose_fixed_size_capacity();
+                }
             }
+
+            for (size_t position : other_columns)
+                insert_rows(position);
 
             if constexpr (merge_mode == Mode::MergeUniqueChunks)
             {
@@ -195,6 +311,8 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
         if (consumed_rows == max_merged_block_size)
             break;
     }
+
+    drop_unwritten_rows(merged_rows);
 
     if (limit_reached || !queue.isValid())
     {
