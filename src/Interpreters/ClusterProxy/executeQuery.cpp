@@ -624,15 +624,20 @@ void executeQuery(
         }
     }
 
+    /// All shards share the query tree, so that the query is planned once, unless it is rewritten for the shard.
+    const auto query_for_all_shards = query_info.query_tree->clone();
+
     for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {
         const auto & shard_info = cluster->getShardsInfo()[i];
 
-        auto query_for_shard = query_info.query_tree->clone();
+        auto query_for_shard = query_for_all_shards;
         if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
             /// TODO: support composite sharding key
             sharding_key_expr->getRequiredColumns().size() == 1)
         {
+            query_for_shard = query_for_shard->clone();
+
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
                 sharding_key_column_name,
