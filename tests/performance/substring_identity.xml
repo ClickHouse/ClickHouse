@@ -7,4 +7,7 @@
     <query>SELECT substringUTF8(concat(toString(number), repeat('x', 256)), 1) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT substringUTF8(concat('żółć', toString(number), repeat('x', 256)), 1) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT substring(concat(toString(number), repeat('x', 256)), 2) FROM numbers(1000000) FORMAT Null</query>
+    <!-- Dynamic short UTF-8 slices should not count code points across the entire input. -->
+    <query>SELECT leftUTF8(concat(repeat('Ж', 1000), toString(number)), toUInt64(number % 2 + 1)) FROM numbers(100000) FORMAT Null</query>
+    <query>SELECT substringUTF8(concat(repeat('Ж', 1000), toString(number)), 2, toUInt64(number % 2 + 1)) FROM numbers(100000) FORMAT Null</query>
 </test>
