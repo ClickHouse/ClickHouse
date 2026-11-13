@@ -682,13 +682,29 @@ void writeText(const Tuple & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
+namespace
+{
+
+/// A Map element is a key-value pair: every consumer indexes it as a two element tuple.
+bool isKeyValueTuple(const Field & element)
+{
+    return element.getType() == Field::Types::Tuple && element.safeGet<Tuple>().size() == 2;
+}
+
+}
+
 void readBinary(Map & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-        x.push_back(readFieldBinary(buf));
+    {
+        Field element = readFieldBinary(buf);
+        if (!isKeyValueTuple(element))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Map element at index {} is not a key-value tuple", index);
+        x.push_back(std::move(element));
+    }
 }
 
 void writeBinary(const Map & x, WriteBuffer & buf)
@@ -986,8 +1002,7 @@ Container restoreContainerFromDump(std::string_view & tail, char closing, std::s
         Field element = restoreElementFromDump(tail, whole_dump);
         if constexpr (std::is_same_v<Container, Map>)
         {
-            /// A Map element is a key-value pair: every consumer indexes it as a two element tuple.
-            if (element.getType() != Field::Types::Tuple || element.safeGet<Tuple>().size() != 2)
+            if (!isKeyValueTuple(element))
                 cannotRestoreFromDump(whole_dump);
         }
         container.push_back(std::move(element));

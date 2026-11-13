@@ -12,6 +12,7 @@ namespace DB::ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_DEEP_RECURSION;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
 }
 
 using namespace DB;
@@ -562,4 +563,35 @@ GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)
     /// An in-range exponent-form scale still round-trips.
     Field restored = Field::restoreFromDump("Decimal64_'1e-5'");
     ASSERT_EQ(restored.safeGet<DecimalField<Decimal64>>().getScale(), 5u);
+}
+
+
+/// A binary Map element must be a key-value tuple, as in the text dump reader.
+GTEST_TEST(Field, ReadBinaryMapElementMustBeKeyValueTuple)
+{
+    const Field k{String{"k"}};
+    const Field v{String{"v"}};
+    for (const Field & element : {Field{Tuple{}}, Field{Tuple{k}}, Field{Tuple{k, v, v}}, k})
+    {
+        WriteBufferFromOwnString wb;
+        writeFieldBinary(Field{Map{element}}, wb);
+        wb.finalize();
+        ReadBufferFromString rb(wb.str());
+        try
+        {
+            readFieldBinary(rb);
+            FAIL() << "expected INCORRECT_DATA for " << element.dump();
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+        }
+    }
+
+    const Field map{Map{Field{Tuple{k, v}}}};
+    WriteBufferFromOwnString ok_wb;
+    writeFieldBinary(map, ok_wb);
+    ok_wb.finalize();
+    ReadBufferFromString ok_rb(ok_wb.str());
+    ASSERT_EQ(readFieldBinary(ok_rb), map);
 }
