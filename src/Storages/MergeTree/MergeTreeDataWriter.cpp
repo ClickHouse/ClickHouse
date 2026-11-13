@@ -36,6 +36,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/SessionTimezoneBlockerInThread.h>
 #include <Common/intExp.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -346,6 +347,7 @@ void updateTTL(
     const Block & block,
     bool update_part_min_max_ttls)
 {
+    SessionTimezoneBlockerInThread session_timezone_blocker;
     auto expr_and_set = ttl_entry.buildExpression(context);
     for (auto & subquery : expr_and_set.sets->getSubqueries())
         subquery->buildSetInplace(context);
@@ -887,6 +889,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ExpressionActionsPtr expr_after_merge;
     if (optimize_on_insert)
     {
+        SessionTimezoneBlockerInThread session_timezone_blocker;
         is_computed_before_merge = [&](const String & name) { return block.has(name); };
         expr_after_merge = data.getSkipIndicesExpression(metadata_snapshot, indices, std::not_fn(is_computed_before_merge));
     }
@@ -894,6 +897,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
+        /// The table's expressions are computed in the time zone of background merges, which recompute them.
+        SessionTimezoneBlockerInThread session_timezone_blocker;
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices, is_computed_before_merge);
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
@@ -949,12 +954,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     if (optimize_on_insert)
     {
+        SessionTimezoneBlockerInThread session_timezone_blocker;
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
     }
 
     if (expr_after_merge)
     {
+        SessionTimezoneBlockerInThread session_timezone_blocker;
         /// Sorting key expressions and subcolumns computed before the merge are computed again from the merged rows,
         /// as in a background merge.
         for (const auto * output : expr_after_merge->getActionsDAG().getOutputs())
@@ -1208,6 +1215,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
             Block projection_block;
             {
+                SessionTimezoneBlockerInThread session_timezone_blocker;
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
                 projection_block = projection.calculate(block, 0, context, perm_ptr);
                 LOG_DEBUG(
@@ -1319,6 +1327,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
+        SessionTimezoneBlockerInThread session_timezone_blocker;
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);

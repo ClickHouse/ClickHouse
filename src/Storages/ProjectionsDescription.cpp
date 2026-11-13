@@ -1047,6 +1047,8 @@ Block ProjectionDescription::calculateByQuery(
     auto sink = std::make_shared<ProjectionDataSink>(builder.getSharedHeader(), block.rows());
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     pipeline.complete(sink);
+    /// One block: run on the calling thread, so the thread-local state of the caller applies to the projection expressions.
+    pipeline.setNumThreads(1);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 

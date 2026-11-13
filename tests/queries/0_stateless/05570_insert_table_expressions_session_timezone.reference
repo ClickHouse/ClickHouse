@@ -1,0 +1,38 @@
+sorting key over a time zone dependent conversion
+1
+1
+1
+1
+sorting key over a function reading the time zone when it runs
+2
+2
+projection sorting key
+2
+698
+aggregate projection
+349	698
+skip index, before and after the optimize_on_insert merge
+2
+2
+partition key
+1
+3
+TTL
+[1]
+optimize_on_insert merge of GraphiteMergeTree
+1
+1
+sorting key over Dynamic DateTime values that the INSERT also serializes
+[\'2024-01-01 13:00:00\']
+[\'2023-12-31 20:00:00\']
+4
+12
+table created and filled in one session
+144
+skip index next to a sorting key, both with a lambda
+1
+skip index next to a sorting key, both with a literal set
+2
+sorting key whose expression was rebuilt with transform_null_in
+1
+2

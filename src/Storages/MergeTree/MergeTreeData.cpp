@@ -2056,7 +2056,21 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     ContextPtr context,
     const std::function<bool(const String &)> & use_index_expression = {})
 {
-    ASTPtr combined_expr_list = key ? key->expression_list_ast->clone() : make_intrusive<ASTExpressionList>();
+    /// Merges compute the key with the expression of the metadata (`MergeTask`), so an INSERT uses it too when it computes every key column.
+    std::optional<ActionsDAG> key_dag;
+    NameSet key_dag_outputs;
+    if (key && key->expression && !key->column_names.empty())
+    {
+        for (const auto * output : key->expression->getActionsDAG().getOutputs())
+            key_dag_outputs.insert(output->result_name);
+
+        if (std::ranges::all_of(key->column_names, [&](const String & name) { return key_dag_outputs.contains(name); }))
+            key_dag = key->expression->getActionsDAG().clone();
+        else
+            key_dag_outputs.clear();
+    }
+
+    ASTPtr combined_expr_list = key && !key_dag ? key->expression_list_ast->clone() : make_intrusive<ASTExpressionList>();
 
     for (const auto & index : indices)
     {
@@ -2064,8 +2078,21 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         const auto & index_exprs = index->index.expression_list_ast->children;
         chassert(index_exprs.size() == index->index.column_names.size());
         for (size_t i = 0; i < index_exprs.size(); ++i)
-            if (!use_index_expression || use_index_expression(index->index.column_names[i]))
+        {
+            const auto & name = index->index.column_names[i];
+            if ((!use_index_expression || use_index_expression(name)) && !key_dag_outputs.contains(name))
                 combined_expr_list->children.push_back(index_exprs[i]->clone());
+        }
+    }
+
+    if (key_dag)
+    {
+        if (!combined_expr_list->children.empty())
+        {
+            auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
+            key_dag = ActionsDAG::merge(std::move(*key_dag), ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActionsDAG(false));
+        }
+        return std::make_shared<ExpressionActions>(std::move(*key_dag), ExpressionActionsSettings(context));
     }
 
     if (!key && combined_expr_list->children.empty())

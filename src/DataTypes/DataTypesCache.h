@@ -138,6 +138,9 @@ private:
     /// long-lived client context for the whole session and mutates the setting
     /// in place between queries (see `ClientBase::onTimezoneUpdate`).
     String session_timezone;
+
+    /// Whether the entries were created under `SessionTimezoneBlockerInThread`, which changes the zone of `DateTime` serializations.
+    bool session_timezone_blocked = false;
 };
 
 /// Return instance of a thread local cache.
