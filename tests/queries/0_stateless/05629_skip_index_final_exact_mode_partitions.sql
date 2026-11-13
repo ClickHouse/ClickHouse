@@ -1,0 +1,77 @@
+-- `use_skip_indexes_if_final_exact_mode` adds back the granules that can hold another version of a row
+-- selected by the skip index. When FINAL merges each partition separately, only the parts of the same
+-- partition can hold one.
+
+SET use_skip_indexes = 1;
+SET use_skip_indexes_if_final = 1;
+SET use_skip_indexes_if_final_exact_mode = 1;
+SET query_plan_optimize_lazy_final = 0;
+SET enable_parallel_replicas = 0;
+SET use_query_condition_cache = 0;
+SET optimize_on_insert = 0;
+
+DROP TABLE IF EXISTS t_partitions;
+
+-- The partition key is not in the primary key, so by default FINAL merges across partitions.
+CREATE TABLE t_partitions (k UInt64, p UInt8, v UInt8, ver UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY p ORDER BY k
+SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0;
+
+SYSTEM STOP MERGES t_partitions;
+
+-- Key 1: the matching version is older than a version in another partition.
+INSERT INTO t_partitions VALUES (1, 2, 1, 1);
+INSERT INTO t_partitions VALUES (1, 1, 0, 2);
+-- Key 2: the matching version is older than a version in the same partition.
+INSERT INTO t_partitions VALUES (2, 3, 1, 1);
+INSERT INTO t_partitions VALUES (2, 3, 0, 2);
+-- Key 3: the matching version is the only one.
+INSERT INTO t_partitions VALUES (3, 4, 1, 1);
+
+SELECT 'merge across partitions';
+SELECT groupArray(k) FROM (SELECT k FROM t_partitions FINAL WHERE v = 1 ORDER BY k SETTINGS do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 1);
+SELECT groupArray(k) FROM (SELECT k FROM t_partitions FINAL WHERE v = 1 ORDER BY k SETTINGS do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 1, use_skip_indexes = 0);
+SELECT trimBoth(explain) FROM
+(
+    EXPLAIN indexes = 1 SELECT k FROM t_partitions FINAL WHERE v = 1 SETTINGS do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 1
+)
+WHERE explain ILIKE '%Granules:%'
+ORDER BY rowNumberInAllBlocks() DESC
+LIMIT 1;
+
+SELECT 'merge each partition separately';
+SELECT groupArray(k) FROM (SELECT k FROM t_partitions FINAL WHERE v = 1 ORDER BY k SETTINGS do_not_merge_across_partitions_select_final = 1);
+SELECT groupArray(k) FROM (SELECT k FROM t_partitions FINAL WHERE v = 1 ORDER BY k SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes = 0);
+SELECT trimBoth(explain) FROM
+(
+    EXPLAIN indexes = 1 SELECT k FROM t_partitions FINAL WHERE v = 1 SETTINGS do_not_merge_across_partitions_select_final = 1
+)
+WHERE explain ILIKE '%Granules:%'
+ORDER BY rowNumberInAllBlocks() DESC
+LIMIT 1;
+
+DROP TABLE t_partitions;
+
+DROP TABLE IF EXISTS t_partition_in_key;
+
+-- The partition key is in the primary key, so FINAL merges each partition separately by default.
+CREATE TABLE t_partition_in_key (k UInt64, p UInt8, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = ReplacingMergeTree PARTITION BY p ORDER BY (k, p)
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0;
+
+SYSTEM STOP MERGES t_partition_in_key;
+
+-- Four parts, one per partition, each covering the whole key range.
+INSERT INTO t_partition_in_key SELECT number, number % 4, number = 100 FROM numbers(1000);
+
+SELECT 'partition key in the primary key';
+SELECT count() FROM t_partition_in_key FINAL WHERE v = 1 SETTINGS do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 1;
+SELECT trimBoth(explain) FROM
+(
+    EXPLAIN indexes = 1 SELECT k FROM t_partition_in_key FINAL WHERE v = 1 SETTINGS do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 1
+)
+WHERE explain ILIKE '%Granules:%'
+ORDER BY rowNumberInAllBlocks() DESC
+LIMIT 1;
+
+DROP TABLE t_partition_in_key;

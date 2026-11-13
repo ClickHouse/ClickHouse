@@ -1,0 +1,11 @@
+merge across partitions
+[3]
+[3]
+Granules: 5/3
+merge each partition separately
+[1,3]
+[1,3]
+Granules: 4/3
+partition key in the primary key
+1
+Granules: 3/1

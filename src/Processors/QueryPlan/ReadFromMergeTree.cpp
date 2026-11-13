@@ -2558,10 +2558,9 @@ static NameSet getColumnsRequiredForMergingFinal(
     return required_columns;
 }
 
-bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
+static bool doNotMergePartsAcrossPartitionsFinalImpl(
+    const Settings & settings, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
 {
-    const auto & settings = context->getSettingsRef();
-
     /// If setting do_not_merge_across_partitions_select_final is set always prefer it
     if (settings[Setting::do_not_merge_across_partitions_select_final])
         return true;
@@ -2573,7 +2572,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
         return false;
 
-    if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
+    if (!metadata.hasPrimaryKey() || !metadata.hasPartitionKey())
         return false;
 
     /** To avoid merging parts across partitions we want result of partition key expression for
@@ -2583,11 +2582,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
       * in primary key, then for same primary key column values, result of partition key expression
       * will be the same.
       */
-    const auto & partition_key_expression = storage_snapshot->metadata->getPartitionKey().expression;
+    const auto & partition_key_expression = metadata.getPartitionKey().expression;
     if (partition_key_expression->getActionsDAG().hasNonDeterministic())
         return false;
 
-    const auto & primary_key_columns = storage_snapshot->metadata->getPrimaryKey().column_names;
+    const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
     NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
 
     /** The proof above equates "same primary key column values" with "one logical key for the FINAL
@@ -2608,6 +2607,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     }
 
     return true;
+}
+
+bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
+{
+    return doNotMergePartsAcrossPartitionsFinalImpl(context->getSettingsRef(), data, *storage_snapshot->metadata);
 }
 
 std::optional<FilterDAGInfo> ReadFromMergeTree::getSamplingFilter() const
@@ -4078,7 +4082,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             if (final_second_pass)
             {
                 result.parts_with_ranges
-                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
+                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges,
+                        doNotMergePartsAcrossPartitionsFinalImpl(settings, data, *metadata_snapshot), log);
                 add_index_stat_row_for_pk_expand = true;
             }
         }
