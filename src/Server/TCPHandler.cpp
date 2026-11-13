@@ -6,6 +6,7 @@
 #include <string_view>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -3010,6 +3011,23 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     state->query_context->applySettingsChanges(settings_changes);
+
+    /// The clamp above may drop or change a value that the initiator passed for a setting that chooses the
+    /// method of an aggregation key (see `markAggregationMethodSettingsChanged`). This server would then
+    /// number two-level buckets differently from the initiator, which merges the buckets of all servers by
+    /// their numbers. So it disables two-level aggregation, as for an initiator of an older revision (see
+    /// `DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD`): it sends single-level blocks,
+    /// and the initiator splits them into buckets with its own method. It keeps the value that its
+    /// constraints allow rather than the initiator's: any client may mark its query as secondary, so taking
+    /// the passed value would let a user get around its own constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && aggregationMethodSettingsDifferFromInitiator(passed_settings, state->query_context->getSettingsRef()))
+    {
+        LOG_DEBUG(
+            log, "The settings constraints changed an aggregation method setting of the initiator, so two-level aggregation is disabled");
+        state->query_context->setSetting("group_by_two_level_threshold", Field(0));
+        state->query_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+    }
 
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins

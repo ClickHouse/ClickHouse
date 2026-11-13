@@ -1,0 +1,26 @@
+methods
+comment: u8, s
+Aggregation method: keys32_packed_string_void
+comment: u32, u8, s
+Aggregation method: keys64_packed_string_void
+comment: u64, u8, s
+Aggregation method: keys128_packed_string_void
+comment: u32, ls
+Aggregation method: keys32_packed_string_void
+comment: lu32, s
+Aggregation method: keys32_packed_string_void
+comment: setting off
+Aggregation method: prealloc_serialized_void
+comment: with count
+Aggregation method: keys64_packed_string
+profiles
+partitioned merge	u64, u8, s	1
+serial merge	u8, s	1
+two levels	u32, u8, s	1
+external aggregation	u32, ls	1
+in order	u64, u8, s	1
+group limit	lu32, s	1
+adaptive
+adaptive	u32, u8, s	1
+adaptive	u64, u8, s	1
+adaptive, staged and written to disk	1	1

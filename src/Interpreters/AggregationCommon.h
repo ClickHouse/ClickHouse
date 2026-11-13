@@ -76,6 +76,20 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     }
 }
 
+/// The order in which `packFixedBatch` and `packFixedLongestFirst` place the key columns in the packed key: by value
+/// size, longest first, and keys of one size in the order of their columns. The output side reads a packed key back in
+/// this order. Columns whose value size is not 1, 2, 4, 8 or 16 bytes are left out.
+inline std::vector<size_t> packedFixedKeysOrder(const Sizes & key_sizes)
+{
+    std::vector<size_t> order;
+    order.reserve(key_sizes.size());
+    for (const size_t size : {16, 8, 4, 2, 1})
+        for (size_t i = 0; i < key_sizes.size(); ++i)
+            if (key_sizes[i] == size)
+                order.push_back(i);
+    return order;
+}
+
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
 /// binary blob. Keys are placed starting from the longest one.
 template <typename T>

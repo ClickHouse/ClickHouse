@@ -1,0 +1,10 @@
+key_packed_string, sum	1
+key_packed_string, no aggregate functions	1
+key_packed_string, count	1
+key_packed_string, count, ORDER BY keys LIMIT	1
+keys32_packed_string, sum	1
+keys32_packed_string, no aggregate functions	1
+keys32_packed_string, count	1
+keys32_packed_string, count, ORDER BY keys LIMIT	1
+keys64_packed_string, sum, two levels	1
+keys32_packed_string, LowCardinality(String), sum	1

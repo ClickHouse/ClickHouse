@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
@@ -48,8 +49,10 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   *     data.prefetch(std::move(key_holder));
   *
   * ahead of the `emplaceKey`/`findKey` loop, so the look-ahead row's key holder is built once for
-  * the prefetch and once again when that row is actually processed. Hiding a cache miss is only a
-  * win when that duplicated work is cheaper than the miss.
+  * the prefetch and once again when that row is actually processed. A key that stores its hash
+  * (`key_holder_key_stores_hash`) is the exception: the loop keeps the keys built for the prefetch
+  * and inserts them (see `LookAheadKeysFor`). Hiding a cache miss is only a win when the duplicated
+  * work is cheaper than the miss.
   *
   * `true` means `getKeyHolder` reads the key in place: an unaligned load, a `packFixed`, or a
   * `string_view` over the column's own memory. Rebuilding it costs a handful of instructions.
@@ -269,69 +272,37 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
-/// For the case when there is one packed string key.
-/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
-/// and the key is always persisted into the arena by `keyHolderPersistKey`.
-template <typename Value, typename Mapped, bool use_cache>
-struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
-                              HashMethodPackedString<Value, Mapped, use_cache>,
-                              Value,
-                              Mapped,
-                              use_cache,
-                              /*need_offset=*/ false,
-                              /*nullable=*/ false>
+/// Content hash stored inside a packed string key. `PackedStringRef::build` invokes it
+/// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
+/// zero by construction and oversized strings use the length as a hash surrogate,
+/// trading hash quality for a uniform cell layout (full string comparison remains
+/// the final equality check).
+///
+/// Computing the hash inside `build` keeps a single pass over the string data:
+/// a separate per-block hashing pass would read every key twice and allocate a
+/// hash array per block. When the `Aggregator` prefetches (hash table larger than
+/// L2) it builds a row's key ahead of the row and keeps it for the insert (see
+/// `KeptLookAheadKeys`), so the string is hashed once.
+///
+/// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
+/// aggregation derives a 64-bit hash via a dedicated conversion path.
+struct PackedStringHash
 {
-    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-    /// `PackedStringRef::build` reads the key in place; see the note on `Hash` below for why
-    /// rebuilding it (and its content hash) in the look-ahead is an accepted trade here.
-    static constexpr bool has_cheap_key_holder = true;
-
-    const IColumn::Offset * offsets;
-    const UInt8 * chars;
-
-    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
-        : Base(key_columns[0])
+    ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
     {
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
-    }
-
-    /// Content hash stored inside the packed key. `PackedStringRef::build` invokes it
-    /// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
-    /// zero by construction and oversized strings use the length as a hash surrogate,
-    /// trading hash quality for a uniform cell layout (full string comparison remains
-    /// the final equality check).
-    ///
-    /// Computing the hash inside `build` keeps a single pass over the string data:
-    /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. When the `Aggregator` prefetches (hash table larger than
-    /// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
-    /// key, the other loops build and hash it again.
-    ///
-    /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
-    /// aggregation derives a 64-bit hash via a dedicated conversion path.
-    struct Hash
-    {
-        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
-        {
 #if defined(CRC_INT)
-            /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
-            /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
-            /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
-            /// which otherwise dominates low-cardinality short-string aggregation
-            /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
-            /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
-            /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
-            if (size < 8)
-                return hashTinyKey(data, size);
+        /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
+        /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
+        /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
+        /// which otherwise dominates low-cardinality short-string aggregation
+        /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
+        /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
+        /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
+        if (size < 8)
+            return hashTinyKey(data, size);
 #endif
-            return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
-        }
-    };
+        return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
+    }
 
 #if defined(CRC_INT)
     /// Hash a 1..7 byte key with a single CRC instruction.
@@ -358,6 +329,42 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         return static_cast<UInt32>(res);
     }
 #endif
+};
+
+/// For the case when there is one packed string key.
+/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
+/// and the key is always persisted into the arena by `keyHolderPersistKey`.
+template <typename Value, typename Mapped, bool use_cache>
+struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
+                              HashMethodPackedString<Value, Mapped, use_cache>,
+                              Value,
+                              Mapped,
+                              use_cache,
+                              /*need_offset=*/ false,
+                              /*nullable=*/ false>
+{
+    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    /// `PackedStringRef::build` reads the key in place, and the look-ahead keeps the keys it builds (see
+    /// `KeptLookAheadKeys`), so a key and its content hash are built once.
+    static constexpr bool has_cheap_key_holder = true;
+
+    /// The content hash stored in the packed key. Callers that rebuild a key from its bytes to probe a table
+    /// use it.
+    using Hash = PackedStringHash;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+
+    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
+        : Base(key_columns[0])
+    {
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
+    }
 
     /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
     /// view remains valid for this block and permits reads up to 15 bytes past its end.
@@ -376,6 +383,284 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
+};
+
+/// For the case of fixed-width keys and one non-nullable `String` key, stored as a
+/// `KeysAndPackedString<Keys>`: the fixed-width values packed into `Keys` longest first, and the string as a
+/// packed reference. Like `HashMethodPackedString`, it reads the key in place and persists the string only
+/// when the key is inserted. It keeps no consecutive-keys cache, because `KeysAndPackedStringHashTable`
+/// returns bare mapped pointers, or untyped cell addresses for a set, from which the cache cannot read the key.
+/// With `for_sub_range`, it is the `SubRangeState` of the method.
+///
+/// The `String` key can be `LowCardinality(String)`: the string of a row is then its dictionary entry. When
+/// the dictionary has no more entries than the state has rows, the state hashes each entry for the first row
+/// with it and reuses the hash for the later ones; otherwise each row hashes its string (see `entry_hashes`).
+/// The key and its hash are the same as from a `String` column, so shards that store the column as `String`
+/// and as `LowCardinality(String)` number the two-level buckets alike, which the merge of a distributed query
+/// over both needs. A `LowCardinality` fixed-width key column is materialized, as the packing reads the
+/// values in place. A state of a sub-range of the block materializes only its rows. Aggregation in order
+/// builds such a state for every run of equal sorting key values, so its work stays proportional to the run.
+template <typename Value, typename Mapped, typename Keys, bool for_sub_range = false>
+struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBase<
+                                           HashMethodKeysAndPackedString<Value, Mapped, Keys, for_sub_range>,
+                                           Value,
+                                           Mapped,
+                                           /*consecutive_keys_optimization=*/ false,
+                                           /*need_offset=*/ false,
+                                           /*nullable=*/ false>
+{
+    using Self = HashMethodKeysAndPackedString<Value, Mapped, Keys, for_sub_range>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    /// As in `HashMethodPackedString`, the key is read in place, and the look-ahead keeps the keys it builds
+    /// (see `KeptLookAheadKeys`), so a key and its hash are built once.
+    static constexpr bool has_cheap_key_holder = true;
+
+    /// The hash that the key stores (see `KeysAndPackedString`): the content hash of the string, continued
+    /// with the fixed-width values, so that it covers the whole key.
+    struct Hash
+    {
+        Keys keys;
+
+        /// Continues the content hash of a string (`PackedStringHash`) with the fixed-width values.
+        static ALWAYS_INLINE UInt32 combine(Keys fixed_keys, UInt32 content_hash)
+        {
+            return static_cast<UInt32>(intHashCRC32(fixed_keys, content_hash));
+        }
+
+        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
+        {
+            return combine(keys, PackedStringHash{}(data, size));
+        }
+    };
+
+    /// The fixed-width key columns and the sizes of their values (1, 2, 4, 8 or 16 bytes), in the order of
+    /// the key columns. A `LowCardinality` column is replaced by its copy materialized into
+    /// `materialized_columns`, except in a state of a sub-range, which packs a copy of its rows (see
+    /// `packCopyOfSubRange`).
+    ColumnRawPtrs fixed_columns;
+    Sizes fixed_sizes;
+    Columns materialized_columns;
+
+    /// The values of the only fixed-width key column when they are as wide as `Keys`: such values are their
+    /// own packed form, so they are read in place, without packing. Null otherwise.
+    const Keys * column_keys = nullptr;
+
+    /// The fixed-width values of the block, packed longest first (see `packFixedBatch`). A state built for a
+    /// sub-range of the block holds those of the sub-range, from row `prepared_keys_begin` on. It holds none
+    /// for a sub-range shorter than `min_rows_to_batch_pack_sub_range` without a `LowCardinality` fixed-width
+    /// key, whose rows it packs one by one.
+    PaddedPODArray<Keys> prepared_keys;
+    size_t prepared_keys_begin = 0;
+
+    /// The buffers of the `String` key column, whose rows are the strings, or of the dictionary of a
+    /// `LowCardinality(String)` key column, whose entries are.
+    const IColumn::Offset * string_offsets = nullptr;
+    const UInt8 * string_chars = nullptr;
+
+    /// A `LowCardinality(String)` key column, whose rows are positions in its dictionary.
+    const ColumnLowCardinality * low_cardinality_strings = nullptr;
+
+    /// The content hashes of the dictionary entries that rows have asked for, so that the rows of one entry
+    /// hash its string once. 0 marks an entry not hashed yet, so a string whose hash is 0 is hashed for each
+    /// of its rows. `getKeyHolder` fills it, so it is mutable. It is empty when the dictionary has more
+    /// entries than the state has rows, as for a filtered or cut block, which keeps the whole dictionary of
+    /// its source: each row then hashes its string, so the state does no work for entries that its rows do
+    /// not use.
+    mutable PaddedPODArray<UInt32> entry_hashes;
+
+    /// The `String` key is the one column without a value size. A state built for a sub-range of the block
+    /// (`rows`) packs only that sub-range, so building a state per sub-range does not repeat whole-block
+    /// work; the other states pack the whole block. Every state counts the rows of `rows`, the whole block by
+    /// default, to decide whether to keep `entry_hashes`.
+    HashMethodKeysAndPackedString(
+        const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const HashMethodContextPtr & /*context*/, RowRange rows = {})
+    {
+        const size_t block_rows = key_columns[0]->size();
+        const size_t rows_end = std::min(rows.end, block_rows);
+        const bool sub_range = for_sub_range && (rows.begin != 0 || rows_end < block_rows);
+
+        bool has_low_cardinality_fixed_key = false;
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            const IColumn * column = key_columns[i];
+            const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
+            if (key_sizes[i] == 0)
+            {
+                if (low_cardinality)
+                {
+                    low_cardinality_strings = low_cardinality;
+                    column = low_cardinality->getDictionary().getNestedNotNullableColumn().get();
+                    if (column->size() <= rows_end - rows.begin)
+                        entry_hashes.resize_fill(column->size(), 0);
+                }
+                const auto & column_string = assert_cast<const ColumnString &>(*column);
+                string_offsets = column_string.getOffsets().data();
+                string_chars = column_string.getChars().data();
+            }
+            else
+            {
+                has_low_cardinality_fixed_key |= low_cardinality != nullptr;
+                fixed_columns.push_back(column);
+                fixed_sizes.push_back(key_sizes[i]);
+            }
+        }
+        chassert(fixed_columns.size() + 1 == key_columns.size());
+
+        if (has_low_cardinality_fixed_key && !sub_range)
+            materializeLowCardinalityColumns();
+
+        if (has_low_cardinality_fixed_key && sub_range)
+        {
+            packCopyOfSubRange(rows.begin, rows_end);
+        }
+        else if (fixed_columns.size() == 1 && fixed_sizes[0] == sizeof(Keys))
+        {
+            column_keys = reinterpret_cast<const Keys *>(
+                static_cast<const ColumnFixedSizeHelper *>(fixed_columns[0])->getRawDataBegin<sizeof(Keys)>());
+        }
+        else if (!sub_range)
+        {
+            packFixedBatch(fixed_columns.size(), fixed_columns, fixed_sizes, prepared_keys);
+        }
+        else if (rows_end > rows.begin && rows_end - rows.begin >= min_rows_to_batch_pack_sub_range)
+        {
+            prepared_keys_begin = rows.begin;
+            packFixedBatchRange(fixed_columns.size(), fixed_columns, fixed_sizes, prepared_keys, rows.begin, rows_end);
+        }
+    }
+
+    /// Returns the packed fixed-width values of the row and its string, in the padded buffers of the `String`
+    /// column or of the dictionary, without hashing or persisting the key. The view remains valid for this
+    /// block and permits reads up to 15 bytes past its end.
+    ALWAYS_INLINE std::pair<Keys, std::string_view> getKeyParts(ssize_t row) const
+    {
+        return {getFixedKeys(row), stringAt(stringPositionOf(row))};
+    }
+
+    ALWAYS_INLINE ArenaKeysAndPackedStringHolder<Keys> getKeyHolder(ssize_t row, Arena & pool) const
+    {
+        const Keys keys = getFixedKeys(row);
+        const ssize_t position = stringPositionOf(row);
+        const std::string_view str = stringAt(position);
+        if (!entry_hashes.empty())
+        {
+            /// The content hash of the entry, computed for the first row with it, continues with the
+            /// fixed-width values as `Hash` continues the hash of a string, so the key is the one a `String`
+            /// column builds. As with `Hash`, `build` calls it only for a string that stores a hash, not for
+            /// an empty one.
+            const auto hash_of_entry = [this, keys, position](const char * data, size_t size)
+            {
+                UInt32 & content_hash = entry_hashes[position];
+                if (content_hash == 0)
+                    content_hash = PackedStringHash{}(data, size);
+                return Hash::combine(keys, content_hash);
+            };
+            return {KeysAndPackedString<Keys>::build(keys, str.data(), str.size(), hash_of_entry), pool};
+        }
+        return {KeysAndPackedString<Keys>::build(keys, str.data(), str.size(), Hash{keys}), pool};
+    }
+
+    /// Puts the key columns in the order of the key's bytes: the fixed-width values as `packFixedBatch` packs them,
+    /// and the `String` column, which has no value size, last.
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        std::vector<size_t> order = packedFixedKeysOrder(key_sizes);
+        order.push_back(std::ranges::find(key_sizes, 0) - key_sizes.begin());
+        chassert(order.size() == key_columns.size());
+
+        std::vector<IColumn *> new_columns;
+        new_columns.reserve(key_columns.size());
+        Sizes new_sizes;
+        new_sizes.reserve(key_sizes.size());
+        for (const size_t i : order)
+        {
+            new_columns.push_back(key_columns[i]);
+            new_sizes.push_back(key_sizes[i]);
+        }
+
+        key_columns.swap(new_columns);
+        return new_sizes;
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false, false, false>;
+
+private:
+    /// The position of the string of the row in the buffers that `stringAt` reads: the row itself for a
+    /// `String` key column, its dictionary entry for a `LowCardinality(String)` one.
+    ALWAYS_INLINE ssize_t stringPositionOf(ssize_t row) const
+    {
+        if (low_cardinality_strings)
+            return static_cast<ssize_t>(low_cardinality_strings->getIndexAt(static_cast<size_t>(row)));
+        return row;
+    }
+
+    /// The string of row `i` of the `String` column, or of entry `i` of the dictionary, in its padded
+    /// buffers.
+    ALWAYS_INLINE std::string_view stringAt(ssize_t i) const
+    {
+        const char * data = reinterpret_cast<const char *>(string_chars + string_offsets[i - 1]);
+        return {data, string_offsets[i] - string_offsets[i - 1]};
+    }
+
+    /// Replaces the `LowCardinality` fixed-width key columns with copies materialized into
+    /// `materialized_columns`, as the packing reads the values in place.
+    void materializeLowCardinalityColumns()
+    {
+        for (const IColumn *& column : fixed_columns)
+        {
+            if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column))
+            {
+                materialized_columns.push_back(low_cardinality->convertToFullColumn());
+                column = materialized_columns.back().get();
+            }
+        }
+    }
+
+    /// Packs the fixed-width values of rows [begin, end) into `prepared_keys`, for a state of a sub-range
+    /// with a `LowCardinality` fixed-width key. It packs a copy of these rows only, with the
+    /// `LowCardinality` columns materialized, as the packing reads the values in place.
+    void packCopyOfSubRange(size_t begin, size_t end)
+    {
+        Columns copies;
+        ColumnRawPtrs copied_columns;
+        for (const IColumn * column : fixed_columns)
+        {
+            copies.push_back(column->cut(begin, end - begin)->convertToFullColumnIfLowCardinality());
+            copied_columns.push_back(copies.back().get());
+        }
+        prepared_keys_begin = begin;
+        packFixedBatch(copied_columns.size(), copied_columns, fixed_sizes, prepared_keys);
+    }
+
+    /// The packed fixed-width values of the row.
+    ALWAYS_INLINE Keys getFixedKeys(ssize_t row) const
+    {
+        if (column_keys)
+            return column_keys[row];
+        if constexpr (for_sub_range)
+        {
+            if (prepared_keys.empty())
+                return packFixedKeys(row);
+            return prepared_keys[row - prepared_keys_begin];
+        }
+        else
+            return prepared_keys[row];
+    }
+
+    /// Packs the fixed-width values of a row of a short sub-range, which has no prepared values. Out of line,
+    /// so the accessors stay small enough to inline into the per-row loops.
+    NO_INLINE Keys packFixedKeys(ssize_t row) const
+    {
+        return packFixedLongestFirst<Keys>(row, fixed_columns.size(), fixed_columns, fixed_sizes);
+    }
+};
+
+template <typename Value, typename Mapped, typename Keys>
+struct SubRangeStateOf<HashMethodKeysAndPackedString<Value, Mapped, Keys, false>>
+{
+    using Type = HashMethodKeysAndPackedString<Value, Mapped, Keys, true>;
 };
 
 /// For the case when there is one fixed-length string key.
@@ -502,10 +787,6 @@ struct HashMethodKeysFixed
     /// its own.
     bool covers_sub_range = false;
     size_t prepared_keys_begin = 0;
-
-    /// A sub-range shorter than this is packed per row: the array would cost more to allocate and fill
-    /// than the rows it saves packing.
-    static constexpr size_t min_rows_to_batch_pack_sub_range = 256;
 
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
@@ -706,14 +987,7 @@ struct HashMethodKeysFixed
     {
         if (!usePreparedKeys(key_sizes))
             return {};
-
-        std::vector<size_t> order;
-        order.reserve(key_sizes.size());
-        for (const size_t size : {16, 8, 4, 2, 1})
-            for (size_t i = 0; i < key_sizes.size(); ++i)
-                if (key_sizes[i] == size)
-                    order.push_back(i);
-        return order;
+        return packedFixedKeysOrder(key_sizes);
     }
 
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)

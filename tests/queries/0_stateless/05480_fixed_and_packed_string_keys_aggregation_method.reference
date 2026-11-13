@@ -1,0 +1,30 @@
+comment: u8_u16_string
+Aggregation method: keys32_packed_string
+comment: u32_string
+Aggregation method: keys32_packed_string
+comment: u32_u8_string
+Aggregation method: keys64_packed_string
+comment: u64_string
+Aggregation method: keys64_packed_string
+comment: u64_u8_string
+Aggregation method: keys128_packed_string
+comment: u128_string
+Aggregation method: keys128_packed_string
+comment: fixed_string_3_string
+Aggregation method: prealloc_serialized
+comment: u128_u64_string
+Aggregation method: prealloc_serialized
+comment: u32_two_strings
+Aggregation method: prealloc_serialized
+comment: u32_nullable_string
+Aggregation method: nullable_prealloc_serialized
+comment: u32_low_cardinality_string
+Aggregation method: keys32_packed_string
+comment: low_cardinality_u32_string
+Aggregation method: keys32_packed_string
+comment: u32_low_cardinality_nullable_string
+Aggregation method: nullable_prealloc_serialized
+comment: u32_string_setting_off
+Aggregation method: prealloc_serialized
+comment: u32_string_compatibility
+Aggregation method: prealloc_serialized

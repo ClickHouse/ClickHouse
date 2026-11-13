@@ -16,6 +16,8 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/HashTable/KeysAndPackedString.h>
+#include <Common/memcpySmall.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
@@ -71,9 +73,11 @@ struct AdaptiveArgumentLayout
 /// String-like keys stage their bytes: a packed reference copied as a plain value would
 /// carry a pointer into the source block, which is released once the block is consumed. The
 /// staged form of both string kinds is the raw characters, and the drain rebuilds the table's
-/// key from them, pointing into the record.
+/// key from them, pointing into the record. A key of fixed-width values and a string stages the
+/// packed values, in the bytes that the key columns fill, followed by the characters of the string.
 template <typename Key>
-constexpr bool adaptive_key_stages_bytes = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
+constexpr bool adaptive_key_stages_bytes
+    = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef> || is_keys_and_packed_string<Key>;
 
 /// Records retain the key holder's width. A numeric table may widen a key for its cell layout,
 /// but staging and rehashing need only the original value.
@@ -89,7 +93,8 @@ using AdaptiveRecordKey = std::remove_cvref_t<decltype(keyHolderGetKey(std::decl
 template <typename Method>
 using AdaptiveBucketTable = typename Method::Data::Impl;
 
-/// Reads a byte-staged key back from its record. The key is rebuilt pointing into the record, so a table holding it
+/// Reads a string key (`std::string_view` or `PackedStringRef`) back from its record. The key is rebuilt pointing into
+/// the record, so a table holding it
 /// needs the record until the table is converted or written: the merge frees a partition's records only after that,
 /// and copies the keys of the records it reads back from a spill, whose blocks go before.
 template <typename Key>
@@ -173,6 +178,19 @@ inline std::string_view ALWAYS_INLINE readStagedString(const char *& from)
     const std::string_view value(from, size);
     from += size;
     return value;
+}
+
+/// Copies the bytes of a string-like key into a staged record from a buffer that keeps padding past them: the
+/// block's key column, or the bytes that the batch of misses kept. The overflow-tolerant small copy reads and
+/// writes up to 15 bytes past the end. The records are appended in increasing byte order with every chunk
+/// ending in unused padding, so the scribble lands in space that the next append overwrites or that no record
+/// uses.
+inline void ALWAYS_INLINE copyPaddedKeyBytes(const char * data, size_t size, char * staged)
+{
+    if (size <= 64)
+        memcpySmallAllowReadWriteOverflow15(staged, data, size);
+    else
+        memcpy(staged, data, size);
 }
 
 /// Whether a variable-size argument is staged by `writeStagedString` rather than in its column's serialization. The
@@ -278,14 +296,17 @@ struct StagedFixedKey
 };
 
 /// The stored width of `Method`'s fixed-width keys (see `StagedFixedKey`), where `packed_key_bytes` is the sum of the
-/// sizes of the key columns. Only `AggregationMethodKeysFixed` packs its keys, and the method is chosen only where they
-/// fit in its key together with their null flags.
+/// sizes of the key columns. `AggregationMethodKeysFixed` packs its keys, and the method is chosen only where they fit
+/// in its key together with their null flags. The methods of fixed-width keys and one `String` key pack the fixed-width
+/// part of their keys, which has no null flags, and the size of the string key counts as 0 in the sum.
 template <typename Method>
 size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 {
     using Key = AdaptiveRecordKey<Method>;
     if constexpr (requires { Method::has_nullable_keys; })
         return packed_key_bytes + (Method::has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0);
+    else if constexpr (is_keys_and_packed_string<Key>)
+        return packed_key_bytes;
     else
         return sizeof(Key);
 }
@@ -299,7 +320,8 @@ size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 /// A record of a fixed-width key stores no hash: the merge rehashes the key in a few instructions, which costs less
 /// than the bytes of a hash in a record of a dozen or two, written by the staging, read by the merge, and written to
 /// disk and read back by a spill. A record of a byte-staged key stores the hash in the form of its `Hash` (see
-/// `AdaptiveStagedHash`) and the size of the key as a staged `UInt`.
+/// `AdaptiveStagedHash`) and the size of the key as a staged `UInt`. A record of a key of fixed-width values and a
+/// string stores the 32-bit hash only with a non-empty string, and the size of the string instead of that of the key.
 ///
 /// Every format offers the readers the same interface: `bytes(record)`, the size of the record; `key(record)`, the
 /// position and the size of its stored key; `readKey(record, hash)`, the key as the table takes it; and
@@ -308,7 +330,11 @@ size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 /// `bytesForKey(key_size, count)` (key formats) or `bytesFor` (argument formats) gives and fills the record from
 /// `writeHeader(record, hash, key_size, ...)`, whose last argument is the count of a count record or the size of an
 /// argument record. It returns the position where the writer stores the `keyBytes(key_size)` bytes of the key. The
-/// formats of a fixed-width key ignore `key_size`: they know the stored width. An argument format with
+/// formats of a fixed-width key ignore `key_size`: they know the stored width. The formats of a key of fixed-width
+/// values and a string take as `key_size` the size that the producer counts, `sizeof(Keys)` plus the size of the
+/// string. They write the key themselves, with `writeKey(to, keys, str)`, because they keep only the filled bytes of
+/// the packed values, and tell the prefetch of the merge the sub-table of a key with `hasString(record)` (see
+/// `StagedKeysAndPackedStringKey`). An argument format with
 /// `with_variable_arguments` may hold variable-size arguments after the key; the others hold none, so the writer
 /// compiles their loop without the code for them. An argument format with `fixed_width_key` stores the key's
 /// `fixed_key.bytes` at `key_offset` in every record, from which the drain rebuilds a key that is also an argument (see
@@ -378,6 +404,283 @@ struct StagedByteKeyRecord
         const char * pos = record + count_offset;
         return static_cast<UInt32>(readStagedUInt(pos));
     }
+};
+
+/// The staged form of a key of fixed-width values and a string (`KeysAndPackedString`, the key of `Table`), at
+/// the record's `offset`: {lead, [hash,] [string size,] packed values, string}. The lead is a
+/// staged `UInt`. In a count record it holds the count, a contribution within one block as in
+/// `StagedByteKeyRecord`, above a low bit that tells whether the string is non-empty, and the size of a
+/// non-empty string follows the hash as a staged `UInt`. In any other record the lead is the size of the
+/// string. Only a non-empty string has the 32-bit hash that the key stores. A key with an empty string, the
+/// common form of a missing value, is hashed by its packed values alone (see
+/// `KeysAndPackedStringHashTable::hash`), which the readers hash again in a few instructions. The packed
+/// values take the bytes that the key columns fill (see `StagedFixedKey`), followed by the string. So a count
+/// record with an empty string and a count below 128 takes one byte more than its key columns. The writer
+/// passes `key_size`, the size of the key as the producer counts it: `sizeof(Keys)` plus the size of the
+/// string.
+template <typename Table, bool with_count>
+struct StagedKeysAndPackedStringKey
+{
+    using Key = typename Table::Key;
+    using Keys = decltype(Key::keys);
+
+    StagedKeysAndPackedStringKey(size_t offset_, size_t key_bytes)
+        : offset(offset_)
+        , fixed_key(key_bytes)
+    {
+    }
+
+    /// The fields of a record that the key reads.
+    struct Fields
+    {
+        /// The packed values, followed by the string.
+        const char * key = nullptr;
+        size_t string_size = 0;
+        /// The hash that the key stores, if its string is non-empty.
+        UInt32 hash = 0;
+        /// The count of a count record.
+        UInt32 count = 0;
+    };
+
+    /// The bytes of a record from its start to the end of its key, with `count` rows for a count record and 0 for
+    /// the others.
+    size_t bytesUpToKeyEnd(size_t key_size, UInt32 count) const
+    {
+        const size_t string_size = stringSize(key_size);
+        size_t bytes = offset + stagedUIntBytes(lead(count, string_size)) + fixed_key.bytes + string_size;
+        if (string_size)
+            bytes += sizeof(UInt32) + (with_count ? stagedUIntBytes(string_size) : 0);
+        return bytes;
+    }
+
+    size_t keyBytes(size_t key_size) const { return fixed_key.bytes + stringSize(key_size); }
+
+    /// Writes the fields before the stored key and returns where the key goes.
+    char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, UInt32 count) const
+    {
+        const size_t string_size = stringSize(key_size);
+        char * pos = writeStagedUInt(record + offset, lead(count, string_size));
+        if (!string_size)
+            return pos;
+        chassert(routing_hash <= std::numeric_limits<UInt32>::max());
+        unalignedStore<UInt32>(pos, static_cast<UInt32>(routing_hash));
+        pos += sizeof(UInt32);
+        if constexpr (with_count)
+            pos = writeStagedUInt(pos, string_size);
+        return pos;
+    }
+
+    /// Writes the key at `to`, where `writeHeader` returned: the packed values in their stored width,
+    /// followed by the string. The store writes all `sizeof(Keys)` bytes of the packed values, which are zero
+    /// past the stored width, and the string overwrites them. Those past the key land where the record's later
+    /// fields, the next record or the padding of the chunk go, as the overflow of `copyPaddedKeyBytes` does.
+    /// The caller writes the later fields of the record after the key, and guarantees that `str` keeps padding
+    /// past its bytes, as the buffers of a column do.
+    void ALWAYS_INLINE writeKey(char * to, Keys keys, std::string_view str) const
+    {
+        unalignedStore<Keys>(to, keys);
+        copyPaddedKeyBytes(str.data(), str.size(), to + fixed_key.bytes);
+    }
+
+    Fields ALWAYS_INLINE read(const char * record) const
+    {
+        Fields fields;
+        const char * pos = record + offset;
+        const size_t lead_value = readStagedUInt(pos);
+        if constexpr (with_count)
+            fields.count = static_cast<UInt32>(lead_value >> 1);
+        else
+            fields.string_size = lead_value;
+        if (leadHasString(lead_value))
+        {
+            fields.hash = unalignedLoad<UInt32>(pos);
+            pos += sizeof(UInt32);
+            if constexpr (with_count)
+                fields.string_size = readStagedUInt(pos);
+        }
+        fields.key = pos;
+        return fields;
+    }
+
+    std::pair<const char *, size_t> key(const char * record) const
+    {
+        const Fields fields = read(record);
+        return {fields.key, fixed_key.bytes + fields.string_size};
+    }
+
+    UInt64 routingHash(const char * record) const
+    {
+        const Fields fields = read(record);
+        if (fields.string_size)
+            return fields.hash;
+        return Table::hash(Key::withEmptyString(fixed_key.read(fields.key)));
+    }
+
+    /// Rebuilds the key pointing into the record. `build` calls the functor only for the keys whose hash it
+    /// stores (see `KeysAndPackedString`), which is then the routing hash.
+    Key readKey(const char * record, UInt64 routing_hash) const
+    {
+        const Fields fields = read(record);
+        return Key::build(
+            fixed_key.read(fields.key),
+            fields.key + fixed_key.bytes,
+            fields.string_size,
+            [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
+    }
+
+    bool hasString(const char * record) const
+    {
+        const char * pos = record + offset;
+        return leadHasString(readStagedUInt(pos));
+    }
+
+private:
+    /// The size of the string of a key that the producer counts as `key_size` bytes: `sizeof(Keys)` plus the string.
+    static size_t stringSize(size_t key_size)
+    {
+        chassert(key_size >= sizeof(Keys));
+        return key_size - sizeof(Keys);
+    }
+
+    static size_t lead(UInt32 count, size_t string_size)
+    {
+        if constexpr (with_count)
+            return (size_t{count} << 1) | (string_size != 0);
+        else
+            return string_size;
+    }
+
+    /// Whether the string is non-empty, from the lead that `lead` made.
+    static bool leadHasString(size_t lead_value)
+    {
+        if constexpr (with_count)
+            return lead_value & 1;
+        else
+            return lead_value != 0;
+    }
+
+    const size_t offset;
+    const StagedFixedKey<Keys> fixed_key;
+};
+
+/// Count and key-only records of a key of fixed-width values and a string, whose bucket table is `Table`: the
+/// key alone, as `StagedKeysAndPackedStringKey` stores it.
+template <typename Table, bool with_count_>
+struct StagedKeysAndPackedStringRecord
+{
+    using Key = typename Table::Key;
+    using Keys = decltype(Key::keys);
+
+    static constexpr bool with_count = with_count_;
+    static constexpr bool with_arguments = false;
+    /// The count takes the bits of the lead above the flag.
+    static constexpr UInt32 max_count = std::numeric_limits<UInt32>::max() >> 1;
+
+    explicit StagedKeysAndPackedStringRecord(size_t key_bytes)
+        : key_layout(0, key_bytes)
+    {
+    }
+
+    size_t bytesForKey(size_t key_size, UInt32 count) const { return key_layout.bytesUpToKeyEnd(key_size, count); }
+
+    size_t keyBytes(size_t key_size) const { return key_layout.keyBytes(key_size); }
+
+    char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, UInt32 count) const
+    {
+        chassert(count <= max_count);
+        return key_layout.writeHeader(record, routing_hash, key_size, count);
+    }
+
+    void writeKey(char * to, Keys keys, std::string_view str) const { key_layout.writeKey(to, keys, str); }
+
+    std::pair<const char *, size_t> key(const char * record) const { return key_layout.key(record); }
+
+    size_t bytes(const char * record) const
+    {
+        const auto [pos, size] = key(record);
+        return static_cast<size_t>(pos + size - record);
+    }
+
+    UInt64 routingHash(const char * record) const { return key_layout.routingHash(record); }
+
+    template <typename AnyTable>
+    UInt64 hash(const AnyTable &, const char * record) const { return routingHash(record); }
+
+    Key readKey(const char * record, UInt64 routing_hash) const { return key_layout.readKey(record, routing_hash); }
+
+    bool hasString(const char * record) const { return key_layout.hasString(record); }
+
+    UInt32 count(const char * record) const requires with_count { return key_layout.read(record).count; }
+
+    const StagedKeysAndPackedStringKey<Table, with_count> key_layout;
+};
+
+/// Argument records of a key of fixed-width values and a string, whose bucket table is `Table`: {fixed-size
+/// arguments, [UInt32 record size,] key, variable-size arguments}, the key as `StagedKeysAndPackedStringKey`
+/// stores it. A record whose variable-size arguments are all `String`s, or that has none, needs no stored
+/// size: the reader skips the strings to find its end, as in `StagedByteKeyStringArgumentRecord`. Another
+/// record stores its size, as in `StagedByteKeyGeneralArgumentRecord`.
+template <typename Table, bool stores_record_size>
+struct StagedKeysAndPackedStringArgumentRecord
+{
+    using Key = typename Table::Key;
+    using Keys = decltype(Key::keys);
+
+    static constexpr bool with_count = false;
+    static constexpr bool with_arguments = true;
+    static constexpr bool with_variable_arguments = true;
+    static constexpr bool fixed_width_key = false;
+
+    StagedKeysAndPackedStringArgumentRecord(const AdaptiveArgumentLayout & layout, size_t key_bytes)
+        : record_size_offset(layout.fixed_bytes)
+        , key_layout(layout.fixed_bytes + (stores_record_size ? sizeof(UInt32) : 0), key_bytes)
+        , strings(layout.variable_fields.size())
+    {
+    }
+
+    size_t bytesFor(size_t key_size, size_t variable_bytes) const { return key_layout.bytesUpToKeyEnd(key_size, 0) + variable_bytes; }
+
+    size_t keyBytes(size_t key_size) const { return key_layout.keyBytes(key_size); }
+
+    char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, size_t record_bytes) const
+    {
+        if constexpr (stores_record_size)
+            unalignedStore<UInt32>(record + record_size_offset, static_cast<UInt32>(record_bytes));
+        return key_layout.writeHeader(record, routing_hash, key_size, 0);
+    }
+
+    void writeKey(char * to, Keys keys, std::string_view str) const { key_layout.writeKey(to, keys, str); }
+
+    std::pair<const char *, size_t> key(const char * record) const { return key_layout.key(record); }
+
+    size_t bytes(const char * record) const
+    {
+        if constexpr (stores_record_size)
+            return unalignedLoad<UInt32>(record + record_size_offset);
+        else
+        {
+            const auto [pos, size] = key(record);
+            const char * value = pos + size;
+            for (size_t i = 0; i < strings; ++i)
+                readStagedString(value);
+            return static_cast<size_t>(value - record);
+        }
+    }
+
+    UInt64 routingHash(const char * record) const { return key_layout.routingHash(record); }
+
+    template <typename AnyTable>
+    UInt64 hash(const AnyTable &, const char * record) const { return routingHash(record); }
+
+    Key readKey(const char * record, UInt64 routing_hash) const { return key_layout.readKey(record, routing_hash); }
+
+    bool hasString(const char * record) const { return key_layout.hasString(record); }
+
+    /// The stored size follows the fixed-size arguments, whose area has one size for the query.
+    const size_t record_size_offset;
+    const StagedKeysAndPackedStringKey<Table, /*with_count=*/false> key_layout;
+    /// The number of `String` arguments of a record without a stored size, which follow the key.
+    const size_t strings;
 };
 
 /// Count and key-only records of a fixed-width key: {[UInt8 count,] key}, of one size for the query. The count is a
@@ -695,7 +998,21 @@ ALWAYS_INLINE decltype(auto) visitStagedRecordFormat(
     const AdaptiveArgumentLayout * layout, bool is_simple_count, size_t packed_key_bytes, F && f)
 {
     using Key = AdaptiveRecordKey<Method>;
-    if constexpr (adaptive_key_stages_bytes<Key>)
+    if constexpr (is_keys_and_packed_string<Key>)
+    {
+        /// A key of fixed-width values and a string has formats of its own, which store its packed values in
+        /// the bytes that the key columns fill, and its 32-bit hash only with a non-empty string.
+        using Table = AdaptiveBucketTable<Method>;
+        const size_t key_bytes = stagedFixedKeyBytes<Method>(packed_key_bytes);
+        if (is_simple_count)
+            return f(StagedKeysAndPackedStringRecord<Table, /*with_count_=*/true>(key_bytes));
+        if (!layout)
+            return f(StagedKeysAndPackedStringRecord<Table, /*with_count_=*/false>(key_bytes));
+        if (layout->variable_fields_are_strings)
+            return f(StagedKeysAndPackedStringArgumentRecord<Table, /*stores_record_size=*/false>(*layout, key_bytes));
+        return f(StagedKeysAndPackedStringArgumentRecord<Table, /*stores_record_size=*/true>(*layout, key_bytes));
+    }
+    else if constexpr (adaptive_key_stages_bytes<Key>)
     {
         using Hash = AdaptiveStagedHash<Method>;
         if (is_simple_count)

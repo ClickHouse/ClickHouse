@@ -11,6 +11,14 @@ node256 = cluster.add_instance(
     tag="25.6",
     with_installed_binary=True,
 )
+# A release that has `enable_packed_string_keys_in_aggregation` (revision 54489 or above) but predates
+# `enable_fixed_and_packed_string_keys_in_aggregation` (below revision 54497).
+node268 = cluster.add_instance(
+    "node268",
+    image="clickhouse/clickhouse-server",
+    tag="26.8",
+    with_installed_binary=True,
+)
 # A current server whose `default` profile disables the setting - the value is not
 # compiled-in, not sent with any query, and exists only as a server-side default.
 node_disabled_by_profile = cluster.add_instance(
@@ -312,6 +320,89 @@ def test_packed_string_keys_default_propagation(started_cluster):
     shard_side_values = node_disabled_by_profile.query(
         f"""
         SELECT DISTINCT Settings['enable_packed_string_keys_in_aggregation']
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND is_initial_query = 0 AND initial_query_id = '{query_id}'
+        """
+    ).strip()
+    assert shard_side_values == "1"
+
+
+def create_fixed_and_string_tables(table, node, other_node_name):
+    # `UInt64` and `String` keys: the `keys64_packed_string` method on a current server, the serialized
+    # method on a server that predates it. A third of the strings are empty, which `keys64_packed_string`
+    # stores by the number alone.
+    node.query(
+        f"DROP TABLE IF EXISTS {table} SYNC; CREATE TABLE {table} (k UInt64, s String) ENGINE = MergeTree ORDER BY k"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number % 500, if(number % 3 = 0, '', concat('string_', toString(number % 7))) FROM numbers(5000)"
+    )
+    node.query(
+        f"CREATE TABLE IF NOT EXISTS dist_{table} (k UInt64, s String) AS remote('{other_node_name}', 'default.{table}', 'default', '')"
+    )
+    node.query(
+        f"CREATE TABLE IF NOT EXISTS global_{table} (k UInt64, s String) ENGINE = Merge('default', '.*{table}')"
+    )
+
+
+def count_fixed_and_string_groups(source, node):
+    return int(
+        node.query(
+            f"SELECT count() FROM (SELECT k, s FROM {source} GROUP BY k, s)",
+            settings={"group_by_two_level_threshold": 1},
+        )
+    )
+
+
+def test_fixed_and_string_keys_aggregation_compatibility(started_cluster):
+    # Both servers hold the same rows, so the distributed `GROUP BY` must return as many groups as one
+    # server's table. A server that predates `enable_fixed_and_packed_string_keys_in_aggregation` always
+    # uses the serialized method, so servers below revision 54497 are fenced off by
+    # `DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD`: the initiator zeroes the
+    # two-level thresholds for them, and a current shard answering an older initiator disables two-level
+    # aggregation itself. Without the fence, the same key lands in different buckets on the two servers
+    # and comes back twice. The 26.8 node knows `enable_packed_string_keys_in_aggregation` (revision 54489)
+    # but predates this setting, so revision 54497 alone fences it off. The 25.6 node is below 54489 as
+    # well, so it would pass without that revision.
+    create_fixed_and_string_tables("repro7", node1, other_node_name=node268.name)
+    create_fixed_and_string_tables("repro7", node268, other_node_name=node1.name)
+    expected = count_fixed_and_string_groups("repro7", node1)
+    assert count_fixed_and_string_groups("global_repro7", node1) == expected
+    assert count_fixed_and_string_groups("global_repro7", node268) == expected
+
+
+def test_fixed_and_packed_string_keys_default_propagation(started_cluster):
+    # As in `test_packed_string_keys_default_propagation`: the initiator sits on the compiled-in default,
+    # while the shard's own `default` profile turns `enable_fixed_and_packed_string_keys_in_aggregation`
+    # off. The initiator's effective value must reach the shard, or the two would aggregate with
+    # different methods.
+    assert (
+        node_disabled_by_profile.query(
+            "SELECT value FROM system.settings WHERE name = 'enable_fixed_and_packed_string_keys_in_aggregation'"
+        ).strip()
+        == "0"
+    )
+
+    create_fixed_and_string_tables("repro8", node1, other_node_name=node_disabled_by_profile.name)
+    create_fixed_and_string_tables("repro8", node_disabled_by_profile, other_node_name=node1.name)
+    expected = count_fixed_and_string_groups("repro8", node1)
+
+    query_id = "fixed_and_string_keys_default_propagation"
+    assert (
+        int(
+            node1.query(
+                "SELECT count() FROM (SELECT k, s FROM global_repro8 GROUP BY k, s)",
+                settings={"group_by_two_level_threshold": 1},
+                query_id=query_id,
+            )
+        )
+        == expected
+    )
+
+    node_disabled_by_profile.query("SYSTEM FLUSH LOGS")
+    shard_side_values = node_disabled_by_profile.query(
+        f"""
+        SELECT DISTINCT Settings['enable_fixed_and_packed_string_keys_in_aggregation']
         FROM system.query_log
         WHERE type = 'QueryFinish' AND is_initial_query = 0 AND initial_query_id = '{query_id}'
         """

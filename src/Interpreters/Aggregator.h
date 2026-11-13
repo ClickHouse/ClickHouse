@@ -273,6 +273,12 @@ public:
         /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).
         bool enable_packed_string_keys = true;
 
+        /// Use the `KeysAndPackedStringHashTable`-based hash tables for fixed-width keys and one non-nullable
+        /// `String` key (`keys32_packed_string`, `keys64_packed_string`, `keys128_packed_string`); if false, fall
+        /// back to `prealloc_serialized`. As for `enable_packed_string_keys`, the methods hash keys differently,
+        /// so all participants of a distributed query must agree on this value.
+        bool enable_fixed_and_packed_string_keys = true;
+
         /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
         /// aggregation-method state is constructed for every contiguous run of equal order-key
         /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
@@ -380,6 +386,7 @@ public:
             bool serialize_string_with_zero_byte_,
             bool enable_parallel_single_level_merge_,
             bool enable_packed_string_keys_,
+            bool enable_fixed_and_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
             UInt64 adaptive_aggregator_freeze_threshold_bytes_,
@@ -395,7 +402,8 @@ public:
             size_t max_block_size_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_,
-            bool enable_packed_string_keys_);
+            bool enable_packed_string_keys_,
+            bool enable_fixed_and_packed_string_keys_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
@@ -741,6 +749,13 @@ private:
     bool shared_kept_keys_cutoff_inert = false;
 
     HashMethodContextPtr aggregation_state_cache;
+
+    /// The method of `mergeBlocks`, which merges with a better hash function where the chosen method has one
+    /// (see `chooseMergeBlocksMethod`), and the context of its hashing states: the two methods can differ in
+    /// the type of the state, as `keys64_packed_string` does from its replacement
+    /// `prealloc_serialized_hash64`.
+    AggregatedDataVariants::Type merge_blocks_method = AggregatedDataVariants::Type::EMPTY;
+    HashMethodContextPtr merge_blocks_state_cache;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
@@ -1701,6 +1716,7 @@ private:
         Arena * aggregates_pool,
         Method & method,
         Table & data,
+        const HashMethodContextPtr & state_cache,
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
@@ -1714,6 +1730,7 @@ private:
         Arena * aggregates_pool,
         Method & method,
         Table & data,
+        const HashMethodContextPtr & state_cache,
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,

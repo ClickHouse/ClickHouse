@@ -499,7 +499,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
 
 private:
     static constexpr bool keys_hold_pointers
-        = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
+        = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef> || is_keys_and_packed_string<Key>;
 
     std::vector<Key> hash_table_keys;       /// per `heap_column` row: the hash-table key captured at admission, for `erase` on eviction
 
@@ -516,6 +516,12 @@ private:
             /// These keys live in a plain `HashMap` compared by exact `memcmp`,
             /// so the ordinary unpadded persistence applies.
             ArenaPackedStringHolder holder{key, arena};
+            keyHolderPersistKey(holder);
+            return holder.key;
+        }
+        else if constexpr (is_keys_and_packed_string<Key>)
+        {
+            ArenaKeysAndPackedStringHolder<decltype(Key::keys)> holder{key, arena};
             keyHolderPersistKey(holder);
             return holder.key;
         }

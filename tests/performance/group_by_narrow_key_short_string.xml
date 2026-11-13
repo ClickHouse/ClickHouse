@@ -1,0 +1,32 @@
+<test>
+    <!-- `GROUP BY` a `UInt32` and a `String` of 12 to 15 bytes, such as an ID or a date and a short name or code. The
+         `keys32_packed_string` method keeps such strings inline in its keys; a wider fixed-width part leaves room for
+         11 bytes only, and longer strings are stored out of line. The keys have 200 thousand groups in `k`, `s` and
+         2 million in `k2`, `s2`.
+
+         The second table stores the strings as `LowCardinality(String)`, which the same method reads through the
+         dictionaries of the part, hashing the string of each entry once per block. `s` has 200 thousand values, more
+         than a dictionary keeps, and `t` has 20 values, such as a category or a status. A filter that keeps half of
+         the rows leaves each block with fewer rows than its dictionary has entries, so the method hashes the string
+         of each row instead.
+
+         A `GROUP BY` without aggregate functions takes the key-only form of the method, whose cells hold the keys
+         alone. -->
+
+    <create_query>CREATE TABLE narrow_key_short_string (k UInt32, s String, k2 UInt32, s2 String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE narrow_key_low_cardinality_string (k UInt32, s LowCardinality(String), w UInt32, t LowCardinality(String), v UInt32) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO narrow_key_short_string SELECT g % 1000, leftPad(toString(g), 12 + g % 4, '0'), g2 % 1000, leftPad(toString(g2), 12 + g2 % 4, '0') FROM (SELECT cityHash64(number) % 200000 AS g, cityHash64(number, 1) % 2000000 AS g2 FROM numbers_mt(20000000))</fill_query>
+    <fill_query>INSERT INTO narrow_key_low_cardinality_string SELECT g % 1000, leftPad(toString(g), 12 + g % 4, '0'), cityHash64(number, 4) % 100000, concat('category_', toString(cityHash64(number, 3) % 20)), number % 1000 FROM (SELECT number, cityHash64(number) % 200000 AS g FROM numbers_mt(20000000))</fill_query>
+    <fill_query>OPTIMIZE TABLE narrow_key_low_cardinality_string FINAL</fill_query>
+
+    <query>SELECT k, s, count() FROM narrow_key_short_string GROUP BY k, s FORMAT Null</query>
+    <query>SELECT k2, s2, count() FROM narrow_key_short_string GROUP BY k2, s2 FORMAT Null</query>
+    <query>SELECT k2, s2, count() FROM narrow_key_short_string GROUP BY k2, s2 SETTINGS enable_adaptive_aggregator = 0 FORMAT Null</query>
+    <query>SELECT k, s, count() FROM narrow_key_low_cardinality_string GROUP BY k, s FORMAT Null</query>
+    <query>SELECT k, s, count() FROM narrow_key_low_cardinality_string WHERE w % 2 = 0 GROUP BY k, s FORMAT Null</query>
+    <query>SELECT w, t, sum(v) FROM narrow_key_low_cardinality_string GROUP BY w, t FORMAT Null</query>
+    <query>SELECT k, s FROM narrow_key_low_cardinality_string GROUP BY k, s FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS narrow_key_short_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS narrow_key_low_cardinality_string</drop_query>
+</test>

@@ -21,7 +21,6 @@ namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsUInt64 connections_with_failover_max_tries;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -222,6 +221,7 @@ void HedgedConnections::sendQuery(
         /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the
         /// overrides below, so all of them are marked changed afterwards and are serialized.
         prepareSecondaryQuerySettings(modified_settings);
+        markAggregationMethodSettingsChanged(modified_settings);
 
         modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
             modified_settings[Setting::interactive_delay],
@@ -248,13 +248,6 @@ void HedgedConnections::sendQuery(
         /// how a query is analyzed on every server that takes part in it, and the two analyses do not
         /// speak the same inter-server protocol.
         modified_settings.set("allow_experimental_analyzer", true);
-
-        /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
-        /// servers of a distributed query must agree on it even when it comes only from server/profile
-        /// defaults. Force it into the changed set, so it is always sent to the remote servers.
-        modified_settings.set(
-            "enable_packed_string_keys_in_aggregation",
-            static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
         /// The quotas over profile events charge the initiating user with what the remote servers report
         /// in their `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the

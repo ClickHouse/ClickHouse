@@ -44,6 +44,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/ColumnsHashing/LookAheadKeys.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
@@ -180,7 +181,10 @@ void initDataVariantsWithSizeHint(
                     /*group_by_two_level_threshold_bytes*/ 0,
                     /*result_size_bytes*/ 0))
                 method_chosen = DB::convertToTwoLevelTypeIfPossible(method_chosen);
-            result.init(method_chosen, hint->median_size);
+            result.init(
+                method_chosen,
+                DB::AggregatedDataVariants::SizeHint{
+                    .keys = hint->median_size, .keys_with_empty_string = hint->medianSizeWithEmptyString()});
         }
     }
     else
@@ -208,6 +212,9 @@ void updateStatistics(
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+    size_t sum_of_sizes_with_empty_string = 0;
+    for (const auto & variants : data_variants)
+        sum_of_sizes_with_empty_string += variants->sizeWithEmptyString();
 
     /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
     /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
@@ -217,7 +224,12 @@ void updateStatistics(
         const auto prev = stats.getSizeHint(params);
         repeat_dominated = prev && prev->adaptive_staging_repeat_dominated;
     }
-    stats.update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = *repeat_dominated}, params);
+    stats.update(
+        {.sum_of_sizes = sum_of_sizes,
+         .median_size = *median_size,
+         .sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string,
+         .adaptive_staging_repeat_dominated = *repeat_dominated},
+        params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -426,6 +438,7 @@ Aggregator::Params::Params(
     bool serialize_string_with_zero_byte_,
     bool enable_parallel_single_level_merge_,
     bool enable_packed_string_keys_,
+    bool enable_fixed_and_packed_string_keys_,
     bool enable_adaptive_aggregator_,
     UInt64 adaptive_aggregator_freeze_threshold_,
     UInt64 adaptive_aggregator_freeze_threshold_bytes_,
@@ -463,6 +476,7 @@ Aggregator::Params::Params(
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
     , enable_packed_string_keys(enable_packed_string_keys_)
+    , enable_fixed_and_packed_string_keys(enable_fixed_and_packed_string_keys_)
 {
 }
 
@@ -509,7 +523,8 @@ Aggregator::Params::Params(
     size_t max_block_size_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     bool serialize_string_with_zero_byte_,
-    bool enable_packed_string_keys_)
+    bool enable_packed_string_keys_,
+    bool enable_fixed_and_packed_string_keys_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -521,6 +536,7 @@ Aggregator::Params::Params(
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
     , enable_packed_string_keys(enable_packed_string_keys_)
+    , enable_fixed_and_packed_string_keys(enable_fixed_and_packed_string_keys_)
 {
 }
 
@@ -741,6 +757,71 @@ private:
 
 #endif
 
+namespace
+{
+
+/// If possible, changes the method to some_hash64; otherwise leaves it as is. A better hash function is
+/// needed because during external aggregation, `mergeBlocks` may merge partitions of data with total
+/// number of keys far greater than 4 billion.
+AggregatedDataVariants::Type chooseMergeBlocksMethod(AggregatedDataVariants::Type method)
+{
+#define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
+    M(key64)                          \
+    M(key64_void)                     \
+    M(keys128_void)                   \
+    M(keys256_void)                   \
+    M(key_string)                     \
+    M(key_fixed_string)               \
+    M(keys128)                        \
+    M(keys256)                        \
+    M(serialized)                     \
+    M(nullable_serialized)            \
+    M(prealloc_serialized)            \
+    M(nullable_prealloc_serialized)   \
+    M(serialized_void)                     \
+    M(nullable_serialized_void)            \
+    M(prealloc_serialized_void)            \
+    M(nullable_prealloc_serialized_void)   \
+    M(nullable_key64)                 \
+    M(nullable_keys128)               \
+    M(nullable_keys256)               \
+    M(nullable_key64_void)            \
+    M(nullable_keys128_void)          \
+    M(nullable_keys256_void)          \
+
+#define M(NAME) \
+    if (method == AggregatedDataVariants::Type::NAME) \
+        method = AggregatedDataVariants::Type::NAME ## _hash64; \
+
+    APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
+#undef M
+
+    /// There is no packed hash64 method; `mergeBlocks` re-reads keys from block columns, so the
+    /// `std::string_view`-keyed hash64 methods work just as well: `key_string_hash64` for a `String` key, and
+    /// `prealloc_serialized_hash64` or its key-only form for fixed-width keys and one `String` key.
+    switch (method)
+    {
+        case AggregatedDataVariants::Type::key_packed_string:
+            return AggregatedDataVariants::Type::key_string_hash64;
+        case AggregatedDataVariants::Type::keys32_packed_string:
+        case AggregatedDataVariants::Type::keys64_packed_string:
+        case AggregatedDataVariants::Type::keys128_packed_string:
+            return AggregatedDataVariants::Type::prealloc_serialized_hash64;
+        case AggregatedDataVariants::Type::keys32_packed_string_void:
+        case AggregatedDataVariants::Type::keys64_packed_string_void:
+        case AggregatedDataVariants::Type::keys128_packed_string_void:
+            return AggregatedDataVariants::Type::prealloc_serialized_void_hash64;
+        default:
+            break;
+    }
+
+#undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
+
+    return method;
+}
+
+}
+
 Aggregator::Aggregator(const Block & header_, const Params & params_)
     : keys_positions(calculateKeysPositions(header_, params_))
     , aggregates_positions(calculateAggregatesPositions(header_, params_))
@@ -844,12 +925,16 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (!params.enable_packed_string_keys && method_chosen == AggregatedDataVariants::Type::key_packed_string)
         method_chosen = AggregatedDataVariants::Type::key_string;
 
-    /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
-    /// table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for UInt64,
-    /// 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed fixed keys
-    /// (keys32/keys64/keys128/keys256), serialized keys (serialized/prealloc_serialized and their nullable
-    /// forms) and nullable fixed-width keys (nullable_key32/64, nullable_keys128/256); single string/FixedString
-    /// and LowCardinality keys are not covered yet.
+    if (!params.enable_fixed_and_packed_string_keys && AggregatedDataVariants::isKeysAndPackedString(method_chosen))
+        method_chosen = AggregatedDataVariants::Type::prealloc_serialized;
+
+    /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped
+    /// hash table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for
+    /// UInt64, 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed
+    /// fixed keys (keys32/keys64/keys128/keys256), serialized keys (serialized/prealloc_serialized and their
+    /// nullable forms), nullable fixed-width keys (nullable_key32/64, nullable_keys128/256) and fixed-width
+    /// keys with one `String` key (keys32/64/128_packed_string, which take `LowCardinality` keys too); a
+    /// single string or FixedString key and the other `LowCardinality` keys are not covered yet.
     /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
     if (params.aggregates_size == 0)
@@ -871,6 +956,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::nullable_key64:   method_chosen = Type::nullable_key64_void;   break;
             case Type::nullable_keys128: method_chosen = Type::nullable_keys128_void; break;
             case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
+            case Type::keys32_packed_string:  method_chosen = Type::keys32_packed_string_void;  break;
+            case Type::keys64_packed_string:  method_chosen = Type::keys64_packed_string_void;  break;
+            case Type::keys128_packed_string: method_chosen = Type::keys128_packed_string_void; break;
             default: break;
         }
     }
@@ -938,6 +1026,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+    merge_blocks_method = chooseMergeBlocksMethod(method_chosen);
+    merge_blocks_state_cache = AggregatedDataVariants::createCache(merge_blocks_method, cache_settings);
 
     if (params.enable_adaptive_aggregator)
         adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
@@ -1167,6 +1257,7 @@ void Aggregator::mergeOnBlockSmall(
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
         mergeStreamsImpl<!(IS_TWO_LEVEL)>(result.aggregates_pool, *result.NAME, result.NAME->data, \
+                         aggregation_state_cache, \
                          result.without_key, \
                          result.consecutive_keys_cache_stats, \
                          /* no_more_keys= */ false, \
@@ -1300,9 +1391,10 @@ void Aggregator::executeImpl(
         {
             /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
             /// It also doesn't make sense when building the key holder is expensive: the look-ahead
-            /// below calls `getKeyHolder` a second time for every row, so a method that materializes
-            /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
-            /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+            /// below calls `getKeyHolder` a second time for every row whose key does not store its
+            /// hash, so a method that materializes its key there (e.g. serializing all key columns)
+            /// would pay its dominant per-row cost twice - far more than the cache miss the prefetch
+            /// hides. See `has_cheap_key_holder`.
             /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
             /// smaller threshold.
             const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
@@ -1536,7 +1628,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     /// Returns nothing and is force-inlined on purpose: a variant of this that returned the emplace
     /// result was compiled into an out-of-line call per row for the string methods, and the call is
     /// what the loop's speed is made of - it costs more than the work it wraps.
-    auto process_row = [&](size_t row) ALWAYS_INLINE
+    auto process_row = [&](size_t row, auto && emplace_result) ALWAYS_INLINE
     {
         // For some methods we simply don't have a set counterpart, so a map method is used.
         // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
@@ -1544,20 +1636,15 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         // again is a store into a random place of the table on every row.
         if constexpr (State::has_mapped)
         {
-            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
             if (emplace_result.isInserted())
                 emplace_result.setMapped(place);
-            heap_push(row, emplace_result);
         }
-        else
-        {
-            heap_push(row, state.emplaceKey(method.data, row, *aggregates_pool));
-        }
+        heap_push(row, emplace_result);
     };
 
     if (all_keys_are_const)
     {
-        process_row(0);
+        process_row(0, state.emplaceKey(method.data, 0, *aggregates_pool));
         return;
     }
 
@@ -1570,19 +1657,18 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
+    static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+    ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
+
     /// For all rows.
     for (size_t i = row_begin; i < row_end; ++i)
     {
-        if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+        if constexpr (prefetch_cells)
         {
             if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
                 prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-            if (i + prefetch_look_ahead < row_end)
-            {
-                auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                method.data.prefetch(std::move(key_holder));
-            }
+            look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
         }
 
         if constexpr (top_k)
@@ -1596,7 +1682,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             }
         }
 
-        process_row(i);
+        process_row(i, look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool));
 
         if constexpr (top_k)
         {
@@ -1831,48 +1917,17 @@ void NO_INLINE Aggregator::executeImplBatch(
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
             }
 
-            if constexpr (prefetch && !top_k && std::is_same_v<KeyHolder, ArenaPackedStringHolder>)
-            {
-                /// Building a packed key computes its hash, so the keys built for the prefetch are reused by the insert.
-                static constexpr size_t ring_size = 64; /// A power of two above the maximum look-ahead.
-                PackedStringRef ring[ring_size]{};
-                size_t built_end = row_begin;
-                for (size_t i = row_begin; i < row_end; ++i)
-                {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    const size_t want_end = std::min(row_end, i + std::min(prefetch_look_ahead, ring_size - 1) + 1);
-                    for (; built_end < want_end; ++built_end)
-                    {
-                        const PackedStringRef key = state.getKeyHolder(built_end, *aggregates_pool).key;
-                        ring[built_end % ring_size] = key;
-                        method.data.prefetchByHash(method.data.hash(key));
-                    }
-
-                    typename Method::Data::LookupResult it;
-                    bool inserted = false;
-                    method.data.emplace(ArenaPackedStringHolder{ring[i % ring_size], *aggregates_pool}, it, inserted);
-                    if (inserted)
-                        getInlineCountState(it->getMapped()) = 1;
-                    else
-                        ++getInlineCountState(it->getMapped());
-                }
-                return;
-            }
+            static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+            ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
 
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+                if constexpr (prefetch_cells)
                 {
                     if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
                         prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-                    if (i + prefetch_look_ahead < row_end)
-                    {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                        method.data.prefetch(std::move(key_holder));
-                    }
+                    look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, row_end, *aggregates_pool);
                 }
 
                 if constexpr (top_k)
@@ -1885,7 +1940,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+                auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
 
                 if constexpr (top_k)
                 {
@@ -1978,22 +2033,21 @@ void NO_INLINE Aggregator::executeImplBatch(
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
+        static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
+        ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
+
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
 
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            if constexpr (prefetch_cells)
             {
                 if (i == key_start + PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
                 /// Bound by `key_end` (not `row_end`): when all keys are const the key
                 /// columns hold 1 row, so the look-ahead must not cross that row.
-                if (i + prefetch_look_ahead < key_end)
-                {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
-                }
+                look_ahead_keys.prefetch(state, method.data, i, prefetch_look_ahead, key_end, *aggregates_pool);
             }
 
             if constexpr (top_k)
@@ -2008,7 +2062,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            auto emplace_result = look_ahead_keys.emplaceKey(state, method.data, i, *aggregates_pool);
 
             if constexpr (top_k)
             {
@@ -2577,11 +2631,15 @@ bool Aggregator::executeOnBlock(Columns columns,
         if (!result.isLowCardinality())
         {
             /// Serialized methods read key columns through `IColumn` virtuals, so a non-nullable
-            /// `LowCardinality` key can be serialized from its dictionary without being copied into
-            /// a full column first. `LowCardinality(Nullable)` keys need the materialized
-            /// representation, which carries their null map, and so does an active top-K heap, whose
-            /// ranked columns are built from the key columns.
-            if (result.isSerialized() && !top_k_active)
+            /// `LowCardinality` key can be serialized from its dictionary without being copied into a full
+            /// column first. The methods of fixed-width keys and one `String` take non-nullable
+            /// `LowCardinality` keys as they are too, as in the merge: they read the string through its
+            /// dictionary and materialize a fixed-width key themselves (see `HashMethodKeysAndPackedString`).
+            /// `LowCardinality(Nullable)` keys need the materialized representation, which carries their null
+            /// map, and so does an active top-K heap, whose ranked columns are built from the key columns.
+            const bool reads_low_cardinality_in_place
+                = result.isSerialized() || AggregatedDataVariants::isKeysAndPackedString(result.type);
+            if (reads_low_cardinality_in_place && !top_k_active)
             {
                 const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
                 if (low_cardinality && !low_cardinality->getDictionary().nestedColumnIsNullable())
@@ -3764,7 +3822,7 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
 
     AggregatedDataVariants dst;
     dst.aggregator = this;
-    dst.init(first->type, max_source_table_size / num_partitions);
+    dst.init(first->type, AggregatedDataVariants::SizeHint{.keys = max_source_table_size / num_partitions});
     dst.keys_size = params.keys_size;
     dst.key_sizes = key_sizes;
     dst.aggregates_pools.insert(dst.aggregates_pools.end(), first->aggregates_pools.begin(), first->aggregates_pools.end());
@@ -3844,15 +3902,17 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
         src_data = nullptr;
     };
 
-    auto merge_cell = [&](const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
+    /// Merges a source cell, with its key as the table stores it, into `dst_table`: the destination table, or a
+    /// sub-table of a destination that dispatches its keys over sub-tables.
+    auto merge_cell = [&](auto & dst_table, const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
     {
-        typename Method::Data::LookupResult it;
+        typename std::decay_t<decltype(dst_table)>::LookupResult it;
         bool inserted = false;
 
         if constexpr (is_void_mapped)
         {
             /// `src_data` is the cell's `VoidMapped` placeholder - the key union is the whole merge.
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_table.emplace(key, it, inserted, hash_value);
         }
         else
         {
@@ -3860,7 +3920,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
             if (!src_data)
                 return;
 
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_table.emplace(key, it, inserted, hash_value);
             adopt_or_collect(inserted, it->getMapped(), src_data);
         }
     };
@@ -3948,30 +4008,36 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
 
                     for (size_t i = 0; i < batch_size; ++i)
                         merge_cell(
+                            dst_method.data,
                             std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
                             batch[i].first->getMapped(),
                             batch[i].second);
                 }
             }
-            else if constexpr (requires { src.emptyStringSlot(); })
+            else if constexpr (requires { std::decay_t<decltype(src)>::forEachSubMapPair(src, src, [](auto &, auto &) {}); })
             {
-                /// A string table dispatches keys over size-class sub-tables and has no unified cell
-                /// iterator. The empty-string key lives in a dedicated slot whose dispatch hash is 0,
-                /// so it belongs to partition 0 like the NULL key.
+                /// A table that dispatches keys over sub-tables (a string table by size class, a table of
+                /// fixed-width keys and a string by whether the string is empty) has no unified cell
+                /// iterator: the sub-tables are merged in pairs.
                 auto & dst_table = dst_method.data;
 
-                if (owns_null_slot)
+                /// A string table keeps the empty-string key in a dedicated slot outside its sub-tables. The
+                /// dispatch hash of that key is 0, so it belongs to partition 0 like the NULL key.
+                if constexpr (requires { src.emptyStringSlot(); })
                 {
-                    auto & src_slot = src.emptyStringSlot();
-                    if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
+                    if (owns_null_slot)
                     {
-                        auto & dst_slot = dst_table.emptyStringSlot();
-                        typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
-                        bool inserted = false;
+                        auto & src_slot = src.emptyStringSlot();
+                        if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
+                        {
+                            auto & dst_slot = dst_table.emptyStringSlot();
+                            typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
+                            bool inserted = false;
 
-                        /// The empty-string slot ignores the key argument.
-                        dst_slot.emplace(0, slot_it, inserted, 0);
-                        adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
+                            /// The empty-string slot ignores the key argument.
+                            dst_slot.emplace(0, slot_it, inserted, 0);
+                            adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
+                        }
                     }
                 }
 
@@ -3986,14 +4052,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
                             if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
                                 continue;
 
-                            AggregateDataPtr & src_data = it->getMapped();
-                            if (!src_data)
-                                continue;
-
-                            typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
-                            bool inserted = false;
-                            dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
-                            adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                            merge_cell(dst_sub, std::decay_t<decltype(*it)>::getKey(it->getValue()), it->getMapped(), hash_value);
                         }
                     });
             }
@@ -5991,6 +6050,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * aggregates_pool,
     Method & method,
     Table & data,
+    const HashMethodContextPtr & state_cache,
     AggregateDataPtr overflow_row,
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
@@ -6010,6 +6070,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         aggregates_pool,
         method,
         data,
+        state_cache,
         overflow_row,
         consecutive_keys_cache_stats,
         no_more_keys,
@@ -6027,6 +6088,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * aggregates_pool,
     Method & method [[maybe_unused]],
     Table & data,
+    const HashMethodContextPtr & state_cache,
     AggregateDataPtr overflow_row,
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
@@ -6083,7 +6145,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        State state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
+        State state(key_columns, key_sizes, state_cache, {row_begin, row_end});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -6112,7 +6174,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
+        StateNoCache state(key_columns, key_sizes, state_cache, {row_begin, row_end});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -6229,6 +6291,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         result.aggregates_pool, \
         *result.NAME, \
         result.NAME->data, \
+        aggregation_state_cache, \
         result.without_key, \
         result.consecutive_keys_cache_stats, \
         no_more_keys, \
@@ -6360,7 +6423,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                     const size_t num_deferred_before = numDeferredMerges(deferred);
                 #define M(NAME) \
                     else if (result.type == AggregatedDataVariants::Type::NAME) \
-                        mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled, nullptr, deferred_ptr);
+                        mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], aggregation_state_cache, nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled, nullptr, deferred_ptr);
 
                     if (false) {} // NOLINT
                         APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -6448,7 +6511,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, no_more_keys, is_cancelled, nullptr, deferred_ptr);
+                mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, aggregation_state_cache, result.without_key, result.consecutive_keys_cache_stats, no_more_keys, is_cancelled, nullptr, deferred_ptr);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -6483,57 +6546,13 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
     Stopwatch watch;
 
-    /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
-      * Better hash function is needed because during external aggregation,
-      *  we may merge partitions of data with total number of keys far greater than 4 billion.
-      */
-    auto merge_method = method_chosen;
-
-#define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
-        M(key64)                          \
-        M(key64_void)                     \
-        M(keys128_void)                   \
-        M(keys256_void)                   \
-        M(key_string)                     \
-        M(key_fixed_string)               \
-        M(keys128)                        \
-        M(keys256)                        \
-        M(serialized)                     \
-        M(nullable_serialized)            \
-        M(prealloc_serialized)            \
-        M(nullable_prealloc_serialized)   \
-        M(serialized_void)                     \
-        M(nullable_serialized_void)            \
-        M(prealloc_serialized_void)            \
-        M(nullable_prealloc_serialized_void)   \
-        M(nullable_key64)                 \
-        M(nullable_keys128)               \
-        M(nullable_keys256)               \
-        M(nullable_key64_void)            \
-        M(nullable_keys128_void)          \
-        M(nullable_keys256_void)          \
-
-#define M(NAME) \
-    if (merge_method == AggregatedDataVariants::Type::NAME) \
-        merge_method = AggregatedDataVariants::Type::NAME ## _hash64; \
-
-    APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
-#undef M
-
-    /// There is no packed hash64 method; `mergeBlocks` re-reads keys from block columns,
-    /// so the `std::string_view`-keyed hash64 method works for it just as well.
-    if (merge_method == AggregatedDataVariants::Type::key_packed_string)
-        merge_method = AggregatedDataVariants::Type::key_string_hash64;
-
-#undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
-
     /// Temporary data for aggregation.
     AggregatedDataVariants result;
 
     /// result will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
-    result.init(merge_method);
+    result.init(merge_blocks_method);
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
@@ -6569,7 +6588,7 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, result.consecutive_keys_cache_stats, false, is_cancelled, arena_for_keys.get(), deferred_ptr);
+        mergeStreamsImpl(chunk_columns, chunk_rows, result.aggregates_pool, *result.NAME, result.NAME->data, merge_blocks_state_cache, nullptr, result.consecutive_keys_cache_stats, false, is_cancelled, arena_for_keys.get(), deferred_ptr);
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
