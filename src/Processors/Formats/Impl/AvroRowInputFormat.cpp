@@ -1174,7 +1174,6 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     if (header.has(current_path))
     {
         auto target_column_idx = header.getPositionByName(current_path);
-        /// Read from the first field that matches it.
         if (column_found[target_column_idx])
             return AvroDeserializer::Action(createSkipFn(node));
         const auto & column = header.getByPosition(target_column_idx);
