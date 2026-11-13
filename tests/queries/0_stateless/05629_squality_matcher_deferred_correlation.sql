@@ -27,4 +27,17 @@ FROM squality_matcher_defer_v AS v ORDER BY v.v.x;
 SELECT count(), (SELECT v.v.* REPLACE (1 AS x) FROM squality_matcher_defer_v AS i LIMIT 1)
 FROM squality_matcher_defer_v AS v;
 
+-- A function alias used as the qualifier must defer correlation in its body too.
+SELECT v.v.x, (
+    WITH identity(v.v) AS q
+    SELECT q.* REPLACE (1 AS x) FROM squality_matcher_defer_v AS i LIMIT 1
+)
+FROM squality_matcher_defer_v AS v ORDER BY v.v.x;
+
+SELECT count(), (
+    WITH identity(v.v) AS q
+    SELECT q.* REPLACE (1 AS x) FROM squality_matcher_defer_v AS i LIMIT 1
+)
+FROM squality_matcher_defer_v AS v;
+
 DROP TABLE squality_matcher_defer_v;

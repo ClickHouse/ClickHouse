@@ -377,6 +377,9 @@ private:
     /// Global resolve expression node to tree size
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
 
+    /// While resolving a matcher qualifier's alias body, defer correlation until its transformers finish.
+    bool defer_matcher_alias_correlation = false;
+
     /// Global scalar subquery to scalar value map
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;

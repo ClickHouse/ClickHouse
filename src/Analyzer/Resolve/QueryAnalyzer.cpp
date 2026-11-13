@@ -1440,6 +1440,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
+    const bool previous_defer_matcher_alias_correlation = defer_matcher_alias_correlation;
+    defer_matcher_alias_correlation |= identifier_resolve_context.defer_matcher_correlation;
+    SCOPE_EXIT({ defer_matcher_alias_correlation = previous_defer_matcher_alias_correlation; });
+
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
     /// Table aliases are single-part names, so a compound table identifier can only be `database.table`.
@@ -1748,7 +1752,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    if (!identifier_resolve_context.defer_matcher_correlation)
+    if (!identifier_resolve_context.defer_matcher_correlation && !defer_matcher_alias_correlation)
     {
         CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
         if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
@@ -2481,7 +2485,7 @@ static IdentifierResolveScope * findMatcherExpressionScope(const QueryTreeNodePt
     return expression_scope ? expression_scope : &scope;
 }
 
-static bool matcherExpressionUsesOtherScope(const QueryTreeNodePtr & expression, const IdentifierResolveScope & owner_scope)
+static bool expressionUsesOtherScope(const QueryTreeNodePtr & expression, const IdentifierResolveScope & owner_scope)
 {
     std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
     while (!nodes_to_process.empty())
@@ -3247,7 +3251,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
-            if (matcherExpressionUsesOtherScope(node, *group_by_keys_scope))
+            if (expressionUsesOtherScope(node, *group_by_keys_scope))
                 continue;
 
             auto it = group_by_keys_scope->nullable_group_by_keys.find(node);
@@ -4587,7 +4591,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
                     || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
 
-            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
+            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty()
+                && (node->getNodeType() == QueryTreeNodeType::COLUMN || !expressionUsesOtherScope(node, *scope_ptr)))
             {
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())

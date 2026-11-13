@@ -34,4 +34,19 @@ SELECT t.v.x, (
 )
 FROM squality_matcher_scope_tuple AS t ORDER BY t.v.x; -- { serverError NOT_AN_AGGREGATE }
 
+-- `APPLY` must not let the inner grouping key replace an outer generated subcolumn.
+SELECT t.v.x, (
+    SELECT t.v.* APPLY identity FROM squality_matcher_scope_tuple AS i WHERE i.v.x = 3
+    GROUP BY ROLLUP(getSubcolumn(i.v, 'x'))
+    HAVING GROUPING(getSubcolumn(i.v, 'x')) = 0 LIMIT 1
+)
+FROM squality_matcher_scope_tuple AS t ORDER BY t.v.x; -- { serverError NOT_AN_AGGREGATE }
+
+SELECT t.v.x, (
+    SELECT t.v.* APPLY (x -> x + 0) FROM squality_matcher_scope_tuple AS i WHERE i.v.x = 3
+    GROUP BY ROLLUP(getSubcolumn(i.v, 'x'))
+    HAVING GROUPING(getSubcolumn(i.v, 'x')) = 0 LIMIT 1
+)
+FROM squality_matcher_scope_tuple AS t ORDER BY t.v.x; -- { serverError NOT_AN_AGGREGATE }
+
 DROP TABLE squality_matcher_scope_tuple;
