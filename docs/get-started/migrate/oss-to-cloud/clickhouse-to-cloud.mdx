@@ -73,7 +73,7 @@ CREATE DATABASE db
 - Using the CREATE TABLE statement from the source, create the destination.
 
 <Tip>
-Change the ENGINE to to ReplicatedMergeTree without any parameters when you run the CREATE statement. ClickHouse Cloud always replicates tables and provides the correct parameters. Keep the `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY`, `TTL`, and `SETTINGS` clauses though.
+Change the ENGINE to ReplicatedMergeTree without any parameters when you run the CREATE statement. ClickHouse Cloud always replicates tables and provides the correct parameters. Keep the `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY`, `TTL`, and `SETTINGS` clauses though.
 </Tip>
 
 ```sql

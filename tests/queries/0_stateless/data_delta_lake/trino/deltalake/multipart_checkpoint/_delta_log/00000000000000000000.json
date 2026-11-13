@@ -1,0 +1,3 @@
+{"commitInfo":{"version":0,"timestamp":1697439143958,"userId":"marius","userName":"marius","operation":"CREATE TABLE","operationParameters":{"queryId":"20231016_065223_00001_dhwpa"},"clusterId":"trino-428-191-g91ee252-presto-master","readVersion":0,"isolationLevel":"WriteSerializable","isBlindAppend":true}}
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"ce0eab6c-75a5-4904-9f90-2fe73bedf1ce","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"c\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{"delta.checkpointInterval":"6"},"createdTime":1697439143958}}

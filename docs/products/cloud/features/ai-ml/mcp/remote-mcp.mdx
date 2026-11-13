@@ -55,7 +55,16 @@ If your MCP client runs on a remote or headless host where a browser-based OAuth
    ```
 
    The command prints the new key ID and secret once; store them in your secret manager. Without `--ip-allow`, the key's IP allowlist is empty and denies all access.
-3. On the remote host, provide the credentials through your secret-management system and create an HTTP Basic authorization value:
+3. For each ClickHouse service that the MCP client needs to query, configure a generic Query API endpoint:
+   - Make sure the service is awake, then open **Settings** > **Query API Endpoints**.
+   - Turn on **Allow use of Query API Endpoints**.
+   - If no generic endpoint exists, select **Enable generic query API Endpoint**. Choose the same API key that you will use for MCP, select a database role with read access to the required data, and create the endpoint.
+   - If a generic endpoint already exists, edit it to add the MCP API key to its allowed keys. The endpoint's database roles determine query access for all keys attached to it.
+
+   This service-level setup is required for API-key calls to `list_databases`, `list_tables`, and `run_select_query`. Organization and service permissions alone do not replace the endpoint's API-key binding and database roles. Configure it once per service; you do not need a saved query or a separate endpoint for each MCP tool.
+
+   If `get_services_list` succeeds but query tools report that the service cannot be found or your credentials do not grant access, check that the generic endpoint is enabled and includes the same API key. OAuth clients use the signed-in user's SQL Console access and do not require this API-key setup.
+4. On the remote host, provide the credentials through your secret-management system and create an HTTP Basic authorization value:
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
@@ -69,7 +78,7 @@ export CH_AUTH="Basic $(
 )"
 ```
 
-4. Select your MCP client and add the remote MCP server:
+5. Select your MCP client and add the remote MCP server:
 
 <Tabs>
 <Tab title="Claude Code" id="headless-auth-claude-code">
