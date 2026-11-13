@@ -107,6 +107,9 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         x, y = (f["id"] for f in element_type["fields"])
         struct["fields"].append({"id": new_id(), "name": "l", "required": False, "initial-default": [{str(x): 1, str(y): 2}, {str(x): 3}],
             "type": {"type": "list", "element-id": element, "element": element_type, "element-required": False}})
+    elif mode == "null_struct":
+        struct = next(f for f in fields if f["name"] == "t")["type"]
+        struct["fields"].append({"id": new_id(), "name": "y", "required": False, "type": "int", "initial-default": 5})
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -139,6 +142,32 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
     metadata["last-updated-ms"] += 1
     with open(os.path.join(metadata_dir, f"v{latest + 1}.metadata.json"), "w") as f:
         json.dump(metadata, f)
+PY
+}
+
+# Makes the struct `t` of the tables at $@ optional and rewrites their data files with `t` NULL in the row with `k = 1`, written
+# last: pyarrow misplaces the fields of the rows after a NULL struct nested in a struct.
+null_struct()
+{
+    python3 - "$@" <<'PY'
+import glob, json, os, re, sys
+import pyarrow as pa, pyarrow.orc as orc, pyarrow.parquet as pq
+for table in sys.argv[1:]:
+    metadata_dir = os.path.join(table, "metadata")
+    latest = max(int(m.group(1)) for f in os.listdir(metadata_dir) if (m := re.fullmatch(r"v(\d+)\.metadata\.json", f)))
+    with open(os.path.join(metadata_dir, f"v{latest}.metadata.json")) as f:
+        metadata = json.load(f)
+    for schema in metadata["schemas"]:
+        next(f for f in schema["fields"] if f["name"] == "t")["required"] = False
+    with open(os.path.join(metadata_dir, f"v{latest}.metadata.json"), "w") as f:
+        json.dump(metadata, f)
+    for path in glob.glob(os.path.join(table, "data", "*.orc")) + glob.glob(os.path.join(table, "data", "*.parquet")):
+        is_orc = path.endswith(".orc")
+        data = orc.ORCFile(path).read() if is_orc else pq.read_table(path)
+        rows = sorted(data.to_pylist(), key=lambda row: row["k"] == 1)
+        rows[-1]["t"] = None
+        schema = pa.schema([field.with_nullable(True) if field.name == "t" else field for field in data.schema])
+        (orc.write_table if is_orc else pq.write_table)(pa.Table.from_pylist(rows, schema=schema), path)
 PY
 }
 
@@ -292,6 +321,7 @@ for format in Parquet ORC Avro; do
     bind=()
     before=""
     after=""
+    null_structs=()
 
     table="${format}"
     create+="
@@ -513,7 +543,25 @@ for format in Parquet ORC Avro; do
             SELECT 'dotted container sibling', count() FROM icebergLocal('${table}/') WHERE t.\`s.j\` = 9;"
     fi
 
+    # A struct that is NULL in a row of the file reads its added fields' defaults there.
+    if [ "${format}" != Avro ]; then
+        table="${format}_null_struct"
+        create+="
+            CREATE TABLE t_null_struct (k Int32, t Tuple(x Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_null_struct VALUES (1, (1)), (2, (10));"
+        null_structs+=("${table}")
+        evolve+=("${table}" null_struct)
+        bind+=("${table}")
+        before+="
+            SELECT 'null struct', k, t FROM icebergLocal('${table}/') ORDER BY k;"
+        after+="
+            SELECT 'null struct', k, t FROM icebergLocal('${table}/') ORDER BY k;
+            SELECT 'null struct', k, t.x, t.y FROM icebergLocal('${table}/') ORDER BY k;
+            SELECT 'null struct', count() FROM icebergLocal('${table}/') WHERE t.y = 5;"
+    fi
+
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"
+    null_struct "${null_structs[@]}"
     add_fields "${evolve[@]}"
     ${LOCAL} -q "${before}"
     bind_to_current_schema "${bind[@]}"

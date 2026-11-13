@@ -2924,7 +2924,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
+    /// A struct read as a non-Nullable `Tuple` under the data lake schema gets no null map: its fields are already NULL in
+    /// the rows where it is NULL, and the fields it lacks keep their defaults there.
+    const bool is_data_lake_tuple
+        = orc_type->getKind() == ORC::STRUCT && column_mapper && !mapper_path.empty() && type_hint && isTuple(type_hint);
+    if (!inside_nullable && !is_data_lake_tuple
+        && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
         && (orc_type->getKind() != ORC::LIST && orc_type->getKind() != ORC::MAP && orc_type->getKind() != ORC::UNION))
     {
         DataTypePtr nested_type_hint;

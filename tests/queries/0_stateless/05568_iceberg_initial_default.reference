@@ -77,6 +77,8 @@ schema ids	[0]
 readd	1	(9)	9
 t.j = 9	(9)
 t.j = 9	(9)
+null struct	1	(NULL,5)
+null struct	2	(10,5)
 Parquet, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
@@ -125,6 +127,11 @@ dotted prefix	100	7
 dotted container sibling	([(11)],{'a':11},7,9,9)
 dotted container sibling	9	9	7
 dotted container sibling	1
+null struct	1	(NULL,5)
+null struct	2	(10,5)
+null struct	1	\N	5
+null struct	2	10	5
+null struct	2
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -132,6 +139,8 @@ schema ids	[0]
 readd	1	(9)	9
 t.j = 9	(9)
 t.j = 9	(9)
+null struct	1	(NULL,5)
+null struct	2	(10,5)
 ORC, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
@@ -184,6 +193,11 @@ dotted prefix	100	7
 dotted container sibling	([(11)],{'a':11},7,9,9)
 dotted container sibling	9	9	7
 dotted container sibling	1
+null struct	1	(NULL,5)
+null struct	2	(10,5)
+null struct	1	\N	5
+null struct	2	10	5
+null struct	2
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
