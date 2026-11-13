@@ -251,8 +251,13 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 }
             }
 
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(
-                mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(
+                config,
+                settings_config_prefix,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+                created_from_ddl));
         }
 
         if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())

@@ -47,7 +47,7 @@ function check_dictionary()
         LAYOUT(FLAT()) LIFETIME(0)"
     local output
     output=$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM ${CLICKHOUSE_DATABASE}.d_mysql" 2>&1)
-    if grep -q -E "MySQL port 0|MySQL socket" <<< "$output"; then
+    if grep -q -F "MySQL port 0" <<< "$output"; then
         echo "dictionary $1 port 0: rejected"
     elif grep -q -F "through socket" <<< "$output"; then
         echo "dictionary $1 port 0: unix socket"

@@ -24,7 +24,7 @@ PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned defa
 }
 
 std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name, unsigned default_max_connections)
+        const std::string & config_name, unsigned default_max_connections, bool created_from_ddl)
 {
     bool shared = config.getBool(config_name + ".share_connection", false);
 
@@ -147,15 +147,20 @@ std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
     entry_name += "&pool_size=" + std::to_string(pool_size) + "&wait_timeout=" + std::to_string(wait_timeout)
         + "&background_reconnect=" + (bg_reconnect ? "1" : "0");
 
+    /// The checks of a dictionary created with a DDL query see only the keys of that query, so its
+    /// pool must never be one created from a configuration file.
+    if (created_from_ddl)
+        entry_name += "&created_from_ddl=1";
+
     return entry_name;
 }
 
 PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
+        const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries, bool created_from_ddl)
 {
     std::lock_guard lock(impl->mutex);
 
-    std::string entry_name = getPoolEntryName(config, config_name, max_connections);
+    std::string entry_name = getPoolEntryName(config, config_name, max_connections, created_from_ddl);
 
     /// For shared pools (share_connection=true), entry_name encodes the actual connection
     /// parameters and settings. Use it as the cache key instead of
