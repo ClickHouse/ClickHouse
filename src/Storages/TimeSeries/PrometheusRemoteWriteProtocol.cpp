@@ -319,7 +319,8 @@ Names columnsToWrite(
 
 /// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the async
 /// insert queue, would be flushed after the shard-target check, into whatever answers to the name by then.
-void forceDeliveryToShards(const StorageInMemoryMetadata & metadata, const char * samples_column, const ContextMutablePtr & context)
+void forceDeliveryToShards(
+    const StorageInMemoryMetadata & metadata, const char * samples_column, bool writes_samples, const ContextMutablePtr & context)
 {
     context->setSetting("distributed_foreground_insert", true);
     context->setSetting("async_insert", false);
@@ -336,6 +337,9 @@ void forceDeliveryToShards(const StorageInMemoryMetadata & metadata, const char 
     /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table of this type: the
     /// check on the initiator runs first, so a table swapped in under the name after it is not taken.
     context->setSetting("insert_expected_table_engine", String("TimeSeries"));
+    /// A metadata-only write sends no samples, so it expects nothing of that column.
+    if (!writes_samples)
+        return;
     /// Named as the wrapper declares it, which is the name the sink sends and the probe holds every shard to.
     const auto & samples_type = metadata.columns.get(samples_column).type;
     context->setSetting("insert_expected_column_types", Field{Map{Tuple{String(samples_column), samples_type->getName()}}});
@@ -468,7 +472,7 @@ void PrometheusRemoteWriteProtocol::write(
     /// own shard choice; checked here, not on construction, with no request body read in between.
     if (distributed_target)
     {
-        forceDeliveryToShards(*metadata, samples_column_name, getContext());
+        forceDeliveryToShards(*metadata, samples_column_name, !time_series.empty(), getContext());
         checkPrometheusQueryDistributedWrite(*time_series_storage, *distributed_target, getContext(), block);
     }
 

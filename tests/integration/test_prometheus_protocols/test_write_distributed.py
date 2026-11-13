@@ -792,6 +792,33 @@ def test_remote_write_metadata_needs_a_wrapper_declaring_its_columns():
     assert metadata_on_the_shards(METADATA_METRIC, table="ts_column_granted") == ""
 
 
+def test_remote_write_metadata_only_needs_only_the_metadata_grant():
+    """A metadata-only write sends no samples, so the grant on the four metadata columns is enough."""
+    user = "prom_metadata_only_user"
+    family = "metadata_only_family"
+    node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+    try:
+        node.query(
+            f"GRANT INSERT(metric_family, type, unit, help) ON default.prom_dist TO {user}"
+        )
+        # Both shards are this server, so their inserts run as the caller.
+        node.query(f"GRANT INSERT ON shard_0.* TO {user}")
+        node.query(f"GRANT INSERT ON shard_1.* TO {user}")
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            f"/dist/write?user={user}&password=",
+            convert_metrics_metadata_to_protobuf(
+                [(family, "GAUGE", METADATA_HELP, METADATA_UNIT)]
+            ),
+        )
+        assert response.status_code == 204, response.text
+        stored = metadata_on_the_shards(family)
+        assert stored == f"gauge\t{METADATA_HELP}\t{METADATA_UNIT}\n", stored
+    finally:
+        node.query(f"DROP USER {user}")
+
+
 def test_remote_write_refuses_a_wrapper_retyping_the_metric_name():
     """The block a write sends is filled with the types the table it names declares, and a Distributed
     table declares its own: a `metric_name` no TimeSeries table would declare takes the label bytes to a
