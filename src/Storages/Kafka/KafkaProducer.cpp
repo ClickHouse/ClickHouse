@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
+#include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 
@@ -18,6 +19,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
 
 namespace
 {
@@ -118,8 +124,11 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
         }
     }
 
-    while (!shutdown_called)
+    while (true)
     {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
         try
         {
             producer->produce(builder);
