@@ -37,10 +37,10 @@ ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TEMPORARY TABLE, REMOTE ON *.* TO ${U1}"
 # With `serialize_query_plan` the initiator analyzes the remote table itself, under this user.
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_remote_05257 TO ${U1}"
 ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q1} FOR INTERVAL 100 year MAX SelectedParts = 1, SelectedRows = 1000 TO ${U1}"
-${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257)"
+${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257) SETTINGS use_statistics_for_sum_avg_aggregation = 0"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedParts'], profile_events['SelectedRows'] FROM system.quotas_usage WHERE quota_name = '${Q1}'"
-${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257)"
-${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257)" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
+${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257) SETTINGS use_statistics_for_sum_avg_aggregation = 0"
+${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT sum(a) FROM remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.t_remote_05257) SETTINGS use_statistics_for_sum_avg_aggregation = 0" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedParts'], profile_events['SelectedRows'] FROM system.quotas_usage WHERE quota_name = '${Q1}'"
 
 # With `wait_for_async_insert = 1` the insert returns after the flush, which is accounted before

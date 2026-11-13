@@ -40,6 +40,8 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
+    /// TODO: Managed Iceberg tables could be created through the inner Iceberg REST catalog without a location.
+    /// Override `writesInitialMetadata` and `createTableAtDefaultLocation` and forward them to `getIcebergRestCatalog`.
     void createTable(
         const String & namespace_name,
         const String & table_name,
@@ -93,12 +95,15 @@ public:
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_snapshot) const override;
+        const String & base_catalog_metadata_location,
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 

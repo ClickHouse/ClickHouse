@@ -1,0 +1,5 @@
+capped	t_squash_ratio	10	1000
+capped	t_squash_ratio_dst	10	1000
+uncapped	t_squash_ratio	1	1000
+uncapped	t_squash_ratio_dst	1	1000
+ratio 1	1010

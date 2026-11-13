@@ -222,6 +222,19 @@ namespace
                 right_str, column_type, false, /*compensate_rounding=*/false);
         }
 
+        /// A NaN bound does not bound the other values of the column.
+        if (left->isNaN() || right->isNaN())
+        {
+            LOG_DEBUG(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a NaN bound for column id {} of data file '{}'; "
+                "ignoring the bounds of this column",
+                path_to_manifest_file,
+                column_id,
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
+        }
+
         /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
         /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
         /// right where swapping or clamping them would prune on a value nothing vouches for.
@@ -718,7 +731,13 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         return it->second.get();
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context);
+        *schema_processor_ptr,
+        table_snapshot_schema_id,
+        schema_id,
+        filter_dag.get(),
+        partition_key_description.get(),
+        *common_partition_specification,
+        context);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
