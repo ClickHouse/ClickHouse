@@ -80,6 +80,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
@@ -874,6 +875,14 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
 void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
+    /// Shutdown sets the flag before it copies the databases under this mutex, so a database attached later never shuts down.
+    if (is_shutting_down)
+        throw Exception(ErrorCodes::ABORTED, "Cannot attach database {}, the server is shutting down", backQuoteIfNeed(database_name));
+    attachDatabaseUnlocked(database_name, database);
+}
+
+void DatabaseCatalog::attachDatabaseUnlocked(const String & database_name, const DatabasePtr & database)
+{
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
     if (!database->isDatalakeCatalog())
@@ -938,7 +947,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         }
         catch (...)
         {
-            attachDatabase(database_name, db);
+            std::lock_guard lock{databases_mutex};
+            attachDatabaseUnlocked(database_name, db);
             throw;
         }
     }
@@ -956,7 +966,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         }
         catch (...)
         {
-            attachDatabase(database_name, db);
+            std::lock_guard lock{databases_mutex};
+            attachDatabaseUnlocked(database_name, db);
             throw;
         }
 

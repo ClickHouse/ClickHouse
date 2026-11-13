@@ -304,6 +304,8 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
+    /// Attaches even during shutdown, so `detachDatabase` can put back a database it failed to detach.
+    void attachDatabaseUnlocked(const String & database_name, const DatabasePtr & database) TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
     void checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
         const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const TSA_REQUIRES(databases_mutex);
