@@ -55,7 +55,7 @@ Int64 getPosition(const IColumn & positions, size_t index, bool unsigned_positio
     return value;
 }
 
-String serializeDeletionVectorBlob(std::map<UInt32, roaring::Roaring> & bitmaps, UInt64 & cardinality)
+String serializeDeletionVectorBlob(MapWithMemoryTracking<UInt32, roaring::Roaring> & bitmaps, UInt64 & cardinality)
 {
     UInt64 vector_size = sizeof(Int64) + bitmaps.size() * sizeof(Int32);
     cardinality = 0;
@@ -90,10 +90,10 @@ String serializeDeletionVectorBlob(std::map<UInt32, roaring::Roaring> & bitmaps,
     return buf.str();
 }
 
-std::vector<Int32> parseFieldIds(const String & field_ids)
+VectorWithMemoryTracking<Int32> parseFieldIds(const String & field_ids)
 {
-    std::vector<Int32> result;
-    std::vector<String> parts;
+    VectorWithMemoryTracking<Int32> result;
+    VectorWithMemoryTracking<String> parts;
     boost::split(parts, field_ids, boost::is_any_of(","));
     for (auto & part : parts)
     {

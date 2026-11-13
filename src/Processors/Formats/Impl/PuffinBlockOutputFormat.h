@@ -3,8 +3,8 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 
-#include <map>
-#include <vector>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -28,10 +28,10 @@ private:
     String referenced_data_file;
     Int64 snapshot_id;
     Int64 sequence_number;
-    std::vector<Int32> field_ids;
+    VectorWithMemoryTracking<Int32> field_ids;
     bool positions_are_arrays = false;
     bool positions_are_unsigned = false;
-    std::map<UInt32, roaring::Roaring> bitmaps;
+    MapWithMemoryTracking<UInt32, roaring::Roaring> bitmaps;
 };
 
 class FormatFactory;
