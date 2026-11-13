@@ -207,9 +207,8 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// would create too much lock contention in the cache (this was learned the hard way).
     /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
     /// Such parts will be removed soon and caching them is wasteful.
-    /// Also note that the cache key must use `getPathForCacheKey` (it is based on `getRelativePathOfActivePart`, not `getFullPath`)
-    /// to match the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache` and
-    /// `MergeTreeData::clearVectorSimilarityIndexCache`.
+    /// Also note that the cache key must use `getPathForCacheKey` (not `getFullPath`) to match the key used during eviction in 
+    /// `IMergeTreeDataPart::removeFromVectorIndexCache` and `MergeTreeData::clearVectorSimilarityIndexCache`.
     /// The cache key needs the part itself; without one the granule is loaded directly.
     auto concrete_part = data_part_info->getDataPart();
     if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
@@ -221,7 +220,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         granule = vector_similarity_index_cache->getOrSet(key, [&](MergeTreeIndexGranulePtr & loaded_granule)
         {
             load_func(loaded_granule);
-            /// Lets a test drop the cache entries of the table after the granule is loaded and before it is inserted.
+            /// Allows a test to drop the cache entries of the table after the granule is loaded and before it is inserted.
             FailPointInjection::pauseFailPoint(FailPoints::vector_similarity_index_cache_pause_before_insert);
         });
     }
