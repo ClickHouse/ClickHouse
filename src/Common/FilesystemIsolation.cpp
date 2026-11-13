@@ -82,6 +82,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <set>
 
 #include <dirent.h>
@@ -883,13 +884,9 @@ std::vector<std::string> getNeededLibraries(const std::string & path)
     return libraries;
 }
 
-/// The modules of the Name Service Switch for the services in `/etc/nsswitch.conf`, such as `libnss_files.so.2`
-/// and `libnss_dns.so.2`, and the libraries they need. The C library loads them on the first lookup of a host, a
-/// user or a group, which can happen after the isolation, so they are not among the mapped files. They are looked
-/// up where the dynamic loader finds them: in the directories of the mapped libraries, such as the one of the C
-/// library, and in the default directories. A service without a module, such as one built into the C library, or
-/// one that is not installed, is unavailable to the C library as well.
-std::vector<std::string> getNameServiceModules(const std::vector<std::string> & mapped_files)
+/// The directories where the dynamic loader finds the shared libraries: the directories of the mapped libraries,
+/// such as the one of the C library, and the default directories.
+std::vector<std::string> getLibraryDirectories(const std::vector<std::string> & mapped_files)
 {
     std::vector<std::string> directories;
     for (const auto & file : mapped_files)
@@ -903,13 +900,15 @@ std::vector<std::string> getNameServiceModules(const std::vector<std::string> & 
     for (const auto * directory : {"/lib64", "/usr/lib64", "/lib", "/usr/lib"})
         if (std::find(directories.begin(), directories.end(), directory) == directories.end())
             directories.emplace_back(directory);
+    return directories;
+}
 
-    std::deque<std::string> names;
-    for (const auto & service : getNameServices())
-        names.push_back(fmt::format("libnss_{}.so.2", service));
-
+/// The shared libraries with the names `names`, and the libraries they need, as the dynamic loader finds them in
+/// `directories`. A library that is not found is unavailable to the dynamic loader as well.
+std::vector<std::string> findLibraries(std::deque<std::string> names, const std::vector<std::string> & directories)
+{
     std::vector<std::string> seen;
-    std::vector<std::string> modules;
+    std::vector<std::string> libraries;
     while (!names.empty())
     {
         const std::string name = std::move(names.front());
@@ -924,13 +923,53 @@ std::vector<std::string> getNameServiceModules(const std::vector<std::string> & 
             std::error_code error;
             if (!fs::exists(path, error))
                 continue;
-            modules.push_back(path);
+            libraries.push_back(path);
             for (auto & library : getNeededLibraries(path))
                 names.push_back(std::move(library));
             break;
         }
     }
-    return modules;
+    return libraries;
+}
+
+/// The modules of the Name Service Switch for the services in `/etc/nsswitch.conf`, such as `libnss_files.so.2`
+/// and `libnss_dns.so.2`, and the libraries they need. The C library loads them on the first lookup of a host, a
+/// user or a group, which can happen after the isolation, so they are not among the mapped files. A service without a
+/// module, such as one built into the C library, or one that is not installed, is unavailable to the C library as well.
+std::vector<std::string> getNameServiceModules(const std::vector<std::string> & mapped_files)
+{
+    std::deque<std::string> names;
+    for (const auto & service : getNameServices())
+        names.push_back(fmt::format("libnss_{}.so.2", service));
+    return findLibraries(std::move(names), getLibraryDirectories(mapped_files));
+}
+
+/// The dynamic loader and the shared libraries of an executable that the server starts after the isolation, such as
+/// `clickhouse-odbc-bridge`, which can need libraries that the server itself does not map. Nothing for a file that is
+/// not an ELF file, such as a script, or a statically linked one.
+std::vector<std::string> getExecutableDependencies(const std::string & path, const std::vector<std::string> & mapped_files)
+{
+    {
+        std::error_code error;
+        if (!fs::is_regular_file(path, error))
+            return {};
+        char magic[4] = {};
+        std::ifstream in(path, std::ios::binary);
+        if (!in.read(magic, sizeof(magic)) || memcmp(magic, ELFMAG, SELFMAG) != 0)
+            return {};
+    }
+
+    std::vector<std::string> dependencies;
+    const Elf elf(path);
+    if (const auto interpreter = elf.findSectionByName(".interp"))
+        dependencies.emplace_back(interpreter->begin(), strnlen(interpreter->begin(), interpreter->size()));
+
+    std::deque<std::string> names;
+    for (auto & library : getNeededLibraries(path))
+        names.push_back(std::move(library));
+    for (auto & library : findLibraries(std::move(names), getLibraryDirectories(mapped_files)))
+        dependencies.push_back(std::move(library));
+    return dependencies;
 }
 
 /// The directories of the sockets of the services that the modules of the Name Service Switch for the services in
@@ -1179,6 +1218,15 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     const std::vector<std::string> mapped_files = getMappedFiles();
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
+    /// The libraries of the programs that are started later, with the links that name them, as for the mapped files.
+    std::vector<std::string> executable_dependencies;
+    for (const auto & path : std::vector<FilesystemIsolationPath>(all_paths))
+        if (path.executable)
+            for (auto & dependency : getExecutableDependencies(path.path, mapped_files))
+            {
+                all_paths.push_back({dependency, FilesystemIsolationPath::Access::ReadOnly, fmt::format("needed by {}", path.path)});
+                executable_dependencies.push_back(std::move(dependency));
+            }
     if (const auto interpreter = getInterpreter())
     {
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
@@ -1192,6 +1240,8 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     }
     const std::vector<Mount> mounts = planMounts(all_paths, traversal);
     for (auto & alias : getLibraryAliases(mapped_files))
+        traversal.links.push_back(std::move(alias));
+    for (auto & alias : getLibraryAliases(executable_dependencies))
         traversal.links.push_back(std::move(alias));
 
     std::error_code error;

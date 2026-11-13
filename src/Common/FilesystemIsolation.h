@@ -39,6 +39,9 @@ struct FilesystemIsolationPath
     Access access = Access::ReadOnly;
     /// Where the path comes from, for the log: a configuration key or a description.
     std::string source;
+    /// A program that the server executes after the isolation: its dynamic loader and the shared libraries it needs
+    /// are made visible as well.
+    bool executable = false;
 };
 
 struct FilesystemIsolationStatus

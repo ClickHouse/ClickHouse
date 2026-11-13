@@ -722,10 +722,14 @@ private:
     }
 
     /// The server starts `clickhouse-odbc-bridge` from the directory of its own executable. Only the program is
-    /// visible, not the directory, which is usually `/usr/bin`.
+    /// visible, not the directory, which is usually `/usr/bin`, with its dynamic loader and the libraries it needs.
     void addBridge()
     {
-        add(fs::path(config.getString("application.dir", "/usr/bin")) / "clickhouse-odbc-bridge", Access::ReadOnly, "the ODBC bridge");
+        paths.push_back({
+            (fs::path(config.getString("application.dir", "/usr/bin")) / "clickhouse-odbc-bridge").string(),
+            Access::ReadOnly,
+            "the ODBC bridge",
+            /* executable = */ true});
     }
 
     /// The directory of the heap profiles that jemalloc writes, if its option `prof_prefix` names one, for example
