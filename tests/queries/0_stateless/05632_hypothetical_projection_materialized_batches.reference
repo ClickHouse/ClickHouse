@@ -1,9 +1,9 @@
 t_est	0	1100000
 t_real	0	1100000
-marks: 2977
+marks: 12
 With p_k (normal projection, hypothetical):
-marks: 3438
-marks_span: 2620 to 3438
+marks: 14
+marks_span: 11 to 14
 verdict: too close to call
 real: ReadFromMergeTree (p_k)
-real: Granules: 2620/26191
+real: Granules: 11/100

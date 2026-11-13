@@ -5,9 +5,11 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0;
 
+-- few big granules and the batch sorting queue keep the materialization fast under the thread fuzzer of the flaky check
 CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '';
+    SETTINGS index_granularity = 16384, index_granularity_bytes = 262144, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '',
+        merge_use_batch_sorting_queue = 1;
 CREATE TABLE t_real AS t_est;
 
 -- more rows than `min_insert_block_size_rows` of the background profile, in one part
