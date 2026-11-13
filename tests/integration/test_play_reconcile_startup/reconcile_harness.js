@@ -1927,14 +1927,33 @@ async function main() {
         ['none', () => {}],
         ['database', (sandbox) => vm.runInContext("commitSelectedDatabase('changed_by_user')", sandbox)],
         ['completed-run', (sandbox) => vm.runInContext('++getActiveTab().reqNum', sandbox)],
+        /// A switch to another, already materialized notebook cell with the same query but another
+        /// parameter value keeps the tab, the query text and `tab.reqNum`, and once bootstrap has
+        /// settled it cancels nothing else when both cells hold matching completed results (their
+        /// history writes keep `run=1` and `deferred_run_cancelled` false).
+        ['cell-switch', (sandbox) => vm.runInContext(`{
+            const tab = getActiveTab();
+            const completed = (params) => ({ ran: true, query: query_area.value, params, database: selected_database,
+                url: url_elem.value, user: '', implicitUser: implicitUserStamp(url_elem.value, user_elem.value) });
+            captureActiveTab();
+            tab.result = completed(Object.assign({}, tab.params));
+            const other = makeQueryCell(query_area.value, { p: '2' });
+            other.tab = tab;
+            other.materialized = true;
+            other.result = completed({ p: '2' });
+            tab.cells.push(other);
+            /// As after a run of the \`run=1\` link, whose entries stay auto-runnable.
+            tab.runnableUrl = true;
+            globalThis.cell_switch_done = setActiveCell(tab, other.id);
+        }`, sandbox)],
     ]) {
-        const q = 'DELETE FROM target WHERE id = 1';
+        const q = 'DELETE FROM target WHERE id = {p:UInt64}';
         const probes = [];
         let respond;
         const responded = new Promise(resolve => { respond = resolve; });
         let runs = 0;
         const r = await runScenario(js, {
-            href: base + '?run=1&implicit_user=alice&database=original#' + Buffer.from(q, 'utf8').toString('base64'),
+            href: base + '?run=1&implicit_user=alice&database=original&param_p=1#' + Buffer.from(q, 'utf8').toString('base64'),
             historyState: null,
             seedTabs: [],
             seedMeta: null,
@@ -1960,6 +1979,15 @@ async function main() {
         check('run-link-delayed-probe', `the server is asked which account an empty user is (${interaction})`,
             probes.length > 0, probes);
         act(r.sandbox);
+        await sleep(20);
+        if (interaction === 'cell-switch')
+        {
+            await vm.runInContext('cell_switch_done', r.sandbox);
+        }
+        if (interaction === 'cell-switch')
+            check('run-link-delayed-probe', 'the cell switch leaves the tab, query, run generation and cancellation flags unchanged',
+                vm.runInContext("query_area.value === " + JSON.stringify(q) + " && getActiveTab().reqNum === 0 && !deferred_run_cancelled && !bootstrap_dirty", r.sandbox),
+                vm.runInContext('JSON.stringify([query_area.value, getActiveTab().reqNum, deferred_run_cancelled, bootstrap_dirty])', r.sandbox));
         respond();
         await sleep(50);
         check('run-link-delayed-probe', `the query is auto-run only without an interaction (${interaction})`,

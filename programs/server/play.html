@@ -21974,9 +21974,10 @@ const implicit_user_from_url = current_url.searchParams.get('implicit_user') || 
 /// written, or the link is opened by someone the server authenticates as another account. Otherwise
 /// the query is left in the editor and the link no longer carries `run=1`, failing closed. Any change
 /// of the connection, the tab or the query while the server is being asked, any other action that
-/// cancels a deferred auto-run (`deferred_run_cancelled`: a database selection, a parameter edit), or
-/// a run started meanwhile (`tab.reqNum`, which also covers a run that has already completed),
-/// cancels the auto-run as well.
+/// cancels a deferred auto-run (`deferred_run_cancelled`: a database selection, a parameter edit),
+/// a run started meanwhile (`tab.reqNum`, which also covers a run that has already completed), or a
+/// switch to another notebook cell (`activation_num` and the active cell, since the cell may hold the
+/// same query with other parameters) cancels the auto-run as well.
 /// A user that is named explicitly by the time the auto-run starts (e.g. silently refilled by the
 /// password manager, which fires no `input` event) must be that same account: a refill of another
 /// saved login would otherwise run the linked query as a different user than the link records.
@@ -21999,9 +22000,14 @@ function runDeferredStartupQuery() {
     const connection = connectionTuple();
     const query = query_area.value;
     const request_num = tab.reqNum;
+    /// A switch between notebook cells keeps the tab, and may keep the query text and `tab.reqNum`,
+    /// but binds the editor to another cell's parameters; it bumps `activation_num`.
+    const activation = activation_num;
+    const cell = activeCell(tab);
     learnImplicitUser(url_elem.value, password_elem.value).then(name => {
         const unchanged = connectionTuple() === connection && getActiveTab() === tab && query_area.value === query
-            && tab.reqNum === request_num && !deferred_run_cancelled && !bootstrap_dirty;
+            && tab.reqNum === request_num && activation_num === activation && activeCell(tab) === cell
+            && !deferred_run_cancelled && !bootstrap_dirty;
         if (!unchanged || activeInFlight()) return;
         if (name === implicit_user_from_url) {
             postAll();
