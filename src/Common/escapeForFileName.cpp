@@ -7,8 +7,8 @@ namespace DB
 
 std::string escapeForFileName(std::string_view s)
 {
-    const char * pos = s.data();
-    const char * end = pos + s.size();
+    auto pos = s.begin();
+    const auto end = s.end();
 
     /// Column and substream names are mostly plain identifiers, and the readers and writers of parts escape them per
     /// substream of every granule, so a name with nothing to escape is copied whole instead of character by character.
@@ -19,7 +19,7 @@ std::string escapeForFileName(std::string_view s)
 
     std::string res;
     res.reserve(s.size() + 2);
-    res.append(s.data(), pos);
+    res.append(s.begin(), pos);
 
     while (pos != end)
     {
