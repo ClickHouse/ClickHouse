@@ -2408,7 +2408,7 @@ class SettingsRandomizer:
         # "min_bytes_before_external_group_by": lambda: random.choice(
         #     [0, 1, 1024 * 1024, 16 * 1024 * 1024]
         # ),
-        "use_iceberg_manifest_statistics": lambda: random.random() < 0.3,
+        "use_datalake_metadata_statistics": lambda: random.random() < 0.3,
         # The theta-sketch NDV of `metadata.json` for the estimates above; join order and estimates only
         "use_iceberg_table_statistics_ndv": lambda: random.random() < 0.3,
         # Skipping Iceberg files and row groups by JOIN runtime filters, and delta-kernel-rs file
@@ -2488,8 +2488,8 @@ class SettingsRandomizer:
         "enable_join_seal_gated_reading": "enable_join_runtime_filters",
         # part pruning via statistics requires statistics to be enabled
         "use_statistics_for_part_pruning": "use_statistics",
-        "use_iceberg_manifest_statistics": "use_statistics",
-        "use_iceberg_table_statistics_ndv": "use_iceberg_manifest_statistics",
+        "use_datalake_metadata_statistics": "use_statistics",
+        "use_iceberg_table_statistics_ndv": "use_datalake_metadata_statistics",
         # the file and row group skip needs a runtime filter to check against
         "use_join_runtime_filters_for_iceberg_pruning": "enable_join_runtime_filters",
         # reverse-order FINAL reads only apply when reading in order at all
