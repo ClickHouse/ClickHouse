@@ -172,13 +172,17 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
+    const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
+    /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
+    bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
 
     /// Decision by the planner whether to enable row store tranformation or not.
-    bool enable_row_store = false;
+    NameSet row_store_candidate_columns;
+    std::unordered_map<String, Float64> right_columns_avg_bytes;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -353,9 +357,20 @@ public:
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
+    bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
-    void setRowStoreEnabled(bool value) { enable_row_store = value; }
-    bool isRowStoreEnabled() const { return enable_row_store; }
+    bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }
+    void setPackedStringKeysInHashJoinEnabled(bool value) { enable_packed_string_keys_in_hash_join = value; }
+    void setRowStoreCandidateColumns(NameSet columns) { row_store_candidate_columns = std::move(columns); }
+    const NameSet & getRowStoreCandidateColumns() const { return row_store_candidate_columns; }
+    bool isRowStoreEnabled() const { return !row_store_candidate_columns.empty(); }
+    void setRightColumnAvgBytes(const String & name, Float64 avg_bytes) { right_columns_avg_bytes[name] = avg_bytes; }
+    Float64 getRightColumnAvgBytes(const String & name) const
+    {
+        if (auto it = right_columns_avg_bytes.find(name); it != right_columns_avg_bytes.end())
+            return it->second;
+        return 0;
+    }
 
     const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {

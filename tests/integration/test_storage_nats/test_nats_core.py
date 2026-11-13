@@ -1670,3 +1670,50 @@ def test_hiding_credentials(nats_cluster):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "nats_password = \\'[HIDDEN]\\'" in  message
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
+
+
+def test_nats_stream_error_mode_multirow_message(nats_cluster):
+    """One valid message with several rows used to break the chunk in `stream` error mode."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, b String)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'stream_multirow',
+                     nats_format = 'JSONEachRow',
+                     nats_handle_error_mode = 'stream';
+        CREATE TABLE test.dst (a UInt64, b String, raw Nullable(String), err Nullable(String))
+            ENGINE = MergeTree ORDER BY a;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS
+            SELECT a, b, _raw_message AS raw, _error AS err FROM test.nats;
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    # Two good rows in a single message, then one broken message.
+    good = '{"a":1,"b":"x"}\n{"a":2,"b":"y"}\n'
+    bad = "this is not json"
+    asyncio.run(publish_messages(nats_cluster, "stream_multirow", [good, bad]))
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 3)
+
+    # Check the actual values, not just the count. Good rows keep their data and have
+    # NULL in both virtual columns. The broken row gets default data, the raw message
+    # and a non-NULL error.
+    result = instance.query(
+        "SELECT a, b, raw, err IS NULL FROM test.dst ORDER BY a, b"
+    )
+    assert result == (
+        "0\t\tthis is not json\t0\n"
+        "1\tx\t\\N\t1\n"
+        "2\ty\t\\N\t1\n"
+    )
+
+    # The exact error text depends on the parser, so only check that it is not empty.
+    assert instance.query("SELECT length(err) > 0 FROM test.dst WHERE a = 0") == "1\n"

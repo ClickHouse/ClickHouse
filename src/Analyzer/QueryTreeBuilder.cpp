@@ -63,6 +63,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
@@ -83,6 +84,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -259,46 +261,25 @@ void applyQueryLevelSettings(
     /// uncastable value throws as for a top-level clause, on every server that executes the query. The
     /// node records the effective `changes`: the ones that survive, with their clamped values and the
     /// literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
-    /// subquery see what was applied. `SETTINGS name = DEFAULT` is parsed into `default_settings`, not
-    /// into `changes`, and is clamped separately below.
-    if (!set_query.changes.empty())
-    {
-        /// One change at a time, so that each is clamped against the context as the preceding changes
-        /// left it. Clamping the whole clause as a batch checks every change against the context as it
-        /// was before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve
-        /// differently from the last-wins reading the clause has everywhere else.
-        for (const auto & change : set_query.changes)
-        {
-            SettingsChanges single_change{change};
-            updated_context->clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
-            updated_context->applySettingsChanges(single_change);
-            settings_changes.insert(settings_changes.end(), single_change.begin(), single_change.end());
-        }
-    }
-
-    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Reset those settings
-    /// to their default values in the subquery scope as well, so that the reset actually takes effect
-    /// for the subquery (e.g. a table function such as `obfuscate` reading the effective setting),
-    /// consistent with how `changes` are applied here and with how top-level query settings are
-    /// handled by `InterpreterSetQuery`.
-    if (!set_query.default_settings.empty())
-    {
-        default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
-
-        /// A reset is an assignment of the declared default, so it can violate the reader's constraints
-        /// exactly like an explicit assignment - without this, an inner `SETTINGS max_threads = DEFAULT`
-        /// or `additional_table_filters = DEFAULT` would escape a `readonly`, `CONST` or `MIN` / `MAX`
-        /// constraint that the same clause could not escape by writing the value out. The top-level path
-        /// throws (`checkSettingsConstraintsForSettingsReset` in `InterpreterSetQuery`); here, as for the
-        /// `changes` above, clamp instead: a forbidden reset is dropped, a reset past a bound becomes an
-        /// assignment of the clamped value. The node keeps the clause as written, so the tree's AST and
-        /// hash are unchanged.
-        auto allowed_resets = set_query.default_settings;
-        SettingsChanges clamped_resets;
-        updated_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
-        updated_context->resetSettingsToDefaultValue(allowed_resets);
-        updated_context->applySettingsChanges(clamped_resets);
-    }
+    /// subquery see what was applied. The changes are clamped one at a time, so that each is clamped
+    /// against the context as the preceding changes left it - the last-wins reading the clause has
+    /// everywhere else.
+    ///
+    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Those settings are reset
+    /// in the subquery scope as well, so that the reset actually takes effect for the subquery (e.g. a
+    /// table function such as `obfuscate` reading the effective setting). A reset is an assignment of
+    /// the declared default, so it can violate the reader's constraints exactly like an explicit
+    /// assignment - without clamping, an inner `SETTINGS max_threads = DEFAULT` would escape a
+    /// `readonly`, `CONST` or `MIN` / `MAX` constraint that the same clause could not escape by writing
+    /// the value out. The top-level path throws (`checkSettingsConstraintsForSettingsReset` in
+    /// `InterpreterSetQuery`); here a forbidden reset is dropped, and a reset past a bound becomes an
+    /// assignment of the clamped value. The node keeps the resets as written.
+    ///
+    /// The sequence is shared with `ApplyWithSubqueryVisitor` and the query result cache check
+    /// (`Context::applyNestedQuerySettingsClamped`).
+    auto effective_changes = updated_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
+    settings_changes.insert(settings_changes.end(), effective_changes.begin(), effective_changes.end());
+    default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
 
     if (!set_query.query_parameters.empty())
     {
@@ -335,7 +316,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     /// A `SETTINGS` clause of a UNION is query-level: it applies to the whole union, not to a single
     /// arm. The grammar gives it two shapes - `ASTQueryWithOutput::settings_ast` for the top-level
     /// query, and, for every other position (a subquery, a table function argument, a CTE), the last
-    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause. Both
+    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause (possibly
+    /// nested into `INTERSECT` / `EXCEPT`, see `ASTSelectIntersectExceptQuery::getTrailingSettings`). Both
     /// are applied to the union's context, and that context is the one every arm is built from, so a
     /// nested `(SELECT ... UNION ALL SELECT ... SETTINGS x = ...)` shapes ALL of its arms - the same
     /// contract `InterpreterSetQuery::applySettingsFromQuery` implements for a directly executed
@@ -353,8 +335,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     };
 
     apply_settings(select_with_union_query_typed.settings_ast);
-    if (auto * last_select = select_lists.children.back()->as<ASTSelectQuery>())
-        apply_settings(last_select->settings());
+    apply_settings(ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.children.back()));
 
     auto union_node = std::make_shared<UnionNode>(
         std::move(updated_context),
@@ -417,9 +398,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     std::vector<String> default_settings;
     NameToNameVector query_parameters;
 
-    if (auto * last_select = select_lists.back()->as<ASTSelectQuery>())
+    if (auto trailing_settings = ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.back()))
     {
-        if (auto * set_query = last_select->settings() ? last_select->settings()->as<ASTSetQuery>() : nullptr)
+        if (auto * set_query = trailing_settings->as<ASTSetQuery>())
             applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
     }
 
@@ -458,6 +439,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     const auto & select_query_typed = select_query->as<ASTSelectQuery &>();
 
     auto updated_context = Context::createCopy(context);
+    if (select_query_typed.is_view_inner_query)
+        updated_context->setIsViewInnerQuery(true);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
     std::vector<String> default_settings;
@@ -468,6 +451,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             select_settings->as<ASTSetQuery &>(), updated_context, settings_changes, default_settings, query_parameters);
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
+    const auto allow_experimental_shuffle_query = updated_context->getSettingsRef()[Setting::allow_experimental_shuffle_query];
 
     auto current_query_tree = std::make_shared<QueryNode>(
         std::move(updated_context), std::move(settings_changes), std::move(default_settings), std::move(query_parameters));
@@ -485,6 +469,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
+
+    if (select_query_typed.shuffle && !allow_experimental_shuffle_query)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
+
+    current_query_tree->setIsShuffle(select_query_typed.shuffle);
     current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
