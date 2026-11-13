@@ -20,6 +20,14 @@ EXPECTED_PARTITION_VALUES = {
     "icebergHour": ["473350", "-24"],
 }
 
+# ClickHouse names a partition field after its source column and transform, like the Java builder.
+EXPECTED_PARTITION_FIELD_NAMES = {
+    "icebergYear": "ts_year",
+    "icebergMonth": "ts_month",
+    "icebergDay": "ts_day",
+    "icebergHour": "ts_hour",
+}
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 @pytest.mark.parametrize("transform", ["icebergYear", "icebergMonth", "icebergDay", "icebergHour"])
@@ -61,7 +69,8 @@ def test_writes_date_transform_partition_values_are_utc(
         assert [row["i"] for row in rows] == [expected_i], f"Spark cannot find the row for {local}"
 
     partitions = spark.read.format("iceberg").load(f"{path}#partitions")
-    written = sorted(str(row["partition"]["ts"]) for row in partitions.collect())
+    partition_field_name = EXPECTED_PARTITION_FIELD_NAMES[transform]
+    written = sorted(str(row["partition"][partition_field_name]) for row in partitions.collect())
     assert written == sorted(EXPECTED_PARTITION_VALUES[transform])
 
 
