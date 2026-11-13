@@ -1376,7 +1376,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     bool is_not_in,
     bool compare_nulls,
     const ContextPtr & context,
-    bool bind_arguments);
+    bool bind_arguments,
+    bool match_nullable_nans);
 
 static QueryTreeNodePtr includeMatchingNaNs(
     QueryTreeNodePtr result,
@@ -1485,7 +1486,7 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
                 || !tryGetLeastSupertype(DataTypes{left_type, right_type})))
         {
             /// Keep mixed numeric comparisons on functions understood by older shards.
-            return buildNumericScalarInComparison(left_argument, right_argument, false, true, context, false);
+            return buildNumericScalarInComparison(left_argument, right_argument, false, true, context, false, true);
         }
         if (left_type->hasDynamicStructure() || right_type->hasDynamicStructure()
             || isVariant(left_type) || isVariant(right_type))
@@ -1553,8 +1554,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     bool is_not_in,
     bool compare_nulls,
     const ContextPtr & context,
-    bool bind_arguments = true,
-    bool match_nullable_nans = true)
+    bool bind_arguments,
+    bool match_nullable_nans)
 {
     const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
@@ -3478,7 +3479,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (is_number_comparison && scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype])
                     {
                         node = buildNumericScalarInComparison(
-                            fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
+                            fn_args[0], right_argument, is_not_in, compare_nulls, scope.context, true, true);
                         return ProjectionNames{proj};
                     }
 
