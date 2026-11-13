@@ -804,7 +804,8 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
             assertPropertiesIsObjectOrNull(buf);
             if (properties_col_idx.has_value())
                 SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
-                    *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
+                    *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx],
+                    getPort().getHeader().getByPosition(*properties_col_idx).type.get());
             else
                 skipJSONValueStrict(buf, format_settings.json);
             has_properties = true;

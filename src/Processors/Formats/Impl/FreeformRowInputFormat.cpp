@@ -786,7 +786,7 @@ bool FreeformRowInputFormat::readField(unsigned index, MutableColumns & columns)
             /// reader would stop at a tab, and an `Escaped` one would decode escape sequences that
             /// were never meant as such.
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(*columns[target], field_buf, format_settings, serializations[target]);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(*columns[target], field_buf, format_settings, serializations[target], type.get());
             else
                 serializations[target]->deserializeWholeText(*columns[target], field_buf, format_settings);
         }

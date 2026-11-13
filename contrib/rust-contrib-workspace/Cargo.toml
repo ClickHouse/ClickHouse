@@ -7,5 +7,37 @@ members = [
     "../vortex-cmake",
     "../pcodec-cmake",
     "../wasmtime-cmake",
+    "../delta-kernel-rs-cmake",
+    "../chdig-cmake",
 ]
 resolver = "2"
+
+# Re-exports every enabled member: the one static library of the workspace (see CMakeLists.txt).
+[package]
+name = "_ch_rust_workspace"
+version = "0.1.0"
+edition = "2021"
+
+# The members stay plain libraries: cargo writes every crate type of a manifest for a dependency too.
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+skim = ["dep:_ch_rust_skim_rust"]
+prql = ["dep:_ch_rust_prql"]
+polyglot = ["dep:_ch_rust_polyglot"]
+vortex = ["dep:_ch_rust_vortex"]
+pco = ["dep:_ch_rust_pco"]
+wasmtime = ["dep:_ch_rust_wasmtime"]
+delta_kernel = ["dep:_ch_rust_delta_kernel"]
+chdig = ["dep:_ch_rust_chdig"]
+
+[dependencies]
+_ch_rust_skim_rust = { path = "../skim-cmake", optional = true }
+_ch_rust_prql = { path = "../prql-cmake", optional = true }
+_ch_rust_polyglot = { path = "../polyglot-cmake", optional = true }
+_ch_rust_vortex = { path = "../vortex-cmake", optional = true }
+_ch_rust_pco = { path = "../pcodec-cmake", optional = true }
+_ch_rust_wasmtime = { path = "../wasmtime-cmake", optional = true }
+_ch_rust_delta_kernel = { path = "../delta-kernel-rs-cmake", optional = true }
+_ch_rust_chdig = { path = "../chdig-cmake", optional = true }

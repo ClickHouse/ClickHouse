@@ -8,8 +8,6 @@ keywords: ['Elasticsearch']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="elastic-vs-clickstack">
   ## Elastic Stack vs ClickStack
 </div>
@@ -91,7 +89,15 @@ Elasticsearch は JSON (および[限定的な CSV サポート](https://www.ela
   ### インデックスとストレージ
 </div>
 
-<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
+
+</Frame>
+
+</div>
 
 シャーディングの概念は、Elasticsearch のスケーラビリティモデルの根幹を成しています。各 ① [**インデックス**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) は **分片** に分割され、各分片はディスク上にセグメントとして保存される物理的な Lucene インデックスです。分片は、耐障害性を高めるためにレプリカ分片と呼ばれる 1 つ以上の物理コピーを持つことができます。スケーラビリティのために、分片とレプリカは複数のノードに分散できます。単一の分片 ② は、1 つ以上の不変なセグメントで構成されます。セグメントは Lucene の基本的なインデックス構造です。Lucene は、Elasticsearch の基盤となっている Java ライブラリであり、インデックス作成と検索機能を提供します。
 
@@ -111,7 +117,15 @@ Elasticsearch では、[index mappings](https://www.elastic.co/guide/en/elastics
 
 これに対して ClickHouse は **カラム指向** です。つまり、各カラムは独立して保存されますが、常にテーブルの主キー / ordering key に従ってソートされます。この並び順により、[スパースプライマリ索引](/ja/concepts/core-concepts/primary-indexes) が機能し、ClickHouse はクエリ実行時にデータを効率よくスキップできます。クエリが主キーフィールドでフィルタする場合、ClickHouse は各カラムの関連する部分だけを読み取るため、ディスク I/O を大幅に削減し、すべてのカラムに完全な索引がなくても高い性能を実現できます。
 
-<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse](/images/use-cases/observability/clickhouse.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse はさらに、選択したカラムに対して索引データを事前計算することでフィルタリングを高速化する [**スキップ索引**](/ja/concepts/features/performance/skip-indexes/skipping-indexes) もサポートしています。これらは明示的に定義する必要がありますが、性能を大幅に向上させることがあります。さらに、ClickHouse ではカラムごとに [圧縮コーデック](/ja/guides/use-cases/observability/build-your-own/schema-design#using-codecs) と圧縮アルゴリズムを指定できます。これは Elasticsearch ではサポートされていません (Elasticsearch の [圧縮](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) は `_source` の JSON 保存にのみ適用されます) 。
 
@@ -184,7 +198,15 @@ ClickHouse には size の制限がありません。大規模なデータセッ
 
 ClickHouse は、最新のハードウェアで効率を最大限に引き出せるよう設計されています。デフォルトでは、ClickHouse は N 個の CPU コアを持つマシン上で、N 本の同時実行レーンを使って SQL クエリを実行します。
 
-<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="ClickHouse の実行" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse の実行](/images/use-cases/observability/clickhouse-execution.webp)
+
+</Frame>
+
+</div>
 
 単一ノード上では、実行レーンがデータを独立した範囲に分割し、CPU スレッド間で並行して処理できるようにします。これには、フィルタリング、集計、ソートが含まれます。各レーンのローカル結果は最終的にマージされ、クエリに LIMIT 句が含まれている場合は、limit 演算子が適用されます。
 
@@ -199,7 +221,15 @@ ClickHouse は、最新のハードウェアで効率を最大限に引き出せ
 
 一方 Elasticsearch では、多くの集計で、利用可能な CPU コア数にかかわらず、通常は 1 分片あたり 1 スレッドが割り当てられます。これらのスレッドは分片ローカルな top-N の結果を返し、それがコーディネーティングノードでマージされます。このアプローチでは、システムリソースを十分に活用できないことがあり、特に頻出する項目が複数の分片に分散している場合、グローバル集計で不正確さが生じる可能性があります。精度は `shard_size` パラメータを増やすことで向上できますが、その代償としてメモリ使用量とクエリレイテンシが増加します。
 
-<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Elasticsearch の実行" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Elasticsearch の実行](/images/use-cases/observability/elasticsearch-execution.webp)
+
+</Frame>
+
+</div>
 
 要するに、ClickHouse はより細粒度の並列化と、ハードウェアリソースをより細かく制御できる実行方式によって集計やクエリを実行するのに対し、Elasticsearch はより制約の多い分片ベースの実行に依存しています。
 
@@ -241,7 +271,15 @@ Elasticsearch では、**ロールアップ**や**集計**は [**transforms**](h
 
 次の図は transforms の動作を抽象的に示したものです (なお、事前に集計値を計算したい同じ bucket に属するすべての document を青色で表しています) :
 
-<Image img="/images/use-cases/observability/es-transforms.webp" alt="Elasticsearch transforms" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Elasticsearch transforms](/images/use-cases/observability/es-transforms.webp)
+
+</Frame>
+
+</div>
 
 Continuous transforms は、設定可能な確認間隔 (デフォルト値は 1 分の transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)) に基づく transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) を使用します。上の図では、① 確認間隔が経過すると新しい checkpoint が作成されると仮定しています。すると Elasticsearch は transforms の source index に変更があるかを確認し、前回の checkpoint 以降に追加された 3 つの新しい `blue` document (11、12、13) を検出します。そのため、source index は既存のすべての `blue` document を対象にフィルタリングされ、[composite 集約](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (結果の [pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) を利用するため) によって集計値が再計算されます (そして宛先 index は、以前の集計値を含む document を置き換える document で更新されます) 。同様に ② と ③ でも、変更を確認し、同じ `blue` bucket に属する既存のすべての document から集計値を再計算することで、新しい checkpoint が処理されます。
 
@@ -251,7 +289,15 @@ Continuous transforms は、設定可能な確認間隔 (デフォルト値は 1
 
 次に、インクリメンタルmaterialized view の仕組みを抽象的に示します (なお、事前に集計値を計算したい同じグループに属するすべての行を青色で表しています) :
 
-<Image img="/images/use-cases/observability/ch-mvs.webp" alt="ClickHouse Materialized Views" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Materialized Views](/images/use-cases/observability/ch-mvs.webp)
+
+</Frame>
+
+</div>
 
 上の図では、materialized view のソーステーブルには、同じグループに属するいくつかの `blue` 行 (1〜10) を格納した data part がすでに含まれています。このグループについては、view のターゲットテーブルにも、`blue` グループの [部分集計状態](https://www.youtube.com/watch?v=QDAJTKZT8y4) を格納した data part がすでに存在します。新しい行を伴う ① ② ③ のソーステーブルへの insert が行われると、各 insert ごとに対応するソーステーブルの data part が作成され、同時に、新たに挿入された行の各 block に対してのみ 部分集計状態 が計算され、data part の形で materialized view のターゲットテーブルに挿入されます。④ バックグラウンドでの part merge の際に 部分集計状態 がマージされ、インクリメンタルなデータ集計が実現されます。
 
