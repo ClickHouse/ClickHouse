@@ -23,3 +23,39 @@ lower lambda hasTokenPrefix, no direct read	64
 lower lambda hasTokenLike	64
 lower lambda hasTokenMatch	64
 lower lambda hasTokenMatch, no index	64
+arrayFirst capture hasTokenPrefix	64
+arrayFirst capture hasTokenPrefix, no index	64
+arrayFirst capture hasTokenPrefix array	64
+arrayFirst capture hasTokenPrefix array, no index	64
+arrayFirst capture hasTokenLike	64
+arrayFirst capture hasTokenLike, no index	64
+arrayFirst capture hasTokenLike array	64
+arrayFirst capture hasTokenLike array, no index	64
+arrayFirst capture hasTokenMatch	64
+arrayFirst capture hasTokenMatch, no index	64
+arrayFirst capture hasTokenMatch array	64
+arrayFirst capture hasTokenMatch array, no index	64
+arraySum capture hasTokenPrefix	64
+arraySum capture hasTokenPrefix, no index	64
+arraySum capture hasTokenPrefix array	64
+arraySum capture hasTokenPrefix array, no index	64
+arraySum capture hasTokenLike	64
+arraySum capture hasTokenLike, no index	64
+arraySum capture hasTokenLike array	64
+arraySum capture hasTokenLike array, no index	64
+arraySum capture hasTokenMatch	64
+arraySum capture hasTokenMatch, no index	64
+arraySum capture hasTokenMatch array	64
+arraySum capture hasTokenMatch array, no index	64
+arrayFirst scalar hasTokenPrefix	64
+arrayFirst scalar hasTokenPrefix, no index	64
+arrayFirst scalar hasTokenPrefix array	64
+arrayFirst scalar hasTokenPrefix array, no index	64
+arrayFirst scalar hasTokenLike	64
+arrayFirst scalar hasTokenLike, no index	64
+arrayFirst scalar hasTokenLike array	64
+arrayFirst scalar hasTokenLike array, no index	64
+arrayFirst scalar hasTokenMatch	64
+arrayFirst scalar hasTokenMatch, no index	64
+arrayFirst scalar hasTokenMatch array	64
+arrayFirst scalar hasTokenMatch array, no index	64

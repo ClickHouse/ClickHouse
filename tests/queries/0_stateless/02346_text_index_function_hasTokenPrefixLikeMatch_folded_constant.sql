@@ -67,3 +67,60 @@ SELECT 'lower lambda hasTokenMatch', count() FROM tab_folded_constant WHERE hasT
 SELECT 'lower lambda hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> lower(x), tags), '^env:prod') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_folded_constant;
+
+-- A lambda that captures a folded higher-order expression keeps the index tokenizer.
+CREATE TABLE tab_folded_constant (id UInt64, tags Array(String), INDEX idx(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags)) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, ['env:prod-eu'] FROM numbers(64);
+
+SELECT 'arrayFirst capture hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst capture hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst capture hasTokenPrefix array', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst capture hasTokenPrefix array, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst capture hasTokenLike', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod%') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst capture hasTokenLike, no index', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst capture hasTokenLike array', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod%', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst capture hasTokenLike array, no index', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst capture hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), '^env:prod-eu1$') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst capture hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), '^env:prod-eu1$') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst capture hasTokenMatch array', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst capture hasTokenMatch array, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, arrayFirst(y -> 1, ['1'])), tags), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
+CREATE TABLE tab_folded_constant (id UInt64, tags Array(String), INDEX idx(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags)) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, ['env:prod-eu'] FROM numbers(64);
+
+SELECT 'arraySum capture hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod') SETTINGS use_skip_indexes = 1;
+SELECT 'arraySum capture hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'arraySum capture hasTokenPrefix array', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arraySum capture hasTokenPrefix array, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'arraySum capture hasTokenLike', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod%') SETTINGS use_skip_indexes = 1;
+SELECT 'arraySum capture hasTokenLike, no index', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'arraySum capture hasTokenLike array', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod%', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arraySum capture hasTokenLike array, no index', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'arraySum capture hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), '^env:prod-eu1$') SETTINGS use_skip_indexes = 1;
+SELECT 'arraySum capture hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), '^env:prod-eu1$') SETTINGS use_skip_indexes = 0;
+SELECT 'arraySum capture hasTokenMatch array', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arraySum capture hasTokenMatch array, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, toString(arraySum(arrayMap(y -> y + 1, [0])))), tags), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
+
+CREATE TABLE tab_folded_constant (id UInt64, tag String, INDEX idx(concat(tag, toString(arrayFirst(y -> 1, ['1'])))) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, 'env:prod-eu' FROM numbers(64);
+
+SELECT 'arrayFirst scalar hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst scalar hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst scalar hasTokenPrefix array', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst scalar hasTokenPrefix array, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst scalar hasTokenLike', count() FROM tab_folded_constant WHERE hasTokenLike(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod%') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst scalar hasTokenLike, no index', count() FROM tab_folded_constant WHERE hasTokenLike(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst scalar hasTokenLike array', count() FROM tab_folded_constant WHERE hasTokenLike(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod%', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst scalar hasTokenLike array, no index', count() FROM tab_folded_constant WHERE hasTokenLike(concat(tag, toString(arrayFirst(y -> 1, ['1']))), 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst scalar hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, toString(arrayFirst(y -> 1, ['1']))), '^env:prod-eu1$') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst scalar hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, toString(arrayFirst(y -> 1, ['1']))), '^env:prod-eu1$') SETTINGS use_skip_indexes = 0;
+SELECT 'arrayFirst scalar hasTokenMatch array', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, toString(arrayFirst(y -> 1, ['1']))), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 1;
+SELECT 'arrayFirst scalar hasTokenMatch array, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, toString(arrayFirst(y -> 1, ['1']))), '^env:prod-eu1$', 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
