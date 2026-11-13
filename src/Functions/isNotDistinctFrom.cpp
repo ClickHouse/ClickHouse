@@ -53,7 +53,6 @@ SELECT
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotDistinctFrom>(documentation);
-    factory.registerFunction<FunctionExactNumericIsNotDistinctFrom>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 template <>

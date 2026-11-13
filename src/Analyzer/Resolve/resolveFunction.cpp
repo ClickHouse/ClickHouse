@@ -31,6 +31,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -50,7 +51,6 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/ComparisonNames.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
@@ -1331,14 +1331,88 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     bool compare_nulls,
     const ContextPtr & context)
 {
-    if (compare_nulls)
-        return buildResolvedFunction(
-            is_not_in ? "__exactNumericIsDistinctFrom" : "__exactNumericIsNotDistinctFrom",
-            {left_argument, right_argument}, context);
+    const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
+    const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
+    const bool left_is_decimal = isDecimal(left_type);
+    const bool right_is_decimal = isDecimal(right_type);
 
-    QueryTreeNodePtr result = buildResolvedFunction(NameExactNumericEquals::name, {left_argument, right_argument}, context);
+    QueryTreeNodePtr result;
+    if (left_is_decimal != right_is_decimal)
+    {
+        /// Older shards do not know a new comparison function name. Compare the
+        /// raw Decimal integer to the numeric operand with existing accurate numeric
+        /// comparison functions. A fractional Decimal cannot equal an integer.
+        const auto & decimal_argument = left_is_decimal ? left_argument : right_argument;
+        const auto & numeric_argument = left_is_decimal ? right_argument : left_argument;
+        const auto & decimal_type = left_is_decimal ? left_type : right_type;
+        const auto & numeric_type = left_is_decimal ? right_type : left_type;
+        const bool numeric_is_float = isFloat(numeric_type);
+
+        String reinterpret_name;
+        String integer_cast_name;
+        switch (decimal_type->getTypeId())
+        {
+            case TypeIndex::Decimal32: reinterpret_name = "reinterpretAsInt32"; integer_cast_name = "toInt32"; break;
+            case TypeIndex::Decimal64: reinterpret_name = "reinterpretAsInt64"; integer_cast_name = "toInt64"; break;
+            case TypeIndex::Decimal128: reinterpret_name = "reinterpretAsInt128"; integer_cast_name = "toInt128"; break;
+            case TypeIndex::Decimal256: reinterpret_name = "reinterpretAsInt256"; integer_cast_name = "toInt256"; break;
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal type in numeric `IN` comparison");
+        }
+
+        auto raw_decimal = buildResolvedFunction(reinterpret_name, {decimal_argument}, context);
+        const auto scale = getDecimalScale(*decimal_type);
+        QueryTreeNodePtr decimal_integer = raw_decimal;
+        QueryTreeNodePtr decimal_is_integral;
+        if (scale)
+        {
+            auto multiplier = buildResolvedFunction(
+                integer_cast_name, {std::make_shared<ConstantNode>("1" + String(scale, '0'))}, context);
+            auto remainder = buildResolvedFunction("modulo", {raw_decimal, multiplier}, context);
+            decimal_is_integral = buildResolvedFunction("equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
+            decimal_integer = buildResolvedFunction("intDiv", {raw_decimal, std::move(multiplier)}, context);
+        }
+
+        result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
+        if (decimal_is_integral)
+            result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
+
+        if (numeric_is_float)
+        {
+            /// Fractional floats retain the established Float64 comparison. Integral
+            /// floats use accurate integer/float comparison to avoid rounding above 2^53.
+            auto float_value = buildResolvedFunction("toFloat64", {numeric_argument}, context);
+            auto truncated = buildResolvedFunction("trunc", {float_value}, context);
+            auto is_integral = buildResolvedFunction("equals", {std::move(float_value), std::move(truncated)}, context);
+            auto fractional_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+            result = buildResolvedFunction("if", {std::move(is_integral), std::move(result), std::move(fractional_equals)}, context);
+        }
+    }
+    else if (compare_nulls)
+    {
+        return buildResolvedFunction(
+            is_not_in ? "isDistinctFrom" : "isNotDistinctFrom", {left_argument, right_argument}, context);
+    }
+    else
+    {
+        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+    }
+
     const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
     const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
+
+    if (compare_nulls)
+    {
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+        auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
+        auto either_is_null = buildResolvedFunction("or", {left_is_null, right_is_null}, context);
+        auto both_are_null = buildResolvedFunction("and", {std::move(left_is_null), std::move(right_is_null)}, context);
+        result = buildResolvedFunction("if", {std::move(either_is_null), std::move(both_are_null), std::move(result)}, context);
+        result = buildResolvedFunction("ifNull", {std::move(result), std::make_shared<ConstantNode>(Field{0u})}, context);
+        if (is_not_in)
+            result = buildResolvedFunction("not", {std::move(result)}, context);
+        return result;
+    }
+
     if (left_nullable || right_nullable)
         result = buildResolvedFunction("ifNull", {std::move(result), std::make_shared<ConstantNode>(Field{0u})}, context);
 
