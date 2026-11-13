@@ -194,8 +194,22 @@ void fillFixedBatchOrdered(size_t num_rows, const char * source, char * dest)
     }
 }
 
-/// Packs rows [begin, end) in clause order after `offset` zero bytes, which is the layout of the nullable
-/// `packFixed` for a row without NULLs. Element `i` of `out` is row `begin + i`.
+/// Copies a value of `size` bytes, `half < size <= 2 * half`, as two copies of `half` bytes that overlap.
+template <size_t half, typename Key>
+void fillFixedBatchOrderedOverlapping(size_t num_rows, size_t size, const char * source, char * dest)
+{
+    const size_t tail = size - half;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        memcpy(dest, source, half);
+        memcpy(dest + tail, source + tail, half);
+        source += size;
+        dest += sizeof(Key);
+    }
+}
+
+/// Packs rows [begin, end) in clause order after `offset` zero bytes, which is the layout of `packFixed`, and of the
+/// nullable `packFixed` for a row without NULLs. Element `i` of `out` is row `begin + i`.
 template <typename Key>
 void packFixedBatchOrdered(
     size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t offset,
@@ -216,8 +230,15 @@ void packFixedBatchOrdered(
             case 4: fillFixedBatchOrdered<4, Key>(num_rows, source, dest); break;
             case 8: fillFixedBatchOrdered<8, Key>(num_rows, source, dest); break;
             case 16: fillFixedBatchOrdered<16, Key>(num_rows, source, dest); break;
+            case 3: fillFixedBatchOrderedOverlapping<2, Key>(num_rows, size, source, dest); break;
+            case 5: case 6: case 7: fillFixedBatchOrderedOverlapping<4, Key>(num_rows, size, source, dest); break;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected key size {} for batch packing", size);
+                if (size > 8 && size < 16)
+                    fillFixedBatchOrderedOverlapping<8, Key>(num_rows, size, source, dest);
+                else if (size > 16 && size <= 32)
+                    fillFixedBatchOrderedOverlapping<16, Key>(num_rows, size, source, dest);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected key size {} for batch packing", size);
         }
         dest += size;
     }

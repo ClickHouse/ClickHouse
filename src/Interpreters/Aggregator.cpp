@@ -1210,8 +1210,10 @@ void NO_INLINE Aggregator::executeImpl(
         = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::StateNoCache>, typename Method::StateNoCache>;
 
     /// Const key columns hold one row, addressed as row 0 rather than through the block's range.
-    const ColumnsHashing::RowRange rows
-        = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+    ColumnsHashing::RowRange rows = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+    /// The top-K pruning skips the rows past the boundary of its heap.
+    if constexpr (!for_sub_range)
+        rows.skips_rows = params.top_k && !method.top_k_heap.frozen && method.top_k_heap.hasBoundary();
 
     if (use_cache)
     {

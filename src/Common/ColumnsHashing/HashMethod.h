@@ -501,6 +501,8 @@ struct HashMethodKeysFixed
     /// sub-range, starting at `prepared_keys_begin`, or is empty; a row it does not hold is packed on
     /// its own.
     bool covers_sub_range = false;
+    /// Set when `prepared_keys` is packed longest first (`usePreparedKeys`); a row it does not hold is then packed so too.
+    bool packs_longest_first = false;
     size_t prepared_keys_begin = 0;
 
     /// A sub-range shorter than this is packed per row: the array would cost more to allocate and fill
@@ -519,22 +521,18 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    /// Nullable keys are batch-packed in clause order, the layout of the per-row nullable `packFixed`, so
-    /// `packedKeysOrder` stays empty for them.
+    /// Nullable keys, and keys with a column of another width than 1, 2, 4, 8 or 16 bytes, are batch-packed in clause
+    /// order, the layout of the per-row `packFixed`, so `packedKeysOrder` stays empty for them.
     static bool useOrderedPreparedKeys(const Sizes & key_sizes)
     {
-        if constexpr (!has_nullable_keys || has_low_cardinality)
+        if constexpr (has_low_cardinality)
             return false;
         else
         {
-            size_t packed_size = std::tuple_size_v<KeysNullMap<Key>>;
+            size_t packed_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
             for (auto size : key_sizes)
-            {
-                if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
-                    return false;
                 packed_size += size;
-            }
-            return packed_size <= sizeof(Key);
+            return (has_nullable_keys || hasOtherKeyWidth(key_sizes)) && packed_size <= sizeof(Key);
         }
     }
 
@@ -571,27 +569,30 @@ struct HashMethodKeysFixed
             }
         }
 
+        if constexpr (!has_low_cardinality)
+        {
+            if (useOrderedPreparedKeys(key_sizes))
+            {
+                const RowRange packed = rowsToBatchPack(key_columns, rows);
+                if (packed.end > packed.begin && batchPacksOrderedKeys(key_sizes, rows, key_columns.empty() ? 0 : key_columns[0]->size()))
+                {
+                    packFixedBatchOrdered<Key>(
+                        keys_size, Base::getActualColumns(), key_sizes, has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0,
+                        prepared_keys, packed.begin, packed.end);
+                    if constexpr (has_nullable_keys)
+                        repackRowsWithNulls(packed.begin, packed.end);
+                }
+            }
+        }
+
         if (usePreparedKeys(key_sizes))
         {
+            packs_longest_first = true;
             const RowRange packed = rowsToBatchPack(key_columns, rows);
             if (!covers_sub_range)
                 packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
             else if (packed.end > packed.begin)
                 packFixedBatchRange(keys_size, Base::getActualColumns(), key_sizes, prepared_keys, packed.begin, packed.end);
-        }
-        else if constexpr (has_nullable_keys && !has_low_cardinality)
-        {
-            if (useOrderedPreparedKeys(key_sizes))
-            {
-                const RowRange packed = rowsToBatchPack(key_columns, rows);
-                if (packed.end > packed.begin)
-                {
-                    packFixedBatchOrdered<Key>(
-                        keys_size, Base::getActualColumns(), key_sizes, std::tuple_size_v<KeysNullMap<Key>>, prepared_keys,
-                        packed.begin, packed.end);
-                    repackRowsWithNulls(packed.begin, packed.end);
-                }
-            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -681,7 +682,15 @@ struct HashMethodKeysFixed
                     const size_t index = row - prepared_keys_begin;
                     if (index < prepared_keys.size())
                         return prepared_keys[index];
-                    return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
+                    if constexpr (sizeof(Key) <= 16)
+                    {
+                        if (packs_longest_first)
+                            return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+                        return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
+#endif
+                    }
+                    return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
                 }
             }
 
@@ -762,6 +771,26 @@ private:
         return {0, block_rows};
     }
 
+    static bool hasOtherKeyWidth(const Sizes & key_sizes)
+    {
+        for (auto size : key_sizes)
+            if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+                return true;
+        return false;
+    }
+
+    /// Nullable keys of widths 1, 2, 4, 8 and 16 bytes are batch-packed for every caller. The other ordered keys only
+    /// for a caller that skips none of its rows and, but for a sub-range state, is built for the whole block: a caller that asks about a
+    /// few rows packs them faster one by one.
+    static bool batchPacksOrderedKeys(const Sizes & key_sizes, RowRange rows, size_t block_rows)
+    {
+        if (has_nullable_keys && !hasOtherKeyWidth(key_sizes))
+            return true;
+        if (rows.skips_rows)
+            return false;
+        return for_sub_range || (rows.begin == 0 && rows.end >= block_rows);
+    }
+
     /// A row whose null-map bytes are all zero gets no bit from `createBitmap`, so only the other rows of
     /// the batch-packed range need packing again.
     void repackRowsWithNulls(size_t begin, size_t end)
@@ -794,12 +823,11 @@ private:
     }
 };
 
-/// Only a state that can batch-pack its keys has a sub-range variant; the others would be identical copies.
+/// A LowCardinality state packs every key on its own, so it has no sub-range variant.
 template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool has_low_cardinality, bool use_cache, bool need_offset>
 struct SubRangeStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, false>>
 {
-    using Type = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset,
-        !has_low_cardinality && (has_nullable_keys || sizeof(Key) <= 16)>;
+    using Type = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, !has_low_cardinality>;
 };
 
 /// Bitwise comparator of rows over fixed-width contiguous key columns, flattening tuples

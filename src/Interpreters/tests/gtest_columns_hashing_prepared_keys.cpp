@@ -1,11 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/KeysNullMap.h>
 #include <Interpreters/SetVariants.h>
+
+#include <algorithm>
+#include <numeric>
+#include <random>
 
 using namespace DB;
 
@@ -21,11 +26,11 @@ namespace
 using WholeBlockState = SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>::State;
 /// The state DISTINCT in order builds per equal-range of the sorting prefix (`SetVariants.h` keys128).
 using PreparedState = ColumnsHashing::SubRangeState<WholeBlockState>;
-/// Three of them need 24 bytes, which leaves that class, so they have no sub-range variant.
+/// Three of them need 24 bytes, which leaves that class: they are packed per row, in the sub-range variant too.
 using UnpreparedState = ColumnsHashing::SubRangeState<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>;
 
 static_assert(!std::is_same_v<PreparedState, WholeBlockState>);
-static_assert(std::is_same_v<UnpreparedState, SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>);
+static_assert(!std::is_same_v<UnpreparedState, SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>);
 
 /// Nullable keys128 and keys256 sets: packed in clause order after a 2- and a 4-byte NULL bitmap.
 using NullableWholeBlockState128 = SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>, true>::State;
@@ -445,4 +450,241 @@ TEST(ColumnsHashingPreparedKeys, NullableSubRangeShorterThanTheThresholdIsNotBat
             ASSERT_EQ(below_threshold.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
         }
     });
+}
+
+namespace
+{
+
+/// `FixedString` key columns of the given widths over `rows` rows (a state reads any fixed-width column as raw bytes).
+/// With `nullable`, column 0 is `Nullable`: NULL at the rows == 0 mod 3 of the first half of the block and == 1 mod 3
+/// of the second half.
+struct FixedWidthKeyColumns
+{
+    Columns holders;
+    ColumnRawPtrs columns;
+    ColumnRawPtrs nested;
+    const UInt8 * null_map = nullptr;
+    Sizes sizes;
+    size_t rows;
+    std::string name;
+
+    FixedWidthKeyColumns(std::string name_, const std::vector<size_t> & widths, bool nullable, size_t rows_)
+        : rows(rows_), name(std::move(name_))
+    {
+        for (size_t column_index = 0; column_index < widths.size(); ++column_index)
+        {
+            const size_t width = widths[column_index];
+            auto column = ColumnFixedString::create(width);
+            auto & chars = column->getChars();
+            chars.resize(rows * width);
+            /// Distinct across rows and non-zero in every byte, also under a NULL.
+            for (size_t row = 0; row < rows; ++row)
+            {
+                const UInt64 value = (row + 1) * 0x9E3779B97F4A7C15ULL + (column_index + 1) * 0x2545F4914F6CDD1DULL;
+                for (size_t byte = 0; byte < width; ++byte)
+                    chars[row * width + byte] = static_cast<UInt8>((value >> (8 * (byte % 8))) | 1) ^ static_cast<UInt8>(byte & ~7);
+            }
+
+            if (nullable && column_index == 0)
+            {
+                auto nulls = ColumnUInt8::create(rows);
+                for (size_t row = 0; row < rows; ++row)
+                    nulls->getData()[row] = row % 3 == (row < rows / 2 ? 0 : 1);
+                auto nullable_column = ColumnNullable::create(std::move(column), std::move(nulls));
+                null_map = nullable_column->getNullMapData().data();
+                nested.push_back(&nullable_column->getNestedColumn());
+                holders.emplace_back(std::move(nullable_column));
+            }
+            else
+            {
+                nested.push_back(column.get());
+                holders.emplace_back(std::move(column));
+            }
+            columns.push_back(holders.back().get());
+            sizes.push_back(width);
+        }
+    }
+
+    /// The per-row packer: the layout every key of a state that packs in clause order must have.
+    template <typename Key>
+    Key expected(size_t row) const
+    {
+        if (!null_map)
+            return packFixed<Key>(row, sizes.size(), nested, sizes);
+        KeysNullMap<Key> bitmap{};
+        if (null_map[row])
+            bitmap[0] |= 1;
+        return packFixed<Key>(row, sizes.size(), nested, sizes, bitmap);
+    }
+};
+
+/// The orders in which a caller can ask for the rows: ascending; ascending with a look-ahead of 32 rows, as the
+/// aggregator's prefetch asks; descending; sparse; and random.
+std::vector<std::pair<std::string, std::vector<size_t>>> askOrders(size_t rows)
+{
+    std::vector<std::pair<std::string, std::vector<size_t>>> orders;
+
+    std::vector<size_t> ascending(rows);
+    std::iota(ascending.begin(), ascending.end(), 0);
+    orders.emplace_back("ascending", ascending);
+
+    std::vector<size_t> look_ahead;
+    for (size_t row = 0; row < rows; ++row)
+    {
+        if (row + 32 < rows)
+            look_ahead.push_back(row + 32);
+        look_ahead.push_back(row);
+    }
+    orders.emplace_back("look-ahead", look_ahead);
+
+    orders.emplace_back("descending", std::vector<size_t>(ascending.rbegin(), ascending.rend()));
+
+    std::vector<size_t> sparse;
+    for (size_t row = 0; row < rows; row += 997)
+        sparse.push_back(row);
+    sparse.push_back(rows - 1);
+    orders.emplace_back("sparse", sparse);
+
+    std::vector<size_t> random = ascending;
+    std::shuffle(random.begin(), random.end(), std::mt19937(42));
+    orders.emplace_back("random", random);
+
+    return orders;
+}
+
+using WholeBlockState32 = SetMethodKeysFixed<ClearableHashSet<UInt32, HashCRC32<UInt32>>>::State;
+using WholeBlockState64 = SetMethodKeysFixed<ClearableHashSet<UInt64, HashCRC32<UInt64>>>::State;
+using WholeBlockState256 = SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State;
+
+/// A whole block of a set with a key of another width than 1, 2, 4, 8 or 16 bytes is batch-packed in clause order at
+/// construction, and every key equals the per-row key in every order.
+template <typename State, typename Key>
+void checkPackedPerBlock(const FixedWidthKeyColumns & keys)
+{
+    SCOPED_TRACE(keys.name);
+    ASSERT_TRUE(State::useOrderedPreparedKeys(keys.sizes));
+    ASSERT_FALSE(State::usePreparedKeys(keys.sizes));
+    ASSERT_FALSE(State::packedKeysOrder(keys.sizes));
+    Arena arena;
+
+    for (const auto & [order_name, order] : askOrders(keys.rows))
+    {
+        SCOPED_TRACE(order_name);
+        State state(keys.columns, keys.sizes, nullptr);
+        ASSERT_EQ(state.prepared_keys.size(), keys.rows);
+        for (const size_t row : order)
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+    }
+}
+
+/// The sub-range variant packs a long run in clause order and nothing for a short one; a row it does not hold is packed
+/// on its own, in clause order too.
+template <typename State, typename Key>
+void checkPackedPerRun(const FixedWidthKeyColumns & keys)
+{
+    using RangeState = ColumnsHashing::SubRangeState<State>;
+    static_assert(!std::is_same_v<RangeState, State>);
+    SCOPED_TRACE(keys.name);
+    Arena arena;
+
+    for (const auto & [begin, end] : {std::pair<size_t, size_t>{300, 900}, std::pair<size_t, size_t>{300, 300 + min_batched_rows - 1}})
+    {
+        SCOPED_TRACE(std::to_string(begin) + ".." + std::to_string(end));
+        RangeState state(keys.columns, keys.sizes, nullptr, {begin, end});
+        ASSERT_TRUE(state.covers_sub_range);
+        ASSERT_EQ(state.prepared_keys.size(), end - begin >= min_batched_rows ? end - begin : 0);
+        for (size_t row = begin; row < end; ++row)
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+        for (const size_t row : {size_t{0}, begin - 1, end, keys.rows - 1})
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+    }
+}
+
+/// A whole-block state for a caller that skips rows, starts after row 0 or ends before the last row packs nothing, and
+/// so does a sub-range state for a caller that skips rows.
+template <typename State, typename Key>
+void checkPackedPerRowForAPartialReader(const FixedWidthKeyColumns & keys)
+{
+    SCOPED_TRACE(keys.name);
+    Arena arena;
+
+    for (const auto & [name, rows] : std::vector<std::pair<std::string, ColumnsHashing::RowRange>>{
+             {"skips rows", {.skips_rows = true}}, {"begins at row 100", {.begin = 100}}, {"ends before the last row", {0, keys.rows - 1}}})
+    {
+        SCOPED_TRACE(name);
+        State state(keys.columns, keys.sizes, nullptr, rows);
+        ASSERT_EQ(state.prepared_keys.capacity(), 0);
+        for (size_t row = rows.begin; row < std::min(rows.end, keys.rows); ++row)
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+    }
+
+    ColumnsHashing::SubRangeState<State> ranged(keys.columns, keys.sizes, nullptr, {.begin = 300, .end = 900, .skips_rows = true});
+    ASSERT_TRUE(ranged.covers_sub_range);
+    ASSERT_EQ(ranged.prepared_keys.capacity(), 0);
+    for (size_t row = 300; row < 900; ++row)
+        ASSERT_EQ(ranged.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+}
+
+}
+
+/// A key of another width than 1, 2, 4, 8 or 16 bytes, with or without `Nullable`, for every key size.
+TEST(ColumnsHashingPreparedKeys, OtherWidthKeysArePackedPerBlock)
+{
+    checkPackedPerBlock<WholeBlockState32, UInt32>({"FixedString(3), UInt8", {3, 1}, false, num_long_rows});
+    checkPackedPerBlock<WholeBlockState64, UInt64>({"FixedString(3), UInt8, UInt32", {3, 1, 4}, false, num_long_rows});
+    checkPackedPerBlock<WholeBlockState, UInt128>({"FixedString(5), UInt64", {5, 8}, false, num_long_rows});
+    checkPackedPerBlock<NullableWholeBlockState128, UInt128>({"Nullable(FixedString(3)), UInt32", {3, 4}, true, num_long_rows});
+    checkPackedPerBlock<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, false, num_long_rows});
+    checkPackedPerBlock<WholeBlockState256, UInt256>({"UInt256", {32}, false, num_long_rows});
+    checkPackedPerBlock<NullableWholeBlockState256, UInt256>({"Nullable(FixedString(20)), UInt16", {20, 2}, true, num_long_rows});
+}
+
+TEST(ColumnsHashingPreparedKeys, OtherWidthKeysArePackedPerRunInClauseOrder)
+{
+    checkPackedPerRun<WholeBlockState32, UInt32>({"FixedString(3), UInt8", {3, 1}, false, num_long_rows});
+    checkPackedPerRun<WholeBlockState64, UInt64>({"FixedString(3), UInt8, UInt32", {3, 1, 4}, false, num_long_rows});
+    checkPackedPerRun<WholeBlockState, UInt128>({"FixedString(5), UInt64", {5, 8}, false, num_long_rows});
+    checkPackedPerRun<NullableWholeBlockState128, UInt128>({"Nullable(FixedString(3)), UInt32", {3, 4}, true, num_long_rows});
+    checkPackedPerRun<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, false, num_long_rows});
+    checkPackedPerRun<WholeBlockState256, UInt256>({"UInt256", {32}, false, num_long_rows});
+    checkPackedPerRun<NullableWholeBlockState256, UInt256>({"Nullable(FixedString(20)), UInt16", {20, 2}, true, num_long_rows});
+}
+
+/// The keys of a set with a key of another width are packed per row for a caller that does not ask about every row,
+/// while nullable keys of the other widths still pack their block.
+TEST(ColumnsHashingPreparedKeys, OtherWidthKeysArePackedPerRowForAPartialReader)
+{
+    checkPackedPerRowForAPartialReader<WholeBlockState64, UInt64>({"FixedString(3), UInt8, UInt32", {3, 1, 4}, false, num_long_rows});
+    checkPackedPerRowForAPartialReader<NullableWholeBlockState128, UInt128>(
+        {"Nullable(FixedString(3)), UInt32", {3, 4}, true, num_long_rows});
+    checkPackedPerRowForAPartialReader<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, false, num_long_rows});
+    checkPackedPerRowForAPartialReader<NullableWholeBlockState256, UInt256>(
+        {"Nullable(FixedString(20)), UInt16", {20, 2}, true, num_long_rows});
+
+    const NullableKeyColumns keys;
+    Arena arena;
+    NullableWholeBlockState128 state(keys.columns, keys.sizes, nullptr, {.begin = 100, .skips_rows = true});
+    ASSERT_EQ(state.prepared_keys.size(), num_long_rows);
+    for (size_t row = 100; row < num_long_rows; ++row)
+        ASSERT_EQ(state.getKeyHolder(row, arena), keys.expected<UInt128>(row)) << "row " << row;
+}
+
+/// The batch packer writes every width of 1 to 32 bytes as `packFixed` does, at the offset of the next key too.
+TEST(ColumnsHashingPreparedKeys, OrderedBatchOfEveryWidthMatchesPerRowPacking)
+{
+    constexpr size_t begin = 5;
+    constexpr size_t end = 300;
+    for (size_t width = 1; width <= 32; ++width)
+    {
+        std::vector<size_t> widths{width};
+        if (width < 32)
+            widths.push_back(32 - width);
+        const FixedWidthKeyColumns keys("FixedString(" + std::to_string(width) + ")", widths, /*nullable=*/ false, end + 10);
+        SCOPED_TRACE(keys.name);
+        PaddedPODArray<UInt256> packed;
+        packFixedBatchOrdered<UInt256>(keys.sizes.size(), keys.columns, keys.sizes, 0, packed, begin, end);
+        ASSERT_EQ(packed.size(), end - begin);
+        for (size_t row = begin; row < end; ++row)
+            ASSERT_EQ(packed[row - begin], keys.expected<UInt256>(row)) << "row " << row;
+    }
 }

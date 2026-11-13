@@ -137,8 +137,13 @@ private:
     size_t samples = 0;
 };
 
+/// `rows` describes the rows the getter is asked about, for a getter that takes it.
 template <typename KeyGetter, bool is_asof_join>
-KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {})
+KeyGetter createJoinKeyGetter(
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    HashJoin::RightTableData::KeyRange key_range = {},
+    ColumnsHashing::RowRange rows = {})
 {
     KeyGetter getter = [&]()
     {
@@ -148,10 +153,10 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
             auto key_size_copy = key_sizes;
             key_column_copy.pop_back();
             key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+            return makeJoinKeyGetter<KeyGetter>(key_column_copy, key_size_copy, rows);
         }
         else
-            return KeyGetter(key_columns, key_sizes, nullptr);
+            return makeJoinKeyGetter<KeyGetter>(key_columns, key_sizes, rows);
     }();
 
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
@@ -320,7 +325,12 @@ BuildResult insertFromBlockImplTypeCase(
 
     BuildSlots & slots = table.slots;
 
-    KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
+    /// One getter serves the passes of every slot, which skip the rows with a NULL key or filtered out by the ON section.
+    ColumnsHashing::RowRange key_rows = per_slot.size() == 1 ? joinKeyRows(null_map, join_mask, per_slot[0]) : ColumnsHashing::RowRange{};
+    if (per_slot.size() > 1)
+        key_rows.skips_rows = join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue
+            || (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()));
+    KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes, {}, key_rows);
 
     /// The skip bytes of the block, for the inserts of all slots.
     const UInt8 * skip = nullptr;
@@ -555,8 +565,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
         { \
             const auto & join_on_key = added_columns.join_on_keys[d]; \
             a_map_type_vector[d] = mapv[d]->TYPE.get(); \
-            key_getter_vector.push_back( \
-                std::move(createJoinKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
+            key_getter_vector.push_back(std::move(createJoinKeyGetter<KeyGetter, is_asof_join>( \
+                join_on_key.key_columns, join_on_key.key_sizes, key_range, \
+                joinKeyRows(join_on_key.null_map, join_on_key.join_mask_column, selector)))); \
         } \
         return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }
