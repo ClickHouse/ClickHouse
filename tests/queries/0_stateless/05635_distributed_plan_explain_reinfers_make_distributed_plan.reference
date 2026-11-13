@@ -1,0 +1,2 @@
+select: distributed
+union: distributed
