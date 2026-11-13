@@ -4,7 +4,6 @@
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
-#include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
 #include <Core/DecimalFunctions.h>
