@@ -183,7 +183,6 @@ endif()
 
 disable_dummy_launchers_if_needed()
 add_library (_boost_context ${SRCS_CONTEXT})
-enable_dummy_launchers_if_needed()
 add_library (boost::context ALIAS _boost_context)
 target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
