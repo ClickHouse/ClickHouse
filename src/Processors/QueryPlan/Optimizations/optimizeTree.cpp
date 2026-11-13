@@ -397,6 +397,11 @@ void optimizeTreeSecondPass(
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
         });
 
+    /// `JoinStepLogical::preCalculateKeys` computes an expression key below the join, after which the join no longer
+    /// reads the columns the key was computed from. Prune them, or the join carries them as payload.
+    if (join_runtime_filters_were_added && optimization_settings.remove_unused_columns)
+        removeUnusedColumns(root, RemoveUnusedColumnsMode::Global);
+
     /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
     /// before; a copied predicate alone is no reason to run a rewrite the user turned off
     const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;
@@ -618,7 +623,7 @@ void optimizeTreeSecondPass(
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.
                 if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
-                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings, /*before_projections=*/true);
             }
 
             /// Traverse all children first.
@@ -663,6 +668,10 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
+            /// After the normal projections are chosen, except for parallel replicas (see `optimizeAggregationInOrder`).
+            if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
+                optimizeAggregationInOrder(frame_node, nodes, optimization_settings, /*before_projections=*/false);
+
             if (optimization_settings.aggregate_partitions_independently)
                 optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
 
@@ -1025,6 +1034,10 @@ void optimizeTreeSecondPass(
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
+    /// After every optimization that can replace the reading step: the aggregation relies on the layers of the read.
+    if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { optimizeUniqExactInOrderLayers(frame_node); });
+
     /// Run after every optimization that works with `SortingStep`, so that it only changes how the sorting is executed.
     /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
     if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
@@ -1059,6 +1072,9 @@ void addStepsToBuildSets(
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+            removeSetsOfAlwaysFalseScope(*frame.node, nodes);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
