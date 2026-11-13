@@ -1619,9 +1619,10 @@ struct CollectTablesData
     bool global_with_statement;
     bool scopes_for_with_statement;
 
-    /// A private copy of `context`, created on first use, against which the nested `SETTINGS` changes of the
-    /// two settings above are clamped to the session's settings constraints (see `effectiveNestedScopeSetting`).
-    ContextMutablePtr constraints_context;
+    /// The settings of the select being walked, when an enclosing select has a `SETTINGS` clause: a copy of
+    /// the enclosing scope's settings with that clause applied, clamped to the settings constraints, in the same
+    /// order as the analyzer applies it (see `applyNestedScopeSettings`). Null means the settings of `context`.
+    ContextPtr scope_context;
 
     /// The `WITH` aliases the analyzer keeps in `IdentifierResolveScope::global_with_aliases`: those declared
     /// by an enclosing select that runs with `enable_scopes_for_with_statement = 0`. They are copied into
@@ -3110,29 +3111,40 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
     return Context::ResolveAll;
 }
 
-/// Collects the full names of all identifiers in `ast` except the subtree `skip`. The analyzer looks a CTE up
-/// only by the full name of an identifier in a table-expression position (`QueryAnalyzer::tryResolveIdentifierFromCTE`),
-/// so a compound identifier never references a CTE by one of its parts: `real_table.unused` is a column even when
-/// a CTE is named `unused`, and `cte.x` refers to a column of `cte` only when `cte` itself also occurs in `FROM`.
-/// Any position counts, so the result still over-approximates the names a subtree can reference a CTE by,
-/// which errs toward walking a definition, never toward missing the tables of a used one.
-/// A scalar `WITH expr AS alias` binding is resolved by the first component of a compound identifier
-/// (`WITH (SELECT ...) AS stats SELECT stats.n`) and a lambda binding by the name of a function call
-/// (`WITH x -> x + 1 AS f SELECT f(a)`), so the first component and the names of called functions are added
-/// as well. That only adds names, so it keeps the same safe direction for CTEs.
-void collectReferencedNames(const IAST & ast, const IAST * skip, std::unordered_set<String> & names)
+/// The names a subtree can reference a `WITH` binding by. CTEs and scalar bindings are resolved differently,
+/// so they are reachable by different names.
+struct ReferencedNames
+{
+    /// The analyzer looks a CTE up only by the full name of an identifier in a table-expression position
+    /// (`QueryAnalyzer::tryResolveIdentifierFromCTE`), so a compound identifier never references a CTE by one
+    /// of its parts, and neither does a function call: `real_table.unused` is a column even when a CTE is named
+    /// `unused`, `cte.x` refers to a column of `cte` only when `cte` itself also occurs in `FROM`, and `count()`
+    /// is the aggregate function even when a CTE is named `count`. Any position counts, so this still
+    /// over-approximates the names a subtree can reference a CTE by, which errs toward walking a definition,
+    /// never toward missing the tables of a used one.
+    std::unordered_set<String> cte_names;
+    /// A scalar `WITH expr AS alias` binding is also resolved by the first component of a compound identifier
+    /// (`WITH (SELECT ...) AS stats SELECT stats.n`), and a lambda binding by the name of a function call
+    /// (`WITH x -> x + 1 AS f SELECT f(a)`), so those names are added on top of the full names.
+    std::unordered_set<String> scalar_names;
+};
+
+/// Collects the names by which the identifiers and function calls in `ast`, except the subtree `skip`, may reference a
+/// `WITH` binding by.
+void collectReferencedNames(const IAST & ast, const IAST * skip, ReferencedNames & names)
 {
     if (&ast == skip)
         return;
 
     if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast))
     {
-        names.insert(identifier->name());
+        names.cte_names.insert(identifier->name());
+        names.scalar_names.insert(identifier->name());
         if (identifier->compound())
-            names.insert(identifier->name_parts.front());
+            names.scalar_names.insert(identifier->name_parts.front());
     }
     else if (const auto * function = ast.as<ASTFunction>())
-        names.insert(function->name);
+        names.scalar_names.insert(function->name);
 
     for (const auto & child : ast.children)
         collectReferencedNames(*child, skip, names);
@@ -3188,25 +3200,24 @@ void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & ali
     }
 }
 
-/// The value a nested `SETTINGS` change of the boolean scope setting `change.name` takes effect with, given
-/// that the enclosing scope runs with `current`: the change clamped to the session's settings constraints, as
-/// `QueryTreeBuilder::applyQueryLevelSettings` clamps it. A forbidden change keeps `current`.
-bool effectiveNestedScopeSetting(CollectTablesData & data, const SettingChange & change, bool current)
+/// Applies the nested `SETTINGS` clause `set_query` of a select to the settings of the enclosing scope, and
+/// updates the scope settings the walk tracks. The whole clause is applied with
+/// `Context::applyNestedQuerySettingsClamped`, the sequence `QueryTreeBuilder::applyQueryLevelSettings` uses:
+/// one change at a time, each clamped to the settings constraints as the preceding changes left them. So a
+/// change that a `CONST`, `readonly`, or `MIN`/`MAX` constraint forbids is dropped or clamped here as well,
+/// including a constraint that an earlier change of the same clause introduced:
+/// `SETTINGS readonly = 1, enable_global_with_statement = 0` keeps `enable_global_with_statement = 1`.
+void applyNestedScopeSettings(CollectTablesData & data, const ASTSetQuery & set_query)
 {
-    if (!data.constraints_context)
-        data.constraints_context = Context::createCopy(data.context);
+    auto scope_context = Context::createCopy(data.scope_context ? data.scope_context : data.context);
+    /// The tracked values of the enclosing scope; a `CONST` constraint allows assigning the value in effect.
+    scope_context->setSetting("enable_global_with_statement", Field(data.global_with_statement));
+    scope_context->setSetting("enable_scopes_for_with_statement", Field(data.scopes_for_with_statement));
+    scope_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
 
-    /// A `CONST` constraint allows assigning the value in effect, so clamp against the enclosing scope's value.
-    data.constraints_context->setSetting(change.name, Field(current));
-
-    SettingsChanges single_change{change};
-    data.constraints_context->clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
-
-    bool result = current;
-    for (const auto & clamped : single_change)
-        if (clamped.name == change.name)
-            result = SettingFieldBool(clamped.value).value;
-    return result;
+    data.global_with_statement = scope_context->getSettingsRef()[Setting::enable_global_with_statement];
+    data.scopes_for_with_statement = scope_context->getSettingsRef()[Setting::enable_scopes_for_with_statement];
+    data.scope_context = std::move(scope_context);
 }
 
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
@@ -3253,26 +3264,16 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         const bool saved_global_with_statement = data.global_with_statement;
         const bool saved_scopes_for_with_statement = data.scopes_for_with_statement;
         auto saved_global_with_aliases = data.global_with_aliases;
+        auto saved_scope_context = data.scope_context;
         SCOPE_EXIT({
             data.global_with_statement = saved_global_with_statement;
             data.scopes_for_with_statement = saved_scopes_for_with_statement;
             data.global_with_aliases = std::move(saved_global_with_aliases);
+            data.scope_context = std::move(saved_scope_context);
         });
 
         if (const auto * set_query = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
-        {
-            /// Applied one change at a time and clamped to the settings constraints, exactly as
-            /// `QueryTreeBuilder::applyQueryLevelSettings` applies a nested `SETTINGS` clause: a change that a
-            /// `CONST`, `readonly`, or `MIN`/`MAX` constraint forbids is dropped or clamped there, so the scope
-            /// the analyzer resolves names in keeps the value the constraint allows.
-            for (const auto & change : set_query->changes)
-            {
-                if (change.name == "enable_global_with_statement")
-                    data.global_with_statement = effectiveNestedScopeSetting(data, change, data.global_with_statement);
-                else if (change.name == "enable_scopes_for_with_statement")
-                    data.scopes_for_with_statement = effectiveNestedScopeSetting(data, change, data.scopes_for_with_statement);
-            }
-        }
+            applyNestedScopeSettings(data, *set_query);
 
         /// With `enable_global_with_statement = 0` the analyzer does not look up CTEs or aliases across a
         /// query boundary (`QueryAnalyzer::tryResolveIdentifierInParentScopes`), so neither the CTEs nor the
@@ -3316,7 +3317,9 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// toward walking a definition, never toward missing the tables of a used one.
             /// A scalar `WITH expr AS alias` binding is only registered as an alias too, and resolved only where
             /// it is referenced, so the same applies to it: `WITH (SELECT count() FROM src) AS unused SELECT 1`
-            /// must not reattach `src` either. A binding without a name is always walked.
+            /// must not reattach `src` either. A binding without a name is always walked. A CTE is reachable only by
+            /// the full name of an identifier and a scalar binding also by a part of one or by a function call
+            /// (see `ReferencedNames`): `WITH count AS (SELECT * FROM src) SELECT count()` does not read `src`.
             const auto with_child_name = [](const ASTPtr & with_child) -> String
             {
                 if (const auto * with_element = with_child->as<ASTWithElement>())
@@ -3326,7 +3329,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             std::unordered_set<const IAST *> reachable_ctes;
             if (data.root_query)
             {
-                std::unordered_set<String> referenced_names;
+                ReferencedNames referenced_names;
                 collectReferencedNames(*data.root_query, with.get(), referenced_names);
                 bool changed = true;
                 while (changed)
@@ -3337,7 +3340,8 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                         if (reachable_ctes.contains(with_child.get()))
                             continue;
                         const auto name = with_child_name(with_child);
-                        if (!name.empty() && !referenced_names.contains(name))
+                        const auto & names = with_child->as<ASTWithElement>() ? referenced_names.cte_names : referenced_names.scalar_names;
+                        if (!name.empty() && !names.contains(name))
                             continue;
                         reachable_ctes.insert(with_child.get());
                         collectReferencedNames(*with_child, nullptr, referenced_names);
