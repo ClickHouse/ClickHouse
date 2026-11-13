@@ -221,7 +221,7 @@ protected:
 
     void makeContext(HTTPServerRequest & request)
     {
-        context = session->makeQueryContext();
+        context = session->makeQueryContext(ClientInfo{session->getClientInfo()});
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
