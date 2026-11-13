@@ -13,15 +13,19 @@ from drifting apart — a drift would only surface at the next scheduled
 
 import subprocess
 
-# The six packages built for every release, per arch.
+# The packages built for every release, per arch.
 PACKAGES = (
     "clickhouse-client",
     "clickhouse-common-static",
     "clickhouse-common-static-dbg",
     "clickhouse-keeper",
-    "clickhouse-keeper-dbg",
     "clickhouse-server",
 )
+
+# The debug symbols of the standalone `clickhouse-keeper` binary. Only the release
+# branches cut before the standalone binary was removed build this package.
+KEEPER_DBG_PACKAGE = "clickhouse-keeper-dbg"
+KEEPER_DBG_PACKAGE_CONFIG = "packages/clickhouse-keeper-dbg.yaml"
 
 PACKAGE_ARCHS = ("amd", "arm")
 
@@ -138,14 +142,15 @@ def darwin_job_name(package_arch: str) -> str:
     return f"build_{package_arch}_darwin"
 
 
-def iter_package_objects(version: str):
+def iter_package_objects(version: str, packages):
     """Yield `(repo_type, filename, job_name)` for every deb/rpm/tgz/tgz.sha512
-    object across amd+arm. `repo_type` is one of `"deb"`, `"rpm"`, `"tgz"`."""
+    object of `packages` (see `commit_packages`) across amd+arm. `repo_type` is
+    one of `"deb"`, `"rpm"`, `"tgz"`."""
     for package_arch in PACKAGE_ARCHS:
         job = build_job_name(package_arch)
         deb = deb_tgz_arch(package_arch)
         rpm = rpm_arch(package_arch)
-        for package in PACKAGES:
+        for package in packages:
             yield "deb", f"{package}_{version}_{deb}.deb", job
             yield "rpm", f"{package}-{version}.{rpm}.rpm", job
             tgz = f"{package}-{version}-{deb}.tgz"
@@ -201,6 +206,35 @@ def commit_has_macos_signing(commit_sha: str) -> bool:
     return present.returncode == 0
 
 
+def commit_packages(commit_sha: str) -> tuple:
+    """The packages the release build of this commit produces.
+
+    `ReleaseBranchCI` builds the packages defined in the release commit's own
+    `packages/`, while `AutoReleases` and `CreateRelease` run from `master`. The
+    release branches cut before the standalone `clickhouse-keeper` binary was
+    removed still build `clickhouse-keeper-dbg`, and it must be published for
+    them; the later ones do not build it. Read it off the release commit.
+
+    Raises when `commit_sha` is not present locally rather than assuming either
+    package set."""
+    resolved = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+        capture_output=True,
+    )
+    if resolved.returncode != 0:
+        raise RuntimeError(
+            f"Commit [{commit_sha}] is not present in the local repository, cannot"
+            f" tell which packages it builds"
+        )
+    present = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit_sha}:{KEEPER_DBG_PACKAGE_CONFIG}"],
+        capture_output=True,
+    )
+    if present.returncode == 0:
+        return PACKAGES + (KEEPER_DBG_PACKAGE,)
+    return PACKAGES
+
+
 def commit_has_illumos_build(commit_sha: str) -> bool:
     resolved = subprocess.run(
         ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
@@ -220,11 +254,11 @@ def commit_has_illumos_build(commit_sha: str) -> bool:
     )
 
 
-def expected_s3_objects(version: str, with_signed_macos: bool, with_illumos: bool):
+def expected_s3_objects(version: str, packages, with_signed_macos: bool, with_illumos: bool):
     """`{job_name: set(object_basenames)}` — every object `CreateRelease`
     downloads from `<s3_commit_prefix>/<job_name>/` for this version."""
     by_job = {}  # type: dict[str, set]
-    for _repo_type, filename, job in iter_package_objects(version):
+    for _repo_type, filename, job in iter_package_objects(version, packages):
         by_job.setdefault(job, set()).add(filename)
     for _package_arch, job in iter_macos_objects():
         by_job.setdefault(job, set()).add(MACOS_S3_OBJECT)
@@ -242,6 +276,7 @@ def release_build_artifacts_ready(
     release: str,
     commit_sha: str,
     version: str,
+    packages,
     with_signed_macos: bool,
     with_illumos: bool,
 ) -> bool:
@@ -265,7 +300,7 @@ def release_build_artifacts_ready(
     in so this module stays dependency-free.
     """
     prefix = s3_commit_prefix(release, commit_sha)
-    for job, expected_files in expected_s3_objects(version, with_signed_macos, with_illumos).items():
+    for job, expected_files in expected_s3_objects(version, packages, with_signed_macos, with_illumos).items():
         job_prefix = f"{prefix}/{job}/"
         present = {
             key.rsplit("/", 1)[-1] for key in s3.list_prefix(f"{bucket}/{job_prefix}")

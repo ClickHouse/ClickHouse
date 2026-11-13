@@ -2,8 +2,9 @@
 # nfpm should run from the same directory with a config
 name: "clickhouse-keeper"
 description: |
-  Static clickhouse-keeper binary
-    A stand-alone clickhouse-keeper package
+  ClickHouse Keeper
+    A ZooKeeper-compatible coordination service without the ClickHouse server.
+    The clickhouse-keeper program is the clickhouse binary of clickhouse-common-static.
 
 
 #
@@ -24,8 +25,14 @@ deb:
 # Package specific content
 conflicts:
 - clickhouse-server
-suggests:
-- clickhouse-keeper-dbg
+
+overrides:
+  deb:
+    depends:
+    - clickhouse-common-static (= ${CLICKHOUSE_VERSION_STRING})
+  rpm:
+    depends:
+    - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
 
 contents:
 - src: root/etc/clickhouse-keeper/keeper_config.xml
@@ -33,12 +40,13 @@ contents:
   type: config|noreplace
 - src: clickhouse-keeper.service
   dst: /lib/systemd/system/clickhouse-keeper.service
-- src: root/usr/bin/clickhouse-keeper
+- src: clickhouse
   dst: /usr/bin/clickhouse-keeper
-- src: clickhouse-keeper
+  type: symlink
+- src: clickhouse
   dst: /usr/bin/clickhouse-keeper-client
   type: symlink
-- src: clickhouse-keeper
+- src: clickhouse
   dst: /usr/bin/clickhouse-keeper-converter
   type: symlink
 # docs

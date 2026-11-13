@@ -39,7 +39,7 @@ RUN arch=${TARGETARCH:-amd64} \
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
 ARG VERSION="26.10.2.103"
-ARG PACKAGES="clickhouse-keeper"
+ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
 
 # user/group precreated explicitly with fixed uid/gid on purpose.

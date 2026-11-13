@@ -245,6 +245,55 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 
+#if ENABLE_CLICKHOUSE_KEEPER
+/// `clickhouse-keeper` used to be a separate binary with its own dispatcher (see `programs/keeper/keeper_main.cpp`).
+/// Now it is a symlink to `clickhouse`, so keep the subcommands that dispatcher supported working:
+/// `clickhouse-keeper client`, `clickhouse-keeper keeper-client`, `clickhouse-keeper converter`,
+/// `clickhouse-keeper keeper-converter` and `clickhouse-keeper keeper` (also with the `--` prefix).
+/// Any other invocation runs the Keeper server, as before.
+/// Returns `nullptr` if the binary is not invoked as `clickhouse-keeper`.
+static MainFunc getStandaloneKeeperApp(std::vector<char *> & argv)
+{
+    if (argv.empty())
+        return nullptr;
+
+    std::string_view program(argv[0]);
+    if (program != "clickhouse-keeper" && !program.ends_with("/clickhouse-keeper"))
+        return nullptr;
+
+    const std::pair<std::string_view, MainFunc> keeper_applications[] =
+    {
+        {"keeper", mainEntryClickHouseKeeper},
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+        {"converter", mainEntryClickHouseKeeperConverter},
+        {"keeper-converter", mainEntryClickHouseKeeperConverter},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+        {"client", mainEntryClickHouseKeeperClient},
+        {"keeper-client", mainEntryClickHouseKeeperClient},
+#endif
+    };
+
+    if (argv.size() >= 2)
+    {
+        std::string_view first_arg(argv[1]);
+        if (first_arg.starts_with("--"))
+            first_arg.remove_prefix(2);
+
+        for (const auto & [name, func] : keeper_applications)
+        {
+            if (first_arg == name)
+            {
+                argv.erase(argv.begin() + 1);
+                return func;
+            }
+        }
+    }
+
+    return mainEntryClickHouseKeeper;
+}
+#endif
+
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
 /// We don't use it. But it can be used by some libraries for implementation of "plugins".
 /// We absolutely discourage the ancient technique of loading
@@ -445,6 +494,11 @@ int main(int argc_, char ** argv_)
 
     /// Print a basic help if nothing was matched
     MainFunc main_func = printHelpOnError;
+
+#if ENABLE_CLICKHOUSE_KEEPER
+    if (MainFunc keeper_func = getStandaloneKeeperApp(argv))
+        return keeper_func(static_cast<int>(argv.size()), argv.data());
+#endif
 
     for (auto & application : clickhouse_applications)
     {

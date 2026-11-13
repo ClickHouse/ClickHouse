@@ -160,7 +160,7 @@ bash -ex /packages/symbols_test.sh""",
 apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-keeper*deb -y
+apt-get install /packages/clickhouse-{common-static,keeper}_*deb -y
 bash -ex /packages/keeper_test.sh""",
     }
     return test_install(image, tests)
@@ -175,7 +175,7 @@ yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{server,
 echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
         "Install keeper rpm": r"""#!/bin/bash -ex
-yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
+yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{common-static,keeper}-[0-9]*rpm
 bash -ex /packages/keeper_test.sh""",
     }
     return test_install(image, tests)
@@ -206,7 +206,9 @@ def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
         else "clickhouse-{common-static,client,server}-[0-9]*tgz"
     )
     keeper_packages = (
-        "clickhouse-keeper*tgz" if debug_symbols else "clickhouse-keeper-[0-9]*tgz"
+        "clickhouse-{common-static,keeper}*tgz"
+        if debug_symbols
+        else "clickhouse-{common-static,keeper}-[0-9]*tgz"
     )
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
