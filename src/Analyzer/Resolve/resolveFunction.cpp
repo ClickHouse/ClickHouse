@@ -1692,6 +1692,19 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                         "and", {buildResolvedFunction("not", {std::move(scaled_is_integral)}, context), build_cast_comparison()}, context);
                     result = buildResolvedFunction("or", {std::move(exact_match), std::move(fractional_match)}, context);
                 }
+
+                if (decimal_type->getTypeId() == TypeIndex::Decimal64)
+                {
+                    /// Below 2^51 raw units, adjacent decimal values are farther apart
+                    /// than one `Float64` ULP at every scale. The ordinary comparison
+                    /// is therefore safe and avoids the scaled fallback on common values.
+                    auto raw_magnitude = buildResolvedFunction("abs", {raw_decimal}, context);
+                    auto within_exact_range = buildResolvedFunction(
+                        "less", {std::move(raw_magnitude), std::make_shared<ConstantNode>(Field{UInt64{1} << 51})}, context);
+                    auto fast_equal = buildResolvedFunction("equals", {decimal_argument, numeric_argument}, context);
+                    result = buildResolvedFunction(
+                        "if", {std::move(within_exact_range), std::move(fast_equal), std::move(result)}, context);
+                }
             }
         }
     }
