@@ -209,3 +209,37 @@ SETTINGS allow_lossy_numeric_supertype = 1;
 SELECT d = x, d != x, isNotDistinctFrom(d, x), isDistinctFrom(d, x)
 FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
 SETTINGS allow_lossy_numeric_supertype = 1;
+
+-- Multiple candidates must bind the shared left operand only once per level.
+WITH
+    toDecimal64(x, 0) IN (x, 2., 3., 4.) AS a,
+    toDecimal64(a, 0) IN (x, 2., 3., 4.) AS b,
+    toDecimal64(b, 0) IN (x, 2., 3., 4.) AS c,
+    toDecimal64(c, 0) IN (x, 2., 3., 4.) AS d,
+    toDecimal64(d, 0) IN (x, 2., 3., 4.) AS e,
+    toDecimal64(e, 0) IN (x, 2., 3., 4.) AS f,
+    toDecimal64(f, 0) IN (x, 2., 3., 4.) AS g,
+    toDecimal64(g, 0) IN (x, 2., 3., 4.) AS h
+SELECT h FROM values('x Float64', 1)
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0, max_expanded_ast_elements = 10000;
+
+WITH
+    toDecimal64(x, 0) IN (x, 2., 3., 4.) AS a,
+    toDecimal64(a, 0) IN (x, 2., 3., 4.) AS b,
+    toDecimal64(b, 0) IN (x, 2., 3., 4.) AS c,
+    toDecimal64(c, 0) IN (x, 2., 3., 4.) AS d,
+    toDecimal64(d, 0) IN (x, 2., 3., 4.) AS e,
+    toDecimal64(e, 0) IN (x, 2., 3., 4.) AS f,
+    toDecimal64(f, 0) IN (x, 2., 3., 4.) AS g,
+    toDecimal64(g, 0) IN (x, 2., 3., 4.) AS h
+SELECT h FROM values('x Float64', 1)
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1, max_expanded_ast_elements = 10000;
+
+-- The array-map lambda receives materialized LowCardinality operands.
+SELECT d IN (materialize(toLowCardinality(x))), d NOT IN (materialize(toLowCardinality(x)))
+FROM values('d Decimal(18,2), x Float64', (1,1))
+SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT x IN (materialize(toLowCardinality(d))), x NOT IN (materialize(toLowCardinality(d)))
+FROM values('d Decimal(18,2), x Float64', (1,1))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;

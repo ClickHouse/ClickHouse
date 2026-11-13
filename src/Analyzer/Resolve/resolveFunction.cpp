@@ -1347,7 +1347,9 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
         const auto * left_array_type = typeid_cast<const DataTypeArray *>(left_array->getResultType().get());
         const auto * right_array_type = typeid_cast<const DataTypeArray *>(right_array->getResultType().get());
         chassert(left_array_type && right_array_type);
-        const DataTypes argument_types{left_array_type->getNestedType(), right_array_type->getNestedType()};
+        const DataTypes argument_types{
+            recursiveRemoveLowCardinality(left_array_type->getNestedType()),
+            recursiveRemoveLowCardinality(right_array_type->getNestedType())};
         auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_exact_left", "__in_exact_right"});
         lambda_arguments->resolve(argument_types);
         auto left_value = std::make_shared<ColumnNode>(
@@ -1477,13 +1479,50 @@ static QueryTreeNodePtr buildNumericInComparison(
         return buildNumericScalarInComparison(
             left_argument, right_arguments.front(), is_not_in, compare_nulls, context);
 
+    /// Each scalar comparison refers to the left operand. Bind it with all
+    /// candidates once, so nested multi-candidate membership grows linearly.
+    QueryTreeNodes arrays;
+    arrays.reserve(right_arguments.size() + 1);
+    DataTypes argument_types;
+    argument_types.reserve(right_arguments.size() + 1);
+    Names argument_names;
+    argument_names.reserve(right_arguments.size() + 1);
+
+    auto bind_argument = [&](const QueryTreeNodePtr & argument)
+    {
+        auto array = buildResolvedFunction("array", {argument}, context);
+        const auto * array_type = typeid_cast<const DataTypeArray *>(array->getResultType().get());
+        chassert(array_type);
+        argument_types.push_back(recursiveRemoveLowCardinality(array_type->getNestedType()));
+        argument_names.push_back("__in_exact_arg_" + std::to_string(arrays.size()));
+        arrays.push_back(std::move(array));
+    };
+
+    bind_argument(left_argument);
+    for (const auto & right_argument : right_arguments)
+        bind_argument(right_argument);
+
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(argument_names);
+    lambda_arguments->resolve(argument_types);
+    QueryTreeNodes bound_arguments;
+    bound_arguments.reserve(argument_types.size());
+    for (size_t i = 0; i < argument_types.size(); ++i)
+        bound_arguments.push_back(std::make_shared<ColumnNode>(
+            NameAndTypePair{argument_names[i], argument_types[i]}, lambda_arguments));
+
     QueryTreeNodes comparisons;
     comparisons.reserve(right_arguments.size());
-    for (const auto & right_argument : right_arguments)
+    for (size_t i = 0; i < right_arguments.size(); ++i)
         comparisons.push_back(buildNumericScalarInComparison(
-            left_argument, right_argument, is_not_in, compare_nulls, context));
+            bound_arguments.front(), bound_arguments[i + 1], is_not_in, compare_nulls, context, false));
 
-    return buildResolvedFunction(is_not_in ? "and" : "or", std::move(comparisons), context);
+    auto body = buildResolvedFunction(is_not_in ? "and" : "or", std::move(comparisons), context);
+    auto lambda = std::make_shared<LambdaNode>(
+        lambda_arguments, body, false /*is_operator*/,
+        std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+    arrays.insert(arrays.begin(), std::move(lambda));
+    auto mapped = buildResolvedFunction("arrayMap", std::move(arrays), context);
+    return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
 }
 
 /// converts tuple to array with proper type handling
