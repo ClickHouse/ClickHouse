@@ -21,6 +21,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
+#include <Planner/PlannerProjections.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -42,7 +43,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/ProjectionPlanner.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB

@@ -1,4 +1,4 @@
-#include <Storages/ProjectionPlanner.h>
+#include <Planner/PlannerProjections.h>
 
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ConstantNode.h>
