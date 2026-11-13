@@ -1500,7 +1500,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
-                /// with `use_primary_key = 0` the search runs only for `_part_offset` conditions
+                /// an always true key condition drops nothing, all drops then come from `_part_offset` conditions
                 if (filter_context.report_index_usage && !part_key_condition.alwaysUnknownOrTrue())
                     ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, total_marks_count - ranges.getMarksCount());
                 if (ranges.ranges.empty())
