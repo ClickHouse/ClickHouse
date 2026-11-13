@@ -1,7 +1,10 @@
+#include "config.h"
+
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
@@ -9,6 +12,7 @@
 #include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Silk/tests/gtest_silk_scheduler.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/unit.h>
@@ -34,6 +38,11 @@
 namespace DB::FailPoints
 {
 extern const char http_connection_socket_inode_unavailable[];
+}
+
+namespace DB::ErrorCodes
+{
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -1185,6 +1194,105 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
     }
     ASSERT_TRUE(reached_proxy_connect);
 }
+
+#if USE_SILK
+
+/// The transport is fixed for the lifetime of a connection: a connection stored by one transport is never reused by the
+/// other. Pools of both transports belong to the same group, so they share its metrics.
+TEST_F(ConnectionPoolTest, TransportsDoNotShareConnectionsButShareGroupMetrics)
+{
+    /// A cooperative connection used from a plain thread needs the scheduler.
+    initializeFiberSchedulerForTests();
+
+    timeouts.withHTTPKeepAliveTimeout(Poco::Timespan(10, 0));
+
+    auto uri = Poco::URI(getServerUrl());
+    auto blocking_pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::Blocking);
+    auto cooperative_pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::Cooperative);
+    auto metrics = blocking_pool->getMetrics();
+
+    DB::HTTPConnectionInfo blocking_info;
+    {
+        auto connection = blocking_pool->getConnection(timeouts, nullptr);
+        blocking_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+    ASSERT_TRUE(blocking_info.has_value);
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+
+    /// The stored blocking connection is not handed out to the cooperative pool.
+    DB::HTTPConnectionInfo cooperative_info;
+    {
+        auto connection = cooperative_pool->getConnection(timeouts, nullptr);
+        cooperative_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+    ASSERT_TRUE(cooperative_info.has_value);
+    ASSERT_NE(blocking_info.id, cooperative_info.id);
+    ASSERT_EQ(0, cooperative_info.requests_served);
+
+    /// Each transport reuses its own connection.
+    {
+        auto connection = blocking_pool->getConnection(timeouts, nullptr);
+        auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        ASSERT_EQ(blocking_info.id, reused.id);
+        ASSERT_EQ(1, reused.requests_served);
+    }
+    {
+        auto connection = cooperative_pool->getConnection(timeouts, nullptr);
+        auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        ASSERT_EQ(cooperative_info.id, reused.id);
+        ASSERT_EQ(1, reused.requests_served);
+    }
+
+    /// Both connections are counted in the metrics of their group; `active_count` includes stored connections.
+    ASSERT_EQ(2, getServer().totalConnections());
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.stored_count));
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+}
+
+#if USE_SSL
+
+/// `HTTPSClientSession` tunnels through the proxy with ordinary Poco sockets, so a cooperative HTTPS connection over a
+/// tunneling proxy is rejected before it connects anywhere instead of blocking the thread of a fiber.
+TEST_F(ConnectionPoolTest, CooperativeHTTPSThroughTunnelingProxyIsRejected)
+{
+    initializeFiberSchedulerForTests();
+
+    auto uri = Poco::URI("https://127.0.0.1:9999");
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    /// TCPMUX (port 1) is a reserved port that almost never has a listener, so a connect attempt would fail.
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+    proxy_config.tunneling = true;
+    proxy_config.original_request_protocol = DB::ProxyConfiguration::Protocol::HTTPS;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config, DB::HTTPConnectionTransport::Cooperative);
+    auto metrics = pool->getMetrics();
+
+    int error_code = 0;
+    try
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+    ASSERT_EQ(DB::ErrorCodes::SUPPORT_IS_DISABLED, error_code);
+    /// No connect attempt was made.
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+}
+
+#endif
+
+#endif
 
 TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 {
