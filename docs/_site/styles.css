@@ -38,6 +38,14 @@ html:not(.dark) .ch-hero-card:hover {
     background-color: #272727 !important;
     border-color: #535353 !important;
 }
+/* White use-case artwork is inverted only in light mode. */
+.ch-usecase-icon {
+    filter: invert(1);
+}
+.dark .ch-usecase-icon {
+    filter: none;
+}
+
 /* Use case section dividers */
 .ch-usecase-divider {
     border: none !important;
