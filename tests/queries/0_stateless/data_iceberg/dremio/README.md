@@ -5,6 +5,15 @@ The tables in this directory are copied from the Dremio test resources,
 https://github.com/dremio/dremio-oss/tree/799ccbda47e6f2e1bfacf1ccbded174e00d4150a/sabot/kernel/src/test/resources/iceberg
 (Apache License 2.0, https://github.com/dremio/dremio-oss/blob/master/LICENSE).
 
+`NOTICE` in this directory is the `NOTICE` file of Dremio at the same commit
+(https://github.com/dremio/dremio-oss/blob/799ccbda47e6f2e1bfacf1ccbded174e00d4150a/NOTICE), retained as required
+by section 4(d) of the Apache License 2.0:
+
+```
+Dremio
+Copyright 2015-2017 Dremio Corporation
+```
+
 The files are unchanged, except that the Hadoop checksum files (`.*.crc`) are not copied. The metadata
 refers to the original locations of the tables: `/tmp/iceberg`, `file:///tmp/iceberg` (format version 1 tables)
 and `/tmp/iceberg-test-tables/v2/...` (format version 2 tables), with manifest lists, manifests and data files
