@@ -2362,8 +2362,8 @@ private:
         const size_t arguments_size_before = function_node.getArguments().getNodes().size();
         const auto function_before = function_node.getFunctionOrThrow();
 
-        /// Hashing an operand walks the table expression it reads from, so each operand is hashed once per call. A lookup
-        /// by its key is still charged that hash work, so the work budget counts what it counted before.
+        /// Hashing an operand walks the table expression it reads from, so each operand is hashed once per call;
+        /// every later lookup by its key is still charged that hash work against the budget.
         struct OperandKey
         {
             QueryTreeNodePtrWithHash key;
