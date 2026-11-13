@@ -3111,6 +3111,84 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
                         return ProjectionNames{proj};
                     }
+
+                    /// Numeric comparisons can be exact without having a lossless array
+                    /// element supertype. Keep each source value in its original type;
+                    /// converting a fractional float to an integer could invent a match.
+                    const bool numeric_left = isNumber(removeNullable(removeLowCardinality(in_first_argument->getResultType())));
+                    const bool numeric_source = std::all_of(source_elements.begin(), source_elements.end(), [](const auto & element)
+                    {
+                        return element->getResultType()->onlyNull()
+                            || isNumber(removeNullable(removeLowCardinality(element->getResultType())));
+                    });
+                    if (use_standard_null_semantics && numeric_left && numeric_source
+                        && !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false))
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        QueryTreeNodes arrays;
+                        Names argument_names;
+                        auto bind_argument = [&](const QueryTreeNodePtr & argument)
+                        {
+                            auto array = std::make_shared<FunctionNode>("array");
+                            array->getArguments().getNodes().push_back(argument);
+                            arrays.push_back(std::move(array));
+                            argument_names.push_back("__in_numeric_arg_" + std::to_string(argument_names.size()));
+                        };
+                        bind_argument(in_first_argument);
+
+                        QueryTreeNodes comparisons;
+                        for (const auto & element : source_elements)
+                        {
+                            if (element->getResultType()->onlyNull())
+                            {
+                                comparisons.push_back(std::make_shared<ConstantNode>(
+                                    Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())));
+                                continue;
+                            }
+
+                            bind_argument(element);
+                            auto equals = std::make_shared<FunctionNode>("equals");
+                            equals->getArguments().getNodes() = {
+                                std::make_shared<IdentifierNode>(Identifier{argument_names.front()}),
+                                std::make_shared<IdentifierNode>(Identifier{argument_names.back()})};
+                            auto to_nullable = std::make_shared<FunctionNode>("toNullable");
+                            to_nullable->getArguments().getNodes().push_back(std::move(equals));
+                            comparisons.push_back(std::move(to_nullable));
+                        }
+                        if (in_rhs_has_explicit_null)
+                            comparisons.push_back(std::make_shared<ConstantNode>(
+                                Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())));
+
+                        if (comparisons.empty())
+                        {
+                            node = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
+                            return ProjectionNames{proj};
+                        }
+
+                        QueryTreeNodePtr result;
+                        if (comparisons.size() == 1)
+                            result = std::move(comparisons.front());
+                        else
+                        {
+                            auto any_match = std::make_shared<FunctionNode>("or");
+                            any_match->getArguments().getNodes() = std::move(comparisons);
+                            result = std::move(any_match);
+                        }
+                        if (is_not_in)
+                            result = createNotWrapper(std::move(result));
+
+                        auto lambda = std::make_shared<LambdaNode>(
+                            std::make_shared<LambdaArgumentsNode>(argument_names), std::move(result), false /*is_operator*/);
+                        auto mapped = std::make_shared<FunctionNode>("arrayMap");
+                        mapped->getArguments().getNodes().push_back(std::move(lambda));
+                        for (auto & array : arrays)
+                            mapped->getArguments().getNodes().push_back(std::move(array));
+                        auto first = std::make_shared<FunctionNode>("arrayElement");
+                        first->getArguments().getNodes() = {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})};
+                        node = std::move(first);
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
                     auto source_null_predicate = makeInSourceNullPredicate(source_elements, in_rhs_has_explicit_null);
                     QueryTreeNodes matchable_elements = source_elements;
                     if (use_standard_null_semantics)
