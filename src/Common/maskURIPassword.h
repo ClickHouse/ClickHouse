@@ -154,38 +154,71 @@ inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std
 /// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
 inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
-    size_t offset = 0;
+    bool on_url_start = true;
     std::string result;
-    while (true)
+    auto current = std::string_view(uri);
+    size_t uncopied_start = 0;
+    size_t uncopied_end = 0;
+    const size_t original_size = uri.size();
+    while (uncopied_end < original_size)
     {
-        const auto current = std::string_view(uri).substr(offset);
+        current = std::string_view(uri).substr(uncopied_end);
+        size_t url_end = current.find("|");
+        if (url_end != std::string::npos)
+        {
+            current = current.substr(0, url_end);
+            url_end = uncopied_end + url_end;
+        }
+
         auto [password_begin, password_end] = findURIPasswordRange(current, authority_terminators);
         if (password_begin == std::string::npos)
         {
-            if (offset > 0)
+            if (!on_url_start)
             {
-                result.append(uri, offset);
-                uri = result;
-                return true;
+                if (url_end != std::string::npos)
+                {
+                    uncopied_end = url_end + 1;
+                    on_url_start = true;
+                    continue;
+                }
+                break;
             }
             if (current.starts_with("//"))
             {
                 std::tie(password_begin, password_end) = findURIPasswordRange(current.substr(2), authority_terminators, true);
-                password_begin += 2;
-                password_end += 2;
+                if (password_begin != std::string::npos)
+                {
+                    password_begin += 2;
+                    password_end += 2;
+                }
             } else
             {
                 std::tie(password_begin, password_end) = findURIPasswordRange(current, authority_terminators, true);
             }
             if (password_begin == std::string::npos)
             {
-                return false;
+                if (url_end != std::string::npos)
+                {
+                    uncopied_end = url_end + 1;
+                    continue;
+                }
+                break;
             }
         }
-
-        result.append(uri, offset, password_begin).append(HIDDEN_SECRET);
-        offset += password_end;
+        uncopied_end += password_begin;
+        result.append(uri, uncopied_start, uncopied_end - uncopied_start);
+        result.append(HIDDEN_SECRET);
+        on_url_start = false;
+        uncopied_end += password_end - password_begin;
+        uncopied_start = uncopied_end;
     }
+    if (uncopied_start == 0)
+    {
+        return false;
+    }
+    result.append(uri, uncopied_start, original_size - uncopied_start);
+    uri = result;
+    return true;
 }
 
 /// Hides the secret option values and the URI password of a MongoDB connection string or option list; returns whether any was hidden.
