@@ -172,7 +172,10 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
+    const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
+    /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
+    bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -354,7 +357,10 @@ public:
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
+    bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
+    bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }
+    void setPackedStringKeysInHashJoinEnabled(bool value) { enable_packed_string_keys_in_hash_join = value; }
     void setRowStoreCandidateColumns(NameSet columns) { row_store_candidate_columns = std::move(columns); }
     const NameSet & getRowStoreCandidateColumns() const { return row_store_candidate_columns; }
     bool isRowStoreEnabled() const { return !row_store_candidate_columns.empty(); }

@@ -16,6 +16,7 @@ struct PrefixListing
     std::vector<String> matched;
 };
 
+/// Objects at any depth inside the directory `path`/`prefix` (all of `path` for an empty `prefix`).
 PrefixListing listPrefix(
     const IObjectStorage & object_storage,
     const String & path,
@@ -27,12 +28,49 @@ PrefixListing listPrefix(
     const String & prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need);
 
+/// Only the objects directly inside the directory `path`/`prefix` whose names start with `name_prefix`.
+/// `entries` holds everything the storage returned for `listed_prefix`, including the objects in subdirectories.
+PrefixListing listPrefixNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const String & suffix);
+
+PrefixListing listPrefixNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need);
+
+/// Objects at any depth inside the directory `path`/`prefix` (all of `path` for an empty `prefix`).
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix, const String & suffix);
 
 std::vector<String> listFiles(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need);
+
+/// Only the objects directly inside the directory `path`/`prefix`.
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix, const String & suffix);
+
+/// Only the objects directly inside the directory `path`/`prefix` whose names start with `name_prefix`.
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const String & suffix);
+
+std::vector<String> listFilesNonRecursive(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix,
