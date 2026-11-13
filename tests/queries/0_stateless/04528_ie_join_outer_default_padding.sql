@@ -70,7 +70,7 @@ SELECT (SELECT arraySort(groupArray((l.id, l.k, l.s, r.id, r.lo, r.hi, r.s))) FR
 DROP TABLE lpad;
 DROP TABLE rpad;
 
--- `Enum` columns, also inside a `Tuple`, are padded with the type default (the first value), not the column zero 0.
+-- `Enum` columns, also inside a `Tuple`, are padded with the type default (the smallest value), not the column zero 0.
 DROP TABLE IF EXISTS lpad_enum;
 DROP TABLE IF EXISTS rpad_enum;
 
@@ -108,6 +108,20 @@ SELECT (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad
 SELECT 'enum filter';
 SELECT (SELECT count() FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi WHERE r.e = 'a' AND r.t.e = 'x'),
        (SELECT count() FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k = r.mid WHERE r.e = 'a' AND r.t.e = 'x');
+
+-- A typed `JSON` path of an `Enum` type is padded with the type default as well.
+DROP TABLE IF EXISTS rpad_json;
+CREATE TABLE rpad_json (id Int32, lo Int32, hi Int32, mid Int32, j JSON(p Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO rpad_json VALUES (1, 9, 11, 10, '{"p":"b"}'), (2, 49, 51, 50, '{"p":"b"}');
+
+SELECT 'enum json';
+SELECT l.id, r.id, r.j FROM lpad_enum l LEFT JOIN rpad_json r ON l.k > r.lo AND l.k < r.hi ORDER BY l.id, r.id;
+SELECT (SELECT arraySort(groupArray((l.id, r.id, toString(r.j)))) FROM lpad_enum l LEFT JOIN rpad_json r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, r.id, toString(r.j)))) FROM lpad_enum l LEFT JOIN rpad_json r ON l.k = r.mid);
+SELECT (SELECT count() FROM lpad_enum l LEFT JOIN rpad_json r ON l.k > r.lo AND l.k < r.hi WHERE r.j.p = 'a'),
+       (SELECT count() FROM lpad_enum l LEFT JOIN rpad_json r ON l.k = r.mid WHERE r.j.p = 'a');
+
+DROP TABLE rpad_json;
 
 DROP TABLE lpad_enum;
 DROP TABLE rpad_enum;

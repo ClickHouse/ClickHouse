@@ -108,7 +108,7 @@ FROM kr_05233 AS r LEFT JOIN kl_tup_mix_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00')
 SETTINGS optimize_functions_to_subcolumns = 0;
 
--- An inequality-only ON routes to `ie_join`, whose not-matched rows hold the type default (the first declared value)
+-- An inequality-only ON routes to `ie_join`, whose not-matched rows hold the type default (the smallest value)
 -- like the hash join's, so the filter rejects them with and without the rewrite.
 CREATE TABLE kie_l_05233 (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE kie_r_05233 (x UInt8, y UInt8, e Enum8('a' = 1)) ENGINE = MergeTree ORDER BY x;

@@ -68,3 +68,8 @@ enum right anti
 1
 enum filter
 1	1
+enum json
+1	1	{"p":"b"}
+2	0	{"p":"a"}
+1
+1	1
