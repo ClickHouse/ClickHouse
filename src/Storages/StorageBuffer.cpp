@@ -4,6 +4,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
+#include <Common/CurrentThread.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
@@ -112,7 +113,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int USER_EXPIRED;
     extern const int ACCESS_ENTITY_NOT_FOUND;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 /// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
@@ -199,14 +199,18 @@ std::shared_ptr<const BufferWriteIdentity> captureWriteIdentity(const ContextPtr
     return identity;
 }
 
-/// An error that means the captured identity can never deliver its block to the destination: the user was
-/// dropped, their authentication expired, or they are not (or no longer) authorized for a downstream table.
-/// Retrying such a flush never succeeds, so the block must be discarded rather than kept and retried.
+/// An error that means the captured identity can never deliver its block to this destination locally: the user
+/// was dropped, their authentication expired, or they are not (or no longer) locally authorized for it. These
+/// are local and persistent, so retrying never succeeds and the block is discarded (fail closed) rather than
+/// retained and retried forever - which would wedge the shard (and every background flush, OPTIMIZE and
+/// shutdown), and lets a user with INSERT on the buffer but not its destination wedge it with one row.
+/// `AUTHENTICATION_FAILED` is deliberately excluded: for a `Distributed` destination it can come from the remote
+/// connection (e.g. a transient cluster-secret mismatch) while the local identity is still valid, so such a
+/// block is retained for retry once the remote side is fixed, instead of being lost.
 bool isUndeliverableUnderIdentity(int code)
 {
     return code == ErrorCodes::ACCESS_DENIED
         || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND
-        || code == ErrorCodes::AUTHENTICATION_FAILED
         || code == ErrorCodes::USER_EXPIRED;
 }
 
@@ -1497,25 +1501,28 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// An undeliverable block (the buffering user was dropped or expired, or lost access to a downstream
-        /// table) can never be flushed; discard it (fail closed) instead of retaining it and wedging the shard
-        /// for every other identity, background flush, OPTIMIZE and shutdown.
+        /// A block that is undeliverable under its captured identity (the buffering user was dropped or expired,
+        /// or is not locally authorized for the destination) can never be flushed; discard it (fail closed)
+        /// instead of retaining it and wedging the shard for every other identity, background flush, OPTIMIZE
+        /// and shutdown.
         if (flushed_under_user_identity && isUndeliverableUnderIdentity(getCurrentExceptionCode()))
         {
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
-            /// Logged below the `warning` level so it is not forwarded to the client of an unrelated user whose
-            /// insert happened to trigger this flush (that would leak the buffering user's name and grants to
-            /// them); `ProfileEvents::StorageBufferErrorOnFlush` already counted it for monitoring.
+            /// Deliberately omits the exception text and the buffering user name: a different user's insert may
+            /// have triggered this flush, and at `information`/`trace` client log level the message is forwarded
+            /// to them, which would leak the buffering user's identity and required grants. The cause is counted
+            /// in `ProfileEvents::StorageBufferErrorOnFlush`.
             LOG_INFO(
                 log,
-                "Discarding {} rows ({} bytes) buffered for destination table {}: the buffering user can no longer "
-                "write to it ({}).",
-                block_rows, block_bytes, destination_id.getNameForLogs(), getCurrentExceptionMessage(false));
+                "Discarding {} rows ({} bytes) buffered for destination table {}: it can no longer be flushed "
+                "under the identity that buffered it.",
+                block_rows, block_bytes, destination_id.getNameForLogs());
             return true;
         }
 
-        /// Transient failure: return the block to its place in the buffer and retry later.
+        /// Transient/downstream failure, with the local identity still valid: return the block to its place in
+        /// the buffer and retry later.
         CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
@@ -1523,6 +1530,19 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
+
+        /// If a different user's operation triggered this flush of a batch buffered under another identity, do
+        /// not surface that identity's exception (its name, required grants, table names) to them. Replace it
+        /// with a neutral message; the batch is retained, so a background flush records the cause server-side.
+        if (flushed_under_user_identity)
+        {
+            auto triggering_context = CurrentThread::tryGetQueryContext();
+            if (triggering_context && triggering_context->getUserID() != buffer.write_identity->user_id)
+                throw Exception(
+                    getCurrentExceptionCode(),
+                    "Could not flush a buffered batch to destination table {}; it is retained for retry.",
+                    destination_id.getNameForLogs());
+        }
 
         /// After a while, the next write attempt will happen.
         throw;

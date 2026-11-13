@@ -97,5 +97,22 @@ echo -n "partial denied, no leak:"
 if echo "$part" | grep -q "ACCESS_DENIED" && ! echo "$part" | grep -qi "columns"; then echo " OK"; else echo " UNEXPECTED"; fi
 echo -n "victim after Part E:    "; victim
 
+echo "## Part F: a cross-identity discard does not leak the buffering user to the triggering user"
+# low buffers a row while it may write to victim, then loses that grant. ok's synchronous insert then flushes
+# low's now-undeliverable batch (discarded). At information log level the discard diagnostic is forwarded to ok,
+# and it must not reveal low's name or required grants. Synchronous inserts keep the flush on ok's query thread.
+${CH} --multiquery <<EOF
+CREATE TABLE ${db}.single_hop (s String) ENGINE = Buffer(${victim_db}, victim, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+GRANT INSERT ON ${victim_db}.victim TO ${low};
+GRANT INSERT ON ${db}.single_hop TO ${low}, ${ok};
+EOF
+run_low --async-insert 0 --query "INSERT INTO ${db}.single_hop VALUES ('from_low')"
+${CH} --query "REVOKE INSERT ON ${victim_db}.victim FROM ${low}"
+info_client="${CLICKHOUSE_CLIENT/--send_logs_level=warning/--send_logs_level=information}"
+leak=$(${info_client} --user "${ok}" --async-insert 0 --query "INSERT INTO ${db}.single_hop VALUES ('from_ok')" 2>&1)
+echo -n "discard diagnostic hides the buffering user: "
+if echo "$leak" | grep -q "can no longer be flushed under the identity" \
+    && ! echo "$leak" | grep -qE "${low}|Not enough privileges|INSERT ON ${victim_db}"; then echo "OK"; else echo "UNEXPECTED"; fi
+
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}" 2>/dev/null
 ${CH} --query "DROP DATABASE IF EXISTS ${victim_db}"
