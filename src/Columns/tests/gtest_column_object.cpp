@@ -1,4 +1,5 @@
 #include <Columns/ColumnObject.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeFactory.h>

@@ -223,9 +223,11 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 يؤثر المفتاح الأساسي الطويل سلبًا في أداء الإدراج واستهلاك الذاكرة، لكن الأعمدة الإضافية في المفتاح الأساسي لا تؤثر في أداء ClickHouse أثناء استعلامات `SELECT`.
 
-يمكنك إنشاء جدول من دون مفتاح أساسي باستخدام الصياغة `ORDER BY tuple()`. في هذه الحالة، يخزّن ClickHouse البيانات بترتيب إدراجها. وإذا كنت تريد الحفاظ على ترتيب البيانات عند إدراجها بواسطة استعلامات `INSERT ... SELECT`، فاضبط [max&#95;insert&#95;threads = 1](/ar/reference/settings/session-settings/max-insert#max_insert_threads).
+يمكنك إنشاء جدول من دون مفتاح أساسي باستخدام الصياغة `ORDER BY tuple()`. ولإعادة ترتيب صفوف كل كتلة مُدرَجة بهدف تحسين قابلية الضغط، فعّل الإعداد `optimize_row_order_if_no_order_by`. ينطبق هذا الإعداد على الجداول العادية من عائلة `MergeTree`، بما في ذلك `ReplicatedMergeTree`. أما المحركات المتخصصة في هذه العائلة، مثل `ReplacingMergeTree` أو `AggregatingMergeTree`، فلا يُحسَّن ترتيب صفوفها أبدًا، بل تحتفظ بالترتيب الذي أُدرجت به الصفوف.
 
-لاختيار البيانات بالترتيب الأصلي، استخدم استعلامات `SELECT` [أحادية الخيط](/ar/reference/settings/session-settings/max-threads#max_threads).
+لتمكين إعادة الترتيب، اضبط `optimize_row_order_if_no_order_by = 1` في عبارة `SETTINGS` الخاصة بالجدول. وعند إدراج البيانات بواسطة استعلامات `INSERT ... SELECT`، اضبط أيضًا [max&#95;insert&#95;threads = 1](/ar/reference/settings/session-settings/max-insert#max_insert_threads) للحفاظ على الترتيب المُحسَّن.
+
+عندما تكون إعادة الترتيب معطّلة، استخدم استعلامات `SELECT` [أحادية الخيط](/ar/reference/settings/session-settings/max-threads#max_threads) لاختيار البيانات بترتيب إدراجها. أما عندما تكون إعادة الترتيب مفعّلة، فيحافظ استعلام `SELECT` أحادي الخيط على ترتيب البيانات كما هي مخزّنة على القرص.
 
 ### اختيار مفتاح أساسي يختلف عن مفتاح الفرز {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -572,41 +574,43 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 يمكن استخدام الفهارس من النوع `set` مع جميع الدوال. أما أنواع الفهارس الأخرى، فهي مدعومة على النحو التالي:
 
-| الدالة (المعامل) / الفهرس                                                                                                           | المفتاح الأساسي | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
-| ----------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
-| [equals (=, ==)](/ar/reference/functions/regular-functions/comparison-functions#equals)                                                | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/ar/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [like](/ar/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [notLike](/ar/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [match](/ar/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗               | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith)                                                    | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith)                                                        | ✗               | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [multiSearchAny](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                     | ✗               | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
-| [multiSearchAnyUTF8](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [multiMatchAny](/ar/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [in](/ar/reference/functions/regular-functions/in-functions)                                                                           | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/ar/reference/functions/regular-functions/in-functions)                                                                        | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [less (`<`)](/ar/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greater (`>`)](/ar/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [lessOrEquals (`<=`)](/ar/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greaterOrEquals (`>=`)](/ar/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                               | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [empty](/ar/reference/functions/regular-functions/array-functions#empty)                                                               | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [notEmpty](/ar/reference/functions/regular-functions/array-functions#notEmpty)                                                         | ✗               | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
-| [has](/ar/reference/functions/regular-functions/array-functions#has)                                                                   | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                                             | ✗               | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                                             | ✗               | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken)                                                 | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenOrNull](/ar/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                     | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/ar/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)             | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/ar/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull) | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                         | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                         | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [pointInPolygon](/ar/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                             | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [mapContains (mapContainsKey)](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                           | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                 | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                     | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValueLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                             | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                               | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| الدالة (المعامل) / الفهرس                                                                                                             | المفتاح الأساسي | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
+| [equals (=, ==)](/ar/reference/functions/regular-functions/comparison-functions#equals)                                                  | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notEquals(!=, &lt;&gt;)](/ar/reference/functions/regular-functions/comparison-functions#notEquals)                                      | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [like](/ar/reference/functions/regular-functions/string-search-functions#like)                                                           | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [notLike](/ar/reference/functions/regular-functions/string-search-functions#notLike)                                                     | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [match](/ar/reference/functions/regular-functions/string-search-functions#match)                                                         | ✗               | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [startsWith](/ar/reference/functions/regular-functions/string-functions#startsWith)                                                      | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [endsWith](/ar/reference/functions/regular-functions/string-functions#endsWith)                                                          | ✗               | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [multiSearchAny](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                       | ✗               | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyUTF8](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                               | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitive](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)         | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8) | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiMatchAny](/ar/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                         | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [in](/ar/reference/functions/regular-functions/in-functions)                                                                             | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notIn](/ar/reference/functions/regular-functions/in-functions)                                                                          | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [less (`<`)](/ar/reference/functions/regular-functions/comparison-functions#less)                                                        | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greater (`>`)](/ar/reference/functions/regular-functions/comparison-functions#greater)                                                  | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [lessOrEquals (`<=`)](/ar/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                       | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greaterOrEquals (`>=`)](/ar/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                                 | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [empty](/ar/reference/functions/regular-functions/array-functions#empty)                                                                 | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [notEmpty](/ar/reference/functions/regular-functions/array-functions#notEmpty)                                                           | ✗               | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
+| [has](/ar/reference/functions/regular-functions/array-functions#has)                                                                     | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [hasAny](/ar/reference/functions/regular-functions/array-functions#hasAny)                                                               | ✗               | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasAll](/ar/reference/functions/regular-functions/array-functions#hasAll)                                                               | ✗               | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasToken](/ar/reference/functions/regular-functions/string-search-functions#hasToken)                                                   | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenOrNull](/ar/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                       | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/ar/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)               | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/ar/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)   | ✗               | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                           | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                           | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [pointInPolygon](/ar/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                               | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [mapContains (mapContainsKey)](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                             | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                   | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                       | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValueLike](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                               | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyValue](/ar/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                 | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 
 لا يمكن لـ `ngrambf_v1` استخدام الدوال التي تحتوي على وسيطة ثابتة أصغر من حجم ngram لتحسين الاستعلامات.
 
@@ -993,16 +997,17 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 * `policy_name_N` — اسم السياسة. يجب أن تكون أسماء السياسات فريدة.
 * `volume_name_N` — اسم وحدة التخزين. يجب أن تكون أسماء وحدات التخزين فريدة.
 * `disk` — قرص ضمن وحدة تخزين.
-* `max_data_part_size_bytes` — الحد الأقصى لحجم الجزء الذي يمكن تخزينه على أيٍّ من أقراص وحدة التخزين. إذا كان الحجم التقديري لجزء مدموج أكبر من `max_data_part_size_bytes`، فسيُكتب هذا الجزء في وحدة التخزين التالية. تتيح هذه الميزة أساسًا الاحتفاظ بالأجزاء الجديدة/الصغيرة على وحدة تخزين سريعة (SSD) ثم نقلها إلى وحدة تخزين بطيئة (HDD) عندما يصبح حجمها كبيرًا. لا تستخدم هذا الإعداد إذا كانت سياستك تحتوي على وحدة تخزين واحدة فقط.
+* `max_data_part_size_bytes` — الحد الأقصى لحجم الجزء الذي يمكن تخزينه على أيٍّ من أقراص وحدة التخزين. إذا كان الحجم التقديري لجزء مدموج أكبر من `max_data_part_size_bytes`، فسيُكتب هذا الجزء في وحدة التخزين التالية. تتيح هذه الميزة أساسًا الاحتفاظ بالأجزاء الجديدة/الصغيرة على وحدة تخزين سريعة (SSD) ثم نقلها إلى وحدة تخزين بطيئة (HDD) عندما يصبح حجمها كبيرًا. لا تستخدم هذا الإعداد إذا كانت سياستك تحتوي على وحدة تخزين واحدة فقط.
 * `move_factor` — عندما تنخفض المساحة المتاحة عن هذه النسبة، تبدأ البيانات تلقائيًا بالانتقال إلى وحدة التخزين التالية إن وُجدت (القيمة الافتراضية 0.1). يرتّب ClickHouse الأجزاء الموجودة حسب الحجم من الأكبر إلى الأصغر (ترتيبًا تنازليًا)، ثم يحدّد الأجزاء التي يكفي حجمها الإجمالي لتحقيق شرط `move_factor`. وإذا لم يكن الحجم الإجمالي لجميع الأجزاء كافيًا، فستنقل جميع الأجزاء.
-* `perform_ttl_move_on_insert` — يعطّل TTL move عند تنفيذ INSERT لجزء بيانات. افتراضيًا (إذا كان مُمكّنًا)، إذا أدرجنا جزء بيانات انتهت صلاحيته بالفعل وفق قاعدة TTL move، فإنه ينتقل فورًا إلى وحدة التخزين/القرص المعرَّف في قاعدة النقل. وقد يؤدي ذلك إلى إبطاء عملية INSERT بشكل كبير إذا كانت وحدة التخزين/القرص الوجهة بطيئة (مثل S3). وإذا كان معطّلًا، فسيُكتب جزء البيانات المنتهي الصلاحية أولًا في وحدة التخزين الافتراضية، ثم يُنقل مباشرة بعد ذلك إلى وحدة تخزين TTL.
+* `backup_metadata_only` — بيانات الجداول التي تستخدم هذه السياسة يوفّرها التخزين نفسه، مثل مجموعة بيانات مشتركة للقراءة فقط (القيمة الافتراضية `false`). يجب أن تكون جميع وحدات التخزين في السياسة للقراءة فقط. يخزّن `BACKUP` تعريفات هذه الجداول فقط، ويعيد `RESTORE` إنشاءها دون استعادة البيانات مع الاحتفاظ بمعرّفات UUID الخاصة بها من النسخة الاحتياطية، لكي تعثر على بياناتها في التخزين مجددًا. تفشل عمليتا `BACKUP` و`RESTORE` لأقسام (partitions) محددة من مثل هذا الجدول. لا تُدعم سوى عائلة `MergeTree` العادية: أما جدول `MergeTree` المتماثل أو المشترك، أو العرض المُجسَّد أو جدول `TimeSeries` الذي يحتوي على جدول داخلي يستخدم مثل هذه السياسة، فيُنسخ احتياطيًا ويُستعاد كالمعتاد، مع عرض تحذير.
+* `perform_ttl_move_on_insert` — يعطّل TTL move عند تنفيذ INSERT لجزء بيانات. افتراضيًا (إذا كان مُمكّنًا)، إذا أدرجنا جزء بيانات انتهت صلاحيته بالفعل وفق قاعدة TTL move، فإنه ينتقل فورًا إلى وحدة التخزين/القرص المعرَّف في قاعدة النقل. وقد يؤدي ذلك إلى إبطاء عملية INSERT بشكل كبير إذا كانت وحدة التخزين/القرص الوجهة بطيئة (مثل S3). وإذا كان معطّلًا، فسيُكتب جزء البيانات المنتهي الصلاحية أولًا في وحدة التخزين الافتراضية، ثم يُنقل مباشرة بعد ذلك إلى وحدة تخزين TTL.
 * `load_balancing` - سياسة موازنة الأقراص، `round_robin` أو `least_used`.
 * `least_used_ttl_ms` - يضبط مهلة التحديث (بالملي ثانية) للمساحة المتاحة على جميع الأقراص (`0` - التحديث دائمًا، `-1` - عدم التحديث مطلقًا، والقيمة الافتراضية هي `60000`). لاحظ أنه إذا كان القرص مستخدمًا من ClickHouse فقط وغير خاضع لتوسيع/تقليص نظام الملفات أثناء التشغيل، فيمكنك استخدام `-1`. أما في جميع الحالات الأخرى فلا يُنصح بذلك، لأنه سيؤدي في النهاية إلى توزيع غير صحيح للمساحة.
 * `prefer_not_to_merge` — يجب ألا تستخدم هذا الإعداد. فهو يعطّل دمج أجزاء البيانات على وحدة التخزين هذه (وهذا ضار ويؤدي إلى تراجع الأداء). عند تمكين هذا الإعداد (لا تفعل ذلك)، لا يعود دمج البيانات على وحدة التخزين هذه مسموحًا به (وهذا أمر سيئ). يتيح هذا الإعداد (لكنك لا تحتاج إليه) التحكّم (وإذا كنت تريد التحكّم في شيء هنا، فأنت ترتكب خطأً) في كيفية تعامل ClickHouse مع الأقراص البطيئة (لكن ClickHouse يعرف الأفضل، لذا يُرجى عدم استخدام هذا الإعداد).
 * `volume_priority` — يحدّد الأولوية (الترتيب) الذي تُملأ به وحدات التخزين. القيمة الأقل تعني أولوية أعلى. يجب أن تكون قيم المعلَمة أعدادًا طبيعية، وأن تغطي مجتمعةً النطاق من 1 إلى N (بحيث تُمنح أقل أولوية) من دون تخطي أي أرقام.
-  * إذا كانت *جميع* وحدات التخزين موسومة، فستُرتَّب أولوياتها وفق الترتيب المحدد.
-  * إذا كانت *بعض* وحدات التخزين فقط موسومة، فستكون الوحدات غير الموسومة ذات الأولوية الأدنى، وتُرتَّب حسب ترتيب تعريفها في `config`.
-  * إذا لم تكن *أي* من وحدات التخزين موسومة، فتُحدَّد أولويتها وفق ترتيب التصريح بها في التهيئة.
+  * إذا كانت *جميع* وحدات التخزين موسومة، فستُرتَّب أولوياتها وفق الترتيب المحدد.
+  * إذا كانت *بعض* وحدات التخزين فقط موسومة، فستكون الوحدات غير الموسومة ذات الأولوية الأدنى، وتُرتَّب حسب ترتيب تعريفها في `config`.
+  * إذا لم تكن *أي* من وحدات التخزين موسومة، فتُحدَّد أولويتها وفق ترتيب التصريح بها في التهيئة.
   * لا يمكن أن تكون لوحدتي تخزين قيمة الأولوية نفسها.
 
 أمثلة على التهيئة:
@@ -1048,15 +1053,15 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 </storage_configuration>
 ```
 
-في المثال المذكور، تنفّذ سياسة التخزين `hdd_in_order` أسلوب [التوزيع بالتناوب](https://en.wikipedia.org/wiki/Round-robin_scheduling). لذلك لا تحدد هذه السياسة سوى وحدة تخزين واحدة (`single`)، وتُخزَّن أجزاء البيانات على جميع أقراصها بالتتابع الدوري. يمكن أن تكون هذه السياسة مفيدة جدًا إذا كانت هناك عدة أقراص متشابهة مركّبة على النظام، ولكن RAID غير مهيأ. ضع في اعتبارك أن كل قرص على حدة غير موثوق، وقد تحتاج إلى تعويض ذلك بعامل replication مقداره 3 أو أكثر.
+في المثال المذكور، تنفّذ سياسة التخزين `hdd_in_order` أسلوب [التوزيع بالتناوب](https://en.wikipedia.org/wiki/Round-robin_scheduling). لذلك لا تحدد هذه السياسة سوى وحدة تخزين واحدة (`single`)، وتُخزَّن أجزاء البيانات على جميع أقراصها بالتتابع الدوري. يمكن أن تكون هذه السياسة مفيدة جدًا إذا كانت هناك عدة أقراص متشابهة مركّبة على النظام، ولكن RAID غير مهيأ. ضع في اعتبارك أن كل قرص على حدة غير موثوق، وقد تحتاج إلى تعويض ذلك بعامل replication مقداره 3 أو أكثر.
 
-إذا كانت هناك أنواع مختلفة من الأقراص متاحة في النظام، فيمكن استخدام سياسة `moving_from_ssd_to_hdd` بدلًا من ذلك. تتكوّن وحدة التخزين `hot` من قرص SSD (`fast_ssd`)، ويبلغ الحد الأقصى لحجم جزء يمكن تخزينه على هذه الوحدة 1GB. ستُخزَّن جميع الأجزاء التي يزيد حجمها على 1GB مباشرةً على وحدة التخزين `cold`، التي تحتوي على قرص HDD باسم `disk1`.
+إذا كانت هناك أنواع مختلفة من الأقراص متاحة في النظام، فيمكن استخدام سياسة `moving_from_ssd_to_hdd` بدلًا من ذلك. تتكوّن وحدة التخزين `hot` من قرص SSD (`fast_ssd`)، ويبلغ الحد الأقصى لحجم جزء يمكن تخزينه على هذه الوحدة 1GB. ستُخزَّن جميع الأجزاء التي يزيد حجمها على 1GB مباشرةً على وحدة التخزين `cold`، التي تحتوي على قرص HDD باسم `disk1`.
 كذلك، بمجرد أن تتجاوز نسبة امتلاء القرص `fast_ssd` 80%، ستُنقل البيانات إلى `disk1` بواسطة عملية تعمل في الخلفية.
 
 يُعد ترتيب سرد وحدات التخزين داخل سياسة التخزين مهمًا إذا كانت واحدة على الأقل من وحدات التخزين المدرجة لا تحتوي على المعامل `volume_priority` بشكل صريح.
-وبمجرد امتلاء إحدى وحدات التخزين بشكل زائد، تُنقل البيانات إلى الوحدة التالية. ويُعد ترتيب سرد الأقراص مهمًا أيضًا لأن البيانات تُخزَّن عليها بالتناوب.
+وبمجرد امتلاء إحدى وحدات التخزين بشكل زائد، تُنقل البيانات إلى الوحدة التالية. ويُعد ترتيب سرد الأقراص مهمًا أيضًا لأن البيانات تُخزَّن عليها بالتناوب.
 
-عند إنشاء table، يمكن تطبيق إحدى سياسات التخزين المهيأة عليها:
+عند إنشاء جدول، يمكن تطبيق إحدى سياسات التخزين المهيأة عليه:
 
 ```sql
 CREATE TABLE table_with_non_default_policy (
@@ -1070,7 +1075,7 @@ PARTITION BY toYYYYMM(EventDate)
 SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
-تعني سياسة التخزين `default` استخدام وحدة تخزين واحدة فقط، تتكوّن من قرص واحد فقط محدَّد في `<path>`.
+تعني سياسة التخزين `default` استخدام وحدة تخزين واحدة فقط، تتكوّن من قرص واحد فقط محدَّد في `<path>`.
 يمكنك تغيير سياسة التخزين بعد إنشاء الجدول باستخدام استعلام [ALTER TABLE ... MODIFY SETTING]، ويجب أن تتضمن السياسة الجديدة جميع الأقراص ووحدات التخزين القديمة نفسها وبالأسماء نفسها.
 
 يمكن تغيير عدد الخيوط التي تنفّذ عمليات نقل أجزاء البيانات في الخلفية عبر الإعداد [background&#95;move&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_move_pool_size).
