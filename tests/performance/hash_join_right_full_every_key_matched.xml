@@ -10,7 +10,7 @@
             <name>join_settings</name>
             <values>
                 <value>join_algorithm = 'hash', hash_join_layout = 'serial'</value>
-                <value>join_algorithm = 'parallel_hash', hash_join_layout = 'parallel'</value>
+                <value>join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', enable_robin_hood_hash_for_joins = 1</value>
             </values>
         </substitution>
         <substitution>

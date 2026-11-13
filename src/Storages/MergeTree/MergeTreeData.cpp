@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -62,7 +63,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <Disks/supportWritingWithAppend.h>
-#include <IO/Expect404ResponseScope.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -7239,6 +7239,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
     if (new_storage_policy != getStoragePolicy())
     {
+        /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
             throw Exception(
@@ -7639,57 +7642,6 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, PartDirIntent intent) const
 {
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
-}
-
-std::pair<bool, MergeTreeData::MutableDataPartPtr> MergeTreeData::loadDataPartForRemovalIfExists(const String & name, bool ignore_no_such_key)
-{
-    const auto volume = std::make_shared<SingleDiskVolume>("volume_" + name, getDisks()[0]);
-
-    if (!volume->getDisk()->existsFileOrDirectory(fs::path(relative_data_path) / name))
-    {
-        LOG_DEBUG(log, "Part {} doesn't exist on disk, probably it was already removed", name);
-        return std::pair{false, nullptr};
-    }
-
-    try
-    {
-        std::optional<Expect404ResponseScope> scope;
-        if (ignore_no_such_key)
-            scope.emplace();
-
-        auto part = getDataPartBuilder(name, volume, name, getReadSettings(), PartDirIntent::OpenExisting)
-            .withPartFormatFromDisk()
-            .build();
-
-        part->loadChecksums(/*require=*/false);
-        if (!part->getParentPart())
-        {
-            [[maybe_unused]] bool has_broken_projections = false;
-            part->loadProjections(
-                /*require_columns_checksums=*/false,
-                /*check_consistency=*/false,
-                has_broken_projections,
-                /*if_not_loaded=*/false,
-                /*only_metadata=*/true);
-        }
-
-        return std::pair{true, part};
-    }
-#if USE_AWS_S3
-    catch (S3Exception & exc)
-    {
-        if (exc.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY && ignore_no_such_key)
-            return std::pair{false, nullptr};
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-#endif
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    return std::pair{true, nullptr};
 }
 
 void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
@@ -12438,7 +12390,7 @@ void MergeTreeData::optimizeDryRun(
         merge_task->cancel();
         throw;
     }
-    auto new_part = merge_task->getFuture().get();
+    auto new_part = merge_task->takeResultPart();
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())

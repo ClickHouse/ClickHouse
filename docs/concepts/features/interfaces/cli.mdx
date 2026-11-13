@@ -16,7 +16,7 @@ With `clickhousectl` you can:
 - Create, configure, scale, back up and query ClickHouse Cloud services
 - Create, monitor, configure and restore [ClickHouse Managed Postgres](/products/managed-postgres/overview) services
 - Create and operate ClickPipes from object storage, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB and BigQuery
-- Manage sources, dashboards, alerts, webhooks, saved searches and roles on a [Managed ClickStack](/clickstack/deployment/managed) service
+- Manage sources, dashboards, alerts, webhooks, saved searches and roles on a [Self-managed ClickHouse Observability](/clickstack/self-configured/deployment/managed) service
 - Develop executable UDFs locally and deploy them to ClickHouse Cloud
 - Manage organization members, invitations, API keys and roles
 - Install the official ClickHouse agent skills into coding agents
@@ -430,7 +430,7 @@ CDC pipes must be `Paused` before `update`: stop the pipe, poll `get` until it i
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` manages sources, dashboards, alerts, webhooks, saved searches and roles on an existing [Managed ClickStack](/clickstack/deployment/managed) service. Resources are JSON files (`--file`, or `-` for stdin). Reads support OAuth; writes need an API key.
+`cloud clickstack` manages sources, dashboards, alerts, webhooks, saved searches and roles on an existing [Self-managed ClickHouse Observability](/clickstack/self-configured/deployment/managed) service. Resources are JSON files (`--file`, or `-` for stdin). Reads support OAuth; writes need an API key.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>
