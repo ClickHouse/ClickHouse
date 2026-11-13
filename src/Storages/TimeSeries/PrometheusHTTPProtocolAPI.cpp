@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Server/PrometheusMetricsWriter.h>
-#include <Storages/StoragePrometheusQuery.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/ASTExpressionList.h>
@@ -63,6 +62,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsUInt64 promql_max_points_per_series;
     extern const SettingsBool promql_push_down_label_matchers;
 }
@@ -257,7 +257,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
-    StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        query_context->setSetting("enable_materialized_cte", true);
+
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
