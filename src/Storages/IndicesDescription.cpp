@@ -203,10 +203,9 @@ void rejectPartialIndexConditionWithoutInitiatorUser(const ASTPtr & definition_a
     if (declaration && declaration->getWhere())
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "The WHERE condition of a skip index is checked as the user against the table on the host the query is "
-            "submitted to, and this host cannot do that for this query (it has no such table, or the query alters it in "
-            "several steps). Submit it from a host that has the table, or let every host run it as the initiating user: "
-            "enable the server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
+            "The WHERE condition of a skip index would be resolved by each host against its own schema without the "
+            "user who submitted the query. Let every host run the query as the initiating user instead: enable the "
+            "server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
             "distributed_ddl_entry_format_version to at least {}",
             DDLLogEntry::INITIATOR_USER_VERSION);
 }

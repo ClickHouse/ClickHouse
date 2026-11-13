@@ -2,8 +2,8 @@
 # Tags: zookeeper, no-replicated-database
 # no-replicated-database: ON CLUSTER is not allowed for a Replicated database
 
-# The hosts of an `ON CLUSTER` query analyse the condition of a partial index without the submitting user,
-# so the initiator checks it as the user first, and refuses it when it has no table to check it against.
+# Hosts of an `ON CLUSTER` query analyse a partial index condition without the user, against their own schema.
+# Only a declared column list is the same everywhere, so only it is checked on the initiator; the rest is refused.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,7 +31,7 @@ CREATE USER $user;
 GRANT CREATE TABLE, ALTER ADD INDEX, CLUSTER ON *.* TO $user;
 "
 
-echo '1. A condition the user may run is accepted.'
+echo '1. A condition the user may run is accepted with a declared column list, refused on an existing table.'
 run -q "ALTER TABLE tab ON CLUSTER test_shard_localhost ADD INDEX i p TYPE minmax WHERE p > 0"
 run -q "CREATE INDEX j ON tab ON CLUSTER test_shard_localhost (p) TYPE minmax WHERE p > 1"
 run -q "
@@ -40,7 +40,7 @@ run -q "
 "
 $CLICKHOUSE_CLIENT -q "SELECT table, name FROM system.data_skipping_indices WHERE database = currentDatabase() ORDER BY ALL"
 
-echo '2. An index copied by CREATE AS is accepted, on the legacy entry format too.'
+echo '2. An index copied by CREATE AS is refused, on every entry format.'
 for version in 2 8
 do
     run --distributed_ddl_entry_format_version $version -q "

@@ -65,6 +65,13 @@ do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS probe"
 done
 
+echo "short attach of a stored table"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TABLE ON $CLICKHOUSE_DATABASE.src TO $user"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE src"
+$CLICKHOUSE_CLIENT --user "$user" --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 \
+    -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.src" 2>&1 | grep -o -m1 "ACCESS_DENIED" || echo "no error"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'src'"
+
 $CLICKHOUSE_CLIENT -q "
 DROP USER $user;
 DROP FUNCTION $udf;

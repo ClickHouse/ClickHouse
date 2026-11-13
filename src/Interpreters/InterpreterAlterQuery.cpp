@@ -675,7 +675,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
 
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext(), table](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -700,11 +700,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
                         rejectTextIndexTransformWithoutInitiatorUser(*declaration);
                 }
-                /// Index conditions are checked as the user against this host's table instead.
-                if (!checkAddedIndexPermissions(captured_alter, table, context))
-                    for (const auto & child : captured_alter.command_list->children)
-                        if (const auto & command = child->as<const ASTAlterCommand &>(); command.type == ASTAlterCommand::ADD_INDEX)
-                            rejectPartialIndexConditionWithoutInitiatorUser(command.index_decl);
+                /// Each host resolves an index condition against its own table, where a column may be an ALIAS of something else.
+                for (const auto & child : captured_alter.command_list->children)
+                    if (const auto & command = child->as<const ASTAlterCommand &>(); command.type == ASTAlterCommand::ADD_INDEX)
+                        rejectPartialIndexConditionWithoutInitiatorUser(command.index_decl);
             }
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

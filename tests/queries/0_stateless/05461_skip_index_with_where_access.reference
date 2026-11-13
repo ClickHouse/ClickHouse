@@ -33,3 +33,6 @@ ACCESS_DENIED
 copied from another table
 ACCESS_DENIED
 ACCESS_DENIED
+short attach of a stored table
+no error
+1

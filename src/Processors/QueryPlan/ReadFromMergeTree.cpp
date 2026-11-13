@@ -3429,10 +3429,22 @@ bool filterImpliesIndexCondition(
     const auto indexed_matches = matchTrees(
         index.selected_rows_expression->getActionsDAG().getOutputs(), index_analysis_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
     NameSet index_subexpressions;
+    std::unordered_map<std::string_view, ActionsDAG::ActionType> index_subexpression_types;
     for (const auto & action : index.expression->getActions())
+    {
         index_subexpressions.insert(action.node->result_name);
+        index_subexpression_types.emplace(action.node->result_name, action.node->getWithoutAlias()->type);
+    }
     for (const auto & node : index_analysis_dag.getNodes())
     {
+        /// A column or a constant named like an indexed expression of another kind, such as a column named `toString(n)`.
+        if (node.type == ActionsDAG::ActionType::INPUT || node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            auto it = index_subexpression_types.find(node.result_name);
+            if (it != index_subexpression_types.end() && it->second != node.type)
+                return false;
+            continue;
+        }
         if (node.type != ActionsDAG::ActionType::FUNCTION)
             continue;
         const RPNBuilderTreeNode rpn_node(&node, context);

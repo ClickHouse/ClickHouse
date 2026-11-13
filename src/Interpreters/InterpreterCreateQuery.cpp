@@ -1107,7 +1107,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             {
                 constexpr bool is_implicitly_created = false;
                 constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
-                checkPartialIndexConditionAsUser(index, properties.columns, getContext());
+                if (isFreshTableDefinition(mode, create.attach_short_syntax))
+                    checkPartialIndexConditionAsUser(index, properties.columns, getContext());
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(
                     index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
                 if (properties.indices.has(index_desc.name))
@@ -4236,7 +4237,11 @@ BlockIO InterpreterCreateQuery::execute()
                             rejectTextIndexTransformWithoutInitiatorUser(index);
                         checkTextIndexPreAndPostProcessorPermissions(index, getContext());
                         if (index.where_expression)
+                        {
+                            if (!workers_use_initiator_user)
+                                rejectPartialIndexConditionWithoutInitiatorUser(index.definition_ast);
                             checkPartialIndexConditionAsUser(index.definition_ast, as_storage_metadata->getColumns(), getContext());
+                        }
                     }
                 }
             }

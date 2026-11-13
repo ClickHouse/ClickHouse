@@ -63,6 +63,28 @@ SELECT count() FROM t_nested WHERE p AND formatRow('JSONEachRow', n) = '{"n":1}\
 SELECT count() FROM t_nested WHERE p AND formatRow('JSONEachRow', n) = '{"n":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
 SELECT count() FROM t_zero_minmax WHERE id = 2 AND 1. / (f + 0.) < 0. SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
 
+SELECT 'a column named like the indexed expression';
+DROP TABLE IF EXISTS t_name_set;
+DROP TABLE IF EXISTS t_name_bloom;
+DROP TABLE IF EXISTS t_name_column;
+CREATE TABLE t_name_set (n UInt64, p UInt8, `toString(n)` String, INDEX i toString(n) TYPE set(10) WHERE p = 1) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_name_bloom (n UInt64, p UInt8, `toString(n)` String, INDEX i toString(n) TYPE bloom_filter WHERE p = 1) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_name_column (n UInt64, p UInt8, `toString(n)` String, INDEX i `toString(n)` TYPE set(10) WHERE p = 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_name_set VALUES (1, 1, 'x');
+INSERT INTO t_name_bloom VALUES (1, 1, 'x');
+INSERT INTO t_name_column VALUES (1, 1, 'x');
+SELECT count() FROM t_name_set WHERE p = 1 AND `toString(n)` = 'x' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_name_set WHERE p = 1 AND `toString(n)` = 'x' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_name_set WHERE p = 1 AND `toString(n)` = 'x' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SELECT count() FROM t_name_bloom WHERE p = 1 AND `toString(n)` = 'x' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_name_bloom WHERE p = 1 AND `toString(n)` = 'x' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SELECT 'the column itself is indexed: the index is used';
+SELECT count() FROM t_name_column WHERE p = 1 AND `toString(n)` = 'x' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
+SELECT count() FROM t_name_column WHERE p = 1 AND `toString(n)` = 'y' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
+DROP TABLE t_name_set;
+DROP TABLE t_name_bloom;
+DROP TABLE t_name_column;
+
 DROP TABLE t_expr_set;
 DROP TABLE t_expr_minmax;
 DROP TABLE t_expr_eq;

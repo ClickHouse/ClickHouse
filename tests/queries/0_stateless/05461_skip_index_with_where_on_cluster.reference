@@ -1,18 +1,14 @@
-1. A condition the user may run is accepted.
-ok
-ok
+1. A condition the user may run is accepted with a declared column list, refused on an existing table.
+refused
+refused
 ok
 dst	i
-tab	i
-tab	j
-2. An index copied by CREATE AS is accepted, on the legacy entry format too.
-ok
-ok
-copy_2	i
-copy_8	i
+2. An index copied by CREATE AS is refused, on every entry format.
+refused
+refused
 3. A condition the user may not run is refused.
-(ACCESS_DENIED)
-(ACCESS_DENIED)
+refused
+refused
 (ACCESS_DENIED)
 4. A table this host does not have is refused.
 refused
