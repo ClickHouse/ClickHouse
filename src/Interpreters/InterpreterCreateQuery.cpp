@@ -1976,6 +1976,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
+    /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
+    /// A replay of a stored definition was checked when it was created.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkExportAccess(create);
+
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
@@ -3023,6 +3028,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
+namespace
+{
+/// The population's own `SETTINGS` are reapplied on top of its context under the names they were written with.
+constexpr std::array<std::string_view, 3> settings_sending_population_to_other_servers
+{
+    "allow_experimental_parallel_reading_from_replicas",
+    "enable_parallel_replicas",
+    "parallel_distributed_insert_select",
+};
+}
+
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
@@ -3038,10 +3054,22 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         else
             insert->select = create.select->clone();
 
+        ContextMutablePtr insert_context = getContext();
+        /// Every replica of a `Replicated` database executes this entry and fills its own copy of the table, so the population
+        /// must neither read through parallel replicas nor be sent to other servers as a distributed `INSERT`.
+        if (getContext()->getZooKeeperMetadataTransaction())
+        {
+            auto local_context = Context::createCopy(getContext());
+            local_context->setSetting("parallel_distributed_insert_select", Field{0});
+            local_context->setSetting("enable_parallel_replicas", Field{0});
+            removeSettingsFromQuery(insert->select, settings_sending_population_to_other_servers);
+            insert_context = local_context;
+        }
+
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
-            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            insert_context,
+            insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_isnert */ false);
@@ -3542,6 +3570,21 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+
+                /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
+                /// its inner engines while normalizing, so add the ones this query does not give itself
+                if (inherited.is_time_series_table)
+                {
+                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
+                    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
+                    if (as_create.targets)
+                        for (const auto & target : as_create.targets->targets)
+                            if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
+                                inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
+                }
+
+                /// the worker inherits the move destination of the source too, and runs with no user
+                checkExportAccess(inherited);
             }
 
             return executeQueryOnCluster(create);
@@ -3626,7 +3669,26 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
+    /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
+    /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
+    /// taking it away from `user_files` needs `WRITE`, like renaming files after processing does. Without this,
+    /// `CREATE TABLE` on a table of their own would let a user read or consume any data staged in `user_files`.
+    if (create.has_attach_from_path)
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
+
+    /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
+    required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
     return required_access;
+}
+
+void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    if (internal)
+        return;
+
+    getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

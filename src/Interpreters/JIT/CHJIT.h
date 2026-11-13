@@ -89,7 +89,7 @@ public:
 
 private:
 
-    std::unique_ptr<llvm::Module> createModuleForCompilation();
+    std::unique_ptr<llvm::Module> createModuleForCompilation(llvm::LLVMContext & context);
 
     CompiledModule compileModule(std::unique_ptr<llvm::Module> module);
 
@@ -99,7 +99,6 @@ private:
 
     static std::unique_ptr<llvm::TargetMachine> getTargetMachine();
 
-    llvm::LLVMContext context;
     std::unique_ptr<llvm::TargetMachine> machine;
     llvm::DataLayout layout;
     std::unique_ptr<JITCompiler> compiler;
@@ -114,8 +113,7 @@ private:
 
 /// Drop the static CHJIT instances used for compiled expressions and compiled aggregate functions.
 /// On the next compile request, fresh instances are constructed (paying the one-time
-/// `TargetMachine`/`Subtarget`/`LLVMContext` initialization cost again, ~few MiB), reclaiming any
-/// LLVMContext-retained type/constant uniquing accumulated by previous compilations.
+/// `TargetMachine`/`Subtarget` initialization cost again, ~few MiB).
 ///
 /// Concurrency: each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`,
 /// so the actual instance survives a reset until every user has released its handle. The reset

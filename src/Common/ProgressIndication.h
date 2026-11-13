@@ -106,6 +106,10 @@ private:
     /// to check whether progress output needs to be cleared.
     size_t written_progress_chars = 0;
 
+    /// Selects the frame of the spinning indicator. It is per instance, because several clients
+    /// (e.g. the sessions of the web terminal) can show progress concurrently in one process.
+    size_t indicator_frame = 0;
+
     /// The server periodically sends information about how much data was read since last time.
     /// This information is stored here.
     Progress progress;

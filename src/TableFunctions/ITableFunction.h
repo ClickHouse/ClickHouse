@@ -107,12 +107,17 @@ public:
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
 
-    /// Returns actual table structure after enforcing source access checks.
-    /// Use this instead of getActualTableStructure() from outside execute().
+    /// Returns actual table structure after enforcing the same access checks as `execute`: source, engine,
+    /// and `CREATE TEMPORARY TABLE` (for table functions not allowed in readonly mode).
+    /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
 
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// Check the `CREATE TEMPORARY TABLE` grant, required to use a table function unless it is allowed
+    /// in readonly mode and the query is not an insert.
+    void checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const;
 
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.

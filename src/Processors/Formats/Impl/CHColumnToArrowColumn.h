@@ -4,6 +4,7 @@
 #if USE_ARROW || USE_PARQUET
 
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
 
 #include <arrow/table.h>
@@ -35,6 +36,8 @@ public:
         bool output_date_as_uint16 = false;
         /// Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
         bool output_unsupported_types_as_binary = false;
+        /// Upper bound on one record batch; a chunk holding more is written as several.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     };
 
     static std::shared_ptr<arrow::Schema> calculateArrowSchema(
