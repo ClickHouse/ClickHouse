@@ -748,6 +748,13 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     const std::string_view declared_return = overload.return_type;
     const String signature = fmt::format("{}:{}", mapping.substrait_name, fmt::join(overload.arg_types, "_"));
 
+    /// A Substrait result is nullable when any of its arguments is nullable in Substrait.
+    /// ClickHouse can disagree. `sum(x)` under `GROUP BY` is nullable in Substrait but not in ClickHouse.
+    const bool any_arg_nullable = std::ranges::any_of(args, [](const auto & a) { return isSubstraitTypeNullable(a.type); });
+    const bool result_nullable = any_arg_nullable && !mapping.never_null;
+    if (isNullableOrLowCardinalityNullable(node.result_type) && !result_nullable)
+        return blocked(fmt::format("function {} returns a nullable result in ClickHouse but not in Substrait", name));
+
     bool needs_result_cast = false;
     ConvertedExpression out;
     out.node = &node;
@@ -756,16 +763,14 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     /// It declares `i64` where ClickHouse returns UInt64 for counts and lengths, too small to overflow `i64`.
     const DataTypePtr ch_result = removeLowCardinalityAndNullable(node.result_type);
     if ((declared_return == "bool" && isUInt8(ch_result)) || (declared_return == "i64" && isUInt64(ch_result)))
-    {
-        const bool any_arg_nullable = std::ranges::any_of(args, [](const auto & a) { return isSubstraitTypeNullable(a.type); });
-        out.type = makeSimpleSubstraitType(declared_return, any_arg_nullable && !mapping.never_null);
-    }
+        out.type = makeSimpleSubstraitType(declared_return, result_nullable);
     else
     {
         /// Otherwise the declared return type must be the ClickHouse result type.
         if (auto converted_short = result_short(); !converted_short)
             return std::unexpected(std::move(converted_short.error()));
         out.type = std::move(*ch_result_type);
+        setSubstraitTypeNullability(out.type, result_nullable);
         if (ch_result_short != declared_return)
         {
             if (mapping.coercion == Coercion::ToResultType && declared_return == coercion_target)
