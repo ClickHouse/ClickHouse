@@ -5,7 +5,6 @@
 -- preprocessor and tokenizer, the same as with an alias or in WHERE.
 -- https://github.com/ClickHouse/ClickHouse/issues/125854
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 

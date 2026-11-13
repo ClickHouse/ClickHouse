@@ -39,10 +39,21 @@ public:
 
 private:
     void addStreams();
-    void seekToMarkAndDeserializePrefix(size_t from_mark, bool seek_to_mark);
+    /// Seek the streams of the columns `columns_mask` selects (all of them if it is null) to `from_mark`
+    /// (only those that need it, unless `seek_to_mark`) and deserialize their prefixes.
+    void seekToMarkAndDeserializePrefix(size_t from_mark, bool seek_to_mark, const std::vector<bool> * columns_mask);
     void adjustLastRightMark(size_t current_mark);
 
     MergeTreeReaderStream & getStream(const NameAndTypePair & column) override;
+
+    /// Read the granule `mark` of the columns `columns_mask` selects, see `MergeTreeReaderCompact::readGranules`.
+    /// The columns cache serves some granules of some columns, so the other streams are not where the previous
+    /// granule left them, and every selected stream is sought to the mark.
+    void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
+
+    /// Read the granule `mark`. The streams continue from where the previous granule left them, unless
+    /// `seek_to_mark` or the granule begins a new stripe.
+    void readGranuleImpl(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask, bool seek_to_mark);
 
     const bool use_prefetch;
     FileStreams streams;

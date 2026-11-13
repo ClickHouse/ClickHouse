@@ -684,7 +684,7 @@ bool decompress(
     /// When a specific method is forced, always use it regardless of block size.
     /// The size threshold below only applies to the adaptive bandit algorithm
     /// where timing very small blocks would add too much noise.
-    if (statistics.choose_method >= 0 || dest_size >= 32768)
+    if (statistics.choose_method >= 0 || dest_size >= MIN_BLOCK_SIZE_TO_CHOOSE_VARIANT)
     {
         size_t variant_size = PerformanceStatistics::NUM_ELEMENTS;
         size_t best_variant = statistics.select(variant_size);

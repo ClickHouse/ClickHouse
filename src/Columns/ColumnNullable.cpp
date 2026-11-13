@@ -1073,6 +1073,16 @@ void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowSto
     getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
 }
 
+void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const
+{
+    getNestedColumn().gatherRangeIntoRows(rows, row_length, field_offset, start, count, overflow_cursor, getNullMapData().data());
+}
+
+void ColumnNullable::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 *) const
+{
+    getNestedColumn().gatherSelectedIntoRows(source_rows, destination_rows, field_offset, getNullMapData().data());
+}
+
 /// A NULL row emits only the flag byte and never touches the nested column, so an
 /// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
 /// Probe row 0 once so every row rejects the same types a non-NULL row would, even

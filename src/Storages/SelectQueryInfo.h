@@ -5,13 +5,15 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
 namespace DB
 {
+
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -64,8 +66,8 @@ struct PrewhereInfo
 
     PrewhereInfo clone() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -77,8 +79,8 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -144,6 +146,11 @@ struct SelectQueryInfo
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     TableExpressionNodePtr table_expression;
+
+    /// A parallel-replicas read through a table function is coordinated under the name of the storage the call
+    /// resolved to, not under the identity of the call: set for a read shipped in a plan fragment, which a replica
+    /// rebuilds from the storage alone. Kept here so that every step rebuilt from this read inherits it.
+    bool parallel_replicas_coordinated_under_storage_name = false;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -215,6 +222,7 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 

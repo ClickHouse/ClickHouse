@@ -19,6 +19,9 @@ size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ra
 
 std::optional<UInt64> getCurrentQueryHardLimit();
 
+/// Memory the current thread can still allocate before the strictest hard limit of its query, user or the server; none if no limit is set.
+std::optional<UInt64> getCurrentQueryAvailableMemory();
+
 /// Return current query tracked memory usage
 Int64 getCurrentQueryMemoryUsage();
 

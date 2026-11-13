@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge />
 
@@ -20,7 +19,15 @@ La génération d’images permet à un agent de créer de nouvelles images à p
 
 La génération d’images s’active via la fenêtre modale **Ajouter des outils** dans l’Agent Builder (et non dans la section **Capabilities**). Cliquez sur **Ajouter des outils** en bas du panneau de l’Agent Builder, puis ajoutez l’un des outils de génération d’images, par exemple **OpenAI Image Tools**, **DALL-E-3** ou **Stable Diffusion**. L’agent sélectionne l’outil approprié en fonction de la demande, ou vous pouvez le limiter dans les instructions.
 
-<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Fenêtre modale des outils de l’agent affichant des intégrations de génération d’images, notamment OpenAI Image Tools, DALL-E-3 et Stable Diffusion, aux côtés d’autres outils tiers" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Fenêtre modale des outils de l’agent affichant des intégrations de génération d’images, notamment OpenAI Image Tools, DALL-E-3 et Stable Diffusion, aux côtés d’autres outils tiers](/images/cloud/agent-builder/tools-modal.webp)
+
+</Frame>
+
+</div>
 
 <div id="generation">
   ## Génération

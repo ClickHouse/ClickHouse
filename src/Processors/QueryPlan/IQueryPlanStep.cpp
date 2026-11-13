@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Formats/FormatSettings.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/ThreadStatus.h>
 #include <IO/Operators.h>

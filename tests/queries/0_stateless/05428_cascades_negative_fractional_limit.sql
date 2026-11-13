@@ -10,7 +10,6 @@ CREATE TABLE t_cascades_neg_limit (a UInt64) ENGINE = MergeTree ORDER BY a
 SYSTEM STOP MERGES t_cascades_neg_limit;
 INSERT INTO t_cascades_neg_limit SELECT number * 4 FROM numbers(10);
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 -- Without it a rejected plan runs locally and still gives the correct result.

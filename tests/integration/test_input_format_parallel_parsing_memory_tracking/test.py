@@ -41,7 +41,7 @@ def test_memory_tracking_total():
         [
             "bash",
             "-c",
-            "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') AS row from numbers(10000) FORMAT JSONEachRow\" > data.jsonl",
+            "clickhouse local --tmp -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') AS row from numbers(10000) FORMAT JSONEachRow\" > data.jsonl",
         ]
     )
 

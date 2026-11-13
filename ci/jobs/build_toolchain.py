@@ -411,7 +411,8 @@ def main():
             f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
-            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
+            # CMake links its compiler checks with these too, so add what jemalloc's C++ part and profiling code need
+            f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow -Wl,--whole-archive -ljemalloc_pic -Wl,--no-whole-archive -lstdc++ -lm"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
@@ -677,6 +678,19 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+        # The executables link jemalloc statically, and its license must ship with them
+        if res:
+            results.append(
+                Result.from_commands_run(
+                    name="Install jemalloc license",
+                    command=(
+                        f"install -D -m 644 /usr/share/doc/libjemalloc-dev/copyright"
+                        f" {STAGE2_INSTALL_DIR}/share/doc/jemalloc/copyright"
+                    ),
+                )
+            )
+            res = results[-1].is_ok()
 
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"

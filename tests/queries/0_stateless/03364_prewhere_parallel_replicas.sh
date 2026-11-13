@@ -6,7 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 opts=(
-  --enable_analyzer=1
   --enable_parallel_replicas=1
   --automatic_parallel_replicas_mode=0
   --parallel_replicas_for_non_replicated_merge_tree=1

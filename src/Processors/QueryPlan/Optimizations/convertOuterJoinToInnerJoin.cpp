@@ -94,7 +94,8 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         filter->getExpression(),
         filter->getFilterColumnName(),
         *interesting_side_header,
-        /*allow_unknown_function_arguments=*/true);
+        /*allow_unknown_function_arguments=*/true,
+        interesting_side_plan_node);
 
     /// If not matched rows are not always filtered out, then we cannot convert ANY OUTER JOIN to INNER JOIN
     /// See discussion in https://github.com/ClickHouse/ClickHouse/issues/66447
@@ -267,12 +268,12 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (check_left_stream)
         left_stream_safe = filterResultForNotMatchedRows(
             filter_dag, filter_column_name, *left_stream_input_header,
-            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
+            /*allow_unknown_function_arguments=*/true, child_node->children.front()) == FilterResult::FALSE;
 
     if (check_right_stream)
         right_stream_safe = filterResultForNotMatchedRows(
             filter_dag, filter_column_name, *right_stream_input_header,
-            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
+            /*allow_unknown_function_arguments=*/true, child_node->children.back()) == FilterResult::FALSE;
 
     if (!left_stream_safe || !right_stream_safe)
     {

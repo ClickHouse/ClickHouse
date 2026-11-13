@@ -1,28 +1,32 @@
 ---
-title: "Détails de connexion en CLI"
+title: "Informations de connexion en CLI"
 ---
 
-Cette page explique comment retrouver les détails de connexion d&#39;un service ClickHouse Cloud existant — hostname, numéros de port, username et mot de passe — depuis la ligne de commande, à l&#39;aide de la [ClickHouse CLI](/fr/products/cloud/features/cli) (`clickhousectl`). Les commandes sont non interactives ; `clickhousectl` produit du JSON avec `--json`.
+Cette page explique comment retrouver les informations de connexion d&#39;un service ClickHouse Cloud existant — hostname, numéros de port, nom d’utilisateur et mot de passe — depuis la ligne de commande, à l&#39;aide de l’[Interface en ligne de commande de ClickHouse](/fr/concepts/features/interfaces/cli) (`clickhousectl`). Hormis l&#39;authentification, les commandes sont non interactives. `clickhousectl` produit du JSON avec `--json`, ou automatiquement lorsqu&#39;il est exécuté par un agent de code.
 
 ## Prérequis {#prerequisites}
 
-Installez le ClickHouse CLI :
+Installez l&#39;interface en ligne de commande de ClickHouse :
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
+
+Le script installe `~/.local/bin/clickhousectl` ainsi qu&#39;un alias `chctl`. Assurez-vous que `~/.local/bin` figure dans votre `PATH`.
 
 Vous avez également besoin de `jq`.
 
-Les étapes d&#39;écriture ci-dessous nécessitent une [authentification par API key](/fr/products/cloud/features/admin-features/api/openapi) : `cloud service start` (uniquement si votre service est à l&#39;état `stopped`) et `reset-password`. La connexion OAuth est en read-only et ne couvre que les étapes de lecture (`service list`, `service get`) :
+Pour les étapes en lecture seule (`service list`, `service get`), une connexion via le navigateur suffit. Comme elle ouvre un navigateur, une intervention humaine est nécessaire pour la mener à bien :
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login
 ```
 
-Vous pouvez également définir les variables d&#39;environnement `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET`. Vérifiez avec `clickhousectl cloud auth status` : une entrée avec le scope `read/write` doit apparaître.
+La connexion via le navigateur est en lecture seule. Les étapes d’écriture ci-dessous nécessitent une [API key](/fr/products/cloud/features/admin-features/api/openapi) : `cloud service start` ou `cloud service wake` (uniquement si votre service est à l’état `stopped` ou `idle`) et `reset-password`. Pour vous connecter avec une clé, exécutez `clickhousectl cloud auth login --interactive` : la commande vous invite à saisir la clé et le secret, et évite que le secret n’apparaisse dans l’historique de votre interpréteur de commandes. Vous pouvez aussi passer les options `--api-key` et `--api-secret`, ou définir les variables d’environnement `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET` ; un agent de code ou un script doit utiliser les variables d’environnement.
 
-Vous devez également disposer d&#39;un service ClickHouse Cloud existant dont vous pourrez récupérer les détails de connexion, par exemple un service créé dans le quickstart [Créez votre premier service Cloud](/fr/get-started/quickstarts/create-your-first-service-on-cloud) ou via le flux CLI [Quick Start Cloud](/fr/getting-started/quick-start/cloud).
+La connexion vérifie les identifiants et affiche l’identity associée, que vous pouvez consulter à tout moment avec `clickhousectl cloud auth whoami`. Si vous appartenez à plusieurs organisations, ajoutez `--org-id <org-id>` (ou `--org-name <name>`) à chaque commande `cloud service` de ce guide.
+
+Vous devez également disposer d’un service ClickHouse Cloud existant dont vous récupérerez les informations de connexion, par exemple un service créé en suivant le [Démarrage rapide Cloud](/fr/get-started/setup/cloud).
 
 ## Trouver votre service {#find-your-service}
 
@@ -39,10 +43,10 @@ clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @t
 Conservez l&#39;ID du service : toutes les autres commandes de ce guide le prennent en argument. Pour le retrouver par son nom :
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+CH_ID=$(clickhousectl cloud service get --name my-first-service --json | jq -r .id)
 ```
 
-Le service doit être en cours d&#39;exécution pour pouvoir vérifier la connectivité à une étape ultérieure. Si son state est `stopped`, démarrez-le et interrogez-le jusqu&#39;à ce qu&#39;il passe à `running` (un service `idle` du fait de l&#39;idle scaling se réveille automatiquement à la première connection : aucune action n&#39;est donc nécessaire ici) :
+Le service doit être en cours d&#39;exécution pour pouvoir vérifier la connectivité à une étape ultérieure. Si son state est `stopped`, démarrez-le et interrogez-le jusqu&#39;à ce qu&#39;il passe à `running` :
 
 ```bash
 clickhousectl cloud service start "$CH_ID"
@@ -50,6 +54,8 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
   sleep 15
 done
 ```
+
+Un service `idle` du fait de l&#39;idle scaling se réveille automatiquement à la première connexion : aucune action n&#39;est donc nécessaire ici. Pour le réveiller à l&#39;avance, exécutez `clickhousectl cloud service wake "$CH_ID"` et interrogez-le de la même manière.
 
 ## Récupérer vos détails de connexion {#get-your-connection-details}
 
@@ -107,7 +113,7 @@ CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r
 ```
 
 <Warning>
-  `reset-password` invalide immédiatement le mot de passe précédent de l&#39;utilisateur `default` : tout client encore configuré avec l&#39;ancien mot de passe ne parvient plus à s&#39;authentifier. Si le service appartient à un [warehouse](/fr/products/cloud/features/infrastructure/warehouses), les utilisateurs de base de données sont partagés entre tous les services de ce warehouse : la réinitialisation change donc aussi le mot de passe de tous les services associés. Comme le mot de passe initial, le nouveau mot de passe n&#39;est affiché qu&#39;une seule fois : conservez-le en lieu sûr.
+  `reset-password` remplace le mot de passe de l&#39;utilisateur `default`. La modification met quelques secondes à s&#39;appliquer : d&#39;ici là, le nouveau mot de passe est refusé et l&#39;ancien fonctionne toujours ; relancez donc la première connexion pendant quelques instants si elle échoue. Ensuite, tout client encore configuré avec l&#39;ancien mot de passe ne parvient plus à s&#39;authentifier. Si le service appartient à un [warehouse](/fr/products/cloud/features/infrastructure/warehouses), les utilisateurs de base de données sont partagés entre tous les services de ce warehouse : la réinitialisation change donc aussi le mot de passe de tous les services associés. Comme le mot de passe initial, le nouveau mot de passe n&#39;est affiché qu&#39;une seule fois : conservez-le en lieu sûr.
 </Warning>
 
 ## Enregistrez vos détails de connexion pour les réutiliser {#save-your-connection-details-for-reuse}
@@ -137,7 +143,7 @@ curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
 1
 ```
 
-Vérifiez le protocole natif (port 9440) avec [**clickhouse client**](/fr/concepts/features/interfaces/client). Le ClickHouse CLI gère le binaire `clickhouse` pour vous : si vous ne l&#39;avez pas encore, `clickhousectl local use latest` l&#39;installe et crée un lien symbolique vers `~/.local/bin/clickhouse`. Ensuite :
+Vérifiez le protocole natif (port 9440) avec [**clickhouse client**](/fr/concepts/features/interfaces/client). L’Interface en ligne de commande de ClickHouse gère le binaire `clickhouse` pour vous : si vous ne l&#39;avez pas encore, `clickhousectl local use latest` installe la dernière version de ClickHouse et crée un lien symbolique vers `~/.local/bin/clickhouse`. Ensuite :
 
 ```bash
 clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \

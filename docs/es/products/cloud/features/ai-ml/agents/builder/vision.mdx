@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,7 +25,15 @@ Vision solo funciona con modelos que admiten entrada de imágenes. Si el modelo 
 
 Haz clic en el icono del clip en la esquina inferior izquierda del editor de mensajes y elige **Upload to Provider** para adjuntar una imagen: una captura de pantalla, una foto, un gráfico o un diagrama. Después, haz cualquier pregunta que requiera leer la imagen: *&quot;¿Qué tiene de malo este plan de consulta?&quot;*, *&quot;Transcribe el texto de esta captura de pantalla&quot;* o *&quot;Compara este dashboard con el de la semana pasada.&quot;*
 
-<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="Editor de mensajes con el menú del clip abierto que muestra las opciones Upload to Provider, Upload as Text y Upload to Code Environment" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Editor de mensajes con el menú del clip abierto que muestra las opciones Upload to Provider, Upload as Text y Upload to Code Environment](/images/cloud/agent-builder/vision/vision.webp)
+
+</Frame>
+
+</div>
 
 El agente trata la imagen como parte del contexto del mensaje, así que las preguntas de seguimiento dentro del mismo turno pueden hacer referencia a lo que vio sin tener que volver a subirla.
 

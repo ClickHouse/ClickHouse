@@ -22,11 +22,10 @@ Mode: memory-efficient
               Function: sum(UInt64) → UInt64
               Arguments: __table1.v
         Skip merging: 0
-          ShuffleExchange (any)
-            ReadFromMergeTree (default.t_shuffle_bucket_order)
-            ReadType: Default
-            Parts: 1
-            Granules: 782
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
+          ReadType: Default
+          Parts: 1
+          Granules: 782
     MergingAggregated (merge)
     Keys: __table1.k
     Aggregates:
@@ -42,11 +41,10 @@ Mode: memory-efficient
               Function: sum(UInt64) → UInt64
               Arguments: __table1.v
         Skip merging: 0
-          ShuffleExchange (any)
-            ReadFromMergeTree (default.t_shuffle_bucket_order)
-            ReadType: Default
-            Parts: 1
-            Granules: 782
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
+          ReadType: Default
+          Parts: 1
+          Granules: 782
 -- the force setting loses to the guard
 Expression ((Project names + Projection))
   MergingAggregated
@@ -54,15 +52,13 @@ Expression ((Project names + Projection))
       MergingAggregated (merge)
         GatherExchange
           Aggregating (partial)
-            ShuffleExchange (any)
-              Expression ((Before GROUP BY + Change column names to column identifiers))
-                ReadFromMergeTree (default.t_shuffle_bucket_order)
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.t_shuffle_bucket_order)
       MergingAggregated (merge)
         GatherExchange
           Aggregating (partial)
-            ShuffleExchange (any)
-              Expression ((Before GROUP BY + Change column names to column identifiers))
-                ReadFromMergeTree (default.t_shuffle_bucket_order)
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.t_shuffle_bucket_order)
 7	600056
 7	600056
 -- nothing promises bucket order: the shuffle scatter stays
@@ -85,9 +81,8 @@ GatherExchange
     MergingAggregated (merge)
       ShuffleExchange (by hash([__table1.k]))
         Aggregating (partial)
-          ShuffleExchange (any)
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.t_shuffle_bucket_order)
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_shuffle_bucket_order)
 -- complete stage under the force setting: the shuffle scatter stays
 GatherExchange
   Expression ((Project names + Projection))
@@ -102,15 +97,13 @@ Expression ((Project names + Projection))
       MergingAggregated (merge)
         GatherExchange
           Aggregating (partial)
-            ShuffleExchange (any)
-              Expression ((Before GROUP BY + Change column names to column identifiers))
-                ReadFromMergeTree (default.t_shuffle_bucket_order)
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.t_shuffle_bucket_order)
       MergingAggregated (merge)
         GatherExchange
           Aggregating (partial)
-            ShuffleExchange (any)
-              Expression ((Before GROUP BY + Change column names to column identifiers))
-                ReadFromMergeTree (default.t_shuffle_bucket_order)
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.t_shuffle_bucket_order)
 -- promise from enable_memory_bound_merging_of_aggregation_results alone
 MergingAggregated
 Keys: __table1.k
@@ -133,11 +126,10 @@ Aggregates:
               Function: sum(UInt64) → UInt64
               Arguments: __table1.v
         Skip merging: 0
-          ShuffleExchange (any)
-            ReadFromMergeTree (default.t_shuffle_bucket_order)
-            ReadType: Default
-            Parts: 1
-            Granules: 782
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
+          ReadType: Default
+          Parts: 1
+          Granules: 782
     MergingAggregated (merge)
     Keys: __table1.k
     Aggregates:
@@ -152,8 +144,7 @@ Aggregates:
               Function: sum(UInt64) → UInt64
               Arguments: __table1.v
         Skip merging: 0
-          ShuffleExchange (any)
-            ReadFromMergeTree (default.t_shuffle_bucket_order)
-            ReadType: Default
-            Parts: 1
-            Granules: 782
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
+          ReadType: Default
+          Parts: 1
+          Granules: 782

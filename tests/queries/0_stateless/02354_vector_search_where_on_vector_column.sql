@@ -7,7 +7,6 @@
 -- be left without its input and the query would fail with `NOT_FOUND_COLUMN_IN_BLOCK`. The rewrite must be
 -- skipped instead, the same way it is skipped when the `SELECT` clause or a row policy reads the vector column.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_04850;
