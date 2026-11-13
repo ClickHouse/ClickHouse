@@ -1545,6 +1545,24 @@ SettingsChanges checkInsertExpectations(const StoragePtr & table, const StorageM
     return {{"insert_expected_table_engine", expected_engine}, {"insert_expected_column_types", Field{expected_types}}};
 }
 
+/// A Distributed table forwards the expectations, so a shard never checks a column the table does not declare.
+void checkExpectedColumnsAreDeclared(const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
+{
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & expected_type : settings[Setting::insert_expected_column_types].value)
+    {
+        const auto & name_and_type = expected_type.safeGet<Tuple>();
+        const auto & name = name_and_type.at(0).safeGet<String>();
+        if (!columns.has(name))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares no column `{}`, which the INSERT expects as {} (insert_expected_column_types)",
+                table->getStorageID().getNameForLogs(),
+                name,
+                name_and_type.at(1).safeGet<String>());
+    }
+}
+
 /// A column the user may not see is neither looked up nor named in an error, here or by a shard.
 void checkAccessToExpectedColumns(const ContextPtr & context, const StorageID & table_id)
 {
@@ -1647,6 +1665,8 @@ BlockIO InterpreterInsertQuery::execute()
     /// or views, are its own. Only a Distributed table on the first hop forwards them, for each shard to check its table.
     if (table->getName() != "Distributed" || context->getClientInfo().distributed_depth > 0)
         consumed_insert_expectations = checkInsertExpectations(table, metadata_snapshot, settings);
+    else
+        checkExpectedColumnsAreDeclared(table, metadata_snapshot, settings);
     if (!consumed_insert_expectations.empty())
     {
         /// Consumed on a copy: a caller that queues this insert keeps them, for the flush to check its own table.

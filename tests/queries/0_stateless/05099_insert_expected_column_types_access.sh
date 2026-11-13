@@ -9,11 +9,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="u_05099_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS d_expected_access;
+    DROP TABLE IF EXISTS n_expected_access;
     DROP TABLE IF EXISTS t_expected_access;
     DROP USER IF EXISTS $user;
     CREATE TABLE t_expected_access (x UInt8, secret UUID) ENGINE = Memory;
     CREATE TABLE d_expected_access AS t_expected_access ENGINE = Distributed(test_shard_localhost, ${CLICKHOUSE_DATABASE}, t_expected_access);
+    CREATE TABLE n_expected_access (x UInt8) ENGINE = Distributed(test_shard_localhost, ${CLICKHOUSE_DATABASE}, t_expected_access);
     CREATE USER $user;
+    GRANT INSERT ON ${CLICKHOUSE_DATABASE}.n_expected_access TO $user;
     GRANT INSERT(x) ON ${CLICKHOUSE_DATABASE}.t_expected_access TO $user;
     GRANT INSERT(x) ON ${CLICKHOUSE_DATABASE}.d_expected_access TO $user;
 "
@@ -32,6 +35,10 @@ echo "distributed, missing column: $(run "$dist = 1, insert_expected_column_type
 # A background insert with an expectation is delivered at once, so a refused batch is not left in the queue.
 echo "distributed background, wrong type: $(run "$dist = 0, insert_expected_column_types = {'x': 'String'} VALUES (7)")"
 echo "distributed background, right type: $(run "$dist = 0, insert_expected_column_types = {'x': 'UInt8'} VALUES (8)")"
+# A column only the shard's table has is refused by the narrower Distributed table, not looked up on the shard.
+narrow="INSERT INTO n_expected_access (x) SETTINGS prefer_localhost_replica = 0, distributed_foreground_insert = 1"
+echo "narrow distributed, shard-only column: $(run "$narrow, insert_expected_column_types = {'secret': 'UUID'} VALUES (9)")"
+echo "narrow distributed, declared column: $(run "$narrow, insert_expected_column_types = {'x': 'UInt8'} VALUES (10)")"
 $CLICKHOUSE_CLIENT -q "SELECT 'queued files', count() FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'd_expected_access' AND data_files > 0"
 
 $CLICKHOUSE_CLIENT -q "GRANT INSERT ON ${CLICKHOUSE_DATABASE}.t_expected_access TO $user"
@@ -39,4 +46,4 @@ echo "table grant, wrong type: $(run "INSERT INTO t_expected_access (x) SETTINGS
 echo "table grant, right type: $(run "INSERT INTO t_expected_access (x) SETTINGS insert_expected_column_types = {'secret': 'UUID'} VALUES (5)")"
 
 $CLICKHOUSE_CLIENT -q "SELECT groupArray(x) FROM (SELECT x FROM t_expected_access ORDER BY x)"
-$CLICKHOUSE_CLIENT -q "DROP TABLE d_expected_access; DROP TABLE t_expected_access; DROP USER $user"
+$CLICKHOUSE_CLIENT -q "DROP TABLE d_expected_access; DROP TABLE n_expected_access; DROP TABLE t_expected_access; DROP USER $user"
