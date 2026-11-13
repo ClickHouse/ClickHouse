@@ -510,11 +510,9 @@ std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason> Subst
         if (!condition_node)
             return blocked(fmt::format("filter column {} is not among the expression outputs", *filter_column_name));
 
-        auto converted = converter.convert(*condition_node);
+        auto converted = converter.convertCondition(*condition_node);
         if (!converted)
             return std::unexpected(std::move(converted.error()));
-        if (converted->type.kind_case() != substrait::Type::kBool)
-            return blocked(fmt::format("filter condition {} is not a boolean", *filter_column_name));
         condition = std::move(converted->expression);
     }
 
@@ -815,11 +813,9 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
         std::vector<SubstraitExpressionConverter::ConvertedExpression> converted_conjuncts;
         for (const auto & conjunct : conjuncts)
         {
-            auto converted = converter.convert(*conjunct.getNode());
+            auto converted = converter.convertCondition(*conjunct.getNode());
             if (!converted)
                 return std::unexpected(std::move(converted.error()));
-            if (converted->type.kind_case() != substrait::Type::kBool)
-                return blocked("join condition is not a boolean");
             converted_conjuncts.push_back(std::move(*converted));
         }
         return makeConjunction(std::move(converted_conjuncts), extensions);

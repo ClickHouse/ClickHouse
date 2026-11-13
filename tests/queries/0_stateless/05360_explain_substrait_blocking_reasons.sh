@@ -20,5 +20,11 @@ $CLICKHOUSE_CLIENT --enable_substrait 1 --ignore-error -q "
     SELECT 'Every blocked branch is reported, left branch first';
     EXPLAIN SUBSTRAIT SELECT cityHash64(name) FROM t_substrait_blocked UNION ALL SELECT sipHash64(name) FROM t_substrait_blocked;
 
+    SELECT 'A filter condition that is not a boolean';
+    EXPLAIN SUBSTRAIT SELECT name FROM t_substrait_blocked WHERE id;
+
+    SELECT 'A join condition that is not a boolean';
+    EXPLAIN SUBSTRAIT SELECT a.name FROM t_substrait_blocked AS a JOIN t_substrait_blocked AS b ON a.id = b.id AND (a.id + b.id) SETTINGS enable_join_runtime_filters = 0;
+
     DROP TABLE t_substrait_blocked;
 " 2>&1 | sed -E '/^Received exception/d; /^\(query:/d; s/^Code: .*DB::Exception: //; s/\. \(NOT_IMPLEMENTED\)$//'

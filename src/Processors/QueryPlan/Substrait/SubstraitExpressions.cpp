@@ -540,6 +540,19 @@ SubstraitExpressionConverter::convertProjection(const ActionsDAG & dag, const Bl
 }
 
 std::expected<SubstraitExpressionConverter::ConvertedExpression, SubstraitBlockingReason>
+SubstraitExpressionConverter::convertCondition(const ActionsDAG::Node & node)
+{
+    auto converted = convert(node);
+    if (converted && converted->type.kind_case() != substrait::Type::kBool)
+    {
+        auto reason = blocked("the condition is not a boolean");
+        reason.error().expression = unalias(node).result_name;
+        return reason;
+    }
+    return converted;
+}
+
+std::expected<SubstraitExpressionConverter::ConvertedExpression, SubstraitBlockingReason>
 SubstraitExpressionConverter::convert(const ActionsDAG::Node & node)
 {
     if (const auto it = converted_nodes.find(&node); it != converted_nodes.end())

@@ -51,14 +51,14 @@ public:
         const ActionsDAG::Node * node = nullptr;
     };
 
-    std::expected<ConvertedExpression, SubstraitBlockingReason> convert(const ActionsDAG::Node & node);
-
     /// Converts the DAG into a ProjectRel that computes `output_header`. The already converted subtree `child` nests inside it as the input.
     /// A DAG that changes nothing, for example a rename, needs no relation, and `child` comes back unchanged.
     std::expected<ConvertedRelation, SubstraitBlockingReason>
     convertProjection(const ActionsDAG & dag, const Block & output_header, substrait::Rel child);
+    std::expected<ConvertedExpression, SubstraitBlockingReason> convertCondition(const ActionsDAG::Node & node);
 
 private:
+    std::expected<ConvertedExpression, SubstraitBlockingReason> convert(const ActionsDAG::Node & node);
     std::expected<ConvertedExpression, SubstraitBlockingReason> convertNodeImpl(const ActionsDAG::Node & node);
     std::expected<ConvertedExpression, SubstraitBlockingReason> convertFunction(const ActionsDAG::Node & node);
 
