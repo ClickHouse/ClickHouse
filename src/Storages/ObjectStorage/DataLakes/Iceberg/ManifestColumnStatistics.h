@@ -112,6 +112,8 @@ private:
         /// nullopt when the column is not identity-partitioned in the file's spec or the value does not convert; Null for a
         /// NULL partition value.
         std::optional<Field> identity_partition_value;
+        /// The size of the column in the file on disk (`column_sizes`), nullopt when missing or 0.
+        std::optional<UInt64> compressed_bytes;
     };
 
     /// What the number of distinct values needs beyond the merged statistics. Unlike those, it is known only when
@@ -122,6 +124,9 @@ private:
         std::set<Field> identity_partition_values;
         /// False once a file has no identity-partition value for the column.
         bool identity_partition_known = true;
+        /// The rows and the sizes on disk of the column in the files that give the size, for the last rule.
+        UInt64 rows_with_compressed_size = 0;
+        UInt64 compressed_bytes = 0;
     };
 
     /// The types of the targets in the schema with id `file_schema_id`, the schema id with which a data file was written.
@@ -131,8 +136,8 @@ private:
     std::vector<ColumnMetrics> extractFileMetrics(
         const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file, UInt64 rows);
 
-    /// Adds the identity-partition value that a file gives for a target.
-    static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
+    /// Adds the identity-partition value and the size that a file of `rows` rows gives for a target.
+    static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics, UInt64 rows);
 
     /// The number of distinct values of a target by the first rule that applies (1: identity-partition values, 2: the
     /// range of the bounds, 3: the table statistics), clamped to [1, non-NULL rows]; std::nullopt if none does. `column`
@@ -152,6 +157,9 @@ private:
     UInt64 total_rows = 0;
     /// Merges the per-file `Basic` statistics of each target, as those of MergeTree parts.
     ConditionSelectivityEstimatorBuilder statistics_builder;
+    /// The setting `estimate_distinct_values_from_metadata`: without another rule, estimate the number of distinct values
+    /// from the size of the column in the files.
+    bool estimate_distinct_values_from_compressed_size = false;
 };
 
 }

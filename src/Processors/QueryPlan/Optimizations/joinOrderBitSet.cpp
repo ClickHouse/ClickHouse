@@ -122,8 +122,7 @@ SelectivityEstimate computeSelectivity(
         /// to either side of the join. This is equivalent to evaluating all
         /// (left_member, right_member) pairs and taking the minimum selectivity,
         /// since min(1/max(l,r)) = 1/max(all l's and r's).
-        UInt64 max_ndv = 0;
-        UInt64 max_ndv_upper_bound = 0;
+        KeyDistinctValues key_distinct_values;
         bool has_left = false;
         bool has_right = false;
         for (const auto & equiv_member : *equiv_class)
@@ -137,12 +136,10 @@ SelectivityEstimate computeSelectivity(
                 has_right = true;
             else
                 continue;
-            auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
-            max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
-            max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
+            key_distinct_values.add(getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
         }
         if (has_left && has_right)
-            applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+            applyEquiKeyDistinctValues(estimate, key_distinct_values);
     }
 
     return estimate;

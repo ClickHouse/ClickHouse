@@ -36,6 +36,42 @@ struct ColumnDistinctValues
     std::optional<UInt64> ndv;
     /// `ndv` if known, otherwise the row count of the column's relation; 0 when neither is known.
     UInt64 upper_bound = 0;
+    /// `ndv` is estimated from the metadata of the data, see `ColumnStats::num_distinct_values_from_metadata`.
+    bool from_metadata = false;
+};
+
+/// The largest numbers of distinct values of the key columns of an equality or an equivalence class.
+struct KeyDistinctValues
+{
+    UInt64 max_ndv = 0;
+    UInt64 max_ndv_upper_bound = 0;
+    /// The largest row count of a key without a known number of distinct values.
+    UInt64 max_rows_without_ndv = 0;
+    bool has_ndv_from_metadata = false;
+
+    void add(std::optional<UInt64> ndv, UInt64 upper_bound, bool from_metadata)
+    {
+        max_ndv = std::max(max_ndv, ndv.value_or(0));
+        max_ndv_upper_bound = std::max(max_ndv_upper_bound, upper_bound);
+        if (!ndv)
+            max_rows_without_ndv = std::max(max_rows_without_ndv, upper_bound);
+        has_ndv_from_metadata |= ndv && from_metadata;
+    }
+
+    void add(const ColumnDistinctValues & values) { add(values.ndv, values.upper_bound, values.from_metadata); }
+
+    /// The number of distinct values that the equality is estimated with, 0 if unknown.
+    /// A number of distinct values from metadata can be far below the actual one: a foreign key with 10000 values
+    /// of which a few make up most of the rows gets about as many as those few. The key it is joined with, unique in
+    /// its relation of 10000 rows and without a known number of distinct values, would then make the join 100 times
+    /// larger than its foreign key side. With the row count of that key as well, the join of a foreign key with its
+    /// primary key stays as large as the foreign key side, as when no key has a known number of distinct values.
+    UInt64 getNumberOfDistinctValues() const
+    {
+        if (has_ndv_from_metadata)
+            return std::max(max_ndv, max_rows_without_ndv);
+        return max_ndv;
+    }
 };
 
 /// Number of distinct values of a join-key column.
@@ -54,7 +90,7 @@ inline ColumnDistinctValues getColumnStats(
         {
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
-                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values};
+                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values, col_it->second.num_distinct_values_from_metadata};
             return {{}, it->second->estimated_rows.value_or(0)};
         }
         return {};
@@ -62,7 +98,7 @@ inline ColumnDistinctValues getColumnStats(
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
     if (auto it = relation_stat.column_stats.find(column_name); it != relation_stat.column_stats.end())
-        return {it->second.num_distinct_values, it->second.num_distinct_values};
+        return {it->second.num_distinct_values, it->second.num_distinct_values, it->second.num_distinct_values_from_metadata};
     return {{}, relation_stat.estimated_rows.value_or(0)};
 }
 
@@ -78,6 +114,11 @@ inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, UInt64 ma
     }
     if (max_ndv_upper_bound > 0)
         estimate.reported_value = std::min(estimate.reported_value, 1.0 / static_cast<double>(max_ndv_upper_bound));
+}
+
+inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, const KeyDistinctValues & key_distinct_values)
+{
+    applyEquiKeyDistinctValues(estimate, key_distinct_values.getNumberOfDistinctValues(), key_distinct_values.max_ndv_upper_bound);
 }
 
 inline SelectivityEstimate computeSelectivity(
@@ -96,12 +137,10 @@ inline SelectivityEstimate computeSelectivity(
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
         return estimate;
 
-    auto lhs_ndv = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
-    auto rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
-    applyEquiKeyDistinctValues(
-        estimate,
-        std::max(lhs_ndv.ndv.value_or(0), rhs_ndv.ndv.value_or(0)),
-        std::max(lhs_ndv.upper_bound, rhs_ndv.upper_bound));
+    KeyDistinctValues key_distinct_values;
+    key_distinct_values.add(getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName()));
+    key_distinct_values.add(getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName()));
+    applyEquiKeyDistinctValues(estimate, key_distinct_values);
     return estimate;
 }
 

@@ -34,6 +34,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool estimate_distinct_values_from_metadata;
+    extern const SettingsBool use_statistics;
 }
 
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
@@ -388,6 +390,34 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     return statistics;
 }
 
+namespace
+{
+
+/// The numbers of distinct values of the columns of the read that have none measured by statistics, estimated from the
+/// metadata of the parts, see the setting `estimate_distinct_values_from_metadata`.
+void addDistinctValuesFromMetadata(
+    ExpressionStatistics & statistics,
+    const ReadFromMergeTree & read_step,
+    const ReadFromMergeTree::AnalysisResultPtr & analyzed_result,
+    const ConditionSelectivityEstimator * estimator)
+{
+    const auto & settings = read_step.getContext()->getSettingsRef();
+    if (!settings[Setting::use_statistics] || !settings[Setting::estimate_distinct_values_from_metadata])
+        return;
+
+    Names column_names;
+    for (const auto & column_name : read_step.getAllColumnNames())
+        if (!statistics.column_statistics.contains(column_name) || (estimator && !estimator->hasCardinality(column_name)))
+            column_names.push_back(column_name);
+    if (column_names.empty())
+        return;
+
+    for (const auto & [column_name, distinct_values] : read_step.estimateDistinctValuesFromMetadata(column_names, analyzed_result))
+        statistics.column_statistics[column_name].num_distinct_values = distinct_values;
+}
+
+}
+
 ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMergeTree & read_step)
 {
     ExpressionStatistics statistics;
@@ -428,6 +458,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                     : Float64(relation_profile.rows);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+            addDistinctValuesFromMetadata(statistics, read_step, analyzed_result, estimator.get());
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
             fillReadColumnWidths(statistics, read_step, table_name);
@@ -445,6 +476,8 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
         if (column_ndv)
             statistics.column_statistics[column_name].num_distinct_values = column_ndv.value();
     }
+
+    addDistinctValuesFromMetadata(statistics, read_step, analyzed_result, nullptr);
 
     auto cardinality_hint = statistics_lookup.getCardinality(table_name);
     if (cardinality_hint)

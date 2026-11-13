@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDistinctValuesFromMetadata.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <base/sort.h>
@@ -7208,6 +7209,13 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
     }
 
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+}
+
+std::unordered_map<String, UInt64> ReadFromMergeTree::estimateDistinctValuesFromMetadata(
+    const Names & column_names, const AnalysisResultPtr & analyzed_result) const
+{
+    const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
+    return DB::estimateDistinctValuesFromMetadata(parts, getStorageMetadata(), column_names);
 }
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const
