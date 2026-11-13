@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int NETWORK_ERROR;
+    extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int SNAPPY_UNCOMPRESS_FAILED;
@@ -680,7 +681,8 @@ public:
             /// to the PromQL expression.
             /// So is a shard that could not be reached or that went away during the query.
             bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA || e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
-                || e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT);
+                || e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT
+                || e.code() == ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
             /// The error body is JSON, also for endpoints whose success body is not.
             response.setContentType("application/json");
             response.setStatusAndReason(

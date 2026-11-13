@@ -24,7 +24,7 @@ struct PrometheusQueryDistributedTarget
 
 /// Checks that a table can be read by a prometheus query, i.e. that it's either a TimeSeries table
 /// or a Distributed table over per-shard TimeSeries tables. Returns std::nullopt for a TimeSeries table.
-std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage);
+std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage, const ContextPtr & context);
 
 /// The TimeSeries version naming the table's outer samples column: a Distributed table has no version
 /// of its own, so it's the one implied by the column it declares.

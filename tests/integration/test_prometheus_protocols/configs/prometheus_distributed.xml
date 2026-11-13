@@ -18,6 +18,14 @@
                     <table>default.ts_all</table>
                 </handler>
             </local_api>
+            <!-- A Distributed table whose only shard cannot be reached. -->
+            <unreachable_api>
+                <url_prefix>/unreachable</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_unreachable</table>
+                </handler>
+            </unreachable_api>
         </handlers>
     </prometheus>
 </clickhouse>

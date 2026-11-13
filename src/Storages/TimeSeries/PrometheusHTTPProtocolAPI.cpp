@@ -196,7 +196,7 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
-    distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    distributed_target = resolvePrometheusQueryTarget(*time_series_storage, context_);
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!distributed_target)
         checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));

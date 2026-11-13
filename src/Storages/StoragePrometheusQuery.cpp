@@ -110,7 +110,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
-    auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage, context);
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!distributed_target)
         checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
@@ -222,7 +222,7 @@ void StoragePrometheusQuery::readImpl(
     auto time_series_storage = DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context);
     auto evaluation_settings = config.evaluation_settings;
     /// Resolved again: a table created AS this function is read later, and by another user.
-    evaluation_settings.distributed = resolvePrometheusQueryTarget(*time_series_storage);
+    evaluation_settings.distributed = resolvePrometheusQueryTarget(*time_series_storage, context);
     if (evaluation_settings.distributed)
         checkPrometheusQueryDistributedRead(time_series_storage->getStorageID(), context);
     else
