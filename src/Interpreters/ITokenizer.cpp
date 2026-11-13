@@ -1285,6 +1285,26 @@ void IcuTokenizer::substringToTokens(
 }
 #endif
 
+bool doesTextSearchFunctionSupportTokenizer(std::string_view function_name, ITokenizer::Type type)
+{
+    if (function_name != "hasPhrase")
+        return true;
+
+    static const std::unordered_set<ITokenizer::Type> phrase_types = {
+        ITokenizer::Type::SplitByNonAlpha,
+        ITokenizer::Type::SplitByString,
+        ITokenizer::Type::SplitByRegexp,
+        ITokenizer::Type::Array,
+        ITokenizer::Type::AsciiCJK,
+#if USE_ICU
+        ITokenizer::Type::Icu,
+#endif
+        ITokenizer::Type::Ngrams,
+    };
+
+    return phrase_types.contains(type);
+}
+
 }
 
 #if USE_ICU

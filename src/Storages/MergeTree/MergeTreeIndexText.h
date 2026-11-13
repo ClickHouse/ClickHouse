@@ -616,4 +616,10 @@ public:
     TextIndexAutomatonBudgetPtr automaton_budget = std::make_shared<TextIndexAutomatonBudget>();
 };
 
+/// Empty for any index type other than `text`, and when `function_name` rejects that tokenizer.
+String getTextIndexTokenizerDescription(const IndexDescription & index, const String & function_name);
+
+/// The index expression spelled the way queries are analyzed, `std::nullopt` when that is unchanged.
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index);
+
 }
