@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Deletion protection'
+slug: /cloud/manage/deletion-protection
+title: 'Service deletion protection'
+description: 'Block deletion of a ClickHouse Cloud service until protection is turned off'
+keywords: ['deletion protection', 'delete service', 'ClickHouse Cloud', 'service settings', 'deletionProtection']
+doc_type: 'guide'
+---
+
+Service deletion protection is a per-service setting that blocks deletion until you turn it off. Use it for ClickHouse Cloud services you want to keep from being removed by mistake in the Cloud console, through the [ClickHouse Cloud API](/cloud/manage/api/api-overview), or with Terraform.
+
+<Note>
+This applies to ClickHouse Cloud services. It does not apply to [ClickHouse Managed Postgres](/cloud/managed-postgres) services.
+</Note>
+
+Protection is off by default. Turning it off does not delete the service. A protected service keeps running, and queries, scaling, and other settings are unchanged.
+
+While protection is on, delete requests are refused. `DELETE /v1/organizations/{organizationId}/services/{serviceId}` returns HTTP `409` until you turn protection off. The service must also be stopped before it can be deleted. Deletion then runs asynchronously.
+
+## Who can change it {#who-can-change-it}
+
+Turning protection on or off uses the [`control-plane:service:delete`](/cloud/security/console-roles) permission. Organization admins have this permission. See [Console roles and permissions](/cloud/security/console-roles).
+
+Turning protection on also requires deletion protection to be available for the organization. ClickHouse Cloud organizations have it. A create or update that sets `deletionProtection` to `true` returns HTTP `400` when the organization does not. Turning protection off does not use that check: a request that sets `deletionProtection` to `false` is accepted, including for a service that is already protected.
+
+| Action | Permission |
+| --- | --- |
+| Turn the console switch on or off | `control-plane:service:delete` on the service |
+| Set `deletionProtection` on an existing service | `control-plane:service:manage` and `control-plane:service:delete` on the service |
+| Send the value the service already has | `control-plane:service:manage` only. Repeating the current value does not require `control-plane:service:delete` |
+| Create a service with `deletionProtection: true` | `control-plane:organization:create-service`, and `control-plane:service:delete` granted for all services in the organization |
+| Delete the service | `control-plane:service:delete` on the service. The service must be stopped, and protection must be off |
+
+ClickStack services cannot be updated through the Cloud API. Turn their deletion protection on or off in the console.
+
+## Turn protection on or off in the console {#console}
+
+Open the service and go to **Settings**. Under **Deletion protection**, use the switch. The change is saved immediately.
+
+The switch is available to anyone with `control-plane:service:delete` on that service. With protection on, the console refuses the delete action until you turn the switch off.
+
+## Set it with the Cloud API {#cloud-api}
+
+The service object has a boolean field, `deletionProtection`. Set it when you create a service (`POST /v1/organizations/{organizationId}/services`) or update one (`PATCH /v1/organizations/{organizationId}/services/{serviceId}`). Get and list responses include the field. When it is absent, the service is not protected.
+
+Turn protection on:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": true}'
+```
+
+To delete a protected service, turn protection off, stop the service, wait until it is stopped, and then delete it. `PATCH .../state` with `"command": "stop"` requires `control-plane:service:manage` and returns before the service has stopped. A delete while the service is still `stopping` is rejected. A delete against a protected service returns `409` and leaves the service in place.
+
+Turn protection off:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  -d '{"deletionProtection": false}'
+```
+
+Request a stop:
+
+```bash
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X PATCH \
+  -H "Content-Type: application/json" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/state" \
+  -d '{"command": "stop"}'
+```
+
+Wait until `result.state` is `stopped`, then delete:
+
+```bash
+while [ "$(curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID" \
+  | jq -r '.result.state')" != "stopped" ]; do
+  sleep 5
+done
+
+curl --silent --user "$KEY_ID:$KEY_SECRET" \
+  -X DELETE \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID"
+```
+
+## Terraform {#terraform}
+
+<Note>
+`deletion_protection` is not in the latest released provider, [v3.43.0](https://github.com/ClickHouse/terraform-provider-clickhouse/releases/tag/v3.43.0). The attribute was added in [terraform-provider-clickhouse#799](https://github.com/ClickHouse/terraform-provider-clickhouse/pull/799), which is merged and not yet in a release. The example below fails on v3.43.0 with an unsupported argument. Use a provider release after v3.43.0 that includes the attribute.
+</Note>
+
+The `clickhouse_service` resource accepts `deletion_protection`. While it is `true`, `terraform destroy` and any change that would replace the service fail. Set it to `false` and apply that change on its own, then destroy the service.
+
+Removing `deletion_protection` from the configuration leaves the current setting unchanged.
+
+```hcl
+resource "clickhouse_service" "example" {
+  # ...
+
+  deletion_protection = true
+}
+```
+
+Setting `deletion_protection = true` when creating a service needs an API key that can delete all services in the organization. Changing it later needs delete permission on that service.

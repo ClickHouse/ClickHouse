@@ -116,6 +116,7 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan
         || select_query_options_.building_distributed_plan
         || mayShipPlanFragment(query_context))
+    , view_source_in_subqueries(select_query_options_.view_source_in_subqueries)
 {}
 
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
@@ -124,6 +125,7 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextP
     , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
     , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution
         || mayShipPlanFragment(query_context))
+    , view_source_in_subqueries(planner_context_->view_source_in_subqueries)
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
