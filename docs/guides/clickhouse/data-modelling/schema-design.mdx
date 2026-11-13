@@ -6,8 +6,6 @@ keywords: ['schema', 'schema design', 'query optimization']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Understanding effective schema design is key to optimizing ClickHouse performance and includes choices that often involve trade-offs, with the optimal approach depending on the queries being served as well as factors such as data update frequency, latency requirements, and data volume. This guide provides an overview of schema design best practices and data modeling techniques for optimizing ClickHouse performance.
 
 ## Stack Overflow dataset {#stack-overflow-dataset}
@@ -16,7 +14,15 @@ For the examples in this guide, we use a subset of the Stack Overflow dataset. T
 
 > The primary keys and relationships indicated aren't enforced through constraints (Parquet is file not table format) and purely indicate how the data is related and the unique keys it possesses.
 
-<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow Schema"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Stack Overflow Schema](/images/data-modeling/stackoverflow-schema.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -229,7 +235,15 @@ Users coming from OLTP databases often look for the equivalent concept in ClickH
 
 At the scale at which ClickHouse is often used, memory and disk efficiency are paramount. Data is written to ClickHouse tables in chunks known as parts, with rules applied for merging the parts in the background. In ClickHouse, each part has its own primary index. When parts are merged, then the merged part's primary indexes are also merged. The primary index for a part has one index entry per group of rows - this technique is called sparse indexing.
 
-<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="Sparse Indexing in ClickHouse"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Sparse Indexing in ClickHouse](/images/data-modeling/schema-design-indices.webp)
+
+</Frame>
+
+</div>
 
 The selected key in ClickHouse will determine not only the index, but also order in which data is written on disk. Because of this, it can dramatically impact compression levels which can in turn affect query performance. An ordering key which causes the values of most columns to be written in contiguous order will allow the selected compression algorithm (and codecs) to compress the data more effectively.
 

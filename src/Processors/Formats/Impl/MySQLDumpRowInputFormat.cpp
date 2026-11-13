@@ -488,7 +488,7 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     }
     skipEndOfRow(*in, table_name);
 
-    column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+    column_mapping->insertDefaultsForNotSeenColumns(columns, types, ext.read_columns);
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
     if (!format_settings.defaults_for_omitted_fields)
@@ -515,7 +515,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization, type.get());
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;

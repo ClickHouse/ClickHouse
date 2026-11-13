@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'панели мониторинга', 'визуализация', 'sql', 'обсервабилити']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickStack поддерживает визуализации на основе SQL-запросов в исходном виде. Это дает полный контроль над логикой запроса, сохраняя интеграцию с временными диапазонами на уровне панели мониторинга, фильтрами и отрисовкой диаграмм.
 
 Визуализации на основе SQL полезны, когда нужно выйти за рамки встроенного Chart Explorer — например, чтобы объединять таблицы с помощью JOIN или строить сложные агрегации, которые не поддерживаются chart builder.
@@ -19,7 +17,15 @@ ClickStack поддерживает визуализации на основе S
 
 Чтобы создать визуализацию на основе SQL, откройте редактор плитки панели мониторинга и выберите вкладку **SQL**.
 
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Кнопка редактора SQL" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Кнопка редактора SQL](/images/use-cases/observability/sql-editor-button.webp)
+
+</Frame>
+
+</div>
 
 Далее:
 
