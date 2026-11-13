@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 
 
@@ -94,6 +95,9 @@ void IObjectStorageIteratorAsync::nextBatch()
                 LogFrequencyLimiter(getLogger("ObjectStorageIteratorAsync"), 30),
                 "Listing returned an empty page while reporting more to come, following the token. {}",
                 describeListing());
+
+            /// The caller cannot check for a stop between empty pages.
+            CurrentThread::checkIfNotCancelled();
         }
     }
     catch (...)
