@@ -29,7 +29,7 @@
             repeat('t', number % 64) AS title,
             if(number % 5 = 0, concat('search phrase ', toString(number % 1001)), '') AS phrase,
             concat('model-', toString(number % 211)) AS phone_model,
-            concat('{"a":', toString(number % 10007), ',"b":"', hex(cityHash64(number, 14)), '"}') AS params,
+            concat('{{"a":', toString(number % 10007), ',"b":"', hex(cityHash64(number, 14)), '"}}') AS params,
             toString(number % 17) AS charset,
             concat('lang-', toString(number % 41)) AS language,
             concat('utm-', toString(number % 503)) AS utm_source,
