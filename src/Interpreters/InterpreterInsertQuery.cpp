@@ -1767,6 +1767,13 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline = buildInsertPipeline(query, table);
     }
 
+    /// An ALTER may have run while the pipeline was built, so check the table again after it took its metadata.
+    if (!consumed_insert_expectations.empty())
+    {
+        auto used_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        checkInsertExpectations(table, used_metadata_snapshot, settings);
+    }
+
     res.pipeline.addStorageHolder(table);
 
     /// Keep the share lock until the pipeline finishes (not just while it is being built), so that
