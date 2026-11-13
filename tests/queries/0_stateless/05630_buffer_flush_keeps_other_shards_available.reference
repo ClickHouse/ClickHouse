@@ -1,0 +1,2 @@
+insert into the other shard does not wait for the flush: OK
+['a1','a2','a3','b1','b2']

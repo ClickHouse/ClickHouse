@@ -1177,6 +1177,10 @@ public:
 
         StorageBuffer::Buffer * buffer_to_use = chosen_buffer ? chosen_buffer : least_busy_buffer;
         std::unique_lock<std::mutex> & lock_to_use = chosen_buffer ? chosen_lock : least_busy_lock;
+        /// Keep only the selected shard locked: the other one stays available to its own writers while this insert
+        /// appends and possibly flushes, which can take a whole destination write.
+        if (chosen_buffer && least_busy_lock.owns_lock())
+            least_busy_lock.unlock();
 
         /// If you still can not lock anything at once, then we'll wait on mutex.
         if (!buffer_to_use)
