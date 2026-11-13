@@ -54,3 +54,8 @@ FROM (SELECT CAST(NULL AS Nullable(String)) AS c, materialize(c) AS m FROM numbe
 SELECT tuple(groupArrayDistinct(x), COUNTOrDefaultDistinct(x), anyDistinct(x)) AS r,
     r <=> tuple(groupArrayDistinct(y), COUNTOrDefaultDistinct(y), anyDistinct(y))
 FROM (SELECT toString(number * 7 % 5) AS y, toLowCardinality(y) AS x FROM numbers(1000)) SETTINGS max_threads = 1;
+
+-- A full copy of the `LowCardinality` column would take 6.5 GB.
+SELECT COUNTOrDefaultDistinct(x), length(groupArrayDistinct(x)), length(anyDistinct(x))
+FROM (SELECT materialize(toLowCardinality(toFixedString('', 100000))) AS x FROM numbers(200000))
+SETTINGS max_block_size = 65409, max_threads = 1, max_memory_usage = 100000000;
