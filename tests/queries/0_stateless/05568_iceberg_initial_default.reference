@@ -114,6 +114,11 @@ dotted element	1	100	8
 dotted element	1	(5)	5
 dotted element	0	100	8
 dotted element	0	(5)	5
+dotted sibling	(11,100,7)
+dotted sibling	100	7
+dotted sibling	1
+dotted prefix	(100,7,11)
+dotted prefix	100	7
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -162,6 +167,11 @@ dotted element	1	100	8
 dotted element	1	(5)	5
 dotted element	0	100	8
 dotted element	0	(5)	5
+dotted sibling	(11,100,7)
+dotted sibling	100	7
+dotted sibling	1
+dotted prefix	(100,7,11)
+dotted prefix	100	7
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]

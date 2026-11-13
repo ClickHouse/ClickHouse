@@ -1560,7 +1560,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     bool absent_column_has_namesake = false;
     /// Under the data lake schema, the top-level struct and list columns of the file whose elements are requested, selected
     /// with the type hint that `orcColumnsToCHChunk` reads them with, so that their fields are matched by field id.
-    NameSet nested_tables;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
     for (const auto & column : header)
     {
         auto adjusted_type = column.type;
@@ -1592,7 +1592,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
                 const auto orc_kind = nested_table_orc_type->getKind();
                 if (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST)
                 {
-                    if (nested_tables.insert(nested_table_name).second)
+                    if (!nested_table_type_hints.contains(nested_table_name))
                     {
                         VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns;
                         for (const auto & name_and_type : header.getNamesAndTypesList())
@@ -1613,6 +1613,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
                             requested_structs,
                             column_mapper,
                             nested_table_name);
+                        nested_table_type_hints.emplace(nested_table_name, std::move(nested_table_type));
                     }
                     continue;
                 }
@@ -1669,7 +1670,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         std::move(count_only_fields),
         column_mapper,
         std::move(absent_columns),
-        std::move(absent_column_defaults));
+        std::move(absent_column_defaults),
+        std::move(nested_table_type_hints));
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs
         && !absent_column_has_namesake)
@@ -1894,7 +1896,8 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     UnorderedSetWithMemoryTracking<UInt64> count_only_fields_,
     const ColumnMapper * column_mapper_,
     NameSet absent_columns_,
-    UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_)
+    UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_,
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
@@ -1905,6 +1908,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , column_mapper(column_mapper_)
     , absent_columns(std::move(absent_columns_))
     , absent_column_defaults(std::move(absent_column_defaults_))
+    , nested_table_type_hints(std::move(nested_table_type_hints_))
 {
 }
 
@@ -3472,16 +3476,76 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     }
 }
 
-/// The element of the struct `path` that the subcolumn path `subpath` below it starts with, and the rest of `subpath`. An element
-/// name can have dots: it is the shortest prefix of `subpath` that the data lake schema has as a field of the struct.
-static std::pair<String, String> splitStructElementName(const String & path, const String & subpath, const ColumnNameToFieldId & encoding)
+/// The field of the ORC struct `orc_type` that the element `name` of the struct `path` is read from, as `updateIncludeTypeIds`
+/// selects it: by field id if the struct has them, else by name.
+static const ORC::Type * findStructElementORCType(
+    const String & path,
+    const String & name,
+    const ORC::Type * orc_type,
+    const ColumnMapper & column_mapper,
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache)
 {
+    if (!orc_type || orc_type->getKind() != ORC::STRUCT)
+        return nullptr;
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    if (auto it = encoding.find(path + "." + name); it != encoding.end())
+        if (auto field_by_id = findORCFieldByIcebergId(*orc_type, it->second, field_ids_cache))
+            return *field_by_id;
+    if (auto field = findORCStructFieldByName(orc_type, name, ignore_case))
+        return orc_type->getSubtype(*field);
+    return nullptr;
+}
+
+static bool hasORCElements(const ORC::Type & orc_type)
+{
+    const auto kind = orc_type.getKind();
+    return kind == ORC::STRUCT || kind == ORC::LIST || kind == ORC::MAP || kind == ORC::UNION;
+}
+
+/// The element of the struct `path` that the subcolumn path `subpath` below it starts with, and the rest of `subpath`. Of the
+/// prefixes of `subpath` (and all of it) that are fields of the struct, it is the shortest one that the file has and that can hold
+/// the rest, else the shortest one the file lacks and whose `initial-default` is not a scalar, else the longest (a scalar's `null`).
+static std::pair<String, String> splitStructElementName(
+    const String & path,
+    const String & subpath,
+    const ORC::Type * orc_type,
+    const ColumnMapper & column_mapper,
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache)
+{
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    VectorWithMemoryTracking<size_t> ends;
     for (size_t pos = subpath.find('.'); pos != String::npos; pos = subpath.find('.', pos + 1))
         if (encoding.contains(path + "." + subpath.substr(0, pos)))
-            return {subpath.substr(0, pos), subpath.substr(pos + 1)};
+            ends.push_back(pos);
     if (encoding.contains(path + "." + subpath))
-        return {subpath, {}};
-    return Nested::splitName(subpath);
+        ends.push_back(subpath.size());
+    if (ends.empty())
+        return Nested::splitName(subpath);
+
+    auto split = [&](size_t end) -> std::pair<String, String>
+    { return {subpath.substr(0, end), end == subpath.size() ? String{} : subpath.substr(end + 1)}; };
+
+    VectorWithMemoryTracking<const ORC::Type *> element_orc_types;
+    for (size_t end : ends)
+    {
+        const auto * element_orc_type
+            = findStructElementORCType(path, subpath.substr(0, end), orc_type, column_mapper, ignore_case, field_ids_cache);
+        if (element_orc_type && (end == subpath.size() || hasORCElements(*element_orc_type)))
+            return split(end);
+        element_orc_types.push_back(element_orc_type);
+    }
+    for (size_t i = 0; i < ends.size(); ++i)
+    {
+        if (element_orc_types[i])
+            continue;
+        const Field * value = column_mapper.getIcebergInitialDefault(path + "." + subpath.substr(0, ends[i]));
+        const auto type = value ? value->getType() : Field::Types::Null;
+        if (type == Field::Types::Null || type == Field::Types::Tuple || type == Field::Types::Array || type == Field::Types::Map)
+            return split(ends[i]);
+    }
+    return split(ends.back());
 }
 
 /// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
@@ -3522,7 +3586,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> nested_subcolumns;
     for (const auto & [subpath, type] : subcolumns)
     {
-        auto [name, rest] = splitStructElementName(path, subpath, column_mapper.getStorageColumnEncoding());
+        auto [name, rest] = splitStructElementName(path, subpath, orc_type, column_mapper, ignore_case, field_ids_cache);
         if (!whole_types.contains(name) && !nested_subcolumns.contains(name))
             names.push_back(name);
         if (rest.empty())
@@ -3540,19 +3604,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
             types.push_back(it->second);
             continue;
         }
-        /// The field of the element as `updateIncludeTypeIds` selects it: by field id if the struct has them, else by name.
-        const ORC::Type * element_orc_type = nullptr;
-        if (orc_type && orc_type->getKind() == ORC::STRUCT)
-        {
-            std::optional<const ORC::Type *> field_by_id;
-            const auto & encoding = column_mapper.getStorageColumnEncoding();
-            if (auto it = encoding.find(path + "." + name); it != encoding.end())
-                field_by_id = findORCFieldByIcebergId(*orc_type, it->second, field_ids_cache);
-            if (field_by_id)
-                element_orc_type = *field_by_id;
-            else if (auto field = findORCStructFieldByName(orc_type, name, ignore_case))
-                element_orc_type = orc_type->getSubtype(*field);
-        }
+        const auto * element_orc_type = findStructElementORCType(path, name, orc_type, column_mapper, ignore_case, field_ids_cache);
         types.push_back(makeTypeHintFromSubcolumns(
             path + "." + name, element_orc_type, nested_subcolumns.at(name), column_mapper, ignore_case, field_ids_cache));
     }
@@ -3615,7 +3667,10 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
                     /// needs the type of the column itself, not of a requested element of it.
                     const auto orc_kind = orc_column_with_type.second->getKind();
-                    if (column_mapper && (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST))
+                    /// The read type of the file lacks the unselected fields, so the hint is the one the fields were selected with.
+                    if (auto it = nested_table_type_hints.find(nested_table_name); column_mapper && it != nested_table_type_hints.end())
+                        nested_table_type = it->second;
+                    else if (column_mapper && (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST))
                     {
                         VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns;
                         for (const auto & name_and_type : nested_columns)

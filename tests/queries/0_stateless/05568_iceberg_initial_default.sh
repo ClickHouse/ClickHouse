@@ -78,6 +78,9 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
         struct["fields"].append({"id": new_id(), "name": "s", "required": False, "initial-default": {},
             "type": {"type": "struct", "fields": [{"id": new_id(), "name": "element", "required": False, "initial-default": [9],
                 "type": {"type": "list", "element-id": element, "element": "int", "element-required": False}}]}})
+    elif mode == "dotted_prefix":
+        struct = next(f for f in fields if f["name"] == "t")["type"]
+        struct["fields"].append({"id": new_id(), "name": "s", "required": False, "type": "int", "initial-default": 11})
     elif mode == "readd_in_list":
         by_name = {f["name"]: f for f in fields}
         u = by_name["u"]["type"]["fields"][1]["type"]["element"]
@@ -464,6 +467,26 @@ for format in Parquet ORC Avro; do
                 SELECT 'dotted element', ${optimize}, tupleElement(t, 's.j'), t.k FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = ${optimize};
                 SELECT 'dotted element', ${optimize}, tupleElement(t, 'd.e'), t.\`d.e\`.f FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = ${optimize};"
         done
+
+        # Neither is an element `s.j` next to a scalar `s`, in the file or added after it.
+        table="${format}_dotted_sibling"
+        create+="
+            CREATE TABLE t_dotted_sibling (t Tuple(s Nullable(Int32), \`s.j\` Nullable(Int32), k Nullable(Int32)))
+            ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_dotted_sibling VALUES ((11, 100, 7));"
+        after+="
+            SELECT 'dotted sibling', t FROM icebergLocal('${table}/');
+            SELECT 'dotted sibling', t.\`s.j\`, t.k FROM icebergLocal('${table}/');
+            SELECT 'dotted sibling', count() FROM icebergLocal('${table}/') WHERE t.\`s.j\` = 100;"
+        table="${format}_dotted_prefix"
+        create+="
+            CREATE TABLE t_dotted_prefix (t Tuple(\`s.j\` Nullable(Int32), k Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_dotted_prefix VALUES ((100, 7));"
+        evolve+=("${table}" dotted_prefix)
+        bind+=("${table}")
+        after+="
+            SELECT 'dotted prefix', t FROM icebergLocal('${table}/');
+            SELECT 'dotted prefix', t.\`s.j\`, t.k FROM icebergLocal('${table}/');"
     fi
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"

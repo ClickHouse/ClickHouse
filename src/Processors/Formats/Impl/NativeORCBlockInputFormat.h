@@ -152,7 +152,8 @@ public:
     using NameToColumnPtr = UnorderedMapWithMemoryTracking<std::string, ORCColumnWithType>;
 
     /// `absent_columns` are proven missing from the file by Iceberg field id (see `column_mapper_`): no field of the file
-    /// is read into them, and they get their `absent_column_defaults_` if any.
+    /// is read into them, and they get their `absent_column_defaults_` if any. A struct or list column whose subcolumns are
+    /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
         bool allow_missing_columns_,
@@ -163,7 +164,8 @@ public:
         UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
         const ColumnMapper * column_mapper_ = nullptr,
         NameSet absent_columns_ = {},
-        UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {});
+        UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -201,6 +203,7 @@ private:
     const ColumnMapper * column_mapper;
     NameSet absent_columns;
     UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
 };
 }
 #endif
