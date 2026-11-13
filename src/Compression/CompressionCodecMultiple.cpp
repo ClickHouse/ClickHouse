@@ -13,6 +13,7 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <string_view>
 
 
 namespace DB
@@ -38,6 +39,18 @@ UInt32 getCheckedReserveSize(const CompressionCodecPtr & codec, UInt32 size, siz
             "at codec {} of {} ({}). Use fewer codecs.",
             size, codec_index + 1, codecs_count, codec->getCodecDescription()->formatForErrorMessage());
     return reserve_size;
+}
+
+/// Whether a compressed block of the `Multiple` codec lists `Multiple` among its own codecs.
+bool hasNestedMultiple(const char * block, UInt32 block_size)
+{
+    constexpr UInt32 codecs_offset = COMPRESSED_BLOCK_HEADER_SIZE + 1;
+    if (block_size < codecs_offset)
+        return false;
+
+    const UInt32 codecs_count = std::min<UInt32>(static_cast<UInt8>(block[COMPRESSED_BLOCK_HEADER_SIZE]), block_size - codecs_offset);
+    const std::string_view codecs(block + codecs_offset, codecs_count);
+    return codecs.contains(static_cast<char>(CompressionMethodByte::Multiple));
 }
 
 }
@@ -232,6 +245,11 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
                 memcpy(compressed_buf.data(), input, source_size);
             input = compressed_buf.data();
         }
+
+        /// Versions before 26.10 wrote `CODEC(Delta, Default)` as a chain inside a chain when the default codec was a chain.
+        /// Nothing writes a deeper nesting, and decoding it would recurse as deep as the data says.
+        if (compression_method == static_cast<UInt8>(CompressionMethodByte::Multiple) && hasNestedMultiple(input, source_size))
+            throw Exception(decompression_error_code, "Codec Multiple is nested inside a nested codec Multiple");
 
         UInt32 uncompressed_size = readDecompressedBlockSize(input);
 
