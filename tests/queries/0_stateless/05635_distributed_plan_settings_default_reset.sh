@@ -32,4 +32,13 @@ if [ "${UNION_COUNT}" -gt 0 ]; then echo "distributed"; else echo "not distribut
 echo "INTERSECT case"
 ${CLICKHOUSE_CLIENT} -q "SELECT getSetting('make_distributed_plan') INTERSECT SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1, make_distributed_plan = DEFAULT"
 
+echo "CREATE AS SELECT case"
+${CLICKHOUSE_CLIENT} -q "
+DROP TABLE IF EXISTS t_dp_settings_default_reset_ctas;
+CREATE TABLE t_dp_settings_default_reset_ctas ENGINE = Memory AS SELECT getSetting('make_distributed_plan') AS v
+    SETTINGS distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1, make_distributed_plan = DEFAULT;
+SELECT v FROM t_dp_settings_default_reset_ctas;
+DROP TABLE t_dp_settings_default_reset_ctas;
+"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_dp_settings_default_reset"

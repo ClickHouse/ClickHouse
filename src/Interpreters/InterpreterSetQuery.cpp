@@ -139,30 +139,35 @@ static void dropSettingDefault(const ASTPtr & settings_ast, const String & setti
         std::erase(set_query->default_settings, setting_name);
 }
 
-/// Mirrors the traversal of `applySettingsFromQuery` below, for the query shapes that reach
-/// `QueryTreeBuilder`: instead of applying each visited clause, it drops `setting_name` from its
-/// `default_settings` so a later re-application (the query tree builder re-applies every
-/// top-level clause while building its analysis context) cannot reset it a second time.
+static void dropSettingDefaultFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, const String & setting_name)
+{
+    const ASTs & children = select_with_union.list_of_selects->children;
+    const auto * last_select = children.empty() ? nullptr : children.back()->as<ASTSelectQuery>();
+    if (last_select)
+        dropSettingDefault(last_select->settings(), setting_name);
+}
+
+/// Same clauses as `applySettingsFromQuery`; it must change with it.
 void InterpreterSetQuery::removeSettingDefaultFromQuery(const ASTPtr & ast, const String & setting_name)
 {
     if (!ast)
         return;
 
     if (const auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
+    {
         dropSettingDefault(query_with_output->settings_ast, setting_name);
+
+        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
+            dropSettingDefaultFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), setting_name);
+    }
 
     if (const auto * select_query = ast->as<ASTSelectQuery>())
     {
-        /// Also reached for a bare top-level INTERSECT/EXCEPT: `ASTSelectIntersectExceptQuery`
-        /// derives from `ASTSelectQuery`, exactly as `applySettingsFromQuery` relies on below.
         dropSettingDefault(select_query->settings(), setting_name);
     }
     else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
     {
-        const ASTs & children = select_with_union_query->list_of_selects->children;
-        const auto * last_select = children.empty() ? nullptr : children.back()->as<ASTSelectQuery>();
-        if (last_select)
-            dropSettingDefault(last_select->settings(), setting_name);
+        dropSettingDefaultFromSelectWithUnion(*select_with_union_query, setting_name);
     }
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {

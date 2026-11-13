@@ -7,3 +7,5 @@ true
 distributed
 INTERSECT case
 true
+CREATE AS SELECT case
+true
