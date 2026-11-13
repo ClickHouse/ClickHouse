@@ -15,6 +15,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
@@ -132,10 +134,26 @@ bool canBeReattached(const StoragePtr & table, const std::unordered_set<const IS
 /// The internal queries run with full access, so require that the user could run them.
 /// It also checks `readonly` and `allow_ddl`. Whether the table is a view is not known for a table which is not loaded yet,
 /// so require the grants for both.
-bool isGrantedToReattach(const String & database_name, const String & table_name, const ContextPtr & query_context)
+/// `ATTACH` also requires `TABLE ENGINE` on the engine from the metadata (see `InterpreterCreateQuery`),
+/// so read the metadata as `ATTACH` does, which works for a table which is not loaded yet as well.
+bool isGrantedToReattach(const DatabasePtr & database, const String & table_name, const ContextPtr & context, const ContextPtr & query_context)
 {
+    const String & database_name = database->getDatabaseName();
+    const auto access = query_context->getAccess();
+
     const AccessFlags flags = AccessFlags(AccessType::DROP_TABLE) | AccessType::DROP_VIEW | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW;
-    return query_context->getAccess()->isGranted(flags, database_name, table_name);
+    if (!access->isGranted(flags, database_name, table_name))
+        return false;
+
+    const auto create_query = database->tryGetCreateTableQuery(table_name, context);
+    if (!create_query)
+        return false;
+
+    const auto & create = create_query->as<const ASTCreateQuery &>();
+    if (create.storage && create.storage->engine && !access->isGranted(AccessType::TABLE_ENGINE, create.storage->engine->name))
+        return false;
+
+    return true;
 }
 
 /// A table used by another query or DDL must not be reattached: `DETACH ... SYNC` would wait for that query to finish,
@@ -145,9 +163,16 @@ bool isIdle(const StoragePtr & table, const ContextPtr & context)
     /// Not zero: zero means an infinite wait.
     const Poco::Timespan probe_timeout(0, 1000);
 
+    /// The queries using a lazily loaded table lock the storage behind it, not the stand-in.
+    std::vector<StoragePtr> storages_to_probe{table};
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && proxy->isLazyStandIn())
+        if (auto nested = proxy->tryGetNested())
+            storages_to_probe.push_back(std::move(nested));
+
     try
     {
-        auto lock = table->lockExclusively(context->getCurrentQueryId(), probe_timeout);
+        for (const auto & storage : storages_to_probe)
+            auto lock = storage->lockExclusively(context->getCurrentQueryId(), probe_timeout);
     }
     catch (const Exception & e)
     {
@@ -186,7 +211,7 @@ void reattachTables(const DatabasePtr & database, const std::vector<String> & ta
         {
             auto table = database->tryGetTable(table_name, context);
             if (!table
-                || !isGrantedToReattach(database_name, table_name, query_context)
+                || !isGrantedToReattach(database, table_name, context, query_context)
                 || !canBeReattached(table, storages_with_action_locks)
                 || !isIdle(table, context))
                 continue;

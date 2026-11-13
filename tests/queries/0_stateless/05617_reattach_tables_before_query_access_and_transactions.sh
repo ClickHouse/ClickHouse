@@ -36,6 +36,25 @@ $CLICKHOUSE_CLIENT -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_quer
 after=$(sample)
 [ "$before" = "$after" ] && echo "default user: not reattached" || echo "default user: reattached"
 
+# `ATTACH` also requires `TABLE ENGINE` on the engine of the table (the test configuration has `table_engines_require_grant`).
+$CLICKHOUSE_CLIENT -q "
+    DROP USER $user;
+    CREATE USER $user IDENTIFIED WITH no_password;
+    GRANT SELECT, DROP TABLE, DROP VIEW, CREATE TABLE, CREATE VIEW ON ${CLICKHOUSE_DATABASE}.* TO $user;
+"
+
+before=$(sample)
+$CLICKHOUSE_CLIENT --user "$user" -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_query_execution_probability = 1"
+after=$(sample)
+[ "$before" = "$after" ] && echo "user without TABLE ENGINE: not reattached" || echo "user without TABLE ENGINE: reattached"
+
+$CLICKHOUSE_CLIENT -q "GRANT TABLE ENGINE ON GenerateRandom TO $user"
+
+before=$(sample)
+$CLICKHOUSE_CLIENT --user "$user" -q "SELECT 1 FORMAT Null SETTINGS reattach_tables_before_query_execution_probability = 1"
+after=$(sample)
+[ "$before" = "$after" ] && echo "user with TABLE ENGINE: not reattached" || echo "user with TABLE ENGINE: reattached"
+
 $CLICKHOUSE_CLIENT -q "DROP USER $user"
 
 # A transaction keeps the tables it has modified until it is finished, so the queries inside it must not reattach tables,
