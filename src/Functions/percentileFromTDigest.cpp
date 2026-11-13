@@ -68,7 +68,7 @@ public:
             std::string_view sketch_data = col_sketch->getDataAt(row);
             Float64 percentile = col_percentile->getFloat64(row);
 
-            if (percentile < 0.0 || percentile > 1.0)
+            if (!(percentile >= 0.0 && percentile <= 1.0))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Percentile must be between 0.0 and 1.0 for function {}, got {}", getName(), percentile);
 

@@ -131,7 +131,7 @@ public:
         }
 
         /// Validate constant percentile value if applicable
-        if (is_percentile_const && (const_percentile_value < 0.0 || const_percentile_value > 1.0))
+        if (is_percentile_const && !(const_percentile_value >= 0.0 && const_percentile_value <= 1.0))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -148,7 +148,7 @@ public:
             Float64 percentile = is_percentile_const ? const_percentile_value : col_percentile->getFloat64(i);
 
             /// Validate percentile range (skip if already validated constant)
-            if (!is_percentile_const && (percentile < 0.0 || percentile > 1.0))
+            if (!is_percentile_const && !(percentile >= 0.0 && percentile <= 1.0))
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
