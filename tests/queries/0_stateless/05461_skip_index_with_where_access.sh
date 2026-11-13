@@ -16,6 +16,7 @@ DROP USER IF EXISTS $user;
 DROP FUNCTION IF EXISTS $udf;
 DROP TABLE IF EXISTS secret;
 DROP TABLE IF EXISTS scratch;
+DROP TABLE IF EXISTS src;
 CREATE TABLE secret (sensitive UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE scratch (p UInt8, INDEX i p TYPE minmax) ENGINE = MergeTree ORDER BY tuple();
 CREATE FUNCTION $udf AS (t, c) -> hasColumnInTable('$CLICKHOUSE_DATABASE', t, c);
@@ -50,10 +51,25 @@ do
     run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j p TYPE minmax WHERE p = intDiv(1, $udf('secret', 'sensitive'))" $enabled
 done
 
+echo "copied from another table"
+$CLICKHOUSE_CLIENT --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 -q "
+CREATE TABLE src (p UInt8, INDEX i p TYPE minmax WHERE demangle(toString(p)) != '') ENGINE = MergeTree ORDER BY tuple();
+GRANT SHOW COLUMNS, SELECT ON $CLICKHOUSE_DATABASE.src TO $user;
+GRANT INSERT, ALTER ON $CLICKHOUSE_DATABASE.probe TO $user;
+"
+for copy in "AS" "CLONE AS"
+do
+    output=$($CLICKHOUSE_CLIENT --user "$user" --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 \
+        -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe $copy ${CLICKHOUSE_DATABASE}.src" 2>&1)
+    echo "$output" | grep -o -m1 "ACCESS_DENIED" || echo "no error"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS probe"
+done
+
 $CLICKHOUSE_CLIENT -q "
 DROP USER $user;
 DROP FUNCTION $udf;
 DROP TABLE secret;
 DROP TABLE scratch;
+DROP TABLE src;
 DROP TABLE IF EXISTS probe;
 "

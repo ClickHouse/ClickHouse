@@ -197,6 +197,19 @@ void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index
         throwTransformNeedsInitiatorUser();
 }
 
+void rejectPartialIndexConditionWithoutInitiatorUser(const ASTPtr & definition_ast)
+{
+    const auto * declaration = definition_ast ? definition_ast->as<ASTIndexDeclaration>() : nullptr;
+    if (declaration && declaration->getWhere())
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "The WHERE condition of a skip index is authorized on the host the query is submitted to, and the other hosts "
+            "analyse it without that user. Let every host run the query as the initiating user instead: enable the server "
+            "setting distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version "
+            "to at least {}",
+            DDLLogEntry::INITIATOR_USER_VERSION);
+}
+
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)
 {
     const auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;

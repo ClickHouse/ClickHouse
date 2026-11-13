@@ -696,6 +696,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                         continue;
                     if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
                         rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+                    rejectPartialIndexConditionWithoutInitiatorUser(command.index_decl);
                 }
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

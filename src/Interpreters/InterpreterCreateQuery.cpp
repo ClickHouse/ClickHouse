@@ -1396,7 +1396,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                         index.name);
 
         for (const auto & index : properties.indices)
+        {
             checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+            if (index.where_expression)
+                checkPartialIndexConditionAsUser(index.definition_ast, properties.columns, getContext());
+        }
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
@@ -4122,8 +4126,11 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
             return;
 
         for (const auto & index : captured_create.columns_list->indices->children)
+        {
             if (const auto * declaration = index->as<ASTIndexDeclaration>())
                 rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+            rejectPartialIndexConditionWithoutInitiatorUser(index);
+        }
     };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
@@ -4216,8 +4223,13 @@ BlockIO InterpreterCreateQuery::execute()
                         if (index.isImplicitlyCreated())
                             continue;
                         if (!workers_use_initiator_user)
+                        {
                             rejectTextIndexTransformWithoutInitiatorUser(index);
+                            rejectPartialIndexConditionWithoutInitiatorUser(index.definition_ast);
+                        }
                         checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                        if (index.where_expression)
+                            checkPartialIndexConditionAsUser(index.definition_ast, as_storage_metadata->getColumns(), getContext());
                     }
                 }
             }
