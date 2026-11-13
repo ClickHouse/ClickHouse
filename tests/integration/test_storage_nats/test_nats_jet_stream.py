@@ -739,10 +739,32 @@ def test_nats_insert_into_missing_stream(nats_cluster):
 
     # 5000 messages do not fit into the queue of the producer.
     for rows in [1, 5000]:
+        start = time.monotonic()
         error = instance.query_and_get_error(
             f"INSERT INTO test.nats SELECT number, number FROM numbers({rows})", timeout=60
         )
         assert "there is no JetStream stream for this subject" in error, error
+        # The publish is retried twice, 250 ms apart, before the INSERT fails.
+        assert time.monotonic() - start >= 0.5
+
+
+def test_nats_insert_message_over_max_payload(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value String)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+
+    # The message is larger than the server's max_payload (1 MiB by default).
+    error = instance.query_and_get_error(
+        "INSERT INTO test.nats SELECT 1, repeat('aa', 1000000)", timeout=60
+    )
+    assert "Cannot publish to NATS subject test_subject: Maximum Payload Exceeded" in error, error
 
 
 def test_fetching_messages_without_mv(nats_cluster):
