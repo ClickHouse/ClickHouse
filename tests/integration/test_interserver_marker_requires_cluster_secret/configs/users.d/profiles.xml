@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Force distributed reads to go to the (self-referential) replica over a real
+                 interserver connection instead of being served locally, so the query actually
+                 crosses the cluster-secret boundary. -->
+            <prefer_localhost_replica>0</prefer_localhost_replica>
+        </default>
+    </profiles>
+</clickhouse>

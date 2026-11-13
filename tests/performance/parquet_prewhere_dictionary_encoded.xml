@@ -6,7 +6,8 @@
             number AS k,
             toUInt16(cityHash64(number) % 300) AS a,
             toUInt8(intDiv(number, 500) % 7) AS r,
-            concat('v', toString(cityHash64(number, 1) % 1000)) AS s
+            concat('v', toString(cityHash64(number, 1) % 1000)) AS s,
+            concat('m', toString(intDiv(number, 65536) * 500 + cityHash64(number, 2) % 500)) AS m
         FROM numbers(50000000)
         SETTINGS output_format_parquet_write_page_index = 0
     ]]></fill_query>
@@ -20,4 +21,5 @@
     <query>SELECT count(), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE s != 'v1' FORMAT Null</query>
     <query>SELECT sum(a) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE s IN ('v1', 'v2', 'v3') FORMAT Null</query>
     <query>SELECT count(), max(s) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE s LIKE '%7%' FORMAT Null</query>
+    <query>SELECT count(), max(m) FROM file('test_parquet_prewhere_dictionary_encoded.parquet', Parquet) PREWHERE m != '' FORMAT Null</query>
 </test>

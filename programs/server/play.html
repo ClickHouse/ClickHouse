@@ -8045,22 +8045,15 @@ class QueryResultElement extends HTMLElement
         this._selectCell(new_cell);
     }
 
-    _loadJS(src, integrity)
+    /// Only for the JavaScript assets that ship with the server (see `_assetURL`):
+    /// no third-party code is loaded into the page.
+    _loadJS(src)
     {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = src;
-            if (integrity)
-            {
-                script.crossOrigin = 'anonymous';
-                script.integrity = integrity;
-            }
-            else if (!src.startsWith('/'))
-            {
-                console.warn('no integrity for', src);
-            }
             script.addEventListener('load', function() { resolve(true); });
-            /// Reject on a failed load (blocked/unavailable CDN, network error, or SRI mismatch)
+            /// Reject on a failed load (missing asset or network error)
             /// so awaiting callers (the chart/graph renderers in the query lifecycle) fall into
             /// their `catch` and report the error instead of hanging forever - the script `error`
             /// event otherwise leaves this promise pending and the run stuck in flight.
@@ -8105,8 +8098,7 @@ class QueryResultElement extends HTMLElement
     _loadUplot()
     {
         if (QueryResultElement._loadUplotPromise) { return QueryResultElement._loadUplotPromise; }
-        QueryResultElement._loadUplotPromise = this._loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA')
+        QueryResultElement._loadUplotPromise = this._loadJS(QueryResultElement._assetURL('uplot.js'))
             /// Drop the cached promise on failure so a later attempt can retry the load
             /// instead of re-awaiting a permanently rejected promise.
             .catch((e) => { QueryResultElement._loadUplotPromise = null; throw e; });
