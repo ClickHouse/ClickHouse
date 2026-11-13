@@ -424,14 +424,39 @@ bool usesOnlyColumns(const ASTPtr & ast, const ColumnsDescription & columns)
     return std::ranges::all_of(ast->children, [&](const ASTPtr & child) { return usesOnlyColumns(child, columns); });
 }
 
-/// Adds the aliases of the lambdas in `ast` to `names`, also inside lambdas and subqueries.
-void collectLambdaAliases(const ASTPtr & ast, NameSet & names)
+/// Adds the aliases in `ast` with their expressions to `aliased`, also those of lambdas and those inside lambdas and subqueries.
+void collectAllAliasedExpressions(const ASTPtr & ast, std::vector<std::pair<String, const IAST *>> & aliased)
 {
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
-        if (const String alias = ast->tryGetAlias(); !alias.empty())
-            names.insert(alias);
+    if (const String alias = ast->tryGetAlias(); !alias.empty())
+        aliased.emplace_back(alias, ast.get());
     for (const auto & child : ast->children)
-        collectLambdaAliases(child, names);
+        collectAllAliasedExpressions(child, aliased);
+}
+
+/// Adds to `names` the aliases in `ast` through which a function may invoke a lambda: the alias of a lambda, as `f` in
+/// `(y -> y = 1) AS f`, and an alias of an identifier that names one of them, as `g` in `f AS g`, at any depth of such aliases.
+/// A name counts if any of its definitions in any scope does.
+void collectLambdaAliases(const ASTs & expressions, NameSet & names)
+{
+    std::vector<std::pair<String, const IAST *>> aliased;
+    for (const auto & expression : expressions)
+        collectAllAliasedExpressions(expression, aliased);
+    for (bool changed = true; changed;)
+    {
+        changed = false;
+        for (const auto & [alias, expression] : aliased)
+        {
+            if (names.contains(alias))
+                continue;
+            const auto * function = expression->as<ASTFunction>();
+            const auto * identifier = expression->as<ASTIdentifier>();
+            if ((function && function->name == "lambda") || (identifier && names.contains(identifier->name())))
+            {
+                names.insert(alias);
+                changed = true;
+            }
+        }
+    }
 }
 
 /// Whether `ast` invokes a function whose name is one of `names`, such as `f(id)` for the alias `f` of a lambda.
@@ -740,10 +765,10 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
 
     const ColumnsDescription & columns = storage_snapshot->metadata->getColumns();
     RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, referenced_names, session_timezone, context, false};
-    /// An expression that invokes the alias of a lambda, such as `f(id)`, cannot be analyzed without the lambda.
+    /// An expression that invokes a lambda through an alias, such as `f(id)` for `(y -> y = 1) AS f`, or `g(id)` for `f AS g`,
+    /// cannot be analyzed without the lambda.
     NameSet lambda_aliases;
-    for (const auto & expression : expressions)
-        collectLambdaAliases(expression, lambda_aliases);
+    collectLambdaAliases(expressions, lambda_aliases);
     data.resolve_alias_type = [&](const ASTPtr & aliased_expression, const String & name) -> DataTypePtr
     {
         if (hasFunctionWithName(aliased_expression, lambda_aliases))
