@@ -1,0 +1,38 @@
+tgt_kinds	1	20	2
+tgt_wide	5	10	1	8
+tgt_three	1	def	3
+tgt_three	2	def	4
+Row 1:
+──────
+log_comment: 05622_first_and_third_no_views
+tables:      ['default.tgt_three']
+views:       []
+columns:     ['default.tgt_three.a','default.tgt_three.c']
+
+Row 2:
+──────
+log_comment: 05622_first_and_third_select
+tables:      ['system.one','default.mv_three','default.src_three','default.tgt_three']
+views:       ['default.mv_three']
+columns:     ['system.one.dummy','default.mv_three.a','default.mv_three.b','default.mv_three.c','default.src_three.a','default.src_three.b','default.src_three.c','default.tgt_three.a','default.tgt_three.b','default.tgt_three.c']
+
+Row 3:
+──────
+log_comment: 05622_first_and_third_values
+tables:      ['default.mv_three','default.src_three','default.tgt_three']
+views:       ['default.mv_three']
+columns:     ['default.mv_three.a','default.mv_three.b','default.mv_three.c','default.src_three.a','default.src_three.b','default.src_three.c','default.tgt_three.a','default.tgt_three.b','default.tgt_three.c']
+
+Row 4:
+──────
+log_comment: 05622_source_column_kinds
+tables:      ['default.mv_kinds','default.src_kinds','default.tgt_kinds']
+views:       ['default.mv_kinds']
+columns:     ['default.mv_kinds.a','default.mv_kinds.d','default.mv_kinds.m','default.src_kinds.a','default.src_kinds.d','default.src_kinds.e','default.src_kinds.m','default.tgt_kinds.a','default.tgt_kinds.d','default.tgt_kinds.m']
+
+Row 5:
+──────
+log_comment: 05622_target_column_kinds
+tables:      ['default.mv_plain','default.src_plain','default.tgt_wide']
+views:       ['default.mv_plain']
+columns:     ['default.mv_plain.a','default.src_plain.a','default.tgt_wide.a','default.tgt_wide.d','default.tgt_wide.e']
