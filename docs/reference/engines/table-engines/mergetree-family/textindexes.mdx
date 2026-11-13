@@ -583,7 +583,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
-| [position](/reference/functions/regular-functions/string-search-functions#position), [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8), [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings) (`> 0`, see [below](#functions-example-position)) | `lower`/`upper` only | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [position](/reference/functions/regular-functions/string-search-functions#position), [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8), [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings) (`> 0`, see [below](#functions-example-position)) | `lower`/`upper` only | `splitByNonAlpha`, `array` | yes¹ |
 | [positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive), [positionCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8), [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive), [countSubstringsCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) (`> 0`) | `lower`/`upper` only² | `splitByNonAlpha`, `array`² | no² |
 | [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
@@ -844,7 +844,8 @@ The same holds for `!= 0`, `>= 1` and the mirrored comparisons such as `0 < posi
 [positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive) (alias `instr`), [positionCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8), [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive) and [countSubstringsCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) use the index like `col ILIKE '%value%'`.
 `positionCaseInsensitive` and `countSubstringsCaseInsensitive` fold the case of ASCII letters only, so unlike `ILIKE` they also use the index with the `array` tokenizer for a needle with non-ASCII characters.
 
-The index is not used for the form with a start position argument, for a needle that is not valid UTF-8, for a `Nullable` column, or if the index has a preprocessor other than `lower` or `upper`.
+The index is not used for the form with a start position argument, for a needle that is not valid UTF-8, for a `Nullable` column, if the index has a preprocessor other than `lower` or `upper`, or if its tokenizer is not `splitByNonAlpha` or `array`.
+These functions search bytes, while the other tokenizers decode UTF-8 and could miss a match in a value that is not valid UTF-8.
 
 Example:
 

@@ -2036,6 +2036,11 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
         || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
         return false;
 
+    /// These functions search bytes, while `ngrams`, `sparseGrams` and `asciiCJK` decode UTF-8 and skip the bytes after
+    /// a broken leading byte, so an index on them could drop a row that a byte search finds.
+    if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha && tokenizer->getType() != ITokenizer::Type::Array)
+        return false;
+
     /// `countSubstrings` of an empty needle is 0, unlike `LIKE '%%'`.
     if (needle_string.empty() && search_function_name.starts_with("countSubstrings"))
         return false;

@@ -512,7 +512,7 @@ CREATE TABLE tab
 (
     id UInt32,
     m Map(String, String),
-    INDEX idx(mapValues(m)) TYPE text(tokenizer = ngrams(3))
+    INDEX idx(mapValues(m)) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -557,3 +557,32 @@ SELECT count() FROM (
 ) WHERE explain LIKE '%Name: idx%';
 
 DROP TABLE tab;
+
+SELECT '-- A haystack that is not valid UTF-8';
+
+-- The ngrams, sparseGrams and asciiCJK tokenizers skip the ASCII bytes after a broken leading byte, a byte search does not.
+DROP TABLE IF EXISTS tab_ngrams;
+DROP TABLE IF EXISTS tab_sparse;
+DROP TABLE IF EXISTS tab_cjk;
+CREATE TABLE tab_ngrams (id UInt32, s String, INDEX idx(s) TYPE text(tokenizer = ngrams(3))) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE tab_sparse (id UInt32, s String, INDEX idx(s) TYPE text(tokenizer = sparseGrams(3, 5), preprocessor = lower(s))) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE tab_cjk (id UInt32, s String, INDEX idx(s) TYPE text(tokenizer = asciiCJK)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_ngrams VALUES (1, unhex('F0616C706861')), (2, 'beta');
+INSERT INTO tab_sparse VALUES (1, unhex('F0616C706861')), (2, 'beta');
+INSERT INTO tab_cjk VALUES (1, unhex('F0E4B8AD')), (2, 'beta');
+
+SELECT 'ngrams position', arraySort(groupArray(id)) FROM tab_ngrams WHERE position(s, 'alpha') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'ngrams position', arraySort(groupArray(id)) FROM tab_ngrams WHERE position(s, 'alpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'ngrams position', arraySort(groupArray(id)) FROM tab_ngrams WHERE position(s, 'alpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT 'ngrams countSubstrings', arraySort(groupArray(id)) FROM tab_ngrams WHERE countSubstrings(s, 'alpha') > 0 SETTINGS use_skip_indexes = 1;
+SELECT 'ngrams positionUTF8', arraySort(groupArray(id)) FROM tab_ngrams WHERE positionUTF8(s, 'alpha') > 0 SETTINGS use_skip_indexes = 1;
+SELECT 'sparseGrams position', arraySort(groupArray(id)) FROM tab_sparse WHERE position(s, 'alpha') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'sparseGrams position', arraySort(groupArray(id)) FROM tab_sparse WHERE position(s, 'alpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'sparseGrams countSubstrings', arraySort(groupArray(id)) FROM tab_sparse WHERE countSubstrings(s, 'alpha') > 0 SETTINGS use_skip_indexes = 1;
+SELECT 'asciiCJK position', arraySort(groupArray(id)) FROM tab_cjk WHERE position(s, '中') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'asciiCJK position', arraySort(groupArray(id)) FROM tab_cjk WHERE position(s, '中') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'asciiCJK position', arraySort(groupArray(id)) FROM tab_cjk WHERE position(s, '中') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+DROP TABLE tab_ngrams;
+DROP TABLE tab_sparse;
+DROP TABLE tab_cjk;

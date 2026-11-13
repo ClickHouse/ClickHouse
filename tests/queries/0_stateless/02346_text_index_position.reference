@@ -218,3 +218,15 @@ absent key, empty needle	[1,2,3]
 absent key, empty needle	[1,2,3]
 0
 0
+-- A haystack that is not valid UTF-8
+ngrams position	[1]
+ngrams position	[1]
+ngrams position	[1]
+ngrams countSubstrings	[1]
+ngrams positionUTF8	[1]
+sparseGrams position	[1]
+sparseGrams position	[1]
+sparseGrams countSubstrings	[1]
+asciiCJK position	[1]
+asciiCJK position	[1]
+asciiCJK position	[1]
