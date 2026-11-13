@@ -39,14 +39,6 @@ public:
 
     std::string getName() const override { return name; }
 
-    /// The keys of named collection overrides must not resolve to a column or alias.
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const override
-    {
-        VectorWithMemoryTracking<size_t> result;
-        appendNamedArgumentIndexes(query_node_table_function, result);
-        return result;
-    }
-
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,

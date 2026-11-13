@@ -61,13 +61,8 @@ public:
     }
 
     /// The 3rd argument may be a query passed to MySQL as is - a subquery `(SELECT ...)` or `query('SELECT ...')`.
-    /// Such an argument must not be analyzed as an ordinary expression, nor the keys of named collection overrides.
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const override
-    {
-        VectorWithMemoryTracking<size_t> result{2};
-        appendNamedArgumentIndexes(query_node_table_function, result);
-        return result;
-    }
+    /// Such an argument must not be analyzed as an ordinary expression.
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
