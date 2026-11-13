@@ -1,13 +1,15 @@
 -- Tags: atomic-database
 
-SET stop_refreshable_materialized_views_on_startup = 1;
 SET session_timezone = 'Etc/UTC';
 
 CREATE TABLE refresh_progress_dst (x UInt8) ENGINE = Memory;
+-- Give EMPTY a delayed first refresh so the view cannot refresh while setting up the fake clock.
 CREATE MATERIALIZED VIEW refresh_progress_mv
-REFRESH EVERY 1 MINUTE RANDOMIZE FOR 8 SECOND
+REFRESH AFTER 1 DAY
 APPEND TO refresh_progress_dst EMPTY AS SELECT toUInt8(1) AS x;
 
+SYSTEM STOP VIEW refresh_progress_mv;
+ALTER TABLE refresh_progress_mv MODIFY REFRESH EVERY 1 MINUTE RANDOMIZE FOR 8 SECOND APPEND;
 SYSTEM TEST VIEW refresh_progress_mv SET FAKE TIME '2050-01-01 00:01:05';
 SYSTEM REFRESH VIEW refresh_progress_mv;
 SYSTEM START VIEW refresh_progress_mv;
