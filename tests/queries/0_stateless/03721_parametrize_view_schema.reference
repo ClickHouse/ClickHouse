@@ -42,7 +42,7 @@ SelectWithUnionQuery (children 1)
         Function equals (children 1)
          ExpressionList (children 2)
           Identifier upper_bound
-          Literal UInt64_3
+          Literal \'[HIDDEN]\'
 EXPLAIN QUERY TREE SELECT *
 FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
 QUERY id: 0
@@ -109,7 +109,7 @@ SelectWithUnionQuery (children 1)
         Function equals (children 1)
          ExpressionList (children 2)
           Identifier upper_bound
-          Literal UInt64_3
+          Literal \'[HIDDEN]\'
 EXPLAIN QUERY TREE SELECT *
 FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 SELECT *
