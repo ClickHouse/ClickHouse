@@ -244,9 +244,12 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
-    # PR builds must not pollute the shared sccache bucket; only master/release
-    # builds (pr_number == 0) are allowed to write entries.
-    if info.pr_number > 0:
+    # PR builds must not pollute the shared sccache bucket. Only master/release
+    # builds (pr_number == 0) and backport PRs from this repository write entries.
+    backport_from_repo = (
+        info.workflow_name == "BackportPR" and info.fork_name == info.repo_name
+    )
+    if info.pr_number > 0 and not backport_from_repo:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     os.makedirs(build_dir, exist_ok=True)
 
