@@ -196,7 +196,7 @@ ConditionTemplate<Cond>::ConditionTemplate(
     , metadata_snapshot(std::move(metadata_snapshot_))
     , context(std::move(context_))
     , skip_folding(skip_folding_)
-    , has_subquery_sets(hasSubquerySets(dag.get()))
+    , needs_preparation(!skip_folding && dag && dag->predicate && hasSubquerySets(dag.get()))
 {
     generateUnsubstituted();
 }
@@ -228,7 +228,7 @@ const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPartIn
 template <typename Cond>
 void ConditionTemplate<Cond>::prepareForPart(const MergeTreeDataPartPtr & part) const
 {
-    if (has_subquery_sets)
+    if (needs_preparation)
         generateForPart(part);
 }
 
@@ -248,10 +248,10 @@ template <typename Cond>
 const Cond & ConditionTemplate<Cond>::getForPartition(
     const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const
 {
-    if (!has_subquery_sets)
+    if (!needs_preparation)
         return generateForPartition(partition, partition_id, is_projection_part);
 
-    if (!skip_folding && dag && dag->predicate && !is_projection_part)
+    if (!is_projection_part)
         if (const auto * cond = lookupSubstituted(partition_id))
             return *cond;
 

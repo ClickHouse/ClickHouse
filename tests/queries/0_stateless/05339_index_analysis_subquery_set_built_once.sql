@@ -44,6 +44,21 @@ SETTINGS use_constant_folding_in_index_analysis = 1, optimize_use_projections = 
     max_block_size = 65409, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0,
     log_comment = '05339_text_index_map';
 
+-- With EXPLAIN, the subquery is executed only to analyze the indexes: not when the primary key drops every part.
+SET ignore_format_null_for_explain = 0;
+
+EXPLAIN indexes = 1 SELECT count() FROM t_subquery_set_built_once
+WHERE x = 99999 AND y < 100000 AND y + p IN (SELECT number FROM numbers(20) WHERE NOT ignore(sleep(0.1)))
+SETTINGS use_constant_folding_in_index_analysis = 1, optimize_use_projections = 1, max_threads = 8, max_threads_for_indexes = 8,
+    use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_statistics_for_part_pruning = 0, optimize_move_to_prewhere = 0,
+    use_query_condition_cache = 0, log_comment = '05339_primary_key_drops_all' FORMAT Null;
+
+EXPLAIN indexes = 1 SELECT count() FROM t_subquery_set_built_once
+WHERE x = 99999 AND y < 100000 AND y + p IN (SELECT number FROM numbers(20) WHERE NOT ignore(sleep(0.1)))
+SETTINGS use_constant_folding_in_index_analysis = 1, optimize_use_projections = 1, max_threads = 8, max_threads_for_indexes = 8,
+    use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, use_statistics_for_part_pruning = 0, optimize_move_to_prewhere = 0,
+    use_query_condition_cache = 0, log_comment = '05339_primary_key_drops_all_on_data_read' FORMAT Null;
+
 -- A set built during planning is still used by the per-partition conditions.
 SELECT count() FROM t_subquery_set_built_once
 WHERE x IN (SELECT number FROM numbers(10))
@@ -54,7 +69,8 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['SleepFunctionCalls']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment IN ('05339_primary_key', '05339_skip_index', '05339_skip_index_on_data_read', '05339_text_index_map') AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND log_comment IN ('05339_primary_key', '05339_skip_index', '05339_skip_index_on_data_read', '05339_text_index_map',
+    '05339_primary_key_drops_all', '05339_primary_key_drops_all_on_data_read') AND type = 'QueryFinish'
 ORDER BY log_comment;
 
 -- The per-partition conditions use the set to prune.

@@ -60,6 +60,9 @@ public:
     const Cond & getForPart(const MergeTreeDataPartPtr & part) const;
     const Cond & getForPart(const IMergeTreeDataPartInfoForReader & part_info) const;
 
+    /// Whether `prepareForPart` generates anything: the filter has an `IN` subquery and is specialized per partition.
+    bool needsPreparation() const { return needs_preparation; }
+
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
 
@@ -69,7 +72,7 @@ private:
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
     const bool skip_folding;
-    const bool has_subquery_sets;
+    const bool needs_preparation;
 
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;
