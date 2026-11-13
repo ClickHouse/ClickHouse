@@ -397,6 +397,14 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 }
 
 
+bool StorageTimeSeries::hasInnerRequiredTables() const
+{
+    return isInnerTable(ViewTarget::Samples)
+        || isInnerTable(ViewTarget::Tags)
+        || isInnerTable(ViewTarget::MetricFamilies);
+}
+
+
 void StorageTimeSeries::createOrDropTagsDeduplicationCache()
 {
     std::lock_guard lock{caches_mutex};
@@ -528,7 +536,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    if (!hasInnerTables())
+    if (!hasInnerRequiredTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
@@ -652,7 +660,7 @@ bool StorageTimeSeries::optimize(
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    if (!hasInnerTables())
+    if (!hasInnerRequiredTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
@@ -1113,8 +1121,8 @@ generic codecs and can otherwise dominate the on-disk size of the samples table.
 creates itself get the codec of the timestamps, `CODEC(Delta, T64, ZSTD(3))`: they dominate the size of the rows with few samples.
 Tables of [version](#schema-versioning) 10 and earlier store one sample per row in the columns `timestamp` and `value`, and the columns the engine
 created itself got the same codecs: `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`.
-The engine enables `ALP` and the codecs for subcolumns for its inner samples and recent samples tables without requiring the settings
-`enable_alp_codec` and [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) to be set.
+The engine enables the codecs for subcolumns for its inner samples and recent samples tables without requiring the setting
+[enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 Queries reading a time range use the `bucket` column to select granules by the primary key `(id, bucket)`, and the `min_time` and `max_time`
@@ -1549,9 +1557,9 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `samples_bucket_step_seconds` | UInt64 | 3600 | The length in seconds of the time buckets of the [samples](#samples-table) table: a row of the table contains the samples of one time series with timestamps in one bucket, and the `bucket` column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time |
 | `samples_partition_by` | Expression | `toYYYYMM(toDateTime(bucket, 'UTC'))` | Partition key of the inner [samples](#samples-table) table, for example `toStartOfWeek(toDateTime(bucket, 'UTC'))`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per month is used |
 | `metric_families_deduplication_cache_size_bytes` | UInt64 | 10485760 | Maximum size in bytes of the deduplication cache of the [metric families](#metric-families-table) table. The cache remembers the descriptions of the metric families written recently, so they aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). Set to 0 to disable the cache, see also `metric_families_deduplication_cache_expiration_seconds` |
-| `metric_families_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [metric families](#metric-families-table) table expires, counted from the moment the metric family was written. So every metric family is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Set to 0 to disable the cache |
+| `metric_families_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [metric families](#metric-families-table) table expires, counted from the moment the metric family was written. The actual lifetime of an entry is uniformly random in the range `[0.8 * expiration_seconds, expiration_seconds]`, so the metric families written together aren't all written again at the same moment. So every metric family is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Set to 0 to disable the cache |
 | `tags_deduplication_cache_size_bytes` | UInt64 | 104857600 | Maximum size in bytes of the deduplication cache of the [tags](#tags-table) table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time` (tables of [version](#schema-versioning) 7 or earlier store them unless `store_min_time_and_max_time` is disabled), because otherwise every insert changes these columns: the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also `tags_deduplication_cache_expiration_seconds` |
-| `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time`, see `tags_deduplication_cache_size_bytes`. Set to 0 to disable the cache |
+| `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. The actual lifetime of an entry is uniformly random in the range `[0.8 * expiration_seconds, expiration_seconds]`, so the time series written together aren't all written again at the same moment. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time`, see `tags_deduplication_cache_size_bytes`. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. The default is 32768 for tables of [version](#schema-versioning) 10 or earlier, which store one sample per row |
 | `samples_index_granularity_bytes` | UInt64 | 524288 | Sets `index_granularity_bytes` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional [recent samples](#recent-samples-table) target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(bucket) + toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)` derived from this setting (overriding any TTL from the engine declaration): a row expires when all its samples are older than the TTL. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |

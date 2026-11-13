@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: use-ssl
+# Tags: use-ssl, no-fasttest
+# no-fasttest: Too slow for fast test (~30s), covered by regular stateless runs.
 
 # A set port adds `--port` to `$CLICKHOUSE_CLIENT` and `$CLICKHOUSE_BENCHMARK`, but the test checks the default port.
 unset CLICKHOUSE_PORT_TCP

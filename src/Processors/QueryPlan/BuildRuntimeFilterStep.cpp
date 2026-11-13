@@ -1,4 +1,5 @@
 #include <string_view>
+#include <Formats/FormatSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/Operators.h>

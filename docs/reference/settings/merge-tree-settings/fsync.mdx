@@ -15,8 +15,9 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## fsync_after_insert {#fsync_after_insert}
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Do fsync for every inserted part. Significantly decreases performance of
-inserts, not recommended to use with wide parts.
+Do fsync for every inserted part, so the data is durable when the `INSERT` query
+is acknowledged. Decreases performance of inserts, especially with wide parts.
+See also `group_fsync_before_insert_finish`.
 
 ## fsync_part_directory {#fsync_part_directory}
 <SettingsInfoBlock type="Bool" default_value="0" />
