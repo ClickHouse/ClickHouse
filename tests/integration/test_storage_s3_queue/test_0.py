@@ -2568,6 +2568,52 @@ def test_explicit_version_in_the_url_moves_the_selected_version(started_cluster,
     assert node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst") == "1\t2\t3\n"
 
 
+def test_explicit_version_longer_than_the_latest_is_read_whole(started_cluster):
+    """The read of a version selected by the URL is bounded by that version's size, not the listed latest one's,
+    otherwise only a prefix is ingested and `delete` then removes the selected version with its unread rows."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"explicit_version_size_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    selected_version = client.put_object(Bucket=bucket, Key=source_key, Body=b"1,2,3\n7,8,9\n")["VersionId"]
+    latest_version = client.put_object(Bucket=bucket, Key=source_key, Body=b"4,5,6\n")["VersionId"]
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId={selected_version}"
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (column1 UInt32, column2 UInt32, column3 UInt32)
+        ENGINE = S3Queue('{url}', '{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', CSV)
+        SETTINGS mode = 'unordered', after_processing = 'delete', keeper_path = '/clickhouse/test_{table_name}',
+            s3queue_loading_retries = 0
+        """
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    # The selected version was deleted; the latest one stays the object.
+    wait_until(
+        lambda: {
+            version["VersionId"]
+            for version in client.list_object_versions(Bucket=bucket, Prefix=source_key).get("Versions", [])
+        }
+        == {latest_version}
+    )
+    assert (
+        node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY column1")
+        == "1\t2\t3\n7\t8\t9\n"
+    )
+
+
 @pytest.mark.parametrize("after_processing", ["move", "delete"])
 def test_same_byte_reupload_between_listing_and_read(started_cluster, after_processing):
     """The listing has no versions, so the read is pinned by `ETag` only. A same-byte re-upload

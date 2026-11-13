@@ -727,6 +727,20 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             continue;
         }
 
+#if USE_AWS_S3
+        /// The listing describes the latest version, so a version selected by the URL takes its size and `ETag` from a `HEAD`.
+        if (object_storage->getType() == ObjectStorageType::S3)
+        {
+            const auto & s3_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
+            const auto & selected_version_id = s3_storage.getURI().version_id;
+            if (!selected_version_id.empty())
+            {
+                if (auto selected = s3_storage.tryGetObjectVersionMetadata(object_info->getPath(), selected_version_id, /*with_tags=*/false))
+                    object_info->relative_path_with_metadata.metadata = std::move(selected);
+            }
+        }
+#endif
+
         /// `MOVE` and `DELETE` act on the ingested generation, so the read is pinned to the listed one before it is opened.
         /// A file without a listed generation, or not pinned for its batch's action, is still returned and failed by the source.
         if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), metadata->getTableMetadata().after_processing.load()))
