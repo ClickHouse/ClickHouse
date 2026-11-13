@@ -314,6 +314,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
+    ONCE(iceberg_truncate_lose_metadata_write_response) \
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     PAUSEABLE_ONCE(hudi_pause_after_listing_timeline) \

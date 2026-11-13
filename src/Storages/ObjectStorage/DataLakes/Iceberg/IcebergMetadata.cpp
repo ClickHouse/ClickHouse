@@ -91,6 +91,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -130,6 +131,11 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_truncate_lose_metadata_write_response[];
 }
 
 namespace Setting
@@ -888,9 +894,8 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
                 if (remove_objects)
                 {
                     object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-                    // Only remove metadata file if this session actually wrote it.
-                    // On version conflict, writeMetadataFileAndVersionHint returns false
-                    // without writing — storage_metadata_name belongs to another concurrent writer.
+                    // Only remove the metadata file if this session is known to have written it. When the
+                    // metadata write reports a failure, storage_metadata_name may belong to another writer.
                     if (metadata_was_written)
                         object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
                 }
@@ -902,9 +907,10 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             }
         };
 
-        // Set true only while the catalog commit is in flight. If an exception escapes with this
-        // still set, the commit result is unknown (the catalog may have applied it despite the
-        // error), so the written artifacts must be preserved rather than deleted.
+        // Set true only while a commit point is in flight: the metadata file PUT or the catalog commit.
+        // If an exception escapes with this still set, the commit result is unknown (the metadata file
+        // may have landed, or the catalog may have applied it, despite the error), so the written
+        // artifacts must be preserved rather than deleted.
         bool commit_result_unknown = false;
         try
         {
@@ -923,21 +929,71 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             {
                 String metadata_content = dumpMetadataObjectToString(metadata_object);
                 auto hint_path = filename_generator.generateVersionHint();
-                if (!writeMetadataFileAndVersionHint(
+                const bool use_version_hint = (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint];
+
+                // Without a transactional catalog, the conditional PUT of the metadata file is the commit
+                // point. From here until its outcome is known, a failure does not prove that the snapshot
+                // is not live, so an escaping exception must preserve the written artifacts.
+                commit_result_unknown = true;
+                bool metadata_file_written = writeMetadataFileAndVersionHint(
+                    persistent_components.path_resolver,
+                    metadata_info,
+                    metadata_content,
+                    hint_path,
+                    object_storage,
+                    context,
+                    use_version_hint);
+                fiu_do_on(FailPoints::iceberg_truncate_lose_metadata_write_response, { metadata_file_written = false; });
+
+                if (!metadata_file_written)
+                {
+                    // `false` is either a lost version race or an unknown outcome: the PUT may have been
+                    // applied with its response lost. Our snapshot id is random, so the file at this
+                    // version tells whose commit it is.
+                    if (!object_storage->exists(StoredObject(storage_metadata_name)))
+                    {
+                        // Nothing has landed. Keep the empty manifest list in case a delayed PUT still
+                        // lands; otherwise orphan-file cleanup reclaims it.
+                        cleanup(/* metadata_was_written */ false, /* remove_objects */ false);
+                        continue;
+                    }
+
+                    const auto landed_metadata = getMetadataJSONObject(
+                        storage_metadata_name,
+                        object_storage,
+                        /* metadata_cache */ nullptr,
+                        context,
+                        log,
+                        metadata_info.compression_method,
+                        persistent_components.table_uuid);
+                    const Int64 our_snapshot_id = result.snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                    const bool landed_metadata_is_ours = landed_metadata->has(Iceberg::f_current_snapshot_id)
+                        && !landed_metadata->isNull(Iceberg::f_current_snapshot_id)
+                        && landed_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id) == our_snapshot_id;
+
+                    if (!landed_metadata_is_ours)
+                    {
+                        // Proven conflict: another writer owns this version and nothing references our
+                        // manifest list. Discard our artifacts and retry against freshly-read state.
+                        commit_result_unknown = false;
+                        cleanup(/* metadata_was_written */ false);
+                        continue;
+                    }
+
+                    // Our metadata file landed although the write reported a failure, so the truncate is
+                    // committed. Finish the version hint update that was skipped after the failure.
+                    LOG_INFO(log, "Metadata file {} was written by this truncate despite the reported failure", storage_metadata_name);
+                    (void)tryWriteVersionHintFile(
                         persistent_components.path_resolver,
                         metadata_info,
-                        metadata_content,
                         hint_path,
                         object_storage,
                         context,
-                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
-                {
-                    // Lost the version race: another writer already committed this metadata
-                    // version. Discard our artifacts and retry against freshly-read state.
-                    cleanup(false);
-                    continue;
+                        /* create */ use_version_hint,
+                        /* assert_version_exactly */ false);
                 }
 
+                commit_result_unknown = false;
                 metadata_written = true;
             }
 
@@ -964,10 +1020,11 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
         }
         catch (...)
         {
-            // If the commit was in flight when this threw, we cannot prove it failed — the catalog
-            // may already point at our snapshot. Fail closed: keep the objects (a leaked empty
-            // manifest list is reclaimed by standard Iceberg orphan-file GC) and drop only the
-            // local cache. Otherwise (pre-commit error or proven conflict) delete the artifacts.
+            // If a commit point was in flight when this threw, we cannot prove it failed — our
+            // metadata file may have landed, or the catalog may already point at our snapshot. Fail
+            // closed: keep the objects (a leaked empty manifest list is reclaimed by standard Iceberg
+            // orphan-file GC) and drop only the local cache. Otherwise (pre-commit error or proven
+            // conflict) delete the artifacts.
             cleanup(metadata_written, /*remove_objects=*/!commit_result_unknown);
             throw;
         }
