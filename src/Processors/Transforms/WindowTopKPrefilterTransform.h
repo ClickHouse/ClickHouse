@@ -18,8 +18,8 @@ namespace DB
   * keeps every row of its partition ranked ahead of it, so the kept rows' ranks are exact.
   *
   * The argument uses only "rows of this partition this instance has already seen", and a chunk is such a
-  * subset just as much as a whole stream is: no state survives `transform`, and the transform may run per
-  * stream before the scatter with no exchange, each stream forwarding a superset of what the filter keeps.
+  * subset just as much as a whole stream is: no partition state survives `transform`, and the transform may run
+  * per stream before the scatter with no exchange, each stream forwarding a superset of what the filter keeps.
   */
 class WindowTopKPrefilterTransform final : public ISimpleTransform
 {
@@ -47,6 +47,10 @@ private:
     UInt64 observed_rows = 0;
     UInt64 skipped_rows = 0;
     bool frozen = false;
+
+    /// Chunks forwarded unexamined after a chunk was given up early, and the next such interval.
+    UInt64 chunks_to_skip = 0;
+    UInt64 skip_interval = 0;
 
     IColumnFilter filter;
 };

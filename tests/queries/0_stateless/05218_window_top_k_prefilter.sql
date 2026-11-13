@@ -261,6 +261,40 @@ SELECT '37b the sort really is a FinishSorting', count() FROM (EXPLAIN actions=1
 SELECT '37c control, ordering not reused', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk <= 3 SETTINGS enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk <= 3 ORDER BY p, o, rk SETTINGS enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 1;
 
+SELECT '-- 39 thousands of one-row partitions next to one large partition: the large one keeps being pruned,';
+SELECT '--     whether it is interleaved with them (39) or follows them (39b). In 39c two chunks of them are given up,';
+SELECT '--     the backoff skips the third and the last two are pruned. Pinned like case 32.';
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM (SELECT number % 2 = 0 ? 0 : number AS p, 20000 - number AS o FROM numbers(20000))) WHERE rk <= 10
+SETTINGS max_threads = 1, max_block_size = 8192, log_processors_profiles = 1, log_queries = 1, log_comment = '05218_window_top_k_prefilter_skew';
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SELECT '39 rows dropped', sum(output_rows) < sum(input_rows) FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND log_comment = '05218_window_top_k_prefilter_skew' AND type = 'QueryFinish'
+);
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM (SELECT number < 1000 ? number + 1 : 0 AS p, 20000 - number AS o FROM numbers(20000))) WHERE rk <= 10
+SETTINGS max_threads = 1, max_block_size = 8192, log_processors_profiles = 1, log_queries = 1, log_comment = '05218_window_top_k_prefilter_skew_prefix';
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SELECT '39b rows dropped', sum(output_rows) < sum(input_rows) FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND log_comment = '05218_window_top_k_prefilter_skew_prefix' AND type = 'QueryFinish'
+);
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM (SELECT number < 16384 ? number + 1 : 0 AS p, 40000 - number AS o FROM numbers(40000))) WHERE rk <= 10
+SETTINGS max_threads = 1, max_block_size = 8192, log_processors_profiles = 1, log_queries = 1, log_comment = '05218_window_top_k_prefilter_skew_retry';
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SELECT '39c rows in and out', sum(input_rows), sum(output_rows) FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND log_comment = '05218_window_top_k_prefilter_skew_retry' AND type = 'QueryFinish'
+);
+
 DROP TABLE t_wtkp_ord;
 DROP TABLE t_wtkp_var;
 DROP TABLE t_wtkp_ip;

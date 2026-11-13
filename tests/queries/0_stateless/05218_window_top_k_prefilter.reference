@@ -331,3 +331,12 @@ nan	nan	2
 3	6	1
 3	6	1
 3	6	1
+-- 39 thousands of one-row partitions next to one large partition: the large one keeps being pruned,
+--     whether it is interleaved with them (39) or follows them (39b). In 39c two chunks of them are given up,
+--     the backoff skips the third and the last two are pruned. Pinned like case 32.
+10010
+39 rows dropped	1
+1010
+39b rows dropped	1
+16394
+39c rows in and out	40000	24596
