@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 
 namespace DB::ErrorCodes
@@ -260,6 +261,45 @@ size_t countThreads()
     while (const dirent * entry = ::readdir(dir)) /// NOLINT(concurrency-mt-unsafe): the directory stream is not shared.
         if (entry->d_name[0] != '.')
             ++threads;
+    return threads;
+}
+
+/// The threads of the process with their names, for a message.
+std::vector<std::string> describeThreads()
+{
+    std::vector<std::string> threads;
+    std::error_code error;
+    for (const auto & entry : fs::directory_iterator("/proc/self/task", error))
+    {
+        std::string name;
+        try
+        {
+            name = readFile(entry.path() / "comm");
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch): the thread is gone by now.
+        {
+        }
+        if (name.ends_with('\n'))
+            name.pop_back();
+        threads.push_back(fmt::format("{} ({})", entry.path().filename().string(), name.empty() ? "exited" : name));
+    }
+    return threads;
+}
+
+/// Waits until the process has at most `max_threads` threads and returns their number, or the number of threads if
+/// it has more after a second. A thread that was just joined is not gone yet: `pthread_join` returns when the kernel
+/// clears the ID of the thread at the start of its exit, and the thread stays in `/proc/self/task` and in the thread
+/// group, which `unshare` of a user namespace refuses, until it finishes exiting. There is no notification of that,
+/// and with a single CPU, as in a container limited to one, it finishes only when this thread lets it run.
+size_t waitForSingleThread(size_t max_threads)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    size_t threads = countThreads();
+    while (threads > max_threads && std::chrono::steady_clock::now() < deadline)
+    {
+        ::sched_yield();
+        threads = countThreads();
+    }
     return threads;
 }
 
@@ -966,10 +1006,11 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 #else
     constexpr size_t max_threads = 1;
 #endif
-    if (const size_t threads = countThreads(); threads > max_threads)
+    if (const size_t threads = waitForSingleThread(max_threads); threads > max_threads)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "The filesystem must be isolated when the process has a single thread, but it has {}", threads);
+            "The filesystem must be isolated when the process has a single thread, but it has {}: {}", threads,
+            fmt::join(describeThreads(), ", "));
 
     checkNoOpenDirectories();
 
