@@ -182,7 +182,7 @@ Depending on the service type, you will need to provide different details. Speci
 
 - Webhook URL
 - Webhook headers (optional)
-- Webhook body (optional). The body currently supports the template variables `{{title}}`, `{{body}}`, and `{{link}}`.
+- Webhook body (optional). The body is a Handlebars template. Besides `{{title}}`, `{{body}}` and `{{link}}`, it can use variables that describe the alert and the firing, such as `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` and `{{groupKey}}`. See [Alert webhook template variables](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md) for the full list.
 
 ## Managing alerts {#managing-alerts}
 

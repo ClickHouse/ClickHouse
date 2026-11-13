@@ -172,7 +172,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
     if (format_settings.tsv.empty_as_default && is_empty_field)
     {
-        column.insertDefault();
+        type->insertDefaultInto(column);
         return false;
     }
 

@@ -350,6 +350,9 @@ add_contrib (librtcx-cmake librtcx)
 add_contrib (nvcomp-cmake)
 add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
 
+# Must come after every member of the Rust workspace.
+add_contrib (rust-contrib-workspace)
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,

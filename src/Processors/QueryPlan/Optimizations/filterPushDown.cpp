@@ -879,6 +879,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         && !isSensitiveToEvaluationCount(filter->getExpression())
         && filterResultForNotMatchedRows(filter->getExpression(), filter->getFilterColumnName(), Block{}) == FilterResult::FALSE;
 
+    const JoinKind join_kind = logical_join ? logical_join->getJoinOperator().kind : table_join_ptr->kind();
+    const JoinStrictness join_strictness = logical_join ? logical_join->getJoinOperator().strictness : table_join_ptr->strictness();
+    const bool left_stream_only_matched = join_kind == JoinKind::Right && join_strictness != JoinStrictness::Semi;
+    const bool right_stream_only_matched = join_kind == JoinKind::Left && join_strictness != JoinStrictness::Semi;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -890,6 +895,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
         cross_type_equivalent_columns,
+        left_stream_only_matched,
+        right_stream_only_matched,
         filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
@@ -1250,6 +1257,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
+            /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
+            if (std::ranges::any_of(grouping_sets, [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); }))
+                return 0;
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
         }
