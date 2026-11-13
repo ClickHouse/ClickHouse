@@ -3,4 +3,4 @@ default user: reattached
 user without TABLE ENGINE: not reattached
 user with TABLE ENGINE: reattached
 transactions	[1]
-implicit transaction	[1,3]
+implicit transaction	1

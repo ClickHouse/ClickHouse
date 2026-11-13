@@ -73,7 +73,9 @@ $CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --asyn
     SELECT 'transactions', groupArray(x) FROM mt;
 "
 
+# Only check that the queries finish: the visibility of the data inserted in an implicit transaction depends on the table engine
+# (e.g. it differs for `SharedMergeTree`).
 $CLICKHOUSE_CLIENT --reattach_tables_before_query_execution_probability 1 --async_insert 0 --enable_parallel_replicas 0 --implicit_transaction 1 --max_execution_time 60 -q "
     INSERT INTO mt VALUES (3);
-    SELECT 'implicit transaction', groupArray(x) FROM (SELECT x FROM mt ORDER BY x);
+    SELECT 'implicit transaction', count() > 0 FROM mt;
 "
