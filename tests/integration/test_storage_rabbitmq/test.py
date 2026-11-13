@@ -4175,9 +4175,10 @@ def test_rabbitmq_insert_into_missing_exchange(rabbitmq_cluster, db, unique):
         assert f"no exchange '{unique}_{table}'" in error, error
 
 
-def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique):
+@pytest.mark.parametrize("async_insert", [0, 1])
+def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
     # The queue rejects every message, so the producer republishes until the query is killed.
-    exchange = f"{unique}_full"
+    exchange = f"{unique}_full_{async_insert}"
     credentials = pika.PlainCredentials("root", "clickhouse")
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
@@ -4207,19 +4208,29 @@ def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique):
     )
 
     query_id = f"{unique}_{uuid.uuid4().hex}"
+    # An asynchronous insert is published by its flush, a query of its own.
+    if async_insert:
+        producing_query = f"query_kind = 'AsyncInsertFlush' AND query LIKE '%{db}.rabbitmq%'"
+    else:
+        producing_query = f"query_id = '{query_id}'"
     errors = []
     insert = threading.Thread(
         target=lambda: errors.append(
-            instance.query_and_get_error(f"INSERT INTO {db}.rabbitmq VALUES (1)", query_id=query_id, timeout=120)
+            instance.query_and_get_error(
+                f"INSERT INTO {db}.rabbitmq VALUES (1)",
+                query_id=query_id,
+                settings={"async_insert": async_insert},
+                timeout=120,
+            )
         ),
         daemon=True,
     )
     insert.start()
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while instance.query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'").strip() == "0":
-        assert time.monotonic() < deadline, "the INSERT did not start"
+    while instance.query(f"SELECT count() FROM system.processes WHERE {producing_query}").strip() == "0":
+        assert time.monotonic() < deadline, "the INSERT did not start publishing"
         time.sleep(0.1)
-    instance.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC", timeout=30)
+    instance.query(f"KILL QUERY WHERE {producing_query} SYNC", timeout=30)
     insert.join(timeout=30)
     assert errors and "QUERY_WAS_CANCELLED" in errors[0], errors
 
