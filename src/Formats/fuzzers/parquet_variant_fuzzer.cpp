@@ -389,7 +389,7 @@ Encoded encode(const IColumn & column, const DataTypePtr & type, bool mark_nulls
     Encoded result;
     PaddedPODArray<UInt8> null_map;
     Parquet::encodeVariantColumn(
-        column, type, "v", /*escape_dots_in_json_keys=*/false, DBMS_DEFAULT_MAX_PARSER_DEPTH, assert_cast<ColumnString &>(*result.metadata), assert_cast<ColumnString &>(*result.value),
+        column, type, "v", Parquet::VariantSettings{}, assert_cast<ColumnString &>(*result.metadata), assert_cast<ColumnString &>(*result.value),
         mark_nulls ? &null_map : nullptr);
     return result;
 }
@@ -397,7 +397,7 @@ Encoded encode(const IColumn & column, const DataTypePtr & type, bool mark_nulls
 MutableColumnPtr decode(const Encoded & encoded, const DataTypePtr & type)
 {
     auto column = type->createColumn();
-    Parquet::decodeVariantColumn(*encoded.metadata, *encoded.value, *column, type, "v", encoded.value->size(), FormatSettings{});
+    Parquet::decodeVariantColumn(*encoded.metadata, *encoded.value, *column, type, "v", encoded.value->size(), Parquet::VariantSettings{});
     return column;
 }
 

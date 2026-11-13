@@ -969,7 +969,7 @@ void prepareColumnVariant(
     auto value = ColumnString::create();
     NullMap null_map;
     encodeVariantColumn(
-        *column, type, name, options.json_type_escape_dots_in_keys, options.max_variant_json_depth, *metadata, *value,
+        *column, type, name, options.variant_settings, *metadata, *value,
         required ? nullptr : &null_map);
 
     auto & variant_schema = schemas.emplace_back();

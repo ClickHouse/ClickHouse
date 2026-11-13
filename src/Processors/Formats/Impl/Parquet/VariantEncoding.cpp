@@ -932,11 +932,13 @@ struct JSONNode
     std::optional<String> value;
 };
 
-class VariantEncoder
+}
+
+class VariantValueEncoder::Impl
 {
 public:
-    VariantEncoder(const String & column_name_, bool escape_dots_in_json_keys_, size_t max_json_depth_)
-        : column_name(column_name_), escape_dots_in_json_keys(escape_dots_in_json_keys_), max_json_depth(max_json_depth_)
+    Impl(String column_name_, const VariantSettings & settings_)
+        : column_name(std::move(column_name_)), settings(settings_)
     {
     }
 
@@ -1294,12 +1296,12 @@ private:
             if (path_info.column->isNullAt(path_info.row))
                 continue;
 
-            if (max_json_depth != 0
-                && static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= max_json_depth)
+            if (settings.max_depth != 0
+                && static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= settings.max_depth)
                 throw Exception(
                     ErrorCodes::TOO_DEEP_RECURSION,
                     "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is nested deeper than {} levels",
-                    column_name, path_info.path, max_json_depth);
+                    column_name, path_info.path, settings.max_depth);
 
             size_t node = 0;
             size_t begin = 0;
@@ -1309,7 +1311,7 @@ private:
                     throwJSONPathConflict(path_info.path);
                 const size_t end = path_info.path.find('.', begin);
                 String key(path_info.path.substr(begin, end == std::string_view::npos ? end : end - begin));
-                if (escape_dots_in_json_keys)
+                if (settings.escape_dots_in_json_keys)
                     key = unescapeDotInJSONKey(key);
                 const auto [child_it, inserted] = nodes[node].children.try_emplace(std::move(key), nodes.size());
                 const size_t child = child_it->second;
@@ -1362,24 +1364,41 @@ private:
             column_name, path);
     }
 
-    const String & column_name;
-    const bool escape_dots_in_json_keys;
-    const size_t max_json_depth;
+    const String column_name;
+    const VariantSettings settings;
     UnorderedMapWithMemoryTracking<String, UInt32> key_ids;
     VectorWithMemoryTracking<std::string_view> keys;
 };
 
+VariantSettings::VariantSettings(const FormatSettings & format_settings)
+    : max_depth(format_settings.max_parser_depth)
+    , escape_dots_in_json_keys(format_settings.json.json_type_escape_dots_in_keys)
+    , use_partial_match_to_skip_paths_by_regexp(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
+{
 }
 
-VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const FormatSettings & format_settings)
+VariantValueEncoder::VariantValueEncoder(String column_name_, const VariantSettings & settings_)
+    : impl(std::make_unique<Impl>(std::move(column_name_), settings_))
+{
+}
+
+VariantValueEncoder::~VariantValueEncoder() = default;
+
+void VariantValueEncoder::encode(const IColumn & column, const IDataType & type, size_t row, String & metadata, String & value)
+{
+    impl->reset();
+    impl->encode(column, type, row, value);
+    impl->writeMetadata(metadata);
+}
+
+VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const VariantSettings & settings_)
     : output_type(std::move(output_type_))
     , column_name(std::move(column_name_))
-    , max_depth(format_settings.max_parser_depth)
-    , escape_dots_in_json_keys(format_settings.json.json_type_escape_dots_in_keys)
+    , settings(settings_)
 {
     const DataTypePtr inner_type = removeNullable(output_type);
     if (const auto * object_type = typeid_cast<const DataTypeObject *>(inner_type.get()))
-        filter = std::make_shared<const JSONPathsFilter>(*object_type, format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+        filter = std::make_shared<const JSONPathsFilter>(*object_type, settings.use_partial_match_to_skip_paths_by_regexp);
     else
         chassert(isDynamic(inner_type));
 }
@@ -1387,7 +1406,8 @@ VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column
 void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_view value_blob, IColumn & output) const
 {
     const Metadata parsed_metadata = parseMetadata(metadata_blob);
-    const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_depth, .escape_dots_in_json_keys = escape_dots_in_json_keys};
+    const DecodeContext context{
+        .metadata = parsed_metadata, .max_depth = settings.max_depth, .escape_dots_in_json_keys = settings.escape_dots_in_json_keys};
 
     /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
     /// null) go through `output.insertDefault()`, which inserts NULL into a nullable column.
@@ -1430,7 +1450,7 @@ void decodeVariantColumn(
     const DataTypePtr & output_type,
     const String & column_name,
     size_t num_rows,
-    const FormatSettings & format_settings)
+    const VariantSettings & settings)
 {
     const NullMap * metadata_nulls = nullptr;
     const ColumnString & metadata_strings = unwrapLeaf(metadata, metadata_nulls);
@@ -1438,7 +1458,7 @@ void decodeVariantColumn(
     const NullMap * value_nulls = nullptr;
     const ColumnString & value_strings = unwrapLeaf(value, value_nulls);
 
-    const VariantValueDecoder decoder(output_type, column_name, format_settings);
+    const VariantValueDecoder decoder(output_type, column_name, settings);
 
     for (size_t row = 0; row < num_rows; ++row)
     {
@@ -1471,8 +1491,7 @@ void encodeVariantColumn(
     const IColumn & column,
     const DataTypePtr & type,
     const String & column_name,
-    bool escape_dots_in_json_keys,
-    size_t max_json_depth,
+    const VariantSettings & settings,
     ColumnString & metadata,
     ColumnString & value,
     PaddedPODArray<UInt8> * null_map)
@@ -1484,7 +1503,7 @@ void encodeVariantColumn(
     metadata.reserve(num_rows);
     value.reserve(num_rows);
 
-    VariantEncoder encoder(column_name, escape_dots_in_json_keys, max_json_depth);
+    VariantValueEncoder encoder(column_name, settings);
     String metadata_blob;
     String value_blob;
     for (size_t row = 0; row < num_rows; ++row)
@@ -1497,11 +1516,9 @@ void encodeVariantColumn(
             continue;
         }
 
-        encoder.reset();
         metadata_blob.clear();
         value_blob.clear();
-        encoder.encode(column, *type, row, value_blob);
-        encoder.writeMetadata(metadata_blob);
+        encoder.encode(column, *type, row, metadata_blob, value_blob);
         metadata.insertData(metadata_blob.data(), metadata_blob.size());
         value.insertData(value_blob.data(), value_blob.size());
     }

@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
@@ -30,8 +31,7 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
-    bool json_type_escape_dots_in_keys = false;
-    size_t max_variant_json_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    VariantSettings variant_settings;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
