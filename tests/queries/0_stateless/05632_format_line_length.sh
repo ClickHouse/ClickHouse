@@ -61,6 +61,13 @@ $CLICKHOUSE_FORMAT --line_length 24 --query "SELECT concat('spaces inside a very
 echo 'Unicode width'
 $CLICKHOUSE_FORMAT --line_length 24 --query "SELECT concat('你好', '世界', '🙂', 'é')"
 
+echo 'Unicode boundary widths'
+# 33 display columns, 45 UTF-8 bytes, 21 code points.
+query="SELECT '乌龟走着走着，找到了辣椒'"
+for width in 36 33 32; do
+    $CLICKHOUSE_FORMAT --line_length "$width" --query "$query"
+done
+
 echo 'Nested literals'
 $CLICKHOUSE_FORMAT --line_length 40 --query 'SELECT [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], tuple(tuple(), tuple(1), tuple(1, tuple(2, 3)))'
 

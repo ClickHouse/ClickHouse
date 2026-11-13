@@ -37,6 +37,7 @@ bool fitsLineLength(std::string_view query, size_t line_length)
 
 struct FlatWidth
 {
+    /// Tabs advance to multiples of eight columns, so width depends on the starting column modulo eight.
     std::array<size_t, 8> columns{};
     bool multiline = false;
 
@@ -86,6 +87,7 @@ struct FormattingEvent
     size_t group;
     size_t indent = 0;
     size_t length = 0;
+    /// Optional breaks check the following fragment instead of inheriting the group's layout.
     bool optional = false;
 };
 
@@ -101,6 +103,7 @@ public:
 
     WriteBuffer & out;
     std::vector<FormattingGroup> groups;
+    /// Events have nondecreasing byte offsets in `out`; groups open and close in stack order.
     std::vector<FormattingEvent> events;
     size_t current_group = no_group;
     size_t open_groups = 0;
@@ -120,6 +123,7 @@ public:
         size_t group = no_group;
         for (const auto & event : events)
         {
+            chassert(cursor <= event.offset && event.offset <= query.size());
             if (group != no_group)
                 groups[group].width.append(query.substr(cursor, event.offset - cursor));
             cursor = event.offset;
@@ -133,6 +137,7 @@ public:
             }
         }
 
+        /// Include text after each group up to the next break or newline, such as closing brackets and commas.
         FlatWidth suffix;
         cursor = query.size();
         for (auto it = events.rbegin(); it != events.rend(); ++it)
@@ -264,6 +269,7 @@ void ASTFormattingGroup::finish() noexcept
     if (!formatting)
         return;
 
+    chassert(formatting->current_group == index);
     formatting->events.push_back({FormattingEvent::Close, formatting->out.count(), index});
     formatting->current_group = formatting->groups[index].parent;
     --formatting->open_groups;

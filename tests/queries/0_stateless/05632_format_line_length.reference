@@ -83,6 +83,11 @@ SELECT
         '🙂',
         'é'
     )
+Unicode boundary widths
+SELECT '乌龟走着走着，找到了辣椒'
+SELECT '乌龟走着走着，找到了辣椒'
+SELECT
+    '乌龟走着走着，找到了辣椒'
 Nested literals
 SELECT
     [
