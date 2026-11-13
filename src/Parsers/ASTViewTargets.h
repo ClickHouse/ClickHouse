@@ -86,6 +86,9 @@ class ASTViewTargets : public IAST
 public:
     std::vector<ViewTarget> targets;
 
+    /// Set by the parser when a target table path was folded (`db.ns.t` into `db`, `ns.t`); not formatted, not hashed, not in JSON.
+    bool has_folded_table_path = false;
+
     /// Manipulates AST of the target table which has query parameters in its definition.
     /// Passing nullptr to setTableASTWithQueryParams removes that AST.
     void setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr new_table_ast);

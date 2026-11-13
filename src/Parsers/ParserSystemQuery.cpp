@@ -72,7 +72,7 @@ namespace ErrorCodes
     }
 
     if (!parsed_table)
-        parsed_table = parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
+        parsed_table = parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path);
 
     if (!parsed_table && require_table)
         return false;
@@ -204,7 +204,7 @@ enum class SystemQueryTargetType : uint8_t
         }
         else if (!database && ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
         {
-            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
+            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path);
         }
         else if (ParserKeyword{Keyword::ZKPATH}.ignore(pos, expected))
         {
@@ -464,7 +464,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
-            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path))
                 return false;
             if (res->type == Type::SYNC_REPLICA)
             {
@@ -637,7 +637,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->storage_policy = storage_policy_str;
             res->volume = volume_str;
             if (res->volume.empty() && res->storage_policy.empty())
-                parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
+                parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path);
             break;
         }
 
@@ -662,14 +662,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::SYNC_MERGES:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
-            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
+            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path);
             break;
 
         case Type::SCHEDULE_MERGE:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
-            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path))
                 return false;
             if (!ParserKeyword{Keyword::PARTS}.ignore(pos, expected))
                 return false;
@@ -697,7 +697,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::PAUSE:
         case Type::CANCEL:
         case Type::REFRESH:
-            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path))
                 return false;
             break;
 
@@ -714,7 +714,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::TEST_VIEW:
         {
-            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table, res->table_is_folded_path))
                 return false;
 
             if (ParserKeyword{Keyword::UNSET_FAKE_TIME}.ignore(pos, expected))

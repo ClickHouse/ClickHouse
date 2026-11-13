@@ -57,7 +57,7 @@ bool ParserHypotheticalObjectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
         if (!s_on.ignore(pos, expected))
             return false;
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table, query->table_is_folded_path))
             return false;
 
         query->object_name = object_name;
@@ -126,7 +126,7 @@ bool ParserHypotheticalObjectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
         if (!s_on.ignore(pos, expected))
             return false;
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table, query->table_is_folded_path))
             return false;
 
         query->object_name = object_name;

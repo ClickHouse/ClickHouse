@@ -31,7 +31,7 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_update.ignore(pos, expected))
         return false;
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table, query->table_is_folded_path))
         return false;
 
     if (s_on.ignore(pos, expected))

@@ -1256,7 +1256,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table, query->table_is_folded_path))
             return false;
 
         String cluster_str;

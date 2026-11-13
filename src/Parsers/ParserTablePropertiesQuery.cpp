@@ -25,6 +25,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     ASTPtr database;
     ASTPtr table;
+    bool table_is_folded_path = false;
     boost::intrusive_ptr<ASTQueryWithTableAndOutput> query;
 
     bool parse_only_database_name = false;
@@ -117,12 +118,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         query->setIsTemporary(temporary);
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table, table_is_folded_path))
             return false;
     }
 
     query->database = database;
     query->table = table;
+    query->table_is_folded_path = table_is_folded_path;
 
     if (database)
         query->children.push_back(database);

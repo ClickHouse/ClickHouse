@@ -591,6 +591,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             for (size_t i = 2; i < parts.size(); ++i)
                 table_name += "." + parts[i];
             node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(table_name), std::move(params));
+            node->as<ASTTableIdentifier>()->is_folded_path = true;
         }
         else if (parts.size() == 1)
             node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));

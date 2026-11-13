@@ -31,7 +31,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (!(ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected)))
         return false;
-    if (!parseTableNameWithOptionalFromDatabase(pos, expected, query->database, query->table))
+    if (!parseTableNameWithOptionalFromDatabase(pos, expected, query->database, query->table, query->table_is_folded_path))
         return false;
 
     if (ParserKeyword(Keyword::NOT).ignore(pos, expected))

@@ -477,6 +477,7 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;
+    is_folded_path = false;
 }
 
 void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

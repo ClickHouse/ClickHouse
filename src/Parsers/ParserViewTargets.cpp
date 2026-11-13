@@ -92,6 +92,8 @@ namespace
                 auto table_id = ast->as<ASTTableIdentifier>()->getTableId();
                 if (!res)
                     res = make_intrusive<ASTViewTargets>();
+                if (ast->as<ASTTableIdentifier>()->is_folded_path)
+                    res->has_folded_table_path = true;
                 res->setTableID(kind, table_id);
                 return true;
             }

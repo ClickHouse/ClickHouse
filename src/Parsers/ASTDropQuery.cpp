@@ -374,6 +374,7 @@ ASTs ASTDropQuery::getRewrittenASTsOfSingleTable(ASTPtr self) const
 
         query.database = database_and_table->getDatabase();
         query.table = database_and_table->getTable();
+        query.table_is_folded_path = database_and_table->is_folded_path;
 
         if (query.database)
             query.children.push_back(query.database);

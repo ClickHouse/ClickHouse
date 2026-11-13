@@ -42,7 +42,7 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
     return true;
 }
 
-bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database, ASTPtr & table)
+bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database, ASTPtr & table, bool & is_folded_path)
 {
     ASTPtr table_identifier;
     if (!ParserCompoundIdentifier({.table_name = true, .allow_query_parameter = true}).parse(pos, table_identifier, expected))
@@ -50,17 +50,19 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
     const auto & identifier = table_identifier->as<ASTTableIdentifier &>();
     database = identifier.getDatabase();
     table = identifier.getTable();
+    is_folded_path = identifier.is_folded_path;
     return true;
 }
 
 
-bool parseTableNameWithOptionalFromDatabase(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
+bool parseTableNameWithOptionalFromDatabase(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str, bool & is_folded_path)
 {
     ASTPtr table_identifier;
     if (!ParserCompoundIdentifier({.table_name = true}).parse(pos, table_identifier, expected))
         return false;
     const auto & identifier = table_identifier->as<ASTTableIdentifier &>();
     table_str = identifier.shortName();
+    is_folded_path = identifier.is_folded_path;
     if (identifier.compound())
     {
         database_str = identifier.getDatabaseName();

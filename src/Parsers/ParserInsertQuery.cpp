@@ -74,6 +74,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// They will be used to initialize ASTInsertQuery's fields.
     ASTPtr database;
     ASTPtr table;
+    bool table_is_folded_path = false;
     ASTPtr infile;
     ASTPtr columns;
     ASTPtr format;
@@ -122,7 +123,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table, table_is_folded_path))
             return false;
     }
 
@@ -356,6 +357,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         query->database = database;
         query->table = table;
+        query->table_is_folded_path = table_is_folded_path;
 
         if (database)
             query->children.push_back(database);

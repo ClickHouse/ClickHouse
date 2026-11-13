@@ -40,6 +40,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     ASTPtr database;
     ASTPtr table;
+    bool table_is_folded_path = false;
     ASTPtr partition;
     ASTPtr parts_list;
     bool dry_run = false;
@@ -52,7 +53,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!s_optimize_table.ignore(pos, expected))
         return false;
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table, table_is_folded_path))
         return false;
 
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -113,6 +114,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->manifest = manifest;
     query->database = database;
     query->table = table;
+    query->table_is_folded_path = table_is_folded_path;
 
     if (database)
         query->children.push_back(database);

@@ -94,6 +94,8 @@ public:
     /// Use this (not `uuid != UUIDHelpers::Nil`) when you need to distinguish "user wrote `UUID '...'`"
     /// from "no UUID clause": explicit `UUID '00000000-0000-0000-0000-000000000000'` parses to `Nil`.
     bool has_uuid = false;
+    /// Set by the parser when `db.ns.t` was folded into (`db`, `ns.t`); not formatted, not hashed, not in JSON.
+    bool is_folded_path = false;
 
     StorageID getTableId() const;
     String getDatabaseName() const;
