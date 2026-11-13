@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Compression/CompressionCodecFSST.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
 
@@ -12,6 +13,17 @@ namespace DB
 
 class Exception;
 class ReadBuffer;
+
+/// An encoded block of the `FSST` codec, see `CompressedReadBufferFromFile::readFSSTBlock`.
+struct FSSTBlock
+{
+    CompressionCodecFSST::EncodedBlock encoded;
+    /// The size of the decoded data of the block.
+    size_t decoded_size = 0;
+    /// The position in the decoded data of the block where reading starts, and the same position in the codes.
+    size_t start_offset = 0;
+    FSST::Cursor start_cursor;
+};
 
 /** Basic functionality for implementation of
   *  CompressedReadBuffer, CompressedReadBufferFromFile and CachedCompressedReadBuffer.
@@ -57,6 +69,12 @@ protected:
     /// This method can change location of `to` to avoid unnecessary copy if data is uncompressed.
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::WorkingBuffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
+
+    /// If the block read by `readCompressedData` is encoded by `FSST`, alone or as the first codec of a chain,
+    /// parses it into `block` without decoding and returns true. For a chain, the other stages are decompressed
+    /// into `buffer`, which then holds the codes. Returns false for any other block, which is to be decompressed as usual.
+    bool tryGetFSSTEncodedBlock(
+        size_t size_decompressed, size_t size_compressed_without_checksum, CompressionCodecFSST::EncodedBlock & block, PODArray<char> & buffer);
 
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;

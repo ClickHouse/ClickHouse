@@ -65,6 +65,17 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
     return writeHeader(dest, body_size, source_size);
 }
 
+UInt32 ICompressionCodec::compressWithValueBoundaries(
+    const char * source, UInt32 source_size, char * dest, std::span<const UInt32> value_boundaries) const
+{
+    chassert(source != nullptr && dest != nullptr);
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
+
+    const UInt32 body_size = doCompressDataWithValueBoundaries(source, source_size, &dest[getHeaderSize()], value_boundaries);
+    return writeHeader(dest, body_size, source_size);
+}
+
 UInt32 ICompressionCodec::writeHeader(char * dest, UInt32 body_size, UInt32 uncompressed_size) const
 {
     const UInt32 block_size = getHeaderSize() + body_size;

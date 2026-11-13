@@ -1,16 +1,18 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBufferWithValueBoundaries.h>
 #include <Compression/ICompressionCodec.h>
 
 
 namespace DB
 {
 
-class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>, public IWriteBufferWithValueBoundaries
 {
 public:
     explicit CompressedWriteBuffer(
@@ -51,6 +53,9 @@ public:
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
+    bool needsValueBoundaries() const override { return codec->needsValueBoundaries(); }
+    void addValueBoundary(size_t offset) override;
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.
@@ -67,6 +72,11 @@ private:
     CompressionCodecPtr uncompressed_codec;
 
     PODArray<char> compressed_buffer;
+
+    /// The boundaries of the values in the working buffer, see `IWriteBufferWithValueBoundaries`.
+    /// The block is compressed with them if any were reported, even if all of them are at its beginning or end.
+    VectorWithMemoryTracking<UInt32> value_boundaries;
+    bool has_value_boundaries = false;
 };
 
 }

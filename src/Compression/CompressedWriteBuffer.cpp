@@ -50,7 +50,11 @@ void CompressedWriteBuffer::nextImpl()
         compressed_ptr = compressed_buffer.data();
     }
 
-    UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, codec_state.get());
+    UInt32 compressed_size = has_value_boundaries
+        ? codec->compressWithValueBoundaries(working_buffer.begin(), decompressed_size, compressed_ptr, value_boundaries)
+        : codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, codec_state.get());
+    value_boundaries.clear();
+    has_value_boundaries = false;
 
     /// The block is stored as is if compression saves less than 1/8 of its size.
     if (uncompressed_codec && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
@@ -67,6 +71,15 @@ void CompressedWriteBuffer::nextImpl()
         out.write(compressed_buffer.data(), compressed_size);
 
     growAdaptiveBufferAfterFlush();
+}
+
+void CompressedWriteBuffer::addValueBoundary(size_t offset)
+{
+    has_value_boundaries = true;
+    /// The beginning and the end of the block are boundaries anyway.
+    if (offset == 0 || offset >= working_buffer.size() || (!value_boundaries.empty() && value_boundaries.back() >= offset))
+        return;
+    value_boundaries.push_back(static_cast<UInt32>(offset));
 }
 
 void CompressedWriteBuffer::finalizeImpl()

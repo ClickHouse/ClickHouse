@@ -2,8 +2,14 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event CompressedReadBufferFSSTBlocksWithoutDecoding;
+}
 
 namespace DB
 {
@@ -24,6 +30,12 @@ bool CompressedReadBufferFromFile::nextImpl()
 {
     try
     {
+        if (has_pending_fsst_block)
+        {
+            decodePendingFSSTBlock();
+            return true;
+        }
+
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
@@ -68,6 +80,108 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 }
 
 
+void CompressedReadBufferFromFile::decodePendingFSSTBlock()
+{
+    chassert(has_pending_fsst_block && working_buffer.empty());
+    has_pending_fsst_block = false;
+
+    const size_t size_decompressed = fsst_block.decoded_size;
+    memory.resize(size_decompressed);
+    working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+
+    const auto & encoded = fsst_block.encoded;
+    FSST::decodeBlock(encoded.table, encoded.codes, encoded.codes_size, working_buffer.begin(), size_decompressed, encoded.error_code);
+
+    /// The data before the position was consumed by the reader of the encoded block and accounted in `bytes`
+    /// by `finishFSSTBlock`, but `next` will account the whole block when it is read to the end.
+    bytes -= fsst_block.start_offset;
+    nextimpl_working_buffer_offset = fsst_block.start_offset;
+}
+
+const FSSTBlock * CompressedReadBufferFromFile::readFSSTBlock()
+{
+    try
+    {
+        if (has_pending_fsst_block)
+        {
+            ProfileEvents::increment(ProfileEvents::CompressedReadBufferFSSTBlocksWithoutDecoding);
+            return &fsst_block;
+        }
+
+        if (pos < working_buffer.end())
+            return nullptr;
+
+        bytes += offset();
+        resetWorkingBuffer();
+        size_compressed = 0;
+
+        size_t size_decompressed = 0;
+        size_t size_compressed_without_checksum = 0;
+        size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+        if (!new_size_compressed)
+            return nullptr;
+
+        size_compressed = new_size_compressed;
+
+        if (nextimpl_working_buffer_offset > size_decompressed)
+            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Required to move position beyond the decompressed block (pos: "
+                "{}, block size: {})", nextimpl_working_buffer_offset, size_decompressed);
+
+        if (tryGetFSSTEncodedBlock(size_decompressed, size_compressed_without_checksum, fsst_block.encoded, fsst_codes_buffer))
+        {
+            fsst_block.decoded_size = size_decompressed;
+            fsst_block.start_offset = nextimpl_working_buffer_offset;
+            fsst_block.start_cursor = {};
+            const auto & encoded = fsst_block.encoded;
+            FSST::skip(encoded.table, encoded.codes, encoded.codes_size, fsst_block.start_cursor, fsst_block.start_offset, encoded.error_code);
+            nextimpl_working_buffer_offset = 0;
+            has_pending_fsst_block = true;
+            ProfileEvents::increment(ProfileEvents::CompressedReadBufferFSSTBlocksWithoutDecoding);
+            return &fsst_block;
+        }
+
+        /// The same as `nextImpl` and `next` do.
+        auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+        memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
+        working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+        decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+        nextimpl_working_buffer_offset = 0;
+        return nullptr;
+    }
+    catch (Exception & e)
+    {
+        addDiagnostics(e);
+        throw;
+    }
+}
+
+void CompressedReadBufferFromFile::finishFSSTBlock(size_t end_offset, const FSST::Cursor & end_cursor)
+{
+    chassert(has_pending_fsst_block && end_offset >= fsst_block.start_offset && end_offset <= fsst_block.decoded_size);
+
+    bytes += end_offset - fsst_block.start_offset;
+    fsst_block.start_offset = end_offset;
+    fsst_block.start_cursor = end_cursor;
+
+    if (end_offset == fsst_block.decoded_size)
+    {
+        /// The block is consumed entirely: the state is the same as after reading a decompressed block to the end.
+        has_pending_fsst_block = false;
+        size_compressed = 0;
+        return;
+    }
+
+    /// The block stays pending until the next read. Its codes may point to the memory of `compressed_in`,
+    /// which may be reused before that, e.g. by `setReadUntilPosition`, so keep a copy of them.
+    const char * codes = reinterpret_cast<const char *>(fsst_block.encoded.codes);
+    if (codes < fsst_codes_buffer.data() || codes >= fsst_codes_buffer.data() + fsst_codes_buffer.size())
+    {
+        fsst_codes_buffer.assign(codes, codes + fsst_block.encoded.codes_size);
+        fsst_block.encoded.codes = reinterpret_cast<const UInt8 *>(fsst_codes_buffer.data());
+    }
+}
+
 void CompressedReadBufferFromFile::prefetch(Priority priority)
 {
     file_in.prefetch(priority);
@@ -77,6 +191,22 @@ void CompressedReadBufferFromFile::prefetch(Priority priority)
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     chassert(size_compressed || working_buffer.empty());
+
+    if (has_pending_fsst_block)
+    {
+        /// The seek is within the pending block: move the position in it.
+        if (offset_in_compressed_file == file_in.getPosition() - size_compressed && offset_in_decompressed_block <= fsst_block.decoded_size)
+        {
+            fsst_block.start_offset = offset_in_decompressed_block;
+            fsst_block.start_cursor = {};
+            const auto & encoded = fsst_block.encoded;
+            FSST::skip(encoded.table, encoded.codes, encoded.codes_size, fsst_block.start_cursor, offset_in_decompressed_block, encoded.error_code);
+            return;
+        }
+
+        has_pending_fsst_block = false;
+        size_compressed = 0;
+    }
 
     /// Nothing to do if we already at required position
     if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
@@ -116,6 +246,9 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
     try
     {
         size_t bytes_read = 0;
+
+        if (has_pending_fsst_block)
+            next();
 
         /// If there are unread bytes in the buffer, then we copy needed to `to`.
         if (pos < working_buffer.end())

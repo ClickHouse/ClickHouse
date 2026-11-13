@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <bit>
 
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeString.h>
@@ -6,6 +7,10 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressionCodecFSST.h>
+#include <Compression/FSST.h>
+#include <IO/WriteBufferWithValueBoundaries.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -17,6 +22,7 @@
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <base/unit.h>
+#include <base/unaligned.h>
 #include <Common/StringValueFilter.h>
 #include <Common/assert_cast.h>
 
@@ -406,6 +412,567 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
     filter.updateStatsOfBulkScan(bulk_values_checked, bulk_values_replaced, bulk_bytes_skipped, bulk_values_checked_individually);
+}
+
+namespace
+{
+
+/** A scan of the codes of an aligned block encoded by `FSST` (`CompressionCodecFSST::Format::ENCODED_ALIGNED`) for the
+  * values that can contain the needles of the `Substring` and `Suffix` conditions of `StringValueFilter`: they must
+  * contain every bigram (pair of adjacent bytes) of the needles, or the byte of a needle of one byte. The gram that occurs
+  * the least in a sample of the codes of the block is chosen for every block. (Checking two grams makes fewer candidates,
+  * but the scan and the bookkeeping of the found codes cost more than decoding the extra candidates.)
+  *
+  * A bigram is either inside a symbol, or consists of the last byte of a symbol and the first byte of the next one,
+  * so every code is mapped to a class: whether its symbol contains the gram, ends with the first byte of the gram,
+  * and starts with the second byte of the gram. The whole block is scanned in one pass,
+  * 8 codes at a time, which has no other dependency between the codes than the class of the previous code, and the found
+  * codes are mapped to the values by the index of the values. Unlike checking the values one by one, there is no work
+  * per value, and the scan is faster than decoding the codes.
+  *
+  * An escaped byte is classified as a symbol of one byte. The escape code is rare, so it is a branch, which does not make
+  * the position of the next code depend on the value of the current one.
+  */
+class FSSTBlockScanner
+{
+public:
+    explicit FSSTBlockScanner(const StringValueFilter & filter)
+    {
+        using Type = StringValueFilter::Condition::Type;
+        for (const auto & condition : filter.getConditions())
+        {
+            if (condition.type != Type::Substring && condition.type != Type::Suffix)
+                continue;
+            const auto & needle = condition.needle;
+            if (needle.size() == 1)
+                addGram({static_cast<UInt8>(needle[0]), 0, false});
+            for (size_t i = 0; i + 1 < needle.size(); ++i)
+                addGram({static_cast<UInt8>(needle[i]), static_cast<UInt8>(needle[i + 1]), true});
+        }
+    }
+
+    bool empty() const { return grams.empty(); }
+
+    /// Chooses the gram that occurs the least in a sample of the codes of the block (from its beginning),
+    /// and builds the classes of the codes for it.
+    void build(const FSST::SymbolTable & table, const UInt8 * codes, size_t codes_size)
+    {
+        /// The masks of all grams: the bigrams that start and end with a byte, and the grams of one byte.
+        std::array<UInt32, 256> first_is{};
+        std::array<UInt32, 256> second_is{};
+        std::array<UInt32, 256> single_is{};
+        for (size_t i = 0; i < grams.size(); ++i)
+        {
+            if (grams[i].is_bigram)
+            {
+                first_is[grams[i].first] |= 1u << i;
+                second_is[grams[i].second] |= 1u << i;
+            }
+            else
+            {
+                single_is[grams[i].first] |= 1u << i;
+            }
+        }
+
+        /// For every code: the grams inside its symbol, that its last byte starts, and that its first byte ends.
+        std::array<GramMasks, 256> code_masks{};
+        for (size_t code = 0; code < table.num_symbols; ++code)
+        {
+            const size_t length = table.lengths[code];
+            GramMasks & masks = code_masks[code];
+            for (size_t i = 0; i < length; ++i)
+            {
+                masks.inside |= single_is[symbolByte(table, code, i)];
+                if (i + 1 < length)
+                    masks.inside |= first_is[symbolByte(table, code, i)] & second_is[symbolByte(table, code, i + 1)];
+            }
+            masks.ends_with_first = first_is[symbolByte(table, code, length - 1)];
+            masks.starts_with_second = second_is[symbolByte(table, code, 0)];
+        }
+        std::array<GramMasks, 256> literal_masks{};
+        for (size_t byte = 0; byte < 256; ++byte)
+            literal_masks[byte] = {single_is[byte], first_is[byte], second_is[byte]};
+
+        /// The number of occurrences of every gram in a sample of the codes.
+        static constexpr size_t SAMPLE_SIZE = 1024;
+        const size_t sample_size = std::min(codes_size, SAMPLE_SIZE);
+        std::array<UInt32, MAX_GRAMS> counts{};
+        UInt32 prev_ends = 0;
+        for (size_t pos = 0; pos + 1 < sample_size; ++pos)
+        {
+            const GramMasks & masks = codes[pos] == FSST::ESCAPE_CODE ? literal_masks[codes[++pos]] : code_masks[codes[pos]];
+            UInt32 found = masks.inside | (prev_ends & masks.starts_with_second);
+            prev_ends = masks.ends_with_first;
+            while (found)
+            {
+                ++counts[std::countr_zero(found)];
+                found &= found - 1;
+            }
+        }
+
+        size_t chosen = 0;
+        for (size_t i = 1; i < grams.size(); ++i)
+            if (counts[i] < counts[chosen])
+                chosen = i;
+
+        const UInt32 bit = 1u << chosen;
+        for (size_t code = 0; code < 256; ++code)
+            classes[code] = classOf(code_masks[code], bit);
+        for (size_t byte = 0; byte < 256; ++byte)
+            literal_classes[byte] = classOf(literal_masks[byte], bit);
+    }
+
+    /// Appends the positions of the codes in `[begin, end)` that can be (the end of) an occurrence of the chosen gram.
+    /// `begin` is a boundary of the values, so a bigram with the previous code is not in the same value.
+    void findCandidateCodes(const CompressionCodecFSST::EncodedBlock & block, size_t begin, size_t end, std::vector<UInt32> & result) const
+    {
+        const UInt8 * codes = block.codes;
+        /// The class of the previous code.
+        UInt64 prev = 0;
+        size_t pos = begin;
+
+        /// One code, or an escaped byte.
+        auto scalar_step = [&]
+        {
+            const size_t code_pos = pos;
+            UInt64 cls;
+            if (codes[pos] == FSST::ESCAPE_CODE)
+            {
+                ++pos;
+                if (pos >= end)
+                    throw Exception(block.error_code, "Cannot decode FSST data: the escape code at the end of the data");
+                cls = literal_classes[codes[pos]];
+            }
+            else
+            {
+                cls = classes[codes[pos]];
+            }
+            ++pos;
+
+            if (foundBits(cls, prev) & 1)
+                result.push_back(static_cast<UInt32>(code_pos));
+            prev = cls;
+        };
+
+        /// 8 codes at once, if none of them is the escape code: their classes are packed into the bytes of a word,
+        /// and the conditions are checked for all of them by a few operations on it.
+        static constexpr UInt64 ONES = 0x0101010101010101ULL;
+        while (end - pos >= 8)
+        {
+            const UInt64 word = unalignedLoadLittleEndian<UInt64>(codes + pos);
+            const UInt64 inverted = ~word;
+            if (unlikely(((inverted - ONES) & word & (ONES << 7)) != 0))
+            {
+                /// There is a byte 0xFF (the escape code): process these codes one by one.
+                const size_t chunk_end = pos + 8;
+                while (pos < chunk_end)
+                    scalar_step();
+                continue;
+            }
+
+            UInt64 packed = 0;
+            for (size_t i = 0; i < 8; ++i)
+                packed |= UInt64(classes[(word >> (8 * i)) & 0xFF]) << (8 * i);
+
+            /// The class of the previous code for every code.
+            const UInt64 prev_packed = (packed << 8) | prev;
+            const UInt64 found = foundBits(packed, prev_packed) & ONES;
+            if (unlikely(found != 0))
+            {
+                for (size_t i = 0; i < 8; ++i)
+                    if ((found >> (8 * i)) & 1)
+                        result.push_back(static_cast<UInt32>(pos + i));
+            }
+
+            prev = packed >> 56;
+            pos += 8;
+        }
+
+        while (pos < end)
+            scalar_step();
+    }
+
+private:
+    struct Gram
+    {
+        UInt8 first;
+        UInt8 second;
+        bool is_bigram;
+
+        bool operator==(const Gram &) const = default;
+    };
+
+    struct GramMasks
+    {
+        UInt32 inside = 0;
+        UInt32 ends_with_first = 0;
+        UInt32 starts_with_second = 0;
+    };
+
+    /// The masks of the grams are 32-bit, so more grams are not considered: it is a necessary condition anyway.
+    static constexpr size_t MAX_GRAMS = 32;
+
+    void addGram(const Gram & gram)
+    {
+        if (grams.size() < MAX_GRAMS && std::find(grams.begin(), grams.end(), gram) == grams.end())
+            grams.push_back(gram);
+    }
+
+    /// The class bits for one gram: whether the symbol contains it, ends with its first byte, starts with its second byte.
+    static constexpr UInt8 INSIDE = 1;
+    static constexpr UInt8 ENDS_WITH_FIRST = 2;
+    static constexpr UInt8 STARTS_WITH_SECOND = 4;
+
+    static UInt8 classOf(const GramMasks & masks, UInt32 bit)
+    {
+        return static_cast<UInt8>(
+            ((masks.inside & bit) ? INSIDE : 0) | ((masks.ends_with_first & bit) ? ENDS_WITH_FIRST : 0)
+            | ((masks.starts_with_second & bit) ? STARTS_WITH_SECOND : 0));
+    }
+
+    /// For the classes of codes (one per byte) and the classes of the codes before them: bit 0 of a byte is set
+    /// if the gram is found at the code. Other bits are garbage.
+    static UInt64 foundBits(UInt64 cls, UInt64 prev_cls)
+    {
+        return cls | ((prev_cls >> 1) & (cls >> 2));
+    }
+
+    static UInt8 symbolByte(const FSST::SymbolTable & table, size_t code, size_t i)
+    {
+        return static_cast<UInt8>(table.symbols[code] >> (8 * i));
+    }
+
+    std::vector<Gram> grams;
+    std::array<UInt8, 256> classes{};
+    /// The same for the escaped bytes.
+    std::array<UInt8, 256> literal_classes{};
+};
+
+/** The conditions of `StringValueFilter` that are checked exactly on the codes of a block encoded by `FSST` with the
+  * boundaries of the values (`CompressionCodecFSST::Format::ENCODED_ALIGNED`). Every value that starts in such a block
+  * is encoded on its own, exactly as `FSST::encodeValue` encodes it, so:
+  * - `Equals`: the value is equal to the needle if and only if its codes are equal to the codes of the needle;
+  * - `Prefix`: the encoder chooses a symbol by the next 8 bytes, so the codes of the needle that start at least 8 bytes
+  *   before its end are the same in every value that starts with it. They are compared without decoding, and only the
+  *   few bytes after them are decoded and compared with the rest of the needle.
+  */
+class FSSTBlockExactConditions
+{
+public:
+    explicit FSSTBlockExactConditions(const StringValueFilter & filter)
+    {
+        for (const auto & condition : filter.getConditions())
+        {
+            if (condition.type == StringValueFilter::Condition::Type::Equals || condition.type == StringValueFilter::Condition::Type::Prefix)
+                conditions.push_back({&condition, {}, 0, 0});
+            else
+                all_conditions_are_exact = false;
+        }
+    }
+
+    bool empty() const { return conditions.empty(); }
+
+    /// Whether checking these conditions decides the whole filter.
+    bool decideFilter() const { return all_conditions_are_exact; }
+
+    void build(const FSST::SymbolTable & table)
+    {
+        for (auto & condition : conditions)
+        {
+            const auto & needle = condition.condition->needle;
+            condition.codes.resize(FSST::maxEncodedSize(needle.size()));
+            condition.codes.resize(FSST::encodeValue(table, needle.data(), needle.size(), condition.codes.data()));
+
+            if (condition.condition->type == StringValueFilter::Condition::Type::Prefix)
+            {
+                /// The codes that start at least `MAX_SYMBOL_LENGTH` bytes before the end of the needle.
+                size_t num_codes = 0;
+                size_t num_bytes = 0;
+                while (num_codes < condition.codes.size() && num_bytes + FSST::MAX_SYMBOL_LENGTH <= needle.size())
+                {
+                    const UInt8 code = condition.codes[num_codes];
+                    num_bytes += code == FSST::ESCAPE_CODE ? 1 : table.lengths[code];
+                    num_codes += code == FSST::ESCAPE_CODE ? 2 : 1;
+                }
+                condition.num_prefix_codes = num_codes;
+                condition.num_prefix_bytes = num_bytes;
+            }
+        }
+    }
+
+    /// Checks the value of `size` bytes, whose codes are `[begin, end)` (from the index of the values, within the codes).
+    /// The codes that are compared are not decoded, so they are not validated: a malformed block can only make
+    /// the comparison fail. The decoded part is validated by `FSST::decode`.
+    bool match(const CompressionCodecFSST::EncodedBlock & block, size_t begin, size_t end, size_t size) const
+    {
+        const UInt8 * codes = block.codes;
+        for (const auto & condition : conditions)
+        {
+            const auto & needle = condition.condition->needle;
+            if (condition.condition->type == StringValueFilter::Condition::Type::Equals)
+            {
+                if (size != needle.size() || end - begin != condition.codes.size()
+                    || memcmp(codes + begin, condition.codes.data(), condition.codes.size()) != 0)
+                    return false;
+                continue;
+            }
+
+            if (size < needle.size() || end - begin < condition.num_prefix_codes
+                || memcmp(codes + begin, condition.codes.data(), condition.num_prefix_codes) != 0)
+                return false;
+
+            /// The rest of the needle is shorter than `2 * MAX_SYMBOL_LENGTH`.
+            const size_t rest_size = needle.size() - condition.num_prefix_bytes;
+            char rest[2 * FSST::MAX_SYMBOL_LENGTH];
+            FSST::Cursor cursor{begin + condition.num_prefix_codes, 0};
+            FSST::decode(block.table, codes, block.codes_size, cursor, rest, rest_size, block.error_code);
+            if (memcmp(rest, needle.data() + condition.num_prefix_bytes, rest_size) != 0)
+                return false;
+        }
+        return true;
+    }
+
+private:
+    struct Condition
+    {
+        const StringValueFilter::Condition * condition;
+        /// The codes of the needle in the current block.
+        std::vector<UInt8> codes;
+        /// For `Prefix`: the number of the codes of the needle that are compared, and of the bytes they encode.
+        size_t num_prefix_codes;
+        size_t num_prefix_bytes;
+    };
+
+    std::vector<Condition> conditions;
+    bool all_conditions_are_exact = true;
+};
+
+}
+
+/// The same as `deserializeBinaryFilteredWithKnownSizes`, for a data stream compressed by the `FSST` codec, with the
+/// boundaries of the values (`CompressionCodecFSST::Format::ENCODED_ALIGNED`): the values are checked against the filter
+/// on the encoded data, exactly for `Equals` and `Prefix` (see `FSSTBlockExactConditions`), by a necessary condition for
+/// `Substring` and `Suffix` (see `FSSTBlockScanner`), and only the values that may match are decoded and checked against
+/// the filter. As soon as the next block is not such a block (e.g. a block stored as is, or encoded without the boundaries
+/// of the values), the rest of the values are read by `deserializeBinaryFilteredWithKnownSizes`.
+static NO_INLINE void deserializeBinaryFilteredFromFSST(
+    ColumnString::Chars & data,
+    ColumnString::Offsets & offsets,
+    CompressedReadBufferFromFile & istr,
+    size_t first_row,
+    const StringValueFilter & filter)
+{
+    const size_t num_rows = offsets.size();
+    size_t offset = data.size();
+    /// The original (unfiltered) cumulative offset of the current stream position, as in `deserializeBinaryFilteredWithKnownSizes`.
+    size_t original_pos = offset;
+
+    size_t values_checked = 0;
+    size_t values_replaced = 0;
+    size_t bytes_skipped = 0;
+    /// The values that may match are decoded and checked one by one.
+    size_t values_checked_individually = 0;
+
+    FSSTBlockExactConditions exact_conditions(filter);
+    FSSTBlockScanner scanner(filter);
+    std::vector<UInt32> candidate_codes;
+
+    /// The values that are too short for a needle (or not of its size, for `Equals`) are rejected by their size.
+    size_t min_size = 0;
+    std::optional<size_t> exact_size;
+    for (const auto & condition : filter.getConditions())
+    {
+        min_size = std::max(min_size, condition.needle.size());
+        if (condition.type == StringValueFilter::Condition::Type::Equals)
+            exact_size = condition.needle.size();
+    }
+
+    auto reserve = [&](size_t size)
+    {
+        if (unlikely(offset + size > data.size()))
+            data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
+    };
+
+    /// Accounts the value at `data[offset]`, which is decoded entirely, and checks it against the filter.
+    auto check_decoded_value = [&](size_t value_size)
+    {
+        ++values_checked_individually;
+        if (filter.match(reinterpret_cast<const char *>(&data[offset]), value_size))
+        {
+            offset += value_size;
+        }
+        else
+        {
+            ++values_replaced;
+            bytes_skipped += value_size;
+        }
+    };
+
+    auto throw_not_aligned = []
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A value is not aligned with the codes in an aligned block encoded by FSST");
+    };
+
+    size_t i = first_row;
+    try
+    {
+        while (i < num_rows)
+        {
+            const FSSTBlock * block = istr.readFSSTBlock();
+            /// A block without the boundaries of the values stays pending, and it is decoded and read as usual.
+            if (!block || !block->encoded.aligned)
+                break;
+
+            const auto & encoded = block->encoded;
+            const auto & table = encoded.table;
+            if (!exact_conditions.empty())
+                exact_conditions.build(table);
+
+            FSST::Cursor cursor = block->start_cursor;
+            size_t available = block->decoded_size - block->start_offset;
+
+            /// The index gives the end of every value that ends in the block, except the last one, which ends with the codes:
+            /// the next boundary after the current position is the end of the current value.
+            const auto & boundaries = encoded.boundary_code_positions;
+            size_t next_boundary = std::upper_bound(boundaries.begin(), boundaries.end(), cursor.code_pos) - boundaries.begin();
+
+            /// The codes that can be in an occurrence of a needle, and whether a value has one of them (for the values in order).
+            candidate_codes.clear();
+            size_t next_candidate_code = 0;
+            if (!scanner.empty())
+            {
+                scanner.build(table, encoded.codes, encoded.codes_size);
+                scanner.findCandidateCodes(encoded, cursor.code_pos, encoded.codes_size, candidate_codes);
+            }
+            auto has_candidate_code = [&](size_t begin, size_t end)
+            {
+                while (next_candidate_code < candidate_codes.size() && candidate_codes[next_candidate_code] < begin)
+                    ++next_candidate_code;
+                return next_candidate_code < candidate_codes.size() && candidate_codes[next_candidate_code] < end;
+            };
+
+            /// The values that end in this block.
+            while (i < num_rows)
+            {
+                const size_t value_size = offsets[i] - original_pos;
+                if (value_size > available)
+                    break;
+
+                ++values_checked;
+
+                /// The codes of the value: `[begin, end)`.
+                const size_t begin = cursor.code_pos;
+                size_t end = begin;
+                if (value_size)
+                    end = next_boundary < boundaries.size() ? boundaries[next_boundary++] : encoded.codes_size;
+                /// A value that starts in an aligned block starts at a code, and its codes are in the block.
+                if (cursor.offset_in_symbol != 0 || end < begin)
+                    throw_not_aligned();
+                cursor = {end, 0};
+
+                /// Whether the value matches the filter, does not match, or has to be decoded and checked against the filter.
+                enum class Decision : UInt8
+                {
+                    REJECT,
+                    ACCEPT,
+                    CHECK,
+                };
+                Decision decision = Decision::CHECK;
+
+                /// An empty string never matches the filter.
+                if (value_size == 0 || value_size < min_size || (exact_size && value_size != *exact_size))
+                    decision = Decision::REJECT;
+                else if (!exact_conditions.empty() && !exact_conditions.match(encoded, begin, end, value_size))
+                    decision = Decision::REJECT;
+                else if (exact_conditions.decideFilter())
+                    decision = Decision::ACCEPT;
+                else if (!has_candidate_code(begin, end))
+                    decision = Decision::REJECT;
+
+                if (decision == Decision::REJECT)
+                {
+                    ++values_replaced;
+                    bytes_skipped += value_size;
+                }
+                else
+                {
+                    reserve(value_size);
+                    FSST::Cursor decode_cursor{begin, 0};
+                    FSST::decode(table, encoded.codes, encoded.codes_size, decode_cursor, reinterpret_cast<char *>(&data[offset]), value_size, encoded.error_code);
+                    if (decode_cursor.code_pos != end || decode_cursor.offset_in_symbol != 0)
+                        throw_not_aligned();
+                    if (decision == Decision::ACCEPT)
+                        offset += value_size;
+                    else
+                        check_decoded_value(value_size);
+                }
+
+                available -= value_size;
+                original_pos += value_size;
+                offsets[i] = offset;
+                ++i;
+            }
+
+            if (i == num_rows || available == 0)
+            {
+                istr.finishFSSTBlock(block->decoded_size - available, cursor);
+                continue;
+            }
+
+            /// The value continues in the next blocks: decode it entirely and check it as usual.
+            const size_t value_size = offsets[i] - original_pos;
+            reserve(value_size);
+            char * value_data = reinterpret_cast<char *>(&data[offset]);
+            FSST::decode(table, encoded.codes, encoded.codes_size, cursor, value_data, available, encoded.error_code);
+            istr.finishFSSTBlock(block->decoded_size, cursor);
+
+            size_t value_bytes_read = available;
+            while (value_bytes_read < value_size)
+            {
+                const FSSTBlock * next_block = istr.readFSSTBlock();
+                if (!next_block)
+                {
+                    istr.readStrict(value_data + value_bytes_read, value_size - value_bytes_read);
+                    break;
+                }
+
+                const size_t n = std::min(value_size - value_bytes_read, next_block->decoded_size - next_block->start_offset);
+                FSST::Cursor next_cursor = next_block->start_cursor;
+                const auto & next_encoded = next_block->encoded;
+                FSST::decode(next_encoded.table, next_encoded.codes, next_encoded.codes_size, next_cursor, value_data + value_bytes_read, n, next_encoded.error_code);
+                istr.finishFSSTBlock(next_block->start_offset + n, next_cursor);
+                value_bytes_read += n;
+            }
+
+            ++values_checked;
+            check_decoded_value(value_size);
+            original_pos += value_size;
+            offsets[i] = offset;
+            ++i;
+        }
+    }
+    catch (...)
+    {
+        /// Drop the rows whose values were not fully read to keep the column consistent.
+        offsets.resize(i);
+        data.resize_exact(offset);
+        throw;
+    }
+
+    data.resize_exact(offset);
+    /// The rejected values are not decoded, which costs less than decoding them, so filtering them pays off even when
+    /// they are short. The values checked one by one participate in the minimum average size of skipped values.
+    filter.updateStatsOfBulkScan(values_checked, values_replaced, bytes_skipped, values_checked_individually);
+
+    if (i < num_rows)
+    {
+        /// The offsets of the rest of the values continue the original (unfiltered) offsets: rebase them onto the filtered data.
+        if (const size_t shift = original_pos - offset)
+            for (size_t k = i; k < num_rows; ++k)
+                offsets[k] -= shift;
+
+        deserializeBinaryFilteredWithKnownSizes(data, offsets, istr, i, filter);
+    }
 }
 
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
@@ -1046,7 +1613,27 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
     size_t end = offsets[offset + limit - 1];
     size_t bytes = end - begin;
-    stream->write(reinterpret_cast<const char *>(&column_string.getChars()[begin]), bytes);
+    const char * chars = reinterpret_cast<const char *>(column_string.getChars().data());
+
+    /// If the stream is compressed by a codec that uses the boundaries of the values (e.g. `FSST`, which then encodes
+    /// every value on its own, so that the values can be checked without decoding them), report them: before the first
+    /// value (the stream may contain other data before) and after every value.
+    auto * stream_with_value_boundaries = dynamic_cast<IWriteBufferWithValueBoundaries *>(stream);
+    if (stream_with_value_boundaries && stream_with_value_boundaries->needsValueBoundaries())
+    {
+        stream_with_value_boundaries->addValueBoundary(stream->offset());
+        size_t value_begin = begin;
+        for (size_t i = offset; i < offset + limit; ++i)
+        {
+            stream->write(chars + value_begin, offsets[i] - value_begin);
+            stream_with_value_boundaries->addValueBoundary(stream->offset());
+            value_begin = offsets[i];
+        }
+    }
+    else
+    {
+        stream->write(chars + begin, bytes);
+    }
     settings.path.pop_back();
 }
 
@@ -1178,7 +1765,13 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
+        /// If the data is compressed by `FSST`, the values are checked without decoding them.
+        const auto & filter = *settings.string_value_filter;
+        auto * compressed_stream = dynamic_cast<CompressedReadBufferFromFile *>(stream);
+        if (compressed_stream)
+            deserializeBinaryFilteredFromFSST(data, string_column.getOffsets(), *compressed_stream, prev_num_rows, filter);
+        else
+            deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, filter);
     }
     else
     {

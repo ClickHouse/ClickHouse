@@ -17,12 +17,14 @@ class MMappedFileCache;
 class CompressedReadBufferFromFile final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
-      /** At any time, one of two things is true:
+      /** At any time, one of three things is true:
       * a) size_compressed = 0 and working_buffer is empty
       * b)
       *  - `working_buffer` contains the entire block.
       *  - `file_in` points to the end of this block.
       *  - `size_compressed` contains the compressed size of this block.
+      * c) the same as b), but the block is not decoded: `has_pending_fsst_block` is set, `working_buffer` is empty,
+      *    and `fsst_block` holds the encoded block and the current position in it (see `readFSSTBlock`).
       */
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
@@ -47,6 +49,15 @@ private:
 
     void prefetch(Priority priority) override;
 
+    /// See `readFSSTBlock`.
+    FSSTBlock fsst_block;
+    bool has_pending_fsst_block = false;
+    /// The codes of `fsst_block`, if they are not in the memory of `compressed_in`, which can be reused by the next read.
+    PODArray<char> fsst_codes_buffer;
+
+    /// Decodes the pending block into `working_buffer`, at the position where the reading of the encoded block ended.
+    void decodePendingFSSTBlock();
+
 public:
     explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
@@ -58,6 +69,23 @@ public:
     off_t getPosition() const override;
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
+
+    /** Reading of the blocks compressed by the `FSST` codec without decoding them, to process the encoded data,
+      * e.g. to check the values in it against a filter (see `StringValueFilter`).
+      *
+      * If there is no unread data in the working buffer and the next block is encoded by `FSST` (alone or as
+      * the first codec of a chain), returns the encoded block. The reading starts at `FSSTBlock::start_offset`
+      * in its decoded data (`FSSTBlock::start_cursor` in the codes), which is not zero after `seek`. After processing
+      * the block from there, the caller must call `finishFSSTBlock` with the position where the reading ended.
+      * If the block is not consumed entirely, it is decoded lazily on the next ordinary read; the next call
+      * of `readFSSTBlock` returns it again instead.
+      *
+      * Otherwise returns nullptr: if there is unread data in the working buffer, or at the end of the file,
+      * or after it read the next block, which is not encoded by `FSST`, and decompressed it into the working buffer
+      * as `next` does. The caller reads the data in the working buffer as usual then.
+      */
+    const FSSTBlock * readFSSTBlock();
+    void finishFSSTBlock(size_t end_offset, const FSST::Cursor & end_cursor);
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {
