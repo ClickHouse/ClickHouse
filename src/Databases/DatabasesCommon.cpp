@@ -257,6 +257,10 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.primary_key.definition_ast)
                 storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
 
+            /// A partition key cannot change in `MergeTree`, but in a data lake (`Iceberg`) its source column can be renamed.
+            if (metadata.partition_key.definition_ast)
+                storage_ast.set(storage_ast.partition_by, metadata.partition_key.definition_ast);
+
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
