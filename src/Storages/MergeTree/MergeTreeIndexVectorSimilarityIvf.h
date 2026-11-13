@@ -18,18 +18,20 @@
 namespace DB
 {
 
-/// The `ivf` method of the `vector_similarity` index: an inverted file of `Float32` vectors, built and searched on the GPU.
+/// The `ivf` method of the `vector_similarity` index: an inverted file of 4-bit codes, built and searched on the GPU.
 ///
 ///     INDEX idx vec TYPE vector_similarity('ivf', 'L2Distance', dimensions[, lists])
 ///
 /// The vectors of a granule are clustered by the balanced k-means of cuVS into `lists` lists (0 or omitted: `4 * sqrt(rows)`).
-/// A search scores the query against the centroids, takes the lists of the `vector_search_ivf_probes` nearest ones, and ranks
-/// their vectors by exact distances.
+/// A list holds its rows as 4-bit codes of their residuals to the centroid, rotated by a random orthogonal matrix (see
+/// `GPU::ivfEntryBytes`): 64 bytes per row of 96 dimensions instead of 388. A search scores the query against the centroids,
+/// ranks the codes of the lists of the `vector_search_ivf_probes` nearest ones by approximate distances on the device, and
+/// ranks the best `4 * limit` of them by exact distances to their vectors.
 ///
-/// Only the centroids and the offsets of the lists stay in memory (in the cache of vector similarity indexes) and, for
-/// probing, on the device. The lists are in a substream of their own, uncompressed, and a search reads only the probed ones
-/// at their byte offsets, in chunks, and streams them to the device. A batch of queries (`vectorSearch`) reads every list it
-/// probes once.
+/// Only the centroids, the rotation and the offsets of the lists stay in memory (in the cache of vector similarity indexes)
+/// and, for probing, on the device. The lists and the vectors are in substreams of their own, uncompressed: a search reads
+/// only the probed lists at their byte offsets, in chunks, streams them to the device, and reads the vectors of the
+/// candidates, by rows. A batch of queries (`vectorSearch`) reads every list it probes once.
 
 enum class IvfMetric : uint8_t
 {
@@ -91,20 +93,27 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     std::vector<float> centroids;       /// lists x dimensions
     std::vector<UInt64> list_offsets;   /// lists + 1, in entries
 
-    /// Built, before they are written: the entries in temporary files, by ranges of lists.
+    /// The random orthogonal R of the codes, `dimensions x dimensions`, row-major, and R c of each centroid.
+    std::vector<float> rotation;
+    std::vector<float> rotated_centroids;
+
+    /// Built, before they are written: the entries in temporary files, by ranges of lists, and the vectors by rows.
     std::vector<IvfListBucket> buckets;
+    std::shared_ptr<TemporaryDataBuffer> vectors;
 
 private:
-    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
+    static constexpr UInt64 FILE_FORMAT_VERSION = 3;
 
     /// A list in the substream: the rows of its entries, then their vectors.
-    size_t entryBytes() const { return sizeof(UInt32) + dimensions * sizeof(float); }
+    size_t entryBytes() const;
     size_t entries() const { return list_offsets.empty() ? 0 : list_offsets.back(); }
 
     std::shared_ptr<GPU::IvfCentroids> getDeviceCentroids() const;
 
     /// Where the lists of this granule start in their substream.
     UInt64 lists_byte_begin = 0;
+    /// Where the vectors of this granule start in their substream.
+    UInt64 vectors_byte_begin = 0;
 
     /// Where the lists are read from, set by `deserializeBinaryWithMultipleStreams`.
     DataPartStoragePtr data_part_storage;
@@ -140,7 +149,7 @@ private:
     void reset();
 
     size_t rows = 0;
-    std::unique_ptr<TemporaryDataBuffer> vectors;
+    std::shared_ptr<TemporaryDataBuffer> vectors;
     /// A uniform sample of the rows so far, at most `sample_capacity` of them.
     std::vector<float> sample;
     size_t sample_capacity = 0;

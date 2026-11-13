@@ -41,8 +41,9 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
-        /// The lists of the `ivf` method of the vector similarity index, read by byte offsets.
+        /// The lists and the vectors of the `ivf` method of the vector similarity index, read by byte offsets.
         VectorIndexLists,
+        VectorIndexVectors,
     };
 
     Type type;
@@ -55,8 +56,10 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        /// The lists of vectors are not compressed, so that a list is read alone at its byte offset.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions && type != Type::VectorIndexLists;
+        /// The lists and the vectors of the `ivf` index are not compressed, so that a list or a vector is read alone at its
+        /// byte offset.
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions && type != Type::VectorIndexLists
+            && type != Type::VectorIndexVectors;
     }
 };
 

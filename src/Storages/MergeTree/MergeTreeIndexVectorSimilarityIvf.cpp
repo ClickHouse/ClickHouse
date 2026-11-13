@@ -11,20 +11,27 @@
 #include <GPU/GPUDevice.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/Stopwatch.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <mutex>
 #include <optional>
+#include <random>
 #include <string_view>
+#include <thread>
 
 namespace DB
 {
@@ -54,8 +61,13 @@ namespace
 
 constexpr UInt32 invalid_neighbour = std::numeric_limits<UInt32>::max();
 
-/// The suffix of the file of the lists.
+/// The suffixes of the files of the lists and of the vectors.
 constexpr std::string_view lists_substream_suffix = ".lst";
+constexpr std::string_view vectors_substream_suffix = ".vec";
+
+/// A search ranks this many times the rows it returns by the approximate distances of the codes, then those by exact distances.
+/// Four is the least with the recall of exact lists on Deep10M.
+constexpr size_t rescoring_factor = 4;
 
 /// The build holds at most this much of the vectors in memory: the sample for k-means, a block to assign, a bucket to sort.
 constexpr size_t max_sample_bytes = 512 << 20;
@@ -90,9 +102,114 @@ void checkCanUseDevice()
             "`GLIBC_TUNABLES=glibc.pthread.stack_cache_size=17179869184`");
 }
 
-GPU::IvfDistance toIvfDistance(IvfMetric metric)
+/// Runs `work(task)` for the tasks `[0, num_tasks)` on up to all cores.
+template <typename Work>
+void runOnCores(size_t num_tasks, Work && work)
 {
-    return metric == IvfMetric::L2 ? GPU::IvfDistance::L2 : GPU::IvfDistance::Cosine;
+    const size_t num_threads = std::min<size_t>(getNumberOfCPUCoresToUse(), num_tasks);
+    if (num_threads <= 1)
+    {
+        for (size_t task = 0; task < num_tasks; ++task)
+            work(task);
+        return;
+    }
+    std::atomic<size_t> next = 0;
+    std::exception_ptr exception;
+    std::mutex mutex;
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (size_t t = 0; t < num_threads; ++t)
+        threads.emplace_back([&]
+        {
+            try
+            {
+                for (size_t task; (task = next.fetch_add(1)) < num_tasks;)
+                    work(task);
+            }
+            catch (...)
+            {
+                std::lock_guard lock(mutex);
+                if (!exception)
+                    exception = std::current_exception();
+            }
+        });
+    for (auto & thread : threads)
+        thread.join();
+    if (exception)
+        std::rethrow_exception(exception);
+}
+
+/// A random orthogonal matrix, row-major: Gram-Schmidt of a Gaussian one. The same for the same seed.
+std::vector<float> makeRotation(size_t dimensions, UInt64 seed)
+{
+    pcg64 rng(seed);
+    std::normal_distribution<double> gaussian;
+    std::vector<double> rows(dimensions * dimensions);
+    for (auto & value : rows)
+        value = gaussian(rng);
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        double * row = rows.data() + i * dimensions;
+        for (size_t j = 0; j < i; ++j)
+        {
+            const double * other = rows.data() + j * dimensions;
+            double dot = 0;
+            for (size_t k = 0; k < dimensions; ++k)
+                dot += row[k] * other[k];
+            for (size_t k = 0; k < dimensions; ++k)
+                row[k] -= dot * other[k];
+        }
+        double norm = 0;
+        for (size_t k = 0; k < dimensions; ++k)
+            norm += row[k] * row[k];
+        /// Normalized in place: the next rows are made orthogonal to it.
+        const double inverse = 1 / std::sqrt(norm);
+        for (size_t k = 0; k < dimensions; ++k)
+            row[k] *= inverse;
+    }
+    return std::vector<float>(rows.begin(), rows.end());
+}
+
+/// R c of each of the `lists` centroids, row-major.
+std::vector<float> rotateCentroids(const std::vector<float> & rotation, const std::vector<float> & centroids, size_t lists, size_t dimensions)
+{
+    std::vector<float> rotated(lists * dimensions, 0);
+    runOnCores((lists + 255) / 256, [&](size_t task)
+    {
+        for (size_t l = task * 256; l < std::min(lists, (task + 1) * 256); ++l)
+            for (size_t i = 0; i < dimensions; ++i)
+            {
+                float sum = 0;
+                for (size_t k = 0; k < dimensions; ++k)
+                    sum += rotation[i * dimensions + k] * centroids[l * dimensions + k];
+                rotated[l * dimensions + i] = sum;
+            }
+    });
+    return rotated;
+}
+
+/// The 4-bit code of the rotated residual `r` (see `GPU::ivfEntryBytes`): writes the codes and returns lo, step and |r_hat|^2.
+std::array<float, 3> encodeResidual(const float * r, size_t dimensions, char * codes)
+{
+    float lo = r[0];
+    float hi = r[0];
+    for (size_t i = 1; i < dimensions; ++i)
+    {
+        lo = std::min(lo, r[i]);
+        hi = std::max(hi, r[i]);
+    }
+    const float step = hi > lo ? (hi - lo) / 15 : 1.0f;
+    std::fill(codes, codes + GPU::ivfCodeBytes(dimensions), 0);
+    float norm2 = 0;
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const int code = std::clamp(static_cast<int>(std::lround((r[i] - lo) / step)), 0, 15);
+        const float decoded = lo + static_cast<float>(code) * step;
+        norm2 += decoded * decoded;
+        const size_t nibble = i % 8;
+        codes[(i / 32) * 16 + ((i % 32) / 8) * 4 + nibble / 2] |= static_cast<char>(code << (4 * (nibble % 2)));
+    }
+    return {lo, step, norm2};
 }
 
 }
@@ -120,37 +237,46 @@ MergeTreeIndexGranuleIvf::~MergeTreeIndexGranuleIvf() = default;
 
 size_t MergeTreeIndexGranuleIvf::memoryUsageBytes() const
 {
-    return centroids.size() * sizeof(float) + list_offsets.size() * sizeof(UInt64);
+    return (centroids.size() + rotation.size() + rotated_centroids.size()) * sizeof(float) + list_offsets.size() * sizeof(UInt64);
+}
+
+size_t MergeTreeIndexGranuleIvf::entryBytes() const
+{
+    return GPU::ivfEntryBytes(dimensions);
 }
 
 void MergeTreeIndexGranuleIvf::serializeBinary(WriteBuffer &) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} of method 'ivf' is written to two substreams", backQuote(index_name));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} of method 'ivf' is written to three substreams", backQuote(index_name));
 }
 
 void MergeTreeIndexGranuleIvf::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
 {
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty vector similarity index {}", backQuote(index_name));
-    if (buckets.empty())
+    if (buckets.empty() || !vectors)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index {} is written without its lists", backQuote(index_name));
 
     auto & header = streams.at(MergeTreeIndexSubstream::Type::Regular)->compressed_hashing;
     auto & lists_stream = streams.at(MergeTreeIndexSubstream::Type::VectorIndexLists)->plain_hashing;
+    auto & vectors_stream = streams.at(MergeTreeIndexSubstream::Type::VectorIndexVectors)->plain_hashing;
 
     writeIntBinary(FILE_FORMAT_VERSION, header);
     writeIntBinary(static_cast<UInt64>(dimensions), header);
     writeIntBinary(static_cast<UInt8>(metric), header);
     writeIntBinary(static_cast<UInt64>(rows), header);
     writeIntBinary(static_cast<UInt64>(lists), header);
-    /// The lists of several granules follow each other in the substream.
+    /// The lists and the vectors of several granules follow each other in their substreams.
     writeIntBinary(static_cast<UInt64>(lists_stream.count()), header);
+    writeIntBinary(static_cast<UInt64>(vectors_stream.count()), header);
     header.write(reinterpret_cast<const char *>(centroids.data()), centroids.size() * sizeof(float));
+    header.write(reinterpret_cast<const char *>(rotation.data()), rotation.size() * sizeof(float));
     header.write(reinterpret_cast<const char *>(list_offsets.data()), list_offsets.size() * sizeof(UInt64));
 
-    /// A bucket at a time: its records sorted into lists, each list the rows of its entries and then their vectors.
-    const size_t vector_bytes = dimensions * sizeof(float);
-    const size_t record_bytes = 2 * sizeof(UInt32) + vector_bytes;
+    /// A bucket at a time: its records sorted into lists, each list the rows of its entries, their parameters, their codes.
+    const size_t code_bytes = GPU::ivfCodeBytes(dimensions);
+    const size_t params_bytes = 3 * sizeof(float);
+    const size_t record_bytes = 2 * sizeof(UInt32) + params_bytes + code_bytes;
     const size_t entry_bytes = entryBytes();
     std::vector<char> records;
     std::vector<char> sorted;
@@ -176,10 +302,14 @@ void MergeTreeIndexGranuleIvf::serializeBinaryWithMultipleStreams(MergeTreeIndex
             const size_t index = cursor[list - bucket.first_list]++;
             char * region = sorted.data() + (list_offsets[list] - base) * entry_bytes;
             memcpy(region + index * sizeof(UInt32), record + sizeof(UInt32), sizeof(UInt32));
-            memcpy(region + size * sizeof(UInt32) + index * vector_bytes, record + 2 * sizeof(UInt32), vector_bytes);
+            memcpy(region + size * sizeof(UInt32) + index * params_bytes, record + 2 * sizeof(UInt32), params_bytes);
+            memcpy(region + size * (sizeof(UInt32) + params_bytes) + index * code_bytes, record + 2 * sizeof(UInt32) + params_bytes, code_bytes);
         }
         lists_stream.write(sorted.data(), sorted.size());
     }
+
+    auto in = vectors->read();
+    copyData(*in, vectors_stream);
 }
 
 void MergeTreeIndexGranuleIvf::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
@@ -200,6 +330,7 @@ void MergeTreeIndexGranuleIvf::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     readIntBinary(persisted_rows, istr);
     readIntBinary(persisted_lists, istr);
     readIntBinary(lists_byte_begin, istr);
+    readIntBinary(vectors_byte_begin, istr);
 
     if (persisted_dimensions != dimensions || persisted_metric != static_cast<UInt8>(metric))
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -212,10 +343,15 @@ void MergeTreeIndexGranuleIvf::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     rows = persisted_rows;
     lists = persisted_lists;
     centroids.resize(lists * dimensions);
+    rotation.resize(dimensions * dimensions);
     list_offsets.resize(lists + 1);
     istr.readStrict(reinterpret_cast<char *>(centroids.data()), centroids.size() * sizeof(float));
+    istr.readStrict(reinterpret_cast<char *>(rotation.data()), rotation.size() * sizeof(float));
     istr.readStrict(reinterpret_cast<char *>(list_offsets.data()), list_offsets.size() * sizeof(UInt64));
     buckets.clear();
+    vectors.reset();
+    /// The scan of the codes needs R c of each centroid.
+    rotated_centroids = rotateCentroids(rotation, centroids, lists, dimensions);
 
     if (list_offsets[0] != 0 || !std::is_sorted(list_offsets.begin(), list_offsets.end()) || entries() != rows)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has invalid list offsets", backQuote(index_name));
@@ -290,10 +426,11 @@ void MergeTreeIndexGranuleIvf::searchBatch(const std::vector<float> & queries, s
 
     Stopwatch watch;
     const size_t num_probes = std::clamp<size_t>(probes, 1, lists);
-    const size_t select = std::min<size_t>(limit, rows);
-    if (select > GPU::IvfListScan::maxSelect())
+    if (limit > GPU::IvfListScan::maxSelect())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index {} of method 'ivf' returns at most {} rows per query",
             backQuote(index_name), GPU::IvfListScan::maxSelect());
+    /// The candidates for the exact distances.
+    const size_t select = std::min({limit * rescoring_factor, GPU::IvfListScan::maxSelect(), rows});
 
     std::vector<UInt32> probed(num_queries * num_probes);
     getDeviceCentroids()->nearestLists(queries.data(), num_queries, num_probes, probed.data());
@@ -312,7 +449,11 @@ void MergeTreeIndexGranuleIvf::searchBatch(const std::vector<float> & queries, s
     const auto lists_file_name = IMergeTreeDataPart::getStreamNameOrHash(lists_stream_name, ".idx", *data_part_storage);
     if (!lists_file_name)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has no file of lists {}.idx", backQuote(index_name), lists_stream_name);
-    auto lists_file = data_part_storage->readFile(*lists_file_name + ".idx", reader_settings.read_settings, std::nullopt);
+    /// `pread` rather than the reading of MergeTree by default: lists and vectors are read at offsets, with `readBigAt`, which
+    /// the asynchronous buffers do not support, and they read ahead past a seek.
+    ReadSettings index_read_settings = reader_settings.read_settings;
+    index_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    auto lists_file = data_part_storage->readFile(*lists_file_name + ".idx", index_read_settings, std::nullopt);
     const bool read_at = lists_file->supportsReadAt();
     auto read_range = [&](char * to, size_t offset, size_t size)
     {
@@ -326,7 +467,8 @@ void MergeTreeIndexGranuleIvf::searchBatch(const std::vector<float> & queries, s
         lists_file->readStrict(to, size);
     };
 
-    GPU::IvfListScan scan(queries.data(), num_queries, dimensions, select, toIvfDistance(metric));
+    GPU::IvfListScan scan(queries.data(), num_queries, dimensions, select, rotation.data());
+    std::vector<float> chunk_rotated_centroids;
 
     const size_t entry_bytes = entryBytes();
     std::vector<Int32> chunk_position(lists, -1);
@@ -380,8 +522,13 @@ void MergeTreeIndexGranuleIvf::searchBatch(const std::vector<float> & queries, s
             chunk.query_list_offsets[q + 1] = static_cast<UInt32>(chunk.query_lists.size());
         }
 
+        chunk_rotated_centroids.resize(chunk.begins.size() * dimensions);
+        for (size_t i = first; i < last; ++i)
+            std::copy_n(rotated_centroids.begin() + order[i] * dimensions, dimensions,
+                chunk_rotated_centroids.begin() + static_cast<size_t>(chunk_position[order[i]]) * dimensions);
+
         scan.scan(chunk.bytes.data(), chunk.bytes.size(), chunk.begins.data(), chunk.sizes.data(), chunk.begins.size(),
-            chunk.query_list_offsets.data(), chunk.query_lists.data());
+            chunk_rotated_centroids.data(), chunk.query_list_offsets.data(), chunk.query_lists.data());
 
         for (size_t i = first; i < last; ++i)
             chunk_position[order[i]] = -1;
@@ -391,14 +538,78 @@ void MergeTreeIndexGranuleIvf::searchBatch(const std::vector<float> & queries, s
     std::vector<UInt32> found_rows(num_queries * select);
     std::vector<float> found_distances(num_queries * select);
     scan.result(found_rows.data(), found_distances.data());
-    for (size_t q = 0; q < num_queries; ++q)
-    {
-        std::copy_n(found_rows.begin() + q * select, select, neighbours.begin() + q * limit);
-        std::copy_n(found_distances.begin() + q * select, select, distances.begin() + q * limit);
-    }
+    const UInt64 scan_ms = watch.elapsedMilliseconds();
 
-    LOG_TRACE(logger, "Searched {} queries in {} of {} lists ({}) of IVF index {} in {} ms",
-        num_queries, order.size(), lists, ReadableSize(bytes_read), backQuote(index_name), watch.elapsedMilliseconds());
+    /// The exact distances of the candidates, to their vectors read by rows.
+    const String vectors_stream_name = index_file_name + String(vectors_substream_suffix);
+    const auto vectors_file_name = IMergeTreeDataPart::getStreamNameOrHash(vectors_stream_name, ".idx", *data_part_storage);
+    if (!vectors_file_name)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has no file of vectors {}.idx", backQuote(index_name), vectors_stream_name);
+    /// A file per thread: a read buffer is not safe to share between threads. Its buffer takes a vector, as it reads one at a time.
+    const size_t vector_bytes = dimensions * sizeof(float);
+    ReadSettings vectors_read_settings = index_read_settings;
+    vectors_read_settings.local_fs_settings.buffer_size = std::max<size_t>(vector_bytes, 4096);
+    vectors_read_settings.remote_fs_settings.buffer_size = std::max<size_t>(vector_bytes, 4096);
+
+    const bool cosine = metric == IvfMetric::Cosine;
+    const size_t num_tasks = std::min<size_t>(getNumberOfCPUCoresToUse(), num_queries);
+    runOnCores(num_tasks, [&](size_t task)
+    {
+        auto vectors_file = data_part_storage->readFile(*vectors_file_name + ".idx", vectors_read_settings, std::nullopt);
+        const bool vectors_read_at = vectors_file->supportsReadAt();
+        std::vector<float> vector(dimensions);
+        std::vector<std::pair<float, UInt32>> exact;
+        exact.reserve(select);
+        for (size_t q = task; q < num_queries; q += num_tasks)
+        {
+            const float * query = queries.data() + q * dimensions;
+            exact.clear();
+            for (size_t i = 0; i < select; ++i)
+            {
+                const UInt32 row = found_rows[q * select + i];
+                if (row == invalid_neighbour)
+                    break;
+                const size_t offset = vectors_byte_begin + row * vector_bytes;
+                if (vectors_read_at)
+                {
+                    if (vectors_file->readBigAt(reinterpret_cast<char *>(vector.data()), vector_bytes, offset, nullptr) != vector_bytes)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Vector similarity index {} has a truncated file of vectors", backQuote(index_name));
+                }
+                else
+                {
+                    vectors_file->seek(offset, SEEK_SET);
+                    vectors_file->readStrict(reinterpret_cast<char *>(vector.data()), vector_bytes);
+                }
+                float distance = 0;
+                if (cosine)
+                {
+                    for (size_t j = 0; j < dimensions; ++j)
+                        distance += vector[j] * query[j];
+                    distance = 1.0f - distance;
+                }
+                else
+                {
+                    for (size_t j = 0; j < dimensions; ++j)
+                    {
+                        const float diff = vector[j] - query[j];
+                        distance += diff * diff;
+                    }
+                }
+                exact.emplace_back(distance, row);
+            }
+            const size_t found = std::min(limit, exact.size());
+            std::partial_sort(exact.begin(), exact.begin() + found, exact.end());
+            for (size_t i = 0; i < found; ++i)
+            {
+                distances[q * limit + i] = exact[i].first;
+                neighbours[q * limit + i] = exact[i].second;
+            }
+        }
+    });
+
+    LOG_TRACE(logger, "Searched {} queries in {} of {} lists ({}) of IVF index {} in {} ms, of them the exact distances of {} candidates per query {} ms",
+        num_queries, order.size(), lists, ReadableSize(bytes_read), backQuote(index_name), watch.elapsedMilliseconds(), select,
+        watch.elapsedMilliseconds() - scan_ms);
 }
 
 MergeTreeIndexAggregatorIvf::MergeTreeIndexAggregatorIvf(
@@ -428,7 +639,7 @@ void MergeTreeIndexAggregatorIvf::reset()
 void MergeTreeIndexAggregatorIvf::add(const float * vector)
 {
     if (!vectors)
-        vectors = std::make_unique<TemporaryDataBuffer>(temporaryData());
+        vectors = std::make_shared<TemporaryDataBuffer>(temporaryData());
     vectors->write(reinterpret_cast<const char *>(vector), dimensions * sizeof(float));
 
     /// Reservoir sampling, algorithm R.
@@ -465,8 +676,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
     sample = {};
     const double train_seconds = watch.elapsedSeconds();
 
+    granule->rotation = makeRotation(dimensions, /*seed=*/ 42);
+    /// The residual of R x to its centroid is R x - R c.
+    granule->rotated_centroids = rotateCentroids(granule->rotation, granule->centroids, lists, dimensions);
+
     /// The entries go to buckets of consecutive lists, each small enough to be sorted in memory when written.
-    const size_t record_bytes = 2 * sizeof(UInt32) + dimensions * sizeof(float);
+    const size_t code_bytes = GPU::ivfCodeBytes(dimensions);
+    const size_t record_bytes = 2 * sizeof(UInt32) + 3 * sizeof(float) + code_bytes;
     const size_t num_buckets = std::clamp<size_t>((rows * record_bytes + max_bucket_bytes - 1) / max_bucket_bytes, 1, lists);
     std::vector<IvfListBucket> buckets(num_buckets);
     std::vector<UInt32> bucket_of_list(lists);
@@ -480,12 +696,18 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
     }
 
     std::vector<UInt64> counts(lists, 0);
-    auto write_entry = [&](UInt32 list, UInt32 row, const float * vector)
+    std::vector<float> residual(dimensions);
+    std::vector<char> codes(code_bytes);
+    auto write_entry = [&](UInt32 list, UInt32 row, const float * rotated)
     {
+        for (size_t i = 0; i < dimensions; ++i)
+            residual[i] = rotated[i] - granule->rotated_centroids[list * dimensions + i];
+        const auto code_params = encodeResidual(residual.data(), dimensions, codes.data());
         auto & out = *buckets[bucket_of_list[list]].records;
         out.write(reinterpret_cast<const char *>(&list), sizeof(list));
         out.write(reinterpret_cast<const char *>(&row), sizeof(row));
-        out.write(reinterpret_cast<const char *>(vector), dimensions * sizeof(float));
+        out.write(reinterpret_cast<const char *>(code_params.data()), sizeof(code_params));
+        out.write(codes.data(), code_bytes);
         ++counts[list];
     };
 
@@ -495,14 +717,15 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
         GPU::IvfCentroids device_centroids(granule->centroids.data(), lists, dimensions);
         const size_t block_rows = std::max<size_t>(assign_block_bytes / (dimensions * sizeof(float)), 1);
         std::vector<float> block(block_rows * dimensions);
+        std::vector<float> rotated(block_rows * dimensions);
         std::vector<UInt32> assigned(block_rows);
         for (size_t first = 0; first < rows; first += block_rows)
         {
             const size_t n = std::min(block_rows, rows - first);
             in->readStrict(reinterpret_cast<char *>(block.data()), n * dimensions * sizeof(float));
-            device_centroids.assign(block.data(), n, assigned.data());
+            device_centroids.assign(block.data(), n, assigned.data(), granule->rotation.data(), rotated.data());
             for (size_t i = 0; i < n; ++i)
-                write_entry(assigned[i], static_cast<UInt32>(first + i), block.data() + i * dimensions);
+                write_entry(assigned[i], static_cast<UInt32>(first + i), rotated.data() + i * dimensions);
         }
     }
     in.reset();
@@ -513,6 +736,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
     for (size_t l = 0; l < lists; ++l)
         granule->list_offsets[l + 1] = granule->list_offsets[l] + counts[l];
     granule->buckets = std::move(buckets);
+    /// Written as they are by `serializeBinaryWithMultipleStreams`.
+    granule->vectors = std::move(vectors);
 
     LOG_DEBUG(logger, "Built IVF index {} of {} rows with {} dimensions in {} lists in {:.3f} s (k-means on {} rows {:.3f} s), {} buckets",
         backQuote(index_name), rows, dimensions, lists, watch.elapsedSeconds(), sample_rows, train_seconds, num_buckets);
@@ -661,6 +886,7 @@ MergeTreeIndexSubstreams MergeTreeIndexIvf::getSubstreams() const
     return {
         {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
         {MergeTreeIndexSubstream::Type::VectorIndexLists, String(lists_substream_suffix), ".idx"},
+        {MergeTreeIndexSubstream::Type::VectorIndexVectors, String(vectors_substream_suffix), ".idx"},
     };
 }
 
