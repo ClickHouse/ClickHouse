@@ -34,7 +34,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://[::1]:8123/path@x", "http://[::1]:8123/path@x"},
         {"file:///etc/passwd", "file:///etc/passwd"},
         {"http://user:password", "http://user:password"},
-        {"user:password@host", "user:password@host"},
+        {"user:password@host", "user:[HIDDEN]@host"},
         {"just some text", "just some text"},
         {"", ""},
         {"://", "://"},
@@ -73,6 +73,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
         {"http://host?email=a@b.com", "http://host?email=a@b.com"},
         {"://token@host", "://[HIDDEN]@host"},
+        {"//token@host", "//[HIDDEN]@host"},
     };
 
     for (const auto & [input, expected] : cases)

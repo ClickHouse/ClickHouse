@@ -117,14 +117,15 @@ inline constexpr std::string_view URI_AUTHORITY_TERMINATORS = "/?#";
 /// - an authority cut short by a raw '/', '?' or '#' in the password: it runs to the last '@' (`u:pa/ss@host`).
 /// `authority_terminators` are where the consumer of the URI ends its userinfo. By default only '/', as the MongoDB
 /// driver does, since the consumer of a text is not always known; pass `URI_AUTHORITY_TERMINATORS` for `Poco::URI`.
-inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std::string_view authority_terminators = "/")
+inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std::string_view authority_terminators = "/",
+    const bool from_start = false)
 {
     static constexpr std::string_view SEPARATOR = "://";
 
-    for (size_t separator = text.find(SEPARATOR); separator != std::string_view::npos;
+    for (size_t separator = from_start ? 0 : text.find(SEPARATOR); separator != std::string_view::npos;
          separator = text.find(SEPARATOR, separator + SEPARATOR.length()))
     {
-        size_t authority_begin = separator + SEPARATOR.length();
+        size_t authority_begin = from_start ? 0 : separator + SEPARATOR.length();
         size_t userinfo_bound = std::min(text.find_first_of(authority_terminators, authority_begin), text.length());
         std::string_view bounded = text.substr(authority_begin, userinfo_bound - authority_begin);
 
@@ -157,7 +158,8 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
     std::string result;
     while (true)
     {
-        auto [password_begin, password_end] = findURIPasswordRange(std::string_view(uri).substr(offset), authority_terminators);
+        const auto current = std::string_view(uri).substr(offset);
+        auto [password_begin, password_end] = findURIPasswordRange(current, authority_terminators);
         if (password_begin == std::string::npos)
         {
             if (offset > 0)
@@ -166,7 +168,19 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
                 uri = result;
                 return true;
             }
-            return false;
+            if (current.starts_with("//"))
+            {
+                std::tie(password_begin, password_end) = findURIPasswordRange(current.substr(2), authority_terminators, true);
+                password_begin += 2;
+                password_end += 2;
+            } else
+            {
+                std::tie(password_begin, password_end) = findURIPasswordRange(current, authority_terminators, true);
+            }
+            if (password_begin == std::string::npos)
+            {
+                return false;
+            }
         }
 
         result.append(uri, offset, password_begin).append(HIDDEN_SECRET);
