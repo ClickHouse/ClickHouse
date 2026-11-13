@@ -21,6 +21,9 @@ SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620) SETTIN
 SELECT value FROM prometheusQuery(ts, 'sum_over_time(m[5m:])', 1000620) SETTINGS promql_default_subquery_step = 15;
 SELECT tags, arrayMap(x -> x.2, samples) FROM prometheusQueryRange(ts, 'count_over_time(m[5m:])', 1000320, 1000620, 60) ORDER BY ALL SETTINGS promql_default_subquery_step = 15;
 
+SELECT 'compatibility = 26.10 keeps the old step of 15 seconds:';
+SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', 1000620) SETTINGS compatibility = '26.10';
+
 SELECT 'an explicit subquery step wins:';
 SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:30s])', 1000620) SETTINGS promql_default_subquery_step = 15;
 

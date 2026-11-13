@@ -11469,7 +11469,7 @@ Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange
 0 means the default of 1 minute, which is the default global `evaluation_interval` that Prometheus uses here.
 The value is kept to the microsecond, so a value below 1 microsecond also means the default. A negative value is an error.
 )", IMPORTANT | PRIVATE_PREVIEW, \
-        {"26.11", 60, 60, "New setting."}) \
+        {"26.11", 15, 60, "New setting. The step of a PromQL subquery without one changes from 15 seconds to 1 minute, like Prometheus."}) \
     \
     DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
 Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.

@@ -6,6 +6,8 @@ subquery without step, promql_default_subquery_step = 15:
 20
 20
 [('l','a')]	[20,20,20,20,20,20]
+compatibility = 26.10 keeps the old step of 15 seconds:
+20
 an explicit subquery step wins:
 10
 instant selector two minutes after the last sample, default lookback 5m:
