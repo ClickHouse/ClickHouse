@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Bindplane', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'collector management']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
@@ -154,7 +153,15 @@ These processors are applied consistently across your collector fleet before dat
 Bindplane provides safe, one-click rollouts with validation. You can monitor collector health, throughput, and any errors in real-time through the Bindplane interface.
 </Tip>
 
-<Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Telemetry in ClickHouse Observability via Bindplane" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Telemetry in ClickHouse Observability via Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Verify telemetry in ClickHouse Observability" id="verify-telemetry">
 
@@ -165,7 +172,15 @@ Once the configuration is rolled out, telemetry starts flowing into ClickHouse O
 3. Confirm that the expected telemetry from your Bindplane-managed collectors has arrived
 4. If data is missing, check the Bindplane collector logs for connection or authentication errors
 
-<Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Telemetry in ClickHouse Observability via Bindplane" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Telemetry in ClickHouse Observability via Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

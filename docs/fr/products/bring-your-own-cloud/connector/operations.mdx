@@ -16,24 +16,35 @@ Cette page décrit les opérations après mise en service du connector sur les d
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-  Les opérations Kubernetes post-déploiement utilisent la CLI `helm` sur votre poste de travail. Seul `init` inclut un client Helm intégré ; installez donc `helm` avant votre première mise à niveau.
-</Note>
+`connector upgrade` nécessite une CLI en version v0.50.0 ou ultérieure et embarque son propre client Helm ; aucun binaire `helm` n&#39;est donc nécessaire :
 
-Mettez à niveau la release depuis le repository public de charts avec la surcouche de valeurs préparée par `init` :
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+`context add` s&#39;exécute une fois par cluster et enregistre le contexte kubeconfig dans lequel le connector s&#39;exécute ; `--use` en fait le contexte courant, et `context use <name>` permet d&#39;en changer par la suite. `connector upgrade` demande une confirmation avant toute modification ; ses indicateurs sont décrits dans la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade).
+
+Les versions du chart correspondent aux étiquettes de version, sans le `v` initial : l&#39;étiquette `v0.50.0` correspond au chart `0.50.0`. L&#39;executor s&#39;exécute avec une seule réplique et la stratégie `Recreate` ; une mise à niveau entraîne donc une brève déconnexion. Consultez [lorsque le connector est hors ligne](/fr/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) pour savoir ce qu&#39;il advient des commandes pendant cet intervalle.
+
+Pour effectuer plutôt la mise à niveau avec la CLI `helm`, utilisez l’Overlay de values mis en tampon par `init` :
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-Les versions du chart correspondent aux tags de release sans le préfixe `v` (le chart `X.Y.Z` correspond au tag `vX.Y.Z`). Le chart publié pointe déjà vers l’image de conteneur publique. Les installations et mises à niveau standard ne nécessitent donc aucune valeur d’image. Pour consulter les valeurs par défaut du chart, exécutez `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. L’executor s’exécute sous la forme d’une réplique unique avec la strategy `Recreate` ; une mise à niveau le déconnecte donc brièvement. Voir [quand le connector est hors ligne](/fr/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) pour savoir ce qu’il advient des commandes durant cette window.
+Le chart publié pointe déjà vers l’image de conteneur publique : les installations et mises à niveau simples ne nécessitent donc aucune valeur d’image. Pour consulter les valeurs par défaut du chart, exécutez `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`.
 
-Une installation à partir d’une référence directe au chart (`oci://`, une URL, une archive locale ou un répertoire local) n’est associée à aucun repository à partir duquel résoudre le chart. Exécutez plutôt `helm upgrade clicklink-connector <same-chart-reference>` avec la nouvelle version. Réexécuter `init` avec une CLI plus récente permet également d’aboutir au même résultat, mais nécessite un point d’entrée : `--handoff` si vous avez conservé le bundle, ou un nouveau jeton d’inscription avec `--force` après le nettoyage documenté. La commande `helm upgrade` ci-dessus est la procédure habituelle (voir [réexécutions et récupération](#re-runs-and-recovery)).
+<Note>
+  Dans les versions antérieures à v0.50.0, `init` écrivait `image.tag` dans `clicklink-values.yaml`, figé sur la version qui l’avait mis en place. Supprimez cette clé une fois pour toutes avec `yq -i 'del(.image.tag)' clicklink-values.yaml` avant le prochain `helm upgrade` utilisant ce fichier ; sinon, le chart évolue mais les groupes de conteneurs conservent l’ancienne image. `connector upgrade` ne lit pas l’Overlay et supprime de lui-même toute étiquette obsolète dans la version déployée.
+</Note>
+
+`connector upgrade` refuse une version dont l’image provient d’un [mirror privé](/fr/products/bring-your-own-cloud/connector/configuration#private-mirrors) ; utilisez plutôt la commande `helm upgrade` ci-dessus, qui conserve le mirror défini dans votre Overlay. Une installation effectuée à partir d’une référence directe au chart (`oci://`, une URL, ou une archive ou un répertoire local) ne dispose d’aucun dépôt permettant de résoudre la version : relancez `helm upgrade clicklink-connector <same-chart-reference>` avec la nouvelle version. Relancer `init` avec une CLI plus récente permet également d’aboutir au même état, mais nécessite un point d’entrée : `--handoff` si vous avez conservé l’archive, ou un nouveau jeton d’inscription avec `--force` (voir [relances et récupération](#re-runs-and-recovery)).
 
 ### VM Linux {#upgrades-linux-vm}
 

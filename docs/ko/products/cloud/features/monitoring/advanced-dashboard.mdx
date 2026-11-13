@@ -8,8 +8,6 @@ title: 'ClickHouse Cloud의 고급 대시보드'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 운영 환경에서 데이터베이스 시스템을 모니터링하는 일은 배포 상태를 파악하고 장애를 예방하거나 해결하는 데 매우 중요합니다.
 
 Advanced dashboard는 ClickHouse 시스템과 해당 환경을 깊이 있게 파악할 수 있도록 설계된 경량 도구로, 성능 병목, 시스템 장애, 비효율에 선제적으로 대응하는 데 도움이 됩니다.
@@ -27,7 +25,15 @@ Cloud에서 Advanced dashboard를 사용하는 방법을 설명합니다.
 * 왼쪽 패널
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="고급 대시보드" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![고급 대시보드](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## 네이티브 고급 대시보드에 액세스하기
@@ -42,12 +48,28 @@ Cloud에서 Advanced dashboard를 사용하는 방법을 설명합니다.
 그러면 네이티브 고급 대시보드가 새 탭에서 열립니다. 대시보드에 액세스하려면
 인증해야 합니다.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="고급 대시보드" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![고급 대시보드](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 각 시각화는 해당 내용을 채우는 SQL 쿼리와 연결되어 있습니다. 펜 아이콘을 클릭하면
 이 쿼리를 편집할 수 있습니다.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="고급 대시보드" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![고급 대시보드](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</Frame>
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## 기본 제공 시각화
@@ -131,7 +153,15 @@ ClickHouse 서비스 상태를 실시간으로 파악하면 비즈니스에 영�
 최적화가 충분하지 않은 삽입을 파악할 때 확인해야 할 핵심 메트릭은 **초당 삽입된 행 수**와
 **파티션별 최대 파트 수**입니다.
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="배치되지 않은 삽입" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![배치되지 않은 삽입](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</Frame>
+
+</div>
 
 위 예시에서는 13시와 14시 사이에 **초당 삽입된 행 수**와 **파티션별 최대 파트 수**에서
 두 번의 급증이 나타납니다. 이는 데이터가 적절한 속도로 수집되고 있음을 의미합니다.
@@ -151,7 +181,15 @@ CPU나 메모리처럼 많은 리소스를 소비하는 SQL 쿼리를 실행하�
 
 아래는 초당 실행되는 쿼리 수에는 큰 변화가 없지만 CPU 사용량이 급증하는 예시입니다.
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="리소스 사용량이 많은 쿼리" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![리소스 사용량이 많은 쿼리](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</Frame>
+
+</div>
 
 <div id="bad-primary-key-design">
   ### 잘못된 프라이머리 키 설계
@@ -168,7 +206,15 @@ ClickHouse가 쿼리를 실행하기 위해 읽어야 하는 행 수를 줄일 �
 전체적인 쿼리 처리량이 증가했음을 의미할 수도 있고,
 실행 과정에서 많은 수의 행을 선택하는 쿼리가 있음을 나타낼 수도 있습니다.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="리소스를 많이 사용하는 쿼리" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![리소스를 많이 사용하는 쿼리](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</Frame>
+
+</div>
 
 타임스탬프를 필터로 사용하면 `system.query_log` 테이블에서
 급증이 발생한 시점에 실행된 쿼리를 찾을 수 있습니다.

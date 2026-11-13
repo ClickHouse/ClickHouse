@@ -35,15 +35,39 @@ keywords: ['Windows']
 
 * AD 環境と OU 構造の例:
 
-<Image img={ad_env} size="md" alt="AD 環境と OU 構造の例" />
+<div className="ch-image-md">
+
+<Frame>
+
+![AD 環境と OU 構造の例](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+
+</Frame>
+
+</div>
 
 * AD セキュリティグループ設定の例:
 
-<Image img={ad_group} size="md" alt="AD セキュリティグループ設定の例" />
+<div className="ch-image-md">
+
+<Frame>
+
+![AD セキュリティグループ設定の例](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+
+</Frame>
+
+</div>
 
 * AD ユーザー設定の例:
 
-<Image img={ad_user} size="md" alt="AD ユーザー設定の例" />
+<div className="ch-image-md">
+
+<Frame>
+
+![AD ユーザー設定の例](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+
+</Frame>
+
+</div>
 
 1. Windows AD Users and Groups で、各ユーザーを対応するグループに追加します。これらのグループは ClickHouse のロールに対応付けられます (例は次の手順を参照してください) 。
 
@@ -56,7 +80,15 @@ keywords: ['Windows']
 
 * ユーザーのグループメンバーシップの例:
 
-<Image img={ad_user_group} size="md" alt="ユーザーのグループメンバーシップの例" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ユーザーのグループメンバーシップの例](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+
+</Frame>
+
+</div>
 
 2. ClickHouse の `config.xml` で、各 ClickHouse ノードに `ldap_servers` 設定を追加します。
 
