@@ -319,14 +319,17 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
+        const auto & type = types[column_idx];
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
-            column.insertDefault();
+            if (type->isDefaultInsertTrivial())
+                column.insertDefault();
+            else
+                type->insertDefaultInto(column);
             read = false;
         }
         else
         {
-            const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             /// Let Enum conversion functions handle the null value.
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
