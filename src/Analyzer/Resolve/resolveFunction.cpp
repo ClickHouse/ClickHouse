@@ -1433,11 +1433,9 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
     }
     else
     {
-        /// `has` uses the same value comparison as a constant `IN` set, including
-        /// nested `Dynamic` and `Variant` values and wide unsigned/Decimal pairs.
-        auto candidates = buildResolvedFunction("array", {right_argument}, context);
-        result = buildResolvedFunction("has", {std::move(candidates), left_argument}, context);
-        result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
+        /// `isNotDistinctFrom` preserves the comparison domain for mixed numeric
+        /// types and the nested values held by `Dynamic` and `Variant`.
+        result = buildResolvedFunction("isNotDistinctFrom", {left_argument, right_argument}, context);
     }
 
     if (canContainNull(*left_argument->getResultType()) || canContainNull(*right_argument->getResultType()))
@@ -1502,7 +1500,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
     const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
 
-    if (bind_arguments && (left_is_decimal != right_is_decimal || (compare_nulls && (left_nullable || right_nullable))))
+    if (bind_arguments && (left_is_decimal != right_is_decimal
+        || (compare_nulls && (left_nullable || right_nullable || (isFloat(left_type) && isFloat(right_type))))))
     {
         /// The exact comparison uses each operand in several branches. Bind both
         /// operands once so nested `IN` expressions grow linearly and the query
