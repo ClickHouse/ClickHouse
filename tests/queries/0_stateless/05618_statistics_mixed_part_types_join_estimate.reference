@@ -1,0 +1,8 @@
+stored type:	t_events_a	1	UInt32
+stored type:	t_events_a	2	DateTime(\'UTC\')
+stored type:	t_events_b	1	DateTime(\'UTC\')
+stored type:	t_events_b	2	UInt32
+join rows:	1000	1000
+join estimate, old data first:	estimated 2.01 thousand
+join estimate, old data first, filter:	estimated 2.01 thousand
+join estimate, old data last:	estimated 2.01 thousand
