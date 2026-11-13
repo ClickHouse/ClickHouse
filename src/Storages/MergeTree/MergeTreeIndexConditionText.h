@@ -153,6 +153,7 @@ public:
         ContextPtr context_,
         const Block & index_sample_block,
         const std::optional<String> & normalized_index_column_name_,
+        const std::optional<String> & map_element_subcolumn_name_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -311,6 +312,8 @@ private:
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
+    /// The subcolumn `m.key_<key>` that `optimize_functions_to_subcolumns` makes of the index expression `m['key']`.
+    std::optional<String> map_element_subcolumn_name;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.

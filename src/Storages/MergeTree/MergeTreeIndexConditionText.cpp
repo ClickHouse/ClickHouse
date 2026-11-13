@@ -11,7 +11,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -268,6 +267,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     const std::optional<String> & normalized_index_column_name_,
+    const std::optional<String> & map_element_subcolumn_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -281,6 +281,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
+    , map_element_subcolumn_name(map_element_subcolumn_name_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
@@ -2431,23 +2432,8 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & column_name) const
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, is_column_shadowing_map_subcolumn);
-    if (!parsed)
-        return false;
-
-    /// `serializeText` is the identity for a String key, which the index expression names as a quoted literal.
-    /// Same assumption as traverseMapElementKeyNode.
-    const auto & [map_column_name, serialized_key] = *parsed;
-    if (hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, quoteString(serialized_key))))
-        return true;
-
-    /// An integer key is named as a number literal, e.g. `arrayElement(m, 1)` for `m[1]`.
-    std::string_view digits = serialized_key;
-    if (digits.starts_with('-'))
-        digits.remove_prefix(1);
-    if (digits.empty() || !std::ranges::all_of(digits, [](char c) { return isNumericASCII(c); }))
-        return false;
-    return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, serialized_key));
+    /// A physical column of that name shadows the subcolumn.
+    return column_name == map_element_subcolumn_name && !is_column_shadowing_map_subcolumn(column_name);
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(
