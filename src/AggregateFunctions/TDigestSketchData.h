@@ -28,6 +28,25 @@ private:
         return tdigest.get();
     }
 
+    /// Merge an imported (or partial-state) digest, preserving its compression `k` instead of
+    /// degrading it to the default one. The largest `k` among the inputs is kept (`tdigest::merge`
+    /// keeps the receiver's `k`), so the result does not depend on the merge order.
+    void mergeDigest(datasketches::tdigest<double> && sk)
+    {
+        if (!tdigest)
+        {
+            tdigest = std::make_unique<datasketches::tdigest<double>>(std::move(sk));
+            return;
+        }
+        if (sk.get_k() > tdigest->get_k())
+        {
+            sk.merge(*tdigest);
+            *tdigest = std::move(sk);
+            return;
+        }
+        tdigest->merge(sk);
+    }
+
 public:
     TDigestSketchData() = default;
     ~TDigestSketchData() = default;
@@ -42,8 +61,7 @@ public:
         if (data == nullptr || size == 0)
             return;
 
-        auto sk = deserializeSketch<datasketches::tdigest<double>>(data, size);
-        getTDigest()->merge(sk);
+        mergeDigest(deserializeSketch<datasketches::tdigest<double>>(data, size));
     }
 
     typename datasketches::tdigest<double>::vector_bytes getSerializedData()
@@ -59,8 +77,7 @@ public:
     {
         if (!rhs.tdigest)
             return;
-        datasketches::tdigest<double> * u = getTDigest();
-        u->merge(*rhs.tdigest);
+        mergeDigest(datasketches::tdigest<double>(*rhs.tdigest));
     }
 
     /// You can only call for an empty object.
@@ -70,8 +87,7 @@ public:
         readVectorBinary(bytes, in);
         if (!bytes.empty())
         {
-            auto tdigest_local = deserializeSketch<datasketches::tdigest<double>>(bytes.data(), bytes.size());
-            getTDigest()->merge(tdigest_local);
+            mergeDigest(deserializeSketch<datasketches::tdigest<double>>(bytes.data(), bytes.size()));
         }
     }
 

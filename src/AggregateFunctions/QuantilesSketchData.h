@@ -28,6 +28,28 @@ private:
         return quantile_sketch.get();
     }
 
+    /// Merge an imported (or partial-state) sketch, preserving its configured precision `k`
+    /// instead of degrading it to the default `k` of a freshly created sketch. The first sketch
+    /// is adopted as-is. For exact-mode sketches (which the library streams item by item into
+    /// the receiving sketch, keeping the receiver's `k`) the larger `k` is kept, so the result
+    /// does not depend on the merge order. Estimation-mode sketches follow the library rules
+    /// (the result takes the smallest `k` among the estimation-mode inputs).
+    void mergeSketch(datasketches::quantiles_sketch<double> && sk)
+    {
+        if (!quantile_sketch)
+        {
+            quantile_sketch = std::make_unique<datasketches::quantiles_sketch<double>>(std::move(sk));
+            return;
+        }
+        if (!quantile_sketch->is_estimation_mode() && sk.get_k() > quantile_sketch->get_k())
+        {
+            sk.merge(*quantile_sketch);
+            *quantile_sketch = std::move(sk);
+            return;
+        }
+        quantile_sketch->merge(sk);
+    }
+
 public:
     QuantilesSketchData() = default;
     ~QuantilesSketchData() = default;
@@ -52,8 +74,7 @@ public:
             return;
 
         /// Deserialize and merge the sketch
-        auto sk = deserializeSketch<datasketches::quantiles_sketch<double>>(data_ptr, data_size);
-        getQuantilesSketch()->merge(sk);
+        mergeSketch(deserializeSketch<datasketches::quantiles_sketch<double>>(data_ptr, data_size));
     }
 
     String serializedData()
@@ -102,8 +123,7 @@ public:
     {
         if (!rhs.quantile_sketch)
             return;
-        datasketches::quantiles_sketch<double> * u = getQuantilesSketch();
-        u->merge(*rhs.quantile_sketch);
+        mergeSketch(datasketches::quantiles_sketch<double>(*rhs.quantile_sketch));
     }
 
     void read(DB::ReadBuffer & in)
@@ -112,8 +132,7 @@ public:
         readVectorBinary(bytes, in);
         if (!bytes.empty())
         {
-            auto quantile_sketch_local = deserializeSketch<datasketches::quantiles_sketch<double>>(bytes.data(), bytes.size());
-            getQuantilesSketch()->merge(quantile_sketch_local);
+            mergeSketch(deserializeSketch<datasketches::quantiles_sketch<double>>(bytes.data(), bytes.size()));
         }
     }
 
