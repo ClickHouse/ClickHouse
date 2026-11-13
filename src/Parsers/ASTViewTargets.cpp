@@ -9,6 +9,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 

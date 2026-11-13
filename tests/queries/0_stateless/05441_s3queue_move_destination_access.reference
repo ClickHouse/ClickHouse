@@ -24,7 +24,6 @@ table without a destination: created
 -- RESTORE of a queue with a destination, without WRITE on S3
 0
 0
-0
 -- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3
 CREATE AS with WRITE on S3: created
 after_processing = 'delete' with WRITE on S3: created
@@ -34,4 +33,3 @@ RESTORE ON CLUSTER with WRITE on S3: restored
 CREATE ON CLUSTER with WRITE on S3: created
 CREATE AS ON CLUSTER with WRITE on S3: created
 ATTACH with WRITE on S3: attached
-RESTORE TEMPORARY with WRITE on S3: restored	1
