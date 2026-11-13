@@ -5,6 +5,7 @@
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
@@ -1114,6 +1115,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     }
 
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+
+    /// Re-applying the clause can reset an inferred `make_distributed_plan`; infer it again so
+    /// EXPLAIN plans what executes.
+    if (explain_query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        applyDistributedPlanSettings(explain_query_context);
+
     query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
