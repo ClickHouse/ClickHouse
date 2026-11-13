@@ -84,8 +84,11 @@ std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
     /// when parsing their string arguments during execution.
     static constexpr std::array settings{
         std::string_view{"dialect"},
+        std::string_view{"enable_kusto_dialect"},
         std::string_view{"allow_experimental_kusto_dialect"},
+        std::string_view{"enable_prql_dialect"},
         std::string_view{"allow_experimental_prql_dialect"},
+        std::string_view{"enable_polyglot_dialect"},
         std::string_view{"allow_experimental_polyglot_dialect"},
         std::string_view{"polyglot_dialect"},
         std::string_view{"enable_json_ast_dialect"},

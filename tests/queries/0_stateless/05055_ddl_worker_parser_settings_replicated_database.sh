@@ -23,34 +23,53 @@ trap cleanup EXIT
 ${CLICKHOUSE_CLIENT} --query \
     "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}', '{shard}', '{replica}')"
 
-${CLICKHOUSE_CLIENT} \
-    --distributed_ddl_output_mode=none \
-    --enable_json_ast_dialect=1 \
-    --enable_logsql_dialect=1 \
-    --logsql_database=logsql_database_from_context \
-    --logsql_table=logsql_table_from_context \
-    --logsql_time_column=timestamp_from_context \
-    --logsql_message_column=message_from_context \
-    --implicit_select=1 \
-    --allow_settings_after_format_in_insert=1 \
-    --join_use_nulls=1 \
-    --query "CREATE TABLE ${DB}.${TABLE} ENGINE = Memory AS SELECT 1 AS value
-        SETTINGS
-            enable_json_ast_dialect = 1,
-            enable_logsql_dialect = 1,
-            logsql_database = 'logsql_database_from_query',
-            logsql_table = 'logsql_table_from_query',
-            logsql_time_column = 'timestamp_from_query',
-            logsql_message_column = 'message_from_query',
-            implicit_select = 1,
-            allow_settings_after_format_in_insert = 1,
-            database = 'system',
-            join_use_nulls = 1"
+# Session settings use aliases. Query settings keep their original spelling in the AST,
+# and `= DEFAULT` entries are stored separately from value assignments.
+for spelling in session enable allow_experimental; do
+    dialect_settings=""
+    if [[ ${spelling} != session ]]; then
+        dialect_settings="${spelling}_kusto_dialect = 1, ${spelling}_prql_dialect = DEFAULT, ${spelling}_polyglot_dialect = 1,"
+    fi
+
+    ${CLICKHOUSE_CLIENT} \
+        --distributed_ddl_output_mode=none \
+        --allow_experimental_kusto_dialect=1 \
+        --allow_experimental_prql_dialect=1 \
+        --allow_experimental_polyglot_dialect=1 \
+        --enable_json_ast_dialect=1 \
+        --enable_logsql_dialect=1 \
+        --logsql_database=logsql_database_from_context \
+        --logsql_table=logsql_table_from_context \
+        --logsql_time_column=timestamp_from_context \
+        --logsql_message_column=message_from_context \
+        --implicit_select=1 \
+        --allow_settings_after_format_in_insert=1 \
+        --join_use_nulls=1 \
+        --query "CREATE TABLE ${DB}.${TABLE}_${spelling} ENGINE = Memory AS SELECT 1 AS value
+            SETTINGS
+                ${dialect_settings}
+                enable_json_ast_dialect = 1,
+                enable_logsql_dialect = 1,
+                logsql_database = 'logsql_database_from_query',
+                logsql_table = 'logsql_table_from_query',
+                logsql_time_column = 'timestamp_from_query',
+                logsql_message_column = 'message_from_query',
+                implicit_select = 1,
+                allow_settings_after_format_in_insert = 1,
+                database = 'system',
+                join_use_nulls = 1"
+done
 
 echo "queued settings"
 ${CLICKHOUSE_CLIENT} --query "
     WITH
         [
+            'enable_kusto_dialect',
+            'enable_prql_dialect',
+            'enable_polyglot_dialect',
+            'allow_experimental_kusto_dialect',
+            'allow_experimental_prql_dialect',
+            'allow_experimental_polyglot_dialect',
             'enable_json_ast_dialect',
             'enable_logsql_dialect',
             'logsql_database',
@@ -61,7 +80,7 @@ ${CLICKHOUSE_CLIENT} --query "
         ['database ='] AS initiator_only_settings,
         ['implicit_select', 'allow_settings_after_format_in_insert', 'join_use_nulls'] AS semantic_settings
     SELECT
-        count() = 1,
+        count() = 3,
         countIf(NOT arrayExists(setting -> position(value, setting) > 0, parser_settings)) = count(),
         countIf(NOT arrayExists(setting -> position(value, setting) > 0, initiator_only_settings)) = count(),
         countIf(arrayAll(setting -> position(value, setting) > 0, semantic_settings)) = count()

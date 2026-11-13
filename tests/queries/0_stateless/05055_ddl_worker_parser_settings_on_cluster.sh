@@ -12,8 +12,10 @@ TABLE="ddl_worker_parser_settings_on_cluster_05055"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none \
-        --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${TABLE} ON CLUSTER test_shard_localhost" >/dev/null 2>&1 || true
+    for spelling in session enable allow_experimental; do
+        ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none \
+            --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${TABLE}_${spelling} ON CLUSTER test_shard_localhost" >/dev/null 2>&1 || true
+    done
     for setting_source in query session; do
         ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.ddl_parser_local_${setting_source} SYNC" >/dev/null 2>&1 || true
         ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none \
@@ -25,56 +27,66 @@ cleanup
 trap cleanup EXIT
 
 # A non-default `async_insert_select_as_async_insert` must be stripped even when set only in the session.
-${CLICKHOUSE_CLIENT} \
-    --dialect=clickhouse \
-    --allow_experimental_kusto_dialect=1 \
-    --allow_experimental_prql_dialect=1 \
-    --allow_experimental_polyglot_dialect=1 \
-    --polyglot_dialect=mysql \
-    --enable_json_ast_dialect=1 \
-    --enable_logsql_dialect=1 \
-    --logsql_database=logsql_database_from_context \
-    --logsql_table=logsql_table_from_context \
-    --logsql_time_column=timestamp_from_context \
-    --logsql_message_column=message_from_context \
-    --enable_trino_dialect=1 \
-    --implicit_select=1 \
-    --allow_settings_after_format_in_insert=1 \
-    --promql_database=promql_database_from_context \
-    --promql_table=promql_table_from_context \
-    --promql_evaluation_time=42 \
-    --enable_time_series_table=1 \
-    --async_insert_select_as_async_insert=0 \
-    --join_use_nulls=1 \
-    --distributed_ddl_output_mode=none \
-    --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.${TABLE} ON CLUSTER test_shard_localhost
-        ENGINE = Memory AS SELECT 1
-        SETTINGS
-            dialect = 'clickhouse',
-            allow_experimental_kusto_dialect = 1,
-            allow_experimental_prql_dialect = 1,
-            allow_experimental_polyglot_dialect = 1,
-            polyglot_dialect = 'mysql',
-            enable_json_ast_dialect = 1,
-            enable_logsql_dialect = 1,
-            logsql_database = 'logsql_database_from_query',
-            logsql_table = 'logsql_table_from_query',
-            logsql_time_column = 'timestamp_from_query',
-            logsql_message_column = 'message_from_query',
-            enable_trino_dialect = 1,
-            implicit_select = 1,
-            allow_settings_after_format_in_insert = 1,
-            promql_database = 'promql_database_from_query',
-            promql_table = 'promql_table_from_query',
-            evaluation_time = 43,
-            enable_time_series_table = 1,
-            join_use_nulls = 1"
+# Session settings use aliases. Query settings keep their original spelling in the AST,
+# and `= DEFAULT` entries are stored separately from value assignments.
+for spelling in session enable allow_experimental; do
+    dialect_settings=""
+    if [[ ${spelling} != session ]]; then
+        dialect_settings="${spelling}_kusto_dialect = 1, ${spelling}_prql_dialect = DEFAULT, ${spelling}_polyglot_dialect = 1,"
+    fi
+
+    ${CLICKHOUSE_CLIENT} \
+        --dialect=clickhouse \
+        --allow_experimental_kusto_dialect=1 \
+        --allow_experimental_prql_dialect=1 \
+        --allow_experimental_polyglot_dialect=1 \
+        --polyglot_dialect=mysql \
+        --enable_json_ast_dialect=1 \
+        --enable_logsql_dialect=1 \
+        --logsql_database=logsql_database_from_context \
+        --logsql_table=logsql_table_from_context \
+        --logsql_time_column=timestamp_from_context \
+        --logsql_message_column=message_from_context \
+        --enable_trino_dialect=1 \
+        --implicit_select=1 \
+        --allow_settings_after_format_in_insert=1 \
+        --promql_database=promql_database_from_context \
+        --promql_table=promql_table_from_context \
+        --promql_evaluation_time=42 \
+        --enable_time_series_table=1 \
+        --async_insert_select_as_async_insert=0 \
+        --join_use_nulls=1 \
+        --distributed_ddl_output_mode=none \
+        --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.${TABLE}_${spelling} ON CLUSTER test_shard_localhost
+            ENGINE = Memory AS SELECT 1
+            SETTINGS
+                ${dialect_settings}
+                dialect = 'clickhouse',
+                polyglot_dialect = 'mysql',
+                enable_json_ast_dialect = 1,
+                enable_logsql_dialect = 1,
+                logsql_database = 'logsql_database_from_query',
+                logsql_table = 'logsql_table_from_query',
+                logsql_time_column = 'timestamp_from_query',
+                logsql_message_column = 'message_from_query',
+                enable_trino_dialect = 1,
+                implicit_select = 1,
+                allow_settings_after_format_in_insert = 1,
+                promql_database = 'promql_database_from_query',
+                promql_table = 'promql_table_from_query',
+                evaluation_time = 43,
+                enable_time_series_table = 1,
+                join_use_nulls = 1"
+done
 
 echo "queued settings"
 ${CLICKHOUSE_CLIENT} --query "
     WITH
         [
             'dialect',
+            'enable_kusto_dialect',
+            'enable_prql_dialect',
+            'enable_polyglot_dialect',
             'allow_experimental_kusto_dialect',
             'allow_experimental_prql_dialect',
             'allow_experimental_polyglot_dialect',
@@ -98,7 +110,7 @@ ${CLICKHOUSE_CLIENT} --query "
             'enable_time_series_table'
         ] AS semantic_settings
     SELECT
-        count() = 1,
+        count() = 3,
         countIf(NOT arrayExists(name -> mapContains(settings, name), parser_settings)) = count(),
         countIf(arrayAll(name -> mapContains(settings, name), semantic_settings)) = count(),
         countIf(NOT arrayExists(name -> position(query, name) > 0, parser_settings)) = count(),
