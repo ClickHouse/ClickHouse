@@ -1284,6 +1284,11 @@ static QueryTreeNodePtr buildResolvedFunction(
     const String & name,
     QueryTreeNodes arguments,
     const ContextPtr & context);
+static QueryTreeNodePtr buildPortableNullSafeEquals(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context);
+static bool isCheapInOperand(const QueryTreeNodePtr & argument);
 
 /// Builds the row-wise comparison for a one-element IN set: the compare-nulls functions
 /// (`nullIn`, `notNullIn`) compare nulls explicitly, while the others map to
@@ -1301,6 +1306,13 @@ static QueryTreeNodePtr buildScalarInComparison(
         if (hasTypeThatCanContainNulls(left_argument->getResultType())
             || hasTypeThatCanContainNulls(right_argument->getResultType()))
         {
+            if (isCheapInOperand(left_argument) && isCheapInOperand(right_argument))
+            {
+                auto result = buildPortableNullSafeEquals(left_argument, right_argument, context);
+                if (is_not_in)
+                    result = buildResolvedFunction("not", {std::move(result)}, context);
+                return result;
+            }
             return buildBoundNullSafeInComparison(left_argument, right_argument, is_not_in, context);
         }
 
@@ -1339,6 +1351,27 @@ static QueryTreeNodePtr buildResolvedFunction(
     function->resolveAsFunction(FunctionFactory::instance().get(name, context));
     return function;
 }
+
+static bool isCheapInOperand(const QueryTreeNodePtr & argument)
+{
+    if (argument->as<ColumnNode>() || argument->as<ConstantNode>())
+        return true;
+
+    const auto * function = argument->as<FunctionNode>();
+    if (!function || function->getFunctionName() != "materialize")
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    return arguments.size() == 1 && (arguments[0]->as<ColumnNode>() || arguments[0]->as<ConstantNode>());
+}
+
+static QueryTreeNodePtr buildNumericScalarInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    bool compare_nulls,
+    const ContextPtr & context,
+    bool bind_arguments);
 
 static QueryTreeNodePtr includeMatchingNaNs(
     QueryTreeNodePtr result,
@@ -1433,9 +1466,25 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
     }
     else
     {
-        /// `isNotDistinctFrom` preserves the comparison domain for mixed numeric
-        /// types and the nested values held by `Dynamic` and `Variant`.
-        result = buildResolvedFunction("isNotDistinctFrom", {left_argument, right_argument}, context);
+        const bool both_numeric = isNumber(left_type) && isNumber(right_type);
+        if (both_numeric
+            && ((isDecimal(left_type) != isDecimal(right_type))
+                || !tryGetLeastSupertype(DataTypes{left_type, right_type})))
+        {
+            /// Keep mixed numeric comparisons on functions understood by older shards.
+            return buildNumericScalarInComparison(left_argument, right_argument, false, true, context, false);
+        }
+        if (left_type->hasDynamicStructure() || right_type->hasDynamicStructure()
+            || isVariant(left_type) || isVariant(right_type))
+        {
+            auto candidates = buildResolvedFunction("array", {right_argument}, context);
+            result = buildResolvedFunction("has", {std::move(candidates), left_argument}, context);
+        }
+        else
+        {
+            result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+            result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
+        }
     }
 
     if (canContainNull(*left_argument->getResultType()) || canContainNull(*right_argument->getResultType()))
@@ -1501,7 +1550,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
 
     if (bind_arguments && (left_is_decimal != right_is_decimal
-        || (compare_nulls && (left_nullable || right_nullable || (isFloat(left_type) && isFloat(right_type))))))
+        || (compare_nulls && (left_nullable || right_nullable || (isFloat(left_type) && isFloat(right_type)))))
+        && !(isCheapInOperand(left_argument) && isCheapInOperand(right_argument)))
     {
         /// The exact comparison uses each operand in several branches. Bind both
         /// operands once so nested `IN` expressions grow linearly and the query
@@ -1577,6 +1627,18 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
             auto is_integral = buildResolvedFunction("equals", {std::move(float_value), std::move(truncated)}, context);
             auto fractional_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
             result = buildResolvedFunction("if", {std::move(is_integral), std::move(result), std::move(fractional_equals)}, context);
+
+            /// Below the float's exact-integer limit, the raw Decimal integer cannot
+            /// round onto a different integral float. Use the ordinary comparison
+            /// for this common case and keep the exact path for larger values.
+            const UInt64 exact_limit = numeric_type->getTypeId() == TypeIndex::Float32 ? (1ULL << 24) : (1ULL << 53);
+            auto above_lower = buildResolvedFunction(
+                "greaterOrEquals", {raw_decimal, std::make_shared<ConstantNode>(Field{-static_cast<Int64>(exact_limit)})}, context);
+            auto below_upper = buildResolvedFunction(
+                "less", {raw_decimal, std::make_shared<ConstantNode>(Field{exact_limit})}, context);
+            auto within_exact_range = buildResolvedFunction("and", {std::move(above_lower), std::move(below_upper)}, context);
+            auto common_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+            result = buildResolvedFunction("if", {std::move(within_exact_range), std::move(common_equals), std::move(result)}, context);
         }
     }
     else if (compare_nulls)

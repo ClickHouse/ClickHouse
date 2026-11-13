@@ -42,6 +42,18 @@ def test_numeric_scalar_membership_on_older_shard(start_cluster):
         == "1\n"
     )
 
+    old_node.query("CREATE TABLE numeric_nullable_old_shard (x Nullable(UInt8)) ENGINE = Memory")
+    old_node.query("INSERT INTO numeric_nullable_old_shard VALUES (1), (NULL)")
+    for predicate, expected in (("IN", "2\n"), ("NOT IN", "0\n")):
+        assert (
+            new_node.query(
+                "SELECT count() FROM remote('old_node', default, numeric_nullable_old_shard) "
+                f"WHERE x {predicate} (materialize(x)) SETTINGS prefer_localhost_replica = 0",
+                settings={"transform_null_in": 1, "allow_lossy_numeric_supertype": 0},
+            )
+            == expected
+        )
+
     for transform_null_in in (0, 1):
         assert (
             new_node.query(
