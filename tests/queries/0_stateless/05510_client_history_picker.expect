@@ -153,7 +153,7 @@ send -- "\022"
 expect -re {[0-9]+/[0-9]+}
 send -- "emoji_target"
 expect -re {1/[0-9]+}
-expect -re { \.\.(😀){1,31}\033\[[0-9;]*memoji_target}
+expect -re { \.\.(😀){1,31}\x1b\[[0-9;]*memoji_target}
 send -- "\033"
 expect ":) "
 send -- "\022"
