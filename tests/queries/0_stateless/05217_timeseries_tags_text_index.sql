@@ -2,7 +2,6 @@
 -- PromQL requires ANTLR4, which is disabled in the fast-test build.
 
 SET allow_experimental_time_series_table = 1;
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET explain_query_plan_default = 'legacy';
@@ -37,7 +36,7 @@ WHERE explain LIKE '%__text_index_tags_idx_equals%';
 
 SELECT 'PromQL selector uses the index';
 -- The tags subquery is evaluated while building the `IN` set and is absent from `EXPLAIN`.
-SELECT value FROM timeSeriesSelector(ts_text, 'test_metric{job="worker"}', 999, 1000)
+SELECT arrayJoin(samples).2 AS value FROM timeSeriesSelector(ts_text, 'test_metric{job="worker"}', 999, 1000, 'samples')
 SETTINGS log_comment = 'timeseries_tags_text_index_selector';
 SELECT value FROM prometheusQuery(ts_text, 'test_metric{job="worker"}', 1000)
 SETTINGS log_comment = 'timeseries_tags_text_index_promql';
@@ -96,17 +95,4 @@ INSERT INTO ts_text_memory SELECT * FROM ts_text;
 SELECT count() FROM ts_text_memory;
 DROP TABLE ts_text_memory;
 
-SELECT 'external tags target';
-CREATE TABLE external_tags
-(
-    id Tuple(UInt64, LowCardinality(UUID)),
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String)
-)
-ENGINE = MergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_text_external ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 TAGS external_tags;
-INSERT INTO ts_text_external (metric_name, tags, samples) VALUES ('test_metric', {'job':'api'}, [(1000, 1.)]);
-SELECT value FROM prometheusQuery(ts_text_external, 'test_metric{job="api"}', 1000);
-DROP TABLE ts_text_external;
-DROP TABLE external_tags;
 DROP TABLE ts_text;

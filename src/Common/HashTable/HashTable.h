@@ -336,7 +336,8 @@ static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_S
 /** Like `HashTableGrowerWithPrecalculation`, but adapts to large hash tables.
   *
   * For large hash tables, random memory access is the main bottleneck, not the computations.
-  * When the buffer reaches 2^robin_hood_size_degree cells, the grower switches the hash table to the Robin Hood mode:
+  * When the buffer reaches 2^robin_hood_size_degree cells, the grower switches the hash table to the Robin Hood mode
+  * (unless it is disabled with `setRobinHoodAllowed`):
   * the max load factor is increased from 0.5 to robin_hood_max_load_factor_percent / 100 (the hash table becomes up to two times smaller),
   * and the elements inside collision resolution chains are ordered by their optimal positions,
   * so a lookup of a missing key can stop early instead of walking to the end of the chain.
@@ -357,6 +358,7 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
 
     UInt8 size_degree = initial_size_degree;
     bool robin_hood = false;
+    bool robin_hood_allowed = true;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
 
@@ -375,10 +377,17 @@ public:
     UInt8 sizeDegree() const { return size_degree; }
     bool isRobinHood() const { return robin_hood; }
 
+    /// Whether the hash table may switch to the Robin Hood mode. Can be disabled only before the switch.
+    void setRobinHoodAllowed(bool allowed)
+    {
+        chassert(allowed || !robin_hood);
+        robin_hood_allowed = allowed;
+    }
+
     void increaseSizeDegree(UInt8 delta)
     {
         UInt8 new_size_degree = size_degree + delta;
-        setSizeDegree(new_size_degree, robin_hood || new_size_degree > robin_hood_size_degree);
+        setSizeDegree(new_size_degree, robin_hood || (robin_hood_allowed && new_size_degree > robin_hood_size_degree));
     }
 
     static constexpr auto initial_count = 1ULL << initial_size_degree;
@@ -401,7 +410,7 @@ public:
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
     void increaseSize()
     {
-        if (!robin_hood && size_degree >= robin_hood_size_degree)
+        if (robin_hood_allowed && !robin_hood && size_degree >= robin_hood_size_degree)
             setSizeDegree(size_degree, true);
         else
             increaseSizeDegree(robin_hood || size_degree >= max_size_degree_quadratic ? 1 : 2);
@@ -414,7 +423,7 @@ public:
         if (num_elems > 1)
             new_size_degree = std::max(new_size_degree, static_cast<size_t>(log2(num_elems - 1)) + 2);
 
-        if (new_size_degree <= robin_hood_size_degree)
+        if (!robin_hood_allowed || new_size_degree <= robin_hood_size_degree)
         {
             setSizeDegree(static_cast<UInt8>(new_size_degree), false);
             return;
@@ -430,7 +439,7 @@ public:
     void setBufSize(size_t buf_size_)
     {
         UInt8 new_size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
-        setSizeDegree(new_size_degree, new_size_degree > robin_hood_size_degree);
+        setSizeDegree(new_size_degree, robin_hood_allowed && new_size_degree > robin_hood_size_degree);
     }
 };
 
@@ -696,19 +705,24 @@ protected:
 
         alignas(Cell) std::byte tmp[sizeof(Cell)];
 
+        /// compiler assumes that moving a cell can change them, and would reload them for every cell.
+        Cell * const cells = buf;
+        const Grower local_grower = grower;
+        auto distance_from_optimal = [&](size_t pos) { return local_grower.place(pos - local_grower.place(cells[pos].getHash(*this))); };
+
         for (size_t i = 1; i < buf_size; ++i)
         {
-            size_t place_value = grower.place(start + i);
-            if (buf[place_value].isZero(*this))
+            size_t place_value = local_grower.place(start + i);
+            if (cells[place_value].isZero(*this))
                 continue;
 
             /// Find the new place of the element: before all elements whose optimal positions are after its own.
-            size_t distance = distanceFromOptimalPosition(buf[place_value], place_value);
+            size_t distance = distance_from_optimal(place_value);
             size_t new_place = place_value;
             while (distance > 0)
             {
-                size_t prev_place = grower.place(new_place - 1);
-                if (buf[prev_place].isZero(*this) || distanceFromOptimalPosition(buf[prev_place], prev_place) + 1 >= distance)
+                size_t prev_place = local_grower.place(new_place - 1);
+                if (cells[prev_place].isZero(*this) || distance_from_optimal(prev_place) + 1 >= distance)
                     break;
                 new_place = prev_place;
                 --distance;
@@ -717,14 +731,14 @@ protected:
             if (new_place == place_value)
                 continue;
 
-            memcpy(static_cast<void *>(tmp), static_cast<const void *>(&buf[place_value]), sizeof(Cell));
+            memcpy(static_cast<void *>(tmp), static_cast<const void *>(&cells[place_value]), sizeof(Cell));
             for (size_t pos = place_value; pos != new_place;)
             {
-                size_t prev_pos = grower.place(pos - 1);
-                memcpy(static_cast<void *>(&buf[pos]), static_cast<const void *>(&buf[prev_pos]), sizeof(Cell));
+                size_t prev_pos = local_grower.place(pos - 1);
+                memcpy(static_cast<void *>(&cells[pos]), static_cast<const void *>(&cells[prev_pos]), sizeof(Cell));
                 pos = prev_pos;
             }
-            memcpy(static_cast<void *>(&buf[new_place]), static_cast<const void *>(tmp), sizeof(Cell));
+            memcpy(static_cast<void *>(&cells[new_place]), static_cast<const void *>(tmp), sizeof(Cell));
         }
     }
 
@@ -877,14 +891,16 @@ protected:
 
         if (!empty() && grower.bufSize() != old_size)
         {
+            /// compiler assumes that moving a cell can change them, and would reload them for every cell.
+            Cell * const cells = buf;
             /** Now some items may need to be moved to a new location.
               * The element can stay in place, or move to a new location "on the right",
               *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
               */
             size_t i = 0;
             for (; i < old_size; ++i)
-                if (!buf[i].isZero(*this))
-                    reinsert(buf[i], buf[i].getHash(*this));
+                if (!cells[i].isZero(*this))
+                    reinsert(cells, new_grower, cells[i], cells[i].getHash(*this));
 
             /** There is also a special case:
               *    if the element was to be at the end of the old buffer,                  [        x]
@@ -895,8 +911,8 @@ protected:
               *    process tail from the collision resolution chain immediately after it   [        o    x    ]
               */
             size_t new_size = grower.bufSize();
-            for (; i < new_size && !buf[i].isZero(*this); ++i)
-                reinsert(buf[i], buf[i].getHash(*this));
+            for (; i < new_size && !cells[i].isZero(*this); ++i)
+                reinsert(cells, new_grower, cells[i], cells[i].getHash(*this));
         }
 
         if (isRobinHood())
@@ -915,24 +931,19 @@ protected:
       * Used when increasing the buffer size.
       * It uses the ordinary linear probing, and in the Robin Hood mode the order of the elements has to be restored afterwards.
       */
-    void reinsert(Cell & x, size_t hash_value)
+    void reinsert(Cell * cells, const Grower & new_grower, Cell & x, size_t hash_value)
     {
-        size_t place_value = grower.place(hash_value);
+        size_t place_value = new_grower.place(hash_value);
 
-        /// If the element is in its place.
-        if (&x == &buf[place_value])
-            return;
+        /// The keys are unique, so comparing addresses is same as comparing keys.
+        while (&cells[place_value] != &x && !cells[place_value].isZero(*this))
+            place_value = new_grower.next(place_value);
 
-        /// Compute a new location, taking into account the collision resolution chain.
-        place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
-
-        /// If the item remains in its place in the old collision resolution chain.
-        if (!buf[place_value].isZero(*this))
+        if (&cells[place_value] == &x)
             return;
 
         /// Copy to a new location and zero the old one.
-        x.setHash(hash_value);
-        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
+        memcpy(static_cast<void*>(&cells[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
     }
 
@@ -1548,9 +1559,6 @@ public:
         return res;
     }
 
-    /// Reinsert node pointed to by iterator
-    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value) { reinsert(*it.getPtr(), hash_value); }
-
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {
@@ -1654,7 +1662,7 @@ public:
           * https://en.wikipedia.org/wiki/Linear_probing
           * https://en.wikipedia.org/wiki/Open_addressing
           * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
-          * in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          * in cell https://arxiv.org/pdf/0909.2547
           *
           * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
           */

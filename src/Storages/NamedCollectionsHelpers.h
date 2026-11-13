@@ -52,7 +52,9 @@ void checkNamedCollectionOverridesInDictionarySource(
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
-/// If `dependent_table_id` is provided, registers the table as a dependency of the named collection.
+/// If `dependent_table_id` is provided, `asts` is the definition of that table: registers the table as a dependency of the
+/// named collection, and replaces in `asts` an override value that is an expression with a string literal of the value it
+/// evaluated to, so that loading the table again does not evaluate it again.
 /// Checks overrides in `SETTINGS` before the engine applies them.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,

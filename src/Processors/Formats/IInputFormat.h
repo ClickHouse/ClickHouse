@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/ColumnMapping.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Core/Field.h>
@@ -9,6 +10,7 @@
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <Processors/ISource.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -16,8 +18,11 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
+class ColumnMapper;
+struct RelativePathWithMetadata;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
+using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// Most (all?) file formats have a natural order of rows within the file.
@@ -50,14 +55,21 @@ struct ChunkInfoRowNumbers : public ChunkInfo
     std::optional<IColumnFilter> applied_filter;
 };
 
+/// Indices of row groups (or stripes) in a file.
+using RowGroupIndices = VectorWithMemoryTracking<size_t>;
+
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
+    FileBucketInfo() = default;
+    FileBucketInfo(const FileBucketInfo &) = default;
+    FileBucketInfo & operator=(const FileBucketInfo &) = default;
+
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -68,7 +80,30 @@ struct IBucketSplitter
 {
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(
+        size_t bucket_size,
+        ReadBuffer & buf,
+        const RelativePathWithMetadata & object,
+        const FormatSettings & format_settings_,
+        const ContextPtr & context) = 0;
+
+    /// Splits a file into at most `max_buckets` buckets of similar size, to be read in parallel by
+    /// separate input formats within one query. Unlike `splitToBuckets`, the buckets may carry state
+    /// that is not serialized, e.g. the parsed file metadata, so that their readers don't have to
+    /// read it again. `object_with_metadata` identifies the version of the file for the format's
+    /// metadata cache, as in `FormatFactory::getInputWithMetadata`. Returns less than two buckets if
+    /// the file can't be split. The buckets are ordered from the largest.
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitForParallelReading(
+        size_t max_buckets,
+        ReadBuffer & buf,
+        const FormatSettings & format_settings_,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context) = 0;
+
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const VectorWithMemoryTracking<UInt64> & /*split_offsets*/)
+    {
+        return {};
+    }
 
     virtual ~IBucketSplitter() = default;
 };
@@ -124,6 +159,9 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
+    /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
+    virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
+
     /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
     template <typename Buffer>
     void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
@@ -137,17 +175,23 @@ public:
 
     virtual void needOnlyCount() { need_only_count = true; }
 
-    virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+    virtual void prefetch() {}
+
+    virtual std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
     /// which returned rows, the best value of the sort column among these rows, in the query's order.
     /// A bucket whose best value is beyond the final threshold holds no row of the result.
-    virtual std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
+    virtual VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
+    /// The format skipped row groups or pages of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
+    virtual bool isJoinRuntimeFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+    /// Called after the file was read, if its version provably did not change during the read.
+    virtual void cacheFilterColumnStatistics() {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
@@ -163,7 +207,7 @@ protected:
 private:
     void resetOwnedBuffers();
 
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+    VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

@@ -300,6 +300,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP CONNECTIONS CACHE", Type::CLEAR_CONNECTIONS_CACHE},
             {"DROP MARK CACHE", Type::CLEAR_MARK_CACHE},
             {"DROP PRIMARY INDEX CACHE", Type::CLEAR_PRIMARY_INDEX_CACHE},
+            {"DROP STATISTICS CACHE", Type::CLEAR_STATISTICS_CACHE},
             {"DROP UNCOMPRESSED CACHE", Type::CLEAR_UNCOMPRESSED_CACHE},
             {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
             {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
@@ -400,6 +401,74 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
 
             res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            break;
+        }
+        case Type::DROP_AMBER_NODE:
+        {
+            ASTPtr ast;
+            res->if_exists = ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected);
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.node_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::ALLOCATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::CREATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SHARDS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.shard_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SEGMENTS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.segment_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::DROP_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::FROM}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
             break;
         }
         case Type::ENABLE_FAILPOINT:
@@ -1253,6 +1322,11 @@ Clears the mark cache.
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory.
 Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Clears the statistics cache, which holds the column statistics of the data parts of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory, one entry per data part and column.
+Its size is configured with the server-level setting `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
@@ -1646,6 +1720,14 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
 </Note>
 
+Without `ON VOLUME`, merges are stopped only for the tables that exist when the statement runs, and only until the server restarts:
+
+- Without a table name (and without `ON VOLUME`), merges are stopped for every MergeTree table that exists at that moment. Tables created afterwards still merge.
+- With a table name, the statement returns `Ok.` even if the table does not exist, and it has no effect on a table created later with that name.
+- The stopped state is kept in memory. After a server restart, merges run again for all tables.
+
+While merges are stopped for a non-replicated MergeTree table by `SYSTEM STOP MERGES [db.]merge_tree_family_table_name`, `OPTIMIZE TABLE` on that table also fails, with or without `FINAL`, with the error `Cancelled merging parts. (ABORTED)`. Run `SYSTEM START MERGES` for the table first.
+
 ### SYSTEM START MERGES {#start-merges}
 
 <CloudNotSupportedBadge/>
@@ -1769,6 +1851,36 @@ Provides possibility to start background fetch tasks from replication queues whi
 ```sql
 SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
+
+### SYSTEM STOP REPLICATED DDL QUERIES {#stop-replicated-ddl-queries}
+
+Temporarily prohibits DDL queries in [`Replicated`](/reference/engines/database-engines/replicated) databases and distributed `ON CLUSTER` DDL queries on the server where it is executed:
+
+```sql
+SYSTEM STOP REPLICATED DDL QUERIES [ON CLUSTER cluster_name]
+```
+
+While DDL queries are stopped:
+
+- DDL queries in `Replicated` databases fail with the `QUERY_IS_PROHIBITED` error. This includes DDL queries that were initiated on this server and are already queued, but not yet committed.
+- All `ON CLUSTER` DDL queries except `SYSTEM` queries fail with the `QUERY_IS_PROHIBITED` error when initiated on this server, regardless of the engine of the target database (not only for `Replicated` databases).
+- DDL queries initiated on other replicas are still applied on this server: the statement prevents this server from initiating DDL, it does not stop the execution of the DDL queue.
+
+Without `ON CLUSTER`, the statement affects only the local server. With `ON CLUSTER`, it is executed on every host of the cluster (`SYSTEM` queries are not rejected while DDL queries are stopped, so `SYSTEM START REPLICATED DDL QUERIES ON CLUSTER` still works).
+
+The prohibition is not persistent: it is stored in memory and in ephemeral nodes in Keeper, and is lifted when the server restarts. Do not rely on it as a durable maintenance fence; execute it again after a restart if needed.
+
+The statement requires the global `SYSTEM REPLICATION QUEUES` privilege.
+
+### SYSTEM START REPLICATED DDL QUERIES {#start-replicated-ddl-queries}
+
+Cancels `SYSTEM STOP REPLICATED DDL QUERIES` and allows DDL queries in `Replicated` databases and distributed `ON CLUSTER` DDL queries again:
+
+```sql
+SYSTEM START REPLICATED DDL QUERIES [ON CLUSTER cluster_name]
+```
+
+The statement requires the global `SYSTEM REPLICATION QUEUES` privilege.
 
 ### SYSTEM STOP PULLING REPLICATION LOG {#stop-pulling-replication-log}
 

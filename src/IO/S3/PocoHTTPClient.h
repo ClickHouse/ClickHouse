@@ -26,6 +26,10 @@
 
 #include <fmt/format.h>
 
+#if USE_SILK
+#include <silk/fibers/event.h>
+#endif
+
 
 namespace Aws::Http::Standard
 {
@@ -52,6 +56,9 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
 /// The AWS SDK reports `REQUEST_NOT_MADE` (-1) when no response has been received at all, e.g. after a network error.
 /// Printing that as a number is confusing, and casting it to an unsigned type turns it into 18446744073709551615.
 String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code);
+
+/// Percent-encodes a request path exactly as `PocoHTTPClient` writes it into the request line.
+String encodeRequestPath(const String & path);
 
 /// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
 /// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
@@ -80,7 +87,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
-    bool for_disk_s3;
+    HTTPConnectionGroupType group;
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
@@ -92,6 +99,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String google_adc_client_id;
     String google_adc_client_secret;
     String google_adc_refresh_token;
+    /// Content of a Google service account JSON key file, an alternative to the ADC triple.
+    String google_service_account_key;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -102,9 +111,33 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
 
+    /// Whether the requests sent by this client are the ones `system.blob_storage_log` logs, so they
+    /// may publish their connection to it. Set only for the client of the object storage itself, not
+    /// for the clients of its credentials providers, whose requests can share a scope with a logged
+    /// one; see `HTTPConnectionInfoHelperRequests`.
+    bool publish_connection_info = false;
+
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
+    /// Throws on inconsistent delays and clamps `jitter_factor` into [0, 1].
+    void validateRetryStrategy();
+
+    /// `remote_host_filter` is a reference, so it must not be bound to a temporary.
+    PocoHTTPClientConfiguration(
+        std::function<ProxyConfiguration()> per_request_configuration_,
+        const String & force_region_,
+        const RemoteHostFilter && remote_host_filter_,
+        unsigned int s3_max_redirects_,
+        RetryStrategy retry_strategy_,
+        bool s3_slow_all_threads_after_network_error_,
+        bool s3_slow_all_threads_after_retryable_error_,
+        bool enable_s3_requests_logging_,
+        HTTPConnectionGroupType group_,
+        std::optional<std::string> opt_disk_name_,
+        bool s3_use_adaptive_timeouts_,
+        const HTTPRequestThrottler & request_throttler_,
+        std::function<void(const ProxyConfiguration &)> error_report_) = delete;
 
 private:
     PocoHTTPClientConfiguration(
@@ -116,7 +149,7 @@ private:
         bool s3_slow_all_threads_after_network_error_,
         bool s3_slow_all_threads_after_retryable_error_,
         bool enable_s3_requests_logging_,
-        bool for_disk_s3_,
+        HTTPConnectionGroupType group_,
         std::optional<std::string> opt_disk_name_,
         bool s3_use_adaptive_timeouts_,
         const HTTPRequestThrottler & request_throttler_,
@@ -182,6 +215,11 @@ public:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
 
+    void RetryRequestSleep(std::chrono::milliseconds sleep_time) override;
+
+    void DisableRequestProcessing() override;
+    void EnableRequestProcessing() override;
+
 private:
 
     enum class S3MetricType : uint8_t
@@ -244,11 +282,16 @@ protected:
     const UInt64 http_max_field_name_size = 128 * 1024;
     const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
-    bool for_disk_s3 = false;
+    HTTPConnectionGroupType group = HTTPConnectionGroupType::STORAGE;
+    bool publish_connection_info = false;
 
     HTTPRequestThrottler request_throttler;
 
     const NormalizedHTTPHeaderEntries extra_headers;
+
+#if USE_SILK
+    silk::FiberEvent request_processing_disabled;
+#endif
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient
@@ -276,12 +319,14 @@ private:
     const String google_adc_client_id;
     const String google_adc_client_secret;
     const String google_adc_refresh_token;
+    const String google_service_account_key;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
     BearerToken requestBearerTokenFromADC() const;
+    BearerToken requestBearerTokenFromServiceAccountKey() const;
 };
 
 }

@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -14,6 +13,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
@@ -300,15 +300,14 @@ namespace
 
 using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
 
-/// Renders the substream path by passing its pieces to `append` in order, so the same rendering can either
-/// be materialized into a string or fed into a hash without building the string.
-template <typename Append>
-void appendNameForSubstreamPath(
-    Append && append,
+/// encode_for_cache_key renders the parts that exist in cache keys only: the sparse elements, the identity element
+/// of a SHARED path of Object and the keyword in front of a path name of Object.
+String getNameForSubstreamPath(
+    String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
     bool escape_for_file_name,
-    bool encode_sparse_stream,
+    bool encode_for_cache_key,
     bool escape_variant_substreams,
     size_t initial_array_level = 0)
 {
@@ -318,129 +317,120 @@ void appendNameForSubstreamPath(
     for (auto it = begin; it != end; ++it)
     {
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
-            append(".null");
+            stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
-        {
-            append(".size");
-            append(toString(array_level));
-        }
+            stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
-            append(".size");
+            stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
-            append(".dict");
+            stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
-            append(".dict_prefix");
-        else if (it->type == Substream::SparseElements && encode_sparse_stream)
-            append(".sparse");
+            stream_name += ".dict_prefix";
+        else if (it->type == Substream::SparseElements && encode_for_cache_key)
+            stream_name += ".sparse";
         else if (it->type == Substream::SparseOffsets)
-            append(".sparse.idx");
+            stream_name += ".sparse.idx";
         else if (it->type == Substream::ReplicatedElements)
-            append(".repl");
+            stream_name += ".repl";
         else if (it->type == Substream::ReplicatedIndexes)
-            append(".repl.idx");
+            stream_name += ".repl.idx";
         else if (Substream::named_types.contains(it->type))
         {
+            auto substream_name = "." + it->name_of_substream;
+
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
             /// and name is encoded as a whole.
             if (it->type == Substream::TupleElement && escape_for_file_name)
-                append(escapeForFileName("." + it->name_of_substream));
+                stream_name += escapeForFileName(substream_name);
             else
-            {
-                append(".");
-                append(it->name_of_substream);
-            }
+                stream_name += substream_name;
         }
         else if (it->type == Substream::VariantDiscriminators)
-            append(".variant_discr");
+            stream_name += ".variant_discr";
         else if (it->type == Substream::VariantDiscriminatorsPrefix)
-            append(".variant_discr_prefix");
+            stream_name += ".variant_discr_prefix";
         else if (it->type == Substream::VariantOffsets)
-            append(".variant_offsets");
+            stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
         {
-            append(".");
             if (escape_for_file_name && escape_variant_substreams)
-                append(escapeForFileName(it->variant_element_name));
+                stream_name += "." + escapeForFileName(it->variant_element_name);
             else
-                append(it->variant_element_name);
+                stream_name += "." + it->variant_element_name;
         }
         else if (it->type == Substream::VariantElementNullMap)
         {
-            append(".");
             if (escape_for_file_name && escape_variant_substreams)
-                append(escapeForFileName(it->variant_element_name));
+                stream_name += "." + escapeForFileName(it->variant_element_name) + ".null";
             else
-                append(it->variant_element_name);
-            append(".null");
+                stream_name += "." + it->variant_element_name + ".null";
         }
         else if (it->type == SubstreamType::DynamicStructure)
-            append(".dynamic_structure");
+            stream_name += ".dynamic_structure";
         else if (it->type == SubstreamType::ObjectStructure)
-            append(".object_structure");
+            stream_name += ".object_structure";
         else if (it->type == SubstreamType::ObjectSharedData)
-            append(".object_shared_data");
+            stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::Bucket)
-        {
-            append(".");
-            append(std::to_string(it->bucket));
-        }
+            stream_name += "." + std::to_string(it->bucket);
         else if (it->type == SubstreamType::MapBucketsInfo)
-            append(".buckets_info");
+            stream_name += ".buckets_info";
         else if (it->type == SubstreamType::MapBucketIndexes)
-            append(".bucket_indexes");
+            stream_name += ".bucket_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
-            append(".structure");
+            stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
-            append(".structure_prefix");
+            stream_name += ".structure_prefix";
         else if (it->type == SubstreamType::ObjectSharedDataStructureSuffix)
-            append(".structure_suffix");
+            stream_name += ".structure_suffix";
         else if (it->type == SubstreamType::ObjectSharedDataSubstreams)
-            append(".substreams");
+            stream_name += ".substreams";
         else if (it->type == SubstreamType::ObjectSharedDataPathsMarks)
-            append(".paths_marks");
+            stream_name += ".paths_marks";
         else if (it->type == SubstreamType::ObjectSharedDataSubstreamsMarks)
-            append(".substreams_marks");
+            stream_name += ".substreams_marks";
         else if (it->type == SubstreamType::ObjectSharedDataPathsSubstreamsMetadata)
-            append(".paths_substreams_metadata");
+            stream_name += ".paths_substreams_metadata";
         else if (it->type == SubstreamType::ObjectSharedDataPathsInfos)
-            append(".paths_infos");
+            stream_name += ".paths_infos";
         else if (it->type == SubstreamType::ObjectSharedDataData)
-            append(".data");
+            stream_name += ".data";
         else if (it->type == SubstreamType::ObjectSharedDataCopy)
-            append(".copy");
+            stream_name += ".copy";
         else if (it->type == SubstreamType::ObjectSharedDataCopySizes)
-            append(".sizes");
+            stream_name += ".sizes";
         else if (it->type == SubstreamType::ObjectSharedDataCopyPathsIndexes)
-            append(".paths_indexes");
+            stream_name += ".paths_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataCopyValues)
-            append(".values");
+            stream_name += ".values";
+        else if (it->type == SubstreamType::ObjectTypedSharedData)
+            stream_name += ".object_typed_shared_data";
+        else if (it->type == SubstreamType::ObjectTypedSharedDataHeader)
+            stream_name += ".header";
+        else if (it->type == SubstreamType::ObjectTypedSharedDataPathsData)
+            stream_name += ".paths_data";
+        else if (it->type == SubstreamType::ObjectTypedSharedDataPathsMarks)
+            stream_name += ".paths_marks";
+        else if (it->type == SubstreamType::ObjectTypedSharedDataPath)
+        {
+            /// The path shares its files with every other SHARED path, so the element exists in cache keys only.
+            if (encode_for_cache_key)
+                stream_name += ".shared_paths." + escapeForFileName(it->object_path_name);
+        }
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
         {
-            append(".");
-            if (escape_for_file_name)
-                append(escapeForFileName(it->object_path_name));
-            else
-                append(it->object_path_name);
+            /// In cache keys a path name follows a keyword, so that no name can stand where a fixed stream name
+            /// stands: the key stays injective whatever the paths are called.
+            if (encode_for_cache_key)
+                stream_name += ".object_paths";
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
         }
     }
-}
 
-String getNameForSubstreamPath(
-    String stream_name,
-    SubstreamIterator begin,
-    SubstreamIterator end,
-    bool escape_for_file_name,
-    bool encode_sparse_stream,
-    bool escape_variant_substreams,
-    size_t initial_array_level = 0)
-{
-    appendNameForSubstreamPath(
-        [&](std::string_view piece) { stream_name.append(piece); },
-        begin, end, escape_for_file_name, encode_sparse_stream, escape_variant_substreams, initial_array_level);
     return stream_name;
 }
 
@@ -522,16 +512,10 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
     return subcolumn_name;
 }
 
-UInt128 ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
+String ISerialization::getSubstreamsCacheKeyForStream(const SubstreamPath & path)
 {
     /// Unlike the subcolumn name, this rendering is injective, so two substreams never share a cache slot.
-    /// The key is the hash of the rendering: `SipHash` is a streaming hash, so feeding it the pieces gives
-    /// the hash of their concatenation, without building the string for every cache lookup.
-    SipHash hash;
-    appendNameForSubstreamPath(
-        [&](std::string_view piece) { hash.update(piece); },
-        path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_sparse_stream=*/true, /*escape_variant_substreams=*/true);
-    return hash.get128();
+    return getNameForSubstreamPath("", path.begin(), path.end(), /*escape_for_file_name=*/true, /*encode_for_cache_key=*/true, /*escape_variant_substreams=*/true);
 }
 
 namespace
@@ -608,15 +592,31 @@ ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsD
     return it == cache->end() ? nullptr : it->second;
 }
 
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::DeserializeBinaryBulkState::clone(DeserializeBinaryBulkStateCloneContext & context) const
+{
+    auto it = context.cloned.find(this);
+    if (it != context.cloned.end())
+        return it->second;
+
+    auto cloned = cloneImpl(context);
+    context.cloned.emplace(this, cloned);
+    return cloned;
+}
+
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)
     {
+        /// `DictionaryKeysPrefix` and `VariantDiscriminatorsPrefix` exist only with `use_specialized_prefixes_and_suffixes_substreams`
+        /// (compact parts). They hold only the serialization version or mode, have no data type, and are structural,
+        /// like the other streams here.
         if (elem.type == Substream::NullMap
             || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
+            || elem.type == Substream::DictionaryKeysPrefix
+            || elem.type == Substream::VariantDiscriminatorsPrefix
             || elem.type == Substream::SparseOffsets
             || elem.type == Substream::MapBucketsInfo)
             return false;
@@ -756,7 +756,6 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
-            || path[last_elem].type == Substream::ObjectTypedPath
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
 }
@@ -776,10 +775,11 @@ bool ISerialization::isPrefetchNeededForSubstream(const DB::ISerialization::Subs
     if (prefetch_json_shared_data_substreams || prefix_len == 0 || prefix_len > path.size())
         return true;
 
-    /// The JSON shared data Data substream is not read from the start of the granule: a path's data is
-    /// located via a mark in another stream and read by seeking to it. With many JSON paths the granule
-    /// is large, so prefetching from the start can fetch data we never read.
-    return path[prefix_len - 1].type != Substream::ObjectSharedDataData;
+    /// The data substreams of the JSON shared data and of the typed shared data are not read from the start of the
+    /// granule: a path's data is located via a mark in another stream and read by seeking to it. With many JSON paths
+    /// the granule is large, so prefetching from the start can fetch data we never read.
+    auto last = path[prefix_len - 1].type;
+    return last != Substream::ObjectSharedDataData && last != Substream::ObjectTypedSharedDataPathsData;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -811,7 +811,7 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         return false;
 
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
+        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo || path[path.size() - 1].type == SubstreamType::ObjectTypedSharedDataHeader;
 }
 
 bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)
@@ -837,7 +837,8 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
         case SubstreamType::ObjectStructure: [[fallthrough]];
         case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
         case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
-        case SubstreamType::VariantDiscriminatorsPrefix:
+        case SubstreamType::VariantDiscriminatorsPrefix: [[fallthrough]];
+        case SubstreamType::ObjectTypedSharedDataHeader:
             return true;
         case SubstreamType::DictionaryKeys: [[fallthrough]];
         case SubstreamType::VariantDiscriminators:

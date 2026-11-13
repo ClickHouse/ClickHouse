@@ -2,6 +2,7 @@
 
 #include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/FutureSetSettings.h>
@@ -9,6 +10,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 
 namespace DB
 {
@@ -24,6 +26,26 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 class QueryPlan;
 
 struct DistributedPlanLocalObject;
+
+/// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
+/// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
+/// count it; the builder logs the specific reason itself.
+struct PlanWithParallelReplicas
+{
+    enum class SkipReason : uint8_t
+    {
+        None,
+        /// The settings rule parallel replicas out.
+        Settings,
+        /// The query cannot be read with parallel replicas.
+        QueryShape,
+    };
+
+    std::unique_ptr<QueryPlan> plan;
+    SkipReason skip_reason = SkipReason::None;
+};
+
+using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -53,6 +75,9 @@ struct QueryPlanOptimizationSettings
     /// --- Zero-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool remove_redundant_sorting;
 
+    /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep` (at the end of the second pass).
+    bool use_shuffle_for_order_by_rand;
+
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
@@ -78,6 +103,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool parallel_distinct;
+    bool force_distinct_partitions_independently;
     bool window_partitions_independently;
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
@@ -85,11 +112,13 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool replace_always_true_filter;
     bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
+    bool top_k_through_array_join;
     bool min_max_from_files;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
@@ -112,6 +141,8 @@ struct QueryPlanOptimizationSettings
     /// default per-relation ON-clause restriction. CD-A is correct but incomplete; CD-C is correct
     /// and complete.
     JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
+    /// DPsub chooses between hash and sort-merge joins using the sort order of the inputs.
+    bool query_plan_join_order_use_interesting_orders = true;
 
     /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
     /// defaults (false). The conflict detectors' null-rejection analysis only
@@ -135,7 +166,8 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache_for_top_k;
     bool use_query_condition_cache_for_time_conditions;
     double query_condition_cache_time_condition_grid_factor;
-    bool read_in_order_through_join;
+    /// 0 - off, 1 - on, 2 - on even when the parts have no virtual rows (`force`).
+    UInt64 read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
@@ -159,12 +191,17 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_fallback_to_local_execution
         = true; /// Fall back to local execution instead of throwing when the plan cannot be distributed
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
-    UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
+    UInt64 distributed_plan_default_reader_bucket_count = 0; /// Bucket count for read steps in distributed query plan, 0 - automatic
+    UInt64 distributed_plan_min_rows_per_reader = 1000000; /// Minimum rows per read task for the automatic bucket count
+    /// Workers the plan runs on, caps the automatic bucket count; 0 - unknown. Resolved only when a read is
+    /// distributed, after the decision to fall back to local execution.
+    std::function<size_t()> get_distributed_plan_worker_count;
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
     String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_read_in_order = false; /// Allow read-in-order for ORDER BY in a distributed plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
+    bool distributed_plan_partial_aggregation_before_shuffle = true; /// Shuffle partial aggregation states instead of input rows
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
     bool distributed_plan_join_runtime_filters = false; /// Send join runtime filters between stages of a distributed query plan
@@ -198,6 +235,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
+    bool lazy_materialization_for_join = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -219,7 +257,10 @@ struct QueryPlanOptimizationSettings
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
     bool use_top_k_dynamic_filtering_for_variable_length_types;
+    bool use_top_k_dynamic_filtering_for_single_string_sort_column;
     bool use_skip_indexes_on_data_read;
+    /// `use_skip_indexes_on_data_read` of the query as it runs: `EXPLAIN` turns the setting off for its own planning.
+    bool use_skip_indexes_on_data_read_at_execution;
     size_t max_limit_for_top_k_optimization = 0;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
@@ -234,6 +275,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     bool collect_hash_table_stats_during_aggregation;
+    bool optimize_uniq_exact_radix_partitioning;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
@@ -259,7 +301,7 @@ struct QueryPlanOptimizationSettings
     ///
     /// We should not have the number of threads in query plan.
     /// The information about threads should be available only at the moment we build pipeline.
-    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
+    /// Currently, it is used by HashJoin: it requires the number of threads in ctor.
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
@@ -284,8 +326,8 @@ struct QueryPlanOptimizationSettings
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries.
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
+    /// of re-running the same subqueries, and the logger to say why it could not build a plan on.
+    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 
     bool enable_parallel_replicas = false;
 };

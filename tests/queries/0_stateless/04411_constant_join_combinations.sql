@@ -3,7 +3,6 @@ SET enable_parallel_replicas = 0;
 SET joined_subquery_requires_alias = 0;
 
 -- Some joins return different results with and without the analyzer. Let's enforce both stay the same.
-SET enable_analyzer = 1;
 SELECT 'cross_true';
 SELECT l, r
 FROM values('l UInt8', 1, 2) AS l_tbl

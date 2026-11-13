@@ -13,6 +13,8 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/SystemConfiguration.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -55,7 +57,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
@@ -68,8 +70,10 @@
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
 #include <Server/socketBindListen.h>
@@ -162,6 +166,9 @@
 #include <Common/JemallocMergeTreeArena.h>
 
 #include "config.h"
+#if USE_SILK
+#    include <glibc-rseq/rseq.h>
+#endif
 #include <Common/config_version.h>
 
 #if defined(OS_LINUX)
@@ -260,14 +267,25 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
+    extern const ServerSettingsUInt64 amber_connections_soft_limit;
+    extern const ServerSettingsUInt64 amber_connections_warn_limit;
+    extern const ServerSettingsUInt64 amber_connections_store_limit;
+    extern const ServerSettingsUInt64 amber_connections_hard_limit;
+    extern const ServerSettingsUInt64 amber_connections_rcvbuf;
+    extern const ServerSettingsUInt64 amber_connections_sndbuf;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_rcvbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -275,6 +293,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
     extern const ServerSettingsBool enable_silk_runtime;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -425,6 +444,7 @@ namespace ServerSetting
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
+    extern const ServerSettingsBool cpu_slot_parking;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -433,6 +453,9 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsString statistics_cache_policy;
+    extern const ServerSettingsUInt64 statistics_cache_size;
+    extern const ServerSettingsDouble statistics_cache_size_ratio;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
@@ -442,9 +465,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
-    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -457,6 +480,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsBool collect_connection_metrics;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
@@ -865,6 +889,13 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
+    Poco::AutoPtr<Poco::Util::MapConfiguration> properties(new Poco::Util::MapConfiguration);
+    Poco::Util::AbstractConfiguration::Keys property_keys;
+    config().keys("application", property_keys);
+    for (const auto & key : property_keys)
+        properties->setString("application." + key, config().getRawString("application." + key));
+    application_properties = properties;
+
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
@@ -1092,7 +1123,7 @@ try
         getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
     );
 
-#if defined(__x86_64__)
+    /// Log the CPU instruction sets detected at runtime.
     String cpu_info;
 #define COLLECT_FLAG(X) \
     if (CPU::have##X()) \
@@ -1105,8 +1136,7 @@ try
     CPU_ID_ENUMERATE(COLLECT_FLAG)
 #undef COLLECT_FLAG
 
-    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
-#endif
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info.empty() ? "none detected" : cpu_info);
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
@@ -1434,6 +1464,18 @@ try
 #if USE_SILK
     if (server_settings[ServerSetting::enable_silk_runtime])
     {
+        /// Silk reads the current CPU from the rseq area that the C library registers for every thread, and its
+        /// per-CPU structures use rseq critical sections. Without a registered area it reads a CPU number that is
+        /// out of range and aborts in its worker threads. `rseq_init` in librseq does not detect this: it only
+        /// checks that the C library exports the rseq symbols, not that the registration succeeded.
+        if (rseq_cpu_id() < 0)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The server setting `enable_silk_runtime` is set, but the Linux 'restartable sequences' (rseq) feature, "
+                "which the silk fiber runtime requires, is not enabled for this process. The kernel may not support it "
+                "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
+                "did not register the rseq area");
+
         Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
     }
 #endif
@@ -1487,6 +1529,8 @@ try
         if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
+            /// Closing a cooperative connection needs the scheduler, so stored connections go first.
+            HTTPConnectionPools::instance().dropCache();
             Silk::destroyFiberScheduler();
         }
 #endif
@@ -1804,10 +1848,10 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    getIcebergManifestDecodeThreadPool().initialize(
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
@@ -2237,7 +2281,8 @@ try
             {
                 try
                 {
-                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(
+                        listen_host, streaming_exchange_port, server_settings[ServerSetting::listen_backlog], exchange_connections_ptr));
                     exchange_servers.back()->start();
                 }
                 catch (Poco::Exception & e)
@@ -2278,6 +2323,15 @@ try
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
+
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
 
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
@@ -2320,6 +2374,15 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    String statistics_cache_policy = server_settings[ServerSetting::statistics_cache_policy];
+    size_t statistics_cache_size = server_settings[ServerSetting::statistics_cache_size];
+    double statistics_cache_size_ratio = server_settings[ServerSetting::statistics_cache_size_ratio];
+    if (statistics_cache_size > max_cache_size)
+    {
+        statistics_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(statistics_cache_size));
+    }
+    global_context->setStatisticsCache(statistics_cache_policy, statistics_cache_size, statistics_cache_size_ratio);
     String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
     /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
     size_t columns_cache_size = config().getUInt64("columns_cache_size",
@@ -2625,6 +2688,15 @@ try
                     incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
+            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it must have
+            /// the command line on top of the file and, like `config()`, resolve `${application.*}` and `${system.*}` references.
+            Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
+            file_and_command_line->add(loaded_config, PRIO_DEFAULT);
+            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            file_and_command_line->add(application_properties, PRIO_APPLICATION, /* shared */ true);
+            file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
+            const ConfigurationPtr reload_config = file_and_command_line;
+
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
             /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
             /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
@@ -2634,7 +2706,16 @@ try
             /// so validating afterwards would leave a rejected reload publishing the new form while the
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
-                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
+                *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
+
+            /// `setsockopt` takes `int`. Reject before `config().replace`: `ConfigReloader` does not roll back.
+            {
+                ServerSettings reload_server_settings;
+                reload_server_settings.loadSettingsFromConfig(*reload_config);
+                StreamingExchangeProtocol::validateSocketBufferSizes(
+                    reload_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                    reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
+            }
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -2650,6 +2731,8 @@ try
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
+
+            ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
@@ -2749,6 +2832,8 @@ try
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(config(), logger());
+            /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
+            /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
@@ -2788,8 +2873,13 @@ try
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setKafkaLocksRefreshPolls(new_server_settings[ServerSetting::stream_kafka_locks_refresh_polls]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
             global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
+            global_context->setDistributedCacheTemporaryDataPoolBehaviourOnLimit(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit]);
+            global_context->setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -2923,10 +3013,10 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-            getIcebergManifestDecodeThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+            getAIRequestThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_size],
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+                new_server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
@@ -2935,6 +3025,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+            global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,
@@ -2959,11 +3050,11 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(config()))
-                    global_context->reloadZooKeeperIfChanged(loaded_config);
+                if (zkutil::hasZooKeeperConfig(*reload_config))
+                    global_context->reloadZooKeeperIfChanged(reload_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
-                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(reload_config);
+                global_context->reloadQueryMaskingRulesIfChanged(reload_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
@@ -2992,6 +3083,7 @@ try
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateStatisticsCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3002,6 +3094,9 @@ try
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_GPU
+                global_context->updateGPUKernelCacheConfiguration(new_server_settings);
+#endif
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
@@ -3017,6 +3112,7 @@ try
             CertificateReloader::instance().tryReloadAll(config());
 #endif
             CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+            global_context->reloadStatelessWorkersConfig(config());
             NamedCollectionFactory::instance().reloadFromConfig(config());
             FileCacheFactory::instance().updateSettingsFromConfig(config());
 
@@ -3038,6 +3134,12 @@ try
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
                     new_server_settings[ServerSetting::http_connections_hard_limit],
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings[ServerSetting::amber_connections_soft_limit],
+                    new_server_settings[ServerSetting::amber_connections_warn_limit],
+                    new_server_settings[ServerSetting::amber_connections_store_limit],
+                    new_server_settings[ServerSetting::amber_connections_hard_limit],
                 });
 
             HTTPConnectionPools::instance().setSocketBufferSizes(
@@ -3052,7 +3154,15 @@ try
                 HTTPConnectionPools::SocketBufferSizes{
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
+                },
+                HTTPConnectionPools::SocketBufferSizes{
+                    new_server_settings[ServerSetting::amber_connections_rcvbuf],
+                    new_server_settings[ServerSetting::amber_connections_sndbuf],
                 });
+
+            StreamingExchangeProtocol::setSocketBufferSizes(
+                new_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                new_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
@@ -3073,7 +3183,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = loaded_config;
+            latest_config = reload_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -3586,6 +3696,9 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
+        /// The tables (including the ones in the `system` database) can depend on the dictionaries from the configuration files,
+        /// so register them before loading the databases. They start loading later, in `loadOrReloadDictionaries`.
+        global_context->registerDictionariesBeforeLoadingMetadata(config());
         load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
@@ -3863,8 +3976,11 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
+            /// In wait mode the DDL worker's parts of ON CLUSTER backups and restores are spared, and waited for below.
+            /// Any other backup or restore that missed the wait above is cancelled: an initiator's own part needs this host's DDL worker.
+            const bool wait_backups_and_restores = server_settings[ServerSetting::shutdown_wait_backups_and_restores];
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
-                global_context->getProcessList().killAllQueries();
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ wait_backups_and_restores);
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
@@ -3906,6 +4022,14 @@ try
                 /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            /// Before the AsyncLoader stops, because a restore can create a database, and after the forced exit, because stopping
+            /// the DDL worker waits for the task it runs, which the kill cancels unless it is such a part.
+            if (wait_backups_and_restores)
+            {
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ true);
+                global_context->stopDDLWorkerAndWaitAllBackupsAndRestores();
             }
         });
 

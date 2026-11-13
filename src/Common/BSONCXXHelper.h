@@ -31,14 +31,13 @@ using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type, const bool is_oid)
+static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & nullable_type, const bool is_oid)
 {
     if (field.isNull())
         return bsoncxx::types::b_null{};
 
+    const auto type = removeNullable(nullable_type);
     auto type_id = type->getTypeId();
-    if (type->isNullable())
-        type_id = typeid_cast<const DataTypeNullable *>(type.get())->getNestedType()->getTypeId();
 
     switch (type_id)
     {

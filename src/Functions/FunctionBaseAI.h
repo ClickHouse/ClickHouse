@@ -4,11 +4,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Functions/AI/AIRequestExecutor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
 
-#include <exception>
 #include <functional>
 #include <map>
 #include <optional>
@@ -52,13 +52,14 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) {}
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfBackgroundExpression(context); }
 
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isExpensive() const override { return true; }
     /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
@@ -128,20 +129,23 @@ public:
     /// Parameters common to every AI function. Function-specific params are appended by `functionParams`.
     static AIParamSpecs commonParams();
 
-    /// Exponential backoff delay capped at one minute, so adversarial values of
-    /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
-    /// sleep or overflow `std::chrono::milliseconds`.
-    static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
-
-    /// Whether a failed provider request should be retried: transient network failures and
-    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
-    static bool isRetriableProviderError(std::exception_ptr exception);
+    /// Read the `ai_function_*` settings that govern how one provider request runs. The same policy
+    /// applies to every request the query issues.
+    static AIRequestPolicy makeRequestPolicy(const ContextPtr & context);
 
     /// Parameters accepted by the embedding functions (`aiEmbed`, `aiSimilarity`) in their optional trailing
     /// `Map(String, String)` argument. Unlike the text functions, they take no `max_tokens`, and `model` is a
     /// required positional argument (not read from the map or the named collection). `dimensions` requests a
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
+
+    /// Throws if the context has no user. Background work (merges, mutations, `Buffer` flushes) evaluates
+    /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
+    static void checkHasUser(const ContextPtr & context);
+
+    /// Throws if the context analyzes expressions that are executed in the background (mutations, expressions stored
+    /// in a table definition), where `checkHasUser` throws.
+    static void throwIfBackgroundExpression(const ContextPtr & context);
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
@@ -153,11 +157,12 @@ public:
         UInt64 texts_skipped = 0;
     };
 
-    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
-    /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
-    /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
+    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching
+    /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call, and
+    /// up to `max_concurrent_requests` of those calls are in flight at once.
+    /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
     static void embedTexts(
-        IAIProvider & provider,
+        const std::shared_ptr<IAIProvider> & provider,
         const String & model,
         UInt64 dimensions,
         const String & function_name,
@@ -165,11 +170,9 @@ public:
         const String & initial_query_id,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
-        UInt64 max_retries,
-        UInt64 retry_delay_ms,
-        bool throw_on_error,
-        AIQuotaTracker & quota,
-        const ConnectionTimeouts & timeouts,
+        size_t max_concurrent_requests,
+        const AIRequestPolicy & policy,
+        const AIQuotaTrackerPtr & quota,
         EmbeddingResult & result);
 
 protected:

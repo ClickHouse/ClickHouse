@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-tsan
+-- no-tsan: the queries run in a single thread, so TSan has nothing to check, and they are too slow under it
 -- Large two-level hash tables switch to the Robin Hood mode with a higher load factor.
 -- Check that aggregation, `uniqExact` and `JOIN` stay correct with millions of keys.
 
@@ -22,8 +23,21 @@ FROM (SELECT toString(number) AS s, count() AS c FROM numbers(9000000) GROUP BY 
 SELECT 'uniqExact';
 SELECT uniqExact(number) FROM numbers(9000000);
 
+SELECT 'Merge of two large uniqExact states';
+-- The states are read back as two-level sets with about 35 thousand keys per bucket each: together they outnumber
+-- the cells of a bucket.
+DROP TABLE IF EXISTS t_uniq_exact_states;
+CREATE TABLE t_uniq_exact_states (s AggregateFunction(uniqExact, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_uniq_exact_states SELECT uniqExactState(number) FROM numbers(9000000);
+INSERT INTO t_uniq_exact_states SELECT uniqExactState(number + 9000000) FROM numbers(9000000);
+SELECT uniqExactMerge(s) FROM t_uniq_exact_states;
+DROP TABLE t_uniq_exact_states;
+
 SELECT 'Merge of two-level states';
-SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM remote('127.0.0.{1,2}', numbers(9000000)) GROUP BY k);
+-- With `prefer_localhost_replica = 1` the single thread aggregates the local shard and does not finish the handshake
+-- with the remote one in time, so the remote server closes the connection after `handshake_timeout_milliseconds`.
+SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM remote('127.0.0.{1,2}', numbers(9000000)) GROUP BY k)
+SETTINGS prefer_localhost_replica = 0;
 
 SELECT 'JOIN';
 -- Only `parallel_hash` uses two-level maps, plain `hash` uses one-level maps.
@@ -31,3 +45,19 @@ SELECT 'JOIN';
 SELECT count(), sum(r) FROM numbers(9000000) AS l
 INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
 SETTINGS join_algorithm = 'parallel_hash';
+
+SELECT 'JOIN with and without the Robin Hood mode';
+-- `enable_robin_hood_hash_for_joins` lets the buckets of the two-level map switch to the Robin Hood mode, which halves them.
+SET join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SELECT count(), sum(r) FROM numbers(1000000) AS l
+INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
+SETTINGS enable_robin_hood_hash_for_joins = 1, log_comment = '05345_join_robin_hood';
+SELECT count(), sum(r) FROM numbers(1000000) AS l
+INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
+SETTINGS enable_robin_hood_hash_for_joins = 0, log_comment = '05345_join_no_robin_hood';
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    (SELECT max(memory_usage) FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND type = 'QueryFinish' AND log_comment = '05345_join_no_robin_hood')
+    > 1.2 * (SELECT max(memory_usage) FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND type = 'QueryFinish' AND log_comment = '05345_join_robin_hood');

@@ -1,5 +1,7 @@
 #include <Core/ProtocolDefines.h>
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
@@ -74,6 +76,11 @@ void NegativeLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Limit", limit);
     map.add("Negative Offset", offset);
     map.add("With Ties", with_ties);
+}
+
+QueryPlanStepPtr NegativeLimitStep::clone() const
+{
+    return std::make_unique<NegativeLimitStep>(*this);
 }
 
 /// Wire format and cross-version compatibility.

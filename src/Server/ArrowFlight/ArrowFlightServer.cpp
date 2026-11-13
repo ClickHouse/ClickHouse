@@ -634,9 +634,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
     bool query_finished = false;
     bool handling_exception = false;
     SCOPE_EXIT({
-        if (query_finished)
-            block_io.onFinish();
-        else if (!handling_exception)
+        if (!query_finished && !handling_exception)
             block_io.onCancelOrConnectionLoss();
     });
 
@@ -645,52 +643,55 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
         ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-        PullingPipelineExecutor executor{block_io.pipeline};
-        schema = CHColumnToArrowColumn::calculateArrowSchema(
-            executor.getHeader().getColumnsWithTypeAndName(),
-            "Arrow",
-            nullptr,
-            ArrowFlight::arrowConversionSettings(query_context));
-
-        if (schema_modifier)
         {
-            auto status = schema_modifier(schema);
-            ARROW_RETURN_NOT_OK(status);
-            schema = status.ValueUnsafe();
-        }
+            PullingPipelineExecutor executor{block_io.pipeline};
+            schema = CHColumnToArrowColumn::calculateArrowSchema(
+                executor.getHeader().getColumnsWithTypeAndName(),
+                "Arrow",
+                nullptr,
+                ArrowFlight::arrowConversionSettings(query_context));
 
-        const auto conversion_settings = ArrowFlight::arrowConversionSettings(query_context);
-
-        std::optional<ColumnsWithTypeAndName> header;
-        std::vector<Chunk> chunks;
-        Block block;
-        while (executor.pull(block))
-        {
-            if (!block.empty())
+            if (schema_modifier)
             {
-                removeSpecialColumnRepresentations(block);
-                if (block_modifier)
-                    block_modifier(query_context, block);
-                if (!header)
-                    header = getHeader(block.getColumnsWithTypeAndName());
-                chunks.emplace_back(Chunk{block.getColumns(), block.rows()});
-                if (!single_table)
+                auto status = schema_modifier(schema);
+                ARROW_RETURN_NOT_OK(status);
+                schema = status.ValueUnsafe();
+            }
+
+            const auto conversion_settings = ArrowFlight::arrowConversionSettings(query_context);
+
+            std::optional<ColumnsWithTypeAndName> header;
+            Chunks chunks;
+            Block block;
+            while (executor.pull(block))
+            {
+                if (!block.empty())
                 {
-                    tables.emplace_back(
-                        CHColumnToArrowColumn::calculateArrowTable(
-                            *header, "Arrow", chunks, conversion_settings, header->size(), schema));
-                    chunks.clear();
+                    removeSpecialColumnRepresentations(block);
+                    if (block_modifier)
+                        block_modifier(query_context, block);
+                    if (!header)
+                        header = getHeader(block.getColumnsWithTypeAndName());
+                    chunks.emplace_back(Chunk{block.getColumns(), block.rows()});
+                    if (!single_table)
+                    {
+                        tables.emplace_back(
+                            CHColumnToArrowColumn::calculateArrowTable(
+                                *header, "Arrow", chunks, conversion_settings, header->size(), schema));
+                        chunks.clear();
+                    }
                 }
             }
+
+            if (!header)
+                tables.emplace_back(getEmptyArrowTable(schema));
+            else if (single_table)
+                tables.emplace_back(
+            CHColumnToArrowColumn::calculateArrowTable(
+                *header, "Arrow", chunks, conversion_settings, header->size(), schema));
         }
 
-        if (!header)
-            tables.emplace_back(getEmptyArrowTable(schema));
-        else if (single_table)
-            tables.emplace_back(
-        CHColumnToArrowColumn::calculateArrowTable(
-            *header, "Arrow", chunks, conversion_settings, header->size(), schema));
-
+        block_io.onFinish();
         query_finished = true;
     }
     catch (...)
@@ -848,9 +849,7 @@ arrow::Status ArrowFlightServer::GetSchema(
                 bool query_finished = false;
                 bool handling_exception = false;
                 SCOPE_EXIT({
-                    if (query_finished)
-                        block_io.onFinish();
-                    else if (!handling_exception)
+                    if (!query_finished && !handling_exception)
                         block_io.onCancelOrConnectionLoss();
                 });
 
@@ -859,18 +858,21 @@ arrow::Status ArrowFlightServer::GetSchema(
                     ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
                     ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                    PullingPipelineExecutor executor{block_io.pipeline};
-
-                    schema = CHColumnToArrowColumn::calculateArrowSchema(
-                        executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
-                        ArrowFlight::arrowConversionSettings(query_context));
-                    if (schema_modifier)
                     {
-                        auto status = schema_modifier(schema);
-                        ARROW_RETURN_NOT_OK(status);
-                        schema = status.ValueUnsafe();
+                        PullingPipelineExecutor executor{block_io.pipeline};
+
+                        schema = CHColumnToArrowColumn::calculateArrowSchema(
+                            executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
+                            ArrowFlight::arrowConversionSettings(query_context));
+                        if (schema_modifier)
+                        {
+                            auto status = schema_modifier(schema);
+                            ARROW_RETURN_NOT_OK(status);
+                            schema = status.ValueUnsafe();
+                        }
                     }
 
+                    block_io.onFinish();
                     query_finished = true;
                 }
                 catch (...)
@@ -1069,7 +1071,7 @@ arrow::Status ArrowFlightServer::evaluatePollDescriptor(const String & poll_desc
             auto header = getHeader(block.getColumnsWithTypeAndName());
             rows = block.rows();
             bytes = block.bytes();
-            std::vector<Chunk> chunks;
+            Chunks chunks;
             chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
             std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::calculateArrowTable(
                 header, "Arrow", chunks,
@@ -1118,7 +1120,7 @@ arrow::Status ArrowFlightServer::DoGet(
     auto impl = [&]
     {
         LOG_INFO(log, "DoGet is called for ticket {}", commandForLogging(request.ticket));
-        std::vector<Chunk> chunks;
+        Chunks chunks;
         std::shared_ptr<arrow::Table> table;
         bool should_cancel_ticket = false;
 
@@ -1146,9 +1148,7 @@ arrow::Status ArrowFlightServer::DoGet(
             bool query_finished = false;
             bool handling_exception = false;
             SCOPE_EXIT({
-                if (query_finished)
-                    block_io.onFinish();
-                else if (!handling_exception)
+                if (!query_finished && !handling_exception)
                     block_io.onCancelOrConnectionLoss();
             });
 
@@ -1157,20 +1157,26 @@ arrow::Status ArrowFlightServer::DoGet(
                 ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
                 ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                PullingPipelineExecutor executor{block_io.pipeline};
-
-                Block block;
-                while (executor.pull(block))
                 {
-                    /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
-                    removeSpecialColumnRepresentations(block);
-                    chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                    PullingPipelineExecutor executor{block_io.pipeline};
+
+                    Block block;
+                    while (executor.pull(block))
+                    {
+                        if (!block.empty())
+                        {
+                            /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
+                            removeSpecialColumnRepresentations(block);
+                            chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                        }
+                    }
+
+                    auto header = executor.getHeader();
+                    auto ch_to_arrow_converter = createCHToArrowConverter(header, query_context);
+                    ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
                 }
 
-                auto header = executor.getHeader();
-                auto ch_to_arrow_converter = createCHToArrowConverter(header, query_context);
-                ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
-
+                block_io.onFinish();
                 query_finished = true;
             }
             catch (...)
@@ -1285,9 +1291,7 @@ arrow::Status ArrowFlightServer::DoPut(
         bool query_finished = false;
         bool handling_exception = false;
         SCOPE_EXIT({
-            if (query_finished)
-                block_io.onFinish();
-            else if (!handling_exception)
+            if (!query_finished && !handling_exception)
                 block_io.onCancelOrConnectionLoss();
         });
 
@@ -1315,6 +1319,7 @@ arrow::Status ArrowFlightServer::DoPut(
                 executor.execute();
             }
 
+            block_io.onFinish();
             query_finished = true;
         }
         catch (...)

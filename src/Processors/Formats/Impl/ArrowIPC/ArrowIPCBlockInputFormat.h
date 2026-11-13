@@ -18,7 +18,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -82,9 +81,7 @@ private:
     std::optional<ArrowIPC::MessageReader> message_reader;
     std::optional<ArrowIPC::ArrowSchema> arrow_schema;
     /// GeoParquet geometry columns (by field name), parsed from the schema-level "geo" metadata.
-    /// Plain `std::unordered_map`: assigned from `parseGeoMetadataEncoding` (shared API) and bounded by the
-    /// schema's geo-column count.
-    std::unordered_map<String, GeoColumnMetadata> geo_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
     ArrowIPC::DictionaryRegistry dictionaries;
     /// For each Arrow dictionary id, the field describing its value type (used to decode dictionary batches).
     UnorderedMapWithMemoryTracking<Int64, ArrowIPC::ArrowField> dictionary_value_fields;
@@ -112,7 +109,7 @@ private:
 
     /// File format: random access to record batches via the footer.
     SeekableReadBuffer * seekable = nullptr;
-    String file_data;                       /// Owns the bytes when the input had to be loaded into memory.
+    std::unique_ptr<ArrowIPC::InMemoryFile> file_data; /// Owns the bytes when the input had to be loaded into memory.
     std::unique_ptr<SeekableReadBuffer> memory_buffer;
     struct BlockInfo { Int64 offset = 0; Int64 metadata_length = 0; Int64 body_length = 0; };
     VectorWithMemoryTracking<BlockInfo> record_batch_blocks;

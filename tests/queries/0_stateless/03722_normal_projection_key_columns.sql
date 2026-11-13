@@ -1,5 +1,4 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 -- enable projection for parallel replicas
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
@@ -32,6 +31,6 @@ INSERT INTO test_projection VALUES (2, '2023-01-01', 102, 'https://example.com/p
 OPTIMIZE TABLE test_projection FINAL;
 
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT url FROM test_projection WHERE region = 'europe')
+FROM (EXPLAIN projections = 1 SELECT url FROM test_projection WHERE region = 'europe' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%';
 SELECT url FROM test_projection WHERE region = 'europe' ORDER BY ALL;

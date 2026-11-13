@@ -7,6 +7,7 @@
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/maskURIPassword.h>
@@ -16,6 +17,8 @@
 #include <Formats/FormatSettings.h>
 
 #include <IO/HTTPCommon.h>
+
+#include <Interpreters/Context.h>
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
@@ -145,6 +148,8 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
 {
     if (!url.getUserInfo().empty())
     {
+        Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
+
         Poco::Net::HTTPCredentials http_credentials;
         Poco::Net::HTTPBasicCredentials http_basic_credentials;
 
@@ -272,7 +277,10 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
                 /// Build the request path directly to preserve percent-encoding.
                 /// Poco::URI normalizes paths by decoding %2F -> /, which breaks
                 /// subjects containing slashes.
-                std::string request_path = base_url.getPath() + "/subjects/" + encoded_subject + "/versions";
+                /// `getPath` returns the decoded path, so encode it again like `getPathAndQuery` does for the schema fetch.
+                std::string request_path;
+                Poco::URI::encode(base_url.getPath(), "?#", request_path);
+                request_path += "/subjects/" + encoded_subject + "/versions";
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Registering schema under subject '{}' at path {}", subject, request_path);
 
                 auto connection_timeouts = buildTimeouts(timeouts);

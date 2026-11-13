@@ -1,8 +1,13 @@
+-- Random settings limits: old_parts_lifetime=(480, None)
+
 -- The system tables that enumerate tables narrow that enumeration with the query's condition on
 -- `database` and on the table name, so a condition that names the tables does not walk every
 -- table of every database. Every check below compares a condition the storage pushes down against
 -- the same condition applied afterwards inside an aggregate, which it cannot push down: the two
 -- must agree, whatever the storage decided to skip.
+-- The tables of parts list the outdated ones too, so those must outlive the test: a cleanup
+-- between the two scans of one check would make them disagree.
+-- Outdated parts can still go away during the test (for example, with `SharedMergeTree` in ClickHouse Cloud), so the checks of parts count only the active ones.
 
 DROP TABLE IF EXISTS t_a;
 DROP TABLE IF EXISTS t_b;
@@ -21,7 +26,11 @@ CREATE TABLE t_dist (k UInt64) ENGINE = Distributed(test_shard_localhost, curren
 INSERT INTO t_a SELECT number, toString(number) FROM numbers(10);
 INSERT INTO t_b SELECT number, toString(number) FROM numbers(10);
 INSERT INTO t_c SELECT number, toString(number) FROM numbers(10);
+-- The entry of the insert into `t_rep` stays in its replication queue only until a background thread
+-- executes it: hold it there, so that both scans of `system.replication_queue` below see it.
+SYSTEM STOP REPLICATION QUEUES t_rep;
 INSERT INTO t_rep SELECT number FROM numbers(10);
+SYSTEM SYNC REPLICA t_rep PULL;
 
 ALTER TABLE t_a DELETE WHERE k = 1 SETTINGS mutations_sync = 2;
 ALTER TABLE t_b DELETE WHERE k = 1 SETTINGS mutations_sync = 2;
@@ -70,20 +79,20 @@ SELECT
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'parts',
-    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.parts WHERE database = currentDatabase());
+    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.parts WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'parts_columns',
-    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.parts_columns WHERE database = currentDatabase());
+    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.parts_columns WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'projection_parts',
-    (SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.projection_parts WHERE database = currentDatabase());
+    (SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.projection_parts WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT

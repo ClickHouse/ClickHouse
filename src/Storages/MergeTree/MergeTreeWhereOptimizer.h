@@ -54,11 +54,13 @@ public:
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
+    /// `top_k_filter_column` is the column of the `__topKFilter` that will be prepended to PREWHERE, empty if none.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
-        const NameSet & columns_read_before_filter = {});
+        const NameSet & columns_read_before_filter = {},
+        const String & top_k_filter_column = {});
 
 private:
     struct Condition
@@ -76,6 +78,10 @@ private:
 
         /// Can condition be moved to prewhere?
         bool viable = false;
+
+        /// Does the condition contain a function that reports `isExpensive`?
+        /// Such a condition is moved to PREWHERE after all other conditions.
+        bool expensive = false;
 
         /// Does the condition presumably have good selectivity?
         bool good = false;
@@ -107,10 +113,11 @@ private:
                 names += n.getColumnName();
             }
             return fmt::format(
-                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "Condition(exp:{} viable: {}, expensive: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
                 "columns_size: {}, is_runtime_filter: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
                 names,
                 viable,
+                expensive,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
@@ -123,7 +130,7 @@ private:
         auto tuple() const
         {
             return std::make_tuple(
-                !viable, !good, -min_position_in_primary_key, is_runtime_filter, bytes_per_rejected_row, table_columns.size());
+                !viable, expensive, !good, -min_position_in_primary_key, is_runtime_filter, bytes_per_rejected_row, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -146,6 +153,7 @@ private:
         bool use_statistics = false;
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
+        String top_k_filter_column;
     };
 
     struct OptimizeResult
@@ -188,6 +196,9 @@ private:
       */
     bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
+    /// Whether the expression contains a function that reports `isExpensive`.
+    static bool isExpensiveExpression(const RPNBuilderTreeNode & node);
+
     ConditionSelectivityEstimatorPtr estimator;
 
     const NameSet table_columns;
@@ -202,6 +213,9 @@ private:
     UInt64 total_size_of_queried_columns = 0;
     UInt64 total_rows = 0;
 };
+
+/// The sorting key columns a condition may filter by before `FINAL` without changing its result
+NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot);
 
 
 }
