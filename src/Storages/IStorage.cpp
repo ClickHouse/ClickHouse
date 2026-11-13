@@ -21,7 +21,11 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,6 +37,7 @@
 #include <Planner/collectSelectedColumnsFromTable.h>
 
 #include <algorithm>
+#include <ranges>
 
 
 namespace DB
@@ -479,14 +484,18 @@ void disableScalarSubqueryOptimization(const QueryTreeNodePtr & node)
             disableScalarSubqueryOptimization(child);
 }
 
-/// The view's query analyzed as an `INSERT` does for rows pushed from a source with `source_metadata`.
+/// The view's query analyzed as an `INSERT` does for rows pushed from a source with `source_metadata`, or over the stored source.
 QueryTreeNodePtr analyzeViewQueryForSource(
-    const ASTPtr & query, const StorageID & source_id, const StorageInMemoryMetadata & source_metadata, ContextPtr context)
+    const ASTPtr & query, const StorageID & source_id, const StorageInMemoryMetadata * source_metadata, ContextPtr context)
 {
     auto view_context = Context::createCopy(context);
-    auto view_source = std::make_shared<StorageValues>(
-        source_id, source_metadata.getColumns(), source_metadata.getSampleBlock(), source_metadata.virtuals);
-    view_context->addViewSource(view_source);
+    StoragePtr view_source;
+    if (source_metadata)
+    {
+        view_source = std::make_shared<StorageValues>(
+            source_id, source_metadata->getColumns(), source_metadata->getSampleBlock(), source_metadata->virtuals);
+        view_context->addViewSource(view_source);
+    }
 
     auto query_tree = buildQueryTree(query, view_context);
     disableScalarSubqueryOptimization(query_tree);
@@ -519,6 +528,73 @@ void prepareForComparison(QueryTreeNodePtr & node, const StorageID & source_id, 
     for (auto & child : node->getChildren())
         if (child)
             prepareForComparison(child, source_id, from, to);
+}
+
+/// Gives the recursive CTEs of `node` the temporary tables of the same CTEs in `like`, as each analysis creates new ones.
+void adoptRecursiveCTETables(
+    const QueryTreeNodePtr & node, const QueryTreeNodePtr & like, std::vector<std::pair<StorageID, StoragePtr>> & adopted, ContextPtr context)
+{
+    if (node->getNodeType() != like->getNodeType())
+        return;
+
+    auto * union_node = node->as<UnionNode>();
+    const auto * like_union_node = like->as<UnionNode>();
+    const bool adopt = union_node && union_node->hasRecursiveCTETable() && like_union_node->hasRecursiveCTETable()
+        && union_node->getRecursiveCTETable()->columns == like_union_node->getRecursiveCTETable()->columns;
+    if (adopt)
+        adopted.emplace_back(union_node->getRecursiveCTETable()->getStorageID(), like_union_node->getRecursiveCTETable()->storage);
+
+    if (auto * table = node->as<TableNode>())
+    {
+        for (const auto & [storage_id, storage] : adopted)
+        {
+            if (table->getStorageID() == storage_id)
+            {
+                table->updateStorage(storage, context);
+                break;
+            }
+        }
+    }
+
+    const auto & children = node->getChildren();
+    const auto & like_children = like->getChildren();
+    if (children.size() == like_children.size())
+        for (size_t i = 0; i < children.size(); ++i)
+            if (children[i] && like_children[i])
+                adoptRecursiveCTETables(children[i], like_children[i], adopted, context);
+
+    if (adopt)
+        union_node->setRecursiveCTETable(*like_union_node->getRecursiveCTETable());
+}
+
+std::vector<std::string_view> splitNameParts(std::string_view name)
+{
+    std::vector<std::string_view> parts;
+    for (auto part : std::views::split(name, '.'))
+        parts.emplace_back(part.begin(), part.end());
+    return parts;
+}
+
+/// Whether `ast` may read the column with the name `column_parts`: by a matcher such as `*`, or by an identifier that, from
+/// some part on, names the column, the `Nested` it belongs to, or a subcolumn of it.
+bool mayReadColumn(const IAST & ast, const std::vector<std::string_view> & column_parts)
+{
+    if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>() || ast.as<ASTColumnsRegexpMatcher>()
+        || ast.as<ASTQualifiedColumnsRegexpMatcher>() || ast.as<ASTColumnsListMatcher>() || ast.as<ASTQualifiedColumnsListMatcher>())
+        return true;
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto parts = splitNameParts(identifier->name());
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            const size_t length = std::min(parts.size() - i, column_parts.size());
+            if (std::equal(parts.begin() + i, parts.begin() + i + length, column_parts.begin()))
+                return true;
+        }
+    }
+
+    return std::ranges::any_of(ast.children, [&](const auto & child) { return mayReadColumn(*child, column_parts); });
 }
 
 }
@@ -564,14 +640,30 @@ void IStorage::checkAlterKeepsDependentViews(
     {
         const auto & query = view_metadata->select.inner_query;
         auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
-        auto query_tree = analyzeViewQueryForSource(query, source_id, old_metadata, view_context);
+        QueryTreeNodePtr query_tree;
+        try
+        {
+            query_tree = analyzeViewQueryForSource(query, source_id, &old_metadata, view_context);
+        }
+        catch (const Exception &)
+        {
+            /// E.g. a table function argument computed from the source can be undefined for no rows. If the query works on the
+            /// stored rows, whether it names the column, or the new name it may then resolve to, decides.
+            analyzeViewQueryForSource(query, source_id, nullptr, view_context);
+            if (mayReadColumn(*query, splitNameParts(command.column_name))
+                || (!is_drop && mayReadColumn(*query, splitNameParts(command.rename_to))))
+                broken_views.push_back(view_id.table_name);
+            continue;
+        }
         prepareForComparison(query_tree, source_id, is_drop ? "" : command.column_name, command.rename_to);
 
         /// The view is kept only if its query resolves every name as before, e.g. a renamed column's name not to an alias.
         try
         {
-            auto new_query_tree = analyzeViewQueryForSource(query, source_id, new_metadata, view_context);
+            auto new_query_tree = analyzeViewQueryForSource(query, source_id, &new_metadata, view_context);
             prepareForComparison(new_query_tree, source_id, "", "");
+            std::vector<std::pair<StorageID, StoragePtr>> adopted;
+            adoptRecursiveCTETables(new_query_tree, query_tree, adopted, view_context);
             if (new_query_tree->isEqual(*query_tree))
                 continue;
         }

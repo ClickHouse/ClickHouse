@@ -71,6 +71,39 @@ CREATE TABLE t13 (k Int32, x Int32) ENGINE = MergeTree ORDER BY k;
 CREATE MATERIALIZED VIEW mv13 ENGINE = Memory AS SELECT s.k FROM t13 AS s CROSS JOIN numbers(assumeNotNull((SELECT count() FROM t13))) AS n;
 ALTER TABLE t13 RENAME COLUMN x TO x2;
 ALTER TABLE t13 DROP COLUMN x2;
+-- ... or fails for an empty block: whether the query names the column decides.
+CREATE TABLE t15 (k Int32, x Int32, y Int32, z Int32, nest Nested(x Int32)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t15 VALUES (1, 1, 1, 1, [1]);
+CREATE MATERIALIZED VIEW mv15 ENGINE = Memory AS SELECT s.k, (SELECT max(y) FROM t15) AS m, tupleElement(s.nest, 'x') AS nx
+    FROM t15 AS s CROSS JOIN numbers(assumeNotNull((SELECT intDiv(10, count()) FROM t15))) AS n WINDOW w AS (PARTITION BY s.z);
+ALTER TABLE t15 RENAME COLUMN x TO s; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t15 RENAME COLUMN x TO x2;
+ALTER TABLE t15 DROP COLUMN x2;
+ALTER TABLE t15 RENAME COLUMN k TO k2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t15 RENAME COLUMN y TO y2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t15 DROP COLUMN y; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t15 RENAME COLUMN z TO z2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t15 DROP COLUMN z; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t15 RENAME COLUMN `nest.x` TO `nest.y`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+INSERT INTO t15 VALUES (2, 2, 2, [2]);
+SELECT count() FROM mv15;
+-- A view that fails on the stored rows too is broken: its error is returned.
+CREATE TABLE t16 (k Int32, b Int32, c Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW mv16 ENGINE = Memory AS SELECT k, b FROM t16;
+DETACH TABLE mv16;
+ALTER TABLE t16 RENAME COLUMN b TO b2;
+ATTACH TABLE mv16;
+ALTER TABLE t16 DROP COLUMN c; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- A recursive CTE, which each analysis gives a new temporary table.
+CREATE TABLE t14 (k Int32, c Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW mv14 ENGINE = Memory
+    AS WITH RECURSIVE r AS (SELECT k AS n FROM t14 UNION ALL SELECT n + 1 FROM r WHERE n < 3) SELECT n FROM r;
+ALTER TABLE t14 RENAME COLUMN c TO c2;
+ALTER TABLE t14 DROP COLUMN c2;
+ALTER TABLE t14 RENAME COLUMN k TO k2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+INSERT INTO t14 VALUES (1);
+SELECT count() FROM mv14;
 
 -- Distributed source.
 CREATE TABLE local4 (k Int32, a Int32, b Int32) ENGINE = MergeTree ORDER BY k;
