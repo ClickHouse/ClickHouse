@@ -87,6 +87,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
 #include <ranges>
+#include <set>
 
 namespace DB
 {
@@ -418,6 +419,36 @@ void hideLambdaArgumentsShadowingAliasExpression(
                 hidden_arguments.hide(*lambda_scope, argument_name);
         }
     }
+}
+
+/// Returns true if an identifier or the qualifier of a matcher in the expression starts with `name`, as `x` in `tuple(x.*)`.
+bool expressionRefersToIdentifier(const QueryTreeNodePtr & expression, const std::string & name)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * identifier_node = node->as<IdentifierNode>())
+        {
+            if (identifier_node->getIdentifier().front() == name)
+                return true;
+        }
+        else if (const auto * matcher_node = node->as<MatcherNode>())
+        {
+            if (!matcher_node->isUnqualified() && matcher_node->getQualifiedIdentifier().front() == name)
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
+    }
+
+    return false;
 }
 
 }
@@ -3260,6 +3291,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool replace_transformer_was_used = false;
         bool execute_apply_transformer = false;
         bool execute_replace_transformer = false;
+        /// A preceding transformer of the chain was deferred, so `node` is not the input of the following one.
+        bool transformer_input_is_deferred = false;
 
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
@@ -3299,22 +3332,34 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto expression_copy = expression_node->clone();
                     if (auto * lambda_copy = expression_copy->as<LambdaNode>())
                     {
-                        /// As in `resolveLambda`. A wrong number of arguments is reported by the second expansion.
+                        /** As in `resolveLambda`. A wrong number of arguments is reported by the second expansion.
+                          * If a preceding transformer of the chain was deferred, its result, which is the argument of the lambda,
+                          * is not known yet. A body that refers to the argument, as `x -> tuple(x.*)`, is not expanded then:
+                          * binding the argument to the original column would expand its matchers for a wrong type.
+                          */
                         const auto & lambda_argument_names = lambda_copy->getArguments().getNames();
-                        if (lambda_argument_names.size() == 1)
+                        auto & lambda_body = lambda_copy->getExpression();
+                        if (lambda_argument_names.size() == 1
+                            && !(transformer_input_is_deferred && expressionRefersToIdentifier(lambda_body, lambda_argument_names.front())))
                         {
                             auto & lambda_scope = createIdentifierResolveScope(expression_copy, /*parent_scope=*/&scope);
                             QueryExpressionsAliasVisitor visitor(lambda_scope.aliases);
-                            visitor.visit(lambda_copy->getExpression());
+                            visitor.visit(lambda_body);
                             lambda_scope.expression_argument_name_to_node.emplace(lambda_argument_names.front(), node);
-                            expandMatchersInsideProjectionExpression(lambda_copy->getExpression(), lambda_scope);
+                            /// A matcher at the root of the body, as in `x -> COLUMNS('c') REPLACE (1 AS c)`, is expanded as well.
+                            if (lambda_body->as<MatcherNode>())
+                                resolveExpressionNode(lambda_body, lambda_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                            else
+                                expandMatchersInsideProjectionExpression(lambda_body, lambda_scope);
                         }
                     }
                     else
                     {
+                        /// The matched column is not among the arguments of the copy, so the result of the preceding transformers is not needed.
                         expandMatchersInsideProjectionExpression(expression_copy, scope);
                     }
                     rollbackProjectionNodesBeforeMatcher(saved_insertions_size);
+                    transformer_input_is_deferred = true;
                     continue;
                 }
 
@@ -3428,6 +3473,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     const size_t saved_insertions_size = projection_nodes_before_matcher_insertions.size();
                     expandMatchersInsideProjectionExpression(replace_expression_copy, scope);
                     rollbackProjectionNodesBeforeMatcher(saved_insertions_size);
+                    transformer_input_is_deferred = true;
                     continue;
                 }
 
@@ -8676,8 +8722,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
             /** The replacement expressions of the columns that a `REPLACE` transformer may replace. They rewrite the identifiers
               * of `GROUP BY` before the positional arguments are replaced, see `replaceNodesWithPositionalArguments`.
+              * Each one is stored together with its matcher.
               */
-            std::unordered_map<std::string, std::vector<const IQueryTreeNode *>> replaced_column_names;
+            struct ColumnReplacement
+            {
+                const IQueryTreeNode * matcher;
+                const IQueryTreeNode * expression;
+            };
+            std::unordered_map<std::string, std::vector<ColumnReplacement>> replaced_column_names;
             /// The unqualified matcher arguments of `count` and similar functions are removed by `resolveFunction`.
             std::unordered_set<const IQueryTreeNode *> dropped_matchers;
             struct NodeToProcess
@@ -8785,7 +8837,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                                     const auto & replacement_expressions = replace_transformer->getReplacements().getNodes();
                                     const auto * replacement_expression = replacement_expressions[replacement_it - replacements_names.begin()].get();
                                     executed_transformer_expressions->insert(replacement_expression);
-                                    replaced_column_names[column_name].push_back(replacement_expression);
+                                    replaced_column_names[column_name].push_back({matcher_node, replacement_expression});
                                     transformer_was_used = true;
                                 }
                             }
@@ -8816,7 +8868,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                                     && matcher_may_produce_column(*matcher_node, is_inside_lambda, replaced_column_name)
                                     && std::ranges::none_of(preceding_except_transformers, [&](const auto * except)
                                         { return except->isColumnMatching(replaced_column_name); }))
-                                    replaced_column_names[replaced_column_name].push_back(replacement_expressions[i].get());
+                                    replaced_column_names[replaced_column_name].push_back({matcher_node, replacement_expressions[i].get()});
                             }
                         }
                     }
@@ -8881,26 +8933,34 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
               * into a constant, as `c` in `SELECT * REPLACE (1 AS c) ... GROUP BY c`, possibly through another identifier
               * that a following matcher replaces, as in `SELECT * REPLACE (d AS c), * REPLACE (1 AS d) ... GROUP BY c`.
               * Other replacements, as `t.c` in `* REPLACE (t.c AS c)`, are not positional arguments.
+              * A matcher replaces an identifier at most once (see `replaceIdentifiersWithTransformerMappings`), so the chain
+              * continues only through the replacements of another matcher: in `* REPLACE (d AS c, 1 AS d)`, `c` becomes `d`, not `1`.
+              * The order of the matchers is not tracked, so a chain through the matchers in the reverse order is counted as well.
               */
             auto collect_replaced_identifier = [&](const std::string & identifier_name)
             {
-                std::unordered_set<std::string> visited_names;
-                std::vector<std::string> names_to_process{identifier_name};
+                /// The name together with the matcher whose replacement produced it.
+                using NameWithMatcher = std::pair<std::string, const IQueryTreeNode *>;
+                std::set<NameWithMatcher> visited_names;
+                std::vector<NameWithMatcher> names_to_process{{identifier_name, nullptr}};
                 while (!names_to_process.empty())
                 {
-                    auto name = std::move(names_to_process.back());
+                    auto name_with_matcher = std::move(names_to_process.back());
                     names_to_process.pop_back();
 
-                    auto replaced_it = replaced_column_names.find(name);
-                    if (replaced_it == replaced_column_names.end() || !visited_names.insert(name).second)
+                    auto replaced_it = replaced_column_names.find(name_with_matcher.first);
+                    if (replaced_it == replaced_column_names.end() || !visited_names.insert(name_with_matcher).second)
                         continue;
 
-                    for (const auto * replacement_expression : replaced_it->second)
+                    for (const auto & [matcher, replacement_expression] : replaced_it->second)
                     {
+                        if (matcher == name_with_matcher.second)
+                            continue;
+
                         if (const auto * constant_node = replacement_expression->as<ConstantNode>())
                             collect_positional_argument(*constant_node);
                         else if (const auto * identifier_node = replacement_expression->as<IdentifierNode>())
-                            names_to_process.push_back(identifier_node->getIdentifier().getFullName());
+                            names_to_process.emplace_back(identifier_node->getIdentifier().getFullName(), matcher);
                     }
                 }
             };
