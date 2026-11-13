@@ -6,17 +6,31 @@
 
 #if USE_AWS_S3
 
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
+#include <thread>
+#include <vector>
+
+#include <Common/Silk/FiberScheduler.h>
+#include <Common/Silk/tests/gtest_silk_scheduler.h>
+
+#if USE_SILK
+#include <silk/fibers/future.h>
+#endif
 
 #include <base/scope_guard.h>
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <Poco/Event.h>
+#include <Poco/ThreadPool.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
@@ -1703,5 +1717,181 @@ TEST(IOTestAwsS3Client, CredentialCapDoesNotAffectDataPlaneTimeouts)
     EXPECT_EQ(credential.receive_timeout, Poco::Timespan(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000));
     EXPECT_EQ(credential.connection_timeout, Poco::Timespan(10, 0));
 }
+
+#if USE_SILK
+
+namespace
+{
+
+using HTTPHandlerFunction = std::function<void(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse &)>;
+
+/// A mock endpoint that answers with `handler`, which is called from up to `max_threads` concurrent server threads.
+class FunctionHTTPServer
+{
+public:
+    explicit FunctionHTTPServer(HTTPHandlerFunction handler, int max_threads = 16)
+        : thread_pool(std::make_unique<Poco::ThreadPool>(/* minCapacity = */ 2, max_threads))
+        , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server(std::make_unique<Poco::Net::HTTPServer>(
+              new Factory(std::move(handler)), *thread_pool, *server_socket, makeServerParams(max_threads)))
+    {
+        server->start();
+    }
+    ~FunctionHTTPServer() { server->stop(); }
+    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+
+private:
+    static Poco::AutoPtr<Poco::Net::HTTPServerParams> makeServerParams(int max_threads)
+    {
+        auto params = makeMockServerParams();
+        params->setMaxThreads(max_threads);
+        /// Requests of concurrent fibers wait in the queue while the handlers that hold their answers occupy the server threads.
+        params->setMaxQueued(1024);
+        return params;
+    }
+
+    class Handler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        explicit Handler(const HTTPHandlerFunction & handler_) : handler(handler_) {}
+        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+        {
+            handler(request, response);
+        }
+    private:
+        const HTTPHandlerFunction & handler;
+    };
+
+    class Factory : public Poco::Net::HTTPRequestHandlerFactory
+    {
+    public:
+        explicit Factory(HTTPHandlerFunction handler_) : handler(std::move(handler_)) {}
+        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+        {
+            return new Handler(handler);
+        }
+    private:
+        const HTTPHandlerFunction handler;
+    };
+
+    std::unique_ptr<Poco::ThreadPool> thread_pool;
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+};
+
+void sendHTTPBody(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
+{
+    response.setStatus(status);
+    response.setContentLength(static_cast<std::streamsize>(body.size()));
+    auto & out = response.send();
+    out << body;
+    out.flush();
+}
+
+DB::S3::PocoHTTPClientConfiguration createFiberTestClientConfiguration(const std::string & region)
+{
+    static const DB::RemoteHostFilter remote_host_filter;
+    return DB::S3::ClientFactory::instance().createClientConfiguration(
+        region,
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 3, .initial_delay_ms = 1, .max_delay_ms = 10},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        "http");
+}
+
+/// More fibers than the threads that may run them: Silk has a scheduler thread and a worker thread per CPU.
+size_t getFiberCountAboveSchedulerThreads()
+{
+    return 4 * std::max(1U, std::thread::hardware_concurrency()) + 1;
+}
+
+/// Runs `task` in `fiber_count` fibers, waits for `ready` and then sets `release`, which a server waits for before it
+/// answers. Fails the test if `ready` is not set in time; all fibers have finished on return.
+void runFibersAndReleaseWhenReady(
+    size_t fiber_count, Poco::Event & ready, Poco::Event & release, const std::function<void(size_t)> & task)
+{
+    std::vector<silk::FiberFuture> futures(fiber_count);
+    size_t spawned = 0;
+    while (spawned < fiber_count && Silk::spawn([&task, i = spawned]
+        {
+            task(i);
+            return 0;
+        }, futures[spawned]) == 0)
+        ++spawned;
+    EXPECT_EQ(spawned, fiber_count);
+
+    /// Reported before the release: fibers that block their threads may never finish.
+    EXPECT_TRUE(spawned == fiber_count && ready.tryWait(60'000)) << "The fibers did not get ready within 60 seconds";
+    /// The started fibers use `task`, so they are released and finish before the function returns.
+    release.set();
+    for (size_t i = 0; i < spawned; ++i)
+        EXPECT_EQ(futures[i].wait(), 0);
+}
+
+}
+
+/// S3 requests from fibers use cooperative transport also outside of `AMBER`: more fibers than the threads that run them
+/// wait for their answers at once, which the server holds until a request of every fiber has arrived. With blocking
+/// transport every waiting fiber holds its thread, so the requests of the other fibers are never sent.
+TEST(IOTestAwsS3Client, RequestsFromConcurrentFibersDoNotBlockSchedulerThreads)
+{
+    initializeFiberSchedulerForTests();
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    Poco::Event all_fibers_waiting(/* autoReset = */ false);
+    Poco::Event release(/* autoReset = */ false);
+    std::mutex requested_paths_mutex;
+    std::set<std::string> requested_paths;
+    FunctionHTTPServer http([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        {
+            std::lock_guard lock(requested_paths_mutex);
+            requested_paths.insert(Poco::URI(request.getURI()).getPath());
+            if (requested_paths.size() == fiber_count)
+                all_fibers_waiting.set();
+        }
+        release.wait();
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "");
+    }, /* max_threads = */ static_cast<int>(fiber_count));
+
+    const std::string bucket_url = http.getUrl() + "/IOTestAwsS3ClientRequestsFromConcurrentFibers";
+    const DB::S3::URI uri(bucket_url + "/test.txt");
+    auto client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    client_configuration.endpointOverride = uri.endpoint;
+    /// A request that timed out would free its thread for another fiber, so no request times out before the release.
+    client_configuration.s3_use_adaptive_timeouts = false;
+    client_configuration.requestTimeoutMs = 600'000;
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        DB::S3::ClientSettings{.use_virtual_addressing = uri.is_virtual_hosted_style},
+        "ACCESS_KEY_ID",
+        "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64 = */ "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{
+            .use_environment_credentials = false,
+            .use_insecure_imds_request = false,
+            .forbid_implicit_credentials = false,
+        });
+    ASSERT_TRUE(client);
+
+    /// Each fiber reads its own key, so that the server tells the fibers apart, also if a request is retried.
+    runFibersAndReleaseWhenReady(fiber_count, all_fibers_waiting, release, [&](size_t i)
+    {
+        doReadRequest(client, DB::S3::URI(fmt::format("{}/{}.txt", bucket_url, i)));
+    });
+
+    std::lock_guard lock(requested_paths_mutex);
+    EXPECT_EQ(requested_paths.size(), fiber_count);
+}
+
+#endif
 
 #endif
