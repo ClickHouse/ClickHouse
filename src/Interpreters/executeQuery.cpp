@@ -945,8 +945,8 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         }
         catch (...)
         {
-            /// Writing the error itself failed. An empty column takes its default of an empty JSON
-            /// object; a half-written document would not be valid JSON.
+            /// Ok to swallow: writing the error itself failed. An empty column takes its default
+            /// of an empty JSON object; a half-written document would not be valid JSON.
             elem.query_plan.clear();
         }
     }
