@@ -2,6 +2,8 @@
 #include <Core/Field.h>
 #include <IO/Operators.h>
 #include <Interpreters/WindowDescription.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
