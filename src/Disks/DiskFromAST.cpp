@@ -526,7 +526,8 @@ void DiskFromAST::ensureDiskIsNotInline(const Field & value)
         && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "An inline disk definition in the `disk` setting is supported only by MergeTree family table engines, use a disk name instead");
+            "An inline disk definition in the `disk` setting is supported only by the MergeTree family table engines "
+            "and the Atomic and Ordinary database engines, use a disk name instead");
 }
 
 }
