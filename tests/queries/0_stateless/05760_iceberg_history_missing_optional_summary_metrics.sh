@@ -16,6 +16,8 @@ ROOT="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${ROOT:?}"
 trap 'rm -rf "${ROOT:?}"' EXIT
 
+IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
+
 for fv in 1 2; do
     echo "--- format version ${fv}"
     TABLE="t_fv${fv}"
@@ -31,14 +33,14 @@ for fv in 1 2; do
     # `added-data-files` stays: an append with no added files is rejected before the summary matters.
     iceberg_edit_metadata "${TABLE_PATH}metadata" '.snapshots[].summary |= del(."added-files-size", ."changed-partition-count")' > /dev/null
 
-    # `IcebergMetadata::optimize` reads the history before the compaction, which is v2-only.
-    # Any other error, `Can not convert empty value` included, is printed in full and breaks the reference.
-    if out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1); then
-        echo "OPTIMIZE ok"
-    elif grep -q 'Compaction is supported only for format_version 2' <<< "${out}"; then
-        echo "OPTIMIZE rejected: compaction needs format version 2"
-    else
-        echo "${out}"
+    # `IcebergMetadata::optimize` reads the history before the compaction, which is v2-only. The cloud
+    # build gates `OPTIMIZE` by a member flag instead and may reject it with its own error. An unexpected
+    # error, `Can not convert empty value` on any build, is printed in full and breaks the reference.
+    if ! out=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1); then
+        if grep -q 'Can not convert empty value' <<< "${out}" \
+            || { [ "${IS_CLOUD}" != 1 ] && ! grep -q 'Compaction is supported only for format_version 2' <<< "${out}"; }; then
+            echo "${out}"
+        fi
     fi
 
     # `StorageSystemIcebergHistory` swallows a `getHistory` exception, so the row count detects it.

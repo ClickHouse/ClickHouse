@@ -1,10 +1,8 @@
 --- format version 1
-OPTIMIZE rejected: compaction needs format version 2
 2	2	2
 1
 2
 --- format version 2
-OPTIMIZE ok
 2	2	2
 1
 2
