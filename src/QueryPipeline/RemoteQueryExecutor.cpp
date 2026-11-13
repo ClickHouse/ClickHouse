@@ -661,19 +661,38 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
     /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
-    /// A node that runs a secondary query as another user than the initial one (a cluster without an interserver
-    /// secret) passes on the current roles of the initial user it received, so that the next node takes the row
-    /// policies of the initial user for these roles too, and not for its default roles.
+    /// A node that runs a secondary query passes on the current roles of the initial user it received, so that the next
+    /// node takes the row policies of the initial user for these roles too. Without an interserver secret, the query
+    /// runs here as the cluster user, or as the initial user but with its default roles, so the current roles of this
+    /// node are not the ones of the initial query. The received roles are dropped where the initial user is changed
+    /// (`remote` with another user), so they always belong to `initial_user`.
     std::optional<Strings> received_roles_of_initial_user;
     if (modified_client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && modified_client_info.initial_user != modified_client_info.current_user)
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         received_roles_of_initial_user = modified_client_info.current_roles;
 
     const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     modified_client_info.current_roles.reset();
     if (push_roles && received_roles_of_initial_user)
     {
+        /// The next node may be connected with an interserver secret, which is used only if the initial user is
+        /// the current user (see `Connection::sendQuery`), and then it enables the forwarded roles without checking
+        /// their grants. Roles received on a connection without a secret come from the client, so pass on only
+        /// the ones granted to the user here, as `SET ROLE` does. Otherwise they are used only to find row policies.
+        if (modified_client_info.initial_user == modified_client_info.current_user
+            && context->getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        {
+            const auto & access_control = context->getAccessControl();
+            const auto user = context->getUser();
+            Strings granted_role_names;
+            for (const auto & role_name : *received_roles_of_initial_user)
+            {
+                auto role_id = access_control.find<Role>(role_name);
+                if (role_id && user && user->granted_roles.isGranted(*role_id))
+                    granted_role_names.push_back(role_name);
+            }
+            received_roles_of_initial_user = std::move(granted_role_names);
+        }
         modified_client_info.current_roles = std::move(received_roles_of_initial_user);
     }
     else if (push_roles && modified_client_info.initial_user == modified_client_info.current_user)

@@ -75,6 +75,13 @@ do
     query_with_role "${role}" "remote('127.0.0.{1,2}', ${CLICKHOUSE_DATABASE}, data, '${USER}', '')"
 done
 
+# The same, and the remote nodes read both shards again as the cluster user.
+for role in "${ROLE_1}" "${ROLE_2}"
+do
+    echo "-- same user, two hops, $(role_name "${role}")"
+    query_with_role "${role}" "remote('127.0.0.{1,2}', ${CLICKHOUSE_DATABASE}, data_dist, '${USER}', '')"
+done
+
 # The row policies of the roles change when another role is granted to a role.
 echo "-- role granted to a role"
 query_with_role "${ROLE_1}" data_dist
