@@ -1834,6 +1834,21 @@ void runFibersAndReleaseWhenReady(
         EXPECT_EQ(futures[i].wait(), 0);
 }
 
+/// Sets `release` when all fibers have started `task`. A server that holds its answer until `release` lets all fibers
+/// start only if the fibers that wait for a lock held across that answer do not block scheduler threads. This needs
+/// the lock to be the first place where `task` can wait.
+void runFibersAndReleaseWhenAllStarted(size_t fiber_count, Poco::Event & release, const std::function<void(size_t)> & task)
+{
+    std::atomic<size_t> started = 0;
+    Poco::Event all_started(/* autoReset = */ false);
+    runFibersAndReleaseWhenReady(fiber_count, all_started, release, [&](size_t i)
+    {
+        if (++started == fiber_count)
+            all_started.set();
+        task(i);
+    });
+}
+
 }
 
 /// S3 requests from fibers use cooperative transport also outside of `AMBER`: more fibers than the threads that run them
@@ -1968,6 +1983,18 @@ private:
     FunctionHTTPServer server;
 };
 
+DB::S3::CredentialsConfiguration createAssumeRoleCredentialsConfiguration(const std::string & sts_url, const std::string & role_arn)
+{
+    return DB::S3::CredentialsConfiguration{
+        .use_environment_credentials = false,
+        .use_insecure_imds_request = false,
+        .role_arn = role_arn,
+        .role_session_name = "fiber_session",
+        .sts_endpoint_override = sts_url,
+        .forbid_implicit_credentials = false,
+    };
+}
+
 std::shared_ptr<DB::S3::Client> createAssumeRoleTestClient(
     const DB::S3::URI & uri, const std::string & sts_url, const std::string & role_arn, UInt64 expired_token_retry_timeout_ms = 0)
 {
@@ -1984,14 +2011,7 @@ std::shared_ptr<DB::S3::Client> createAssumeRoleTestClient(
         /* server_side_encryption_customer_key_base64 = */ "",
         {},
         {},
-        DB::S3::CredentialsConfiguration{
-            .use_environment_credentials = false,
-            .use_insecure_imds_request = false,
-            .role_arn = role_arn,
-            .role_session_name = "fiber_session",
-            .sts_endpoint_override = sts_url,
-            .forbid_implicit_credentials = false,
-        });
+        createAssumeRoleCredentialsConfiguration(sts_url, role_arn));
 }
 
 }
@@ -2086,6 +2106,64 @@ TEST(IOTestAwsS3Client, ExpiredTokenRefreshesCredentialsAndRetriesInFiber)
     EXPECT_GE(get_requests, 2);
     /// The cached credentials were still valid, so only the invalidation after `ExpiredToken` makes the fiber call STS.
     EXPECT_EQ(sts.requests, sts_requests_before + 1);
+}
+
+/// Concurrent fibers that need assumed role credentials wait for one `AssumeRole` refresh, which the STS endpoint holds
+/// until all of them have started, and sign their requests with its credentials. If the refresh held a native lock
+/// across the STS request, the fibers waiting for that lock would block every scheduler thread.
+TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
+{
+    initializeFiberSchedulerForTests();
+
+    /// The first credentials are answered at once, the refresh in fibers waits for `release`.
+    Poco::Event release(/* autoReset = */ false);
+    release.set();
+    std::atomic<bool> refreshing = false;
+    std::atomic<size_t> sts_requests = 0;
+    FunctionHTTPServer sts([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        ++sts_requests;
+        const std::string role_access_key = refreshing ? "refreshed_role_access_key" : "first_role_access_key";
+        release.wait();
+        std::optional<StsRequestInfo> request_info;
+        MockStsRequestHandler(request_info, role_access_key, "role_secret_key").handleRequest(request, response);
+    });
+
+    std::atomic<size_t> requests_signed_with_refreshed_credentials = 0;
+    std::atomic<size_t> other_requests = 0;
+    FunctionHTTPServer http([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (getCredentialString(request).starts_with("Credential=refreshed_role_access_key/"))
+            ++requests_signed_with_refreshed_credentials;
+        else
+            ++other_requests;
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "");
+    });
+
+    const DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAssumeRoleRefreshInConcurrentFibers/test.txt");
+    /// The role is unique, so the provider is not shared with other tests through the credentials cache.
+    const std::string role_arn = "arn::role/fiber_concurrent_refresh_role";
+    auto client = createAssumeRoleTestClient(uri, sts.getUrl(), role_arn);
+    ASSERT_TRUE(client);
+
+    /// The provider of the client, which the credentials cache returns for the same role, endpoint and explicit credentials.
+    auto provider = DB::S3::getCredentialsProvider(
+        createFiberTestClientConfiguration("eu-west-1"),
+        Aws::Auth::AWSCredentials("ACCESS_KEY_ID", "SECRET_ACCESS_KEY"),
+        createAssumeRoleCredentialsConfiguration(sts.getUrl(), role_arn));
+    EXPECT_EQ(provider->GetAWSCredentials().GetAWSAccessKeyId(), "first_role_access_key");
+
+    provider->SetNeedRefresh();
+    refreshing = true;
+    release.reset();
+    const size_t sts_requests_before = sts_requests;
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t) { doReadRequest(client, uri); });
+
+    EXPECT_EQ(sts_requests, sts_requests_before + 1);
+    EXPECT_GE(requests_signed_with_refreshed_credentials, fiber_count);
+    EXPECT_EQ(other_requests, 0);
 }
 
 #endif
