@@ -417,7 +417,11 @@ private:
         addKey("access_control_path", Access::ReadWrite, working_directory);
         addKey("user_defined_path", Access::ReadWrite, working_directory);
         addKey("workload_path", Access::ReadWrite, working_directory);
-        addKey("core_path", Access::ReadWrite, working_directory);
+        /// With `--daemon`, the directory of the core dumps is where `BaseDaemon::initialize` changes to at its end.
+        if (is_daemon)
+            add(coreDirectory(), Access::ReadWrite, "`core_path`");
+        else
+            addKey("core_path", Access::ReadWrite, working_directory);
 
         /// They are inside `path` by default, which is not executable, and are mounted separately to be read-only and,
         /// for the scripts, executable.
@@ -516,33 +520,42 @@ private:
     }
 
     /// With the targets of the links, as a log file can be a link to another directory.
-    /// Relative to the directories that `BaseDaemon::initialize` resolves them against: the logs against
-    /// `startup_directory`, and the pid file against the directory it changes to before creating it, which is the one
-    /// of the log with `--daemon`.
+    /// The paths of the logs are relative to the directories that `BaseDaemon::initialize` opens them in: `stderr` and
+    /// `stdout` in `startup_directory`, and the logs and the pid file after it has changed to `logDirectory`.
     void addLogs()
     {
-        for (const auto * key : {"logger.log", "logger.errorlog", "logger.stderr", "logger.stdout"})
-            if (config.has(key))
-                if (const auto value = config.getString(key); !value.empty())
-                    addLocation(absolute(value, startup_directory), Access::ReadWrite, fmt::format("`{}`", key));
-
-        fs::path pid_base = startup_directory;
-        if (is_daemon)
-        {
-            const std::string log = config.getString("logger.log", "");
-            pid_base = log.empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
-        }
-        addKeyLocation("pid", Access::ReadWrite, pid_base);
+        for (const auto * key : {"logger.stderr", "logger.stdout"})
+            addKeyLocation(key, Access::ReadWrite, startup_directory);
+        for (const auto * key : {"logger.log", "logger.errorlog", "pid"})
+            addKeyLocation(key, Access::ReadWrite, logDirectory());
+        /// With `--daemon`, `stderr.log` and `stdout.log` are created in the directory of the log by default.
+        if (is_daemon && !config.getString("logger.log", "").empty())
+            add(logDirectory(), Access::ReadWrite, "the directory of `logger.log`");
     }
 
-    /// The working directory of `Server::main`: with `--daemon`, `BaseDaemon::initialize` changes to the directory of
-    /// the core dumps at its end.
-    fs::path runtimeDirectory() const
+    /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
+    /// changes to that directory, or to `/tmp` without a log.
+    fs::path logDirectory() const
     {
         if (!is_daemon)
-            return working_directory;
+            return startup_directory;
+        const std::string log = config.getString("logger.log", "");
+        return log.empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
+    }
+
+    /// The directory of the core dumps that `BaseDaemon::initialize` changes to at its end with `--daemon`: `core_path`
+    /// relative to `logDirectory`, or `cores` in `path`. If it cannot create it, it falls back to the directory of the
+    /// log, which is visible anyway.
+    fs::path coreDirectory() const
+    {
         const std::string core_path = config.getString("core_path", "");
-        return core_path.empty() ? data_path / "cores" : absolute(core_path, startup_directory);
+        return core_path.empty() ? data_path / "cores" : absolute(core_path, logDirectory());
+    }
+
+    /// The working directory of `Server::main`.
+    fs::path runtimeDirectory() const
+    {
+        return is_daemon ? coreDirectory() : working_directory;
     }
 
     /// The same lookup as in `Server::main`: a relative path is relative to the working directory, or, if there is no
@@ -559,6 +572,26 @@ private:
             if (const fs::path next_to_config = absolute(value, config_directory); fs::exists(next_to_config, error))
                 file = next_to_config;
         addLocation(file, Access::ReadOnly, fmt::format("`{}`", key));
+
+        /// The credentials of Kerberos, in `hdfs` and in the sections `hdfs_<user>` for the users of HDFS, as
+        /// `HDFSBuilderWrapper::loadFromConfig` reads them. The cache of the tickets is written to, also as a new
+        /// file in its directory; its name can have the type of the cache in front, as in `FILE:/tmp/krb5cc`.
+        std::vector<std::string> sections = {"hdfs"};
+        Poco::Util::AbstractConfiguration::Keys top_level_keys;
+        config.keys(top_level_keys);
+        for (const auto & top_level_key : top_level_keys)
+            if (top_level_key.starts_with("hdfs_"))
+                sections.push_back(top_level_key);
+        for (const auto & section : sections)
+        {
+            addKeyLocation(section + ".hadoop_kerberos_keytab", Access::ReadOnly, runtimeDirectory());
+            std::string cache = config.getString(section + ".hadoop_security_kerberos_ticket_cache_path", "");
+            for (const std::string_view type : {"FILE:", "DIR:"})
+                if (cache.starts_with(type))
+                    cache = cache.substr(type.size());
+            if (!cache.empty() && cache.find(':') == std::string::npos)
+                addLocation(absolute(cache, runtimeDirectory()), Access::ReadWrite, fmt::format("`{}.hadoop_security_kerberos_ticket_cache_path`", section));
+        }
     }
 
     void addCertificates()
