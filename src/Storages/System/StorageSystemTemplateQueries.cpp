@@ -2,14 +2,20 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/TemplateQueriesBuiltin.h>
 
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/IBackup.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -51,6 +57,9 @@ namespace
     constexpr size_t MAX_DESCRIPTION_BYTES = 4096;
     constexpr size_t MAX_QUERY_BYTES = 1024 * 1024;
     constexpr size_t MAX_USER_QUERIES = 10000;
+
+    /// The file with the user rows inside the table's data path in a backup.
+    constexpr auto BACKUP_FILE_NAME = "template_queries.tsv";
 
     void checkUserQueryFields(std::string_view name, std::string_view category, std::string_view description, std::string_view query)
     {
@@ -109,53 +118,73 @@ void StorageSystemTemplateQueries::loadIfNeeded() const
     if (file_exists)
     {
         ReadBufferFromFile in(file_path);
-        while (!in.eof())
-        {
-            UserQuery row;
-            readEscapedString(row.name, in);
-            assertChar('\t', in);
-            readEscapedString(row.category, in);
-            assertChar('\t', in);
-            readEscapedString(row.description, in);
-            assertChar('\t', in);
-            readEscapedString(row.query, in);
-            assertChar('\t', in);
-            readIntText(row.created_at, in);
-            if (!in.eof())
-                assertChar('\n', in);
-            rows.push_back(std::move(row));
-        }
+        rows = readRows(in);
     }
 
     user_queries = std::move(rows);
     loaded = true;
 }
 
-void StorageSystemTemplateQueries::saveToFile(const std::vector<UserQuery> & rows) const
+std::vector<StorageSystemTemplateQueries::UserQuery> StorageSystemTemplateQueries::readRows(ReadBuffer & in)
+{
+    std::vector<UserQuery> rows;
+    while (!in.eof())
+    {
+        UserQuery row;
+        readEscapedString(row.name, in);
+        assertChar('\t', in);
+        readEscapedString(row.category, in);
+        assertChar('\t', in);
+        readEscapedString(row.description, in);
+        assertChar('\t', in);
+        readEscapedString(row.query, in);
+        assertChar('\t', in);
+        readIntText(row.created_at, in);
+        if (!in.eof())
+            assertChar('\n', in);
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+void StorageSystemTemplateQueries::writeRows(const std::vector<UserQuery> & rows, WriteBuffer & out)
+{
+    for (const auto & row : rows)
+    {
+        writeEscapedString(row.name, out);
+        writeChar('\t', out);
+        writeEscapedString(row.category, out);
+        writeChar('\t', out);
+        writeEscapedString(row.description, out);
+        writeChar('\t', out);
+        writeEscapedString(row.query, out);
+        writeChar('\t', out);
+        writeIntText(row.created_at, out);
+        writeChar('\n', out);
+    }
+}
+
+void StorageSystemTemplateQueries::saveToFile(std::vector<UserQuery> rows) const
 {
     const String tmp_path = file_path + ".tmp";
     {
         WriteBufferFromFile out(tmp_path);
-        for (const auto & row : rows)
-        {
-            writeEscapedString(row.name, out);
-            writeChar('\t', out);
-            writeEscapedString(row.category, out);
-            writeChar('\t', out);
-            writeEscapedString(row.description, out);
-            writeChar('\t', out);
-            writeEscapedString(row.query, out);
-            writeChar('\t', out);
-            writeIntText(row.created_at, out);
-            writeChar('\n', out);
-        }
+        writeRows(rows, out);
         out.finalize();
         out.sync();
     }
+
+    /// Opened before the rename, so a failure to open the directory leaves the old file in place.
+    LocalDirectorySyncGuard directory(fs::absolute(file_path).parent_path());
+
     std::error_code ec;
     fs::rename(tmp_path, file_path, ec);
     if (ec)
         throw Exception(ErrorCodes::ATOMIC_RENAME_FAIL, "Cannot rename '{}' to '{}': {}", tmp_path, file_path, ec.message());
+
+    /// The file is replaced: the cache follows it even if the directory sync below throws.
+    user_queries = std::move(rows);
+    directory.sync();
 }
 
 void StorageSystemTemplateQueries::addUserQueries(std::vector<UserQuery> new_rows)
@@ -181,8 +210,65 @@ void StorageSystemTemplateQueries::addUserQueries(std::vector<UserQuery> new_row
     if (updated.size() > MAX_USER_QUERIES)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many user template queries: {}, the maximum is {}", updated.size(), MAX_USER_QUERIES);
 
-    saveToFile(updated);
-    user_queries = std::move(updated);
+    saveToFile(std::move(updated));
+}
+
+void StorageSystemTemplateQueries::restoreUserQueries(std::vector<UserQuery> backup_rows)
+{
+    std::lock_guard lock(mutex);
+    loadIfNeeded();
+
+    std::set<String> names;
+    for (const auto & row : user_queries)
+        names.insert(row.name);
+
+    auto updated = user_queries;
+    for (auto & row : backup_rows)
+    {
+        checkUserQueryFields(row.name, row.category, row.description, row.query);
+        /// A name that is taken keeps its current row.
+        if (isBuiltinName(row.name) || !names.insert(row.name).second)
+            continue;
+        updated.push_back(std::move(row));
+    }
+
+    if (updated.size() == user_queries.size())
+        return;
+
+    if (updated.size() > MAX_USER_QUERIES)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many user template queries: {}, the maximum is {}", updated.size(), MAX_USER_QUERIES);
+
+    saveToFile(std::move(updated));
+}
+
+void StorageSystemTemplateQueries::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    WriteBufferFromOwnString out;
+    {
+        std::lock_guard lock(mutex);
+        loadIfNeeded();
+        if (user_queries.empty())
+            return;
+        writeRows(user_queries, out);
+    }
+    backup_entries_collector.addBackupEntry(fs::path(data_path_in_backup) / BACKUP_FILE_NAME, std::make_shared<BackupEntryFromMemory>(out.str()));
+}
+
+void StorageSystemTemplateQueries::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    auto backup = restorer.getBackup();
+    String file_name = fs::path(data_path_in_backup) / BACKUP_FILE_NAME;
+    if (!backup->fileExists(file_name))
+        return;
+
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageSystemTemplateQueries>(shared_from_this()), backup, file_name]
+        {
+            auto in = backup->readFile(file_name);
+            storage->restoreUserQueries(readRows(*in));
+        });
 }
 
 void StorageSystemTemplateQueries::deleteUserQuery(const String & name)
@@ -198,8 +284,7 @@ void StorageSystemTemplateQueries::deleteUserQuery(const String & name)
     if (updated.size() == user_queries.size())
         return;
 
-    saveToFile(updated);
-    user_queries = std::move(updated);
+    saveToFile(std::move(updated));
     LOG_INFO(getLogger("StorageSystemTemplateQueries"), "Deleted template query '{}' from '{}'", name, file_path);
 }
 

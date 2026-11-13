@@ -38,6 +38,10 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     bool supportsDelete() const override { return true; }
 
+    /// A backup keeps the user rows. A restore adds the rows whose names are not taken yet.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 
@@ -55,9 +59,14 @@ private:
 
     /// Must be called with `mutex` held.
     void loadIfNeeded() const;
-    void saveToFile(const std::vector<UserQuery> & rows) const;
+    /// Replaces the file and then the cached rows. Must be called with `mutex` held.
+    void saveToFile(std::vector<UserQuery> rows) const;
+
+    static void writeRows(const std::vector<UserQuery> & rows, WriteBuffer & out);
+    static std::vector<UserQuery> readRows(ReadBuffer & in);
 
     void addUserQueries(std::vector<UserQuery> new_rows);
+    void restoreUserQueries(std::vector<UserQuery> backup_rows);
     void deleteUserQuery(const String & name);
 
     const String file_path;
