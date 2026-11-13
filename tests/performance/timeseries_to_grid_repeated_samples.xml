@@ -8,4 +8,7 @@
     <query>SELECT timeSeriesRateToGrid(1000, 5095, 1, 60)(toDateTime(1000 + number % 4095), toFloat64(number % 4095)) FROM numbers(4095 * 1000) FORMAT Null</query>
     <query>SELECT timeSeriesRateToGrid(1000, 5095, 1, 60)(toDateTime(1000 + number % 4096), toFloat64(number % 4096)) FROM numbers(4096 * 1000) FORMAT Null</query>
     <query>SELECT timeSeriesRateToGrid(1000, 5095, 1, 60)(toDateTime(1000 + number % 4097), toFloat64(number % 4097)) FROM numbers(4097 * 1000) FORMAT Null</query>
+
+    <!-- Two thread states, each one block of descending stretches of 64 ascending timestamps, read as thousands of sorted runs. -->
+    <query>SELECT number % 2 AS c, timeSeriesRateToGrid(0, 4200000, 1000, 3000)(toDateTime64(4194304 - 64 * (intDiv(number, 64) + 1) + number % 64, 3, 'UTC'), toFloat64(number % 1000)) FROM numbers_mt(4194304) GROUP BY c FORMAT Null SETTINGS max_threads = 2, max_block_size = 2097152</query>
 </test>

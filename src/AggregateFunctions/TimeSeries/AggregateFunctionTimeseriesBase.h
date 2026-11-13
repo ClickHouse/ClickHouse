@@ -356,10 +356,21 @@ public:
     {
         if constexpr (flat_samples)
         {
-            for (size_t i = 0; i < size; ++i)
+            size_t i = 0;
+            try
             {
-                data(dst_places[i] + offset)->samples.mergeAndDestroy(data(src_places[i] + offset)->samples);
-                destroy(src_places[i] + offset);
+                for (; i < size; ++i)
+                {
+                    data(dst_places[i] + offset)->samples.mergeAndDestroy(data(src_places[i] + offset)->samples);
+                    destroy(src_places[i] + offset);
+                }
+            }
+            catch (...)
+            {
+                /// The caller has detached the sources, so the ones not destroyed yet are destroyed here.
+                for (; i < size; ++i)
+                    destroy(src_places[i] + offset);
+                throw;
             }
         }
         else

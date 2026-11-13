@@ -157,4 +157,11 @@ SELECT
     (SELECT sum(cityHash64(c, hex(CAST(s AS String)))) FROM (SELECT number % 3 AS c, timeSeriesDeltaToGridState(0, 5000, 10, 30)(toDateTime64(intDiv(number, 30) % 5000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS s FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 8, max_block_size = 1000)
         = (SELECT sum(cityHash64(c, hex(CAST(s AS String)))) FROM (SELECT number % 3 AS c, timeSeriesDeltaToGridState(0, 5000, 10, 30)(toDateTime64(intDiv(number, 30) % 5000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS s FROM numbers(1000000) GROUP BY c) SETTINGS max_threads = 1);
 
+-- Thread states made of many short sorted runs in descending order are merged in pairs when read.
+SELECT 'many sorted runs (1 1):';
+WITH (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 2 AS c, timeSeriesRateToGrid(0, 300000, 1000, 3000)(toDateTime64(262144 - 64 * (intDiv(number, 64) + 1) + number % 64, 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers(262144) GROUP BY c) SETTINGS max_threads = 1) AS descending
+SELECT
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 2 AS c, timeSeriesRateToGrid(0, 300000, 1000, 3000)(toDateTime64(262144 - 64 * (intDiv(number, 64) + 1) + number % 64, 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers_mt(262144) GROUP BY c) SETTINGS max_threads = 2, max_block_size = 131072) = descending,
+    (SELECT sum(cityHash64(c, finalizeAggregation(s))) FROM (SELECT number % 2 AS c, timeSeriesRateToGridState(0, 300000, 1000, 3000)(toDateTime64(262144 - 64 * (intDiv(number, 64) + 1) + number % 64, 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers_mt(262144) GROUP BY c) SETTINGS max_threads = 2, max_block_size = 131072) = descending;
+
 DROP TABLE ts_flat;

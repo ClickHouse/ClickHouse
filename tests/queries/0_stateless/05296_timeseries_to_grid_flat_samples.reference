@@ -31,3 +31,5 @@ state layout:
 corrupted states:
 parallel GROUP BY (1 1 1 1 1 1):
 1	1	1	1	1	1
+many sorted runs (1 1):
+1	1

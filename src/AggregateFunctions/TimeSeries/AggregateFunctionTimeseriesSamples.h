@@ -251,6 +251,8 @@ private:
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = compacting ? 65536 : 4096;
     /// A buffer of at most this many sorted runs is sorted by merging them into another buffer, a buffer of more runs in place.
     static constexpr size_t MAX_RUNS_TO_MERGE_INTO = 16;
+    /// More runs than this are merged in pairs, because taking the runs one stretch at a time costs time linear in their number.
+    static constexpr size_t MAX_RUNS_TO_MERGE_BY_STRETCHES = 64;
     /// Runs that alternate in stretches shorter than this on average are merged in pairs; checked every `STRETCHES_PER_CHECK` stretches.
     static constexpr size_t MIN_AVERAGE_STRETCH_LENGTH = 4;
     static constexpr size_t STRETCHES_PER_CHECK = 64;
@@ -475,7 +477,7 @@ private:
         ::sort(runs.begin(), runs.end(), earlier);
         size_t stretches = 0;
         const Sample * window_begin = out;
-        while (runs.size() > 2)
+        while (runs.size() > 2 && runs.size() <= MAX_RUNS_TO_MERGE_BY_STRETCHES)
         {
             Run run = runs.front();
             const TimestampType next = runs[1].begin->first;
