@@ -38,6 +38,7 @@
 #include <base/scope_guard.h>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 
@@ -683,7 +684,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             && context->getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         {
             const auto & access_control = context->getAccessControl();
-            const auto user = context->getUser();
+            /// A context may have no user (e.g. it has full access), then no role is granted.
+            const auto user = context->getAccess()->tryGetUser();
             Strings granted_role_names;
             for (const auto & role_name : *received_roles_of_initial_user)
             {
