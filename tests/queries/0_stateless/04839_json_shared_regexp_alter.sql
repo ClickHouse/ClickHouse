@@ -143,3 +143,17 @@ INSERT INTO key_04839 SELECT number, toJSONString(map('a', number)) FROM numbers
 ALTER TABLE key_04839 MODIFY COLUMN j JSON(a UInt32, SHARED REGEXP '^zzz$');
 SELECT 'subcolumn key', count() FROM key_04839 WHERE j.a = 5;
 DROP TABLE key_04839;
+
+-- Old parts keep their TTL infos, so a TTL that reads the whole column refuses a rules-only ALTER too.
+CREATE TABLE ttl_04839 (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id TTL if(dynamicType(CAST(j, 'Dynamic')) = 'JSON', toDateTime('2000-01-01'), toDateTime('2100-01-01'));
+ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE ttl_04839;
+CREATE TABLE ttl_04839 (id UInt64, j JSON, x UInt64 TTL if(dynamicType(CAST(j, 'Dynamic')) = 'JSON', toDateTime('2000-01-01'), toDateTime('2100-01-01'))) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE ttl_04839;
+CREATE TABLE ttl_04839 (id UInt64, j JSON(a UInt32)) ENGINE = MergeTree ORDER BY id TTL toDateTime('2100-01-01') + toIntervalSecond(j.a);
+INSERT INTO ttl_04839 SELECT number, toJSONString(map('a', number)) FROM numbers(24);
+ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(a UInt32, SHARED REGEXP '^zzz$');
+OPTIMIZE TABLE ttl_04839 FINAL;
+SELECT 'subcolumn ttl', count() FROM ttl_04839;
+DROP TABLE ttl_04839;

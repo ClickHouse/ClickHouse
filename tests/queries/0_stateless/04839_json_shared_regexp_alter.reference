@@ -16,3 +16,4 @@ rules-only alter	Granules: 24/24
 rules-only alter	Granules: 1/24
 rules and timezone alter	0
 subcolumn key	1
+subcolumn ttl	24

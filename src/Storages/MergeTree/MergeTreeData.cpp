@@ -7203,6 +7203,28 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         "ALTER of column {} is forbidden because projection {} computes an expression from it. Drop the projection first",
                         backQuoteIfNeed(command.column_name),
                         backQuoteIfNeed(projection.name));
+
+            /// Old parts keep their TTL infos, so a TTL that reads the whole column would act on stale values.
+            TTLDescriptions ttls = old_metadata.getRowsWhereTTLs();
+            for (const auto & ttl : old_metadata.getGroupByTTLs())
+                ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getMoveTTLs())
+                ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getRecompressionTTLs())
+                ttls.push_back(ttl);
+            if (old_metadata.hasRowsTTL())
+                ttls.push_back(old_metadata.getRowsTTL());
+            for (const auto & [column_name, ttl] : old_metadata.getColumnTTLs())
+                ttls.push_back(ttl);
+
+            for (const auto & ttl : ttls)
+                for (const auto & ast : {ttl.expression_ast, ttl.where_expression_ast})
+                    if (std::ranges::contains(expressionSourceColumns(ast, old_metadata.getColumns(), local_context), command.column_name))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} is forbidden because the TTL expression ({}) reads it. Drop the TTL first",
+                            backQuoteIfNeed(command.column_name),
+                            ast->formatForErrorMessage());
         }
     }
 
