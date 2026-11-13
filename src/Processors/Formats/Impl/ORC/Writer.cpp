@@ -468,7 +468,8 @@ public:
         ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
 
         UInt64 element_offset = offsets[static_cast<ssize_t>(offset) - 1];
-        UInt64 total_elements = offsets[offset + num_values - 1] - element_offset;
+        /// Both ends are indexed signed: the range of a child is empty for an empty parent array.
+        UInt64 total_elements = offsets[static_cast<ssize_t>(offset + num_values) - 1] - element_offset;
 
         if constexpr (is_map)
         {
