@@ -395,17 +395,16 @@ export const PageWrapper = ({ children }) => {
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
 
-      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">ユースケース別に見る</h2>
-      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">ClickHouseがリアルタイム分析、オブザーバビリティ、データウェアハウジング、エージェンティックAIをあらゆる規模で支える仕組みをご覧ください。</p>
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">ClickHouse で構築できるもの</h2>
 
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
-        <HeroCard title="リアルタイムアナリティクス" galaxyEvent="docs.home.real-time-analytics" description="即座にインサイトとダッシュボードを大規模に提供。数十億行のデータをリアルタイムで分析し、ミリ秒単位で結果を得られます。" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
+        <HeroCard title="リアルタイムアナリティクス" galaxyEvent="docs.home.real-time-analytics" description="即応性の高いアプリケーションと分析" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="オブザーバビリティ" galaxyEvent="docs.home.observability" description="ClickHouse を基盤とするオープンソースのオブザーバビリティスタック、ClickHouse Observability を使用して、ログ、メトリクス、トレースを大規模に保存・クエリできます。" href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="トランザクションアプリ" galaxyEvent="docs.home.transactional-apps" description="マネージド PostgreSQL" href={localizeHref("/products/managed-postgres/overview")} showArrow />
 
-        <HeroCard title="データウェアハウジング" galaxyEvent="docs.home.data-warehousing" description="データを即座に分析・探索し、インサイトの獲得やアプリケーション活用に役立てられます。負荷の高いワークロードをオフロードすることで、より迅速にスケールできます。" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
+        <HeroCard title="データウェアハウジング" galaxyEvent="docs.home.data-warehousing" description="ワークロードをオフロードして、速度とコストを改善" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="エージェント型アナリティクス" galaxyEvent="docs.home.agentic-analytics" description="AIエージェントがリアルタイムデータを直接クエリし、会話形式で即座にインサイトや可視化を提供できます" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="オブザーバビリティ" galaxyEvent="docs.home.observability" description="SRE とエージェントのための包括的な可視性" href={localizeHref("/clickstack/overview")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />

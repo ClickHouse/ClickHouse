@@ -395,17 +395,16 @@ export const PageWrapper = ({ children }) => {
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
 
-      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explorer par cas d&#39;usage</h2>
-      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Découvrez comment ClickHouse alimente l&#39;analytique en temps réel, l&#39;observabilité, l&#39;entreposage de données et l&#39;IA agentique à n&#39;importe quelle échelle.</p>
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Découvrez ce que vous pouvez créer avec ClickHouse</h2>
 
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
-        <HeroCard title="Analyse en temps réel" galaxyEvent="docs.home.real-time-analytics" description="Obtenez des insights instantanés et des dashboards à grande échelle. Analysez des milliards de lignes en temps réel avec des résultats en quelques millisecondes." href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
+        <HeroCard title="Analyse en temps réel" galaxyEvent="docs.home.real-time-analytics" description="Applications et analyses immédiatement réactives" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="Observabilité" galaxyEvent="docs.home.observability" description="Stockez et interrogez logs, métriques et traces à grande échelle avec ClickHouse Observability, la stack d’observabilité open source propulsée par ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="Applications transactionnelles" galaxyEvent="docs.home.transactional-apps" description="PostgreSQL géré pour vous" href={localizeHref("/products/managed-postgres/overview")} showArrow />
 
-        <HeroCard title="Data warehousing" galaxyEvent="docs.home.data-warehousing" description="Analysez et explorez les données instantanément pour en tirer des insights et alimenter vos applications. Passez plus rapidement à l’échelle en déchargeant les workloads les plus lourds." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
+        <HeroCard title="Data warehousing" galaxyEvent="docs.home.data-warehousing" description="Déchargez les charges de travail pour optimiser vitesse et coût" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="Analytique agentique" galaxyEvent="docs.home.agentic-analytics" description="Permettez aux agents d’IA d’interroger directement vos données en temps réel pour fournir instantanément des insights conversationnels et des visualisations" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="Observabilité" galaxyEvent="docs.home.observability" description="Visibilité complète pour les SRE et les agents" href={localizeHref("/clickstack/overview")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />

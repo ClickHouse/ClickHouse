@@ -394,35 +394,34 @@ export const PageWrapper = ({ children }) => {
         </div>
 
         <FullWidthDivider style={{ margin: '40px 0 40px' }} />
-        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explore by use case</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Discover how ClickHouse powers real-time analytics, observability, data warehousing, and agentic AI at any scale.</p>
+        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">See what you can build with ClickHouse</h2>
         <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
             <HeroCard
                 title="Real-time analytics"
                 galaxyEvent="docs.home.real-time-analytics"
-                description="Deliver instant insights and dashboards at scale. Analyze billions of rows in real time with millisecond results."
+                description="Instantly responsive apps and analysis"
                 href={localizeHref("/get-started/use-cases/real-time-analytics")}
                 showArrow
             />
             <HeroCard
-                title="Observability"
-                galaxyEvent="docs.home.observability"
-                description="Store and query logs, metrics and traces at scale using ClickHouse Observability, the open source observability stack powered by ClickHouse."
-                href={localizeHref("/clickstack/overview")}
+                title="Transactional apps"
+                galaxyEvent="docs.home.transactional-apps"
+                description="PostgreSQL managed for you"
+                href={localizeHref("/products/managed-postgres/overview")}
                 showArrow
             />
             <HeroCard
                 title="Data warehousing"
                 galaxyEvent="docs.home.data-warehousing"
-                description="Analyze and explore data instantly for insights and apps. Scale faster by offloading heavy workloads."
+                description="Offload workloads for speed and cost"
                 href={localizeHref("/get-started/use-cases/data-warehousing")}
                 showArrow
             />
             <HeroCard
-                title="Agents"
-                galaxyEvent="docs.home.agentic-analytics"
-                description="Let AI agents query your real-time data directly to deliver instant, conversational insights and visualizations"
-                href={localizeHref("/products/cloud/features/ai-ml/agents")}
+                title="Observability"
+                galaxyEvent="docs.home.observability"
+                description="Full visibility for SREs and agents"
+                href={localizeHref("/clickstack/overview")}
                 showArrow
             />
         </div>

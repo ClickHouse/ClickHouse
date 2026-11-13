@@ -394,17 +394,16 @@ export const PageWrapper = ({ children }) => {
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
 
-      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explore по сценариям использования</h2>
-      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Узнайте, как ClickHouse обеспечивает real-time аналитику, обсервабилити, хранилище данных и агентный ИИ в любом масштабе.</p>
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Посмотрите, что можно создать с ClickHouse</h2>
 
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
-        <HeroCard title="Real-time аналитика" galaxyEvent="docs.home.real-time-analytics" description="Получайте мгновенные инсайты и панели мониторинга в любом масштабе. Анализируйте миллиарды строк в реальном времени с результатами за миллисекунды." href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
+        <HeroCard title="Real-time аналитика" galaxyEvent="docs.home.real-time-analytics" description="Мгновенно отзывчивые приложения и аналитика" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="Обсервабилити" galaxyEvent="docs.home.observability" description="Храните и запрашивайте журналы, метрики и трейсы в любом масштабе с помощью ClickHouse Observability — стека обсервабилити с открытым исходным кодом на базе ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="Транзакционные приложения" galaxyEvent="docs.home.transactional-apps" description="Управляемый PostgreSQL" href={localizeHref("/products/managed-postgres/overview")} showArrow />
 
-        <HeroCard title="Хранилище данных" galaxyEvent="docs.home.data-warehousing" description="Мгновенно анализируйте и изучайте данные для получения инсайтов и создания приложений. Быстрее масштабируйтесь, перенося ресурсоемкие рабочие нагрузки." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
+        <HeroCard title="Хранилище данных" galaxyEvent="docs.home.data-warehousing" description="Переносите нагрузки, чтобы повысить скорость и снизить стоимость" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="Агентная аналитика" galaxyEvent="docs.home.agentic-analytics" description="Позвольте AI-агентам напрямую запрашивать ваши данные в реальном времени, чтобы мгновенно получать инсайты и визуализации в диалоговом формате" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="Обсервабилити" galaxyEvent="docs.home.observability" description="Полная видимость для SRE и агентов" href={localizeHref("/clickstack/overview")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
