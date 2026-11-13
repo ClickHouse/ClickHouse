@@ -22,11 +22,9 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
   ## 前提条件
 </div>
 
-[ClickPipes の概要](/ja/integrations/clickpipes/home)を一通り確認し、取り込み元とする トピック を含む GCP プロジェクトにアクセスでき、適切な Pub/Sub 権限を持つサービスアカウントを作成している必要があります。ClickPipes に必要な権限の正確な一覧については、[Pub/Sub IAM 権限ガイド](/ja/integrations/clickpipes/pubsub/auth)を参照してください。
+[ClickPipes の概要](/ja/integrations/clickpipes/home)を一通り確認し、取り込み元とする トピック を含む GCP プロジェクトにアクセスでき、ClickPipes が使用するサービスアカウントに適切な Pub/Sub 権限を付与できる必要があります。認証オプションおよび必要な権限の正確な一覧については、[Pub/Sub IAM 権限ガイド](/ja/integrations/clickpipes/pubsub/auth)を参照してください。
 
-<div id="creating-your-first-clickpipe">
-  ## 最初の ClickPipe を作成する
-</div>
+## 最初の ClickPipe を作成する {#creating-your-first-clickpipe}
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
@@ -53,7 +51,7 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="Pub/Sub topic、フォーマット、開始オフセットを設定" size="lg" border />
 
-6. 次のステップでは、新しい ClickHouse table にデータを取り込むか、既存のものを再利用するかを選択できます。画面の指示に従って、table 名、スキーマ、設定を変更してください。上部のサンプル table で、変更内容をリアルタイムにプレビューできます。
+6. 次のステップでは、新しい ClickHouse テーブル にデータを取り込むか、既存のものを再利用するかを選択できます。画面の指示に従って、テーブル 名、スキーマ、設定を変更してください。上部のサンプル テーブル で、変更内容をリアルタイムにプレビューできます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="table、スキーマ、設定を指定" size="lg" border />
 
@@ -61,20 +59,20 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="詳細設定を指定" size="lg" border />
 
-7. あるいは、既存の ClickHouse table にデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先 table の ClickHouse フィールドにマッピングできます。
+7. あるいは、既存の ClickHouse テーブル にデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先 テーブル の ClickHouse フィールドにマッピングできます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存の table を使用" size="lg" border />
 
 8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
 
-**Permissions:** ClickPipes は、宛先 table にデータを書き込むための専用ユーザーを作成します。カスタムロール、または事前定義されたロールのいずれかを使用して、この内部ユーザーに割り当てるロールを選択できます。
+**Permissions:** ClickPipes は、宛先 テーブル にデータを書き込むための専用ユーザーを作成します。カスタムロール、または事前定義されたロールのいずれかを使用して、この内部ユーザーに割り当てるロールを選択できます。
 
-* `Full access`: クラスターへのフルアクセス権です。宛先 table で materialized view や Dictionary を使用する場合に役立つことがあります。
-  * `Only destination table`: 宛先 table に対する `INSERT` 権限のみです。
+* `Full access`: クラスターへのフルアクセス権です。宛先 テーブル で materialized view や Dictionary を使用する場合に役立つことがあります。
+* `Only destination table`: 宛先 テーブル に対する `INSERT` 権限のみです。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" border />
 
-9. 「Complete Setup」をクリックすると、システムに ClickPipe が登録され、概要 table に一覧表示されるようになります。
+9. 「Complete Setup」をクリックすると、システムに ClickPipe が登録され、概要 テーブル に一覧表示されるようになります。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
 
@@ -248,10 +246,10 @@ ClickPipes は、アベイラビリティゾーンに分散したアーキテク
 
 Pub/Sub 向け ClickPipes は **at-least-once** 配信を提供します。Pub/Sub メッセージが確認応答されるのは、対応する行が ClickHouse に挿入された後 (または不正なレコードの場合は error table に書き込まれた後) のみです。無限に再配信されるのを防ぐため、error table に振り分けられた不正なレコードも含め、処理されたメッセージはすべて確認応答されます。レプリカが挿入後、ack が Pub/Sub に届く前にクラッシュすると、メッセージは ack deadline 経過後に再配信され、再度挿入されるため、下流のコンシューマーは重複を許容する必要があります。exactly-once セマンティクスが必要な場合は、`_message_id` 仮想カラムを使って下流で重複排除を行ってください (各 Pub/Sub メッセージ ID はトピック内で一意です) 。
 
-<div id="authentication">
-  ## 認証
-</div>
+## 認証 {#authentication}
 
-Pub/Sub 向け ClickPipes は、サービスアカウントの JSON キーを使用して GCP に対して認証します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、メッセージの取り込みと管理対象サブスクリプションのライフサイクル管理のために実行時に使用します。
+ClickPipes UI では、サービスアカウントの JSON キーを使用します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、メッセージの取り込みと管理対象サブスクリプションのライフサイクル管理のために実行時に使用します。
 
-必要な IAM 権限の正確な一覧と、推奨されるカスタムロール定義については、[Pub/Sub IAM permissions guide](/ja/integrations/clickpipes/pubsub/auth) を参照してください。
+GCP Workload Identity もベータとして利用できます。セットアップ手順については、[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)を参照してください。
+
+必要な IAM アクセス許可の正確な一覧と、推奨されるカスタムロール定義については、[Pub/Sub IAM アクセス許可ガイド](/ja/integrations/clickpipes/pubsub/auth) を参照してください。
