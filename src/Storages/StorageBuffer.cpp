@@ -134,8 +134,9 @@ struct BufferWriteIdentity
     String quota_key;
     /// The originating client addresses: a downstream `Distributed` destination over a cluster secret
     /// authenticates `initial_user` against `initial_address` on the remote, and IP-keyed quotas are billed
-    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`. Restored but not
-    /// batch keys (see hasSameFlushIdentity): a background/asynchronous flush does not carry them.
+    /// by `current_address`. Without them the flush would use the buffer context's `0.0.0.0`. Batch keys only
+    /// for a remote destination (see hasSameFlushIdentity), where they affect authentication; a local
+    /// destination ignores them so a background/async flush (which carries none) does not spuriously split.
     std::optional<Poco::Net::SocketAddress> current_address;
     std::optional<Poco::Net::SocketAddress> initial_address;
     /// Quota bucket selectors for `KEYED BY forwarded_ip_address` / `KEYED BY normalized_query_hash`; without
@@ -148,19 +149,24 @@ struct BufferWriteIdentity
     /// Two rows may share a buffer shard only when the flush would authorize and attribute them identically.
     /// The comparison covers the user-identity fields that are stable however the rows arrive: the
     /// access-control fields (user, roles, grants), the authentication deadline (the expiry check), the client
-    /// user names (`currentUser()` and triggered views) and the quota key. The client addresses, the forwarded
-    /// address and the normalized query hash are restored onto the flush but are not compared: a background or
-    /// asynchronous flush does not carry the originating connection's addresses (it runs with empty ones) and
-    /// the hash varies per statement, so comparing them would flush the shard whenever the same user's rows
-    /// arrive through a different path - including the async-insert path, which would surface the flush error
-    /// there. A shard is flushed before it accepts a different identity; with several shards the sink routes
-    /// different identities to different shards instead, so this rarely forces a flush.
-    bool hasSameFlushIdentity(const BufferWriteIdentity & other) const
+    /// user names (`currentUser()` and triggered views) and the quota key. The client addresses are compared
+    /// only for a remote destination (`compare_addresses`): a `Distributed` over a cluster secret authenticates
+    /// the forwarded `initial_address`, so mixing addresses in one flushed block would let one host's rows be
+    /// authorized under another's address. A local destination does not authenticate by address, and a
+    /// background/async flush carries empty addresses, so comparing them there would spuriously split the same
+    /// user's async and sync inserts (see `03554_connection_crash`). The forwarded address and normalized query
+    /// hash are restored best-effort but never compared. A shard is flushed before it accepts a different
+    /// identity; with several shards the sink routes different identities to different shards instead.
+    bool hasSameFlushIdentity(const BufferWriteIdentity & other, bool compare_addresses) const
     {
         if (std::tie(user_id, current_roles, external_roles, authentication_valid_until,
                      current_user, initial_user, authenticated_user, quota_key)
             != std::tie(other.user_id, other.current_roles, other.external_roles, other.authentication_valid_until,
                         other.current_user, other.initial_user, other.authenticated_user, other.quota_key))
+            return false;
+
+        if (compare_addresses
+            && std::tie(current_address, initial_address) != std::tie(other.current_address, other.initial_address))
             return false;
 
         /// Compare the credential grant limit by content, as `AsynchronousInsertQueue` does: a shared_ptr
@@ -197,21 +203,6 @@ std::shared_ptr<const BufferWriteIdentity> captureWriteIdentity(const ContextPtr
     identity->forwarded_for = client_info.forwarded_for;
     identity->normalized_query_hash = context->getNormalizedQueryHash();
     return identity;
-}
-
-/// An error that means the captured identity can never deliver its block to this destination locally: the user
-/// was dropped, their authentication expired, or they are not (or no longer) locally authorized for it. These
-/// are local and persistent, so retrying never succeeds and the block is discarded (fail closed) rather than
-/// retained and retried forever - which would wedge the shard (and every background flush, OPTIMIZE and
-/// shutdown), and lets a user with INSERT on the buffer but not its destination wedge it with one row.
-/// `AUTHENTICATION_FAILED` is deliberately excluded: for a `Distributed` destination it can come from the remote
-/// connection (e.g. a transient cluster-secret mismatch) while the local identity is still valid, so such a
-/// block is retained for retry once the remote side is fixed, instead of being lost.
-bool isUndeliverableUnderIdentity(int code)
-{
-    return code == ErrorCodes::ACCESS_DENIED
-        || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND
-        || code == ErrorCodes::USER_EXPIRED;
 }
 
 void restoreWriteIdentity(const ContextMutablePtr & insert_context, const BufferWriteIdentity & identity)
@@ -1065,6 +1056,10 @@ public:
                 throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
         }
 
+        /// The client addresses are part of the batch identity only for a remote destination, where the remote
+        /// side authenticates by them (see hasSameFlushIdentity).
+        const bool destination_is_remote = destination && destination->isRemote();
+
         size_t bytes = block.bytes();
 
         storage.lifetime_writes.rows += rows;
@@ -1106,7 +1101,7 @@ public:
                 auto & candidate = storage.buffers[shard_num];
                 size_t num_rows = candidate.data.rows();
                 const bool same_identity = !candidate.first_write_time
-                    || candidate.write_identity->hasSameFlushIdentity(*write_identity);
+                    || candidate.write_identity->hasSameFlushIdentity(*write_identity, destination_is_remote);
                 if (same_identity)
                 {
                     if (!chosen_buffer || num_rows < chosen_shard_rows)
@@ -1136,7 +1131,7 @@ public:
             buffer_to_use = &storage.buffers[start_shard_num];
             lock_to_use = buffer_to_use->lockForWriting();
         }
-        insertIntoBuffer(block, *buffer_to_use, metadata_snapshot->metadata_version);
+        insertIntoBuffer(block, *buffer_to_use, metadata_snapshot->metadata_version, destination_is_remote);
         lock_to_use.unlock();
 
         storage.reschedule(0);
@@ -1146,7 +1141,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<const BufferWriteIdentity> write_identity;
 
-    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
+    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version, bool destination_is_remote)
     {
         time_t current_time = time(nullptr);
 
@@ -1158,7 +1153,7 @@ private:
         /// Buffer, whose flush would just discard the earlier rows. first_write_time is non-zero exactly when
         /// the shard holds data, and write_identity is set together with it.
         const bool identity_changed = static_cast<bool>(storage.destination_id)
-            && buffer.first_write_time && !buffer.write_identity->hasSameFlushIdentity(*write_identity);
+            && buffer.first_write_time && !buffer.write_identity->hasSameFlushIdentity(*write_identity, destination_is_remote);
 
         if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
             buffer.metadata_version != metadata_version ||
@@ -1501,18 +1496,28 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// A block that is undeliverable under its captured identity (the buffering user was dropped or expired,
-        /// or is not locally authorized for the destination) can never be flushed; discard it (fail closed)
-        /// instead of retaining it and wedging the shard for every other identity, background flush, OPTIMIZE
-        /// and shutdown.
-        if (flushed_under_user_identity && isUndeliverableUnderIdentity(getCurrentExceptionCode()))
+        /// Discard a block that is undeliverable under its captured identity rather than retaining it (which
+        /// would wedge the shard for every other identity, background flush, OPTIMIZE and shutdown, and let a
+        /// user with INSERT on the buffer but not its destination wedge a single-shard buffer with one row).
+        /// USER_EXPIRED is always local (the credential will not un-expire); for a LOCAL destination so are
+        /// ACCESS_DENIED / ACCESS_ENTITY_NOT_FOUND (the user was dropped or not authorized, at this or a deeper
+        /// local hop). For a REMOTE (`Distributed`) destination those access codes can instead come from the
+        /// remote shard with a valid local identity (local access was already checked when the rows were
+        /// buffered), so retain them for retry after the remote RBAC/secret is corrected rather than losing an
+        /// already-accepted batch.
+        const int code = getCurrentExceptionCode();
+        const auto destination = getDestinationTable();
+        const bool destination_is_remote = destination && destination->isRemote();
+        const bool undeliverable = code == ErrorCodes::USER_EXPIRED
+            || (!destination_is_remote
+                && (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND));
+        if (flushed_under_user_identity && undeliverable)
         {
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
             /// Deliberately omits the exception text and the buffering user name: a different user's insert may
             /// have triggered this flush, and at `information`/`trace` client log level the message is forwarded
-            /// to them, which would leak the buffering user's identity and required grants. The cause is counted
-            /// in `ProfileEvents::StorageBufferErrorOnFlush`.
+            /// to them, which would leak the buffering user's identity and required grants.
             LOG_INFO(
                 log,
                 "Discarding {} rows ({} bytes) buffered for destination table {}: it can no longer be flushed "
@@ -1521,7 +1526,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
             return true;
         }
 
-        /// Transient/downstream failure, with the local identity still valid: return the block to its place in
+        /// Downstream/transient failure, with the local identity still able to deliver: return the block to its place in
         /// the buffer and retry later.
         CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
