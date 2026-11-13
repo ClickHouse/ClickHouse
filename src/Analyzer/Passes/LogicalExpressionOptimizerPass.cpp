@@ -1778,11 +1778,11 @@ public:
     /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost).
     const size_t and_compare_chain_max_hash_work = 0;
     const size_t and_compare_chain_hash_work_start = 0;
-    /// Hash work charged by the compare-chain DFS for the precomputed keys it reuses.
+    /// Hash work of lookups by keys tryOptimizeAndCompareChain already computed, counted as if each lookup hashed again.
     size_t and_compare_chain_reused_hash_work = 0;
 
-    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all getTreeHash calls) since this visitor
-    /// started plus the hash work the DFS charges for reused keys. Used by tryOptimizeAndCompareChain to back off.
+    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
+    /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
     /// A budget of 0 means unlimited, so the optimization is never stopped early.
     bool andCompareChainHashBudgetExceeded() const
     {
@@ -2356,7 +2356,8 @@ private:
         const size_t arguments_size_before = function_node.getArguments().getNodes().size();
         const auto function_before = function_node.getFunctionOrThrow();
 
-        /// Hashing an operand walks the table expression it reads from, so each operand is hashed once.
+        /// Hashing an operand walks the table expression it reads from, so each operand is hashed once per call. A lookup
+        /// by its key is still charged that hash work, so the work budget counts what it counted before.
         struct OperandKey
         {
             QueryTreeNodePtrWithHash key;
@@ -2372,6 +2373,8 @@ private:
                 QueryTreeNodePtrWithHash key(operand);
                 it = operand_keys.emplace(operand.get(), OperandKey{std::move(key), getTreeHashWorkCounter() - hash_work_before}).first;
             }
+            else
+                and_compare_chain_reused_hash_work += it->second.hash_work;
             return it->second.key;
         };
 
@@ -2390,7 +2393,7 @@ private:
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
         struct ComparisonEdge
         {
-            QueryTreeNodePtrWithHash key;
+            QueryTreeNodePtr node;
             CompareType type;
             ComparisonOrderDomain domain;
             /// The two sides come from different table expressions (see the append site).
@@ -2414,7 +2417,7 @@ private:
         for (const auto & argument : arguments)
         {
             /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHash
-            /// containers, and each insert computes a full getTreeHash. A single very large AND chain
+            /// containers, and each insert is charged a full getTreeHash. A single very large AND chain
             /// could hash its whole operand set here before any later (DFS) budget check, so honor the
             /// budget while collecting too -- aborting now only forgoes the optimization (nothing has
             /// been appended to the AND yet), never changes results.
@@ -2476,68 +2479,65 @@ private:
             if (!comparison_domain.isValid())
                 continue;
 
-            const auto & lhs_key = key_of(lhs);
-            const auto & rhs_key = key_of(rhs);
-
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
-                    greater_constants.insert(rhs_key);
-                greater_pairs[rhs_key].push_back({lhs_key, CompareType::less, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(rhs));
+                greater_pairs[key_of(rhs)].push_back({lhs, CompareType::less, comparison_domain, crosses_source});
                 if (lhs->as<ConstantNode>())
-                    less_constants.insert(lhs_key);
-                less_pairs[lhs_key].push_back({rhs_key, CompareType::greater, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(lhs));
+                less_pairs[key_of(lhs)].push_back({rhs, CompareType::greater, comparison_domain, crosses_source});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
-                    greater_constants.insert(lhs_key);
-                greater_pairs[lhs_key].push_back({rhs_key, CompareType::less, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(lhs));
+                greater_pairs[key_of(lhs)].push_back({rhs, CompareType::less, comparison_domain, crosses_source});
                 if (rhs->as<ConstantNode>())
-                    less_constants.insert(rhs_key);
-                less_pairs[rhs_key].push_back({lhs_key, CompareType::greater, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(rhs));
+                less_pairs[key_of(rhs)].push_back({lhs, CompareType::greater, comparison_domain, crosses_source});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
-                    greater_constants.insert(rhs_key);
-                greater_pairs[rhs_key].push_back({lhs_key, CompareType::lessOrEquals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(rhs));
+                greater_pairs[key_of(rhs)].push_back({lhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
                 if (lhs->as<ConstantNode>())
-                    less_constants.insert(lhs_key);
-                less_pairs[lhs_key].push_back({rhs_key, CompareType::greaterOrEquals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(lhs));
+                less_pairs[key_of(lhs)].push_back({rhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
-                    greater_constants.insert(lhs_key);
-                greater_pairs[lhs_key].push_back({rhs_key, CompareType::lessOrEquals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(lhs));
+                greater_pairs[key_of(lhs)].push_back({rhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
                 if (rhs->as<ConstantNode>())
-                    less_constants.insert(rhs_key);
-                less_pairs[rhs_key].push_back({lhs_key, CompareType::greaterOrEquals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(rhs));
+                less_pairs[key_of(rhs)].push_back({lhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
             }
             else if (function_name == "equals")
             {
                 if (rhs->as<ConstantNode>())
                 {
-                    greater_constants.insert(rhs_key);
-                    greater_pairs[rhs_key].push_back({lhs_key, CompareType::equals, comparison_domain, crosses_source});
-                    less_constants.insert(rhs_key);
-                    less_pairs[rhs_key].push_back({lhs_key, CompareType::equals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(rhs));
+                    greater_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(rhs));
+                    less_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                 }
                 else if (lhs->as<ConstantNode>())
                 {
-                    greater_constants.insert(lhs_key);
-                    greater_pairs[lhs_key].push_back({rhs_key, CompareType::equals, comparison_domain, crosses_source});
-                    less_constants.insert(lhs_key);
-                    less_pairs[lhs_key].push_back({rhs_key, CompareType::equals, comparison_domain, crosses_source});
+                    greater_constants.insert(key_of(lhs));
+                    greater_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_constants.insert(key_of(lhs));
+                    less_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
                 }
                 else
                 {
                     /// Bidirection, needs to record visited
-                    greater_pairs[lhs_key].push_back({rhs_key, CompareType::equals, comparison_domain, crosses_source});
-                    greater_pairs[rhs_key].push_back({lhs_key, CompareType::equals, comparison_domain, crosses_source});
-                    less_pairs[lhs_key].push_back({rhs_key, CompareType::equals, comparison_domain, crosses_source});
-                    less_pairs[rhs_key].push_back({lhs_key, CompareType::equals, comparison_domain, crosses_source});
+                    greater_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    greater_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_pairs[key_of(lhs)].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_pairs[key_of(rhs)].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                 }
             }
         }
@@ -2555,10 +2555,32 @@ private:
         /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
         /// `indexHint(X)` is not interchangeable with plain `X`: a hint dedupes only hint-destined
         /// derivations, while contradictions and cross-source conjuncts must still materialize.
-        /// A derived conjunct is `comparison(operand, constant)`, so conjuncts are indexed by their first argument.
-        using ConjunctIndex = QueryTreeNodePtrWithHashMap<QueryTreeNodes>;
+        /// A derived conjunct is `comparison(operand, constant)`, so conjuncts of that shape are indexed by operand and
+        /// constant; a bucket then holds only conjuncts that differ in the comparison.
+        using ConjunctIndex = QueryTreeNodePtrWithHashMap<QueryTreeNodePtrWithHashMap<QueryTreeNodes>>;
         ConjunctIndex existing_plain_conjuncts;
         ConjunctIndex existing_hint_conjuncts;
+        auto constant_of = [](const QueryTreeNodePtr & conjunct) -> const QueryTreeNodePtr &
+        {
+            return conjunct->as<FunctionNode &>().getArguments().getNodes()[1];
+        };
+        auto contains_conjunct = [&](const ConjunctIndex & index, const QueryTreeNodePtr & operand, const QueryTreeNodePtr & conjunct)
+        {
+            auto it = index.find(key_of(operand));
+            if (it == index.end())
+                return false;
+            auto bucket = it->second.find(constant_of(conjunct));
+            return bucket != it->second.end()
+                && std::ranges::any_of(bucket->second, [&](const auto & existing) { return existing->isEqual(*conjunct); });
+        };
+        auto insert_conjunct = [&](ConjunctIndex & index, const QueryTreeNodePtr & operand, const QueryTreeNodePtr & conjunct)
+        {
+            auto & bucket = index[key_of(operand)][constant_of(conjunct)];
+            if (std::ranges::any_of(bucket, [&](const auto & existing) { return existing->isEqual(*conjunct); }))
+                return false;
+            bucket.push_back(conjunct);
+            return true;
+        };
         auto index_conjunct = [&](ConjunctIndex & index, const QueryTreeNodePtr & conjunct)
         {
             const auto * conjunct_function = conjunct->as<FunctionNode>();
@@ -2569,16 +2591,11 @@ private:
             if (!comparison || *comparison == ComparisonFunction::NOT_EQUALS || conjunct_arguments.size() != 2
                 || !conjunct_arguments[1]->as<ConstantNode>())
                 return;
-            index[key_of(conjunct_arguments[0])].push_back(conjunct);
-        };
-        auto contains_conjunct = [](const ConjunctIndex & index, const QueryTreeNodePtrWithHash & key, const QueryTreeNodePtr & conjunct)
-        {
-            auto it = index.find(key);
-            return it != index.end() && std::ranges::any_of(it->second, [&](const auto & existing) { return existing->isEqual(*conjunct); });
+            insert_conjunct(index, conjunct_arguments[0], conjunct);
         };
         for (const auto & argument : function_node.getArguments().getNodes())
         {
-            /// Indexing computes getTreeHash for each conjunct's first argument; respect the budget here as well.
+            /// Indexing charges the hash of each conjunct's operand; respect the budget here as well.
             if (andCompareChainHashBudgetExceeded())
                 return;
             /// Derived conjuncts sit in the AND wrapped in `indexHint`; compare by the inner node.
@@ -2591,22 +2608,17 @@ private:
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(const ComparePairs &, const QueryTreeNodePtrWithHash &, const ConstantNode *, CompareType, ComparisonOrderDomain)> find_pairs
+        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType, ComparisonOrderDomain)> find_pairs
             = [&](const ComparePairs & pairs,
-                  const QueryTreeNodePtrWithHash & current,
+                  QueryTreeNodePtr current,
                   const ConstantNode * constant,
                   CompareType type,
                   ComparisonOrderDomain domain)
         {
-            if (auto it = pairs.find(current); it != pairs.end())
+            if (auto it = pairs.find(key_of(current)); it != pairs.end())
             {
                 for (const auto & left : it->second)
                 {
-                    /// Each step looks `left` up by its precomputed key; charge the hashing that key took.
-                    const auto work_it = operand_keys.find(left.key.node.get());
-                    chassert(work_it != operand_keys.end());
-                    and_compare_chain_reused_hash_work += work_it->second.hash_work;
-
                     if (andCompareChainHashBudgetExceeded())
                         return;
 
@@ -2614,7 +2626,7 @@ private:
                         continue;
 
                     const auto path_domain = domain.isValid() ? domain : left.domain;
-                    auto & visited_domains = visited[left.key];
+                    auto & visited_domains = visited[key_of(left.node)];
                     if (std::find(visited_domains.begin(), visited_domains.end(), path_domain) != visited_domains.end())
                         continue;
                     visited_domains.push_back(path_domain);
@@ -2622,8 +2634,8 @@ private:
                     CompareType compare_type = std::min(type, left.type);
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
-                    if (constant && !left.key.node->as<ConstantNode>()
-                        && (compare_type != CompareType::equals || equal_funcs[left.key].insert(constant).second))
+                    if (constant && !left.node->as<ConstantNode>()
+                        && (compare_type != CompareType::equals || equal_funcs[key_of(left.node)].insert(constant).second))
                     {
                         String compare_function_name;
                         if (compare_type == CompareType::less)
@@ -2639,7 +2651,7 @@ private:
 
                         const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
                         and_node->markAsOperator();
-                        and_node->getArguments().getNodes().push_back(left.key.node->clone());
+                        and_node->getArguments().getNodes().push_back(left.node->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
@@ -2651,9 +2663,9 @@ private:
                                 compare_function_name);
                         /// A bound that may read the preserved side of an outer join can't leave ON, so it is derived only
                         /// to expose a contradiction with a conjunct already written on that expression.
-                        const bool reads_preserved = mayReadPreservedJoinTables(left.key.node);
-                        if (!contains_conjunct(existing_plain_conjuncts, left.key, and_node)
-                            && (!reads_preserved || derived_conjunct_filters.contains(left.key)))
+                        const bool reads_preserved = mayReadPreservedJoinTables(left.node);
+                        if (!contains_conjunct(existing_plain_conjuncts, left.node, and_node)
+                            && (!reads_preserved || derived_conjunct_filters.contains(key_of(left.node))))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2661,10 +2673,10 @@ private:
                             chassert(derived_func);
                             ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
                             auto add_result = addComparisonFilter(
-                                derived_conjunct_filters, left.key, std::move(derived_filter), true, getContext());
+                                derived_conjunct_filters, key_of(left.node), std::move(derived_filter), true, getContext());
                             if (add_result == AddComparisonFilterResult::ALWAYS_FALSE)
                             {
-                                existing_plain_conjuncts[left.key].push_back(and_node);
+                                insert_conjunct(existing_plain_conjuncts, left.node, and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
                             else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !reads_preserved)
@@ -2673,15 +2685,14 @@ private:
                                 {
                                     /// Derived across a join: the only conjunct pushable to the other
                                     /// side (e.g. it shrinks a hash join build side), keep it executable.
-                                    existing_plain_conjuncts[left.key].push_back(and_node);
+                                    insert_conjunct(existing_plain_conjuncts, left.node, and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (!join_left_side_preserved && !contains_conjunct(existing_hint_conjuncts, left.key, and_node))
+                                else if (!join_left_side_preserved && insert_conjunct(existing_hint_conjuncts, left.node, and_node))
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
                                     /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
-                                    existing_hint_conjuncts[left.key].push_back(and_node);
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(FunctionIndexHint::createImplied());
@@ -2695,8 +2706,8 @@ private:
                     /// redundant. E.g. `x < 3 AND y > 3 AND y < 10` builds the chain
                     /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
                     /// which is strictly weaker than the existing `x < 3`.
-                    if (!left.key.node->as<ConstantNode>())
-                        find_pairs(pairs, left.key, constant ? constant : current.node->as<ConstantNode>(), compare_type, path_domain);
+                    if (!left.node->as<ConstantNode>())
+                        find_pairs(pairs, left.node, constant ? constant : current->as<ConstantNode>(), compare_type, path_domain);
                 }
             }
         };
@@ -2705,14 +2716,14 @@ private:
         for (const auto & constant : greater_constants)
         {
             visited.clear();
-            find_pairs(greater_pairs, constant, nullptr, CompareType::equals, {});
+            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals, {});
         }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
         {
             visited.clear();
-            find_pairs(less_pairs, constant, nullptr, CompareType::equals, {});
+            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals, {});
         }
 
         if (function_node.getArguments().getNodes().size() > arguments_size_before)
