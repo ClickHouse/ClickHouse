@@ -1032,7 +1032,9 @@ static bool writeConsolidatedManifestFile(
     }
     catch (...)
     {
-        cleanup();
+        /// The metadata file may still be published: keep the files it references.
+        if (!isUnknownCommitStatus())
+            cleanup();
         throw;
     }
 
