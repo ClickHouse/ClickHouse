@@ -308,10 +308,13 @@ public:
             if (allocated_size == 0)
                 break;
 
-            /// A record cannot extend past its block, so a size that does not fit means these
-            /// bytes are not a record written in this block
+            /// A record cannot extend past its block. The bytes after the last record are zeros, so these bytes
+            /// are corrupted. Returning the keys read so far is not enough: the caller evicts from the index
+            /// exactly the returned keys before it overwrites the block.
             if (allocated_size > static_cast<size_t>(block_end - block_start))
-                break;
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Cache data corrupted. Record of size {} does not fit the rest of the block ({} bytes)",
+                    allocated_size, static_cast<size_t>(block_end - block_start));
 
             simple_keys.emplace_back(key);
             block_start += allocated_size;
@@ -332,11 +335,12 @@ public:
             size_t key_size = unalignedLoad<size_t>(block_start);
             block_start += sizeof(key_size);
 
-            /// The key and the data size that follows it must both still be inside the block,
-            /// otherwise these bytes are not a key written in this block
+            /// The key and the data size that follows it must both still be inside the block (see above).
             const size_t remaining = static_cast<size_t>(block_end - block_start);
             if (remaining < sizeof(size_t) || key_size > remaining - sizeof(size_t))
-                break;
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Cache data corrupted. Key of size {} does not fit the rest of the block ({} bytes)",
+                    key_size, remaining);
 
             std::string_view complex_key (block_start, key_size);
 
@@ -350,7 +354,9 @@ public:
                 break;
 
             if (allocated_size > static_cast<size_t>(block_end - block_start))
-                break;
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Cache data corrupted. Record of size {} does not fit the rest of the block ({} bytes)",
+                    allocated_size, static_cast<size_t>(block_end - block_start));
 
             complex_keys.emplace_back(complex_key);
             block_start += allocated_size;
