@@ -2696,10 +2696,12 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    /// The preprocessed configuration goes into `path` as it is used everywhere else: without the whitespace around it,
+    /// and relative to the original working directory rather than to the current one, which differs with `--daemon`.
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        server_settings[ServerSetting::path],
+        path_str,
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
