@@ -31,6 +31,7 @@ SELECT count() FROM system.parts WHERE table = 't_index_agg_func' AND database =
 SET force_data_skipping_indices = 'idx_v';
 SET use_skip_indexes_if_final = 1;
 
-SELECT id, finalizeAggregation(v) AS vv FROM t_index_agg_func FINAL WHERE vv >= 10 ORDER BY id;
+SELECT id, finalizeAggregation(v) AS vv FROM t_index_agg_func FINAL WHERE vv >= 10 ORDER BY id SETTINGS use_skip_indexes_if_final_exact_mode = 0;
+SELECT id, finalizeAggregation(v) AS vv FROM t_index_agg_func FINAL WHERE vv >= 10 ORDER BY id SETTINGS use_skip_indexes_if_final_exact_mode = 1; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_index_agg_func;
