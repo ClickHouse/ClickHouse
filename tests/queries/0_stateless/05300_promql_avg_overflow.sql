@@ -25,6 +25,9 @@ FROM values('k Nullable(UInt8), v Array(Float64)', (NULL, [1e308]), (1, [2]), (2
 SELECT timeSeriesAvgOverGroupIf(k, v, 1) FROM values('k Nullable(UInt8), v Array(Float64)', (NULL, [1e308]), (1, [2]), (2, [4]));
 SELECT finalizeAggregation(CAST(unhex(hex(timeSeriesAvgOverGroupIfState(k, v, 1))), 'AggregateFunction(timeSeriesAvgOverGroupIf, Nullable(UInt8), Array(Float64), UInt8)'))
 FROM values('k Nullable(UInt8), v Array(Float64)', (NULL, [1e308]), (1, [2]), (2, [4]));
+-- A Nullable condition of `-If` is rejected, as for `any_respect_nullsIf`; `ifNull(cond, 0)` works and keeps the NULL key.
+SELECT timeSeriesAvgOverGroupIf(k, v, c) FROM values('k Nullable(UInt8), v Array(Float64), c Nullable(UInt8)', (NULL, [1e308], 1), (1, [2], 1), (2, [4], NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesAvgOverGroupIf(k, v, ifNull(c, 0)) FROM values('k Nullable(UInt8), v Array(Float64), c Nullable(UInt8)', (NULL, [1e308], 1), (1, [2], 1), (2, [4], NULL));
 SELECT timeSeriesAvgOverGroup(NULL, [1.]);
 SELECT timeSeriesAvgOverGroup(NULL, v) FROM values('v Array(Float64)', ([1e308]), ([2]), ([4]));
 SELECT timeSeriesAvgOverGroup(k) FROM values('k UInt8', 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -12,6 +12,7 @@
 [3.333333333333333e307]
 [3.333333333333333e307]
 [3.333333333333333e307]
+[5e307]
 [1]
 [3.333333333333333e307]
 -- the order of the keys sets the rounding, the order of the rows does not

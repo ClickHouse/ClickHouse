@@ -344,6 +344,8 @@ like Prometheus processes series in the order of their labels, so the result doe
 
 The function keeps all values until the result is calculated, so it needs more memory than `avgForEach`.
 
+The condition of the `-If` combinator must be `UInt8`, as for `any_respect_nulls`: a `Nullable` condition is an error, use `ifNull(cond, 0)` instead.
+
 This function implements the `avg()` aggregation operator of PromQL.
 
 <Note>
