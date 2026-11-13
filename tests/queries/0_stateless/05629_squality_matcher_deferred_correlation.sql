@@ -42,13 +42,13 @@ FROM squality_matcher_defer_v AS v;
 
 -- A matcher nested in the alias body must defer its final collector too.
 SELECT v.v.x, (
-    WITH tuple(v.v.*) AS q
+    WITH CAST(tuple(v.v.*), 'Tuple(x UInt64)') AS q
     SELECT q.* REPLACE (1 AS x) FROM squality_matcher_defer_v AS i LIMIT 1
 )
 FROM squality_matcher_defer_v AS v ORDER BY v.v.x;
 
 SELECT count(), (
-    WITH tuple(v.v.*) AS q
+    WITH CAST(tuple(v.v.*), 'Tuple(x UInt64)') AS q
     SELECT q.* REPLACE (1 AS x) FROM squality_matcher_defer_v AS i LIMIT 1
 )
 FROM squality_matcher_defer_v AS v;
