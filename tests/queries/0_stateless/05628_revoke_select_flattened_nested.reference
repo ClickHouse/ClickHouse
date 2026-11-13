@@ -14,8 +14,8 @@ carriers, REVOKE(nt): - - - - - -
 td GRANT table, REVOKE(n.name): + - -
 td GRANT table, REVOKE(n): + - -
 mv, no revoke: + + +
-mv, definer REVOKE(nt), REVOKE(x): + - -
-mv, definer REVOKE(nt), REVOKE(x), source dropped: + - -
+mv, definer REVOKE(nt), REVOKE(x): + - +
+mv, definer REVOKE(nt), REVOKE(x), source dropped: + - +
 mv over a URL source, definer REVOKE(nt): + -
 mv over a URL source, definer REVOKE(nt), source failing: + -
 0

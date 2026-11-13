@@ -875,7 +875,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 }
 
 Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
-    const Names & column_names, const ContextPtr & context, const StorageID & table_id, const ColumnsDescription * checked_columns) const
+    const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
 {
     Names result;
     result.reserve(column_names.size());
@@ -923,7 +923,7 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
         }
 
         /// A `REVOKE` on the name of a flattened `Nested` structure applies to its columns that have no grant or revoke of their own.
-        if (auto nested_names = (checked_columns ? *checked_columns : *this).getFlattenedNestedNames(name_to_check); !nested_names.empty())
+        if (auto nested_names = getFlattenedNestedNames(name_to_check); !nested_names.empty())
         {
             init_access_rights();
             if (access_rights->isGranted(AccessType::SELECT, database, table, name_to_check)

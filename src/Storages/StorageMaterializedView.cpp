@@ -556,16 +556,8 @@ void StorageMaterializedView::readImpl(
     /// view's own schema (the one the names were resolved against), not the target table's, which can diverge.
     const auto & select_table_id = view_metadata->select.select_table_id;
     if (!select_table_id.empty())
-    {
-        /// The view may store elements of the source's flattened `Nested` structures with another type, and the source is
-        /// not resolved here (that may need I/O before this check), so any dotted name may be such an element.
-        static const ColumnsDescription unknown_source_columns;
         context->checkAccess(
-            AccessType::SELECT,
-            select_table_id,
-            storage_snapshot->metadata->getColumns().getColumnNamesForSelectAccessCheck(
-                column_names, context, select_table_id, &unknown_source_columns));
-    }
+            AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, select_table_id));
 
     auto storage_id = storage->getStorageID();
 

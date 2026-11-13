@@ -88,14 +88,14 @@ reads_td=("SELECT id FROM td" "SELECT n.name.secret FROM td" "SELECT n FROM td")
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.td TO $user; REVOKE SELECT(\`n.name\`) ON $db.td FROM $user"; check "td GRANT table, REVOKE(n.name)" "${reads_td[@]}"
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.td TO $user; REVOKE SELECT(n) ON $db.td FROM $user"; check "td GRANT table, REVOKE(n)" "${reads_td[@]}"
 
-# A materialized view checks its definer's grants on the source-table columns named like the view's without resolving the
-# source table, so a revoke on a dotted prefix of such a name applies, whatever the source column is.
+# A materialized view checks its definer's grants on the source-table columns named like the view's, classified with the
+# view's own columns: the `Array` column `nt.secret` is checked as `nt`, the `String` column `x.y` as itself.
 $CLICKHOUSE_CLIENT --flatten_nested 1 -m -q "
 CREATE TABLE ts (id UInt8, nt Nested(secret String), \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE tgt (id UInt8, \`nt.secret\` String, \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tgt (id UInt8, \`nt.secret\` Array(String), \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
 GRANT SELECT ON $db.ts TO $definer;
 GRANT SELECT ON $db.tgt TO $definer;
-CREATE MATERIALIZED VIEW mv TO tgt DEFINER = $definer SQL SECURITY DEFINER AS SELECT id, arrayJoin(nt.secret) AS \`nt.secret\`, \`x.y\` FROM ts;
+CREATE MATERIALIZED VIEW mv TO tgt DEFINER = $definer SQL SECURITY DEFINER AS SELECT id, nt.secret, \`x.y\` FROM ts;
 "
 reads_mv=("SELECT id FROM mv" "SELECT nt.secret FROM mv" "SELECT x.y FROM mv")
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.mv TO $user"; check "mv, no revoke" "${reads_mv[@]}"
@@ -103,8 +103,8 @@ $CLICKHOUSE_CLIENT -q "REVOKE SELECT(nt) ON $db.ts FROM $definer; REVOKE SELECT(
 check "mv, definer REVOKE(nt), REVOKE(x)" "${reads_mv[@]}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"; check "mv, definer REVOKE(nt), REVOKE(x), source dropped" "${reads_mv[@]}"
 
-# Resolving the source table may need I/O, whose errors and logs would show the reader of the view source data. Here the
-# source is a URL table that reads the HTTP interface of this server.
+# The check does not resolve the source table, which may need I/O whose errors and logs would show the reader of the view
+# source data. Here the source is a URL table that reads the HTTP interface of this server.
 mvdb="${db}_mv"
 urldb="${db}_url"
 src_url="http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+*+FROM+${db}.src+FORMAT+JSONEachRow"
