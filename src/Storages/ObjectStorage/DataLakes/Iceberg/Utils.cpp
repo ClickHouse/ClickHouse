@@ -91,7 +91,6 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
-extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;

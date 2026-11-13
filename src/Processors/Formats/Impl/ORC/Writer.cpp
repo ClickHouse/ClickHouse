@@ -22,7 +22,6 @@
 #include <Common/DateLUT.h>
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
-#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
