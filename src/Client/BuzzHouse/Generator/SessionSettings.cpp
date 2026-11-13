@@ -736,7 +736,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_concurrency_control_for_max_threads", trueOrFalseSetting},
        {"use_constant_folding_in_index_analysis", trueOrFalseSetting},
        {"use_iceberg_manifest_list_partition_pruning", trueOrFalseSetting},
-       {"use_iceberg_manifest_statistics", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_iceberg_table_statistics_ndv", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},

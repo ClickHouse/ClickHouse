@@ -1397,28 +1397,48 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     }
 }
 
-static const std::unordered_map<BinaryOperator, std::string> binopToFunc{
-    {BinaryOperator::BINOP_LE, "less"},
-    {BinaryOperator::BINOP_LEQ, "lessOrEquals"},
-    {BinaryOperator::BINOP_GR, "greater"},
-    {BinaryOperator::BINOP_GREQ, "greaterOrEquals"},
-    {BinaryOperator::BINOP_EQ, "equals"},
-    {BinaryOperator::BINOP_EQEQ, "equals"},
-    {BinaryOperator::BINOP_NOTEQ, "notEquals"},
-    {BinaryOperator::BINOP_LEGR, "notEquals"},
-    {BinaryOperator::BINOP_LEEQGR, "isNotDistinctFrom"},
-    {BinaryOperator::BINOP_IS_DISTINCT_FROM, "isDistinctFrom"},
-    {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, "isNotDistinctFrom"},
-    {BinaryOperator::BINOP_AND, "and"},
-    {BinaryOperator::BINOP_OR, "or"},
-    {BinaryOperator::BINOP_CONCAT, "concat"},
-    {BinaryOperator::BINOP_STAR, "multiply"},
-    {BinaryOperator::BINOP_SLASH, "divide"},
-    {BinaryOperator::BINOP_PERCENT, "modulo"},
-    {BinaryOperator::BINOP_PLUS, "plus"},
-    {BinaryOperator::BINOP_MINUS, "minus"},
-    {BinaryOperator::BINOP_DIV, "divide"},
-    {BinaryOperator::BINOP_MOD, "modulo"}};
+/// Writes `lhs op rhs` into `expr` and returns both operands
+static std::pair<Expr *, Expr *> addBinaryOperands(const BinaryOperator op, Expr * expr)
+{
+    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+    bexpr->set_op(op);
+    return {bexpr->mutable_lhs(), bexpr->mutable_rhs()};
+}
+
+/// Writes `nclauses` clauses joined by AND/OR into `expr`, `fill` writes each one. With `op` set every connector is `op`
+/// and no clause is negated, so the optimizer can rewrite the chain as a whole
+static void addPredicateChain(
+    RandomGenerator & rg,
+    const uint32_t nclauses,
+    const std::optional<BinaryOperator> op,
+    Expr * expr,
+    const std::function<void(uint32_t, Expr *)> & fill)
+{
+    for (uint32_t i = 0; i < nclauses; i++)
+    {
+        /// Split AND/OR first so NOT applies only to the current clause, not the whole remaining chain
+        Expr * clause_target = expr;
+
+        if (i < nclauses - 1)
+        {
+            const auto [lhs, rhs]
+                = addBinaryOperands(op.value_or(rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR), expr);
+
+            clause_target = lhs;
+            expr = rhs;
+        }
+        if (!op.has_value() && rg.nextSmallNumber() < 3)
+        {
+            UnaryExpr * uexpr = clause_target->mutable_comp_expr()->mutable_unary_expr();
+
+            uexpr->set_paren(true);
+            uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+            clause_target = uexpr->mutable_expr();
+        }
+        fill(i, clause_target);
+    }
+}
 
 void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
@@ -1429,7 +1449,12 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
     std::uniform_int_distribution<uint32_t> op_range(
         1, static_cast<uint32_t>(rg.nextMediumNumber() < 98 ? BinaryOperator::BINOP_LEEQGR : BinaryOperator_MAX));
-    const auto & op = rg.nextSmallNumber() < 9 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator));
+    static const auto null_safe_ops
+        = {BinaryOperator::BINOP_LEEQGR, BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, BinaryOperator::BINOP_IS_DISTINCT_FROM};
+    const uint32_t nop = rg.nextSmallNumber();
+    /// The NULL-safe comparisons get their own weight, the range below reaches the last two only 2% of the time
+    const auto op = nop < 8 ? BinaryOperator::BINOP_EQ
+                            : (nop < 9 ? rg.pickRandomly(null_safe_ops) : static_cast<BinaryOperator>(op_range(rg.generator)));
 
     if (rel1->name == rel2->name)
     {
@@ -1444,23 +1469,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
         rel1 = rel2;
         rel2 = rel3;
     }
-    if (rg.nextSmallNumber() < 9)
-    {
-        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-
-        bexpr->set_op(op);
-        expr1 = bexpr->mutable_lhs();
-        expr2 = bexpr->mutable_rhs();
-    }
-    else
-    {
-        /// Sometimes do the function call instead
-        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-        sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
-        expr1 = sfc->add_args()->mutable_expr();
-        expr2 = sfc->add_args()->mutable_expr();
-    }
+    std::tie(expr1, expr2) = addBinaryOperands(op, expr);
     /// Here a copy is needed, because in `addSargableColRef`, rel1 and rel2 may get invalidated
     const SQLRelationCol col1 = rg.pickRandomly(rel1->cols);
     const SQLRelationCol col2 = rg.pickRandomly(rel2->cols);
@@ -1525,64 +1534,33 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstr
     {
         /// Joining clause
         const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 2)) + UINT32_C(1);
-        Expr * expr = jc->mutable_on_expr();
 
-        for (uint32_t i = 0; i < nclauses; i++)
-        {
-            /// Determine the target node for this individual clause, advancing expr to the rhs for the next iteration
-            Expr * clause_target = nullptr;
-
-            if (i == nclauses - 1)
+        addPredicateChain(
+            rg,
+            nclauses,
+            std::nullopt,
+            jc->mutable_on_expr(),
+            [&](const uint32_t i, Expr * clause)
             {
-                clause_target = expr;
-            }
-            else
-            {
-                /// Split AND/OR first so NOT applies only to the current clause, not the whole remaining chain
-                Expr * predicate = nullptr;
-                const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
+                const SQLRelation & rel
+                    = rg.nextBool() ? this->levels[this->current_level].rels.back() : rg.pickRandomly(this->levels[this->current_level].rels);
 
-                if (rg.nextSmallNumber() < 9)
+                /// After the first clause, sometimes a condition on one side only: ON and WHERE differ on outer joins
+                if (i > 0 && !rel.cols.empty() && rg.nextSmallNumber() < 3)
                 {
-                    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+                    std::vector<GroupCol> side_cols;
 
-                    bexpr->set_op(op);
-                    predicate = bexpr->mutable_lhs();
-                    expr = bexpr->mutable_rhs();
+                    for (const auto & col : rel.cols)
+                    {
+                        side_cols.emplace_back(GroupCol(col, nullptr));
+                    }
+                    addWhereFilter(rg, side_cols, clause);
                 }
                 else
                 {
-                    /// Sometimes do the function call instead
-                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-                    sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
-                    predicate = sfc->add_args()->mutable_expr();
-                    expr = sfc->add_args()->mutable_expr();
+                    addJoinClause(rg, clause);
                 }
-                clause_target = predicate;
-            }
-            /// Optionally negate just this individual clause
-            if (rg.nextSmallNumber() < 3)
-            {
-                if (rg.nextSmallNumber() < 9)
-                {
-                    UnaryExpr * uexpr = clause_target->mutable_comp_expr()->mutable_unary_expr();
-
-                    uexpr->set_paren(true);
-                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-                    clause_target = uexpr->mutable_expr();
-                }
-                else
-                {
-                    /// Sometimes do the function call instead
-                    SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
-
-                    sfc->mutable_func()->set_catalog_func("not");
-                    clause_target = sfc->add_args()->mutable_expr();
-                }
-            }
-            addJoinClause(rg, clause_target);
-        }
+            });
     }
     else
     {
@@ -1637,29 +1615,11 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     {
         case PredOp::BinaryExpr: {
             /// Binary expr
-            Expr * lexpr = nullptr;
-            Expr * rexpr = nullptr;
             std::uniform_int_distribution<uint32_t> op_range(
                 1, static_cast<uint32_t>(rg.nextMediumNumber() < 98 ? BinaryOperator::BINOP_LEEQGR : BinaryOperator_MAX));
-            const auto & op = rg.nextSmallNumber() < 7 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator));
+            const auto op = rg.nextSmallNumber() < 7 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator));
+            const auto [lexpr, rexpr] = addBinaryOperands(op, expr);
 
-            if (rg.nextSmallNumber() < 9)
-            {
-                BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-
-                bexpr->set_op(op);
-                lexpr = bexpr->mutable_lhs();
-                rexpr = bexpr->mutable_rhs();
-            }
-            else
-            {
-                /// Sometimes do the function call instead
-                SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-                sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
-                lexpr = sfc->add_args()->mutable_expr();
-                rexpr = sfc->add_args()->mutable_expr();
-            }
             if (rg.nextSmallNumber() < 9)
             {
                 refColumn(rg, gcol, lexpr);
@@ -1862,62 +1822,57 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
     if (!available_cols.empty() && noption < 8)
     {
         const uint32_t nclauses = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3)), UINT32_C(1));
+        const uint32_t nshape = rg.nextSmallNumber();
 
-        for (uint32_t i = 0; i < nclauses; i++)
+        if (nshape < 3)
         {
-            /// Establish clause_target for this iteration: do AND/OR split first,
-            /// then apply NOT only to the current clause (not the entire remaining chain).
-            Expr * clause_target = nullptr;
-            if (i == nclauses - 1)
-            {
-                clause_target = expr;
-            }
-            else
-            {
-                Expr * predicate = nullptr;
-                const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
+            /// Every clause on one column with one connector: equality OR chains become IN, and ranges merge
+            const std::vector<GroupCol> one_col = {rg.pickRandomly(available_cols)};
 
-                if (rg.nextSmallNumber() < 9)
+            addPredicateChain(
+                rg,
+                nclauses,
+                rg.nextBool() ? BinaryOperator::BINOP_OR : BinaryOperator::BINOP_AND,
+                expr,
+                [&](uint32_t, Expr * clause)
                 {
-                    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+                    addWhereFilter(rg, one_col, clause);
+                    this->width++;
+                });
+        }
+        else if (nshape < 4 && nclauses > 1)
+        {
+            /// `(A AND B) OR (A AND C)`, with a common conjunct the optimizer can extract
+            Expr common;
 
-                    bexpr->set_op(op);
-                    predicate = bexpr->mutable_lhs();
-                    expr = bexpr->mutable_rhs();
-                }
-                else
+            addWhereFilter(rg, available_cols, &common);
+            addPredicateChain(
+                rg,
+                nclauses,
+                BinaryOperator::BINOP_OR,
+                expr,
+                [&](uint32_t, Expr * clause)
                 {
-                    /// Sometimes do the function call instead
-                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+                    const auto [lhs, rhs] = addBinaryOperands(BinaryOperator::BINOP_AND, clause);
+                    const bool common_first = rg.nextBool();
 
-                    sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
-                    predicate = sfc->add_args()->mutable_expr();
-                    expr = sfc->add_args()->mutable_expr();
-                }
-                clause_target = predicate;
-            }
-            if (rg.nextSmallNumber() < 3)
-            {
-                /// Negate this clause only
-                if (rg.nextSmallNumber() < 9)
+                    (common_first ? lhs : rhs)->CopyFrom(common);
+                    addWhereFilter(rg, available_cols, common_first ? rhs : lhs);
+                    this->width++;
+                });
+        }
+        else
+        {
+            addPredicateChain(
+                rg,
+                nclauses,
+                std::nullopt,
+                expr,
+                [&](uint32_t, Expr * clause)
                 {
-                    UnaryExpr * uexpr = clause_target->mutable_comp_expr()->mutable_unary_expr();
-
-                    uexpr->set_paren(true);
-                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-                    clause_target = uexpr->mutable_expr();
-                }
-                else
-                {
-                    /// Sometimes do the function call instead
-                    SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
-
-                    sfc->mutable_func()->set_catalog_func("not");
-                    clause_target = sfc->add_args()->mutable_expr();
-                }
-            }
-            addWhereFilter(rg, available_cols, clause_target);
-            this->width++;
+                    addWhereFilter(rg, available_cols, clause);
+                    this->width++;
+                });
         }
         this->width -= nclauses;
     }
