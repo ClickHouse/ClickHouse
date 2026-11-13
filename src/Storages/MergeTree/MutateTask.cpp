@@ -2202,7 +2202,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 for (const auto & extension : owned_index_extensions)
                 {
-                    const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
+                    const String index_filename = getDroppedIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
 
                     /// Resolve against checksums first (no I/O), then fall back to storage so `DROP
@@ -4966,7 +4966,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
         for (const auto & idx_name : ctx->indices_to_drop_names)
         {
-            const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
+            const String idx_file_name = getDroppedIndexFileName(idx_name, escape_filenames);
             for (const auto & sub : known_substream_suffixes)
             {
                 for (const auto & ext : known_index_extensions)

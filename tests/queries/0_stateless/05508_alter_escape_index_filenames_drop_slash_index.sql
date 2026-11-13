@@ -1,7 +1,7 @@
--- A `DROP INDEX` mutation names the files to remove with the `escape_index_filenames` policy of the
--- metadata it runs against. For an index named with '/', that name can only be produced with
--- escaping on, so disabling escaping must be rejected while such an index is still being dropped:
--- both in the same ALTER batch and while an earlier drop mutation is still pending.
+-- A `DROP INDEX` mutation removes the files of an index that is no longer in the metadata, so the
+-- current `escape_index_filenames` policy may differ from the one the index was written with. An
+-- index named with '/' can only be written with escaping on, so its drop mutation must still find
+-- (and remove) its files after escaping was disabled while the mutation was pending.
 
 DROP TABLE IF EXISTS t_drop_slash_index;
 
@@ -16,24 +16,21 @@ SETTINGS escape_index_filenames = 1, index_granularity = 8, min_bytes_for_wide_p
 
 INSERT INTO t_drop_slash_index SELECT number, number FROM numbers(100);
 
--- The same batch drops the index and disables escaping.
-ALTER TABLE t_drop_slash_index DROP INDEX `idx/v`, MODIFY SETTING escape_index_filenames = 0 SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
-
--- The rejected ALTER left the table untouched.
 SELECT secondary_indices_materialized FROM system.parts
 WHERE database = currentDatabase() AND table = 't_drop_slash_index' AND active;
 
--- The drop mutation is still pending.
-SYSTEM STOP MERGES t_drop_slash_index;
-ALTER TABLE t_drop_slash_index DROP INDEX `idx/v` SETTINGS alter_sync = 0, mutations_sync = 0;
+-- Disabling escaping is rejected while the index exists.
 ALTER TABLE t_drop_slash_index MODIFY SETTING escape_index_filenames = 0; -- { serverError BAD_ARGUMENTS }
 
--- Once the mutation has finished, escaping can be disabled.
+-- Drop the index, but keep its mutation pending while escaping is disabled.
+SYSTEM STOP MERGES t_drop_slash_index;
+ALTER TABLE t_drop_slash_index DROP INDEX `idx/v` SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_drop_slash_index MODIFY SETTING escape_index_filenames = 0;
+
+-- The drop mutation finishes under the new policy instead of failing on the index file name.
 SYSTEM START MERGES t_drop_slash_index;
 ALTER TABLE t_drop_slash_index UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_drop_slash_index' AND NOT is_done;
-
-ALTER TABLE t_drop_slash_index MODIFY SETTING escape_index_filenames = 0;
 
 SELECT secondary_indices_materialized FROM system.parts
 WHERE database = currentDatabase() AND table = 't_drop_slash_index' AND active;

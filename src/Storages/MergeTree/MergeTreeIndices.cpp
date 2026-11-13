@@ -77,6 +77,11 @@ String getIndexFileName(const String & index_name, bool escape_filename)
     return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
+String getDroppedIndexFileName(const String & index_name, bool escape_filename)
+{
+    return getIndexFileName(index_name, escape_filename || index_name.contains('/'));
+}
+
 String IMergeTreeIndex::getFileName() const
 {
     return getIndexFileName(index.name, index.escape_filenames);

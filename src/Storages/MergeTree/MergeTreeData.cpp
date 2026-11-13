@@ -6585,27 +6585,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             index.name);
                 }
 
-                /// A `DROP INDEX` mutation names the files to remove with the policy of the metadata
-                /// snapshot it runs against (`MutateTask`), so it needs escaping on until it finishes.
-                /// That covers an index dropped in this very batch (present in the old metadata only)
-                /// and one dropped earlier whose mutation is still pending.
-                auto throw_dropped_index = [](const String & index_name)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot disable setting `escape_index_filenames`: skip index name ({}) contains '/', "
-                        "and its `DROP INDEX` mutation needs escaping enabled. "
-                        "Drop the index in a separate ALTER and wait for the mutation to finish first.",
-                        index_name);
-                };
-
-                for (const auto & index : old_metadata.secondary_indices)
-                    if (index.name.contains('/'))
-                        throw_dropped_index(index.name);
-
-                for (const auto & [mutation_id, mutation_commands] : getUnfinishedMutationCommands())
-                    for (const auto & mutation_command : mutation_commands)
-                        if (mutation_command.type == MutationCommand::DROP_INDEX && mutation_command.column_name.contains('/'))
-                            throw_dropped_index(mutation_command.column_name);
+                /// An index dropped in this batch, or earlier with its `DROP INDEX` mutation still
+                /// pending, does not block the change: that mutation resolves the files of an index
+                /// named with '/' with escaping regardless of the current policy
+                /// (`getDroppedIndexFileName`).
             }
         }
     }
