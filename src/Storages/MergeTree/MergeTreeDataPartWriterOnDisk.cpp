@@ -771,8 +771,7 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
 
-    /// A Compact part without substream marks keeps the list only when it has a `MapBucketIndexes` stream:
-    /// the reader checks the list to tell such a part from one written before that stream existed.
+    /// The reader finds the `MapBucketIndexes` stream of a Compact part without substream marks only in this list.
     if (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact
         && !index_granularity_info.mark_type.with_substreams && !has_map_bucket_indexes)
         columns_substreams = {};
