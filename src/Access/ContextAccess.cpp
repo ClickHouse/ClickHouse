@@ -403,7 +403,6 @@ void ContextAccess::setUser(const UserPtr & user_) const
         subscription_for_initial_user_change = {};
         subscription_for_roles_changes = {};
         subscription_for_roles_of_initial_user_changes = {};
-        roles_of_initial_user = nullptr;
         access = nullptr;
         access_with_implicit = nullptr;
         enabled_roles = nullptr;
@@ -464,6 +463,26 @@ void ContextAccess::setUser(const UserPtr & user_) const
                     ptr->findRowPoliciesOfInitialUser();
                 }
             });
+
+        /// The forwarded current roles of the initial user are found by name, and their row policies depend on the
+        /// roles granted to them. Both change with the roles, not with the users: a role can be created, dropped,
+        /// or granted another role. So the forwarded names are found again on any change of roles.
+        if (params.initial_user_current_roles)
+        {
+            subscription_for_roles_of_initial_user_changes = access_control->subscribeForChanges(
+                AccessEntityType::ROLE,
+                [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> & changes)
+                {
+                    /// Handlers by type are called also without changes.
+                    if (changes.empty())
+                        return;
+                    if (auto ptr = weak_ptr.lock())
+                    {
+                        std::lock_guard lock2{ptr->mutex};
+                        ptr->findRowPoliciesOfInitialUser();
+                    }
+                });
+        }
         findRowPoliciesOfInitialUser();
     }
 }
@@ -518,8 +537,6 @@ void ContextAccess::calculateAccessRights() const
 
 void ContextAccess::findRowPoliciesOfInitialUser() const
 {
-    subscription_for_roles_of_initial_user_changes = {};
-    roles_of_initial_user = nullptr;
     row_policies_of_initial_user = nullptr;
     unknown_current_roles_of_initial_user.clear();
 
@@ -552,25 +569,8 @@ void ContextAccess::findRowPoliciesOfInitialUser() const
     if (!unknown_current_roles_of_initial_user.empty())
         return;
 
-    /// The roles enabled by these roles (and so the row policies) change when the roles are changed, for example
-    /// when another role is granted to one of them, and the users do not change then.
-    roles_of_initial_user = access_control->getEnabledRoles(current_roles, {});
-    subscription_for_roles_of_initial_user_changes = roles_of_initial_user->subscribeForChanges(
-        [weak_ptr = weak_from_this(), weak_roles = std::weak_ptr<const EnabledRoles>(roles_of_initial_user)](
-            const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
-        {
-            auto ptr = weak_ptr.lock();
-            if (!ptr)
-                return;
-            std::lock_guard lock{ptr->mutex};
-            /// A notification can arrive after the roles of the initial user were found again.
-            if (!ptr->roles_of_initial_user || ptr->roles_of_initial_user != weak_roles.lock())
-                return;
-            ptr->row_policies_of_initial_user = ptr->access_control->getEnabledRowPolicies(*ptr->params.initial_user_id, roles_info_->enabled_roles);
-        });
-
-    row_policies_of_initial_user = access_control->getEnabledRowPolicies(
-        *params.initial_user_id, roles_of_initial_user->getRolesInfo()->enabled_roles);
+    auto initial_user_enabled_roles = access_control->getEnabledRolesInfo(current_roles, {})->enabled_roles;
+    row_policies_of_initial_user = access_control->getEnabledRowPolicies(*params.initial_user_id, initial_user_enabled_roles);
 }
 
 

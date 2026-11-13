@@ -224,8 +224,7 @@ private:
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
-    /// The roles enabled by the forwarded current roles of the initial user, and the subscription for their changes.
-    mutable std::shared_ptr<const EnabledRoles> roles_of_initial_user TSA_GUARDED_BY(mutex);
+    /// The subscription for changes of roles, which change the forwarded current roles of the initial user.
     mutable scope_guard subscription_for_roles_of_initial_user_changes TSA_GUARDED_BY(mutex);
     /// Forwarded current roles of the initial user which do not exist on this node. If not empty, reading tables is denied.
     mutable std::vector<String> unknown_current_roles_of_initial_user TSA_GUARDED_BY(mutex);
