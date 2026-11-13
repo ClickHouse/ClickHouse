@@ -9,6 +9,12 @@
 #include <Storages/Statistics/DistinctValuesFromCompressedSize.h>
 
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Poco/String.h>
 
@@ -180,6 +186,100 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromPrimaryIndex(
     return result;
 }
 
+/// Reads only so many keys of a dictionary, which is enough for a dictionary written by default
+/// (`low_cardinality_max_dictionary_size` is 8192), and bounds the reads of the estimation.
+constexpr UInt64 max_dictionary_keys_to_read = 65536;
+
+/// The number of keys of the dictionary of a `LowCardinality` column in a wide part, if it has a single dictionary.
+/// The `DictionaryKeys` stream of the column holds the version of the serialization and then the dictionaries: one at
+/// the end of writing, or one every time the dictionary of the part reached `low_cardinality_max_dictionary_size`
+/// keys, after which the rows that do not fit carry their own keys. So the first dictionary has all values of the
+/// part when it is the last thing in the stream, otherwise the part has more values than it, and there is no number.
+std::optional<UInt64> readLowCardinalityDictionarySize(const IMergeTreeDataPart & part, const NameAndTypePair & column)
+{
+    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get());
+    if (!low_cardinality_type || part.getType() != MergeTreeDataPartType::Wide || !part.areChecksumsLoaded())
+        return std::nullopt;
+
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::DictionaryKeys);
+    const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, path, ".bin", part.checksums, part.storage.getSettings());
+    if (!stream_name)
+        return std::nullopt;
+
+    CompressedReadBufferFromFile in(part.getDataPartStorage().readFile(*stream_name + ".bin", part.storage.getContext()->getReadSettings(), std::nullopt));
+
+    UInt64 keys_version = 0;
+    readBinaryLittleEndian(keys_version, in);
+    if (in.eof())
+        return std::nullopt;
+
+    UInt64 num_keys = 0;
+    readBinaryLittleEndian(num_keys, in);
+    if (num_keys > max_dictionary_keys_to_read)
+        return std::nullopt;
+
+    const auto keys_type = removeNullable(low_cardinality_type->getDictionaryType());
+    auto keys = keys_type->createColumn();
+    keys_type->getDefaultSerialization()->deserializeBinaryBulk(*keys, in, num_keys, 0);
+    if (keys->size() != num_keys || !in.eof())
+        return std::nullopt;
+
+    /// The dictionary of a `Nullable` column has a placeholder for NULL, which is not a distinct value.
+    if (low_cardinality_type->getDictionaryType()->isNullable() && num_keys > 0)
+        --num_keys;
+    return std::max<UInt64>(num_keys, 1);
+}
+
+/// The numbers of distinct values of the `LowCardinality` columns in `column_names` from the dictionaries of the
+/// largest wide parts. The parts share most of their values, so the number of a column is the largest one of the
+/// parts; a part with more values than its first dictionary gives no number for the column.
+std::unordered_map<String, UInt64> estimateDistinctValuesFromLowCardinalityDictionaries(
+    const RangesInDataParts & parts, const StorageMetadataPtr & metadata, const Names & column_names)
+{
+    /// Each part costs a read, so only a few of the largest parts are read.
+    constexpr size_t max_parts_to_read = 8;
+
+    std::vector<NameAndTypePair> low_cardinality_columns;
+    for (const auto & column_name : column_names)
+        if (auto column = metadata->getColumns().tryGetPhysical(column_name); column && column->type->lowCardinality())
+            low_cardinality_columns.push_back(*column);
+    if (low_cardinality_columns.empty())
+        return {};
+
+    std::vector<const IMergeTreeDataPart *> largest_parts;
+    for (const auto & part : parts)
+        if (part.data_part->getType() == MergeTreeDataPartType::Wide && part.data_part->rows_count > 0)
+            largest_parts.push_back(part.data_part.get());
+    const size_t num_parts_to_read = std::min(largest_parts.size(), max_parts_to_read);
+    std::partial_sort(largest_parts.begin(), largest_parts.begin() + num_parts_to_read, largest_parts.end(),
+        [](const auto * lhs, const auto * rhs) { return lhs->rows_count > rhs->rows_count; });
+    largest_parts.resize(num_parts_to_read);
+
+    std::unordered_map<String, UInt64> result;
+    for (const auto & column : low_cardinality_columns)
+    {
+        UInt64 distinct_values = 0;
+        bool complete = !largest_parts.empty();
+        for (const auto * part : largest_parts)
+        {
+            /// A part without the column (added by `ALTER`) has only defaults in it.
+            if (!part->getColumns().contains(column.name))
+                continue;
+            const auto part_distinct_values = readLowCardinalityDictionarySize(*part, column);
+            if (!part_distinct_values)
+            {
+                complete = false;
+                break;
+            }
+            distinct_values = std::max(distinct_values, *part_distinct_values);
+        }
+        if (complete && distinct_values > 0)
+            result.emplace(column.name, distinct_values);
+    }
+    return result;
+}
+
 }
 
 std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
@@ -191,6 +291,10 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
     /// which tells their numbers of distinct values better than the compressed size: a sorted column compresses by
     /// the lengths of its runs of equal values rather than by its number of distinct values.
     auto result = estimateDistinctValuesFromPrimaryIndex(parts, metadata, NameSet(column_names.begin(), column_names.end()));
+
+    /// The dictionaries of `LowCardinality` columns have their distinct values.
+    for (auto & [column_name, distinct_values] : estimateDistinctValuesFromLowCardinalityDictionaries(parts, metadata, column_names))
+        result.try_emplace(column_name, distinct_values);
 
     /// The rows and the compressed bytes of a column in the parts that keep the sizes of their columns.
     struct CompressedSize
