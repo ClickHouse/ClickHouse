@@ -153,7 +153,7 @@ The condition could be any expression based on your requirements.
 
 ## Examples {#examples}
 
-Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 8:
+Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 10:
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -167,6 +167,8 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
+│      9 │
+│     10 │
 └────────┘
 ```
 
@@ -189,6 +191,7 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    NOSIGN,
     'CSVWithNames'
 );
 
@@ -229,7 +232,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10);
+   ('DOGEFI', 10),
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -348,11 +351,11 @@ FROM numbers(3, 6)
 `EXCEPT()` can be used to quickly exclude columns from a result. For instance if we want to select all columns from a table, except a few select columns as shown in the example below:
 
 ```sql title="Query"
-SHOW COLUMNS IN system.settings
+SHOW COLUMNS IN system.settings;
 
 SELECT * EXCEPT (default, alias_for, readonly, description)
 FROM system.settings
-LIMIT 5
+LIMIT 5;
 ```
 
 ```response title="Response"
@@ -402,6 +405,7 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    NOSIGN,
     'CSVWithNames'
 );
 

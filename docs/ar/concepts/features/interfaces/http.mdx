@@ -287,7 +287,8 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-#### تعديل استعلام موجود {#modify-an-existing-query}
+<a id="modify-an-existing-query" />
+#### تعديل استعلام موجود
 
 لا تقتصر إعدادات الإنشاء على طلبات المسار، بل تؤثر أيضًا في الاستعلام الذي تكتبه بنفسك. يصبح الاستعلام جدولًا مشتقًا، لذا تُطبَّق الإعدادات على نتيجته بدلًا من دمجها فيه. على سبيل المثال، يُنفَّذ `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` على النحو التالي:
 
@@ -322,7 +323,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   لا يُعد `filter` آلية للتحكم بالوصول. فهو يضيف عبارة `WHERE` إلى استعلام فرعي مُغلِّف، مما يعني أنه يمكن قراءة البيانات الأساسية ومعالجتها قبل تطبيق عامل التصفية. ولتقييد الصفوف التي يمكن للمستخدم الوصول إليها، استخدم [سياسات الصفوف](/ar/concepts/features/security/access-rights#row-policy-management) أو [`additional_table_filters`](/ar/reference/settings/session-settings/additional#additional_table_filters).
 </Warning>
 
-### تجاوز التنسيقات والضغط {#format-and-compression-overrides}
+<a id="format-and-compression-overrides" />
+### تجاوز التنسيقات والضغط
 
 | الإعداد          | التأثير                                                                                                                                                                                                                                                                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -338,7 +340,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 تتضمن استجابات HTTP الثنائية والمضغوطة ترويسة `Content-Disposition: attachment; filename=…`. ويُشتق اسم الملف من مسار URL، أو يُستخدم `result.<format>.<compression>` إذا لم يوفر المسار اسمًا.
 
-### استخدام جدول مسار مع استعلام {#implicit-table}
+<a id="implicit-table" />
+### استخدام جدول مسار مع استعلام
 
 عندما يشير المسار إلى جدول وتوفّر أيضًا المعلَمة `query`، يُتاح جدول المسار عبر [`implicit_table_at_top_level`](/ar/reference/settings/session-settings/implicit#implicit_table_at_top_level). تقرأ عبارة `SELECT` التي لا تحتوي على عبارة `FROM` من جدول المسار:
 
@@ -355,7 +358,8 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 تُعد طريقة `POST` لنقل البيانات ضرورية لاستعلامات `INSERT`. في هذه الحالة، يمكنك كتابة بداية الاستعلام في معلمة `URL`، واستخدام `POST` لتمرير البيانات المراد إدراجها. ويمكن أن تكون هذه البيانات، على سبيل المثال، ملف تفريغ من MySQL مفصولًا بعلامات جدولة. وبهذه الطريقة، يحل استعلام `INSERT` محل `LOAD DATA LOCAL INFILE` في MySQL.
 
-### أمثلة {#examples}
+<a id="examples" />
+### أمثلة
 
 لإنشاء جدول:
 
@@ -441,7 +445,8 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 في الطلبات الناجحة التي لا تُرجع جدول بيانات، يُعاد متن الاستجابة فارغًا.
 
-### إدراج بيانات Protobuf {#insert-protobuf}
+<a id="insert-protobuf" />
+### إدراج بيانات Protobuf
 
 تُرسَل الصيغ الثنائية مثل [`Protobuf`](/ar/reference/formats/Protobuf/Protobuf) بالطريقة نفسها، إذ يمرّر `--data-binary` البايتات كما هي دون تعديل.
 أما الإعدادات التي تتطلبها الصيغة، مثل [`format_schema`](/ar/reference/settings/formats/format-schema#format_schema)، فتُمرَّر على هيئة معلمات URL إلى جانب `query`، شأنها شأن أي إعداد آخر.
@@ -498,7 +503,8 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 تتوقّع صيغة `Protobuf` أن تُسبَق كل رسالة بطولها مُرمَّزًا بصيغة varint.
 لرسالة واحدة دون هذه البادئة، استخدم [`ProtobufSingle`](/ar/reference/formats/Protobuf/ProtobufSingle)؛ أما الصفوف المُرسَلة كرسائل فرعية ضمن رسالة `Envelope` واحدة، فاستخدم لها [`ProtobufList`](/ar/reference/formats/Protobuf/ProtobufList).
 
-## الضغط {#compression}
+<a id="compression" />
+## الضغط
 
 يمكن استخدام الضغط لتقليل حركة مرور الشبكة عند نقل كميات كبيرة من البيانات، أو لإنشاء ملفات تفريغ مضغوطة مباشرةً.
 
@@ -646,7 +652,8 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 * [الإعدادات](/ar/reference/settings/session-settings)
 * [SET](/ar/reference/statements/set)
 
-## استخدام جلسات ClickHouse في بروتوكول HTTP {#using-clickhouse-sessions-in-the-http-protocol}
+<a id="using-clickhouse-sessions-in-the-http-protocol" />
+## استخدام جلسات ClickHouse في بروتوكول HTTP
 
 يمكنك أيضًا استخدام جلسات ClickHouse ضمن بروتوكول HTTP. للقيام بذلك، عليك إضافة معلمة `GET` ‏`session_id` إلى الطلب. ويمكنك استخدام أي سلسلة نصية كمعرّف للجلسة.
 
@@ -687,7 +694,8 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 تتيح واجهة HTTP تمرير بيانات خارجية (جداول مؤقتة خارجية) لاستخدامها في الاستعلام. لمزيد من المعلومات، راجع [&quot;البيانات الخارجية لمعالجة الاستعلامات&quot;](/ar/reference/engines/table-engines/special/external-data).
 
-## تخزين الاستجابة مؤقتًا {#response-buffering}
+<a id="response-buffering" />
+## تخزين الاستجابة مؤقتًا
 
 يمكن تمكين تخزين الاستجابة مؤقتًا على جانب الخادم. تُوفَّر معلمات URL التالية لهذا الغرض:
 
@@ -713,14 +721,13 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   استخدم التخزين المؤقت لتجنّب الحالات التي يقع فيها خطأ في معالجة الاستعلام بعد إرسال رمز الاستجابة ورؤوس HTTP إلى العميل. في هذه الحالة، تُكتب رسالة الخطأ في نهاية جسم الاستجابة، وعلى جهة العميل لا يمكن اكتشاف الخطأ إلا في مرحلة التحليل.
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## تعيين دور باستخدام معلمات الاستعلام
-</div>
+<a id="setting-role-with-query-parameters" />
+## تعيين دور باستخدام معلمات الاستعلام
 
 أُضيفت هذه الميزة في ClickHouse 24.4.
 
-في حالات معيّنة، قد يلزم تعيين الدور الممنوح أولًا قبل تنفيذ التعليمة نفسها.
-ومع ذلك، لا يمكن إرسال `SET ROLE` والتعليمة معًا، لأن العبارات المتعددة غير مسموح بها:
+في حالات معيّنة، قد يلزم تعيين الدور الممنوح أولًا قبل تنفيذ العبارة نفسها.
+ومع ذلك، لا يمكن إرسال `SET ROLE` والعبارة معًا، لأن العبارات المتعددة غير مسموح بها:
 
 ```bash
 curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
@@ -738,7 +745,7 @@ Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
 ```
 
-هذا يعادل تنفيذ `SET ROLE my_role` قبل التعليمة.
+هذا يعادل تنفيذ `SET ROLE my_role` قبل العبارة.
 
 بالإضافة إلى ذلك، يمكن تحديد عدة معلمات استعلام باسم `role`:
 
@@ -748,7 +755,10 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 في هذه الحالة، يعمل `?role=my_role&role=my_other_role` بشكل مماثل لتنفيذ `SET ROLE my_role, my_other_role` قبل العبارة.
 
-## محاذير رموز استجابة HTTP {#http_response_codes_caveats}
+لا تتأثر معلَمة الاستعلام `role` بإعداد الخادم `access_control_improvements.readonly_restricts_set_role`، إذ يقتصر هذا الإعداد على رفض العبارة `SET ROLE` فقط.
+
+<a id="http_response_codes_caveats" />
+## محاذير رموز استجابة HTTP
 
 نظرًا لقيود بروتوكول HTTP، فإن رمز الاستجابة HTTP 200 لا يضمن نجاح الاستعلام.
 
@@ -884,9 +894,8 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## واجهة HTTP المُعرَّفة مسبقًا
-</div>
+<a id="predefined_http_interface" />
+## واجهة HTTP المُعرَّفة مسبقًا
 
 يدعم ClickHouse استعلامات محددة عبر واجهة HTTP. على سبيل المثال، يمكنك إدخال البيانات في جدول كما يلي:
 
@@ -894,11 +903,13 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-يدعم ClickHouse أيضًا واجهة HTTP المحددة مسبقًا، والتي يمكن أن تساعدك على التكامل بسهولة أكبر مع أدوات خارجية مثل [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). لنلقِ نظرة على مثال.
+يدعم ClickHouse أيضًا واجهة HTTP المُعرَّفة مسبقًا، والتي يمكن أن تساعدك على التكامل بسهولة أكبر مع أدوات خارجية مثل [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). لنلقِ نظرة على مثال.
 
-أولًا، أضِف هذا القسم إلى ملف تهيئة الخادم.
+يمكن أيضًا تعريف معالجات الطلبات نفسها باستخدام SQL، دون الحاجة إلى تحرير ملف إعدادات الخادم - راجع [`CREATE HANDLER`](/ar/reference/statements/create/handler).
 
-تمت تهيئة `http_handlers` ليتضمن عدة `rule`. وسيطابق ClickHouse طلبات HTTP الواردة مع النوع المحدد مسبقًا في `rule`، وستُشغِّل أول قاعدة تتم مطابقتها المعالج. بعد ذلك، سينفّذ ClickHouse الاستعلام المحدد مسبقًا المقابل إذا نجحت المطابقة.
+أولًا، أضِف هذا القسم إلى ملف إعدادات الخادم.
+
+تمت تهيئة `http_handlers` ليتضمن عدة `rule`. وسيطابق ClickHouse طلبات HTTP الواردة مع النوع المحدد مسبقًا في `rule`، وستُشغِّل أول قاعدة تتم مطابقتها المعالج. بعد ذلك، سينفّذ ClickHouse الاستعلام المحدد مسبقًا المقابل إذا نجحت المطابقة.
 
 ```yaml title="config.xml"
 <http_handlers>
@@ -973,7 +984,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 * `full_url`
 * `handler`
 
-فيما يلي شرح لكلٍّ من هذه العناصر:
+فيما يلي شرح لكلٍّ من هذه العناصر:
 
 * يكون `method` مسؤولًا عن مطابقة جزء method في طلب HTTP. ويتوافق `method` بالكامل مع تعريف [`method`]
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) في HTTP protocol. وهو إعداد اختياري. إذا لم يكن معرّفًا في
@@ -1015,7 +1026,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 ستُناقش إعدادات الأنواع `type` المختلفة بعد ذلك.
 
-### predefined_query_handler {#predefined_query_handler}
+<a id="predefined_query_handler" />
+### predefined_query_handler
 
 يدعم `predefined_query_handler` تعيين قيم `Settings` و`query_params`. ويمكنك ضبط `query` ضمن النوع `predefined_query_handler`.
 
@@ -1095,7 +1107,8 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   في كل `predefined_query_handler`، لا يُدعَم إلا `query` واحد.
 </Note>
 
-### dynamic_query_handler {#dynamic_query_handler}
+<a id="dynamic_query_handler" />
+### dynamic_query_handler
 
 في `dynamic_query_handler`، يُكتب الاستعلام على شكل مُعامل في طلب HTTP. والفرق هو أنه في `predefined_query_handler`، يُكتب الاستعلام في ملف التهيئة. ويمكن تهيئة `query_param_name` في `dynamic_query_handler`.
 
@@ -1379,7 +1392,8 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 </clickhouse>
 ```
 
-## استجابة JSON/XML صالحة عند حدوث استثناء أثناء HTTP streaming {#valid-output-on-exception-http-streaming}
+<a id="valid-output-on-exception-http-streaming" />
+## استجابة JSON/XML صالحة عند حدوث استثناء أثناء HTTP streaming
 
 أثناء تنفيذ استعلام عبر HTTP، قد يحدث استثناء بعد إرسال جزء من البيانات بالفعل. وعادةً ما يُرسَل الاستثناء إلى client كنص عادي.
 وقد يحدث ذلك حتى عند استخدام format بيانات محدد لإخراج البيانات، مما قد يجعل الإخراج غير صالح وفقًا لتنسيق البيانات المحدد.

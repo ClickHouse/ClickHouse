@@ -1784,6 +1784,7 @@ These `ALTER` statements modify entities related to role-based access control:
 |---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
 | [ALTER TABLE ... MODIFY COMMENT](/reference/statements/alter/comment)  | Adds, modifies, or removes comments to the table, regardless if it was set before or not. |
 | [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
+| [ALTER DATABASE ... MODIFY SETTING](/reference/statements/alter/database-setting) | Changes settings of a database engine. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 | [ALTER HANDLER](/reference/statements/create/handler#alter-handler) | Modifies a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler). |
 
@@ -3712,6 +3713,63 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
+    };
+
+    documentation["ALTER DATABASE ... MODIFY SETTING"] =
+    {
+        .description = R"DOCS_MD(
+Changes settings of a database engine. The settings that can be changed depend on the engine; not every engine or setting supports modification after database creation.
+
+This statement changes database engine settings, not session settings or defaults for tables in the database.
+
+## Syntax {#syntax}
+
+```sql
+ALTER DATABASE database_name [ON CLUSTER cluster]
+MODIFY SETTING setting_name = value [, ...]
+```
+
+Use `ON CLUSTER` to execute the statement on all hosts in the specified cluster.
+The statement requires the `ALTER DATABASE SETTINGS` privilege.
+
+## Supported settings {#supported-settings}
+
+Refer to the documentation for the database engine for its settings and restrictions. For example:
+
+- [`Atomic`](/reference/engines/database-engines/atomic) and [`Ordinary`](/reference/engines/database-engines/ordinary) support changing `max_tables`.
+- [`MaterializedPostgreSQL`](/reference/engines/database-engines/materialized-postgresql) supports changing selected replication settings, such as `materialized_postgresql_max_block_size`.
+- [`DataLakeCatalog`](/reference/engines/database-engines/datalake) supports changing selected catalog settings; the available settings depend on the catalog type.
+
+An unsupported engine or setting causes an exception.
+
+## Example {#example}
+
+Change the maximum number of tables in an `Atomic` database:
+
+```sql
+CREATE DATABASE example_database ENGINE = Atomic;
+
+ALTER DATABASE example_database MODIFY SETTING max_tables = 100;
+
+SHOW CREATE DATABASE example_database;
+```
+
+Set `max_tables` to `0` to remove this database-level limit:
+
+```sql
+ALTER DATABASE example_database MODIFY SETTING max_tables = 0;
+```
+
+## Related content {#related-content}
+
+- [Database engines](/reference/engines/database-engines)
+- [`ALTER TABLE ... MODIFY SETTING`](/reference/statements/alter/setting)
+)DOCS_MD",
+        .syntax = R"(
+ALTER DATABASE database_name [ON CLUSTER cluster] MODIFY SETTING setting_name = value [, ...]
+)",
+        .parent = "ALTER",
+        .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "ALTER TABLE ... MODIFY SETTING", "CREATE DATABASE", "SHOW"},
     };
 
     documentation["ALTER DATABASE ... MODIFY COMMENT"] =
