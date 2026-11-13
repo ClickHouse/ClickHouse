@@ -1042,10 +1042,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_plan_optimize_exchanges", trueOrFalseSetting},
     {"distributed_plan_prefer_replicas_over_workers", trueOrFalseSettingNoOracle},
     {"distributed_plan_read_in_order", trueOrFalseSettingNoOracle},
-    /// Never 0: it would conflict with make_distributed_plan, which is restricted the same way above.
-    {"distributed_plan_workers_num", CHSetting(oneToThree, {}, false)},
-    /// distributed_plan_worker_cluster is not generated: any non-empty value can contradict
-    /// make_distributed_plan or distributed_plan_execute_locally and fail every query of the session.
+    {"distributed_plan_workers_num", CHSetting(zeroToThree, {}, false)},
     {"distributed_product_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1595,9 +1592,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"log_query_views", trueOrFalseSettingNoOracle},
     {"low_cardinality_max_dictionary_size", CHSetting(highRange, {}, false)},
     {"low_cardinality_use_single_dictionary_for_part", trueOrFalseSettingNoOracle},
-    /// Never the explicit-off value: it would conflict with distributed_plan_workers_num, which is
-    /// restricted the same way below.
-    {"make_distributed_plan", trueOnlySetting},
+    {"make_distributed_plan", trueOrFalseSetting},
     {"materialize_skip_indexes_on_insert", trueOrFalseSettingNoOracle},
     {"materialize_statistics_on_insert", trueOrFalseSettingNoOracle},
     {"materialize_ttl_after_modify", trueOrFalseSettingNoOracle},

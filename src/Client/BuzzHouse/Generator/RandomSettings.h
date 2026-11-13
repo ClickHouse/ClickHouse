@@ -20,9 +20,6 @@ const auto zeroOneTwo = [](RandomGenerator & rg, FuzzConfig &) { return std::to_
 
 const auto zeroToThree = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
-/// Like zeroToThree but never produces 0
-const auto oneToThree = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 3)); };
-
 const auto probRange = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); };
 
 const auto probRangeNoZero
@@ -70,9 +67,6 @@ const auto inline probRangeNoZeroSetting = CHSetting(probRangeNoZero, {"0.001", 
 const auto inline trueOrFalseSetting = CHSetting(trueOrFalse, {"0", "1"}, false);
 
 const auto inline trueOrFalseSettingNoOracle = CHSetting(trueOrFalse, {}, false);
-
-/// Never generates the explicit-off value, for a setting another generated setting can conflict with
-const auto inline trueOnlySetting = CHSetting([](RandomGenerator &, FuzzConfig &) { return "1"; }, {}, false);
 
 extern std::unordered_map<String, CHSetting> hotSettings;
 
