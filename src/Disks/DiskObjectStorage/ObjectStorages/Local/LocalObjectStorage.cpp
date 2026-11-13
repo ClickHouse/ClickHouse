@@ -193,8 +193,11 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     auto modified_settings{read_settings};
-    /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    /// Other options might break assertions in AsynchronousBoundedReadBuffer. `read` is synchronous as well
+    /// and is kept: it opens a fresh descriptor instead of sharing one by path through `OpenedFileCache`,
+    /// which the readers of mutable files (see `getUserFilesDiskReadSettings`) rely on.
+    if (modified_settings.local_fs_settings.method != LocalFSReadMethod::read)
+        modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     modified_settings.local_fs_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
