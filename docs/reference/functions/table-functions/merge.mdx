@@ -23,6 +23,10 @@ merge(['db_name',] 'tables_regexp')
 | `db_name`       | Possible values (optional, default is `currentDatabase()`):<br/>    - database name,<br/>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br/>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
 | `tables_regexp` | A regular expression to match the table names in the specified DB or DBs.                                                                                                                                                                                                                       |
 
+## Access rights {#access-rights}
+
+The matched tables are read with the same access rules as for the [Merge](/reference/engines/table-engines/special/merge#access-rights) table engine. Data is read only from the matched tables that the current user can see, that is, has the [`SHOW TABLES`](/reference/statements/grant#show) privilege on, and the table schema is derived only from them. A matched table that the user cannot see is skipped without an error. Deriving the schema requires the [`SHOW COLUMNS`](/reference/statements/grant#show) privilege on the tables it is derived from. Reading a matched table that the user can see requires the [`SELECT`](/reference/statements/grant#select) privilege on the columns that the query reads, otherwise the query fails with `ACCESS_DENIED`.
+
 ## Related {#related}
 
 - [Merge](/reference/engines/table-engines/special/merge) table engine

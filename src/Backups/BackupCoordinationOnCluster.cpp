@@ -1019,6 +1019,11 @@ void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addFileInfos");
     /// Serialize `file_infos_` and write it to ZooKeeper's nodes.
     String file_infos_str = FileInfos::serialize(file_infos_);
+
+    /// Release the infos as soon as they are serialized: for millions of files they are gigabytes, and the
+    /// caller reads them back from the coordination. `swap`, not `clear`, which keeps the capacity.
+    BackupFileInfos{}.swap(file_infos_);
+
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
 }
 

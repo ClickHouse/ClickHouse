@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ Valeurs possibles :
 * 0 - Désactivé
 * 1 - Activé
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,19 +39,36 @@ Valeurs possibles :
 * 0 - Désactivé
 * 1 - Activé
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'activer le cache de conditions de requête pour les lectures `ORDER BY ... LIMIT n` (TopK) ; activé par défaut. Le contrôle est désactivé dans la version 26.7, donc la `compatibility` avec une version antérieure le maintient désactivé."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant au cache des conditions de requête de prendre en charge les conditions faisant intervenir l’heure actuelle (p. ex. `WHERE time >= now() - INTERVAL 10 DAY`) en dérivant une condition déterministe dont la constante temporelle est arrondie sur une grille ; activé par défaut. previous_value=false : définir `compatibility` sur une version antérieure maintient ces conditions hors du cache, comme auparavant."}]}]} />
 
-Activez le [cache de conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache) pour les requêtes utilisant l&#39;optimisation `ORDER BY <column> LIMIT n` (TopK), basée sur le filtrage dynamique ou les index de saut. Lorsqu&#39;il est désactivé, ces lectures ne consultent pas le cache et ne l&#39;alimentent pas non plus.
+Active le [cache des conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache) pour les conditions faisant intervenir l’heure actuelle, p. ex. `WHERE time >= now() - INTERVAL 10 DAY`, lors de la lecture de tables `MergeTree`. Les lectures depuis des fichiers et le stockage d’objet (`file`, `s3`, etc.) n’utilisent le cache des conditions de requête que pour les conditions déterministes et ne sont pas concernées par ce paramètre.
 
-Ces requêtes peuvent ignorer des granules lors de l&#39;exécution selon le seuil courant. Leurs entrées de cache sont donc partitionnées en fonction des paramètres du plan TopK et de l&#39;ensemble des parties de données lues. Ce paramètre n&#39;a aucun effet si `use_query_condition_cache` n&#39;est pas également activé.
+Ces conditions sont non déterministes (elles évoluent avec l’horloge) et ne peuvent donc pas être mises en cache telles quelles. On en dérive plutôt une condition déterministe en arrondissant sur une grille temporelle la constante d’heure actuelle obtenue après évaluation, p. ex. `WHERE time >= '2026-08-09 12:34:56'` devient `WHERE time >= '2026-08-09 00:00:00'` (arrondi vers le bas pour les lectures du cache et vers le haut pour les écritures dans le cache, ce qui garantit la fiabilité du cache). Le pas de la grille est proportionnel à l’écart entre la constante et l’heure actuelle (voir [`query_condition_cache_time_condition_grid_factor`](/fr/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor)), et plafonné entre une seconde et un jour.
 
-Valeurs possibles :
+Si la constante est déjà alignée sur la grille (p. ex. `WHERE time >= today() - 10` ou `WHERE time >= toStartOfDay(now())`), le cache reste efficace pendant toute la cellule de la grille, p. ex. jusqu’à la fin de la journée. Dans le cas contraire, le cache n’est réutilisé que pour les bornes inférieures sur l’heure, p. ex. `WHERE time >= now() - INTERVAL 10 DAY` : les entrées du cache écrites au cours d’une cellule de la grille sont utilisées au cours de la suivante. Une borne supérieure non alignée telle que `WHERE time < now()`, seule ou au sein d’une fenêtre glissante comme `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, n’est pas réutilisée par les requêtes ultérieures, car leur condition n’est pas incluse dans celle des requêtes précédentes.
+
+Ce paramètre n’a aucun effet si `use_query_condition_cache` n’est pas également activé.
+
+Valeurs possibles :
+
+* 0 - Désactivé
+* 1 - Activé
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'activer le cache des conditions de requête pour les lectures `ORDER BY ... LIMIT n` (TopK) ; activé par défaut. Le contrôle est désactivé dans la version 26.7, donc la `compatibility` avec une version antérieure le maintient désactivé."}]}]} />
+
+Activez le [cache des conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache) pour les requêtes utilisant l&#39;optimisation `ORDER BY <column> LIMIT n` (TopK), basée sur le filtrage dynamique ou les index de saut. Lorsqu&#39;il est désactivé, ces lectures ne consultent pas le cache et ne l&#39;alimentent pas non plus.
+
+Ces requêtes peuvent ignorer des granules lors de l&#39;exécution selon le seuil courant. Leurs entrées de cache sont donc partitionnées en fonction des paramètres du plan TopK et de l&#39;ensemble des parties de données lues (pour une table `File`, en fonction de l&#39;ensemble des fichiers lus et de leurs versions ; pour une table de lac de données, en fonction de son snapshot). Ce paramètre n&#39;a aucun effet si `use_query_condition_cache` n&#39;est pas également activé.
+
+Valeurs possibles :
 
 * 0 - Désactivé
 * 1 - Activé
