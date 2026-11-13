@@ -824,6 +824,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` 中设置的最大查询处理线程数。
 </Note>
 
+#### 聚合、排序和去重步骤中的溢写 {#explain-analyze-spilling}
+
+当 `GROUP BY`、`ORDER BY` 或 `DISTINCT` 步骤将数据溢写到临时存储时，会输出以下信息：
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+该值表示整个步骤 (包括其各个并行处理器) 累计已写入的压缩后字节数。
+该总数包含已被读取或删除的临时文件；如果数据已多次溢写到磁盘，每次写入都会单独计入。
+若没有已溢写到磁盘的数据，则不显示此行。
+
 #### Join 步骤 {#explain-analyze-join-steps}
 
 对于 JOIN 步骤，`EXPLAIN ANALYZE` 会输出用于比较 JOIN 顺序优化器估算值与实际结果的行 (请参阅[估算值与实际 JOIN 指标](#explain-analyze-join-estimation)) ，以及每一侧的*参与*行——`Left` 和 `Right`——后面跟着所有特定于该 JOIN 实现的行。`Left` 和 `Right` 对应 SQL 中的逻辑侧。在大多数情况下，`Left` 同时也是 JOIN 的探测侧，`Right` 则是 JOIN 的构建侧。但由于 JOIN 执行期间可能发生左右交换，情况并非总是如此。涵盖了 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 的所有取值 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) ，以及该设置无法选择的三种实现：`CROSS` 或 `COMMA` JOIN、用于处理无法确定连接键的 `ON` 子句的[块嵌套循环连接](/zh/reference/statements/select/join#join-with-an-arbitrary-on-condition)，以及 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎。大多数实现都会报告两侧；有些仅报告其物化的一侧 (例如，`direct` 只输出 `Left:`) 。
@@ -1100,7 +1112,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 当结果取决于PROJECTION分片的布局方式时，`marks_span` 会给出取值范围；若判定结论难以确定，则报告为 `too close to call`。对于大表，估算只会读取部分粒度作为样本 (参见 `projection_scan_budget_rows`) 。
 
-以下PROJECTION会被报告为 `not_applicable`：聚合PROJECTION；带有 `WHERE` 子句、自带跳过索引、以提交顺序或虚拟列作为键、或存储了 `_block_number` 的PROJECTION；以及未覆盖查询所需全部列的PROJECTION。`force_optimize_projection_name` 和 `preferred_optimize_projection_name` 会被忽略，且 `force_optimize_projection` 不会导致该语句执行失败。
+WHATIF 会将聚合PROJECTION以及自带跳过索引的PROJECTION报告为 `not_applicable`。以提交顺序或虚拟列作为键、或存储了 `_block_number` 的PROJECTION同样会被报告为 `not_applicable`。未覆盖查询所需全部列的PROJECTION也是如此。WHATIF 会忽略 `force_optimize_projection_name` 和 `preferred_optimize_projection_name`，且 `force_optimize_projection` 不会导致该语句执行失败。
 
 **语法**
 
@@ -1111,7 +1123,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **设置**
 
 * `projection_scan_budget_rows` — PROJECTION估算在改为对粒度进行抽样之前最多可读取的行数。默认值：`10000000`。`0` 表示不限制；`max_rows_to_read` 可进一步降低该上限。抽样至少会读取约 30 个粒度，且每个parts至少读取一个；如果 `max_rows_to_read` 的限制无法满足这一要求，则估算结果为 `unsupported`。
-* `empirical` — `1` (默认值) 在内存中对基线裁剪后剩余的粒度应用索引，以测量跳过率 (上界) 。`0` 不执行这一步。无论取何值，如果经验估算未得出结果 (因为已禁用，或无法在内存中评估索引) ，估算器就会改用列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，最终仅汇总索引是否适用。
+* `empirical` — `1` (默认值) 在内存中对基线裁剪后剩余的粒度应用索引，以测量跳过比例 (上界) 。`0` 不执行这一步。无论取何值，如果经验估算未得出结果 (因为已禁用，或无法在内存中评估索引) ，估算器就会改用列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，最终仅汇总索引是否适用。
 
 **输出**
 
