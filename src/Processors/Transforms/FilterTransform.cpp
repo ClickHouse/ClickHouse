@@ -350,8 +350,8 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     if (function_name == "and")
         return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
 
-    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
-    if (function_name != "in" && function_name != "globalIn")
+    /// notIn and notNullIn over an empty set are always true, and the -IgnoreSet variants must not fold
+    if (function_name != "in" && function_name != "globalIn" && function_name != "nullIn" && function_name != "globalNullIn")
         return false;
 
     const IColumn * set_column = node->children[1]->column.get();
@@ -366,7 +366,8 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
         return false;
 
     auto future_set = column_set->getData();
-    if (!future_set)
+    /// The set of an `ENGINE = Set` table can still grow while the query runs.
+    if (!future_set || future_set->isMutableDuringQuery())
         return false;
 
     auto set = future_set->get();
