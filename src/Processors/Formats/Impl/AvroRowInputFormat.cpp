@@ -1277,7 +1277,14 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns)
+AvroDeserializer::AvroDeserializer(
+    const Block & header,
+    avro::ValidSchema schema,
+    bool allow_missing_fields,
+    bool null_as_default_,
+    const FormatSettings & settings_,
+    const NameSet & absent_columns,
+    const UnorderedMapWithMemoryTracking<String, String> * read_names)
     : null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
@@ -1287,7 +1294,20 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     }
 
     column_found.resize(header.columns());
-    row_action = createAction(header, schema_root);
+    if (read_names)
+    {
+        VectorWithMemoryTracking<Action> field_actions(schema_root->leaves());
+        for (int i = 0; i < static_cast<int>(schema_root->leaves()); ++i)
+        {
+            if (auto it = read_names->find(schema_root->nameAt(i)); it != read_names->end())
+                field_actions[i] = createAction(header, schema_root->leafAt(i), it->second);
+            else
+                field_actions[i] = Action(createSkipFn(schema_root->leafAt(i)));
+        }
+        row_action = Action::recordAction(field_actions);
+    }
+    else
+        row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
     if (!allow_missing_fields)
     {
@@ -1346,47 +1366,62 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithM
     }
 }
 
-/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
-/// field id is not in the file, if the file identifies all its top-level fields by id.
-NameSet getColumnsAbsentFromIcebergFile(
+/// Top-level fields of an Iceberg data file bound to `header` by field id (https://iceberg.apache.org/spec/#column-projection).
+struct IcebergAvroFieldBinding
+{
+    /// The columns of `header` whose field id is not in the file: read as NULL.
+    NameSet absent_columns;
+    /// The name each top-level field of the file is read as; a field not in it is not read.
+    UnorderedMapWithMemoryTracking<String, String> read_names;
+};
+
+/// nullopt unless the file identifies each top-level field by a distinct `field-id`.
+std::optional<IcebergAvroFieldBinding> bindIcebergAvroFields(
     const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::DataFileReaderBase::metadata` returns std::map
 {
     auto it = metadata.find("avro.schema");
     if (it == metadata.end())
-        return {};
+        return std::nullopt;
 
     String schema_json(it->second.begin(), it->second.end());
     if (!schema_json.contains("\"field-id\""))
-        return {};
+        return std::nullopt;
 
     Poco::JSON::Parser parser;
     auto root = parser.parse(schema_json);
     if (root.type() != typeid(Poco::JSON::Object::Ptr))
-        return {};
+        return std::nullopt;
 
     auto fields = root.extract<Poco::JSON::Object::Ptr>()->getArray("fields");
     if (!fields || fields->size() == 0)
-        return {};
+        return std::nullopt;
 
+    IcebergAvroFieldBinding binding;
+    UnorderedSetWithMemoryTracking<Int64> top_level_field_ids;
     for (size_t i = 0; i < fields->size(); ++i)
     {
         auto field = fields->getObject(static_cast<unsigned>(i));
         if (!field || !field->has("field-id") || !field->get("field-id").isInteger())
-            return {};
+            return std::nullopt;
+        auto field_id = field->get("field-id").convert<Int64>();
+        if (!top_level_field_ids.insert(field_id).second)
+            return std::nullopt;
+        auto field_name = field->getValue<String>("name");
+        if (auto name = column_mapper.getReadNameOfFileField(field_id, field_name))
+            binding.read_names.emplace(std::move(field_name), std::move(*name));
     }
 
     UnorderedSetWithMemoryTracking<Int64> file_field_ids;
     collectIcebergFieldIds(root, file_field_ids);
 
-    NameSet result;
     const auto & storage_encoding = column_mapper.getStorageColumnEncoding();
     for (const auto & column : header)
     {
         auto field_id = storage_encoding.find(column.name);
         if (field_id != storage_encoding.end() && !file_field_ids.contains(field_id->second))
-            result.insert(column.name);
+            binding.absent_columns.insert(column.name);
     }
-    return result;
+    return binding;
 }
 
 }
@@ -1396,9 +1431,12 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     NameSet absent_columns;
+    std::optional<IcebergAvroFieldBinding> binding;
     if (column_mapper)
     {
-        absent_columns = getColumnsAbsentFromIcebergFile(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
+        binding = bindIcebergAvroFields(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
+        if (binding)
+            absent_columns = binding->absent_columns;
         /// Iceberg row lineage columns are stored only by a rewritten data file: a file without them reads them as NULL.
         size_t index = 0;
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
@@ -1410,7 +1448,7 @@ void AvroRowInputFormat::readPrefix()
     }
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
-        absent_columns);
+        absent_columns, binding ? &binding->read_names : nullptr);
     file_reader_ptr->init();
 }
 

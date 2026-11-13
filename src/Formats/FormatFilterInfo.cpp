@@ -154,6 +154,16 @@ std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
 }
 
+std::optional<String> ColumnMapper::getReadNameOfFileField(Int64 field_id, const String & file_field_name) const
+{
+    if (auto it = field_id_to_clickhouse_name.find(field_id); it != field_id_to_clickhouse_name.end())
+        return it->second;
+    static constexpr Int64 max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
+    if (field_id > max_user_field_id)
+        return file_field_name;
+    return std::nullopt;
+}
+
 FormatFilterInfo::FormatFilterInfo(
     std::shared_ptr<const ActionsDAG> filter_actions_dag_,
     const ContextPtr & context_,

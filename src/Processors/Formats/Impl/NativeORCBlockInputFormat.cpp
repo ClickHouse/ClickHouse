@@ -37,6 +37,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/SharedThreadPools.h>
@@ -179,8 +180,13 @@ std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 
 /// Defined below, next to the read path that also uses it. The sargs path resolves predicate column
 /// names through the same recursive walk, so pruning and reading always agree on the column.
-static const ORC::Type *
-traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case);
+/// `field_names`: the names the fields of `orc_type` are read as, instead of their names in the file; a field not in it is not matched.
+static const ORC::Type * traverseDownORCTypeByName(
+    const std::string & target,
+    const ORC::Type * orc_type,
+    DataTypePtr & type,
+    bool ignore_case,
+    const IcebergORCFieldNames * field_names = nullptr);
 
 struct ORCPredicateColumnTypes
 {
@@ -721,6 +727,7 @@ static void buildORCSearchArgumentImpl(
     const KeyCondition & key_condition,
     const Block & header,
     const ORC::Type & schema,
+    const IcebergORCFieldNames * field_names,
     KeyCondition::RPN & rpn_stack,
     ORC::SearchArgumentBuilder & builder,
     const FormatSettings & format_settings)
@@ -787,7 +794,7 @@ static void buildORCSearchArgumentImpl(
             /// own type, which is what KeyCondition's RPN holds.
             const auto & column_type = column_types->result_type;
             auto resolved_type = column_type;
-            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
+            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case, field_names);
             if (!orc_type)
             {
                 builder.literal(ORC::TruthValue::YES_NO_NULL);
@@ -982,7 +989,7 @@ static void buildORCSearchArgumentImpl(
             for (auto & atom : atoms)
             {
                 rpn_stack.push_back(std::move(atom));
-                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+                buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, builder, format_settings);
             }
             builder.end();
             break;
@@ -1001,7 +1008,7 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -1009,8 +1016,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -1018,8 +1025,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -1039,14 +1046,18 @@ static void buildORCSearchArgumentImpl(
 }
 
 std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition, const Block & header, const ORC::Type & schema, const FormatSettings & format_settings)
+    const KeyCondition & key_condition,
+    const Block & header,
+    const ORC::Type & schema,
+    const FormatSettings & format_settings,
+    const IcebergORCFieldNames * field_names)
 {
     auto rpn_stack = key_condition.getRPN();
     if (rpn_stack.empty())
         return nullptr;
 
     auto builder = std::make_unique<ORC::SearchArgumentBuilder>();
-    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
+    buildORCSearchArgumentImpl(key_condition, header, schema, field_names, rpn_stack, *builder, format_settings);
     return builder->build();
 }
 
@@ -1082,8 +1093,12 @@ static void getFileReader(
     file_reader = createORCReader(std::move(input_stream), options);
 }
 
-static const ORC::Type *
-traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case)
+static const ORC::Type * traverseDownORCTypeByName(
+    const std::string & target,
+    const ORC::Type * orc_type,
+    DataTypePtr & type,
+    bool ignore_case,
+    const IcebergORCFieldNames * field_names)
 {
     /// Recurses the file-controlled ORC type tree. The matching CH type (and the requested column
     /// name) bound the depth in practice, but keep a stack backstop here too, since this runs in
@@ -1093,41 +1108,60 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
     if (target.empty())
         return orc_type;
 
-    auto search_struct_field = [&](const std::string & target_, const ORC::Type * type_) -> std::pair<std::string, const ORC::Type *>
+    auto search_struct_field = [&](const std::string & target_, const ORC::Type * type_, const IcebergORCFieldNames * names)
+        -> std::pair<std::string, const ORC::Type *>
     {
+        /// A top-level field named like the whole request wins over an earlier one whose name is a dotted prefix of it, as a column
+        /// does over a subcolumn. Nested fields are matched in file order, as `Tuple` elements are.
+        const bool whole_name_first = type_->getColumnId() == 0;
         auto search_pass = [&](bool fold) -> std::pair<std::string, const ORC::Type *>
         {
             auto target_copy = target_;
             if (fold)
                 boost::to_lower(target_copy);
 
+            std::pair<std::string, const ORC::Type *> prefix_match{"", nullptr};
             for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
             {
-                auto field_name = type_->getFieldName(i);
+                std::string field_name;
+                if (names)
+                {
+                    auto it = names->find(type_->getSubtype(i)->getColumnId());
+                    if (it == names->end())
+                        continue;
+                    field_name = it->second;
+                }
+                else
+                    field_name = type_->getFieldName(i);
                 if (fold)
                     boost::to_lower(field_name);
 
-                if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
+                if (target_copy == field_name)
+                    return {"", type_->getSubtype(i)};
+                if (!prefix_match.second && startsWith(target_copy, field_name) && target_copy[field_name.size()] == '.')
                 {
-                    return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    prefix_match = {target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    if (!whole_name_first)
+                        break;
                 }
             }
-            return {"", nullptr};
+            return prefix_match;
         };
 
         /// A field spelled exactly like the request always wins: a struct may hold several fields
         /// whose names differ only by case, and case-folding first binds the request to whichever
         /// of them the file lists first.
+        /// Fields named by Iceberg field id carry the requested names, so they are never folded.
         auto exact_match = search_pass(/*fold=*/false);
-        if (exact_match.second || !ignore_case)
+        if (exact_match.second || !ignore_case || names)
             return exact_match;
         return search_pass(/*fold=*/true);
     };
 
     if (ORC::STRUCT == orc_type->getKind())
     {
-        const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
-        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
+        const auto [next_target, next_orc_type] = search_struct_field(target, orc_type, field_names);
+        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, nullptr) : nullptr;
     }
     if (ORC::LIST == orc_type->getKind())
     {
@@ -1138,14 +1172,14 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
         const auto * orc_nested_type = orc_type->getSubtype(0);
         if (array_type && ORC::STRUCT == orc_nested_type->getKind())
         {
-            auto next_type_and_target = search_struct_field(target, orc_nested_type);
+            auto next_type_and_target = search_struct_field(target, orc_nested_type, nullptr);
             const auto & next_target = next_type_and_target.first;
             const auto * next_orc_type = next_type_and_target.second;
             if (next_orc_type)
             {
                 /// Adjust CH type to avoid inconsistency between CH and ORC type brought by flattened Nested type.
                 type = array_type->getNestedType();
-                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case);
+                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, nullptr);
             }
         }
     }
@@ -1174,6 +1208,25 @@ static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type
                 return i;
 
     return std::nullopt;
+}
+
+/// The names the top-level fields of `root` are read as, matched by `iceberg.id` with the columns of `column_mapper`; a field
+/// none of them has is not read. nullopt if a field has no id or two fields share one: the file is matched by name.
+static std::optional<IcebergORCFieldNames> getIcebergORCFieldNames(const ORC::Type & root, const ColumnMapper & column_mapper)
+{
+    IcebergORCFieldNames result;
+    UnorderedSetWithMemoryTracking<Int64> seen_field_ids;
+    for (size_t i = 0; i < root.getSubtypeCount(); ++i)
+    {
+        const auto * field = root.getSubtype(i);
+        Int64 field_id = 0;
+        if (!field->hasAttributeKey("iceberg.id") || !tryParse(field_id, field->getAttributeValue("iceberg.id"))
+            || !seen_field_ids.insert(field_id).second)
+            return std::nullopt;
+        if (auto name = column_mapper.getReadNameOfFileField(field_id, root.getFieldName(i)))
+            result.emplace(field->getColumnId(), std::move(*name));
+    }
+    return result;
 }
 
 /// Also collects the ORC structs that are requested as a `Tuple`.
@@ -1348,12 +1401,16 @@ void NativeORCBlockInputFormat::prepareFileReader()
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
     const auto & file_schema = file_reader->getType();
+    std::optional<IcebergORCFieldNames> iceberg_field_names;
+    if (format_filter_info && format_filter_info->column_mapper)
+        iceberg_field_names = getIcebergORCFieldNames(file_schema, *format_filter_info->column_mapper);
+    const IcebergORCFieldNames * field_names = iceberg_field_names ? &*iceberg_field_names : nullptr;
     UnorderedSetWithMemoryTracking<UInt64> include_typeids;
     VectorWithMemoryTracking<const ORC::Type *> requested_structs;
     for (const auto & column : header)
     {
         auto adjusted_type = column.type;
-        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
+        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case, field_names);
         if (orc_type)
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids, requested_structs);
     }
@@ -1381,10 +1438,11 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.case_insensitive_column_matching,
         format_settings.orc.dictionary_as_low_cardinality,
         format_settings.date_time_overflow_behavior,
-        std::move(count_only_fields));
+        std::move(count_only_fields),
+        iceberg_field_names);
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
-        sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings);
+        sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings, field_names);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;
@@ -1602,7 +1660,8 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool case_insensitive_matching_,
     bool dictionary_as_low_cardinality_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
-    UnorderedSetWithMemoryTracking<UInt64> count_only_fields_)
+    UnorderedSetWithMemoryTracking<UInt64> count_only_fields_,
+    std::optional<IcebergORCFieldNames> iceberg_field_names_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
@@ -1610,6 +1669,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
     , date_time_overflow_behavior(date_time_overflow_behavior_)
     , count_only_fields(std::move(count_only_fields_))
+    , iceberg_field_names(std::move(iceberg_field_names_))
 {
 }
 
@@ -1632,7 +1692,15 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
     orc_field_names.reserve(field_num);
     for (size_t i = 0; i < field_num; ++i)
     {
-        const auto & name = schema->getFieldName(i);
+        const std::string * name_ptr = &schema->getFieldName(i);
+        if (iceberg_field_names)
+        {
+            auto it = iceberg_field_names->find(schema->getSubtype(i)->getColumnId());
+            if (it == iceberg_field_names->end())
+                continue;
+            name_ptr = &it->second;
+        }
+        const auto & name = *name_ptr;
         const auto * field = struct_batch->fields[i];
         if (!field)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table field {} is null", name);
@@ -3118,7 +3186,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     auto find_orc_column = [&](const String & name)
     {
         auto it = name_to_column_ptr.find(name);
-        if (it == name_to_column_ptr.end() && case_insensitive_matching)
+        if (it == name_to_column_ptr.end() && case_insensitive_matching && !iceberg_field_names)
         {
             for (const auto & field_name : orc_field_names)
                 if (boost::iequals(field_name, name))

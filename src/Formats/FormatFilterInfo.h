@@ -3,6 +3,7 @@
 #include <Formats/ColumnNameMaps.h>
 #include <exception>
 #include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
@@ -108,6 +109,10 @@ public:
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
+
+    /// The name a top-level data file field with this id is read as: the read schema's column with the id, or the field's own name for
+    /// a reserved id, which no schema holds (https://iceberg.apache.org/spec/#reserved-field-ids); nullopt: the field is not read.
+    std::optional<String> getReadNameOfFileField(Int64 field_id, const String & file_field_name) const;
 
 private:
     ColumnNameToFieldId storage_encoding;

@@ -64,8 +64,15 @@ std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 /// Creates an ORC file reader; throws INCORRECT_DATA if the root type of the file is not a struct.
 std::unique_ptr<ORC::Reader> createORCReader(std::unique_ptr<ORC::InputStream> stream, const ORC::ReaderOptions & options);
 
+/// The names the top-level fields of an Iceberg ORC file are read as, by the ORC column id of the field.
+using IcebergORCFieldNames = UnorderedMapWithMemoryTracking<UInt64, std::string>;
+
 std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition, const Block & header, const ORC::Type & schema, const FormatSettings & format_settings);
+    const KeyCondition & key_condition,
+    const Block & header,
+    const ORC::Type & schema,
+    const FormatSettings & format_settings,
+    const IcebergORCFieldNames * field_names = nullptr);
 
 class ORCColumnToCHColumn;
 class NativeORCBlockInputFormat final : public IInputFormat
@@ -158,7 +165,8 @@ public:
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
-        UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {});
+        UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
+        std::optional<IcebergORCFieldNames> iceberg_field_names_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -191,6 +199,8 @@ private:
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     /// ORC column ids of the struct fields that are read only for the size and the null map of their struct.
     const UnorderedSetWithMemoryTracking<UInt64> count_only_fields;
+    /// nullopt: the top-level fields are matched by name.
+    const std::optional<IcebergORCFieldNames> iceberg_field_names;
 };
 }
 #endif

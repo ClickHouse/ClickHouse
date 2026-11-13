@@ -2251,10 +2251,10 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (!iceberg_object_info)
         return nullptr;
     chassert(object_info->getFileFormat().has_value());
-    /// Only these readers resolve columns through a mapper: `Parquet` and `Avro` for the columns they read
-    /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan.
+    /// Only these readers resolve columns through a mapper: `Parquet`, `ORC` and `Avro` for the columns they read
+    /// (and `Parquet` and `ORC` for their filters), `Vortex` for the filters it pushes into the scan.
     const auto file_format = Poco::toLower(*object_info->getFileFormat());
-    if (file_format != "parquet" && file_format != "avro" && file_format != "vortex")
+    if (file_format != "parquet" && file_format != "orc" && file_format != "avro" && file_format != "vortex")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
