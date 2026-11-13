@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -129,7 +130,28 @@ public:
 
     bool hasLimitByHint() const { return !limit_by_columns.empty(); }
 
-    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
+    /// A virtual row (an index entry) bounds the rows of its stream in the order of the sorting key of the table.
+    /// So the merge also compares the key columns fixed by the filter which the sort description does not compare that way:
+    /// such a column holds the fixed value in the rows and the index value in a virtual row.
+    struct MergeWithFixedKeys
+    {
+        struct Column
+        {
+            String name;
+            DataTypePtr type;
+            Field value;
+        };
+
+        std::vector<Column> columns;
+        /// The prefix description with `columns` inserted where the sorting key has them.
+        SortDescription description;
+    };
+
+    void convertToFinishSorting(
+        SortDescription prefix_description,
+        bool use_buffering_,
+        bool apply_virtual_row_conversions_,
+        MergeWithFixedKeys merge_with_fixed_keys_ = {});
 
     void enableBuffering() { use_buffering = true; }
     bool getUseBuffering() const { return use_buffering; }
@@ -204,6 +226,7 @@ private:
         const SortDescription & result_sort_desc,
         UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker, bool sort_totals);
 
+    void mergingSortedWithFixedKeys(QueryPipelineBuilder & pipeline, UInt64 limit_);
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
@@ -244,6 +267,7 @@ private:
     bool always_read_till_end = false;
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
+    MergeWithFixedKeys merge_with_fixed_keys;
 
     TopKThresholdTrackerPtr threshold_tracker;
 

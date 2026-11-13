@@ -3,6 +3,7 @@
 #include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -12,6 +13,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -318,12 +320,14 @@ void SortingStep::updateLimit(size_t limit_)
         use_buffering = false;
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
+void SortingStep::convertToFinishSorting(
+    SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_, MergeWithFixedKeys merge_with_fixed_keys_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
+    merge_with_fixed_keys = std::move(merge_with_fixed_keys_);
 }
 
 /// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
@@ -429,6 +433,27 @@ void SortingStep::finishSorting(
             return std::make_shared<FinishSortingTransform>(
                 header, input_sort_desc, result_sort_desc, sort_settings.max_block_size, limit_, increase_sort_description_compile_attempts_current);
         });
+}
+
+void SortingStep::mergingSortedWithFixedKeys(QueryPipelineBuilder & pipeline, const UInt64 limit_)
+{
+    ActionsDAG add_columns(pipeline.getHeader().getColumnsWithTypeAndName());
+    NameSet names;
+    for (const auto & column : merge_with_fixed_keys.columns)
+    {
+        add_columns.getOutputs().push_back(&add_columns.addColumn(column.type->createColumnConst(1, column.value), column.type, column.name));
+        names.insert(column.name);
+    }
+
+    auto add_expression = std::make_shared<ExpressionActions>(std::move(add_columns));
+    pipeline.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, add_expression); });
+
+    mergingSorted(pipeline, merge_with_fixed_keys.description, limit_);
+
+    ActionsDAG remove_columns(pipeline.getHeader().getColumnsWithTypeAndName());
+    remove_columns.removeFromOutputs(names);
+    auto remove_expression = std::make_shared<ExpressionActions>(std::move(remove_columns));
+    pipeline.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, remove_expression); });
 }
 
 void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
@@ -664,7 +689,10 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (!need_finish_sorting)
             addPerStreamLimitByIfNeeded(pipeline, result_description);
 
-        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
+        if (merge_with_fixed_keys.columns.empty() || pipeline.getNumStreams() == 1)
+            mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
+        else
+            mergingSortedWithFixedKeys(pipeline, (need_finish_sorting ? 0 : limit));
 
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 

@@ -85,10 +85,11 @@ DROP TABLE t_virtual_row_widen;
 
 -- A fixed MIDDLE key (WHERE b = 1 ORDER BY a, c on key (a, b, c)) is skipped without adding it to
 -- the virtual row, so the columns after it are no longer a contiguous key prefix. The virtual row
--- builder indexes key columns densely, so the skipped key shifts every later column onto the wrong
--- key column: wrong value trips "Virtual row boundary violated" (STID 2651-3359), and a wrong type
--- (e.g. Nullable key) trips "Virtual row has different type" (STID 1637-309b). Virtual rows must be
--- disabled whenever a key column is skipped, and the reads must not throw and stay correct.
+-- builder used to index key columns densely, so the skipped key shifted every later column onto the
+-- wrong key column: a wrong value tripped "Virtual row boundary violated" (STID 2651-3359), and a
+-- wrong type (e.g. Nullable key) tripped "Virtual row has different type" (STID 1637-309b). The
+-- virtual row now has every key column of the prefix and the merge compares the skipped one as a
+-- hidden column, so the reads must not throw and stay correct.
 DROP TABLE IF EXISTS t_virtual_row_fixed_key;
 
 CREATE TABLE t_virtual_row_fixed_key (a UInt32, b UInt32, c UInt32)
@@ -98,7 +99,7 @@ SETTINGS index_granularity = 8;
 INSERT INTO t_virtual_row_fixed_key SELECT number % 10, 1, number % 7 FROM numbers(2000);
 INSERT INTO t_virtual_row_fixed_key SELECT number % 10, 1, number % 7 FROM numbers(2000, 2000);
 
--- Virtual row optimization must be disabled for the skipped-middle-key read.
+-- The virtual row optimization stays enabled for the skipped-middle-key read.
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c
       SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1)

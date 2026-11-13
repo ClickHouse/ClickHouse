@@ -8,7 +8,19 @@ Virtual row conversions
 -- WHERE a IN (1) ORDER BY a, b
 Read type: InOrder
 Virtual row conversions
--- WHERE a = 1 ORDER BY a DESC, b: the read does not go in the direction of the fixed column, so its index values bound nothing
+-- WHERE a = 1 ORDER BY a DESC, b: the read does not go in the direction of the fixed column
+Read type: InOrder
+Virtual row conversions
+-- WHERE a = 1 ORDER BY b: the fixed key column is not listed
+Read type: InOrder
+Virtual row conversions
+-- WHERE a = 1 ORDER BY b DESC
+Read type: InReverseOrder
+Virtual row conversions
+-- WHERE x = 1 ORDER BY x, a, b: a fixed column which is not in the sorting key
+Read type: InOrder
+Virtual row conversions
+-- WHERE toString(a) = \'1\' ORDER BY b: the fixed value is not known, no virtual row
 Read type: InOrder
 --- key (a, b): result
 1
@@ -30,7 +42,16 @@ Read type: InOrder
 1
 1
 1
+1
+1
+1
+1
+-- a fixed column which is not in the sorting key
+1
+1
 -- a virtual row after each block, several threads
+1
+1
 1
 1
 1
@@ -44,6 +65,16 @@ Virtual row conversions
 1
 1
 1
+-- fixed middle key, not listed: WHERE b = 1 ORDER BY a, c
+Read type: InOrder
+Virtual row conversions
+1
+1
+-- two fixed keys, not listed: WHERE a = 1 AND b = 2 ORDER BY c
+Read type: InOrder
+Virtual row conversions
+1
+1
 -- two fixed keys: WHERE a = 1 AND b = 2 ORDER BY a, b, c
 Read type: InOrder
 Virtual row conversions
@@ -53,6 +84,10 @@ Virtual row conversions
 Read type: InOrder
 Virtual row conversions
 1
+1
+-- not listed
+Read type: InOrder
+Virtual row conversions
 1
 --- key (ts, b): `toDate(ts) = ...` fixes `toDate(ts)` but not the key column `ts`, which still determines the order
 977
@@ -65,6 +100,10 @@ Virtual row conversions
 979
 980
 981
+-- the key column is fixed and listed through a function
+Read type: InOrder
+Virtual row conversions
+995
 --- INNER JOIN: reading in order needs the virtual row
 Read type: InOrder
 Virtual row conversions
@@ -82,6 +121,28 @@ Read type: Default
 8043	24129
 8036	24108
 8029	24087
+-- the fixed key column is not listed, or is listed in the other direction
+Read type: InOrder
+Virtual row conversions
+Read type: Default
+Read type: InOrder
+Virtual row conversions
+Read type: Default
+21	63
+35	105
+42	126
+91	273
+105	315
+8057	24171
+8050	24150
+8043	24129
+8036	24108
+8029	24087
+21	63
+35	105
+42	126
+91	273
+105	315
 -- with FINAL
 Read type: InOrder
 Virtual row conversions
@@ -91,4 +152,8 @@ Read type: Default
 14	2	42
 21	2	63
 28	2	84
+1
+Read type: InOrder
+Virtual row conversions
+Read type: Default
 1
