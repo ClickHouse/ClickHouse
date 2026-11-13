@@ -701,6 +701,9 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 {
     is_execution_initialized = true;
 
+    if (step_profiler)
+        step_profiler->markExecutionStarted();
+
     /// Read the flag ONCE. A config reload mid-initialization would otherwise split a
     /// single query between lazy and eager strategies (e.g. allocate lazy with max=1 but
     /// then start from the full `setMax` target, stranding subsequent setMax as a no-op).

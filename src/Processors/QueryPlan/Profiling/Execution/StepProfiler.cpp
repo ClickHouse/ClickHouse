@@ -34,9 +34,19 @@ StepWallClock * StepProfiler::findClockForStep(const String & step_id, size_t gr
     return it != clocks.end() ? it->second.get() : nullptr;
 }
 
+void StepProfiler::markExecutionStarted()
+{
+    execution_start_ns.store(clock_gettime_ns(), std::memory_order_release);
+}
+
 void StepProfiler::markExecutionFinished()
 {
-    execution_time_ns.store(clock_gettime_ns() - execution_start_ns, std::memory_order_release);
+    /// Zero until the executor starts, and a pipeline may be finalized without ever having run.
+    const UInt64 started_at = execution_start_ns.load(std::memory_order_acquire);
+    if (started_at == 0)
+        return;
+
+    execution_time_ns.store(clock_gettime_ns() - started_at, std::memory_order_release);
 }
 
 bool StepProfiler::needCollectWorkIntervals() const

@@ -38,13 +38,14 @@ public:
 
     const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
 
-    /// Stamped by the executor when it finishes, so the duration excludes everything the
-    /// query-finish path does afterwards -- serializing and sending the result, in particular.
+    /// Stamped by the executor, so the duration is the execution alone: the pipeline is already
+    /// built when it starts, and the result is sent after it ends.
+    void markExecutionStarted();
     void markExecutionFinished();
 
     /// How long the query executed. Zero until the executor has finished.
     UInt64 getExecutionTimeNs() const { return execution_time_ns.load(std::memory_order_acquire); }
-    UInt64 getExecutionStartNs() const { return execution_start_ns; }
+    UInt64 getExecutionStartNs() const { return execution_start_ns.load(std::memory_order_acquire); }
 
     bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);
@@ -57,7 +58,7 @@ private:
     const PlanAnalysisSnapshot plan_snapshot;
     const StepWallClocks clocks;
 
-    const UInt64 execution_start_ns = clock_gettime_ns();
+    std::atomic<UInt64> execution_start_ns = 0;
     std::atomic<UInt64> execution_time_ns = 0;
 
     std::mutex mutex;
