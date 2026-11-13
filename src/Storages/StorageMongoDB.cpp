@@ -566,7 +566,14 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
+        return make_document();
+    }
+
+    if (!query.query_tree)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage requires the query tree, which is not available for this query. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
         return make_document();
     }
 
