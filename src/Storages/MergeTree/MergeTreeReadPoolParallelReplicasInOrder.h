@@ -64,6 +64,8 @@ private:
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;
+    /// Indices into `buffered_tasks` sorted by part info and projection name, to match the parts of a response.
+    std::vector<size_t> buffered_tasks_sorted;
 
     /// See the comment in MergeTreeReadPoolParallelReplicas::getTask method.
     bool failed_to_get_task{false};

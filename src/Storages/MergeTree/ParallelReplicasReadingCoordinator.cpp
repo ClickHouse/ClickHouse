@@ -5,10 +5,9 @@
 #include <numeric>
 #include <set>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <consistent_hashing.h>
+#include <absl/container/flat_hash_map.h>
 
 #include <IO/Progress.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -109,8 +108,17 @@ struct Part
     // FIXME: This is needed to put this struct in set
     // and modify through iterator
     mutable std::set<size_t> replicas;
+};
 
-    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
+/// Orders parts by `info`, so that `Parts` can be searched by `MergeTreePartInfo` without building a `Part`.
+struct PartInfoLess
+{
+    using is_transparent = void;
+
+    static const MergeTreePartInfo & getInfo(const Part & part) { return part.description.info; }
+    static const MergeTreePartInfo & getInfo(const MergeTreePartInfo & info) { return info; }
+
+    bool operator()(const auto & lhs, const auto & rhs) const { return getInfo(lhs) < getInfo(rhs); }
 };
 }
 
@@ -247,7 +255,7 @@ public:
     void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
 
-using Parts = std::set<Part>;
+using Parts = std::set<Part, PartInfoLess>;
 using PartRefs = std::deque<Parts::iterator>;
 
 
@@ -336,7 +344,33 @@ private:
     /// Parts view from the first announcement we received
     std::vector<Part> all_parts_to_read;
 
-    std::unordered_map<std::string, std::unordered_set<size_t>> part_visibility; /// part_name -> set of replicas announced that part
+    /// A part (or a projection part) as a key of `part_visibility`.
+    struct PartVisibilityKey
+    {
+        MergeTreePartInfo info;
+        String projection_name;
+    };
+
+    /// Accept both `PartVisibilityKey` and `RangesInDataPartDescription`, so lookups don't build a key.
+    struct PartVisibilityHash
+    {
+        using is_transparent = void;
+        size_t operator()(const auto & part) const { return part.info.hash() ^ std::hash<std::string_view>{}(part.projection_name); }
+    };
+
+    struct PartVisibilityEqual
+    {
+        using is_transparent = void;
+        bool operator()(const auto & lhs, const auto & rhs) const
+        {
+            return lhs.info == rhs.info && lhs.projection_name == rhs.projection_name;
+        }
+    };
+
+    /// part -> replicas that announced it (indexed by replica number)
+    absl::flat_hash_map<PartVisibilityKey, std::vector<bool>, PartVisibilityHash, PartVisibilityEqual> part_visibility;
+
+    bool isPartVisibleToReplica(const RangesInDataPartDescription & part, size_t replica) const;
 
     /// We order parts from biggest (= oldest) to newest and steal from newest. Because we assume
     /// that they're gonna be merged soon anyway and for them we should already expect worse cache hit.
@@ -432,7 +466,10 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     for (const auto & part : announcement.description)
     {
         /// We don't really care here if this part will be included into the working set or not
-        part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
+        auto it = part_visibility.find(part);
+        if (it == part_visibility.end())
+            it = part_visibility.emplace(PartVisibilityKey{part.info, part.projection_name}, std::vector<bool>(replicas_count)).first;
+        it->second[announcement.replica_num] = true;
     }
 
     /// If state is already initialized - just register availabitily info and leave
@@ -445,7 +482,7 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
 
         for (auto && part : announcement.description)
         {
-            auto intersecting_it = known_parts.lower_bound(Part{.description = part, .replicas = {}});
+            auto intersecting_it = known_parts.lower_bound(part.info);
 
             if (intersecting_it != known_parts.end() && !intersecting_it->description.info.isDisjoint(part.info))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
@@ -546,7 +583,7 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     /// Sift the queue to move out all invisible segments
     for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
     {
-        if (!part_visibility[segment_it->getPartOrProjectionName()].contains(replica_num))
+        if (!isPartVisibleToReplica(*segment_it, replica_num))
         {
             chassert(segment_it->ranges.size() == 1);
             enqueueToStealerOrStealingQueue(*segment_it, segment_it->ranges.front());
@@ -565,7 +602,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasCollectingOwnedSegmentsMicroseconds);
 
     auto & distribution_queue = distribution_by_hash_queue[replica_num];
-    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartOrProjectionName()].contains(replica); };
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return isPartVisibleToReplica(part, replica); };
 
     RangesInDataPartDescription result;
 
@@ -662,7 +699,7 @@ void DefaultCoordinator::tryToStealFromQueue(
     size_t & current_marks_amount,
     RangesInDataPartsDescription & description)
 {
-    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartOrProjectionName()].contains(replica); };
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return isPartVisibleToReplica(part, replica); };
 
     RangesInDataPartDescription result;
 
@@ -724,7 +761,7 @@ void DefaultCoordinator::processPartsFurther(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
 
-    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartOrProjectionName()].contains(replica); };
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return isPartVisibleToReplica(part, replica); };
 
     for (const auto & part : all_parts_to_read)
     {
@@ -806,12 +843,26 @@ void DefaultCoordinator::selectPartsAndRanges(
         tryToStealFromQueues(replica_num, scan_mode, min_marks_per_request, current_marks_amount, description);
 }
 
+bool DefaultCoordinator::isPartVisibleToReplica(const RangesInDataPartDescription & part, size_t replica) const
+{
+    auto it = part_visibility.find(part);
+    return it != part_visibility.end() && it->second[replica];
+}
+
 bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const RangesInDataPartDescription & description) const
 {
     /// At this point we might not be sure if `owner` can read from the given part.
     /// Then we will check it while processing `owner`'s data requests - they are guaranteed to came after the announcement.
-    return !stats[replica].is_unavailable && !replica_status[replica].is_finished
-        && (!replica_status[replica].is_announcement_received || part_visibility.at(description.getPartOrProjectionName()).contains(replica));
+    if (stats[replica].is_unavailable || replica_status[replica].is_finished)
+        return false;
+
+    if (!replica_status[replica].is_announcement_received)
+        return true;
+
+    auto it = part_visibility.find(description);
+    if (it == part_visibility.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} was not announced by any replica", description.getPartOrProjectionName());
+    return it->second[replica];
 }
 
 void DefaultCoordinator::enqueueSegment(const RangesInDataPartDescription & description, const MarkRange & segment, size_t owner)
@@ -1039,7 +1090,7 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     /// To get rid of duplicates
     for (auto && part: announcement.description)
     {
-        auto the_same_it = all_parts_to_read.find(Part{.description = part, .replicas = {}});
+        auto the_same_it = all_parts_to_read.find(part.info);
 
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
@@ -1052,7 +1103,7 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
             continue;
 
         /// Look for the first part >= current
-        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part, .replicas = {}});
+        auto covering_it = all_parts_to_read.lower_bound(part.info);
 
         if (covering_it != all_parts_to_read.end())
         {
@@ -1125,15 +1176,10 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
     for (auto & part : response.description)
     {
-        auto global_part_it = std::find_if(
-            all_parts_to_read.begin(),
-            all_parts_to_read.end(),
-            [&part](const Part & other)
-            {
-                return other.description.info == part.info && other.description.projection_name == part.projection_name;
-            });
+        /// `all_parts_to_read` holds at most one part per `info`.
+        auto global_part_it = all_parts_to_read.find(part.info);
 
-        if (global_part_it == all_parts_to_read.end())
+        if (global_part_it == all_parts_to_read.end() || global_part_it->description.projection_name != part.projection_name)
             continue;
 
         if (global_part_it->replicas.empty())
