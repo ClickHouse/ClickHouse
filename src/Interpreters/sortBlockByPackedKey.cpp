@@ -5,6 +5,7 @@
 #include <Interpreters/callWithOrderedBits.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HyperLogLogCounter.h>
 #include <Common/PODArray.h>
 #include <Common/RadixSort.h>
 #include <Common/iota.h>
@@ -279,6 +280,24 @@ WideColumnSample sampleWideColumn(const char * data, size_t rows, size_t max_dis
     return result;
 }
 
+/// The sample cannot tell values that occur a few times in the block from unique ones, e.g. a tail of unique values
+/// beside frequent ones, so the distinct values of the whole column are counted approximately before ranking it. The
+/// estimate is within a few percent; the exact count of `rankWideColumn` decides for a column near the limit.
+template <typename GetBits>
+bool hasTooManyDistinct(const char * data, size_t rows, size_t max_distinct)
+{
+    using Bits = OrderedBits<GetBits>;
+    HyperLogLogCounter<12, UInt64, TrivialHash, UInt64> counter;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if constexpr (sizeof(Bits) <= sizeof(UInt64))
+            counter.insert(intHash64(valueAt<GetBits>(data, i)));
+        else
+            counter.insert(UInt128Hash{}(valueAt<GetBits>(data, i)));
+    }
+    return counter.size() > max_distinct + max_distinct / 16;
+}
+
 /// Replaces the values by their ranks among the distinct values of the block, unless there are more than `max_distinct` of them.
 template <typename GetBits>
 bool rankWideColumn(
@@ -363,7 +382,8 @@ WidePacking packWideColumn(
     const bool range_may_fit = sizeof(Bits) <= sizeof(UInt64) && sample.range_bits <= bits_left;
     const bool rank = !range_may_fit || (!is_last && sample.range_bits > max_rank_bits);
 
-    if (may_rank && rank && sample.few_distinct && rankWideColumn<GetBits>(data, rows, descending, max_distinct, ranks, column))
+    if (may_rank && rank && sample.few_distinct && !hasTooManyDistinct<GetBits>(data, rows, max_distinct)
+        && rankWideColumn<GetBits>(data, rows, descending, max_distinct, ranks, column))
         return WidePacking::Ranked;
 
     /// Packing would stop after a first column this wide, and a single wide column is not worth packing.

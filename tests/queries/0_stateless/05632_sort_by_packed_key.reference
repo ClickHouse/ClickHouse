@@ -17,6 +17,8 @@ rev, ts	1
 n DESC, ts	1
 uid DESC, ts DESC	1
 cat, toString(n)	1
+mix, ts	1
+rep, ts	1
 INSERT uid, ts	1
 INSERT uid, cat	1
 INSERT uh, ts	1
@@ -29,4 +31,6 @@ INSERT spread DESC, dc	1
 INSERT inc, ts	1
 INSERT rev, ts	1
 INSERT small, identity(1), d	1
+INSERT mix, ts	1
+INSERT rep, ts	1
 DISTINCT cat, uh	1

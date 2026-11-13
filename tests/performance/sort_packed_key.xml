@@ -7,6 +7,9 @@
     <create_query>CREATE TABLE packed_sort_uuid (id UUID, ts DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, ts)</create_query>
     <create_query>CREATE TABLE packed_sort_hash (sid UInt64, ts DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (sid, ts)</create_query>
     <create_query>CREATE TABLE packed_sort_small (sid UInt64, ts DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (sid, ts)</create_query>
+    <!-- 1000 frequent ids and 10% unique ones: too many distinct ids to rank. -->
+    <create_query>CREATE TABLE packed_sort_mix_src (sid UInt64, ts DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE packed_sort_mix (sid UInt64, ts DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (sid, ts)</create_query>
 
     <fill_query>
         INSERT INTO packed_sort_src
@@ -16,17 +19,29 @@
         FROM numbers(4000000)
     </fill_query>
     <fill_query>OPTIMIZE TABLE packed_sort_src FINAL</fill_query>
+    <fill_query>
+        INSERT INTO packed_sort_mix_src
+        SELECT if(number % 10 = 0, sipHash64(number), sipHash64(number % 1000)),
+            toDateTime64('2026-01-01 00:00:00', 3, 'UTC') + toIntervalMillisecond(intDiv(number, 10000) * 15000 + (sipHash64(number) % 1000)),
+            (number % 997) / 7.0
+        FROM numbers(4000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE packed_sort_mix_src FINAL</fill_query>
     <fill_query>SYSTEM STOP MERGES packed_sort_uuid</fill_query>
     <fill_query>SYSTEM STOP MERGES packed_sort_hash</fill_query>
     <fill_query>SYSTEM STOP MERGES packed_sort_small</fill_query>
+    <fill_query>SYSTEM STOP MERGES packed_sort_mix</fill_query>
 
     <query>INSERT INTO packed_sort_uuid SELECT uid, ts, value FROM packed_sort_src</query>
     <query>INSERT INTO packed_sort_hash SELECT sid_hash, ts, value FROM packed_sort_src</query>
     <query>INSERT INTO packed_sort_small SELECT sid_small, ts, value FROM packed_sort_src</query>
     <query>SELECT sid_small, ts, value FROM packed_sort_src ORDER BY sid_small, ts FORMAT Null</query>
+    <query>INSERT INTO packed_sort_mix SELECT sid, ts, value FROM packed_sort_mix_src</query>
 
     <drop_query>DROP TABLE IF EXISTS packed_sort_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS packed_sort_uuid</drop_query>
     <drop_query>DROP TABLE IF EXISTS packed_sort_hash</drop_query>
     <drop_query>DROP TABLE IF EXISTS packed_sort_small</drop_query>
+    <drop_query>DROP TABLE IF EXISTS packed_sort_mix_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS packed_sort_mix</drop_query>
 </test>
