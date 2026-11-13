@@ -57,6 +57,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/PortUtils.h>
 #include <Common/SilkFiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
@@ -244,6 +245,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
+    extern const ServerSettingsInt32 port_offset;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsString columns_cache_policy;
@@ -812,7 +814,12 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger())
+    /// Shift the port by the configured `port_offset` (0 by default). The offset is applied to the
+    /// bound port inside `DB::createServer`; here it is used only to register the matching value.
+    /// `config` is the configuration the listeners are created from, so it carries the same offset as
+    /// the `ServerSettings` loaded from it.
+    const Int32 port_offset = getPortOffsetFromConfig(config);
+    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger(), port_offset)
         && (start_server || !servers.back().bindsOnStart()))
     {
         /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
@@ -823,7 +830,12 @@ void Server::createServer(
         /// configured port is non-zero it equals the bound port anyway, so this preserves the previous
         /// behavior in all cases. (`clickhouse-local` registers the actual bound port because it needs
         /// the OS-assigned value, but it rejects the ambiguous `port=0` + multiple `listen_host` combo.)
-        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+        ///
+        /// Apply `port_offset` here too so the registered value matches the port the server bound.
+        /// `applyPortOffset` leaves an unset / OS-assigned (`0`) port untouched, preserving the
+        /// ephemeral-port behavior described above.
+        global_context->registerServerPort(
+            port_name, applyPortOffset(static_cast<UInt16>(config.getInt(port_name)), port_offset));
     }
 }
 
@@ -2210,6 +2222,10 @@ try
             if (port > 0xFFFF)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
+            Int32 port_offset = server_settings[ServerSetting::port_offset];
+            if (port_offset != 0)
+                port = applyPortOffset(static_cast<UInt16>(port), port_offset);
+
             global_context->setInterserverIOAddress(this_host, static_cast<UInt16>(port));
             global_context->setInterserverScheme(scheme);
         }
@@ -2259,6 +2275,12 @@ try
         if (streaming_exchange_port > 65535)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
+
+        /// Shift by `port_offset` like every other listener, so multiple instances with different
+        /// offsets do not collide on this port. `DistributedPlanExecutor` applies the same offset
+        /// when it derives peer exchange ports from this server-level setting.
+        streaming_exchange_port = applyPortOffset(
+            static_cast<UInt16>(streaming_exchange_port), server_settings[ServerSetting::port_offset]);
 
         /// The exchange handshake is unauthenticated, so the listener is never bound to all interfaces
         /// implicitly: the streaming exchange is enabled only when explicit listen host(s) are given.
@@ -2645,6 +2667,8 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    const Int32 startup_port_offset = server_settings[ServerSetting::port_offset];
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2701,6 +2725,15 @@ try
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
                 *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
+
+            /// Fail closed on a changed `port_offset`. Listeners could be moved, but the state derived from the
+            /// offset at startup could not: the advertised interserver address, cached `remote_servers` clusters
+            /// with inherited ports and locality flags, cluster discovery registrations, the streaming exchange
+            /// listener. Changing the offset requires a restart. Validate before `config().replace` below, for
+            /// the same reason as above.
+            if (const Int32 new_port_offset = getPortOffsetFromConfig(*reload_config); new_port_offset != startup_port_offset)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Changing `port_offset` (from {} to {}) requires a server restart", startup_port_offset, new_port_offset);
 
             /// `setsockopt` takes `int`. Reject before `config().replace`: `ConfigReloader` does not roll back.
             {
@@ -2828,7 +2861,20 @@ try
             updateLevels(config(), logger());
             /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
             /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
-            global_context->setClustersConfig(loaded_config, has_zookeeper);
+            /// The exception is `port_offset`: `Cluster` shifts that `tcp_port` by it to get the port the listener bound, so it must
+            /// be the effective offset, including one passed as `-- --port_offset`. Otherwise a replica on the unshifted port would be
+            /// taken as local while another process may listen there. The offset cannot change on reload (checked above).
+            ConfigurationPtr clusters_config = loaded_config;
+            if (getPortOffsetFromConfig(*loaded_config) != startup_port_offset)
+            {
+                Poco::AutoPtr<Poco::Util::MapConfiguration> port_offset_override(new Poco::Util::MapConfiguration);
+                port_offset_override->setInt("port_offset", startup_port_offset);
+                Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_with_port_offset(new Poco::Util::LayeredConfiguration);
+                file_with_port_offset->add(loaded_config, PRIO_DEFAULT);
+                file_with_port_offset->add(port_offset_override, PRIO_APPLICATION);
+                clusters_config = file_with_port_offset;
+            }
+            global_context->setClustersConfig(clusters_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
 
@@ -3380,7 +3426,9 @@ try
         for (const auto & server : servers_to_start_before_tables)
         {
             if (server.bindsOnStart())
-                global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+                global_context->registerServerPort(
+                    server.getPortName(),
+                    applyPortOffset(static_cast<UInt16>(config().getInt(server.getPortName())), server_settings[ServerSetting::port_offset]));
         }
     }
 
@@ -4054,7 +4102,9 @@ try
             for (const auto & server : servers)
             {
                 if (server.bindsOnStart())
-                    global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+                    global_context->registerServerPort(
+                        server.getPortName(),
+                        applyPortOffset(static_cast<UInt16>(config().getInt(server.getPortName())), server_settings[ServerSetting::port_offset]));
             }
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
@@ -5228,7 +5278,12 @@ void Server::updateServers(
                 LOG_TRACE(log, "<default_session_user> had been changed, will reload {}", server->getDescription());
             }
 
-            if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
+            /// The listener bound the configured port shifted by `port_offset`, so compare against the shifted
+            /// value: otherwise every listener of a server with a non-zero offset would restart on each reload.
+            if (!has_host || !has_port
+                || applyPortOffset(static_cast<UInt16>(config.getInt(server->getPortName())), server_settings[ServerSetting::port_offset])
+                    != server->portNumber()
+                || force_restart)
             {
                 server->stop();
                 LOG_INFO(log, "Stopped listening for {}", server->getDescription());
