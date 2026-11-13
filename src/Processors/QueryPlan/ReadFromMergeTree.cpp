@@ -1473,8 +1473,22 @@ Pipe ReadFromMergeTree::readByLayers(
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 
+        /// Only the prefix of the sorting key that the merge of a layer and the range filters of the layers use
+        /// has to be computed: reading the rest of the key would read and decode columns the query does not need.
+        size_t sorting_key_prefix_size = input_order_info->used_prefix_of_sorting_key_size;
+        if (!split_parts.borders.empty())
+            sorting_key_prefix_size = std::max(sorting_key_prefix_size, split_parts.borders.front().size());
+
+        auto sorting_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+        sorting_key_prefix_ast->children.resize(sorting_key_prefix_size);
+        auto syntax_result = TreeRewriter(context).analyze(
+            sorting_key_prefix_ast,
+            storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        auto sorting_expr = std::make_shared<ExpressionActions>(
+            ExpressionAnalyzer(sorting_key_prefix_ast, syntax_result, context).getActionsDAG(false));
+
         /// Add columns needed to calculate the sorting expression
-        for (const auto & column_name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
+        for (const auto & column_name : sorting_expr->getRequiredColumns())
         {
             if (column_names_set.contains(column_name))
                 continue;
@@ -1482,7 +1496,6 @@ Pipe ReadFromMergeTree::readByLayers(
             in_order_column_names_to_read.push_back(column_name);
             column_names_set.insert(column_name);
         }
-        auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 

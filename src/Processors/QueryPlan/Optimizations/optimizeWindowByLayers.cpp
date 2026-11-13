@@ -51,19 +51,34 @@ ReadFromMergeTree * findReading(QueryPlan::Node & node, std::optional<ActionsDAG
     return reading;
 }
 
-/// The length of the longest prefix of the primary key which is a deterministic function of `key_names`.
-/// Rows with equal values of `key_names` have equal values of this prefix.
-size_t primaryKeyPrefixDeterminedByKeys(const ReadFromMergeTree & reading, const ActionsDAG & key_actions, const Names & key_names)
+/// The length of the longest prefix of the primary key which is a deterministic function of `key_names` and can be
+/// split into ranges. Rows with equal values of `key_names` have equal values of this prefix. `in_reverse_order` is
+/// set to the stored order of the prefix.
+size_t primaryKeyPrefixDeterminedByKeys(
+    const ReadFromMergeTree & reading, const ActionsDAG & key_actions, const Names & key_names, bool & in_reverse_order)
 {
-    const auto & primary_key = reading.getStorageMetadata()->getPrimaryKey();
+    const auto & metadata = reading.getStorageMetadata();
+    const auto & primary_key = metadata->getPrimaryKey();
     if (!primary_key.expression)
         return 0;
 
     const auto & primary_key_actions = primary_key.expression->getActionsDAG();
+    const auto & reverse_flags = metadata->getSortingKey().reverse_flags;
+    in_reverse_order = !reverse_flags.empty() && reverse_flags[0];
 
     size_t prefix_size = 0;
     while (prefix_size < primary_key.column_names.size())
     {
+        /// The range filter of a layer compares the key with the borders, and the comparison is false for `NaN`
+        /// against anything, so a row with such a key would be dropped by every layer.
+        if (!isSafePrimaryDataKeyType(*primary_key.data_types[prefix_size]))
+            break;
+
+        /// The splitter takes one direction for all the columns of the prefix.
+        const bool column_in_reverse_order = !reverse_flags.empty() && reverse_flags[prefix_size];
+        if (column_in_reverse_order != in_reverse_order)
+            break;
+
         /// Only the columns of the prefix may be required: the rest of the key is not determined by `key_names`.
         Names prefix_names(primary_key.column_names.begin(), primary_key.column_names.begin() + prefix_size + 1);
         auto prefix_actions = ActionsDAG::cloneSubDAG(primary_key_actions.findInOutputs(prefix_names), /*remove_aliases=*/false);
@@ -87,7 +102,8 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
 
     std::optional<ActionsDAG> dag;
     auto * reading = findReading(*node.children.front(), dag);
-    if (!reading || !reading->getInputOrder())
+    /// Every layer reads its parts in the stored order of the key (see `ReadFromMergeTree::readByLayers`).
+    if (!reading || !reading->getInputOrder() || reading->getInputOrder()->direction != 1)
         return;
 
     /// The same restrictions as for the join by primary key ranges (`optimizeJoinByShards`).
@@ -102,7 +118,8 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
     if (dag->hasStatefulFunctions() || dag->hasNonDeterministic())
         return;
 
-    const size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, sorting->getPartitionByColumnNames());
+    bool in_reverse_order = false;
+    const size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, sorting->getPartitionByColumnNames(), in_reverse_order);
     if (prefix_size == 0)
         return;
 
@@ -110,7 +127,6 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
     if (!analysis_result->split_parts.layers.empty())
         return;
 
-    const bool in_reverse_order = reading->getInputOrder()->direction < 0;
     analysis_result->split_parts = splitIntersectingPartsRangesIntoLayers(
         analysis_result->parts_with_ranges, num_layers, prefix_size, in_reverse_order, getLogger("optimizeWindowByLayers"));
     analysis_result->split_parts.in_reverse_order = in_reverse_order;
