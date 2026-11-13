@@ -9,6 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The test HTTP server ignores range requests, which the reader reports with a warning.
+CLIENT="${CLICKHOUSE_CLIENT} --send_logs_level=error"
+
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_file"
 wildcard_nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_wildcard"
 
@@ -64,10 +67,10 @@ HTTP_PID=$!
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_file"
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_wildcard"
-    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS $nc"
-    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS $wildcard_nc"
+    ${CLIENT} --query "DROP TABLE IF EXISTS t_file"
+    ${CLIENT} --query "DROP TABLE IF EXISTS t_wildcard"
+    ${CLIENT} --query "DROP NAMED COLLECTION IF EXISTS $nc"
+    ${CLIENT} --query "DROP NAMED COLLECTION IF EXISTS $wildcard_nc"
     kill $HTTP_PID 2>/dev/null
     wait $HTTP_PID 2>/dev/null
 }
@@ -78,21 +81,21 @@ for _ in $(seq 1 50); do
     sleep 0.1
 done
 
-${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION $nc AS url = 'http://127.0.0.1:$HTTP_PORT/some dir/a b.csv' NOT OVERRIDABLE, format = 'CSV'"
-${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION $wildcard_nc AS url = 'http://127.0.0.1:$HTTP_PORT/some dir/*.csv' NOT OVERRIDABLE, format = 'CSV'"
+${CLIENT} --query "CREATE NAMED COLLECTION $nc AS url = 'http://127.0.0.1:$HTTP_PORT/some dir/a b.csv' NOT OVERRIDABLE, format = 'CSV'"
+${CLIENT} --query "CREATE NAMED COLLECTION $wildcard_nc AS url = 'http://127.0.0.1:$HTTP_PORT/some dir/*.csv' NOT OVERRIDABLE, format = 'CSV'"
 
 echo 'file'
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_file (x UInt32) ENGINE = URL($nc)"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM t_file"
-${CLICKHOUSE_CLIENT} --query "SELECT countSubstrings(engine_full, 'some') FROM system.tables WHERE database = currentDatabase() AND name = 't_file'"
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_file"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_file"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM t_file"
+${CLIENT} --query "CREATE TABLE t_file (x UInt32) ENGINE = URL($nc)"
+${CLIENT} --query "SELECT x FROM t_file"
+${CLIENT} --query "SELECT countSubstrings(engine_full, 'some') FROM system.tables WHERE database = currentDatabase() AND name = 't_file'"
+${CLIENT} --query "DETACH TABLE t_file"
+${CLIENT} --query "ATTACH TABLE t_file"
+${CLIENT} --query "SELECT x FROM t_file"
 
 echo 'wildcard'
-${CLICKHOUSE_CLIENT} --allow_url_wildcard_from_index_pages 1 --query "CREATE TABLE t_wildcard (x UInt32) ENGINE = URL($wildcard_nc)"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM t_wildcard ORDER BY x SETTINGS use_hive_partitioning = 0"
-${CLICKHOUSE_CLIENT} --query "SELECT countSubstrings(engine_full, 'some') FROM system.tables WHERE database = currentDatabase() AND name = 't_wildcard'"
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_wildcard"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_wildcard"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM t_wildcard ORDER BY x SETTINGS use_hive_partitioning = 0"
+${CLIENT} --allow_url_wildcard_from_index_pages 1 --query "CREATE TABLE t_wildcard (x UInt32) ENGINE = URL($wildcard_nc)"
+${CLIENT} --query "SELECT x FROM t_wildcard ORDER BY x SETTINGS use_hive_partitioning = 0"
+${CLIENT} --query "SELECT countSubstrings(engine_full, 'some') FROM system.tables WHERE database = currentDatabase() AND name = 't_wildcard'"
+${CLIENT} --query "DETACH TABLE t_wildcard"
+${CLIENT} --query "ATTACH TABLE t_wildcard"
+${CLIENT} --query "SELECT x FROM t_wildcard ORDER BY x SETTINGS use_hive_partitioning = 0"
