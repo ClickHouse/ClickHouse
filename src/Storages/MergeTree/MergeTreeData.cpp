@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -61,7 +62,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
-#include <IO/Expect404ResponseScope.h>
+#include <Disks/supportWritingWithAppend.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -103,6 +104,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
@@ -332,6 +334,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
+    extern const MergeTreeSettingsSeconds empty_parts_lifetime;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsBool fsync_after_insert;
@@ -1377,6 +1380,14 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
+bool MergeTreeData::hasBucketedMapSerialization() const
+{
+    /// Inserted parts use the zero-level setting, merged parts the other one.
+    auto settings = getSettings();
+    return (*settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_BUCKETS
+        || (*settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts] == MergeTreeMapSerializationVersion::WITH_BUCKETS;
+}
+
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
     if (expr.hasArrayJoin())
@@ -2341,6 +2352,17 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 {
     const auto old_storage_policy = getStoragePolicy();
     old_storage_policy->checkCompatibleWith(new_storage_policy);
+
+    if (hasUniqueKey())
+    {
+        for (const auto & disk : new_storage_policy->getDisks())
+        {
+            if (!supportWritingWithAppend(disk))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
+                    getStorageID().getNameForLogs(), disk->getName());
+        }
+    }
 }
 
 
@@ -5485,7 +5507,8 @@ void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
 
 size_t MergeTreeData::clearEmptyParts()
 {
-    if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
+    const auto settings = getSettings();
+    if (!(*settings)[MergeTreeSetting::remove_empty_parts])
         return 0;
 
     /// Do not remove empty parts while outdated data parts are still loading asynchronously.
@@ -5496,6 +5519,8 @@ size_t MergeTreeData::clearEmptyParts()
     if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
         return 0;
 
+    const Int64 lifetime = (*settings)[MergeTreeSetting::empty_parts_lifetime].totalSeconds();
+    const time_t now = time(nullptr);
     std::vector<std::string> parts_names_to_drop;
 
     {
@@ -5504,6 +5529,9 @@ size_t MergeTreeData::clearEmptyParts()
         for (const auto & part : parts)
         {
             if (part->rows_count != 0)
+                continue;
+
+            if (lifetime > 0 && now - part->modification_time < lifetime)
                 continue;
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
@@ -5954,6 +5982,47 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
 
 }
 
+void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
+{
+    auto context = Context::createCopy(local_context);
+    context->setAnalyzingBackgroundExpressions(true);
+
+    const auto & columns = metadata.columns;
+    const auto & virtuals = metadata.virtuals;
+
+    for (const auto * key : {&metadata.partition_key, &metadata.sorting_key, &metadata.sampling_key, &metadata.unique_key})
+    {
+        if (key->definition_ast)
+            KeyDescription::getKeyFromAST(key->definition_ast, columns, virtuals, context);
+    }
+    if (metadata.primary_key.definition_ast)
+        KeyDescription::getPrimaryKeyFromAST(metadata.primary_key.definition_ast, metadata.sorting_key, columns, virtuals, context);
+
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (!index.isImplicitlyCreated())
+            IndexDescription::getIndexFromAST(index.definition_ast, columns, false, index.escape_filenames, context);
+    }
+
+    for (const auto & projection : metadata.projections)
+        ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, context);
+
+    /// A column TTL resets the column to its `DEFAULT` or `MATERIALIZED` expression in merges.
+    ASTPtr ttl_default_expr_list = make_intrusive<ASTExpressionList>();
+    for (const auto & [name, ttl_ast] : columns.getColumnTTLs())
+    {
+        TTLDescription::getTTLFromAST(ttl_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+        const auto & default_desc = columns.get(name).default_desc;
+        if (default_desc.expression && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+            ttl_default_expr_list->children.emplace_back(setAlias(default_desc.expression->clone(), name + "_tmp_ttl_default"));
+    }
+    if (!ttl_default_expr_list->children.empty())
+        validateColumnsDefaultsAndGetSampleBlock(ttl_default_expr_list, columns.getAll(), context);
+    if (metadata.table_ttl.definition_ast)
+        TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -6275,7 +6344,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     removeImplicitStatistics(new_metadata.columns);
     auto settings_defaults = getDefaultSettings();
-    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+    /// Keys, TTL and projections, and the indices the commands add, are built with this context. They are executed in the
+    /// background, so AI functions reject it. A replica replaying an ALTER the initiator already committed must not fail on it.
+    auto apply_context = Context::createCopy(local_context);
+    if (auto txn = local_context->getZooKeeperMetadataTransaction(); !txn || txn->isInitialQuery())
+        apply_context->setAnalyzingBackgroundExpressions(true);
+    commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
@@ -7144,20 +7218,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         alter_effective_settings = std::move(copy);
     }
 
-    if ((*settings_from_storage)[MergeTreeSetting::table_disk])
-    {
-        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
-        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
-        const auto new_storage_policy = new_disk.changed
-            ? local_context->getStoragePolicyFromDisk(new_disk)
-            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
-        if (new_storage_policy != getStoragePolicy())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The disk of table {} with `table_disk = true` cannot be changed",
-                getStorageID().getNameForLogs());
-    }
-
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
     /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
     /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
@@ -7172,6 +7232,24 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (!is_replay_on_another_replica)
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
+    const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
+    const auto new_storage_policy = new_disk.changed
+        ? local_context->getStoragePolicyFromDisk(new_disk)
+        : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
+    if (new_storage_policy != getStoragePolicy())
+    {
+        /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+
+        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
+        if ((*settings_from_storage)[MergeTreeSetting::table_disk])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The disk of table {} with `table_disk = true` cannot be changed",
+                getStorageID().getNameForLogs());
+        checkStoragePolicy(new_storage_policy);
+    }
 
     const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
@@ -7564,57 +7642,6 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, PartDirIntent intent) const
 {
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
-}
-
-std::pair<bool, MergeTreeData::MutableDataPartPtr> MergeTreeData::loadDataPartForRemovalIfExists(const String & name, bool ignore_no_such_key)
-{
-    const auto volume = std::make_shared<SingleDiskVolume>("volume_" + name, getDisks()[0]);
-
-    if (!volume->getDisk()->existsFileOrDirectory(fs::path(relative_data_path) / name))
-    {
-        LOG_DEBUG(log, "Part {} doesn't exist on disk, probably it was already removed", name);
-        return std::pair{false, nullptr};
-    }
-
-    try
-    {
-        std::optional<Expect404ResponseScope> scope;
-        if (ignore_no_such_key)
-            scope.emplace();
-
-        auto part = getDataPartBuilder(name, volume, name, getReadSettings(), PartDirIntent::OpenExisting)
-            .withPartFormatFromDisk()
-            .build();
-
-        part->loadChecksums(/*require=*/false);
-        if (!part->getParentPart())
-        {
-            [[maybe_unused]] bool has_broken_projections = false;
-            part->loadProjections(
-                /*require_columns_checksums=*/false,
-                /*check_consistency=*/false,
-                has_broken_projections,
-                /*if_not_loaded=*/false,
-                /*only_metadata=*/true);
-        }
-
-        return std::pair{true, part};
-    }
-#if USE_AWS_S3
-    catch (S3Exception & exc)
-    {
-        if (exc.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY && ignore_no_such_key)
-            return std::pair{false, nullptr};
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-#endif
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    return std::pair{true, nullptr};
 }
 
 void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
@@ -11637,6 +11664,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     }
     else
     {
+        /// The analysis below resolves the predicate against a `TableNode`, which takes a storage
+        /// snapshot and may cache it for the whole query. The lightweight update discards it with
+        /// `discardSharedStorageSnapshot` before reading, see `StorageReplicatedMergeTree::updateLightweight`.
         execution_context = Context::createCopy(query_context);
     }
 
@@ -11657,8 +11687,13 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         /// Resolve against the real storage, so that its columns (including `ALIAS` and
         /// `EPHEMERAL`), subcolumns and virtual columns (e.g. `_part`, `_partition_id`)
         /// are visible, just like during the mutation execution.
+        /// The snapshot carries no parts: the analysis reads the active parts itself below.
+        auto storage = std::const_pointer_cast<IStorage>(shared_from_this());
+        auto table_lock = storage->lockForShare(
+            execution_context->getInitialQueryId(), execution_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        const auto table_metadata = getInMemoryMetadataPtr(execution_context, /*bypass_metadata_cache=*/ false);
         auto table_expression = std::make_shared<TableNode>(
-            std::const_pointer_cast<IStorage>(shared_from_this()), execution_context);
+            std::move(storage), std::move(table_lock), getStorageSnapshotWithoutData(table_metadata, execution_context));
 
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, table_expression, execution_context);
@@ -12342,7 +12377,20 @@ void MergeTreeData::optimizeDryRun(
         /*parent_part=*/ nullptr,
         dry_run_suffix);
 
-    auto new_part = executeHere(merge_task);
+    /// Not `executeHere`: a dry run reads and writes in the thread group of its query, so the query is cancelled
+    /// before the task, whose `cancel` waits for the uploads of its writers.
+    try
+    {
+        while (merge_task->execute()) {}
+    }
+    catch (...)
+    {
+        if (auto query_status = task_context->getProcessListElementSafe())
+            query_status->cancelQuery(CancelReason::CANCELLED_BY_ERROR);
+        merge_task->cancel();
+        throw;
+    }
+    auto new_part = merge_task->takeResultPart();
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())
@@ -15516,6 +15564,16 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (it != cache->end())
         return it->second;
     return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
+}
+
+void MergeTreeData::discardSharedStorageSnapshot(const ContextPtr & query_context) const
+{
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return;
+
+    auto [cache, lock] = query_metadata_cache->getStorageSnapshotCache();
+    cache->erase(this);
 }
 
 StorageSnapshotPtr

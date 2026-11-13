@@ -1,0 +1,16 @@
+empty local push_down=0 lazy=0: (INCORRECT_DATA)
+empty local push_down=0 lazy=1: (INCORRECT_DATA)
+empty local push_down=1 lazy=0: (INCORRECT_DATA)
+empty local push_down=1 lazy=1: (INCORRECT_DATA)
+empty remote push_down=0 lazy=0: (INCORRECT_DATA)
+empty remote push_down=0 lazy=1: (INCORRECT_DATA)
+empty remote push_down=1 lazy=0: (INCORRECT_DATA)
+empty remote push_down=1 lazy=1: (INCORRECT_DATA)
+nulls local push_down=0 lazy=0: 5	5
+nulls local push_down=0 lazy=1: 5	5
+nulls local push_down=1 lazy=0: 5	5
+nulls local push_down=1 lazy=1: 5	5
+nulls remote push_down=0 lazy=0: 5	5
+nulls remote push_down=0 lazy=1: 5	5
+nulls remote push_down=1 lazy=0: 5	5
+nulls remote push_down=1 lazy=1: 5	5

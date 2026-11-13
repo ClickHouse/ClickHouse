@@ -371,7 +371,7 @@ void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFac
 void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
@@ -417,7 +417,7 @@ SELECT quantileInterpolatedWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation});
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.

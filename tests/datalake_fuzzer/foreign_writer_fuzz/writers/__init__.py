@@ -1,4 +1,11 @@
-from .base import Capabilities, ForeignReadError, OpRejected, Source, Writer
+from .base import (
+    Capabilities,
+    ForeignReadError,
+    OpRejected,
+    Source,
+    Writer,
+    is_tool_error,
+)
 from .clickhouse_writers import ClickHouseDeltaWriter, ClickHouseIcebergWriter
 from .deltars import DeltaRsWriter
 from .pyiceberg_rest import PyIcebergRestWriter
@@ -28,4 +35,5 @@ __all__ = [
     "OpRejected",
     "Source",
     "Writer",
+    "is_tool_error",
 ]

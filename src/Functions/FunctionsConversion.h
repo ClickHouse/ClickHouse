@@ -78,6 +78,7 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <Common/digits10.h>
 #include <Common/quoteString.h>
 #include <base/wide_integer_to_string.h>
 
@@ -1576,8 +1577,22 @@ struct ConvertThroughParsing
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
-            ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
-            read_buffer.setPadded();
+            const char * string_begin = reinterpret_cast<const char *>(chars->data()) + current_offset;
+
+            /// Fast path for canonical IPv4 addresses; anything else (e.g. leading zeros) falls back to the generic parser.
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && std::is_same_v<ToDataType, DataTypeIPv4>)
+            {
+                if (tryParseIPv4(string_begin, string_begin + string_size, vec_to[i].toUnderType()))
+                {
+                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                        (*vec_null_map_to)[i] = false;
+                    current_offset = next_offset;
+                    continue;
+                }
+            }
+
+            ReadBufferFromMemory read_buffer(string_begin, string_size);
+            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -5408,16 +5423,22 @@ struct ToStringMonotonicity
         if (left.getType() == Field::Types::UInt64
             && right.getType() == Field::Types::UInt64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (floor(log10(left.safeGet<UInt64>())) == floor(log10(right.safeGet<UInt64>())))
+            /// 0 stays apart from 1..9: a `Bool` renders 0 and 1 as configurable strings.
+            const UInt64 left_value = left.safeGet<UInt64>();
+            const UInt64 right_value = right.safeGet<UInt64>();
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0 && common::digits10(left_value) == common::digits10(right_value))
                 ? positive : not_monotonic;
         }
 
         if (left.getType() == Field::Types::Int64
             && right.getType() == Field::Types::Int64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (left.safeGet<Int64>() > 0 && right.safeGet<Int64>() > 0 && floor(log10(left.safeGet<Int64>())) == floor(log10(right.safeGet<Int64>())))
+            const Int64 left_value = left.safeGet<Int64>();
+            const Int64 right_value = right.safeGet<Int64>();
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0
+                    && common::digits10(static_cast<UInt64>(left_value)) == common::digits10(static_cast<UInt64>(right_value)))
                 ? positive : not_monotonic;
         }
 

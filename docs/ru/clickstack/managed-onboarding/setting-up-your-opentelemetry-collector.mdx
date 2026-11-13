@@ -22,16 +22,24 @@ import { AgentPrompt } from '/snippets/ru/components/AgentPrompt/AgentPrompt.jsx
 npx skills add clickhouse/agent-skills
 ```
 
+Если у вас уже установлен [`clickhousectl`](/ru/concepts/features/interfaces/cli), вы можете вместо этого установить те же навыки в агенты для программирования, которые он обнаружит:
+
+```bash
+clickhousectl skills --detected-only
+```
+
+Чтобы установить навыки для конкретного агента, передайте `--agent` (например, `--agent claude`). Добавьте `--global`, чтобы выполнить установку в домашний каталог, а не в текущий проект.
+
 <AgentPrompt
   prompt="Используйте навык clickstack-otel-collector, чтобы подключить OpenTelemetry Collector к моему сервису Управляемый ClickStack."
   description="Ваш агент настроит для вас коллектор ClickStack OpenTelemetry. Работает с Claude Code, Cursor, Codex и другими агентами для программирования."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"Установите clickhousectl, если он ещё не установлен, и выполните аутентификацию (будет запрошен API key ClickHouse Cloud — вставьте его в чат или выполните команду входа самостоятельно).",
+"Установите clickhousectl, если он ещё не установлен, и убедитесь, что он аутентифицирован с помощью ключа API (вход через браузер даёт доступ только для чтения и не позволяет создать пользователя для ингестии). Если это не так, попросите пользователя самостоятельно выполнить clickhousectl cloud auth login --interactive в отдельном терминале из того же каталога проекта (ключ будет сохранён там в .clickhouse/credentials.json). Никогда не вставляйте секрет ключа API в чат.",
 "Спросите у пользователя ID или имя целевого сервиса ClickHouse Cloud, затем получите его HTTPS-конечную точку.",
 "Создайте в сервисе SQL-пользователя hyperdx_ingest (сгенерируйте надёжный пароль или используйте предоставленный пользователем).",
 "Запустите коллектор ClickStack OpenTelemetry локально в Docker, указав ваш сервис в качестве назначения.",
-"Отправьте через коллектор короткую серию синтетических логов, трасс и метрик, чтобы подтвердить, что конвейер работает.",
+"Отправьте через коллектор короткую серию синтетических журналов, трасс и метрик, чтобы подтвердить, что конвейер работает.",
 "Убедитесь, что данные попали в базу данных otel, и передайте URL интерфейса ClickStack, где их можно просмотреть."
 ]}
 />
@@ -403,9 +411,7 @@ npx skills add clickhouse/agent-skills
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## Следующие шаги: отправьте собственные данные
-</div>
+## Следующие шаги: отправьте собственные данные {#next-steps}
 
 Описанный выше синтетический всплеск лишь подтверждает, что конвейер работает. Чтобы начать отправлять реальные телеметрические данные, добавьте инструментацию в свои сервисы с помощью [ClickStack SDKs](/ru/clickstack/ingesting-data/sdks/index), которые поддерживают инструментирование для Node.js, Python, Go, Java и других языков и экспортируют OTLP в конечную точку коллектора, которую вы только что проверили. Полный пошаговый пример см. в разделе [Инструментирование приложения](/ru/clickstack/managed-onboarding/instrument-application).
 
@@ -414,9 +420,7 @@ npx skills add clickhouse/agent-skills
 * [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): собирайте журналы, метрики инфраструктуры и события Kubernetes из кластера.
 * [Мониторинг журналов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): передавайте журналы CloudWatch через приёмник CloudWatch OpenTelemetry.
 
-<div id="further-reading">
-  ## Дополнительные материалы
-</div>
+## Дополнительные материалы {#further-reading}
 
 В этом руководстве описан один экземпляр коллектора в его базовой конфигурации. В [справочнике по OpenTelemetry Collector](/ru/clickstack/ingesting-data/collector) описаны следующие шаги:
 

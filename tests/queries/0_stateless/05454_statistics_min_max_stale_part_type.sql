@@ -27,7 +27,7 @@ SELECT count() FROM system.mutations WHERE database = currentDatabase() AND tabl
 SELECT DISTINCT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_05454_narrowing' AND active AND column = 'x';
 -- The mutation is killed, and the part keeps the old type.
 SELECT min(x), max(x) FROM t_05454_narrowing;
-SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05454_narrowing) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05454_narrowing) WHERE explain LIKE '%_statistics_projection%';
 DROP TABLE t_05454_narrowing;
 
 -- A change of the scale keeps the type of `Field`, so the old statistics would pass a check of the `Field` type.
