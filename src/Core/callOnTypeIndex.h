@@ -4,6 +4,9 @@
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeInterval.h>
+/// `DataTypeUUID2` reuses the `UUID` FieldType, so the dispatch below references it as a complete type
+/// (member access such as `DataTypeUUID2::type_id`). Include it here so every dispatch site sees the full type.
+#include <DataTypes/DataTypeUUID2.h>
 
 
 namespace DB
@@ -294,6 +297,7 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::Enum16:         return f(TypePair<DataTypeEnum<Int16>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::UUID2:          return f(TypePair<DataTypeUUID2, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv4:           return f(TypePair<DataTypeIPv4, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv6:           return f(TypePair<DataTypeIPv6, T>(), std::forward<ExtraArgs>(args)...);
 

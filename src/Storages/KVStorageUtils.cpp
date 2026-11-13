@@ -326,6 +326,10 @@ bool traverseDAGFilter(
             // from: without it a date-family literal is reinterpreted in the key's unit space.
             const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
             const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+            /// The tuple comes in a carrier such as `Variant` or `Dynamic`: the types of its elements, and with them
+            /// the layout of UUID values, are unknown. Decline the direct lookup instead of guessing.
+            if (!value_tuple_type || value_tuple_type->getElements().size() != tuple_value.size())
+                return false;
 
             const IColumn * value_column = right->column.get();
             if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
@@ -352,9 +356,7 @@ bool traverseDAGFilter(
                                       right->column->cloneResized(1), right->result_type, primary_key_types[i], std::make_shared<DataTypeFloat64>()))
                     return false;
 
-                DataTypePtr element_type;
-                if (value_tuple_type && i < value_tuple_type->getElements().size())
-                    element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
+                const auto element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
 
                 auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get());
                 if (converted.isNull())

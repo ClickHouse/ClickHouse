@@ -292,7 +292,7 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
 
     WhichDataType which(removeLowCardinality(node.children[0]->result_type));
     return which.isInteger() || which.isDecimal() || which.isEnum() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
-        || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
+        || which.isStringOrFixedString() || which.isUUID() || which.isUUID2() || which.isIPv4() || which.isIPv6();
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const

@@ -198,6 +198,7 @@ IAggregateFunction * createAggregateFunctionSingleValueRespectNulls(
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
+    assertTypeCanBeKeptInField(name, *argument_types[0]);
 
     return new AggregateFunctionAnyRespectNulls<First>(argument_types[0]);
 }

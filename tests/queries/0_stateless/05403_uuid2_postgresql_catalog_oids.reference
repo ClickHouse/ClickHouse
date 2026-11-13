@@ -1,0 +1,12 @@
+--- catalog OIDs
+u|2950
+u2|2950
+n|2950
+a|2951
+an|2951
+--- self-connected schema inference
+u	UUID
+u2	UUID
+n	Nullable(UUID)
+a	Array(UUID)
+an	Array(Nullable(UUID))

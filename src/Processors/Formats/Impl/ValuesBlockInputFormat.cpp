@@ -11,6 +11,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/ParseError.h>
 #include <Core/Block.h>
+#include <Core/ConstantValue.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -44,6 +45,33 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace
+{
+
+/// Whether `predicate` holds for `type` or for any type nested in it.
+template <typename Predicate>
+bool hasTypeMatching(const IDataType & type, Predicate && predicate)
+{
+    if (predicate(type))
+        return true;
+    for (size_t i = 0; i < type.getNumberOfChildren(); ++i)
+        if (hasTypeMatching(*type.getChild(i), predicate))
+            return true;
+    return false;
+}
+
+/// `UUID` and `UUID2` share `Field::Types::UUID` and differ only in the layout of the value, so converting such a
+/// `Field` needs the exact source type. A `Field` extracted from a `Variant` or `Dynamic` column does not carry the
+/// type of its active alternative, so a constant of such a type must be converted to a destination containing
+/// `UUID` or `UUID2` (or to a `Dynamic`, which keeps the type of the value) by casting the column of the constant instead.
+bool needsColumnCastForUUIDLayout(const IDataType & from_type, const IDataType & to_type)
+{
+    return hasTypeMatching(from_type, [](const IDataType & t) { return isVariant(t) || t.hasDynamicStructure(); })
+        && hasTypeMatching(to_type, [](const IDataType & t) { return isUUID(t) || isUUID2(t) || t.hasDynamicStructure(); });
+}
+
 }
 
 
@@ -666,6 +694,23 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
 
+    if (needsColumnCastForUUIDLayout(*value_raw.second, type))
+    {
+        if (value_raw.first.isNull() && !canContainNull(type) && format_settings.null_as_default)
+        {
+            type.insertDefaultInto(column);
+            return false;
+        }
+
+        /// The `Field` has already lost the type of the active alternative (and a column created from it would infer
+        /// `UUID` for a `Dynamic`), so the `Field` conversion cannot tell the layout of a nested `UUID` value. Evaluate
+        /// the expression as a column instead. This path is rare, so evaluating twice is fine.
+        auto constant = evaluateConstantExpressionAsColumn(ast, context);
+        auto casted_column = castColumn(ColumnWithTypeAndName(constant.getColumn(), constant.getType(), ""), type.getPtr(), nullptr);
+        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+        return true;
+    }
+
     Field & expression_value = value_raw.first;
 
     if (format_settings.null_as_default)
@@ -692,10 +737,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     /// Insert value into the column.
-    /// For Dynamic type we cannot just insert Field as we lose information about the data type.
-    /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
+        /// For Dynamic type we cannot just insert Field as we lose information about the data type.
+        /// Instead try to create a column with single element and cast it to the destination type.
         ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);

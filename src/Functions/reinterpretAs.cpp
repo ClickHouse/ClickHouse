@@ -386,7 +386,8 @@ private:
         std::is_same_v<T, DataTypeDate> ||
         std::is_same_v<T, DataTypeDateTime> ||
         std::is_same_v<T, DataTypeDateTime64> ||
-        std::is_same_v<T, DataTypeUUID>;
+        std::is_same_v<T, DataTypeUUID> ||
+        std::is_same_v<T, DataTypeUUID2>;
 
     static bool canBeReinterpretedAsNumeric(const WhichDataType & type)
     {
@@ -397,6 +398,7 @@ private:
             type.isDateTime64() ||
             type.isFloat() ||
             type.isUUID() ||
+            type.isUUID2() ||
             type.isDecimal();
     }
 
@@ -538,7 +540,7 @@ public:
         {
             /// The input matcher is exactly `canBeReinterpretedAsNumeric` plus String/FixedString.
             static const String sig
-                = String("(Number | Date | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                = String("(Number | Date | DateTime | DateTime64 | UUID | UUID2 | StringOrFixedString) -> ")
                 + ToDataType{}.getName();
             return sig;
         }

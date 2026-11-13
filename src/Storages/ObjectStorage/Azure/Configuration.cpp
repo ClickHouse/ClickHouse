@@ -26,6 +26,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/isKeyValueArgument.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/scope_guard.h>
 
@@ -314,14 +315,8 @@ static ASTPtr extractExtraCredentials(ASTs & args)
 static size_t countPositionalArguments(const ASTs & args)
 {
     size_t count = args.size();
-    while (count > 0)
-    {
-        const auto * function = args[count - 1]->as<ASTFunction>();
-        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2
-            || !function->arguments->children[0]->as<ASTIdentifier>())
-            break;
+    while (count > 0 && isKeyValueArgument(*args[count - 1]))
         --count;
-    }
     return count;
 }
 

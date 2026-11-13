@@ -416,8 +416,9 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
 {
     if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(&value))
     {
+        /// The `Field` of a `Dynamic` value keeps its `UUID2` values in the layout of `UUID`.
         if (DataTypePtr alternative = dynamic_column->getTypeAt(0))
-            return alternative;
+            return getTypeOfDynamicValueField(alternative);
     }
     else if (const auto * variant_column = checkAndGetColumn<ColumnVariant>(&value))
     {
@@ -450,6 +451,8 @@ ColumnPtr convertColumnToTypeOrNull(
     ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
+    /// The value is already of the destination type. Extracting it into a `Field` would also lose the discriminators
+    /// of nested `Variant` values, e.g. which of the `UUID` and `UUID2` alternatives of `Array(Variant(UUID, UUID2))`.
     /// Same as `convertFieldToType`, which returns the value untouched when `from` equals `to` - but
     /// only for genuinely identical types that do not involve `Bool`. `IDataType::equals` ignores
     /// custom names, so it also holds for `Bool` and its storage type `UInt8` (and for wrapper pairs
