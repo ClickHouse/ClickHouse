@@ -438,6 +438,7 @@ public:
     void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
     void registerSplitter(const String & format, BucketSplitterCreator splitter);
     BucketSplitter getSplitter(const String & format);
+    bool checkIfFormatHasSplitter(const String & format) const;
 
 private:
     FormatsDictionary dict;

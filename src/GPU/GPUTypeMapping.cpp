@@ -44,6 +44,17 @@ GPUElementType elementTypeOrThrow(const IDataType & type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }
 
+std::optional<GPUElementType> filterElementTypeOf(const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Date: return GPUElementType::UInt16;
+        case TypeIndex::Date32: return GPUElementType::Int32;
+        case TypeIndex::DateTime: return GPUElementType::UInt32;
+        default: return elementTypeOf(type);
+    }
+}
+
 std::optional<GPUCodec> codecOf(UInt8 method_byte)
 {
     switch (method_byte)
