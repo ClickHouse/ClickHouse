@@ -84,6 +84,8 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
   * A caller that stores it unconditionally therefore never applies a collapse the returned plan does not perform.
   *
   * `rewrite_for_shard`, when set, maps an expression to the one the shard received, before the `ALIAS` inlining.
+  * `replace_long_constants = false` names the long constants as written, for a shard that did not receive the query
+  * from `buildQueryTreeForShard`.
   */
 std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,
@@ -91,6 +93,7 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     const Block & shard_header,
     const Block & expected_header,
     std::unordered_map<String, String> * duplicate_to_representative = nullptr,
-    const std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)> & rewrite_for_shard = {});
+    const std::function<QueryTreeNodePtr(const QueryTreeNodePtr &)> & rewrite_for_shard = {},
+    bool replace_long_constants = true);
 
 }

@@ -89,6 +89,14 @@ SELECT 'group', if(a = 0, 1, id) AS y, count() FROM merge(currentDatabase(), '^t
 SELECT 'limit by', id, a + 1 AS y FROM merge(currentDatabase(), '^t_(a|dist_b)$') ORDER BY a, id LIMIT 1 BY id;
 SELECT 'limit by', id, a + 1 AS y FROM merge(currentDatabase(), '^t_(dist_a|b)$') ORDER BY a, id LIMIT 1 BY id;
 
+-- Long constants, which a `Distributed` child receives as scalars.
+SELECT 'scalar', if(toString(a) = repeat('x', 300), 1, 2) AS x, if(toString(b) = repeat('x', 300), 1, 2) AS y, count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY x, y ORDER BY x, y;
+SELECT 'scalar', if(toString(a) = repeat('x', 300), 1, 2) AS x, if(toString(b) = repeat('x', 300), 1, 2) AS y, count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY x, y ORDER BY x, y;
+SELECT 'scalar', a + 1, b + 1, count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY a + 1, b + 1 ORDER BY ALL SETTINGS optimize_const_name_size = 0;
+SELECT 'scalar', a + 1, b + 1, count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY a + 1, b + 1 ORDER BY ALL SETTINGS optimize_const_name_size = 0;
+SELECT 'scalar', groupArraySorted(10)(a), groupArraySorted(10)(b) FROM merge(currentDatabase(), '^t_(a|dist_b)$') SETTINGS optimize_const_name_size = 0;
+SELECT 'scalar', groupArraySorted(10)(a), groupArraySorted(10)(b) FROM merge(currentDatabase(), '^t_(dist_a|b)$') SETTINGS optimize_const_name_size = 0;
+
 -- A `Merge` table with a single `Distributed` child is read at `Complete`.
 CREATE TABLE t_m1 (id UInt64, a UInt8, b UInt8) ENGINE = Merge(currentDatabase(), '^t_dist_b$');
 SELECT 'complete', min(a), min(b), count() FROM t_m1;

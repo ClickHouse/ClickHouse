@@ -2744,13 +2744,24 @@ void ReadFromMerge::convertAndFilterSourceStream(
                 return rewritten;
             };
 
-        if (auto fan_out_actions_dag = buildShardCollapseFanOut(
+        auto build_fan_out = [&](bool replace_long_constants)
+        {
+            return buildShardCollapseFanOut(
                 outer_query_info.query_tree,
                 outer_query_info.planner_context,
                 *child.plan.getCurrentHeader(),
                 header,
                 /*duplicate_to_representative=*/nullptr,
-                rewrite_for_child))
+                rewrite_for_child,
+                replace_long_constants);
+        };
+
+        auto fan_out_actions_dag = build_fan_out(/*replace_long_constants=*/true);
+        /// A child that plans this query tree itself keeps the long constants a `Distributed` child receives as scalars.
+        if (!fan_out_actions_dag && rewrite_for_child)
+            fan_out_actions_dag = build_fan_out(/*replace_long_constants=*/false);
+
+        if (fan_out_actions_dag)
         {
             auto fan_out_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
             fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");

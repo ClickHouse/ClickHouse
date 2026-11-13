@@ -109,6 +109,14 @@ limit by	1	6
 limit by	10	1
 limit by	11	1
 limit by	1	6
+scalar	2	2	3
+scalar	2	2	3
+scalar	1	1	2
+scalar	6	6	1
+scalar	1	1	2
+scalar	6	6	1
+scalar	[0,0,5]	[0,0,5]
+scalar	[0,0,5]	[0,0,5]
 complete	0	0	2
 buffer	0	0	3
 buffer fuse	47	15.666666666666666
