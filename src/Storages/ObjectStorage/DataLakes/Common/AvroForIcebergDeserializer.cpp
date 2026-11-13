@@ -224,12 +224,26 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     ///    ....
     /// However, somehow parser ignores all these nested keys like "total_amount_trunc" or "decimal_10_2" and
     /// directly returns tuple of partition values. However it's exactly what we need.
-    Field partition_value = getValueFromRowByName(row_index, c_data_file_partition);
-    auto tuple = partition_value.safeGet<Tuple>();
+    const auto & partition_column_with_type = extractSubcolumnWithType(c_data_file_partition);
+    if (!partition_column_with_type.has_value())
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot find column {} in manifest file {}",
+            c_data_file_partition,
+            manifest_file_path);
+
+    const auto & partition_column = assert_cast<const ColumnTuple &>(*partition_column_with_type->first);
+    const auto & partition_types = assert_cast<const DataTypeTuple &>(*partition_column_with_type->second).getElements();
 
     DB::Row partition_key_value;
-    for (const auto & value : tuple)
-        partition_key_value.emplace_back(value);
+    for (size_t i = 0; i < partition_types.size(); ++i)
+    {
+        /// A `void` partition field whose source column was dropped has the Avro type `null`, which is read as `Nothing`.
+        if (isNothing(partition_types[i]))
+            partition_key_value.emplace_back();
+        else
+            partition_key_value.emplace_back(partition_column.getColumn(i)[row_index]);
+    }
 
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
