@@ -216,6 +216,11 @@ void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
     }
 }
 
+bool holdsATypeOfItsOwn(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested) { return isDynamic(nested) || isVariant(nested) || isObject(nested); });
+}
+
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
     /// Update the average value size hint if amount of read rows isn't too small

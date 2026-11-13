@@ -18,7 +18,6 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -177,9 +176,8 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
-    /// The fast hash of a `Dynamic` value leaves out the type it holds, time zone included, and the fast
-    /// hash of a `JSON` value leaves out its paths and depends on how they are stored.
-    if (anyInTypeTree(*constant_value.getType(), [](const IDataType & nested) { return isDynamic(nested) || isObject(nested); }))
+    /// The fast hash can leave out the type such a value holds, and depends on how the column stores it.
+    if (holdsATypeOfItsOwn(*constant_value.getType()))
         constant_value.getColumn()->updateHashWithValue(0, hash_state);
     else
         constant_value.getColumn()->updateHashFast(hash_state);

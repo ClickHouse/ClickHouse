@@ -623,6 +623,10 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs);
 /// reachable or not, keeps the digest its caller has already produced.
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 
+/// Whether a value of the type holds a type of its own at any depth: the type a `Dynamic` value holds,
+/// the member a `Variant` value is, the paths of a `JSON` value. `Field` and `updateHashFast` can lose it.
+bool holdsATypeOfItsOwn(const IDataType & type);
+
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.
 template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)

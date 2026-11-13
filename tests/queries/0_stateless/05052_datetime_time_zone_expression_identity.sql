@@ -429,6 +429,17 @@ SELECT 'two JSON paths keep their own IN sets', count() FROM (SELECT arrayJoin([
 WHERE str IN (SELECT arrayJoin(JSONAllPaths(materialize('{"a":1}'::JSON))) AS v)
     OR str IN (SELECT arrayJoin(JSONAllPaths(materialize('{"b":1}'::JSON))) AS v);
 
+-- So is the member a `Variant` value is, also when the `CAST` that widened the `Variant` kept the
+-- members of the column in their old order.
+SELECT 'two zones inside a widened Variant keep their own IN sets', count() FROM numbers(10)
+WHERE number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'UTC')::Variant(DateTime('UTC'))::Variant(DateTime('UTC'), DateTime('Asia/Tokyo'))))) AS v)
+    OR number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'Asia/Tokyo')::Variant(DateTime('Asia/Tokyo'))::Variant(DateTime('UTC'), DateTime('Asia/Tokyo'))))) AS v)
+SETTINGS allow_suspicious_variant_types = 1;
+
+SELECT 'two members inside Tuple(Variant) keep their own IN sets', count() FROM (SELECT arrayJoin(['Date', 'UInt16']) AS str)
+WHERE str IN (SELECT variantType(tupleElement(materialize(tuple(toDate(0)::Variant(Date)::Variant(Date, UInt16))), 1)) AS v)
+    OR str IN (SELECT variantType(tupleElement(materialize(tuple(0::UInt16::Variant(UInt16)::Variant(Date, UInt16))), 1)) AS v);
+
 -- A declared name is compared at its own position, so one sitting elsewhere in the type does not
 -- decide for a zone: these two differ only in a zone left out and are one expression.
 SELECT 'a declared name beside an omitted zone under one alias',

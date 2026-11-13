@@ -10,7 +10,6 @@
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -241,12 +240,8 @@ MatchedTrees::Matches matchTrees(
                                             {
                                                 all_children_matched = inner_col->getField() == outer_col->getField();
 
-                                                /// `Field` leaves out the type a `Dynamic`, `Variant` or `JSON` value holds.
-                                                auto holds_a_type_of_its_own = [](const IDataType & nested)
-                                                {
-                                                    return isDynamic(nested) || isVariant(nested) || isObject(nested);
-                                                };
-                                                if (all_children_matched && anyInTypeTree(*children[i]->result_type, holds_a_type_of_its_own))
+                                                /// `Field` can lose the type such a value holds.
+                                                if (all_children_matched && holdsATypeOfItsOwn(*children[i]->result_type))
                                                 {
                                                     const auto & inner_data = inner_col->getDataColumn();
                                                     const auto & outer_data = outer_col->getDataColumn();
