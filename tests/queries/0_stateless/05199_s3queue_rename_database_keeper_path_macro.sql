@@ -62,8 +62,8 @@ RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Ide
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- A lazily loaded queue table that nothing has touched has no storage object to ask, so the rename is
--- allowed - and it must not be loaded in order to answer, which is why the forward is not `getNested()`.
+-- A lazily loaded queue table that nothing has touched may already have progress in Keeper from an earlier
+-- load, so its rename has to be checked as well. The database loads it before the rename to ask it.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_untouched (a UInt32)
 ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV)
@@ -74,10 +74,22 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
 
-RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 
--- Still a stand-in: answering the check must not have materialized it.
-USE {CLICKHOUSE_DATABASE_2:Identifier};
 SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- A lazily loaded queue table whose path does not depend on the database name is loaded to ask as well, and the
+-- rename is allowed.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_free (a UInt32)
+ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV)
+SETTINGS mode = 'unordered';
+
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
+EXISTS TABLE {CLICKHOUSE_DATABASE_2:Identifier}.lazy_free;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};

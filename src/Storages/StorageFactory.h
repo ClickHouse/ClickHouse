@@ -101,6 +101,9 @@ public:
         /// The background job only feeds dependent views, so a table that has none is deferred like
         /// any other, while one that has some is loaded eagerly to keep them fed.
         bool defers_only_without_dependent_views = false;
+        /// Whether `IStorage::checkTableCanBeRenamedByDatabaseRename` of the engine can refuse the new name. A deferred
+        /// table of such an engine is loaded before its database is renamed, see `DatabaseAtomic::renameDatabase`.
+        bool checks_database_rename = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -154,6 +157,7 @@ public:
         .supports_sql_security = false,
         .supports_deferred_load = false,
         .defers_only_without_dependent_views = false,
+        .checks_database_rename = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,

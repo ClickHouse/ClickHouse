@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -774,6 +775,21 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
+
+    /// A deferred table of an engine that may refuse the new database name has to be loaded to answer
+    /// `checkTableCanBeRenamedByDatabaseRename` below, and it cannot be loaded with the database mutex held.
+    {
+        std::vector<StoragePtr> tables_to_load;
+        {
+            std::lock_guard lock(mutex);
+            for (const auto & table : tables)
+                if (const auto * proxy = typeid_cast<const StorageTableProxy *>(table.second.get()); proxy && proxy->needsLoadForDatabaseRename())
+                    tables_to_load.push_back(table.second);
+        }
+        for (const auto & table : tables_to_load)
+            resolveStorageProxyLoading(table);
+    }
+
     std::lock_guard lock(mutex);
 
     /// A longer database name leaves less room for the table name in the dropped-metadata file
