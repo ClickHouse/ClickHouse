@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
