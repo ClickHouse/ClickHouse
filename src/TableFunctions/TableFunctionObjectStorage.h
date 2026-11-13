@@ -53,6 +53,9 @@ public:
         return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     }
 
+    /// `StorageObjectStorage` reads subcolumns, and building it may read the source.
+    std::optional<bool> storageSupportsSubcolumns() const override { return true; }
+
     std::optional<bool> mayHaveColumnOutsideStructure(const String & column_name, const ContextPtr & context) const override
     {
         /// A data lake has no hive partition columns.

@@ -1027,13 +1027,26 @@ void throwIfTableColumnsAreMissingFromTableFunction(
     const auto global_context = context->getGlobalContext();
     const auto function_columns = table_function.getActualTableStructure(context, /*is_insert_query=*/ true);
     Names missing;
+    /// Names that only the storage can tell: outside the structure, and subcolumns of the structure.
     Names unknown;
-    /// Only an ordinary column of the structure: the storage of the function does not compute an `ALIAS`, `MATERIALIZED` or
-    /// `EPHEMERAL` one, which the table would read by name.
+    Names subcolumns;
+    /// A physical column of the structure: the storage of the function does not compute an `ALIAS` or `EPHEMERAL` one, which
+    /// the table would read by name.
+    const auto physical = GetColumnsOptions(GetColumnsOptions::AllPhysical);
     for (const auto & column : columns.getAllPhysical())
     {
-        if (function_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ordinary, column.name))
+        if (function_columns.tryGetColumn(physical, column.name))
             continue;
+        if (function_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+        {
+            /// The table asks the storage for the subcolumn by its name.
+            const auto supports_subcolumns = table_function.storageSupportsSubcolumns();
+            if (!supports_subcolumns)
+                subcolumns.push_back(column.name);
+            else if (!*supports_subcolumns)
+                missing.push_back(column.name);
+            continue;
+        }
         const auto may_have = table_function.mayHaveColumnOutsideStructure(column.name, global_context);
         if (!may_have)
             unknown.push_back(column.name);
@@ -1041,7 +1054,7 @@ void throwIfTableColumnsAreMissingFromTableFunction(
             missing.push_back(column.name);
     }
 
-    if (!unknown.empty())
+    if (!unknown.empty() || !subcolumns.empty())
     {
         const auto storage = table_function.execute(
             table_function_ast, context, table_name, columns, /*use_global_context=*/ true, /*is_insert_query=*/ true);
@@ -1050,7 +1063,10 @@ void throwIfTableColumnsAreMissingFromTableFunction(
         const auto nested = proxy ? proxy->getNested() : storage;
         const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
         const auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
-        const auto readable = GetColumnsOptions(GetColumnsOptions::Ordinary).withSubcolumns().withVirtuals(
+        const bool nested_supports_subcolumns = nested->supportsSubcolumns();
+        if (!nested_supports_subcolumns)
+            missing.insert(missing.end(), subcolumns.begin(), subcolumns.end());
+        const auto readable = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(nested_supports_subcolumns).withVirtuals(
             VirtualsKind::All, VirtualsMaterializationPlace::All);
         for (const auto & name : unknown)
             if (!nested_snapshot->tryGetColumn(readable, name))
@@ -1067,11 +1083,12 @@ void throwIfTableColumnsAreMissingFromTableFunction(
         missing_list += backQuote(name);
     }
     throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-        "Table function '{}' has no {} {} of the table, so the table could not read {}. The structure has the ordinary columns {}. "
-        "A column of the table, unless it is an `ALIAS` column, needs the name of an ordinary column of the structure, of its "
-        "subcolumn, or of a virtual column of the function, such as `_path` or a hive partition column of a file-like function",
+        "Table function '{}' has no {} {} of the table, so the table could not read {}. The structure has the columns {}. "
+        "A column of the table, unless it is an `ALIAS` column, needs the name of a column of the structure that is not `ALIAS` "
+        "or `EPHEMERAL`, of its subcolumn if the storage of the function reads subcolumns, or of a virtual column of the function, "
+        "such as `_path` or a hive partition column of a file-like function",
         table_function.getName(), missing.size() == 1 ? "column" : "columns", missing_list, missing.size() == 1 ? "it" : "them",
-        function_columns.getOrdinary().toNamesAndTypesDescription());
+        function_columns.getAllPhysical().toNamesAndTypesDescription());
 }
 
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.

@@ -57,6 +57,7 @@ public:
     /// Its storage, `StorageValues`, has no virtual columns, so no column outside the structure, which is told without parsing
     /// the data.
     std::optional<bool> mayHaveColumnOutsideStructure(const String &, const ContextPtr &) const override { return false; }
+    std::optional<bool> storageSupportsSubcolumns() const override { return true; }
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;

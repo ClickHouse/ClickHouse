@@ -114,6 +114,10 @@ public:
         return std::nullopt;
     }
 
+    /// Whether the storage of the function reads a subcolumn by its name, such as `t.x` of a `Tuple` column `t`, which a table
+    /// `AS` the function asks it for, or std::nullopt if only the storage knows (`IStorage::supportsSubcolumns`).
+    virtual std::optional<bool> storageSupportsSubcolumns() const { return std::nullopt; }
+
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
     virtual bool canBeUsedToCreateTable() const { return true; }

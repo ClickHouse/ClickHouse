@@ -14,11 +14,13 @@ CREATE TABLE t_format (x String) AS format('CSV', 'a UInt8', '7\n'); -- { server
 -- The missing column is reported without parsing the data.
 CREATE TABLE t_format_unparsed_missing (x String) AS format('CSV', 'a UInt8', 'abc\n'); -- { serverError THERE_IS_NO_COLUMN }
 
-SELECT '--- a special column of the structure, which the storage of the function does not compute';
+SELECT '--- an ALIAS or EPHEMERAL column of the structure, which the storage of the function does not compute';
 CREATE TABLE t_structure_alias (x UInt8) AS values('a UInt8, x UInt8 ALIAS a', 7); -- { serverError THERE_IS_NO_COLUMN }
-CREATE TABLE t_structure_materialized (x UInt8) AS values('a UInt8, x UInt8 MATERIALIZED a', 7); -- { serverError THERE_IS_NO_COLUMN }
 CREATE TABLE t_structure_ephemeral (x UInt8) AS values('a UInt8, x UInt8 EPHEMERAL', 7); -- { serverError THERE_IS_NO_COLUMN }
 CREATE TABLE t_structure_random (x UInt8) AS generateRandom('a UInt8, x UInt8 ALIAS a', 1); -- { serverError THERE_IS_NO_COLUMN }
+
+SELECT '--- a subcolumn of the structure, which the storage of generateRandom does not read by its name';
+CREATE TABLE t_subcolumn_random (`t.x` UInt8) AS generateRandom('t Tuple(x UInt8)', 1); -- { serverError THERE_IS_NO_COLUMN }
 
 SELECT '--- a column a function with a fixed structure does not have';
 CREATE TABLE t_numbers (y UInt64) AS numbers(3); -- { serverError THERE_IS_NO_COLUMN }
@@ -38,6 +40,9 @@ SELECT toTypeName(a) FROM t_type LIMIT 1;
 SELECT '--- the column of format with an explicit structure';
 CREATE TABLE t_format_column (a UInt8) AS format('CSV', 'a UInt8', '7\n');
 SELECT a FROM t_format_column;
+-- A MATERIALIZED column of the structure, which `format` reads like the others.
+CREATE TABLE t_format_materialized (x UInt8) AS format('CSV', 'a UInt8, x UInt8 MATERIALIZED a', '7,9\n');
+SELECT x FROM t_format_materialized;
 -- The data is parsed when the table is first read, not when it is created or loaded.
 CREATE TABLE t_format_unparsed (a UInt8) AS format('CSV', 'a UInt8', 'abc\n');
 SELECT a FROM t_format_unparsed; -- { serverError INCORRECT_DATA }
@@ -49,6 +54,8 @@ SELECT b FROM t_subset;
 SELECT '--- a subcolumn of a column of the structure';
 CREATE TABLE t_subcolumn (`t.x` UInt8) AS values('t Tuple(x UInt8)', tuple(7));
 SELECT `t.x` FROM t_subcolumn;
+-- The storage of `file` reads subcolumns, which is known without building it, so the file does not need to exist.
+CREATE TABLE t_file_subcolumn (`t.x` UInt8) AS file('05567_missing.csv', 'CSV', 't Tuple(x UInt8)');
 
 SELECT '--- a virtual column and a hive partition column of the storage';
 -- The files are named after the database, so that concurrent runs of the test do not share them.
@@ -102,9 +109,11 @@ DROP TABLE t_alias;
 DROP TABLE t_type;
 DROP TABLE t_subset;
 DROP TABLE t_format_column;
+DROP TABLE t_format_materialized;
 DROP TABLE t_format_unparsed;
 DROP TABLE t_hint;
 DROP TABLE t_subcolumn;
+DROP TABLE t_file_subcolumn;
 DROP TABLE t_virtual;
 DROP TABLE t_hive;
 DROP TABLE t_directory;
