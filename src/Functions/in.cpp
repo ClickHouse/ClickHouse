@@ -305,24 +305,28 @@ public:
                 res = std::move(combined);
             }
 
-            /// Set keys compare identical `NaN` bit patterns as equal, while row-wise
-            /// floating-point equality does not. Apply the same nonmatch policy here.
-            bool has_nan_match = false;
-            for (size_t row = 0; row < res->size(); ++row)
+            /// `Float32` and `Float64` row-wise equality rejects `NaN`, while their
+            /// prepared sets compare raw bits. `BFloat16` row-wise membership uses
+            /// `has` and already agrees with the prepared set.
+            if (left_type_id != TypeIndex::BFloat16)
             {
-                if (res->getBool(row) && !left_arg.column->isNullAt(row) && std::isnan(left_arg.column->getFloat64(row)))
-                {
-                    has_nan_match = true;
-                    break;
-                }
-            }
-            if (has_nan_match)
-            {
-                auto without_nan_matches = ColumnUInt8::create(res->size());
+                bool has_nan_match = false;
                 for (size_t row = 0; row < res->size(); ++row)
-                    without_nan_matches->getData()[row] = res->getBool(row)
-                        && (left_arg.column->isNullAt(row) || !std::isnan(left_arg.column->getFloat64(row)));
-                res = std::move(without_nan_matches);
+                {
+                    if (res->getBool(row) && !left_arg.column->isNullAt(row) && std::isnan(left_arg.column->getFloat64(row)))
+                    {
+                        has_nan_match = true;
+                        break;
+                    }
+                }
+                if (has_nan_match)
+                {
+                    auto without_nan_matches = ColumnUInt8::create(res->size());
+                    for (size_t row = 0; row < res->size(); ++row)
+                        without_nan_matches->getData()[row] = res->getBool(row)
+                            && (left_arg.column->isNullAt(row) || !std::isnan(left_arg.column->getFloat64(row)));
+                    res = std::move(without_nan_matches);
+                }
             }
         }
 

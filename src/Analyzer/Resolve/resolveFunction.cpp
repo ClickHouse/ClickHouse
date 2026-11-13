@@ -3121,7 +3121,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Case 1: array(..) or any function returning Array type -> rewrite to has()
                 if (is_array_type && !left_argument_is_lambda)
                 {
-                    if (non_const_set_candidate->isResolved())
+                    if (scope.context->getSettingsRef()[Setting::in_null_as_unknown]
+                        && non_const_set_candidate->isResolved())
                     {
                         const auto * rhs_array = typeid_cast<const DataTypeArray *>(non_const_set_candidate->getResultType().get());
                         const auto * lhs_array = typeid_cast<const DataTypeArray *>(in_first_argument->getResultType().get());
