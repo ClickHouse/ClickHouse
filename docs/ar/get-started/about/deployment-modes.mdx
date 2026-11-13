@@ -27,9 +27,7 @@ ClickHouse هو نظام قواعد بيانات متعدد الاستخداما
   <iframe src="https://www.youtube.com/embed/EOXEW_-r10A?si=6IanDSJlRzN8f9Mo" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="clickhouse-server">
-  ## خادم ClickHouse
-</div>
+## خادم ClickHouse {#clickhouse-server}
 
 يمثل خادم ClickHouse بنية العميل/الخادم التقليدية، وهو مثالي لعمليات النشر في بيئات الإنتاج. ويوفر وضع النشر هذا كامل إمكانات قاعدة بيانات OLAP، مع استعلامات عالية الإنتاجية ومنخفضة زمن الوصول التي يشتهر بها ClickHouse.
 
@@ -41,9 +39,7 @@ ClickHouse هو نظام قواعد بيانات متعدد الاستخداما
 
 ويُعد وضع النشر هذا الخيار المفضل لبيئات الإنتاج التي تكون فيها الموثوقية والأداء وإمكانية الوصول إلى جميع الميزات أمورًا بالغة الأهمية.
 
-<div id="clickhouse-cloud">
-  ## ClickHouse Cloud
-</div>
+## ClickHouse Cloud {#clickhouse-cloud}
 
 يُعد [ClickHouse Cloud](/ar/products/cloud/getting-started/intro) إصدارًا مُدارًا بالكامل من ClickHouse يزيل الأعباء التشغيلية المرتبطة بإدارة عملية النشر الخاصة بك. ومع احتفاظه بكل الإمكانات الأساسية لـ خادم ClickHouse، فإنه يعزز التجربة بميزات إضافية مصممة لتبسيط التطوير والعمليات.
 
@@ -57,29 +53,25 @@ ClickHouse هو نظام قواعد بيانات متعدد الاستخداما
 
 وتعني الطبيعة المُدارة للخدمة أنك لا تحتاج إلى القلق بشأن التحديثات أو النسخ الاحتياطية أو التوسع أو تصحيحات الأمان — فكل ذلك يُدار تلقائيًا. وهذا يجعلها خيارًا مثاليًا للمؤسسات التي تريد التركيز على بياناتها وتطبيقاتها بدلًا من إدارة قواعد البيانات.
 
-<div id="clickhouse-cli">
-  ## ClickHouse CLI
-</div>
+## واجهة سطر الأوامر لـ ClickHouse {#clickhouse-cli}
 
-تُعد ClickHouse CLI (`clickhousectl`) أداة سطر أوامر للتطوير المحلي لـ ClickHouse وإدارة ClickHouse Cloud. وهي تُبسّط سير العمل المتعلق بتثبيت إصدارات ClickHouse، وتشغيل مثيلات الخادم المحلية وإدارتها، وتنفيذ الاستعلامات.
+تُعدّ [واجهة سطر الأوامر لـ ClickHouse](/ar/concepts/features/interfaces/cli) (`clickhousectl`، واسمها البديل `chctl`) أداةً تعمل من سطر الأوامر، مخصصةً للتطوير المحلي باستخدام ClickHouse وPostgres، ولإدارة ClickHouse Cloud. فهي تثبّت إصدارات ClickHouse، وتشغّل الخوادم المحلية وتديرها، وتنفّذ الاستعلامات.
 
-في التطوير المحلي، يساعد `clickhousectl` على تثبيت إصدارات ClickHouse وتشغيل الخوادم. يمكنك تثبيت أي إصدار من ClickHouse، وتشغيل خوادم مُسمّاة، والاتصال عبر العميل المدمج. ويحصل كل خادم على دليل بيانات خاص به، ما يتيح لك تشغيل عدة بيئات معزولة جنبًا إلى جنب.
+للتطوير المحلي، تثبّت `clickhousectl` أي إصدار من ClickHouse وتشغّل خوادم مُسمّاة. ويمكنك الاتصال بها باستخدام `clickhousectl local client`، الذي يشغّل `clickhouse-client` الخاص بذلك الإصدار. يحتفظ كل خادم ببياناته في الدليل `.clickhouse/` الخاص بالمشروع، مما يتيح لك تشغيل عدة بيئات معزولة جنبًا إلى جنب. وإذا كان Docker قيد التشغيل، فإن الأمر `clickhousectl local postgres` يشغّل خوادم Postgres محلية بالطريقة نفسها.
 
-يوفّر `clickhousectl` أيضًا إدارةً كاملة لموارد ClickHouse Cloud، بما في ذلك إنشاء الخدمات وتوسيعها، وإدارة API keys، وإدارة organizations، مما يجعله أداة موحّدة لكلٍّ من سير العمل المحلي والسحابي.
+كما تدير `clickhousectl` الموارد السحابية في ClickHouse Cloud: الخدمات، وتوسيع النطاق، والنسخ الاحتياطية، وManaged Postgres، وClickPipes، وManaged ClickStack، ومفاتيح API، والمؤسسات. يقتصر تسجيل الدخول عبر المتصفح (`clickhousectl cloud auth login`) على صلاحية القراءة فقط؛ أما إنشاء الموارد أو تعديلها فيتطلب مفتاح API.
 
 ```bash
-# Install the CLI
-curl https://clickhouse.com/cli | sh
+# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
+curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```
 
-<div id="clickhouse-local">
-  ## clickhouse-local
-</div>
+## clickhouse-local {#clickhouse-local}
 
 تُعد [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) أداة قوية لسطر الأوامر توفّر كامل وظائف ClickHouse ضمن ملف تنفيذي مستقل. وهي في جوهرها قاعدة البيانات نفسها الخاصة بـ خادم ClickHouse، لكنها مُعبّأة بطريقة تتيح لك الاستفادة من جميع إمكانات ClickHouse مباشرةً من سطر الأوامر من دون تشغيل مثيل خادم.
 
@@ -91,9 +83,7 @@ clickhousectl local client
 
 إن الجمع بين دوال الجداول البعيدة وإمكانية الوصول إلى نظام الملفات المحلي يجعل clickhouse-local مفيدًا للغاية في السيناريوهات التي تحتاج فيها إلى إجراء join بين البيانات الموجودة على خادم ClickHouse والملفات الموجودة على جهازك المحلي. ويكتسب هذا أهمية خاصة عند العمل مع بيانات محلية حساسة أو مؤقتة لا ترغب في رفعها إلى خادم.
 
-<div id="chdb">
-  ## chDB
-</div>
+## chDB {#chdb}
 
 يُعد [chDB](/ar/chdb/index) ClickHouse مدمجًا كمحرك قاعدة بيانات يعمل داخل العملية، وتُعد Python التنفيذ الأساسي له، مع توفره أيضًا لـ Go وRust وNodeJS وBun. يوفّر خيار النشر هذا قدرات OLAP القوية في ClickHouse مباشرةً داخل عملية تطبيقك، مما يلغي الحاجة إلى تثبيت قاعدة بيانات منفصلة.
 

@@ -6,9 +6,7 @@ title: '지리 좌표를 다루는 함수'
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 [대권 공식](https://en.wikipedia.org/wiki/Great-circle_distance)을 사용하여 지구 표면에 있는 두 지점 사이의 거리를 계산합니다.
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 `greatCircleDistance`와 유사하지만, 구면이 아니라 WGS-84 타원체에서 거리를 계산합니다. 이는 지구 지오이드를 더 정확하게 근사합니다.
 성능은 `greatCircleDistance`와 동일하며(성능 저하 없음), 지구상 거리를 계산할 때는 `geoDistance`를 사용하는 것이 좋습니다.
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 [대권 공식](https://en.wikipedia.org/wiki/Great-circle_distance)을 사용해 지구 표면의 두 지점 사이 중심각을 계산합니다.
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 WGS84 지리 좌표 `(longitude, latitude)`를 [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 좌표로 변환합니다.
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 좌표를 다시 WGS84 지리 좌표 `(경도, 위도)`로 변환합니다. [`geoToUTM`](#geotoutm)의 역변환입니다.
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 WGS84 지리 좌표 `(longitude, latitude)`를 [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 문자열로 인코딩합니다.
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 문자열을 WGS84 지리 좌표 `(longitude, latitude)`로 디코딩합니다. 이는 [`geoToMGRS`](#geotomgrs)의 역연산입니다.
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 점이 타원 중 하나 이상에 속하는지 확인합니다.
 좌표는 데카르트 좌표계의 기하 좌표입니다.
@@ -280,11 +264,9 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
-평면상에서 점이 폴리곤에 포함되는지 확인합니다.
+평면상에서 점이 Polygon에 포함되는지 확인합니다.
 
 ```sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
@@ -293,17 +275,17 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 **입력 값**
 
 * `(x, y)` — 평면 위 한 점의 좌표입니다. 데이터 타입 — [Tuple](/ko/reference/data-types/tuple) — 두 개의 숫자로 이루어진 튜플 또는 [Point](/ko/reference/data-types/geo#point)입니다.
-* `[(a, b), (c, d) ...]` — 다각형의 꼭짓점입니다. 데이터 타입 — [Array](/ko/reference/data-types/array) 또는 [Ring](/ko/reference/data-types/geo#ring)입니다. 각 꼭짓점은 좌표 쌍 `(a, b)`로 표현됩니다. 꼭짓점은 시계 방향 또는 반시계 방향 순서로 지정해야 합니다. 꼭짓점의 최소 개수는 3개입니다.
-* 이 함수는 구멍(비어 있는 내부 영역)이 있는 다각형도 지원합니다. 데이터 타입 — [Polygon](/ko/reference/data-types/geo#polygon). 전체 `Polygon`을 두 번째 인수로 전달하거나, 바깥쪽 링을 먼저 전달한 다음 각 구멍을 별도의 추가 인수로 전달할 수 있습니다.
-* 이 함수는 다중 다각형도 지원합니다. 데이터 타입 — [MultiPolygon](/ko/reference/data-types/geo#multipolygon). 전체 `MultiPolygon`을 두 번째 인수로 전달하거나, 각 구성 다각형을 각각의 인수로 나열할 수 있습니다.
-* 다각형 인수는 다각형 형태의 값(`Ring`, `Polygon` 또는 `MultiPolygon`)을 담고 있는 [Geometry](/ko/reference/data-types/geo#geometry) 컬럼일 수도 있습니다.
+* `[(a, b), (c, d) ...]` — Polygon의 꼭짓점입니다. 데이터 타입 — [Array](/ko/reference/data-types/array) 또는 [Ring](/ko/reference/data-types/geo#ring)입니다. 각 꼭짓점은 좌표 쌍 `(a, b)`로 표현됩니다. 꼭짓점은 시계 방향 또는 반시계 방향 순서로 지정해야 합니다. 꼭짓점의 최소 개수는 3개입니다.
+* 이 함수는 구멍(비어 있는 내부 영역)이 있는 Polygon도 지원합니다. 데이터 타입 — [Polygon](/ko/reference/data-types/geo#polygon). 전체 `Polygon`을 두 번째 인수로 전달하거나, 바깥쪽 링을 먼저 전달한 다음 각 구멍을 별도의 추가 인수로 전달할 수 있습니다.
+* 이 함수는 multipolygon도 지원합니다. 데이터 타입 — [MultiPolygon](/ko/reference/data-types/geo#multipolygon). 전체 `MultiPolygon`을 두 번째 인수로 전달하거나, 각 구성 Polygon을 각각의 인수로 나열할 수 있습니다.
+* Polygon 인수는 Polygon 형태의 값(`Ring`, `Polygon` 또는 `MultiPolygon`)을 담고 있는 [Geometry](/ko/reference/data-types/geo#geometry) 컬럼일 수도 있습니다.
 
-다각형 형태의 타입([Ring](/ko/reference/data-types/geo#ring), [Polygon](/ko/reference/data-types/geo#polygon), [MultiPolygon](/ko/reference/data-types/geo#multipolygon), [Geometry](/ko/reference/data-types/geo#geometry))은 상수 또는 일반적인(비상수) 테이블 컬럼으로 전달할 수 있습니다. 다각형이 여러 개의 개별 인수(바깥쪽 링 뒤에 구멍이 오는 경우 또는 multipolygon의 여러 다각형)에 나뉘어 전달되는 경우, 해당 인수는 모두 상수여야 합니다.
+Polygon 형태의 타입([Ring](/ko/reference/data-types/geo#ring), [Polygon](/ko/reference/data-types/geo#polygon), [MultiPolygon](/ko/reference/data-types/geo#multipolygon), [Geometry](/ko/reference/data-types/geo#geometry))은 상수 또는 일반적인(비상수) 테이블 컬럼으로 전달할 수 있습니다. Polygon이 여러 개의 개별 인수(바깥쪽 링 뒤에 구멍이 오는 경우 또는 multipolygon의 여러 Polygon)에 나뉘어 전달되는 경우, 해당 인수는 모두 상수여야 합니다.
 
 **반환 값**
 
-점이 다각형 내부에 있으면 `1`, 그렇지 않으면 `0`입니다.
-점이 다각형 경계 위에 있으면 함수는 `0` 또는 `1`을 반환할 수 있습니다.
+점이 Polygon 내부에 있으면 `1`, 그렇지 않으면 `0`입니다.
+점이 Polygon 경계 위에 있으면 함수는 `0` 또는 `1`을 반환할 수 있습니다.
 
 **예시**
 
@@ -317,7 +299,7 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
-다각형은 테이블 컬럼을 포함해, 이름이 지정된 기하 데이터 타입으로도 전달할 수 있습니다:
+Polygon은 테이블 컬럼을 포함해, 이름이 지정된 기하 데이터 타입으로도 전달할 수 있습니다:
 
 ```sql
 CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
@@ -333,5 +315,6 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 
 > **참고**
 > • `validate_polygons = 0`을 설정하면 geometry 유효성 검사를 건너뛸 수 있습니다.
-> • `pointInPolygon`은 모든 다각형이 올바른 형식이라고 가정합니다. 입력이 자기 교차하거나, Ring의 순서가 잘못되었거나, edge가 겹치면 결과를 신뢰할 수 없게 됩니다. 특히 edge나 vertex 위에 정확히 놓인 점이나, &quot;inside&quot;와 &quot;outside&quot;의 개념이 정의되지 않는 자기 교차 내부의 점에서는 더욱 그렇습니다.
-> • 다각형 인수가 상수이고 점이 인덱스가 적용된 키 컬럼으로 표현되는 경우(예: `x, y`가 `PRIMARY KEY`의 일부이거나 `minmax` 인덱스로 처리되는 테이블에서 `pointInPolygon((x, y), constant_polygon)`를 사용하는 경우), ClickHouse는 프라이머리 키(primary key)와 `minmax` 데이터 스키핑 인덱스를 모두 사용해 관련 없는 그래뉼을 걸러낼 수 있습니다.
+> • `pointInPolygon`은 모든 Polygon이 올바른 형식이라고 가정합니다. 입력이 자기 교차하거나, Ring의 순서가 잘못되었거나, edge가 겹치면 결과를 신뢰할 수 없게 됩니다. 특히 edge나 vertex 위에 정확히 놓인 점이나, &quot;inside&quot;와 &quot;outside&quot;의 개념이 정의되지 않는 자기 교차 내부의 점에서는 더욱 그렇습니다.
+> • Polygon 좌표의 절댓값은 `1e150`을 초과할 수 없으며, 이보다 큰 값으로 계산하게 되면 함수는 예외를 발생시킵니다.
+> • Polygon 인수가 상수이고 점이 인덱스가 적용된 키 컬럼으로 표현되는 경우(예: `x, y`가 `PRIMARY KEY`의 일부이거나 `minmax` 인덱스로 처리되는 테이블에서 `pointInPolygon((x, y), constant_polygon)`를 사용하는 경우), ClickHouse는 프라이머리 키(primary key)와 `minmax` 데이터 스키핑 인덱스를 모두 사용해 관련 없는 그래뉼을 걸러낼 수 있습니다.

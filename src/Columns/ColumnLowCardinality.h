@@ -113,6 +113,9 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
 
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const Permutation * permutation, const UInt8 * null_map) const override;
+
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
@@ -359,6 +362,9 @@ public:
     };
 
     DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
+
+    /// Returns `getMinimalDictionaryEncodedColumn(offset, limit).dictionary` without building the indexes.
+    ColumnPtr getMinimalDictionary(UInt64 offset, UInt64 limit) const;
 
     ColumnPtr countKeys() const;
 

@@ -1,0 +1,3 @@
+source_rows	2
+active_parts	1
+after_rejected_drop	[1,2,3]
