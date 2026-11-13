@@ -1,0 +1,12 @@
+-- local
+ACCESS_DENIED TABLE ENGINE ON URL
+-- on cluster
+ACCESS_DENIED TABLE ENGINE ON URL
+-- on cluster, format 2
+ACCESS_DENIED TABLE ENGINE ON URL
+-- no table
+0
+-- on cluster, granted
+OK
+-- table created
+1

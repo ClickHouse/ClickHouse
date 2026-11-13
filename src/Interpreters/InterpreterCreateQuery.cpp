@@ -1010,17 +1010,26 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function.getName());
 
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
+}
 
-    /// `CREATE TABLE t AS s3(...)` creates the same permanent table as `CREATE TABLE t ENGINE = S3(...)`, so it needs the
-    /// same `TABLE ENGINE ON S3` grant. Only unfiltered `READ ON S3` and `WRITE ON S3` imply that grant, because writes
-    /// to a table are not checked against the source grants: a key renamed by `s3_create_new_file_on_insert`, or an
-    /// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this check,
-    /// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
-    /// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
-    const String engine_name = table_function.getEngineNameForAccessCheck();
+/// `CREATE TABLE t AS s3(...)` creates the same permanent table as `CREATE TABLE t ENGINE = S3(...)`, so it needs the
+/// same `TABLE ENGINE ON S3` grant. Only unfiltered `READ ON S3` and `WRITE ON S3` imply that grant, because writes
+/// to a table are not checked against the source grants: a key renamed by `s3_create_new_file_on_insert`, or an
+/// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
+/// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
+/// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
+/// The function returns the engine whose grant is needed, or nothing.
+std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & context)
+{
+    /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`.
+    const auto table_function = TableFunctionFactory::instance().get(table_function_ast, context);
+    /// A definition that cannot be a table is refused the same way whatever the grants of the user.
+    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, context);
+    String engine_name = table_function->getEngineNameForAccessCheck();
     const auto & storages = StorageFactory::instance().getAllStorages();
     if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
-        context->checkAccess(AccessType::TABLE_ENGINE, engine_name);
+        return engine_name;
+    return {};
 }
 
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
@@ -4353,6 +4362,11 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
             create.storage->engine->name, /*is_database_engine=*/ !create.table, required_before, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
+
+    /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.
+    if (create.as_table_function)
+        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
+            required_access.emplace_back(AccessType::TABLE_ENGINE, *engine_name);
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
