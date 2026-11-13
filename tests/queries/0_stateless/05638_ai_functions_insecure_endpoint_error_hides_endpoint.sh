@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q "
 
 error=$($CLICKHOUSE_CLIENT -q "SELECT aiGenerate('ping', map('credentials', '${COLLECTION}'))" 2>&1)
 
-echo "$error" | grep -c "BAD_ARGUMENTS"
-echo "$error" | grep -c "ENDPOINT_TOKEN_SECRET"
+echo "$error" | grep -q "BAD_ARGUMENTS" && echo "BAD_ARGUMENTS"
+echo "$error" | grep -q "ENDPOINT_TOKEN_SECRET" && echo "endpoint leaked"
 
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${COLLECTION}"
