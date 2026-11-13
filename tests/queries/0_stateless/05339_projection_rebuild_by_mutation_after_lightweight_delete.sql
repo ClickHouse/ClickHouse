@@ -43,8 +43,10 @@ INSERT INTO t_upd_offset SELECT number, number % 7, number FROM numbers(10);
 DELETE FROM t_upd_offset WHERE id IN (2, 5, 8);
 ALTER TABLE t_upd_offset UPDATE g = 10 - id WHERE 1;
 
+-- Without the local plan, with parallel replicas every replica is a remote one and reads the projection.
 SELECT 'update offset projection', groupArray(_parent_part_offset), groupArray(g)
-FROM (SELECT _parent_part_offset, g FROM mergeTreeProjection(currentDatabase(), t_upd_offset, p) ORDER BY g);
+FROM (SELECT _parent_part_offset, g FROM mergeTreeProjection(currentDatabase(), t_upd_offset, p) ORDER BY g)
+SETTINGS parallel_replicas_local_plan = 0;
 SELECT 'update offset base', groupArray(_part_offset), groupArray(g)
 FROM (SELECT _part_offset, g FROM t_upd_offset ORDER BY g) SETTINGS optimize_use_projections = 0;
 

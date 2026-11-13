@@ -14,6 +14,7 @@
 03401_normal_projection_with_part_offset
 03401_normal_projection_with_part_offset_no_sorting
 03785_rebuild_projection_with_part_offset
+04627_lwd_rebuild_normal_projection_no_where
 05339_projection_rebuild_by_mutation_after_lightweight_delete
 05401_lwd_rebuild_projection_part_offset_multi_block
 05569_projection_calculation_subquery_names
@@ -73,14 +74,6 @@
     https://github.com/ClickHouse/ClickHouse/issues/128546
 05405_lazy_materialization_for_join_object_storage_default_dependency
 
-    `DISTINCT` and `LIMIT` are not shipped with the plan fragment, so replicas return every row they read
-    https://github.com/ClickHouse/ClickHouse/issues/128560
-02862_sorted_distinct_sparse_fix
-04330_distinct_sorted_const_key_after_filter
-04549_virtual_row_distinct_in_order_boundary
-05217_aggregation_in_order_fixed_keys
-05401_aggregation_nullable_fixed_keys_batch_pack
-
     A replica throws `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` on `hasToken(CAST(s, 'String'), ...)`: the text index does not skip the NULL granule there
 05340_text_index_preprocessor_cast_drop_nullable
 
@@ -111,7 +104,6 @@
 02784_parallel_replicas_automatic_decision_join
 04836_merge_table_parallel_replicas_duplicate_announcement
 05175_autopr_lazy_read_statistics
-05292_autopr_stats_key_constants
 05399_autopr_plan_without_parallel_replicas
 
     The test describes query-based behaviour (setting semantics, statistics, step names)
