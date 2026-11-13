@@ -153,11 +153,12 @@ def test_system_log_flush_waits_for_memory_overcommit():
     assert overcommit_wait_time() > wait_time_before
 
     # The flush is not profiled like a query: the profile of a `trace_log` flush would be written to `trace_log` itself.
+    # Server-wide profilers record the flush threads as well, so only look for the traces of the query memory profiler.
     node.query("SYSTEM FLUSH LOGS trace_log", settings=NO_OVERCOMMIT)
     assert (
         node.query(
             "SELECT count() FROM system.trace_log "
-            "WHERE thread_name = 'SystemLogFlush' AND trace_type IN ('Real', 'CPU', 'Memory', 'MemorySample')"
+            "WHERE thread_name = 'SystemLogFlush' AND trace_type = 'Memory' AND memory_context = 'Process'"
         ).strip()
         == "0"
     )
