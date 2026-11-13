@@ -5,19 +5,19 @@
 
   var columns = [
     {
-      title: 'Product',
+      title: 'Products',
       links: [
         ['ClickHouse Cloud', 'https://clickhouse.com/cloud'],
+        ['ClickHouse Managed Postgres', 'https://clickhouse.com/cloud/postgres'],
+        ['ClickHouse Observability', 'https://clickhouse.com/observability'],
+        ['ClickHouse Agents', 'https://clickhouse.com/cloud/agents'],
+        ['ClickHouse AI Engineering by Langfuse', 'https://langfuse.com/?utm_source=clickhouse_footer'],
+        ['ClickHouse Security', 'https://clickhouse.com/security'],
         ['Bring Your Own Cloud', 'https://clickhouse.com/cloud/bring-your-own-cloud'],
-        ['Postgres managed by ClickHouse', 'https://clickhouse.com/cloud/postgres'],
-        ['Managed ClickStack', 'https://clickhouse.com/cloud/clickstack'],
-        ['ClickHouse', 'https://clickhouse.com/clickhouse'],
-        ['ClickStack', 'https://clickhouse.com/clickstack'],
         ['ClickHouse Government', 'https://clickhouse.com/government'],
-        ['ClickHouse Keeper', 'https://clickhouse.com/clickhouse/keeper'],
+        ['Agentic Data Stack', 'https://clickhouse.com/ai'],
         ['ClickPipes', 'https://clickhouse.com/cloud/clickpipes'],
         ['Integrations', 'https://clickhouse.com/integrations'],
-        ['chDB', 'https://clickhouse.com/chdb'],
         ['Pricing', 'https://clickhouse.com/pricing']
       ]
     },
@@ -25,37 +25,51 @@
       title: 'Resources',
       links: [
         ['Documentation', 'https://clickhouse.com/docs'],
-        ['Trust Center', 'https://trust.clickhouse.com'],
+        ['Trust center', 'https://trust.clickhouse.com/'],
         ['Training', 'https://clickhouse.com/learn'],
         ['Support', 'https://clickhouse.com/support/program'],
         ['Benchmarks', 'https://clickhouse.com/benchmarks'],
-        ['Use Cases', 'https://clickhouse.com/use-cases'],
+        ['Use cases', 'https://clickhouse.com/use-cases'],
         ['Videos', 'https://clickhouse.com/videos'],
         ['Demos', 'https://clickhouse.com/demos'],
         ['Presentations', 'https://presentations.clickhouse.com/'],
-        ['Real-time Data Warehouse', 'https://clickhouse.com/real-time-data-warehouse'],
-        ['Engineering Resources', 'https://clickhouse.com/resources/engineering']
+        ['Real-time data warehouse', 'https://clickhouse.com/real-time-data-warehouse'],
+        ['ClickHouse for data lakes', 'https://clickhouse.com/clickhouse-for-data-lakes'],
+        ['AI SRE', 'https://clickhouse.com/ai-sre'],
+        ['Engineering resources', 'https://clickhouse.com/resources/engineering']
       ]
     },
     {
       title: 'Company',
       links: [
         ['Blog', 'https://clickhouse.com/blog'],
-        ['Our Story', 'https://clickhouse.com/company/our-story'],
+        ['Our story', 'https://clickhouse.com/company/our-story'],
         ['Careers', 'https://clickhouse.com/company/careers'],
-        ['Contact Us', 'https://clickhouse.com/company/contact'],
+        ['Contact us', 'https://clickhouse.com/company/contact?loc=footer'],
         ['Events', 'https://clickhouse.com/company/events'],
         ['News', 'https://clickhouse.com/company/news'],
         ['Media', 'https://clickhouse.com/media']
-      ]
+      ],
+      subsection: {
+        title: 'Open source',
+        links: [
+          ['ClickHouse', 'https://clickhouse.com/clickhouse'],
+          ['ClickStack', 'https://clickhouse.com/clickstack'],
+          ['LibreChat', 'https://github.com/LibreChat-AI/LibreChat'],
+          ['Langfuse', 'https://github.com/langfuse/langfuse'],
+          ['chDB', 'https://clickhouse.com/chdb'],
+          ['ClickHouse Keeper', 'https://clickhouse.com/clickhouse/keeper']
+        ]
+      }
     },
     {
       title: 'Join our community',
       links: [
+        ['ClickHouse Community', 'https://clickhouse.com/community'],
         ['GitHub', 'https://github.com/ClickHouse/ClickHouse'],
         ['Slack', 'https://clickhouse.com/slack'],
         ['LinkedIn', 'https://www.linkedin.com/company/clickhouseinc'],
-        ['X', 'https://x.com/ClickHouseDB'],
+        ['X', 'https://x.com/ClickhouseDB'],
         ['Bluesky', 'https://bsky.app/profile/clickhouse.com'],
         ['Telegram', 'https://telegram.me/clickhouse_en'],
         ['Meetup', 'https://www.meetup.com/pro/clickhouse']
@@ -70,13 +84,15 @@
         ['Snowflake', 'https://clickhouse.com/comparison/snowflake'],
         ['Elastic', 'https://clickhouse.com/comparison/elastic-for-observability'],
         ['Splunk', 'https://clickhouse.com/comparison/splunk-for-observability'],
+        ['Datadog', 'https://clickhouse.com/comparison/datadog-for-observability'],
         ['OpenSearch', 'https://clickhouse.com/comparison/opensearch-for-observability']
       ],
       subsection: {
         title: 'Partners',
         links: [
           ['AWS', 'https://clickhouse.com/partners/aws'],
-          ['Azure', 'https://clickhouse.com/partners/azure']
+          ['Azure', 'https://clickhouse.com/partners/azure'],
+          ['Google Cloud', 'https://clickhouse.com/partners/gcp']
         ]
       }
     }
@@ -87,7 +103,7 @@
     ['Privacy', 'https://clickhouse.com/legal/privacy-policy'],
     ['Security', 'https://trust.clickhouse.com/'],
     ['Legal', 'https://clickhouse.com/legal'],
-    ['Cookie Policy', 'https://clickhouse.com/legal/cookie-policy']
+    ['Cookie policy', 'https://clickhouse.com/legal/cookie-policy']
   ];
 
   var logoSvg = '<svg width="135" height="40" viewBox="0 0 135 40" fill="none" xmlns="http://www.w3.org/2000/svg">'

@@ -39,10 +39,10 @@ export const FullWidthDivider = ({ style }) => {
     return <hr ref={ref} className="ch-usecase-divider" style={style} />;
 };
 
-export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, external, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48', imageTop, galaxyEvent }) => {
+export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, external, arrowBottom, square, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48', imageTop, galaxyEvent }) => {
     const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
     const darkFilename = darkFilenameProp || (filename ? filename.replace('-light.', '-dark.') : null);
-    const cardClassName = `ch-hero-card relative ${arrowBottom ? 'flex flex-col' : 'block'} p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit${fullWidthImage ? ' overflow-hidden' : ''}`;
+    const cardClassName = `ch-hero-card relative ${arrowBottom ? 'flex flex-col' : 'block'} p-4${square ? '' : ' rounded-lg'} no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit${fullWidthImage ? ' overflow-hidden' : ''}`;
 
     const content = (
         <>
@@ -85,6 +85,13 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
             ) : null}
             <h3 className={`text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] ${(icon || !filename) ? 'mt-0' : 'mt-5'}`}>
                 {title}
+                {external && (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="ch-card-external-icon inline-block ml-2 -translate-y-px align-middle">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                    </svg>
+                )}
             </h3>
             {body ? body : (
                 <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm font-normal leading-normal min-h-[42px]">{description}</span>
@@ -255,8 +262,6 @@ export const PageWrapper = ({ children }) => {
 };
 
 <style>{`
-  .ch-goal-icon { color: #374151; }
-  .dark .ch-goal-icon { color: #FAFF69; }
   /* Integrations banner: accent-colored border in both modes */
   html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
   html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
@@ -394,37 +399,72 @@ export const PageWrapper = ({ children }) => {
         </div>
 
         <FullWidthDivider style={{ margin: '40px 0 40px' }} />
+        <div className="mt-10">
         <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explore by use case</h2>
-        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Discover how ClickHouse powers real-time analytics, observability, data warehousing, and agentic AI at any scale.</p>
-        <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
+        <div className="ch-usecase-grid">
             <HeroCard
                 title="Real-time analytics"
                 galaxyEvent="docs.home.real-time-analytics"
-                description="Deliver instant insights and dashboards at scale. Analyze billions of rows in real time with millisecond results."
+                description="Instantly responsive apps and analysis"
                 href={localizeHref("/get-started/use-cases/real-time-analytics")}
-                showArrow
+                square
+                icon={<img src="https://clickhouse.com/_next/static/immutable/media/realtime.3kgog9ob9hcgi.svg" alt="" className="ch-usecase-icon h-10 w-10" />}
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
-                title="Observability"
-                galaxyEvent="docs.home.observability"
-                description="Store and query logs, metrics and traces at scale using ClickHouse Observability, the open source observability stack powered by ClickHouse."
-                href={localizeHref("/clickstack/overview")}
-                showArrow
+                title="Transactional apps"
+                galaxyEvent="docs.home.transactional-apps"
+                description="PostgreSQL managed for you"
+                href={localizeHref("/products/managed-postgres/overview")}
+                square
+                icon={<img src="https://clickhouse.com/_next/static/immutable/media/postgres.3x93yyrvuovvn.svg" alt="" className="ch-usecase-icon h-10 w-10" />}
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
                 title="Data warehousing"
                 galaxyEvent="docs.home.data-warehousing"
-                description="Analyze and explore data instantly for insights and apps. Scale faster by offloading heavy workloads."
+                description="Offload workloads for speed and cost"
                 href={localizeHref("/get-started/use-cases/data-warehousing")}
-                showArrow
+                square
+                icon={<img src="https://clickhouse.com/_next/static/immutable/media/warehouse.1d6r5uje_xgw2.svg" alt="" className="ch-usecase-icon h-10 w-10" />}
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
-                title="Agents"
-                galaxyEvent="docs.home.agentic-analytics"
-                description="Let AI agents query your real-time data directly to deliver instant, conversational insights and visualizations"
-                href={localizeHref("/products/cloud/features/ai-ml/agents")}
-                showArrow
+                title="Observability"
+                galaxyEvent="docs.home.observability"
+                description="Full visibility for SREs and agents"
+                href={localizeHref("/clickstack/overview")}
+                square
+                icon={<img src="https://clickhouse.com/_next/static/immutable/media/observability.0zc0d1kv-yam5.svg" alt="" className="ch-usecase-icon ch-transparent h-10 w-10" />}
+                extraClassName="ch-usecase-card"
             />
+            <HeroCard
+                title="Security"
+                galaxyEvent="docs.home.security"
+                href="https://docs.runreveal.com/"
+                external
+                square
+                icon={<img src="https://clickhouse.com/_next/static/immutable/media/security.2_ypkglg2iwen.svg" alt="" className="ch-usecase-icon h-[30px] w-[30px]" />}
+                body={<>
+                    <span className="block mt-3 text-base leading-snug text-[#374151] dark:text-white">AI-powered detection and response</span>
+                    <span className="block mt-3 text-xs text-gray-500 dark:text-neutral-300">Powered by RunReveal</span>
+                </>}
+                extraClassName="ch-usecase-card ch-usecase-partner"
+            />
+            <HeroCard
+                title="AI engineering"
+                galaxyEvent="docs.home.ai-engineering"
+                href="https://langfuse.com/docs"
+                external
+                square
+                icon={<img src="https://clickhouse.com/_next/static/immutable/media/ai.04bne-c8wx6uz.svg" alt="" className="ch-usecase-icon h-9 w-9" />}
+                body={<>
+                    <span className="block mt-3 text-base leading-snug text-[#374151] dark:text-white">Build, trace, and evaluate AI apps</span>
+                    <span className="block mt-3 text-xs text-gray-500 dark:text-neutral-300">Powered by Langfuse</span>
+                </>}
+                extraClassName="ch-usecase-card ch-usecase-partner"
+            />
+        </div>
         </div>
         <FullWidthDivider style={{ margin: '40px 0 40px' }} />
 

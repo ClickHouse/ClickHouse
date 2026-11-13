@@ -394,17 +394,16 @@ export const PageWrapper = ({ children }) => {
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
 
-      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">按用例探索</h2>
-      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">了解 ClickHouse 如何在任意规模下支撑实时分析、可观测性、数据仓库与智能体 AI。</p>
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">看看您能使用 ClickHouse 构建什么</h2>
 
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
-        <HeroCard title="实时分析" galaxyEvent="docs.home.real-time-analytics" description="大规模提供即时洞察和仪表盘。实时分析数十亿行数据，毫秒级返回结果。" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
+        <HeroCard title="实时分析" galaxyEvent="docs.home.real-time-analytics" description="即时响应的应用和分析" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="可观测性" galaxyEvent="docs.home.observability" description="借助由 ClickHouse 驱动的开源可观测性技术栈 ClickHouse Observability，大规模存储和查询日志、指标和链路追踪。" href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="事务型应用" galaxyEvent="docs.home.transactional-apps" description="托管 PostgreSQL 服务" href={localizeHref("/products/managed-postgres/overview")} showArrow />
 
-        <HeroCard title="数据仓储" galaxyEvent="docs.home.data-warehousing" description="即时分析和探索数据，获取洞察并构建应用。通过卸载繁重工作负载，实现更快扩展。" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
+        <HeroCard title="数据仓储" galaxyEvent="docs.home.data-warehousing" description="卸载工作负载以提升速度并降低成本" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
-        <HeroCard title="智能体分析" galaxyEvent="docs.home.agentic-analytics" description="让 AI 智能体直接查询实时数据，提供即时的对话式洞察和可视化" href={localizeHref("/get-started/use-cases/agentic-analytics")} showArrow />
+        <HeroCard title="可观测性" galaxyEvent="docs.home.observability" description="为 SRE 和智能体提供完整可见性" href={localizeHref("/clickstack/overview")} showArrow />
       </div>
 
       <FullWidthDivider style={{ margin: '40px 0 40px' }} />
