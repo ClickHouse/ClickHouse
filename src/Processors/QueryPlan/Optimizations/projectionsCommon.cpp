@@ -327,6 +327,36 @@ size_t filterPartsByProjection(
     return filtered_parts;
 }
 
+void recordProjectionFilteringIndexStat(
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const String & projection_name,
+    String description,
+    String condition,
+    MarkRanges::SearchAlgorithm search_algorithm)
+{
+    ReadFromMergeTree::IndexStat * index_stat = nullptr;
+    for (auto & stat : parent_reading_select_result.index_stats)
+    {
+        if (stat.type == ReadFromMergeTree::IndexType::Projection && stat.name == projection_name)
+        {
+            index_stat = &stat;
+            break;
+        }
+    }
+    if (!index_stat)
+        index_stat = &parent_reading_select_result.index_stats.emplace_back();
+
+    *index_stat = ReadFromMergeTree::IndexStat{
+        .type = ReadFromMergeTree::IndexType::Projection,
+        .name = projection_name,
+        .description = std::move(description),
+        .condition = std::move(condition),
+        .num_parts_after = parent_reading_select_result.selected_parts,
+        .num_granules_after = parent_reading_select_result.selected_marks,
+        .search_algorithm = search_algorithm,
+    };
+}
+
 /// The projection's column set is re-derived from its query at every table load, so it can drift
 /// from what an existing projection part stores (e.g. an ALIAS column selected by the projection
 /// was re-pointed by ALTER, changing the materialized source column or the aggregate-state column
@@ -505,6 +535,28 @@ bool analyzeProjectionCandidate(
 
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
+    candidate.filtered_parts = filtered_parts;
+
+    if (filtered_parts > 0)
+    {
+        std::string condition;
+        MarkRanges::SearchAlgorithm search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
+        for (const auto & stat : projection_result_ptr->index_stats)
+        {
+            if (stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
+            {
+                condition = stat.condition;
+                search_algorithm = stat.search_algorithm;
+            }
+        }
+
+        recordProjectionFilteringIndexStat(
+            parent_reading_select_result,
+            candidate.projection->name,
+            "Projection has been analyzed and is used for part-level filtering",
+            std::move(condition),
+            search_algorithm);
+    }
 
     /// Under `force_primary_key` a scan must be restricted by the primary key of whatever is read.
     /// Only check after filterPartsByProjection to still utilize parts pruning
@@ -515,7 +567,6 @@ bool analyzeProjectionCandidate(
     candidate.selected_marks = projection_result_ptr->selected_marks;
     candidate.selected_ranges = projection_result_ptr->selected_ranges;
     candidate.selected_rows = projection_result_ptr->selected_rows;
-    candidate.filtered_parts = filtered_parts;
 
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
     candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks + parent_parts_sum_marks;
@@ -744,33 +795,17 @@ std::optional<ProjectionFilteringEffect> filterPartsAndCollectProjectionCandidat
         projection_stat->selected_rows = projection_result_ptr->selected_rows;
         projection_stat->filtered_parts = filtered_parts;
 
-        /// Record as an IndexStat so EXPLAIN indexes = 1 surfaces projection filtering.
         /// `num_parts_after` / `num_granules_after` describe the parent-table read after this
         /// stage, including parts that still fall back to the base read. Projection marks are
         /// ordered by the projection key, so they are not a substitute for parent granules.
         /// A later rewrite of the same read overwrites a row-filter entry in place. A part-pruning
         /// entry is left as recorded above.
-        ReadFromMergeTree::IndexStat * index_stat = nullptr;
-        for (auto & stat : parent_reading_select_result.index_stats)
-        {
-            if (stat.type == ReadFromMergeTree::IndexType::Projection && stat.name == projection.name)
-            {
-                index_stat = &stat;
-                break;
-            }
-        }
-        if (!index_stat)
-            index_stat = &parent_reading_select_result.index_stats.emplace_back();
-
-        *index_stat = ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::Projection,
-            .name = projection.name,
-            .description = std::move(description),
-            .condition = std::move(condition),
-            .num_parts_after = parent_reading_select_result.selected_parts,
-            .num_granules_after = parent_reading_select_result.selected_marks,
-            .search_algorithm = search_algorithm,
-        };
+        recordProjectionFilteringIndexStat(
+            parent_reading_select_result,
+            projection.name,
+            std::move(description),
+            std::move(condition),
+            search_algorithm);
 
         return effect;
     }

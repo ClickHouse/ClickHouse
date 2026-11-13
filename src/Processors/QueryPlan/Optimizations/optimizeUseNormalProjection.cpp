@@ -742,6 +742,17 @@ UseProjectionsResult optimizeUseNormalProjections(
             context,
             hypothetical.get());
 
+        /// Covering candidates prune parent parts in `analyzeProjectionCandidate`. Count that
+        /// pruning even when the candidate is later rejected as a read because it did not beat
+        /// the remaining base cost.
+        if (candidate.filtered_parts > 0)
+        {
+            filtering_projections.push_back(FilteringProjectionUse{
+                .name = projection->name,
+                .pruned_parts = true,
+            });
+        }
+
         if (!analyzed)
         {
             result.projection_reject_reasons.try_emplace(projection->name, "no selected part has the projection materialized, or its analysis exceeded the read limits");
@@ -1220,18 +1231,18 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         if (auto * surviving_reading = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
         {
-            auto & surviving = surviving_reading->getAnalysisResult();
+            auto surviving = surviving_reading->getOrCreateAnalyzedResult();
             for (const auto & stat : parent_reading_select_result->index_stats)
             {
                 if (stat.type != ReadFromMergeTree::IndexType::Projection)
                     continue;
 
-                surviving.part_level_projection_index_stats.push_back(stat);
+                surviving->part_level_projection_index_stats.push_back(stat);
                 for (const auto & projection_stat : parent_reading_select_result->projection_stats)
                 {
                     if (projection_stat.name == stat.name)
                     {
-                        surviving.projection_stats.push_back(projection_stat);
+                        surviving->projection_stats.push_back(projection_stat);
                         break;
                     }
                 }

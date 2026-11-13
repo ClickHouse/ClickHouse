@@ -107,6 +107,15 @@ void recordHypotheticalOutcome(
 size_t filterPartsByProjection(
     ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
 
+/// Records a Projection `IndexStat` on the parent read so `EXPLAIN indexes = 1` shows part pruning
+/// that already happened, including when a covering candidate is later rejected as a read.
+void recordProjectionFilteringIndexStat(
+    ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
+    const String & projection_name,
+    String description,
+    String condition,
+    MarkRanges::SearchAlgorithm search_algorithm);
+
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
 /// `parent_mutations_snapshot` is the snapshot of the parent read: a part with a pending

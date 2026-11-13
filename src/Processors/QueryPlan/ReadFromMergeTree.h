@@ -168,14 +168,14 @@ public:
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
     {
-        IndexType type;
+        IndexType type = IndexType::None;
         std::string name = {};
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};
-        size_t num_parts_after;
-        size_t num_granules_after;
+        size_t num_parts_after = 0;
+        size_t num_granules_after = 0;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
         std::vector<DistributedIndexStat> distributed = {};

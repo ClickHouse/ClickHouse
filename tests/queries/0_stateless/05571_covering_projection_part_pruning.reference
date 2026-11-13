@@ -1,0 +1,8 @@
+-- non-covering: missing v, filtering path
+3
+3
+1
+-- covering: has k, candidate rejected as a read, pruning still counts
+2
+3
+1
