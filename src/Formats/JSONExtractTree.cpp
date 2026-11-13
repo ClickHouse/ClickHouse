@@ -296,7 +296,7 @@ void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, siz
 }
 
 /// `IColumn::insertDefault` inserts the zero of the column, which is not the default of every type (an `Enum`
-/// without 0, or a `Tuple` or `JSON` holding one). nullptr when it is.
+/// whose smallest value is not 0, or a `Tuple` or `JSON` holding one). nullptr when it is.
 DataTypePtr getTypeForDefault(const DataTypePtr & type)
 {
     return type->isDefaultInsertTrivial() ? nullptr : type;
