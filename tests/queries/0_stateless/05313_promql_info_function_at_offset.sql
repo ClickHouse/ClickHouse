@@ -1,6 +1,7 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest, no-tsan, long
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag long: the flaky check runs a changed test in many parallel copies, which makes the many `info` queries exceed 180 seconds.
+-- Tag no-tsan: an `info` query needs more stack than the 5% that TSan allows.
 
 -- PromQL info(): the @ and offset modifiers, invalid arguments (a part of 05308_promql_info_function).
 

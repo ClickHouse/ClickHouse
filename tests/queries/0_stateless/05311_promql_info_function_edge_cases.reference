@@ -19,7 +19,5 @@ info({__name__=~"metric|job_only"}) from 0 to 600 step 300
 [('__name__','job_only'),('job','1')]	[(0,3),(300000,3),(600000,3)]
 [('__name__','metric'),('data','mid'),('instance','a'),('job','1')]	[(300000,1)]
 [('__name__','metric'),('instance','a'),('job','1')]	[(0,0),(600000,2)]
-info() of nested aggregations without a selector
-1
 label values with special characters are matched literally
 [('__name__','metric'),('data','x'),('instance','a.b'),('job','j"1')]

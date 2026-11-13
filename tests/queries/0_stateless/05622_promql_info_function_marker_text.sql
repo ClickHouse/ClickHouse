@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-tsan
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-tsan: an `info` query needs more stack than the 5% that TSan allows.
 
 -- PromQL info(): text of a user matcher that looks like a placeholder is matched literally.
 
