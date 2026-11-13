@@ -88,6 +88,7 @@ namespace ProfileEvents
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
+    extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
 }
 
@@ -1650,10 +1651,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
+    /// `column_index_conditions` points into `conditions`, which must live as long as the reader.
+    auto add_column_index_conditions = [&](const decltype(column_conditions) & conditions, bool from_join_runtime_filter)
     {
-        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
-        for (const auto & [idx_in_output_block, key_condition] : column_conditions)
+        for (const auto & [idx_in_output_block, key_condition] : conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             /// No file-readable column for this key-condition column: it has no page-index
@@ -1664,8 +1665,15 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_conditions.push_back({key_condition.get(), SIZE_MAX});
+            primitive_columns[output_info.primitive_start].column_index_conditions.push_back(
+                {.condition = key_condition.get(), .spatial_key_condition_idx = SIZE_MAX, .from_join_runtime_filter = from_join_runtime_filter});
         }
+    };
+
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
+    {
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
+        add_column_index_conditions(column_conditions, /*from_join_runtime_filter=*/ false);
     }
 
     /// Page-level pruning for spatial bbox columns: extract per-column conditions from each
@@ -1695,6 +1703,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 }
             }
         }
+    }
+
+    /// Added last: `applyColumnIndex` counts a page as pruned by the runtime filter only if no other condition ruled it out.
+    if (options.format.parquet.page_filter_push_down && join_runtime_filter_key_condition)
+    {
+        join_runtime_filter_key_condition->extractSingleColumnConditions(join_runtime_filter_column_conditions, nullptr);
+        add_column_index_conditions(join_runtime_filter_column_conditions, /*from_join_runtime_filter=*/ true);
     }
 
     initColumnsCache();
@@ -3061,6 +3076,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
         size_t pruned_pages = 0;
+        size_t pruned_pages_by_join_runtime_filter = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -3090,8 +3106,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
             /// the same bbox column) must agree the page can match; any one of them ruling it out
             /// is enough to prune, so an unproductive later `checkInHyperrectangle` call is skipped.
-            bool passes_filter = std::all_of(
-                column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+            const auto first_failed = std::ranges::find_if_not(
+                column_info.column_index_conditions,
                 [&](const PrimitiveColumnInfo::ColumnIndexCondition & c)
                 {
                     /// A `covering.bbox` predicate may only prune when the full bbox is known for
@@ -3110,7 +3126,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
                 });
 
-            if (!passes_filter)
+            if (first_failed != column_info.column_index_conditions.end())
             {
                 size_t start_row = column.offset_index.page_locations[page_idx].first_row_index;
                 size_t end_row = page_idx + 1 < num_pages ? column.offset_index.page_locations[page_idx + 1].first_row_index : row_group.meta->num_rows;
@@ -3119,6 +3135,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
                 ++pruned_pages;
+                if (first_failed->from_join_runtime_filter)
+                    ++pruned_pages_by_join_runtime_filter;
             }
         }
 
@@ -3127,19 +3145,29 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         if (pruned_pages)
             ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
+        if (pruned_pages_by_join_runtime_filter)
+        {
+            pages_pruned_by_join_runtime_filter += pruned_pages_by_join_runtime_filter;
+            ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedPages, pruned_pages_by_join_runtime_filter);
+        }
     }
     catch (Exception & e)
     {
         /// A `covering.bbox` column that only carries spatial conditions was injected for this
         /// optimization alone: it is neither an output column nor part of the query's own filter.
-        /// Malformed page statistics for it must fail closed (no page pruning for this column)
-        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A bbox column the
-        /// query itself reads or filters on has non-spatial conditions too and keeps throwing.
+        /// The column index of a column that only JOIN runtime filter conditions use is read for them alone too.
+        /// Malformed page statistics for them must fail closed (no page pruning for this column)
+        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A column the
+        /// query itself filters on has static conditions too and keeps throwing.
         /// Running out of memory is not malformed statistics and keeps throwing too.
-        const bool only_spatial_conditions = std::all_of(
-            column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
-            [](const PrimitiveColumnInfo::ColumnIndexCondition & c) { return c.spatial_key_condition_idx != SIZE_MAX; });
-        if (column_info.is_spatial_bbox_column && only_spatial_conditions && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        const bool only_optional_conditions = std::ranges::all_of(
+            column_info.column_index_conditions,
+            [](const PrimitiveColumnInfo::ColumnIndexCondition & c)
+            { return c.spatial_key_condition_idx != SIZE_MAX || c.from_join_runtime_filter; });
+        const bool only_join_runtime_filter_conditions = std::ranges::all_of(
+            column_info.column_index_conditions, &PrimitiveColumnInfo::ColumnIndexCondition::from_join_runtime_filter);
+        if (only_optional_conditions && (column_info.is_spatial_bbox_column || only_join_runtime_filter_conditions)
+            && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
         {
             column.row_ranges_after_column_index.clear();
             if (row_group.meta->num_rows > 0)

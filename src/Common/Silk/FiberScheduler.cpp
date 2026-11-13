@@ -1,4 +1,4 @@
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 
 #if USE_SILK
 
@@ -9,14 +9,11 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
 
-#if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-#    include <Common/SilkThreadLocalStorageSanitizer.h>
-#endif
-
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
 #include <silk/util/init.h>
 #include <silk/util/perf.h>
+#include <silk/util/platform.h>
 
 #include <cerrno>
 #include <functional>
@@ -34,8 +31,6 @@ namespace
 /// Therefore, release-acquire is required.
 std::atomic<bool> fiber_scheduler_initialized = false;
 
-constinit FiberLocal<bool, FiberLocalSlot::INSIDE_SILK_FIBER> inside_silk_fiber;
-
 constexpr uint8_t CLICKHOUSE_FIBER_CATEGORY = 1;
 
 bool isClickHouseFiber() noexcept
@@ -50,10 +45,6 @@ struct FiberContext
 
     static int main(FiberContext * self) noexcept
     {
-#if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-        silk_thread_local_storage_sanitizer_fiber_init_hook();
-#endif
-        inside_silk_fiber = true;
         try
         {
             DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
@@ -147,7 +138,7 @@ bool isFiberSchedulerInitialized()
 
 bool isInsideFiber()
 {
-    return inside_silk_fiber.get();
+    return silk::FiberScheduler::getCurrentFiberId().raw != 0;
 }
 
 RuntimeCounters getRuntimeCounters()
