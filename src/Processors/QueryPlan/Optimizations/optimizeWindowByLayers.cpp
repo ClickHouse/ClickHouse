@@ -118,8 +118,24 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
     if (dag->hasStatefulFunctions() || dag->hasNonDeterministic())
         return;
 
+    /// Only the `PARTITION BY` columns that are columns of the table are used to prove that a window partition lies in
+    /// one layer. A function of the query is matched with a function of the key by its name, arguments and type, which
+    /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
+    /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
+    Names table_column_keys;
+    for (const auto & name : sorting->getPartitionByColumnNames())
+    {
+        const auto * key_node = dag->tryFindInOutputs(name);
+        while (key_node && key_node->type == ActionsDAG::ActionType::ALIAS)
+            key_node = key_node->children.front();
+        if (key_node && key_node->type == ActionsDAG::ActionType::INPUT)
+            table_column_keys.push_back(name);
+    }
+    if (table_column_keys.empty())
+        return;
+
     bool in_reverse_order = false;
-    size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, sorting->getPartitionByColumnNames(), in_reverse_order);
+    size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, table_column_keys, in_reverse_order);
 
     /// Every layer is merged by the prefix of the sorting key that is read in order, and its range filter relies on
     /// the merged stream being sorted by the columns it compares (`FilterSortedStreamByRange` checks the first and

@@ -46,6 +46,18 @@ FROM (SELECT count() OVER (PARTITION BY a, b) AS s FROM t_window_layers_unordere
 SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
 DROP TABLE t_window_layers_unordered_suffix;
 
+-- A function of the key that depends on a setting: the table stores month names, the query computes minutes.
+DROP TABLE IF EXISTS t_window_layers_function_settings;
+SET formatdatetime_parsedatetime_m_is_month_name = 1;
+CREATE TABLE t_window_layers_function_settings (dt DateTime, b UInt32) ENGINE = MergeTree
+ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
+INSERT INTO t_window_layers_function_settings SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400, number FROM numbers(10000);
+SET formatdatetime_parsedatetime_m_is_month_name = 0;
+SELECT count(), min(w), max(w)
+FROM (SELECT count() OVER (PARTITION BY formatDateTime(dt, '%M')) AS w FROM t_window_layers_function_settings)
+SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1;
+DROP TABLE t_window_layers_function_settings;
+
 -- The sorting key column `payload` is not used by the query and must not be read.
 DROP TABLE IF EXISTS t_window_layers_unused_key_suffix;
 CREATE TABLE t_window_layers_unused_key_suffix (a UInt32, payload String) ENGINE = MergeTree ORDER BY (a, payload) SETTINGS index_granularity = 100;
