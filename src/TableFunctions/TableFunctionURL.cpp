@@ -2,7 +2,6 @@
 
 #include <TableFunctions/registerTableFunctions.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -100,39 +99,8 @@ namespace
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
     VectorWithMemoryTracking<size_t> result;
-
-    /// `headers(...)` may appear in any position.
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
-    }
-
-    /// A `key = value` named argument is a trailing argument whose key names a parameter of the table
-    /// function, so it must not resolve to a column or alias. A positional `identifier = value` expression
-    /// (one followed by a positional argument, e.g. the partition_columns_in_data_file Boolean) is an
-    /// ordinary comparison, so only the trailing run of `key = value` arguments is skipped.
-    for (size_t i = table_function_arguments_size; i-- > 0;)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (!function_node)
-            break;
-        const auto & function_name = function_node->getFunctionName();
-        if (function_name == "headers")
-            continue; /// already recorded above; part of the trailing named-argument run
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        if (function_name == "equals" && function_arguments.size() == 2 && function_arguments[0]->as<IdentifierNode>())
-            result.push_back(i);
-        else
-            break;
-    }
-
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers"});
     return result;
 }
 

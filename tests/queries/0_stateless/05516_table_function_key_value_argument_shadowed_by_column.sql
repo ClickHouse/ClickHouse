@@ -72,4 +72,22 @@ WITH 'ignored' AS partition_strategy
 SELECT * FROM s3('http://127.0.0.1:1/bucket/file.csv', 'NOSIGN', 'CSV', 'a UInt8', extra_credentials(role_arn = ''), partition_strategy = 'none')
 FORMAT Null;
 
+-- The other table functions that take named collection overrides share the classification. `mongodb` takes
+-- the structure as an argument, so the analysis never contacts the server. The override key `user` must not
+-- resolve to the column `l.user` (BAD_ARGUMENTS: Unexpected key `l.user` in named collection).
+DROP NAMED COLLECTION IF EXISTS c_05516_mongo;
+CREATE NAMED COLLECTION c_05516_mongo AS host = '127.0.0.1', port = 1, database = 'db', collection = 'c', user = 'default', password = '', structure = 'v UInt8';
+EXPLAIN QUERY TREE
+SELECT l.v
+FROM values('v UInt8, user String', (1, 'shadow')) AS l
+INNER JOIN mongodb(c_05516_mongo, user = 'u') AS r ON l.v = r.v
+FORMAT Null;
+DROP NAMED COLLECTION c_05516_mongo;
+
+-- Without a named collection, a trailing `structure = ...` is a parameter too, not the `WITH` alias.
+EXPLAIN QUERY TREE
+WITH 'x' AS structure
+SELECT * FROM mongodb('127.0.0.1:1', 'db', 'c', 'u', 'p', structure = 'v UInt8')
+FORMAT Null;
+
 DROP TABLE t_05516;

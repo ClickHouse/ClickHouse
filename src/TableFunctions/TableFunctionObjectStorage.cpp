@@ -6,7 +6,6 @@
 #include <Core/SettingsEnums.h>
 
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSetQuery.h>
@@ -142,43 +141,11 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::skipAnalysisForArguments(
     const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
+    /// `headers(...)` and `extra_credentials(...)` are wrappers that the storage parser removes before it classifies
+    /// positional and named arguments (see `S3SecretArguments` and the S3/Azure `Configuration` parsers), so their
+    /// nested `key = value` arguments (e.g. `role_arn = ...`) are skipped with them.
     VectorWithMemoryTracking<size_t> result;
-
-    /// `headers(...)` and `extra_credentials(...)` are wrapper arguments that the storage parser removes
-    /// before it classifies positional and named arguments (see `S3SecretArguments` and the S3/Azure
-    /// `Configuration` parsers). They may appear in any position, and their nested `key = value` arguments
-    /// (e.g. `role_arn = ...`) must not resolve to a column or alias either, so skip their whole subtree.
-    auto is_wrapper_argument = [](const String & wrapper_name) { return wrapper_name == "headers" || wrapper_name == "extra_credentials"; };
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && is_wrapper_argument(function_node->getFunctionName()))
-            result.push_back(i);
-    }
-
-    /// A `key = value` named argument is a trailing argument whose key names a parameter of the table
-    /// function, so it must not resolve to a column or alias. A positional `identifier = value` expression
-    /// (one followed by a positional argument, e.g. the partition_columns_in_data_file Boolean) is an
-    /// ordinary comparison, so only the trailing run of `key = value` arguments is skipped. A wrapper
-    /// argument is removed by the storage parser, so it does not end the run: a named argument can precede it.
-    for (size_t i = table_function_arguments_size; i-- > 0;)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (!function_node)
-            break;
-        const auto & function_name = function_node->getFunctionName();
-        if (is_wrapper_argument(function_name))
-            continue; /// already recorded above; part of the trailing named-argument run
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        if (function_name == "equals" && function_arguments.size() == 2 && function_arguments[0]->as<IdentifierNode>())
-            result.push_back(i);
-        else
-            break;
-    }
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers", "extra_credentials"});
     return result;
 }
 

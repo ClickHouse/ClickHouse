@@ -181,6 +181,14 @@ public:
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
+    /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
+    /// (e.g. the overrides of a named collection) and so must not resolve to a column or alias: the trailing run of
+    /// `key = value` arguments, and the `wrapper_names` arguments, such as `headers(...)`, at any position. A
+    /// wrapper is removed by the storage parser, so it does not end the run. An `identifier = value` followed by
+    /// a positional argument is an ordinary comparison and is still analyzed.
+    static void appendNamedArgumentIndexes(
+        const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names = {});
+
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
     /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
     virtual bool isClusterFunction() const { return false; }
