@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -1462,7 +1463,21 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     && !(need_inversion && isFloatComparison(name, children)))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
-                    auto function_builder = FunctionFactory::instance().get(func_name, context);
+                    ContextPtr function_context = context;
+                    if (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn"
+                        || name == "nullIn" || name == "notNullIn" || name == "globalNullIn" || name == "globalNullNotIn")
+                    {
+                        /// Internal set predicates can capture different `NULL` semantics from the query.
+                        /// Keep those semantics when rebuilding the function for index analysis.
+                        const bool original_null_semantics = node.function_base->useNullAsUnknownSemanticsForIn();
+                        if (original_null_semantics != context->getSettingsRef()[Setting::in_null_as_unknown])
+                        {
+                            auto modified_context = Context::createCopy(context);
+                            modified_context->setSetting("in_null_as_unknown", Field(original_null_semantics));
+                            function_context = modified_context;
+                        }
+                    }
+                    auto function_builder = FunctionFactory::instance().get(func_name, function_context);
                     res = &inverted_dag.addFunction(function_builder, children, "");
                     /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
                     if (boolean_context)
