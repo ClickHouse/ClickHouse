@@ -83,7 +83,9 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         });
         storage_type_str = "S3";
     }
-    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
+    /// Azure Blob File System, secure and plain spelling: both name the same ADLS Gen2 storage.
+    /// The scheme selects the storage engine here; it never selects the wire protocol.
+    else if (storage_type_str == "abfss" || storage_type_str == "abfs")
         storage_type_str = "Azure";
 
     return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));

@@ -31,9 +31,27 @@ TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfssWithProtocol)
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfs)
+{
+    auto storage_type = parseStorageTypeFromString("abfs");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfsWithProtocol)
+{
+    auto storage_type = parseStorageTypeFromString("abfs://");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
 TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfss)
 {
     auto storage_type = parseStorageTypeFromLocation("abfss://container@account.dfs.core.windows.net/path/to/data");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfs)
+{
+    auto storage_type = parseStorageTypeFromLocation("abfs://container@account.dfs.core.windows.net/path/to/data");
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
@@ -57,6 +75,21 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfss)
 
     EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
     EXPECT_TRUE(metadata.hasLocation());
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfs)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfs://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
+
+    EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
+    EXPECT_TRUE(metadata.hasLocation());
+
+    /// The scheme is carried through verbatim; it selects the storage engine, never the wire protocol.
+    EXPECT_EQ(metadata.getLocation(), "abfs://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
+    EXPECT_EQ(metadata.getLocationWithEndpoint("https://mystorageaccount.dfs.core.windows.net"),
+              "https://mystorageaccount.dfs.core.windows.net/mycontainer/path/to/table/");
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfssGetLocation)
