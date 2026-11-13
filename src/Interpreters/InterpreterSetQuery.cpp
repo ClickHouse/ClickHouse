@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace Setting
@@ -68,6 +69,18 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
         reject(change.name);
     for (const auto & name : set_query.default_settings)
         reject(name);
+}
+
+/// `make_distributed_plan` may be inferred from `distributed_plan_workers_num` or
+/// `distributed_plan_worker_cluster`; a query's SETTINGS clause is applied again later (while
+/// building the query tree, and by EXPLAIN), and a reset there would undo only some of that.
+void rejectMakeDistributedPlanDefault(const ASTSetQuery & set_query)
+{
+    for (const auto & name : set_query.default_settings)
+        if (name == "make_distributed_plan")
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "`make_distributed_plan = DEFAULT` is not allowed in a query's SETTINGS. Set it to 0 or "
+                "1, or reset it with `SET make_distributed_plan = DEFAULT`.");
 }
 
 }
@@ -113,6 +126,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
         getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, changes, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
+        rejectMakeDistributedPlanDefault(ast);
     }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
