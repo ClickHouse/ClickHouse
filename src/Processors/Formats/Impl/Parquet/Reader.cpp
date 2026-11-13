@@ -3417,19 +3417,19 @@ void Reader::locatePagesFromHeaders(ColumnChunk & column, const RowGroup & row_g
     const size_t chunk_end = chunk_begin + column.data_pages_bytes;
     const size_t num_rows = size_t(row_group.meta->num_rows);
 
-    /// A large page costs one small read for its header; small pages are walked within larger reads.
+    /// One 4 KiB read per header, more if the header continues past it.
     PaddedPODArray<char> buf;
     size_t buf_begin = 0;
-    size_t prev_page_size = 0;
 
     decltype(column.offset_index.page_locations) locations;
     size_t pos = chunk_begin;
     size_t row_idx = 0;
+    size_t small_pages = 0;
     while (pos < chunk_end)
     {
         std::optional<parq::PageHeader> parsed_header;
         size_t header_size = 0;
-        size_t read_bytes = (locations.empty() || prev_page_size >= 16384) ? 4096 : 65536;
+        size_t read_bytes = 4096;
         while (true)
         {
             if (pos >= buf_begin && pos < buf_begin + buf.size())
@@ -3489,13 +3489,15 @@ void Reader::locatePagesFromHeaders(ColumnChunk & column, const RowGroup & row_g
 
         if (rows_in_page > num_rows - row_idx)
             return;
+        /// With small pages the walk would read about the whole chunk, and then the pages again.
+        if (page_size < 16384 && pos + page_size < chunk_end && ++small_pages == 2)
+            return;
         auto & location = locations.emplace_back();
         location.offset = Int64(pos);
         location.compressed_page_size = Int32(page_size);
         location.first_row_index = Int64(row_idx);
         row_idx += rows_in_page;
         pos += page_size;
-        prev_page_size = page_size;
     }
 
     if (row_idx != num_rows || locations.empty())
