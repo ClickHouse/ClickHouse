@@ -297,6 +297,7 @@ workflow = Workflow.Config(
         can_be_tested,
         "python3 ./ci/jobs/scripts/workflow_hooks/ci_links.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         configure_performance_shards,
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
@@ -308,6 +309,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
     job_aliases={
