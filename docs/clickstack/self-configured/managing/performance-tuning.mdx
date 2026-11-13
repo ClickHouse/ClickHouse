@@ -12,7 +12,6 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
 import OtelTracesSchema from '/snippets/clickstack/_schema_otel_traces.mdx';
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
 This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
@@ -109,7 +108,15 @@ Consider the default observability schema for traces, where Kubernetes metadata 
 
 A user may filter traces using Lucene syntax e.g. `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
-<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="Trace filtering"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trace filtering](/images/clickstack/performance_guide/trace_filtering.webp)
+
+</Frame>
+
+</div>
 
 This results in a SQL predicate similar to:
 
@@ -133,7 +140,15 @@ From this point forward, **new** data will store the Pod name as a dedicated col
 
 Users can now query for pod names efficiently, using Lucene syntax e.g. `PodName:"checkout-675775c4cc-f2p9c"`
 
-<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="Trace filtering v2"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trace filtering v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+
+</Frame>
+
+</div>
 
 For newly inserted data, this avoids map access entirely and significantly reduces I/O.
 
@@ -732,7 +747,15 @@ You can now query this table to confirm it returns data from `otel_logs`.
 
 Configure the UI to use `otel_logs_merge` as the table for the logs data source.
 
-<Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Select Merge Table"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select Merge Table](/images/clickstack/performance_guide/select_merge_table.webp)
+
+</Frame>
+
+</div>
 
 At this point, writes continue to `otel_logs` with the original primary key, while reads use the merge table. There is no visible change for users or impact on ingestion.
 </Step>

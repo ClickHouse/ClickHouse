@@ -6,8 +6,6 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse prend en charge un large choix d’algorithmes de jointure, qui offrent différents compromis entre vitesse d’exécution et consommation de mémoire. Pour la syntaxe et la sémantique des JOIN, consultez la [référence de la clause `JOIN`](/fr/reference/statements/select/join). Pour des recommandations concrètes d’optimisation et des exemples détaillés, consultez [Minimiser et optimiser les JOIN](/fr/concepts/best-practices/minimize-optimize-joins).
 
 ## Choisir un algorithme de JOIN {#choosing-a-join-algorithm}
@@ -16,7 +14,15 @@ ClickHouse prend en charge plusieurs [algorithmes de jointure](https://clickhous
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="vitesse selon la mémoire pour les jointures" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![vitesse selon la mémoire pour les jointures](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -26,7 +32,15 @@ Les types de `JOIN` pris en charge par chaque algorithme de jointure sont indiqu
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="fonctionnalités des jointures" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![fonctionnalités des jointures](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
