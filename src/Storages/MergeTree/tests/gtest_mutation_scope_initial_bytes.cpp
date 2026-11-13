@@ -38,6 +38,8 @@ TEST(MutationScopeInitialBytes, MergedPartReplacesCoveredWeights)
     EXPECT_EQ(scope.counted_parts.size(), 1u);
 }
 
+/// Sanitizer builds do not route operator new through the memory tracker, so the allocation cannot fail there.
+#if !defined(SANITIZER)
 /// A failed allocation while accounting an already counted part must not drop its weight.
 TEST(MutationScopeInitialBytes, FailedAllocationKeepsCountedWeights)
 {
@@ -94,3 +96,4 @@ TEST(MutationScopeInitialBytes, FailedAllocationKeepsCountedWeights)
     EXPECT_EQ(scope.counted_parts.size(), 2u);
     EXPECT_TRUE(scope.counted_parts.contains(first));
 }
+#endif
