@@ -10,9 +10,6 @@ namespace DB
 
 class ASTSetQuery;
 
-/// Whether a SETTINGS node now holds nothing a formatter would print.
-bool isEmptySetQuery(const ASTSetQuery & set_query);
-
 /// Removes the named settings from both carriers of one SETTINGS node, so that a re-injected name is
 /// not reset by a surviving `name = DEFAULT`.
 void stripNamesFromSetQuery(ASTSetQuery & set_query, std::span<const std::string_view> setting_names);

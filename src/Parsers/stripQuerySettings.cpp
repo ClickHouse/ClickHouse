@@ -16,13 +16,13 @@
 namespace DB
 {
 
+namespace
+{
+
 bool isEmptySetQuery(const ASTSetQuery & set_query)
 {
     return set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty();
 }
-
-namespace
-{
 
 /// Erase every entry naming a stripped setting from both lists of one SETTINGS node. Both lists matter:
 ///  - `changes` holds `name = value` and would re-apply the override on top of the pinned fuzz context;
