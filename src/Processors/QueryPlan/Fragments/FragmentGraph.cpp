@@ -83,6 +83,24 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
 
 }
 
+String toString(FragmentExchange::Kind kind)
+{
+    switch (kind)
+    {
+        case FragmentExchange::Kind::Hash:
+            return "hash";
+        case FragmentExchange::Kind::Broadcast:
+            return "broadcast";
+        case FragmentExchange::Kind::Gather:
+            return "gather";
+        case FragmentExchange::Kind::Any:
+            return "any";
+        case FragmentExchange::Kind::SetValues:
+            return "set values";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", static_cast<int>(kind));
+}
+
 const QueryFragment & FragmentGraph::getFragment(UInt32 id) const
 {
     auto it = std::lower_bound(fragments.begin(), fragments.end(), id, [](const QueryFragment & f, UInt32 value) { return f.id < value; });

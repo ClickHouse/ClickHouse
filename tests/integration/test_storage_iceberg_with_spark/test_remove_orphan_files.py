@@ -626,6 +626,38 @@ def test_remove_orphan_files_azure(started_cluster_iceberg_with_spark, storage_t
     env.assert_data_intact()
 
 
+@pytest.mark.parametrize("storage_type", ["azure"])
+def test_remove_orphan_files_azure_directory_entries(started_cluster_iceberg_with_spark, storage_type):
+    """An account with a hierarchical namespace lists each directory as an empty blob with
+    `hdi_isfolder=true` metadata. Azurite has no such namespace, so the entries are made by hand."""
+    cluster = started_cluster_iceberg_with_spark
+    env = make_env(cluster, storage_type, "test_orphan_azure_dirs")
+    env.populate(2)
+
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{env.table_name}"
+
+    def blob(path):
+        return cluster.blob_service_client.get_blob_client(cluster.azure_container_name, path)
+
+    directory_entries = [f"{table_path}/data", f"{table_path}/metadata"]
+    for path in directory_entries:
+        blob(path).upload_blob(b"", overwrite=True, metadata={"hdi_isfolder": "true"})
+    env.add_orphan("data", "orphan-azure-dirs.parquet")
+    blob(f"{table_path}/data/empty-orphan.parquet").upload_blob(b"", overwrite=True)
+    time.sleep(2)
+
+    counts = env.remove_orphans(older_than=env.now_ts(), dry_run=1)
+    assert counts["deleted_data_files_count"] == 2, counts
+
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 2, counts
+    assert counts["failed_deletions_count"] == 0, counts
+    assert all(blob(path).exists() for path in directory_entries)
+    assert not env.exists("data", "orphan-azure-dirs.parquet")
+    assert not env.exists("data", "empty-orphan.parquet")
+    env.assert_data_intact()
+
+
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_remove_orphan_files_ignores_pinned_metadata(started_cluster_iceberg_with_spark, storage_type):
     """When iceberg_metadata_file_path pins the table to an older metadata
