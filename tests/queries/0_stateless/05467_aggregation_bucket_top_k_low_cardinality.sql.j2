@@ -3,8 +3,6 @@
 -- the full one (`top_k 0`); the five heaviest and lightest groups have unique counts, so both print the same rows.
 -- `LowCardinality(Nullable)` keys keep the full conversion, and `LowCardinality` keys never take the threshold merge.
 
--- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
-SET serialize_query_plan = 0;
 SET query_plan_enable_optimizations = 1, query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 1;
 SET max_threads = 4, max_block_size = 8192, group_by_two_level_threshold = 100;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_rows_to_group_by = 0;
