@@ -11338,7 +11338,7 @@ An empty string lets the catalog choose the codec when it writes the first metad
 )", EXPERIMENTAL, \
         {"25.8", "", "", "New setting"}) \
     DECLARE(Bool, make_distributed_plan, false, R"(
-Make distributed query plan. Enabled for the query when `distributed_plan_workers_num` or `distributed_plan_worker_cluster` asks for Stateless Workers, unless set explicitly. Cannot be reset with `= DEFAULT` in a query's `SETTINGS`; use `SET`.
+Make distributed query plan. Enabled for the query when `distributed_plan_workers_num` or `distributed_plan_worker_cluster` asks for Stateless Workers, unless set explicitly.
 
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
