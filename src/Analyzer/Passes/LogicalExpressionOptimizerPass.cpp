@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -456,6 +457,21 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
 /// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails.
+/// A `FixedString` constant is compared with an `Enum` by its value without the trailing zero bytes (see
+/// `FunctionComparison::executeGeneric`), so `e = toFixedString('a', 2)` is `e = 'a'`. Returns the value to convert
+/// to the type of the other side of the comparison.
+static Field fixedStringConstantAsComparedWith(const Field & value, const DataTypePtr & from_type, const DataTypePtr & other_type)
+{
+    if (!isFixedString(removeLowCardinalityAndNullable(from_type)) || !isEnum(removeLowCardinalityAndNullable(other_type))
+        || value.getType() != Field::Types::String)
+        return value;
+
+    String bytes = value.safeGet<String>();
+    while (!bytes.empty() && bytes.back() == '\0')
+        bytes.pop_back();
+    return Field(std::move(bytes));
+}
+
 static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
 {
     const auto & from_type = constant_node->getResultType();
@@ -463,12 +479,29 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     if (from_type->equals(*expr_type))
         return constant_node->getValue();
 
+    /// A `FixedString` constant is compared with a `String` zero-padded, so `s = toFixedString('a', 2)` holds for
+    /// `'a'`, `'a\0'`, `'a\0\0'` and so on, while its conversion to `String` is one of them.
+    if (isFixedString(removeLowCardinalityAndNullable(from_type)) && isString(removeLowCardinalityAndNullable(expr_type)))
+        return std::nullopt;
+
     /// The constant becomes a bound the fold compares exactly, so a lossy conversion forgoes the fold.
-    auto converted = tryConvertFieldToTypeExact(constant_node->getValue(), *expr_type, from_type.get());
+    auto converted = tryConvertFieldToTypeExact(
+        fixedStringConstantAsComparedWith(constant_node->getValue(), from_type, expr_type), *expr_type, from_type.get());
     if (converted.isNull())
         return std::nullopt;
 
     return converted;
+}
+
+/// The set of `IN` converts a `FixedString` element to an `Enum` with its trailing zero bytes, while the comparison
+/// removes them (see `fixedStringConstantAsComparedWith`): `e IN (toFixedString('a', 2))` matches the name `'a\0'`,
+/// but `e = toFixedString('a', 2)` matches `'a'`.
+static bool setConversionKeepsFixedStringPadding(const ConstantNode * constant_node, const DataTypePtr & expr_type)
+{
+    const auto & value = constant_node->getValue();
+    return isFixedString(removeLowCardinalityAndNullable(constant_node->getResultType()))
+        && isEnum(removeLowCardinalityAndNullable(expr_type)) && value.getType() == Field::Types::String
+        && !value.safeGet<String>().empty() && value.safeGet<String>().back() == '\0';
 }
 
 /// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
@@ -904,6 +937,14 @@ static AddComparisonFilterResult addComparisonFilter(
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
+    /// An `Enum` is ordered against a `FixedString` constant by its name (see `FunctionComparison::executeGeneric`),
+    /// while the folds compare the converted values, which are the ordinals of the `Enum`. The two orders differ
+    /// in general (`Enum8('a' = 2, 'b' = 1)`), so only an equality keeps the converted value.
+    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
+        && isFixedString(removeLowCardinalityAndNullable(new_filter.constant_node->getResultType()))
+        && isEnum(removeLowCardinalityAndNullable(expr_type)))
+        new_filter.converted_value.reset();
+
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)
     {
@@ -1114,7 +1155,7 @@ static void convertNotEqualsChainToNotIn(
 
             /// The set converts each element to the expression's type, while the comparison it
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
-            if (!tryConvertToColumnType(literal, expr_type))
+            if (!tryConvertToColumnType(literal, expr_type) || setConversionKeepsFixedStringPadding(literal, expr_type))
                 all_constants_convert_losslessly = false;
         }
 
@@ -2306,7 +2347,8 @@ private:
         Field converted;
         if (isStringOrFixedString(constant_type) && !isStringOrFixedString(other_type))
             converted = tryConvertFieldToType(
-                constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+                fixedStringConstantAsComparedWith(constant_node->getValue(), constant_type, other_type),
+                *other_type, constant_type.get(), getFormatSettings(getContext()));
         else if (isLowerScaleTimePoint(constant_type, other_type))
             converted = tryConvertFieldToTypeExact(constant_node->getValue(), *other_type, constant_type.get());
         if (converted.isNull())
@@ -2773,7 +2815,7 @@ private:
                 /// The set converts each element to the expression's type, while the comparison it
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
-                if (!tryConvertToColumnType(literal, expr_type))
+                if (!tryConvertToColumnType(literal, expr_type) || setConversionKeepsFixedStringPadding(literal, expr_type))
                     all_constants_convert_losslessly = false;
             }
 

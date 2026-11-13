@@ -1179,9 +1179,10 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
+    /// Convert the key as the join does, see `predicateOperandsToCommonType`.
     const auto & key_casted = key_node.result_type->equals(*target_type)
         ? key_node
-        : dag.addCast(key_node, target_type, {}, context);
+        : dag.addCast(key_node, target_type, {}, context, /* fixed_string_to_string_strip_trailing_zeros= */ true);
 
     if (exact_values)
     {

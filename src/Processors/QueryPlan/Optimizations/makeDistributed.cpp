@@ -594,7 +594,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
 
     /// Must have at least one equi-join predicate (required for shuffle partitioning).
-    if (std::ranges::all_of(join_info.expression, [](const auto & expr) { return !expr.isFunction(JoinConditionOperator::Equals); }))
+    if (std::ranges::all_of(join_info.expression, [](const auto & expr) { return std::get<0>(expr.asBinaryPredicate()) != JoinConditionOperator::Equals; }))
         return;
 
     QueryPlan::Node * source_a = node.children[0];

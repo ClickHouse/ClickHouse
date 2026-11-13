@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -18,6 +19,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -27,15 +29,18 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionInitializeAggregation final : public IFunction, private WithContext
+class FunctionInitializeAggregation final : public IFunction
 {
 public:
     static constexpr auto name = "initializeAggregation";
 
-    FunctionInitializeAggregation(ContextPtr context_, AggregateFunctionPtr aggregate_function_)
-        : WithContext(context_), aggregate_function(std::move(aggregate_function_)) {}
+    explicit FunctionInitializeAggregation(AggregateFunctionPtr aggregate_function_)
+        : aggregate_function(std::move(aggregate_function_)) {}
 
     String getName() const override { return name; }
+
+    /// The aggregate may capture settings that change its result, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { aggregate_function->updateHash(hash); }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -128,7 +133,17 @@ class FunctionInitializeAggregationOverloadResolver final : public IFunctionOver
 public:
     static constexpr auto name = "initializeAggregation";
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionInitializeAggregationOverloadResolver>(context_); }
-    explicit FunctionInitializeAggregationOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionInitializeAggregationOverloadResolver(ContextPtr context_)
+        : WithContext(context_)
+        , cast_fixed_string_to_string_strip_trailing_zeros(AggregateFunctionFactory::getCastFixedStringToStringStripTrailingZeros())
+    {
+    }
+
+    /// The adaptors for `Dynamic` and `Variant` arguments hash the resolver rather than the built function, see
+    /// `IFunctionOverloadResolver::updateHash`. The aggregate built from it captures the conversion mode of
+    /// `FixedString` to `String`, see `IAggregateFunction::updateHash`. Hash the mode the aggregate is created with,
+    /// which is not the one of the scope of this function if a subquery overrides the setting.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -168,7 +183,7 @@ public:
             arg.column = recursiveRemoveLowCardinality(arg.column);
         }
         auto aggregate_function = resolveAggregateFunction(args);
-        auto function = std::make_shared<FunctionInitializeAggregation>(getContext(), std::move(aggregate_function));
+        auto function = std::make_shared<FunctionInitializeAggregation>(std::move(aggregate_function));
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -178,6 +193,9 @@ public:
     }
 
 private:
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
+    CachedAggregateFunctionNameAndParameters parsed_aggregate_function_name;
+
     AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
     {
         const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
@@ -196,8 +214,9 @@ private:
 
         String aggregate_function_name;
         Array params_row;
-        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+        parsed_aggregate_function_name.get(
+            aggregate_function_name_with_params, aggregate_function_name, params_row, "function " + getName(),
+            [this] { return getContext(); });
 
         auto action = NullsAction::EMPTY; /// It is already embedded in the function name itself
         AggregateFunctionProperties properties;

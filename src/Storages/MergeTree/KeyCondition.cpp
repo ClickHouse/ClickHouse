@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -849,6 +850,19 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
 
         normalized_args.push_back(child);
     }
+
+    /// The branches are compared with the constant as they are, not converted to the result type of `coalesce`.
+    /// This is wrong when the conversion changes the comparison: a `FixedString` is compared with a `String`
+    /// zero-padded, but its conversion to `String` keeps the padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`),
+    /// so `toFixedString('a', 2) > 'a'` is false while `coalesce(toFixedString('a', 2), 'x') > 'a'` is true.
+    const DataTypePtr result_type = removeNullable(removeLowCardinality(coalesce_node->result_type));
+    auto converts_fixed_string = [&](const ActionsDAG::Node * arg)
+    {
+        const DataTypePtr arg_type = removeNullable(removeLowCardinality(arg->result_type));
+        return !arg_type->equals(*result_type) && anyInTypeTree(*arg_type, [](const IDataType & t) { return isFixedString(t); });
+    };
+    if (std::ranges::any_of(normalized_args, converts_fixed_string) || (trailing_const && converts_fixed_string(trailing_const)))
+        return nullptr;
 
     const size_t m = normalized_args.size();
     const bool has_trailing_const = trailing_const != nullptr;
@@ -2373,7 +2387,7 @@ static bool isFixedStringConstant(
 /// flag cannot repair it and the candidate has to be dropped. An input `FixedString` at least as
 /// wide as the constant keeps the padded bytes, so the transform stays sound there.
 /// Even a constant that fills its declared width can match longer `String` values ending in zero
-/// bytes. `Variant` and `Dynamic` retain the comparison semantics of their active member type.
+/// bytes. The same holds for an `Enum` input, whose names are compared zero-padded. `Variant` and `Dynamic` retain the comparison semantics of their active member type.
 static bool fixedStringConstantLosesPadding(
     const Field & value, bool is_fixed_string, const DataTypePtr & key_expression_input_type)
 {
@@ -2383,12 +2397,78 @@ static bool fixedStringConstantLosesPadding(
     const auto & constant_bytes = value.safeGet<String>();
     const auto input_type = removeLowCardinalityAndNullable(key_expression_input_type);
 
+    /// An `Enum` is compared with a `FixedString` by its name zero-padded, so the constant can match several
+    /// enum values (`'a'` and `'a\0'`), while its conversion to the `Enum` gives one of them.
+    if (isEnum(input_type))
+        return true;
+
     /// Even without stored padding, a string input can match additional trailing zero bytes.
     if (!isStringOrFixedString(input_type) && (constant_bytes.empty() || constant_bytes.back() != '\0'))
         return false;
 
     const auto * fixed_string_input_type = typeid_cast<const DataTypeFixedString *>(input_type.get());
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
+}
+
+/// An `Enum` constant is compared with a `FixedString` by its name, with the trailing zero bytes of the `FixedString`
+/// removed, while its conversion to a `FixedString` pads the name. The padded value agrees with the comparison unless the
+/// name ends with a zero byte itself: `k != CAST('a\0' AS Enum8('a\0' = 1))` is true for the key `'a\0'` of
+/// `FixedString(2)`, to which the constant is converted.
+static bool enumConstantNameLosesZeroBytes(const Field & value, const DataTypePtr & value_type, const DataTypePtr & key_expression_input_type)
+{
+    const auto enum_type = removeLowCardinalityAndNullable(value_type);
+    if (!isEnum(enum_type) || !isFixedString(removeLowCardinalityAndNullable(key_expression_input_type)))
+        return false;
+
+    Field name = tryConvertFieldToType(value, DataTypeString(), enum_type.get(), {});
+    return name.isNull() || (!name.safeGet<String>().empty() && name.safeGet<String>().back() == '\0');
+}
+
+/// Whether a value of `type` (without `Nullable` and `LowCardinality`) can have a `FixedString` nested in a composite
+/// type. `Dynamic` and `JSON` do not show the types of their values, so `CAST(tuple(toFixedString('a', 2)) AS Dynamic)`
+/// and `tuple(CAST(toFixedString('a', 2) AS Dynamic))` are such values as well. A top-level `Dynamic` holding a scalar,
+/// known from `value` if it is given, is handled by the callers like a top-level `FixedString` (see `isFixedStringConstant`).
+static bool valueMayHaveNestedFixedString(const DataTypePtr & type, const Field * value)
+{
+    if (isFixedString(type))
+        return false;
+
+    if (isDynamic(type) && value && value->getType() != Field::Types::Array && value->getType() != Field::Types::Tuple
+        && value->getType() != Field::Types::Map && value->getType() != Field::Types::Object)
+        return false;
+
+    return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t) || isDynamic(t) || isObject(t); });
+}
+
+/// A `FixedString` inside a composite type, such as `Array(FixedString(N))`, is compared with a `String` element of the
+/// other side zero-padded (`[toFixedString('a', 2)] = ['a']`), but the conversion of a value to another type keeps its
+/// padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`). So a constant or a set element of such a type
+/// converted to the input type of a key expression names other key values than the ones that match it. A top-level
+/// `FixedString` is handled by the callers (see `fixedStringConstantLosesPadding`).
+/// The padding matters only where the other side can hold a string: a `FixedString` converted to a number is parsed
+/// both by the conversion and by the comparison, so `(toFixedString('123', 3), 5)` over `Tuple(UInt64, UInt64)` is safe.
+/// `Dynamic` and `JSON` can hold a string without showing it in the type. An `Enum` is compared with a `FixedString` by
+/// its name, with the trailing zero bytes of the `FixedString` removed, while the conversion of a `FixedString` to an
+/// `Enum` keeps them, and the conversion of an `Enum` to a `FixedString` pads the name: `tuple(toFixedString('a', 2))`
+/// equals `tuple('a')` of `Tuple(Enum8('a' = 1, 'a\0' = 2))`, but is converted to `tuple('a\0')`.
+static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_type, const DataTypePtr & input_type, const Field * value)
+{
+    auto has_nested_fixed_string = [](const DataTypePtr & type)
+    {
+        return !isFixedString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+    };
+
+    auto can_hold_string = [](const DataTypePtr & type)
+    {
+        return anyInTypeTree(
+            *type, [](const IDataType & t) { return isStringOrFixedString(t) || isEnum(t) || isDynamic(t) || isObject(t); });
+    };
+
+    const auto value_type_not_null = removeNullable(recursiveRemoveLowCardinality(value_type));
+    const auto input_type_not_null = removeNullable(recursiveRemoveLowCardinality(input_type));
+    return !value_type_not_null->equals(*input_type_not_null)
+        && ((valueMayHaveNestedFixedString(value_type_not_null, value) && can_hold_string(input_type_not_null))
+            || (has_nested_fixed_string(input_type_not_null) && can_hold_string(value_type_not_null)));
 }
 
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
@@ -2598,6 +2678,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || enumConstantNameLosesZeroBytes(value, constant.type, transform_input_type)
+                || nestedFixedStringConversionChangesValues(constant.type, transform_input_type, &value)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
@@ -3351,6 +3433,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || enumConstantNameLosesZeroBytes(value, constant.type, candidate.dag.input_type)
+            || nestedFixedStringConversionChangesValues(constant.type, candidate.dag.input_type, &value)
             || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
 
@@ -3667,6 +3751,25 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
                 && !element_type->equals(*predicate_column_type)
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
+                return false;
+        }
+
+        /// The membership of a value in a set with a `FixedString` nested in a composite type compares the `FixedString`
+        /// zero-padded, but the conversion of the elements keeps the padding. A top-level `Dynamic` element is checked by
+        /// its values: one holding only scalars, such as `has(CAST(['a', NULL], 'Array(Dynamic)'), k)`, has no nested
+        /// `FixedString`.
+        {
+            const DataTypePtr set_input_type = mapping.set_transform ? mapping.set_transform->input_type : key_column_type;
+            if (isDynamic(removeLowCardinalityAndNullable(set_element_type)))
+            {
+                for (size_t row = 0; row < set_column->size(); ++row)
+                {
+                    const Field value = (*set_column)[row];
+                    if (nestedFixedStringConversionChangesValues(set_element_type, set_input_type, &value))
+                        return false;
+                }
+            }
+            else if (nestedFixedStringConversionChangesValues(set_element_type, set_input_type, /*value=*/ nullptr))
                 return false;
         }
 
@@ -4545,7 +4648,67 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
         const auto & function = *it;
-        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
+
+        /// A cast may be created with a conversion mode other than the one from the query context: the join key
+        /// conversion and the runtime filters always remove the trailing zero bytes of a `FixedString` converted
+        /// to `String`. Rebuilding such a cast by name would lose it, so keep the cast of the expression.
+        const auto * dag_node = function.getDAGNode();
+        FunctionBasePtr cast_of_expression;
+        if (dag_node && dag_node->function_base && dag_node->children.size() == 2 && dag_node->children[1]->column
+            && isColumnConst(*dag_node->children[1]->column)
+            && (function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST"))
+        {
+            const auto & captured_cast = dag_node->function_base;
+            const auto & captured_argument_type = captured_cast->getArgumentTypes()[0];
+            if (captured_argument_type->equals(*key_column_type))
+            {
+                cast_of_expression = captured_cast;
+            }
+            else if (recursiveRemoveLowCardinality(captured_argument_type)->equals(*key_column_type)
+                && anyInTypeTree(*key_column_type, [](const IDataType & t) { return isFixedString(t); }))
+            {
+                /// The key type has `LowCardinality` removed (see above), so create the same cast for it, with the
+                /// conversion mode of the cast of the expression.
+                if (auto strip_trailing_zeros = getCastFixedStringToStringStripTrailingZeros(*captured_cast))
+                    cast_of_expression = createInternalCast(
+                        {nullptr, key_column_type, ""}, captured_cast->getResultType(), CastType::nonAccurate, {},
+                        node.getContext(), strip_trailing_zeros);
+            }
+        }
+
+        if (cast_of_expression)
+        {
+            const auto & func = cast_of_expression;
+            if (!func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+                return false;
+
+            if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
+                return false;
+
+            key_column_type = func->getResultType();
+            ColumnWithTypeAndName const_arg{dag_node->children[1]->column, dag_node->children[1]->result_type, dag_node->children[1]->result_name};
+            out_functions_chain.push_back(
+                std::make_shared<FunctionWithOptionalConstArg>(func, const_arg, FunctionWithOptionalConstArg::Kind::RIGHT_CONST));
+            continue;
+        }
+
+        /// Other functions, such as `toString`, capture the conversion mode from the scope where they were built, such as
+        /// a subquery with its own `SETTINGS`, which may differ from the context of the read. Rebuild them with that mode.
+        ContextPtr function_context = node.getContext();
+        if (dag_node && dag_node->function_base)
+        {
+            if (auto strip_trailing_zeros = getFixedStringToStringStripTrailingZeros(*dag_node->function_base);
+                strip_trailing_zeros
+                && (!function_context
+                    || function_context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros] != *strip_trailing_zeros))
+            {
+                auto context_copy = Context::createCopy(function_context ? function_context : Context::getGlobalContextInstance());
+                context_copy->setSetting("cast_fixed_string_to_string_strip_trailing_zeros", Field(*strip_trailing_zeros));
+                function_context = std::move(context_copy);
+            }
+        }
+
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), function_context);
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
@@ -6144,6 +6307,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                         return std::nullopt;
                 }
 
+                /// An `Enum` is compared with a `FixedString` by its name zero-padded, so the constant can equal
+                /// several enum values (`'a'` and `'a\0'`), not a single point of the key.
+                if (candidate.const_is_fixed_string && isEnum(key_expr_type_not_null))
+                    return std::nullopt;
+
                 /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
                 /// constant instead of throwing, so the index must do the same instead of converting.
                 /// Nullable keys are declined, as for NaN above: `NULL <op> 'x'` is NULL, not a constant.
@@ -6195,6 +6363,49 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
             {
                 DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
                 if (!common_type)
+                    return std::nullopt;
+
+                /// A `FixedString` key is compared with a value of another string-like type, such as
+                /// an `Enum`, zero-padded, while the cast of the key to `String` keeps its padding.
+                /// A range over the cast key would prune matching granules. A value that fits into
+                /// the key width compares with the key as the value padded to the key width does,
+                /// both for equality and for the order, so use the padded value instead, as for a
+                /// `String` constant above. The functions that use the constant as a pattern or
+                /// prefix are declined: padding would change the pattern.
+                if (isFixedString(key_expr_type_not_null) && isString(common_type))
+                {
+                    if (func_name == "like" || func_name == "notLike" || func_name == "startsWith"
+                        || func_name == "startsWithUTF8" || func_name == "match")
+                        return std::nullopt;
+
+                    /// The comparison removes the trailing zero bytes of the key (see `FunctionComparison::executeGeneric`),
+                    /// so it agrees with the padded value only when the value does not end with a zero byte itself:
+                    /// `toFixedString('a', 2) < CAST('a\0' AS Enum8('a\0' = 1))` is true, but the key `'a\0'` is not less
+                    /// than the value padded to `'a\0'`.
+                    Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                    if (as_string.isNull()
+                        || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN()
+                        || (!as_string.safeGet<String>().empty() && as_string.safeGet<String>().back() == '\0'))
+                        return std::nullopt;
+
+                    const_value = convertFieldToType(as_string, *key_expr_type_not_null);
+                    if (const_value.isNull())
+                        return std::nullopt;
+                    common_type = key_expr_type_not_null;
+                    const_type = key_expr_type_not_null;
+                }
+
+                /// A `FixedString` inside a composite type, such as `Array(FixedString(N))`, is compared with
+                /// a `String` element of the other side zero-padded (`[toFixedString('a', 2)] = ['a']`), but
+                /// the conversion to the common type keeps its padding, so neither the key nor the constant
+                /// can be converted for a range: decline.
+                auto has_nested_fixed_string = [](const DataTypePtr & type)
+                {
+                    return !isFixedString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+                };
+                if ((!key_expr_type_not_null->equals(*common_type) || !const_type->equals(*common_type))
+                    && (has_nested_fixed_string(key_expr_type_not_null)
+                        || valueMayHaveNestedFixedString(removeNullable(recursiveRemoveLowCardinality(const_type)), &const_value)))
                     return std::nullopt;
 
                 if (!const_type->equals(*common_type))

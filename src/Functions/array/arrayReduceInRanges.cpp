@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -92,6 +93,9 @@ public:
     bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
     bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
+
+    /// The aggregate may capture settings that change its result, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { aggregate_function->updateHash(hash); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -377,7 +381,17 @@ class FunctionArrayReduceInRangesOverloadResolver final : public IFunctionOverlo
 public:
     static constexpr auto name = "arrayReduceInRanges";
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionArrayReduceInRangesOverloadResolver>(context_); }
-    explicit FunctionArrayReduceInRangesOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionArrayReduceInRangesOverloadResolver(ContextPtr context_)
+        : WithContext(context_)
+        , cast_fixed_string_to_string_strip_trailing_zeros(AggregateFunctionFactory::getCastFixedStringToStringStripTrailingZeros())
+    {
+    }
+
+    /// The adaptors for `Dynamic` and `Variant` arguments hash the resolver rather than the built function, see
+    /// `IFunctionOverloadResolver::updateHash`. The aggregate built from it captures the conversion mode of
+    /// `FixedString` to `String`, see `IAggregateFunction::updateHash`. Hash the mode the aggregate is created with,
+    /// which is not the one of the scope of this function if a subquery overrides the setting.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -418,6 +432,9 @@ public:
     }
 
 private:
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
+    CachedAggregateFunctionNameAndParameters parsed_aggregate_function_name;
+
     AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() < 3)
@@ -465,8 +482,9 @@ private:
 
         String aggregate_function_name;
         Array params_row;
-        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+        parsed_aggregate_function_name.get(
+            aggregate_function_name_with_params, aggregate_function_name, params_row, "function " + getName(),
+            [this] { return getContext(); });
 
         AggregateFunctionProperties properties;
         auto action = NullsAction::EMPTY;

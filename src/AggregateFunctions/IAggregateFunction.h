@@ -30,6 +30,8 @@ namespace llvm
     class IRBuilderBase;
 }
 
+class SipHash;
+
 namespace DB
 {
 struct Settings;
@@ -630,6 +632,17 @@ public:
         if (auto nested = getNestedFunction())
             return nested->isDeterministic();
         return true;
+    }
+
+    /** Hash the settings captured when the function was created that change its result for the same arguments,
+      * such as `cast_fixed_string_to_string_strip_trailing_zeros` of `groupConcat`. The scalar functions that run an
+      * aggregate (`arrayReduce`, `initializeAggregation`) take it into `IFunctionBase::updateHash`, so caches keyed
+      * by an expression, like the query condition cache, tell such functions apart. Combinators hash the wrapped function.
+      */
+    virtual void updateHash(SipHash & hash) const
+    {
+        if (auto nested = getNestedFunction())
+            nested->updateHash(hash);
     }
 
     const DataTypePtr & getResultType() const override { return result_type; }

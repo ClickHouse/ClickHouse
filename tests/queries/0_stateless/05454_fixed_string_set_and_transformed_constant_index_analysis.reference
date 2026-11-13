@@ -1,0 +1,18 @@
+bloom filter, IN with a FixedString set over a String column
+2
+2
+1
+bloom filter, IN with an Array(FixedString) set over an Array(String) column
+1
+1
+partition key over a hash of an array, a constant with a FixedString
+1
+1
+1
+primary key over a hash of an array, a constant with a FixedString
+1
+1
+partition key over an array, IN with an Array(FixedString) set
+1
+1
+1

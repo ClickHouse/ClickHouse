@@ -8,6 +8,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Core/ServerSettings.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/SipHash.h>
 #include <DataTypes/IDataType.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -50,11 +51,16 @@ class GroupConcatImpl final : public IAggregateFunctionDataHelper<GroupConcatDat
     const String delimiter;
     const bool is_string;
     const bool is_fixed_string;
+    /// Whether the trailing zero bytes of a `FixedString` argument are removed, see `cast_fixed_string_to_string_strip_trailing_zeros`.
+    const bool strip_trailing_zeros;
 
 public:
-    GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_);
+    GroupConcatImpl(
+        const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_, bool strip_trailing_zeros_);
 
     String getName() const override;
+
+    void updateHash(SipHash & hash) const override { hash.update(strip_trailing_zeros); }
 
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
@@ -63,6 +69,8 @@ public:
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
+    void addBatchSparseSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override;
     void mergeImpl(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override;
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override;
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;

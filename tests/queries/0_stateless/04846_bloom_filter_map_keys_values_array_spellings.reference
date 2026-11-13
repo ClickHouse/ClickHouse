@@ -40,7 +40,7 @@ SELECT (SELECT count() FROM k_lck WHERE hasAll(mapKeys(m), [toFixedString('K1', 
 SELECT id FROM k_lck WHERE has(mapKeys(m), toFixedString('K1', 3)) ORDER BY id;
 1
 SELECT id FROM k_lck WHERE hasAny(mapKeys(m), [toFixedString('K1', 3)]) ORDER BY id;
-0
+1
 -- `LowCardinality(FixedString(3))` values: the direct spellings coerce through the least
 -- supertype, so an over-wide constant compares without throwing and matches nothing.
 CREATE TABLE o_lcfsv (id UInt64, m Map(String, LowCardinality(FixedString(3)))) ENGINE = Log;
@@ -59,9 +59,8 @@ SELECT (SELECT count() FROM k_lcfsv WHERE has(mapValues(m), 'LONGCONST')) = (SEL
 1
 SELECT (SELECT count() FROM k_lcfsv WHERE hasAny(mapValues(m), ['V0', 'XYZ'])) = (SELECT count() FROM o_lcfsv WHERE hasAny(mapValues(m), ['V0', 'XYZ']));
 1
--- Pin the supertype semantics: the short constant matches after the elements' padding is stripped.
+-- Pin the supertype semantics: the short constant does not match, as the cast keeps the elements' padding.
 SELECT id FROM k_lcfsv WHERE has(mapValues(m), 'V0') ORDER BY id;
-0
 -- Pruning is preserved where the index can hash exactly: some stage selects more than zero and
 -- fewer than all granules.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_lck WHERE has(mapKeys(m), toFixedString('K1', 3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));

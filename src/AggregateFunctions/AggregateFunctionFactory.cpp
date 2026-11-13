@@ -28,6 +28,7 @@ struct Settings;
 namespace Setting
 {
     extern const SettingsBool log_queries;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace ErrorCodes
@@ -434,6 +435,15 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                         "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
+}
+
+bool AggregateFunctionFactory::getCastFixedStringToStringStripTrailingZeros()
+{
+    /// The same settings as `getImpl` passes to the creators.
+    ContextPtr query_context;
+    if (CurrentThread::isInitialized())
+        query_context = CurrentThread::get().tryGetQueryContext();
+    return query_context && query_context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros];
 }
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const

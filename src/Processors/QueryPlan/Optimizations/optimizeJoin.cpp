@@ -182,7 +182,9 @@ struct RuntimeHashStatisticsContext
         output_hash.update(join_operator.strictness);
         for (const auto & condition : join_operator.expression)
         {
-            if (condition.isFunction(JoinConditionOperator::Equals) || condition.isFunction(JoinConditionOperator::NullSafeEquals))
+            /// By `asBinaryPredicate`, as the equi conditions are selected: it does not offer every equality as one.
+            const auto predicate_op = std::get<0>(condition.asBinaryPredicate());
+            if (predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals)
                 continue;
             condition.getNode()->updateHash(output_hash);
         }

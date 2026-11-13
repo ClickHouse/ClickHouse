@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
@@ -1292,6 +1293,11 @@ private:
         const IDataType * type_string = left_const ? left_type.get() : right_type.get();
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
+        /// An `Enum` is compared with a `FixedString` as its name, with the trailing zero bytes of the `FixedString` removed
+        /// (see `executeGeneric`). Converting the constant to an exact `Enum` value would keep them.
+        if (isFixedString(*type_string) && isEnum(removeNullable(removeLowCardinality(type_to_compare))))
+            return nullptr;
+
         Field string_value = left_const ? left_const->getField() : right_const->getField();
 
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
@@ -1586,6 +1592,19 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
+
+        /// A `FixedString` compared with another type through `String`, for example with an `Enum`, is converted
+        /// without its trailing zero bytes, as it always was, whatever `cast_fixed_string_to_string_strip_trailing_zeros` is.
+        /// So `toFixedString('7', 4)` equals the `Enum` name `'7'`, and a `FixedString` value equals at most one name:
+        /// index analysis, constant propagation and join keys rely on an `Enum` value being equal to one `Enum` name.
+        if (isString(common_type) && isFixedString(c0.type) != isFixedString(c1.type))
+        {
+            ColumnPtr c0_converted = castColumn(c0, common_type, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
+            ColumnPtr c1_converted = castColumn(c1, common_type, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
+            if (auto res = executeString(c0_converted.get(), c1_converted.get()))
+                return res;
+        }
+
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1598,18 +1617,25 @@ private:
     {
         /// The gathered element columns with `LowCardinality` and top-level `Nullable` removed,
         ColumnsWithTypeAndName element_args;
-        /// Keep the gathered `Nullable` columns alive: the null map pointers below point into them.
+        /// The gathered columns before the top-level `Nullable` is removed.
         ColumnPtr full_elements0;
         ColumnPtr full_elements1;
-        /// Null maps of the gathered elements (nullptr when the elements are not `Nullable`).
-        const NullMap * null_map0 = nullptr;
-        const NullMap * null_map1 = nullptr;
+        /// Per gathered element: whether it is NULL, empty when the elements cannot be NULL. It covers a NULL of
+        /// `Nullable` as well as of `Dynamic` or `Variant`, which keep their NULLs in the values.
+        NullMap is_null0;
+        NullMap is_null1;
         /// Per row: the aligned prefix length both arrays share.
         PaddedPODArray<UInt64> common_lengths;
         /// Per row: whether array0 is shorter(-1), equals(0), bigger(1) than array1.
         PaddedPODArray<Int8> length_cmp;
         /// Total number of gathered element pairs.
         size_t num_elements = 0;
+        /// The side (0 or 1) of a constant array whose elements contain arrays, or -1. Its elements are not gathered,
+        /// because each of them can be large and would be copied once per input row: `element_args` of this side
+        /// holds the elements of the single row of the constant, and `deferred_positions` the position in it of
+        /// every gathered element.
+        int deferred_side = -1;
+        PaddedPODArray<UInt64> deferred_positions;
     };
 
     GatheredArrayElements gatherAlignedArrayElements(
@@ -1617,14 +1643,19 @@ private:
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const
     {
-        /// First, unwrap the two array columns
+        /// First, unwrap the two array columns. A constant is not materialized: its single row is gathered from
+        /// for every input row, so only the elements of the common prefixes are copied.
         chassert(column_type_name0.column && column_type_name1.column);
-        ColumnPtr full_column0 = column_type_name0.column->convertToFullColumnIfConst();
-        ColumnPtr full_column1 = column_type_name1.column->convertToFullColumnIfConst();
+        const bool is_const0 = isColumnConst(*column_type_name0.column);
+        const bool is_const1 = isColumnConst(*column_type_name1.column);
+        const IColumn & data_column0 = is_const0
+            ? assert_cast<const ColumnConst &>(*column_type_name0.column).getDataColumn() : *column_type_name0.column;
+        const IColumn & data_column1 = is_const1
+            ? assert_cast<const ColumnConst &>(*column_type_name1.column).getDataColumn() : *column_type_name1.column;
 
         /// With ColumnArray we have access to offsets and we can handle array of arrays
-        const auto & column_array0 = assert_cast<const ColumnArray &>(*full_column0);
-        const auto & column_array1 = assert_cast<const ColumnArray &>(*full_column1);
+        const auto & column_array0 = assert_cast<const ColumnArray &>(data_column0);
+        const auto & column_array1 = assert_cast<const ColumnArray &>(data_column1);
         /// Fetch all offsets from both ColumnArrays
         const auto & offsets0 = column_array0.getOffsets();
         const auto & offsets1 = column_array1.getOffsets();
@@ -1646,8 +1677,13 @@ private:
         /// Handles [1] = [1] as well as [[1]] = [[1]]
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            ColumnArray::Offset off0 = offsets0[row];
-            ColumnArray::Offset off1 = offsets1[row];
+            /// A constant has one row, which starts at 0 for every input row.
+            if (is_const0)
+                prev0 = 0;
+            if (is_const1)
+                prev1 = 0;
+            ColumnArray::Offset off0 = offsets0[is_const0 ? 0 : row];
+            ColumnArray::Offset off1 = offsets1[is_const1 ? 0 : row];
             size_t len0 = off0 - prev0;
             size_t len1 = off1 - prev1;
             size_t common = std::min(len0, len1);
@@ -1673,22 +1709,45 @@ private:
         /// The element types may be wrapped in `LowCardinality` (e.g. `Array(LowCardinality(Nullable(UInt64)))`);
         DataTypePtr nested_type0 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType());
         DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
+
+        /// An element of a constant that contains arrays is not copied for every input row (see `deferred_side`).
+        /// Both constants have one row, so there is nothing to defer.
+        auto contains_array = [](const DataTypePtr & type)
+        {
+            return anyInTypeTree(*type, [](const IDataType & t) { return isArray(t) || isMap(t); });
+        };
+        if (is_const0 != is_const1)
+        {
+            if (is_const0 && contains_array(nested_type0))
+                gathered.deferred_side = 0;
+            else if (is_const1 && contains_array(nested_type1))
+                gathered.deferred_side = 1;
+        }
+
         /// Strip it recursively from both the types and the gathered columns so the `Nullable` unwrapping just
         /// below and the scalar comparison see plain columns.
-        gathered.full_elements0 = recursiveRemoveLowCardinality(column_array0.getDataPtr()->index(*indexes0, 0));
-        gathered.full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
+        gathered.full_elements0 = recursiveRemoveLowCardinality(
+            gathered.deferred_side == 0 ? column_array0.getDataPtr() : column_array0.getDataPtr()->index(*indexes0, 0));
+        gathered.full_elements1 = recursiveRemoveLowCardinality(
+            gathered.deferred_side == 1 ? column_array1.getDataPtr() : column_array1.getDataPtr()->index(*indexes1, 0));
+        if (gathered.deferred_side >= 0)
+            gathered.deferred_positions = gathered.deferred_side == 0 ? std::move(idx0) : std::move(idx1);
         ColumnPtr elements0 = gathered.full_elements0;
         ColumnPtr elements1 = gathered.full_elements1;
+        auto collect_nulls = [&](const ColumnPtr & elements, const DataTypePtr & nested_type, bool deferred, NullMap & is_null)
+        {
+            if (!canContainNull(*nested_type))
+                return;
+            is_null.resize(gathered.num_elements);
+            for (size_t j = 0; j < gathered.num_elements; ++j)
+                is_null[j] = elements->isNullAt(deferred ? gathered.deferred_positions[j] : j);
+        };
+        collect_nulls(gathered.full_elements0, nested_type0, gathered.deferred_side == 0, gathered.is_null0);
+        collect_nulls(gathered.full_elements1, nested_type1, gathered.deferred_side == 1, gathered.is_null1);
         if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
-        {
-            gathered.null_map0 = &nullable0->getNullMapData();
             elements0 = nullable0->getNestedColumnPtr();
-        }
         if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
-        {
-            gathered.null_map1 = &nullable1->getNullMapData();
             elements1 = nullable1->getNestedColumnPtr();
-        }
 
         gathered.element_args = ColumnsWithTypeAndName{
             {elements0, removeNullable(nested_type0), "left"},
@@ -1697,33 +1756,227 @@ private:
         return gathered;
     }
 
-    /// Compares the gathered aligned elements with the given scalar comparison; returns its
-    /// full (non-const) `UInt8` result over all gathered element pairs.
-    static ColumnPtr compareGatheredElements(const FunctionOverloadResolverPtr & resolver, const GatheredArrayElements & gathered)
+    static bool containsFixedString(const IDataType & type)
     {
-        /// Recurse over indexes to compare flat columns at element-level
-        auto impl = resolver->build(gathered.element_args);
+        return anyInTypeTree(type, [](const IDataType & t) { return isFixedString(t); });
+    }
 
-        /// A `Nothing` element type has no values, so it cannot be executed and yields a `ColumnNothing`
-        /// the callers cannot consume.
-        if (isNothing(impl->getResultType()))
+    /// Order verdict of a pair of elements: 0 if they are equal, 1 if the left one comes first in the direction of the
+    /// comparison (`order_resolver` returns 1), and -1 otherwise. Without `order_resolver`, only the equality is
+    /// determined: unequal elements get a nonzero verdict. A NULL element (of a `Nullable`, `Dynamic` or `Variant` type,
+    /// including an untyped `NULL`) is equal only to another NULL and sorts after every non-NULL value.
+    static void compareElementsForOrder(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const ColumnWithTypeAndName & left,
+        const ColumnWithTypeAndName & right,
+        size_t rows,
+        PaddedPODArray<Int8> & verdict)
+    {
+        static constexpr bool order_is_less = IsOperation<Op>::less || IsOperation<Op>::less_or_equals;
+
+        /// An untyped `NULL` has the type `Nullable(Nothing)`: all its values are NULL and its nested column cannot
+        /// be compared, so the verdict is decided by the NULL handling below alone.
+        auto is_always_null = [](const DataTypePtr & type) { return isNothing(removeNullable(removeLowCardinality(type))); };
+
+        /// Elements without a `FixedString` compared with another type are compared as in the comparison of arrays of
+        /// the same type: by `IColumn::compareAt` of the values cast to their common type. It orders NaN after the other
+        /// numbers and equal to another NaN, and handles the NULLs inside composite values, also in `Dynamic` and `Variant`.
+        /// So are the elements that can hold a value of any type (`Dynamic`, `Variant`, `JSON`): their equality keeps the
+        /// type of the value, so a `FixedString` is not equal to a `String` there, and their order must agree with it.
+        auto holds_any_type = [](const DataTypePtr & type)
         {
-            auto masked = [&](size_t arg, const NullMap * null_map)
+            auto nested = removeNullable(removeLowCardinality(type));
+            return isDynamic(nested) || isVariant(nested) || isObject(nested);
+        };
+        if ((left.type->equals(*right.type) || (!containsFixedString(*left.type) && !containsFixedString(*right.type))
+                || holds_any_type(left.type) || holds_any_type(right.type))
+            && !is_always_null(left.type) && !is_always_null(right.type))
+        {
+            if (DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left.type, right.type}))
             {
-                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
-                    && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
-                                   [](UInt8 byte) { return byte != 0; });
-            };
-
-            if (masked(0, gathered.null_map0) || masked(1, gathered.null_map1))
-                return ColumnUInt8::create(gathered.num_elements, UInt8(0));
-
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                " of function {}", backQuote(gathered.element_args[0].type->getName()),
-                backQuote(gathered.element_args[1].type->getName()), backQuote(name));
+                /// A constant is compared by its single row, without copying it for every row.
+                ColumnPtr left_column = castColumn(left, common_type);
+                ColumnPtr right_column = castColumn(right, common_type);
+                const bool left_is_const = isColumnConst(*left_column);
+                const bool right_is_const = isColumnConst(*right_column);
+                if (left_is_const)
+                    left_column = assert_cast<const ColumnConst &>(*left_column).getDataColumnPtr();
+                if (right_is_const)
+                    right_column = assert_cast<const ColumnConst &>(*right_column).getDataColumnPtr();
+                verdict.resize(rows);
+                for (size_t row = 0; row < rows; ++row)
+                {
+                    int cmp = left_column->compareAt(
+                        left_is_const ? 0 : row, right_is_const ? 0 : row, *right_column, /*nan_direction_hint=*/ 1);
+                    verdict[row] = cmp == 0 ? 0 : ((order_is_less ? cmp < 0 : cmp > 0) ? 1 : -1);
+                }
+                return;
+            }
         }
 
-        return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
+        /// A NULL is equal only to another NULL and sorts after every non-NULL value.
+        auto apply_null_order = [&]()
+        {
+            for (size_t row = 0; row < rows; ++row)
+            {
+                bool left_is_null = left.column->isNullAt(row);
+                bool right_is_null = right.column->isNullAt(row);
+                if (left_is_null && right_is_null)
+                    verdict[row] = 0;
+                else if (left_is_null || right_is_null)
+                    verdict[row] = (order_is_less ? right_is_null : left_is_null) ? 1 : -1;
+            }
+        };
+
+        /// A `Nullable` tuple is compared as the tuple of its non-NULL values, which goes element by element below,
+        /// and then the NULLs of the tuple itself are applied.
+        if ((left.type->isNullable() || right.type->isNullable()) && !is_always_null(left.type) && !is_always_null(right.type)
+            && isTuple(removeNullable(left.type)) && isTuple(removeNullable(right.type)))
+        {
+            auto remove_nullable = [rows](const ColumnWithTypeAndName & argument) -> ColumnWithTypeAndName
+            {
+                if (const auto * constant = checkAndGetColumn<ColumnConst>(argument.column.get()))
+                {
+                    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&constant->getDataColumn()))
+                        return {ColumnConst::create(nullable->getNestedColumnPtr(), rows), removeNullable(argument.type), argument.name};
+                    return argument;
+                }
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(argument.column.get()))
+                    return {nullable->getNestedColumnPtr(), removeNullable(argument.type), argument.name};
+                return argument;
+            };
+            compareElementsForOrder(equals_resolver, order_resolver, remove_nullable(left), remove_nullable(right), rows, verdict);
+            apply_null_order();
+            return;
+        }
+
+        /// The comparison of tuples may return `Nullable(UInt8)` (when an element is `Nullable` or `Dynamic`), which
+        /// does not tell which element is NULL, so tuples are compared element by element, lexicographically.
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left.type.get());
+        const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right.type.get());
+        if (left_tuple_type && right_tuple_type && left_tuple_type->getElements().size() == right_tuple_type->getElements().size())
+        {
+            /// An element of a constant tuple stays a constant.
+            auto tuple_element = [rows](const IColumn & column, size_t i) -> ColumnPtr
+            {
+                if (const auto * constant = checkAndGetColumn<ColumnConst>(&column))
+                    return ColumnConst::create(assert_cast<const ColumnTuple &>(constant->getDataColumn()).getColumnPtr(i), rows);
+                return assert_cast<const ColumnTuple &>(column).getColumnPtr(i);
+            };
+
+            verdict.assign(rows, Int8(0));
+            PaddedPODArray<Int8> element_verdict;
+            for (size_t i = 0; i < left_tuple_type->getElements().size(); ++i)
+            {
+                compareElementsForOrder(
+                    equals_resolver,
+                    order_resolver,
+                    {tuple_element(*left.column, i), left_tuple_type->getElement(i), ""},
+                    {tuple_element(*right.column, i), right_tuple_type->getElement(i), ""},
+                    rows,
+                    element_verdict);
+                for (size_t row = 0; row < rows; ++row)
+                    if (verdict[row] == 0)
+                        verdict[row] = element_verdict[row];
+            }
+            return;
+        }
+
+        verdict.assign(rows, Int8(0));
+
+        if (!is_always_null(left.type) && !is_always_null(right.type))
+        {
+            /// The result is `Nullable(UInt8)` when one of the elements may be NULL. Its values in the rows where an
+            /// element is NULL are not used.
+            auto get_data = [](const ColumnPtr & column) -> const PaddedPODArray<UInt8> &
+            {
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+                    return assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+                return assert_cast<const ColumnUInt8 &>(*column).getData();
+            };
+
+            ColumnsWithTypeAndName args{left, right};
+            auto equals_impl = equals_resolver->build(args);
+            ColumnPtr equals_col = equals_impl->execute(args, equals_impl->getResultType(), rows, /*dry_run=*/false)
+                                       ->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+            const auto & equals_data = get_data(equals_col);
+            if (order_resolver)
+            {
+                auto order_impl = order_resolver->build(args);
+                ColumnPtr order_col = order_impl->execute(args, order_impl->getResultType(), rows, /*dry_run=*/false)
+                                          ->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+                const auto & order_data = get_data(order_col);
+
+                for (size_t row = 0; row < rows; ++row)
+                    verdict[row] = equals_data[row] ? 0 : (order_data[row] ? 1 : -1);
+            }
+            else
+            {
+                for (size_t row = 0; row < rows; ++row)
+                    verdict[row] = equals_data[row] ? 0 : 1;
+            }
+        }
+
+        apply_null_order();
+    }
+
+    /// The verdicts of `compareElementsForOrder` for the gathered element pairs. The elements of a deferred constant
+    /// (see `GatheredArrayElements::deferred_side`) are compared one position of the constant at a time, as a
+    /// `ColumnConst` against the elements of the other side that are paired with it, so they are never copied.
+    static void compareGatheredElements(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const GatheredArrayElements & gathered,
+        PaddedPODArray<Int8> & verdict)
+    {
+        if (gathered.deferred_side < 0)
+        {
+            compareElementsForOrder(
+                equals_resolver, order_resolver, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, verdict);
+            return;
+        }
+
+        const size_t const_side = gathered.deferred_side;
+        const size_t other_side = 1 - const_side;
+        const auto & const_elements = gathered.element_args[const_side];
+        const auto & other_elements = gathered.element_args[other_side];
+        const auto & positions = gathered.deferred_positions;
+        const size_t num_positions = const_elements.column->size();
+
+        /// The gathered pairs grouped by the position of the constant element, in their order.
+        PaddedPODArray<size_t> group_begin(num_positions + 1, 0);
+        for (size_t j = 0; j < gathered.num_elements; ++j)
+            ++group_begin[positions[j] + 1];
+        for (size_t p = 0; p < num_positions; ++p)
+            group_begin[p + 1] += group_begin[p];
+        PaddedPODArray<size_t> group_fill;
+        group_fill.assign(group_begin.begin(), group_begin.end() - 1);
+        auto grouped = ColumnUInt64::create(gathered.num_elements);
+        auto & grouped_data = grouped->getData();
+        for (size_t j = 0; j < gathered.num_elements; ++j)
+            grouped_data[group_fill[positions[j]]++] = j;
+
+        verdict.resize(gathered.num_elements);
+        PaddedPODArray<Int8> group_verdict;
+        for (size_t p = 0; p < num_positions; ++p)
+        {
+            const size_t begin = group_begin[p];
+            const size_t rows = group_begin[p + 1] - begin;
+            if (rows == 0)
+                continue;
+
+            auto group_indexes = ColumnUInt64::create();
+            group_indexes->getData().assign(grouped_data.begin() + begin, grouped_data.begin() + begin + rows);
+
+            ColumnsWithTypeAndName args(2);
+            args[other_side] = {other_elements.column->index(*group_indexes, 0), other_elements.type, other_elements.name};
+            args[const_side] = {ColumnConst::create(const_elements.column->cut(p, 1), rows), const_elements.type, const_elements.name};
+            compareElementsForOrder(equals_resolver, order_resolver, args[0], args[1], rows, group_verdict);
+
+            for (size_t k = 0; k < rows; ++k)
+                verdict[grouped_data[begin + k]] = group_verdict[k];
+        }
     }
 
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
@@ -1739,20 +1992,21 @@ private:
 
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
-        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
-        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+        /// Per element pair: 0 if equal, nonzero otherwise. The order of the elements does not matter here.
+        PaddedPODArray<Int8> element_verdict;
+        compareGatheredElements(equals_resolver, /*order_resolver=*/ nullptr, gathered, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality using array NULL semantics.
-        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+        auto elem_is_null = [](const NullMap & is_null, size_t j) -> bool { return !is_null.empty() && is_null[j]; };
 
         /// Null-safe element equality: a NULL is equal only to another NULL.
         auto elements_equal = [&](size_t j) -> bool
         {
-            bool n0 = elem_is_null(gathered.null_map0, j);
-            bool n1 = elem_is_null(gathered.null_map1, j);
+            bool n0 = elem_is_null(gathered.is_null0, j);
+            bool n1 = elem_is_null(gathered.is_null1, j);
             if (n0 || n1)
                 return n0 && n1;
-            return element_equals[j];
+            return element_verdict[j] == 0;
         };
 
         auto result = ColumnUInt8::create(input_rows_count);
@@ -1792,33 +2046,32 @@ private:
 
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
-        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
-        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
-        ColumnPtr order_col = compareGatheredElements(order_resolver, gathered);
-        const auto & element_order = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+        /// Per element pair: 0 if equal, 1 if the left element comes first, -1 otherwise.
+        PaddedPODArray<Int8> element_verdict;
+        compareGatheredElements(equals_resolver, order_resolver, gathered, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
-        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+        auto elem_is_null = [](const NullMap & is_null, size_t j) -> bool { return !is_null.empty() && is_null[j]; };
 
         /// Null-safe element equality: a NULL is equal only to another NULL.
         auto elements_equal = [&](size_t j) -> bool
         {
-            bool n0 = elem_is_null(gathered.null_map0, j);
-            bool n1 = elem_is_null(gathered.null_map1, j);
+            bool n0 = elem_is_null(gathered.is_null0, j);
+            bool n1 = elem_is_null(gathered.is_null1, j);
             if (n0 || n1)
                 return n0 && n1;
-            return element_equals[j];
+            return element_verdict[j] == 0;
         };
 
         /// Order of the first differing element, with NULL sorting after every non-NULL value.
         auto element_precedes = [&](size_t j) -> UInt8
         {
-            bool n0 = elem_is_null(gathered.null_map0, j);
-            bool n1 = elem_is_null(gathered.null_map1, j);
+            bool n0 = elem_is_null(gathered.is_null0, j);
+            bool n1 = elem_is_null(gathered.is_null1, j);
             /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
             if (n0 || n1)
                 return (order_is_less ? n1 : n0) ? 1 : 0;
-            return element_order[j];
+            return element_verdict[j] == 1 ? 1 : 0;
         };
 
         auto result = ColumnUInt8::create(input_rows_count);
@@ -1865,9 +2118,15 @@ private:
         const ColumnWithTypeAndName & c1,
         size_t input_rows_count) const
     {
-        if (tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
+        /// A `FixedString` element is compared with an element of another type zero-padded, while the cast of
+        /// both arrays to their least supertype keeps the padding, so such arrays are compared element by
+        /// element, like the scalars.
+        const bool fixed_string_against_other_type = !c0.type->equals(*c1.type)
+            && (containsFixedString(*c0.type) || containsFixedString(*c1.type));
+
+        if (!fixed_string_against_other_type && tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
             return executeGeneric(c0, c1);
-        /// when leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
+        /// When leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
         /// element-by-element with the accurate scalar comparison.
         return executeArrayLexicographic(c0, c1, input_rows_count);
     }
