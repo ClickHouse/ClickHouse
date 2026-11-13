@@ -327,7 +327,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 ### Replicating or migrating Postgres data with PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > In addition to table functions, you can always use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4, [](std::string_view key) { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ true, /* with_storage_settings= */ true); }));
 }
 
 }

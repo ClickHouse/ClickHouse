@@ -1,5 +1,6 @@
 #include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/S3NamedCollectionKeys.h>
 
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
@@ -81,49 +82,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
-
-static const std::unordered_set<std::string_view> required_configuration_keys =
-{
-    "url",
-};
-
-static const std::unordered_set<std::string_view> optional_configuration_keys =
-{
-    "format",
-    "compression",
-    "compression_method",
-    "structure",
-    "access_key_id",
-    "secret_access_key",
-    "session_token",
-    "filename",
-    "use_environment_credentials",
-    "max_single_read_retries",
-    "min_upload_part_size",
-    "upload_part_size_multiply_factor",
-    "upload_part_size_multiply_parts_count_threshold",
-    "max_single_part_upload_size",
-    "max_connections",
-    "expiration_window_seconds",
-    "no_sign_request",
-    "partition_strategy",
-    "partition_columns_in_data_file",
-    "storage_class_name",
-    "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
-    "upload_checksum_algorithm",
-    "use_idempotency_id",
-    /// Private configuration options
-    "role_arn", /// for extra_credentials
-    "role_session_name", /// for extra_credentials
-    "external_id", /// for extra_credentials
-    "http_client", /// For GCP
-    "metadata_service", /// For GCP
-    "service_account", /// For GCP
-    "request_token_path", /// For GCP
-    "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
-    "google_adc_client_secret", /// For GCP
-    "google_adc_refresh_token", /// For GCP
-};
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
@@ -207,7 +165,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
+    validateNamedCollection(collection, s3_named_collection_required_keys, s3_named_collection_optional_keys);
 
     /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
     /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`

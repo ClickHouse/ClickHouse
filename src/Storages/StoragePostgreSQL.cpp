@@ -762,10 +762,52 @@ postgres::ConnectionSSLParams StoragePostgreSQL::extractSSLParamsFromArguments(A
     return ssl_params;
 }
 
+namespace
+{
+
+/// The keys of a named collection, with its overrides, that `processNamedCollectionResult` accepts, except `table` and
+/// `query`; the names of `storage_settings` only if it is not null. `isNamedCollectionKey` uses the same sets for the
+/// masking of query arguments.
+struct PostgreSQLNamedCollectionKeys
+{
+    explicit PostgreSQLNamedCollectionKeys(const PostgreSQLSettings * storage_settings)
+    {
+        if (storage_settings)
+            for (const auto & name : storage_settings->getAllRegisteredNames())
+                setting_names.emplace_back(name);
+        for (const auto & name : setting_names)
+            optional.insert(name);
+    }
+
+    /// `optional` refers to `setting_names`.
+    PostgreSQLNamedCollectionKeys(const PostgreSQLNamedCollectionKeys &) = delete;
+    PostgreSQLNamedCollectionKeys & operator=(const PostgreSQLNamedCollectionKeys &) = delete;
+
+    std::vector<String> setting_names;
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required = {"user", "username", "password", "database", "db"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional
+        = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
+           "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
+};
+
+}
+
+bool StoragePostgreSQL::isNamedCollectionKey(std::string_view key, bool require_table, bool with_storage_settings)
+{
+    static const PostgreSQLNamedCollectionKeys keys_with_settings{std::make_unique<PostgreSQLSettings>().get()};
+    static const PostgreSQLNamedCollectionKeys keys_without_settings{nullptr};
+    const auto & keys = with_storage_settings ? keys_with_settings : keys_without_settings;
+    const NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet> validate_key{key};
+    /// Accepts both `table` and `query`, although a collection with `query` rejects `table`: neither is a secret.
+    return keys.required.contains(validate_key) || keys.optional.contains(validate_key)
+        || (require_table && (key == "table" || key == "query"));
+}
+
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
+    const PostgreSQLNamedCollectionKeys keys{storage_settings};
+    auto required_arguments = keys.required;
     if (require_table)
     {
         /// The data source is either a remote table or a query passed to PostgreSQL as is.
@@ -775,14 +817,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
             required_arguments.insert("table");
     }
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
-        = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
-           "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
-    if (storage_settings)
-        for (const auto & name : storage_settings->getAllRegisteredNames())
-            optional_arguments.insert(name);
-
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, keys.optional);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -936,7 +971,10 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             configuration.schema,
             configuration.on_conflict);
     },
-    mysqlPostgreSQLSecretArguments(4),
+    mysqlPostgreSQLSecretArguments(
+        4,
+        [](std::string_view key)
+        { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ true, /* with_storage_settings= */ true); }),
     {
         .supports_settings = true,
         .supports_schema_inference = true,

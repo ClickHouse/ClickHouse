@@ -1185,6 +1185,20 @@ static DatabaseRemoteClusters buildClusters(const String & cluster_description, 
     return {std::move(all_replicas_cluster), std::move(remote_only_cluster)};
 }
 
+namespace
+{
+
+/// The keys of a named collection, with its overrides, that the `Remote` engines accept.
+const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> remote_required_keys = {"addresses_expr", "host", "hostname", "database", "db"};
+const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> remote_optional_keys = {"username", "user", "password", "port"};
+
+bool isRemoteNamedCollectionKey(std::string_view key)
+{
+    const NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet> validate_key{key};
+    return remote_required_keys.contains(validate_key) || remote_optional_keys.contains(validate_key);
+}
+
+}
 
 void registerDatabaseRemote(DatabaseFactory & factory);
 void registerDatabaseRemote(DatabaseFactory & factory)
@@ -1209,9 +1223,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
             validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-                *named_collection,
-                {"addresses_expr", "host", "hostname", "database", "db"},
-                {"username", "user", "password", "port"});
+                *named_collection, remote_required_keys, remote_optional_keys);
 
             addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
             if (addresses_expr.empty())
@@ -1375,7 +1387,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "Remote",
         create_fn,
-        mysqlPostgreSQLSecretArguments(3),
+        mysqlPostgreSQLSecretArguments(3, isRemoteNamedCollectionKey),
         features,
         Documentation{
             .description = common_description,
@@ -1385,7 +1397,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "RemoteSecure",
         create_fn,
-        mysqlPostgreSQLSecretArguments(3),
+        mysqlPostgreSQLSecretArguments(3, isRemoteNamedCollectionKey),
         features,
         Documentation{
             .description = common_description,

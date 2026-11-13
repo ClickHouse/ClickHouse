@@ -502,20 +502,51 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
     return ssl_params;
 }
 
+namespace
+{
+
+/// The keys of a named collection, with its overrides, that `processNamedCollectionResult` accepts, except `table` and
+/// `query`. `isNamedCollectionKey` uses the same sets for the masking of query arguments.
+struct MySQLNamedCollectionKeys
+{
+    explicit MySQLNamedCollectionKeys(const MySQLSettings & storage_settings)
+    {
+        for (const auto & name : storage_settings.getAllRegisteredNames())
+            setting_names.emplace_back(name);
+        for (const auto & name : setting_names)
+            optional.insert(name);
+    }
+
+    /// `optional` refers to `setting_names`.
+    MySQLNamedCollectionKeys(const MySQLNamedCollectionKeys &) = delete;
+    MySQLNamedCollectionKeys & operator=(const MySQLNamedCollectionKeys &) = delete;
+
+    std::vector<String> setting_names;
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required = {"user", "username", "password", "database", "db"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional
+        = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
+           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
+           "ssl_key_passphrase"};
+};
+
+}
+
+bool StorageMySQL::isNamedCollectionKey(std::string_view key, bool require_table_or_query)
+{
+    static const MySQLNamedCollectionKeys keys{MySQLSettings{}};
+    const NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet> validate_key{key};
+    /// Accepts both `table` and `query`, although a collection with `query` rejects `table`: neither is a secret.
+    return keys.required.contains(validate_key) || keys.optional.contains(validate_key)
+        || (require_table_or_query && (key == "table" || key == "query"));
+}
+
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
-        = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
-           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
-           "ssl_key_passphrase"};
-    auto mysql_settings_names = storage_settings.getAllRegisteredNames();
-    for (const auto & name : mysql_settings_names)
-        optional_arguments.insert(name);
-
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
+    const MySQLNamedCollectionKeys keys{storage_settings};
+    auto required_arguments = keys.required;
     if (require_table_or_query)
     {
         /// The data source is either a remote table or a query passed to MySQL as is.
@@ -524,7 +555,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         else
             required_arguments.insert("table");
     }
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, keys.optional);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -671,7 +702,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.getContext(),
             mysql_settings);
     },
-    mysqlPostgreSQLSecretArguments(4),
+    mysqlPostgreSQLSecretArguments(4, [](std::string_view key) { return StorageMySQL::isNamedCollectionKey(key, /* require_table_or_query= */ true); }),
     {
         .supports_settings = true,
         .supports_schema_inference = true,

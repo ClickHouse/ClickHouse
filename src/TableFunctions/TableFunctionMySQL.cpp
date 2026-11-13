@@ -386,7 +386,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 - [mysql_map_fixed_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
 - [mysql_max_rows_to_insert](/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4, [](std::string_view key) { return StorageMySQL::isNamedCollectionKey(key, /* require_table_or_query= */ true); }));
 }
 
 }

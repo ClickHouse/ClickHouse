@@ -421,7 +421,7 @@ HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collecti
     return headers;
 }
 
-SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot, std::function<bool(std::string_view)> accepted_keys)
 {
     return {
         .positional_secret_slots = {password_slot},
@@ -437,6 +437,7 @@ SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
                 if (index != 0)
                     finder.markSecretArgument(index);
         },
+        .accepted_keys = std::move(accepted_keys),
     };
 }
 

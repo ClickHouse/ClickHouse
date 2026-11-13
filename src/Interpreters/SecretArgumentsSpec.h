@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -39,10 +40,16 @@ struct SecretArgumentsSpec
     /// `custom` reads interleaved named and positional arguments itself (`bigquery`), so the generic rules are
     /// not applied: a positional after a named argument and the value of a key that is not a literal are hidden.
     bool custom_reads_named_arguments = false;
+    /// Whether the engine's parser accepts a `key = value` argument with this key (named-collection overrides included).
+    /// If set, the value of every `key = value` argument whose key it rejects is hidden, and the key stays visible. The
+    /// parser rejects such an argument only after the query is formatted for logging, and the key can be a misspelled
+    /// secret key (`passwd = '...'`).
+    std::function<bool(std::string_view)> accepted_keys = {};
 
     bool hasArgumentSecrets() const
     {
-        return !positional_secret_slots.empty() || !secret_keys.empty() || (settings_as_arguments && !secret_settings.empty()) || custom;
+        return !positional_secret_slots.empty() || !secret_keys.empty() || (settings_as_arguments && !secret_settings.empty()) || custom
+            || accepted_keys;
     }
 };
 

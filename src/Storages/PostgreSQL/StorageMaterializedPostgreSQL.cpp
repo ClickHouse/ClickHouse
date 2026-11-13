@@ -801,7 +801,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     factory.registerStorage(
         "MaterializedPostgreSQL",
         creator_fn,
-        mysqlPostgreSQLSecretArguments(4),
+        mysqlPostgreSQLSecretArguments(4, [](std::string_view key) { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ true, /* with_storage_settings= */ false); }),
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,

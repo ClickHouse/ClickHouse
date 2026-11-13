@@ -27,8 +27,9 @@ namespace ErrorCodes
 
 /// The `SecretArgumentsSpec` of the MySQL and PostgreSQL families (and `Remote` databases): `password` at
 /// `password_slot` of the explicit form, and as an override with the TLS credentials given as the contents
-/// of a certificate or a key file (see `credentialsPathKeyFor`).
-SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
+/// of a certificate or a key file (see `credentialsPathKeyFor`). `accepted_keys` tells the keys the parser of the engine
+/// accepts as `key = value` arguments: the value of any other is hidden (see `SecretArgumentsSpec::accepted_keys`).
+SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot, std::function<bool(std::string_view)> accepted_keys);
 
 /// Throws `BAD_ARGUMENTS` if `key` replaces a stored key (including an alias) that is `NOT OVERRIDABLE`.
 /// Does not check privileges. Used where the override was already authorized when the object was created,

@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3NamedCollectionKeys.h>
 
 #include <algorithm>
 
@@ -42,7 +43,10 @@ constexpr std::string_view s3_secret_keys[]
 /// are masked (the query is logged before validation and the intended slot is unknowable). The
 /// backup locator (`BackupInfo::fromAST`) instead collects positionals independently of named
 /// overrides; it passes `positionals_allowed_after_named` to collect them in order.
-std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false)
+/// With `mask_rejected_keys`, the value of a `key = value` argument whose key `S3StorageParsedArguments::fromNamedCollection`
+/// rejects is masked too (see `isS3NamedCollectionKey`).
+std::vector<size_t> classifyS3Arguments(
+    FunctionSecretArgumentsFinder & finder, size_t start = 0, bool positionals_allowed_after_named = false, bool mask_rejected_keys = false)
 {
     /// The parsers strip the nested maps before positional slots are assigned.
     maskHeadersAndExtraCredentials(finder);
@@ -90,6 +94,13 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
                         /// value is not a plain literal or identifier can be a nested secret carrier,
                         /// e.g. `format = headers('Authorization' = '...')`, formatted verbatim before
                         /// the parser rejects the non-literal value. Fail closed and hide the value.
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                    }
+                    else if (mask_rejected_keys && !isS3NamedCollectionKey(key))
+                    {
+                        /// The parser rejects the key, but only after the query is formatted for logging, and the
+                        /// key can be a misspelled secret key (`secret_acces_key`). Fail closed and hide the value;
+                        /// the key stays visible, so that the user can still find the typo.
                         finder.markSecretArgument(i, /* argument_is_named= */ true);
                     }
                 }
@@ -211,12 +222,15 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
 /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
 /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
 /// and the `headers(...)` / `extra_credentials(...)` map overrides.
-void findS3NamedCollectionSecretArguments(FunctionSecretArgumentsFinder & finder, size_t start)
+/// `mask_rejected_keys`: the collection is parsed by `S3StorageParsedArguments::fromNamedCollection`, so the value of an
+/// override with a key it rejects is masked too. Other parsers (the `S3` database engine) accept other keys.
+void findS3NamedCollectionSecretArguments(FunctionSecretArgumentsFinder & finder, size_t start, bool mask_rejected_keys)
 {
     /// After the collection name every argument must be a named `option = value` override or a nested
     /// map; a positional argument is invalid but logged before validation rejects it, so fail closed
     /// and hide every positional the classification returns.
-    maskS3PositionalsFrom(finder, classifyS3Arguments(finder, start), 0);
+    maskS3PositionalsFrom(
+        finder, classifyS3Arguments(finder, start, /* positionals_allowed_after_named= */ false, mask_rejected_keys), 0);
 }
 
 void findS3FunctionSecretArguments(FunctionSecretArgumentsFinder & finder, bool is_cluster_function)
@@ -228,7 +242,7 @@ void findS3FunctionSecretArguments(FunctionSecretArgumentsFinder & finder, bool 
     {
         /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
         /// s3Cluster('cluster_name', named_collection, ..., secret_access_key = 'secret_access_key', ...)
-        findS3NamedCollectionSecretArguments(finder, url_slot + 1);
+        findS3NamedCollectionSecretArguments(finder, url_slot + 1, /* mask_rejected_keys= */ true);
         return;
     }
 
@@ -261,7 +275,7 @@ void findS3TableEngineSecretArguments(FunctionSecretArgumentsFinder & finder)
     if (finder.isNamedCollectionName(0))
     {
         /// S3(named_collection, ..., secret_access_key = 'secret_access_key')
-        findS3NamedCollectionSecretArguments(finder, 1);
+        findS3NamedCollectionSecretArguments(finder, 1, /* mask_rejected_keys= */ true);
         return;
     }
 
@@ -277,7 +291,7 @@ void findS3DatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     if (finder.isNamedCollectionName(0))
     {
         /// S3(named_collection, ..., secret_access_key = 'password', ...)
-        findS3NamedCollectionSecretArguments(finder, 1);
+        findS3NamedCollectionSecretArguments(finder, 1, /* mask_rejected_keys= */ false);
     }
     else
     {

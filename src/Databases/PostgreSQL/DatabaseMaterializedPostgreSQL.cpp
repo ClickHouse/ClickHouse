@@ -904,7 +904,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
-    factory.registerDatabase("MaterializedPostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3, [](std::string_view key) { return StoragePostgreSQL::isNamedCollectionKey(key, /* require_table= */ false, /* with_storage_settings= */ false); }), {
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
