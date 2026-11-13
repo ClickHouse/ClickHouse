@@ -1468,10 +1468,11 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
         auto same_length = buildResolvedFunction("equals", {std::move(left_length), std::move(right_length)}, context);
         result = buildResolvedFunction("and", {std::move(same_length), buildResolvedFunction("not", {std::move(has_mismatch)}, context)}, context);
     }
-    else if (left_map && right_map && left_type->equals(*right_type))
+    else if (left_map && right_map && tryGetLeastSupertype(DataTypes{left_type, right_type}))
     {
-        /// Whole-value `Map` equality already compares nullable values and `NaN`
-        /// with container semantics. Keep the vectorized comparison for equal types.
+        /// Whole-value `Map` equality compares compatible nullable values and
+        /// `NaN` with container semantics. Keep the vectorized comparison when
+        /// a lossless common map type exists.
         result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
     }
     else if (left_map && right_map)
