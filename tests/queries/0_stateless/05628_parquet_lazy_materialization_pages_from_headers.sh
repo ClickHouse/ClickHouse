@@ -28,7 +28,8 @@ for pages in 32768 1024; do
 done
 
 # Without dictionaries the deferred columns are most of the bytes, so reading only the located pages reads far less.
-for pages in 32768 1024; do
+# With 1 MiB pages every chunk has one data page, which is not located.
+for pages in 32768 1024 1048576; do
     $CLICKHOUSE_CLIENT -q "
         INSERT INTO FUNCTION file('${PREFIX}_bytes_${pages}.parquet')
         SELECT toUInt32(number) AS id, number * 3 AS a, number * 5 AS b, number * 7 AS c, number * 11 AS d, number * 13 AS e,
@@ -62,7 +63,7 @@ for f in arrow-go-v18.4.1/flat.v2.6.dpv2 arrow-go-v18.4.1/flat.dict_fallback.dpv
     done
 done
 
-for pages in 32768 1024; do
+for pages in 32768 1024 1048576; do
     $CLICKHOUSE_CLIENT -q "SELECT * FROM file('${PREFIX}_bytes_${pages}.parquet') WHERE id IN (5, 45005, 95005) ORDER BY id LIMIT 3 FORMAT Null
         SETTINGS ${LAZY}, log_comment = '${PREFIX}_bytes_${pages}'"
 done
@@ -78,9 +79,9 @@ $CLICKHOUSE_CLIENT -q "
     SELECT replaceOne(log_comment, '${PREFIX}_', ''), countIf(ProfileEvents['ParquetColumnChunksPagesLocatedFromHeaders'] > 0), count()
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('${PREFIX}_lazy_32768',
-        '${PREFIX}_lazy_1024', '${PREFIX}_lazy_corpus', '${PREFIX}_eager', '${PREFIX}_bytes_32768', '${PREFIX}_bytes_1024')
+        '${PREFIX}_lazy_1024', '${PREFIX}_lazy_corpus', '${PREFIX}_eager', '${PREFIX}_bytes_32768', '${PREFIX}_bytes_1024', '${PREFIX}_bytes_1048576')
     GROUP BY log_comment ORDER BY log_comment"
 
 rm -f "${USER_FILES_PATH}/${PREFIX}_32768.parquet" "${USER_FILES_PATH}/${PREFIX}_1024.parquet" \
-    "${USER_FILES_PATH}/${PREFIX}_bytes_32768.parquet" "${USER_FILES_PATH}/${PREFIX}_bytes_1024.parquet" \
+    "${USER_FILES_PATH}/${PREFIX}_bytes_32768.parquet" "${USER_FILES_PATH}/${PREFIX}_bytes_1024.parquet" "${USER_FILES_PATH}/${PREFIX}_bytes_1048576.parquet" \
     "${USER_FILES_PATH}/${PREFIX}_corpus.parquet"

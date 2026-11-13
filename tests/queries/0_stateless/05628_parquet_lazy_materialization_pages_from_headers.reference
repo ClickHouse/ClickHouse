@@ -25,8 +25,9 @@ duckdb-0.9.2/flat.zstd	3	6998973961688746632
 duckdb-0.9.2/flat.zstd	3	6998973961688746632
 1
 bytes_1024	0	1
+bytes_1048576	0	1
 bytes_32768	1	1
 eager	0	6
 lazy_1024	0	3
 lazy_32768	3	3
-lazy_corpus	4	4
+lazy_corpus	2	4

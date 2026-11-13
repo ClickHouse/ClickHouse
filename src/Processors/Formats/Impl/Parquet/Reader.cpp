@@ -168,6 +168,22 @@ static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
     }
 }
 
+/// Whether the advisory `encoding_stats` of a column chunk count exactly one data page.
+static bool hasOneDataPage(const parq::ColumnMetaData & meta)
+{
+    if (!meta.__isset.encoding_stats)
+        return false;
+    Int64 data_pages = 0;
+    for (const parq::PageEncodingStats & s : meta.encoding_stats)
+    {
+        if (s.count < 0 || !isValidThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES))
+            return false;
+        if (s.page_type == parq::PageType::DATA_PAGE || s.page_type == parq::PageType::DATA_PAGE_V2)
+            data_pages += s.count;
+    }
+    return data_pages == 1;
+}
+
 static void decompressLZ4Raw(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
 {
     if (compressed_size > INT32_MAX || uncompressed_size > INT32_MAX)
@@ -1987,10 +2003,10 @@ void Reader::initializePrefetches()
             }
 
             /// Page headers of a local file are cheap to read, so the few pages holding `rows_to_read` can be
-            /// located without an offset index.
+            /// located without an offset index. A chunk with one data page has none to skip.
             if (format_filter_info->rows_to_read && !column.served_from_cache && !column.offset_index_prefetch
                 && !column.meta->__isset.offset_index_offset && prefetcher.isLocalFile()
-                && primitive_columns[column_idx].levels.back().rep == 0)
+                && primitive_columns[column_idx].levels.back().rep == 0 && !hasOneDataPage(column.meta->meta_data))
                 column.locate_pages_from_headers = true;
 
             /// Column index.
