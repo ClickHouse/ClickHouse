@@ -98,9 +98,10 @@ SETTINGS enable_materialized_cte = 1, use_query_condition_cache = 0, optimize_mo
 SELECT count(), sum(matched) FROM mutation_set_memory;
 
 SYSTEM FLUSH LOGS query_log;
+-- In a Replicated database the ALTER runs on every replica, so fold the rows: each execution must pass.
 SELECT
-    ProfileEvents['RowsReadByPrewhereReaders'] > 0 AS used_prewhere,
-    ProfileEvents['RowsReadByMainReader'] < 8192 AS avoided_full_key_read
+    min(ProfileEvents['RowsReadByPrewhereReaders']) > 0 AS used_prewhere,
+    max(ProfileEvents['RowsReadByMainReader']) < 8192 AS avoided_full_key_read
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05332_mutation_set_cte'
     AND type = 'QueryFinish' AND query_kind = 'Alter';
