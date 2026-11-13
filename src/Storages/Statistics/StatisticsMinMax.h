@@ -34,6 +34,8 @@ private:
     UInt64 row_count = 0;
 
     DataTypePtr data_type;
+    /// `data_type` without `LowCardinality`: the type of the values `min` and `max`, serialized with it.
+    DataTypePtr value_type;
 };
 
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

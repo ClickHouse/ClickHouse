@@ -4,6 +4,8 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -75,6 +77,70 @@ void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
         accumulator = value;
     else if (!isNaNField(value) && accumulator < value)
         accumulator = value;
+}
+
+namespace
+{
+
+enum BoundsMask : UInt8
+{
+    HasMin = 1,
+    HasMax = 2,
+};
+
+FormatSettings getBoundsFormatSettings()
+{
+    FormatSettings settings;
+    /// `IColumn::getExtremes` gives a `UInt64` for a `Bool` column, and the bounds of statistics read from a
+    /// part are compared with the ones built from the blocks of another part when they are merged.
+    settings.binary.read_bool_field_as_int = true;
+    return settings;
+}
+
+}
+
+void StatisticsUtils::serializeBounds(const Field & min, const Field & max, const IDataType & data_type, WriteBuffer & buf)
+{
+    UInt8 mask = 0;
+    if (!min.isNull())
+        mask |= BoundsMask::HasMin;
+    if (!max.isNull())
+        mask |= BoundsMask::HasMax;
+    writeIntBinary(mask, buf);
+
+    const auto serialization = data_type.getDefaultSerialization();
+    const auto settings = getBoundsFormatSettings();
+    if (mask & BoundsMask::HasMin)
+        serialization->serializeBinary(min, buf, settings);
+    if (mask & BoundsMask::HasMax)
+        serialization->serializeBinary(max, buf, settings);
+}
+
+void StatisticsUtils::deserializeBounds(Field & min, Field & max, const IDataType & data_type, ReadBuffer & buf)
+{
+    UInt8 mask = 0;
+    readIntBinary(mask, buf);
+    if (mask & ~(BoundsMask::HasMin | BoundsMask::HasMax))
+        throw Exception(
+            ErrorCodes::ILLEGAL_STATISTICS,
+            "Unknown flags {} of the bounds of statistics. The statistics file may be corrupted. "
+            "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.",
+            static_cast<UInt32>(mask));
+
+    const auto serialization = data_type.getDefaultSerialization();
+    const auto settings = getBoundsFormatSettings();
+    min = Field();
+    max = Field();
+    if (mask & BoundsMask::HasMin)
+        serialization->deserializeBinary(min, buf, settings);
+    if (mask & BoundsMask::HasMax)
+        serialization->deserializeBinary(max, buf, settings);
+}
+
+UInt64 StatisticsUtils::getSerializedBoundsSize(const Field & min, const Field & max, const IDataType & data_type)
+{
+    const UInt64 value_size = data_type.getSizeOfValueInMemory();
+    return sizeof(UInt8) + (min.isNull() ? 0 : value_size) + (max.isNull() ? 0 : value_size);
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -580,8 +646,8 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
-    /// Layout (V4):
-    ///   UInt16  version (= V4)
+    /// Layout (V5, the same as V4, which differs in the payload of `minmax` and `basic`):
+    ///   UInt16  version (= V5)
     ///   UInt64  stat_types_mask
     ///   String  stored_type_name   — column type at write time; deserialization returns nullptr on mismatch
     ///   UInt64  rows
@@ -589,7 +655,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
     /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
-    writeIntBinary(StatisticsFileVersion::V4, buf);
+    writeIntBinary(StatisticsFileVersion::V5, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _] : stats)
@@ -656,7 +722,8 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
     if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2
-        && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4)
+        && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4
+        && version != StatisticsFileVersion::V5)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -670,7 +737,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
-    /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+    /// V4 / V5 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
     /// column type differs from the current type — statistics built on a different type are
     /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
     /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
@@ -679,9 +746,9 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     /// V3 layout: same layout as V4 but without the `stored_type_name` field, and the only
     /// conflict is bit 4 of `stat_types_mask`, which meant the reverted `NullCount` in V3
     /// and means `Basic` in V4 — the deserializer skips it.
-    if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4)
+    if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4 || version == StatisticsFileVersion::V5)
     {
-        if (version == StatisticsFileVersion::V4)
+        if (version != StatisticsFileVersion::V3)
         {
             String stored_type_name;
             readStringBinary(stored_type_name, buf);
