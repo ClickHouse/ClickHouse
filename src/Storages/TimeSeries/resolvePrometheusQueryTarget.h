@@ -35,13 +35,10 @@ UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetada
 /// and refuses a row policy or an additional_table_filters entry on it, which would not be applied.
 void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const ContextPtr & context);
 
-/// The selector reads the inner tables of a TimeSeries table directly, so a row policy or an additional_table_filters entry
-/// on that table would not be applied: refuses them.
+/// The selector reads the inner tables, so it refuses a row policy or an additional_table_filters entry on the table.
 void checkTimeSeriesSelectorSource(const StorageID & storage_id, const ContextPtr & context);
 
-/// Prepares the context of the generated query of a Distributed target: the shards get the query text, not a serialized plan
-/// that would resolve the shard-local table here, and the table's shard-skip settings apply to the schema discovery
-/// of the shards too, unless the query sets them itself.
+/// Sends the shards the query text, and applies the table's shard-skip settings unless the query sets them.
 void applyPrometheusQueryDistributedSettings(Context & query_context, const PrometheusQueryDistributedTarget & target);
 
 }

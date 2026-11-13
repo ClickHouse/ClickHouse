@@ -173,5 +173,3 @@ void applyPrometheusQueryDistributedSettings(Context & query_context, const Prom
 }
 
 }
-
-}
