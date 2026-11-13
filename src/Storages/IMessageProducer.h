@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Columns/IColumn_fwd.h>
 #include <Common/Logger.h>
 #include <Core/Types.h>
@@ -45,7 +46,7 @@ public:
     /// Create and schedule task in BackgroundSchedulePool that will produce messages.
     void start(const ContextPtr & context) override;
 
-    /// Stop producing task, wait for ot to finish and finalize.
+    /// Stop producing task, wait for it to finish, finalize and rethrow the exception that stopped the task, if any.
     void finish() override;
 
     /// In this method producer should not do any hard work and send message
@@ -72,6 +73,9 @@ private:
     BackgroundSchedulePoolTaskHolder producing_task;
 
     std::atomic<bool> scheduled;
+
+    /// Written by the producing task, read in `finish` after `deactivate` waited for the task.
+    std::exception_ptr producing_task_exception;
 };
 
 
