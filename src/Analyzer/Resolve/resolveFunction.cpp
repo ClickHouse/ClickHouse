@@ -1248,6 +1248,14 @@ static bool needsCalendarDateInCast(const DataTypePtr & source_type, const DataT
     return (isDate(target) || isDate32(target)) && (isDateTime(source) || isDateTime64(source));
 }
 
+static bool isIncompatibleNullableScalarForComplexIn(const DataTypePtr & source_type)
+{
+    const auto bare_type = removeNullable(removeLowCardinality(source_type));
+    return canContainNull(*source_type)
+        && (isNumber(bare_type) || isBool(bare_type)
+            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
+}
+
 static QueryTreeNodePtr buildNumericInEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
@@ -3450,9 +3458,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             /// nullable carrier can still contribute a source `NULL`.
                             std::erase_if(matchable_elements, [&](const auto & arg)
                             {
-                                const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
-                                return canContainNull(*arg->getResultType())
-                                    && (isNumber(source_type) || isBool(source_type));
+                                return isIncompatibleNullableScalarForComplexIn(arg->getResultType());
                             });
                             std::erase_if(matchable_elements, [&](const auto & arg)
                             {
@@ -3583,8 +3589,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     if (use_standard_null_semantics
                         && (isArray(left_bare_type) || isMap(left_bare_type))
-                        && canContainNull(*non_const_set_candidate->getResultType())
-                        && (isNumber(right_bare_type) || isBool(right_bare_type)))
+                        && isIncompatibleNullableScalarForComplexIn(non_const_set_candidate->getResultType()))
                     {
                         auto source_is_null = std::make_shared<FunctionNode>("isNull");
                         source_is_null->getArguments().getNodes().push_back(fn_args[1]);
