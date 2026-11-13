@@ -5,7 +5,6 @@
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
@@ -99,7 +98,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool explain_syntax_single_record;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
@@ -987,18 +985,6 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
-/// Re-applying the explained query's SETTINGS can reset a `make_distributed_plan` that `executeQuery` inferred;
-/// infer it again so EXPLAIN plans what executes. Only a plan already on is restored, so a nested EXPLAIN never infers one.
-static void reapplySettingsAndRestoreDistributedPlan(const ASTPtr & query, ContextMutablePtr context)
-{
-    const bool plan_was_on = context->getSettingsRef()[Setting::make_distributed_plan].value;
-
-    InterpreterSetQuery::applySettingsFromQuery(query, context);
-
-    if (plan_was_on && !context->getSettingsRef()[Setting::make_distributed_plan].changed)
-        applyDistributedPlanSettings(context);
-}
-
 struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
@@ -1050,7 +1036,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     auto planning_context = Context::createCopy(getContext());
     inner_options.max_step_description_length = planning_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-    reapplySettingsAndRestoreDistributedPlan(query, planning_context);
+    InterpreterSetQuery::applySettingsFromQuery(query, planning_context);
 
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
@@ -1127,8 +1113,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         explain_query_context->setSetting("use_query_condition_cache", false);
     }
 
-    reapplySettingsAndRestoreDistributedPlan(query, explain_query_context);
-
+    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
     query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
