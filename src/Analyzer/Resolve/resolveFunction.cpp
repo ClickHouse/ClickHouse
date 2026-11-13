@@ -1610,6 +1610,9 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                 auto float_matches = buildResolvedFunction("equals", {numeric_value, std::move(decimal_as_float)}, context);
                 cast_result = buildResolvedFunction("and", {std::move(cast_result), std::move(float_matches)}, context);
             }
+            if (!left_nullable && !right_nullable)
+                cast_result = buildResolvedFunction(
+                    "ifNull", {std::move(cast_result), std::make_shared<ConstantNode>(Field{0u})}, context);
             return cast_result;
         };
 
