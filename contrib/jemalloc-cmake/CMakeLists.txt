@@ -267,6 +267,11 @@ target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
+# Cheap checks on the deallocation path: a sized deallocation with a wrong size, a double free of a large
+# allocation, or inconsistent metadata in the thread cache aborts at the faulty call, with its stack trace,
+# instead of corrupting the allocator metadata and crashing later elsewhere (as in #102918).
+target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS)
+
 if (ENABLE_JEMALLOC_UAF_SAN)
     target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_UAF_DETECTION)
 endif ()
