@@ -91,6 +91,9 @@ struct MergeTreeIndexTextParams
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
+    /// Free positions between the elements of an `Array` row, so that a phrase cannot span two elements.
+    /// 0 for other columns and with the `array` tokenizer, whose phrases span elements.
+    UInt8 position_increment_gap = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
@@ -327,9 +330,10 @@ struct TextIndexHeader
 {
     MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
+    /// has_positions, positions_codec and position_increment_gap are persisted for version >= V2_WithPositions.
     bool has_positions = false;
     UInt8 positions_codec = 0;
+    UInt8 position_increment_gap = 0;
     DictionarySparseIndex sparse_index;
 };
 
@@ -359,6 +363,8 @@ struct TextIndexSerialization
     /// Reads only the version and posting list codec from the start of the header, without the
     /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
+    /// Throws if the positions of a part were built with another gap than the index definition sets.
+    static void checkPositionIncrementGap(const TextIndexHeader & header, const MergeTreeIndexTextParams & params);
     /// If `with_postings` is false, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool with_postings);
     /// Skips a token info without full deserialization and filling the fields.
@@ -492,11 +498,16 @@ struct MergeTreeIndexTextGranuleBuilder
     void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
     void addToken(std::string_view token, const PostingListBuildContext & context);
+    /// Starts the next element of an `Array` row: its first token follows the previous token after `position_increment_gap` free positions.
+    void startElement();
     /// Adds the rows from a column or array of `LowCardinality`, tokenizing each dictionary value once.
     void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row);
+
+    /// Takes `count` consecutive positions of the current row after the pending gap, and returns the first one.
+    UInt32 takeTokenPositions(UInt32 count);
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
@@ -512,6 +523,8 @@ struct MergeTreeIndexTextGranuleBuilder
     UInt64 current_row = 0;
     /// Position of the next token within the current row. Every token of a row shares one sequence.
     UInt32 current_token_position = 0;
+    /// Free positions to skip before the next token, set by `startElement`.
+    UInt32 pending_position_gap = 0;
     UInt64 num_processed_tokens = 0;
     /// Posting list builders for each token. When positions are enabled,
     /// the builders also accumulate the positions of the tokens.
@@ -549,8 +562,15 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    /// When the rows of `column` are the flattened tokens of the elements of an `Array` column, `element_token_offsets` are
+    /// the offsets in the data of `column` where those elements end, and the gap is placed at them.
     template <bool tokenize>
-    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
+    void addDocumentsFromArray(
+        ColumnPtr column,
+        size_t start_row,
+        size_t rows_read,
+        const PostingListBuildContext & context,
+        const IColumn::Offsets * element_token_offsets = nullptr);
 
     /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);

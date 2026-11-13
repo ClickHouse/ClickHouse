@@ -94,6 +94,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -134,6 +135,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, position_increment_gap = G ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -571,6 +573,12 @@ Storing positions increases the on-disk size of the index and the write cost, so
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `support_phrase_search = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to be enabled.
 Set `support_phrase_search = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+
+For an index on an `Array` column, the tokens of all elements of a row share one sequence of positions, and experimental parameter `position_increment_gap` (default: `63`, between `1` and `127`) sets the number of free positions between two elements.
+The gap keeps a phrase within one element, as [`hasPhrase`](#functions-example-hasphrase) requires, so that the function is answered by direct reads from the index.
+A larger gap increases the size of the positions.
+Elements without tokens (empty strings, `NULL`) add no gap.
+The parameter requires `support_phrase_search = 1` and is not supported with the `array` tokenizer: there every element is one token, and a phrase spans consecutive elements.
 
 <Warning>
 This argument is experimental and should only be used for testing.
