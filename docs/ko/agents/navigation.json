@@ -1,49 +1,43 @@
 {
-  "item": "Agents",
-  "dropdowns": [
+  "groups": [
     {
-      "dropdown": "Agents",
-      "icon": "/images/icons/icon-agentic-data-stack.svg",
+      "group": "Get started",
       "pages": [
-        {
-          "group": "Get started",
-          "pages": [
-            "ko/agents/index",
-            "ko/agents/quickstart",
-            "ko/agents/chat"
-          ]
-        },
-        {
-          "group": "Agent Builder",
-          "pages": [
-            "ko/agents/builder/index",
-            "ko/agents/builder/model-parameters",
-            "ko/agents/builder/code-interpreter",
-            "ko/agents/builder/web-search",
-            "ko/agents/builder/image-generation",
-            "ko/agents/builder/vision",
-            "ko/agents/builder/mcp-servers",
-            "ko/agents/builder/skills",
-            "ko/agents/builder/subagents"
-          ]
-        },
-        {
-          "group": "Manage agents",
-          "pages": [
-            "ko/agents/prompts",
-            "ko/agents/memory",
-            "ko/agents/marketplace",
-            "ko/agents/sharing-and-access"
-          ]
-        },
-        {
-          "group": "Assistant",
-          "pages": [
-            "ko/agents/assistant/using-ai-chat",
-            "ko/agents/assistant/customizing-semantic-layer"
-          ]
-        }
+        "ko/agents/index",
+        "ko/agents/quickstart",
+        "ko/agents/chat"
+      ]
+    },
+    {
+      "group": "Agent Builder",
+      "pages": [
+        "ko/agents/builder/index",
+        "ko/agents/builder/model-parameters",
+        "ko/agents/builder/code-interpreter",
+        "ko/agents/builder/web-search",
+        "ko/agents/builder/image-generation",
+        "ko/agents/builder/vision",
+        "ko/agents/builder/mcp-servers",
+        "ko/agents/builder/skills",
+        "ko/agents/builder/subagents"
+      ]
+    },
+    {
+      "group": "Manage agents",
+      "pages": [
+        "ko/agents/prompts",
+        "ko/agents/memory",
+        "ko/agents/marketplace",
+        "ko/agents/sharing-and-access"
+      ]
+    },
+    {
+      "group": "Assistant",
+      "pages": [
+        "ko/agents/assistant/using-ai-chat",
+        "ko/agents/assistant/customizing-semantic-layer"
       ]
     }
-  ]
+  ],
+  "item": "Agents"
 }
