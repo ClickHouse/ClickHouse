@@ -20,6 +20,9 @@
 -- reads 2 rows with max_block_size = 1, so sleepEachRow runs once per single-row block and each call
 -- stays within the cap. The set is made large by the width of its rows rather than by their number,
 -- so that building it stays cheap even with max_block_size = 1, which applies to the subquery as well.
+--
+-- Spilling of the set to disk is disabled explicitly: with a randomized `max_bytes_before_external_set`
+-- the set is not held in memory, and the bound below does not hold.
 
 SET log_queries = 1;
 
@@ -28,7 +31,7 @@ FROM numbers(2)
 WHERE sleepEachRow(3) = 0
   AND concat(repeat('x', 16384), toString(number)) IN (SELECT concat(repeat('x', 16384), toString(number)) FROM numbers(2000))
 FORMAT Null
-SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_long';
+SETTINGS max_threads = 1, max_block_size = 1, max_bytes_before_external_set = 0, max_bytes_ratio_before_external_set = 0, log_comment = '04506_memory_credits_hold_long';
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -19,7 +19,8 @@ $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $USER"
 # The query is sent over HTTP and with `query_metric_log_interval = 0`: the native client requests profile
 # events from the server periodically and `system.query_metric_log` snapshots the query periodically, and
 # both also charge the held interval, so a stale per-user snapshot would not be observable with them.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${USER}&query_id=${QUERY_ID}&max_threads=1&max_block_size=1&query_metric_log_interval=0" -d "
+# Spilling of the set to disk is disabled: with a randomized `max_bytes_before_external_set` the set is not held in memory.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${USER}&query_id=${QUERY_ID}&max_threads=1&max_block_size=1&query_metric_log_interval=0&max_bytes_before_external_set=0&max_bytes_ratio_before_external_set=0" -d "
     SELECT number FROM system.numbers
     WHERE sleepEachRow(3) = 0
       AND concat(repeat('x', 16384), toString(number)) IN (SELECT concat(repeat('x', 16384), toString(number)) FROM system.numbers LIMIT 2000)
