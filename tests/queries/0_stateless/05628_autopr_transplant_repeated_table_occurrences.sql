@@ -32,6 +32,9 @@ SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
+-- Without `PREWHERE` the plans of the shape with two subqueries written alike do not match, and it is skipped
+-- before the cost model, where its reads are to be declined.
+SET optimize_move_to_prewhere = 1;
 
 -- Results on a single node.
 SELECT count(), sum(d.v), sum(b.v), sum(a.v), sum(a.k)
@@ -48,6 +51,11 @@ SELECT count(), sum(d.v), sum(b.v), sum(a.v)
 FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t PREWHERE id < 20000) AS b
 WHERE d.id = b.id AND a.id = b.k
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05628_single_node_subqueries';
+
+SELECT count(), sum(d.v), sum(b.v), sum(a.v)
+FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
+WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05628_single_node_ambiguous';
 
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
@@ -97,6 +105,22 @@ FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT
 WHERE d.id = b.id AND a.id = b.k
 SETTINGS log_comment = '05628_replicas_subqueries';
 
+-- The two subqueries are written alike, so their reads cannot be told apart, although the join pushes different
+-- conditions into them. The pairing has to decline, and only after the cost model has favoured replicas: an earlier
+-- skip would not test it.
+SELECT count(), sum(d.v), sum(b.v), sum(a.v)
+FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
+WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
+SETTINGS log_comment = '05628_warmup_ambiguous';
+SELECT count(), sum(d.v), sum(b.v), sum(a.v)
+FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
+WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
+SETTINGS log_comment = '05628_replicas_ambiguous';
+SELECT count(), sum(d.v), sum(b.v), sum(a.v)
+FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
+WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
+SETTINGS log_comment = '05628_replicas_ambiguous';
+
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
@@ -113,6 +137,17 @@ WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDa
   AND log_comment IN ('05628_replicas_aliases', '05628_replicas_subqueries', '05628_replicas_three')
 GROUP BY shape
 ORDER BY shape
+FORMAT TSVWithNames;
+
+SELECT
+    count() = 2
+        AND min(ProfileEvents['AutoParallelReplicasCostModelEvaluated'] > 0)
+        AND min(ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0)
+        AND max(ProfileEvents['AutoParallelReplicasApplied']) = 0
+        AND max(ProfileEvents['ParallelReplicasUsedCount']) = 0 AS ambiguous_reads_declined_after_the_cost_model
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+  AND event_date >= yesterday() AND log_comment = '05628_replicas_ambiguous'
 FORMAT TSVWithNames;
 
 DROP TABLE t_occ_d;
