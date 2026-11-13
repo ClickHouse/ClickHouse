@@ -1,0 +1,150 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-01
+title: 'Demo days - 2026-10-01'
+sidebarTitle: '2026-10-01'
+description: 'ClickStack dias de demonstração de 2026-10-01'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Indicadores de carregamento em dashboards e intervalos de live tail {#dashboard-loading-indicators-and-live-tail-ranges}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+As duas mudanças apresentadas aqui são contribuições de código aberto: os indicadores de carregamento vieram de [@Harshul1484](https://github.com/Harshul1484), e as mudanças no live tail, de [@krishs01](https://github.com/krishs01). Ambas surgiram de issues abertas no repositório nas últimas semanas.
+
+Antes, nem sempre ficava claro o que estava acontecendo ao atualizar um dashboard. Alguns blocos sumiam atrás de um indicador giratório, enquanto outros continuavam exibindo os dados anteriores sem nenhum sinal de que havia uma consulta em execução. Com uma conexão lenta ou uma consulta grande, não dava para saber se você estava vendo os resultados mais recentes. Os gráficos temporais de linha e de barras empilhadas já pulsavam durante uma nova busca, mas os blocos de número, barra, pizza e tabela verificavam apenas `isLoading`, que permanece `false` enquanto o react-query exibe dados de marcador de posição.
+
+Agora esses blocos mantêm os dados anteriores na tela e pulsam até a nova busca terminar. A mudança foi entregue em alguns PRs pequenos, começando pelos blocos de número, barra e pizza e seguindo para tabelas, mapas de calor e os gráficos de barras em lista e histograma no dashboard de Services. As tabelas precisaram de uma correção extra, porque `useOffsetPaginatedQuery` só mantinha as linhas anteriores no modo ao vivo, e por isso o bloco inteiro desaparecia durante uma atualização. Os blocos de busca e de padrões de eventos, assim como as tabelas de Pods, Nodes e Namespaces no Painel do Kubernetes, ainda mantêm o comportamento antigo. Os PRs correspondentes estão abertos.
+
+No live tail, o seletor de tempo desabilitava todas as predefinições acima de uma hora sem explicar o motivo. Além disso, o interruptor que controlava essas predefinições tinha o rótulo &quot;Relative Time&quot;, embora o restante do aplicativo use o nome live tail.
+
+As predefinições de 3h e 6h agora estão disponíveis, e o interruptor passou a se chamar **Live tail ranges**. As predefinições que continuam desabilitadas exibem a dica de ferramenta &quot;Not available for Live Tail&quot; ao passar o mouse. Intervalos de 12h ou mais continuam desabilitados porque cada atualização consulta novamente toda a janela de tempo. Com o intervalo de atualização padrão de 10 segundos, isso significaria varrer de 12 a 24 horas de dados a cada 10 segundos.
+
+**PRs relacionados:** [#3211](https://github.com/hyperdxio/hyperdx/pull/3211) Fazer os blocos de número, barra e pizza pulsarem enquanto um dashboard é atualizado, [#3212](https://github.com/hyperdxio/hyperdx/pull/3212) Manter as linhas dos blocos de tabela na tela enquanto um dashboard é atualizado, [#3221](https://github.com/hyperdxio/hyperdx/pull/3221) Manter os blocos de mapa de calor na tela enquanto um dashboard é atualizado, [#3229](https://github.com/hyperdxio/hyperdx/pull/3229) Fazer os gráficos de barras em lista e histograma pulsarem durante a atualização, [#3224](https://github.com/hyperdxio/hyperdx/pull/3224) Manter os blocos de busca e de padrões na tela enquanto um dashboard é atualizado (aberto), [#3228](https://github.com/hyperdxio/hyperdx/pull/3228) Manter as tabelas do Painel do Kubernetes na tela enquanto a página é atualizada (aberto), [#3219](https://github.com/hyperdxio/hyperdx/pull/3219) Habilitar live tail para 3h e 6h, renomear o interruptor e adicionar dica de ferramenta para predefinições desabilitadas
+
+## Modelos de issue e o fluxo Needs Feedback {#issue-templates-and-the-needs-feedback-flow}
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=118" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Esta é uma mudança no repositório, e não no produto. Antes, era possível abrir uma issue no repositório do HyperDX com um corpo em formato livre. Agora, toda nova issue parte de um modelo de relatório de bug ou de solicitação de funcionalidade, e issues em branco foram desabilitadas. Podemos adicionar mais modelos conforme a necessidade.
+
+O modelo de relatório de bug já pede informações de depuração logo de início. O aplicativo já conta com a ação **Help → Copy debug info**, que copia as versões do frontend e do backend, o modo de implantação, o navegador e o ID de sessão, removendo chaves de API e parâmetros de consulta. Colar essas informações na issue deve poupar uma rodada de perguntas. Para issues relacionadas ao coletor e à CLI, esse campo é marcado como `N/A`.
+
+Novas issues também recebem automaticamente o rótulo `Needs Feedback`. Isso indica que a issue ainda está em discussão e não está pronta para um PR. Depois que chegamos a um acordo sobre o escopo, um mantenedor troca o rótulo para `Accepting PR`, e a issue fica disponível para que alguém a assuma.
+
+Esse fluxo está documentado em `CONTRIBUTING.md`. Por enquanto, trata-se apenas de uma convenção, sem nenhum mecanismo que a imponha do lado do PR. O objetivo é evitar que as pessoas invistam tempo em correções antes de chegarmos a um consenso sobre a issue e a abordagem. É provável que ajustemos esse processo à medida que virmos como ele funciona na prática.
+
+**PRs relacionados:** [#3239](https://github.com/hyperdxio/hyperdx/pull/3239) Add debug-info ask and Needs Feedback issue flow
+
+## Várias expressões PromQL em um único gráfico {#multiple-promql-expressions-on-one-chart}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=191" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, o PromQL só era compatível com gráficos de série temporal, com uma expressão por bloco. Agora é possível adicionar várias expressões PromQL ao mesmo gráfico de série temporal, cada uma com seu próprio alias. Na demonstração, usamos esse recurso para plotar juntas as latências p50, p95 e p99.
+
+A prévia da consulta abaixo do editor agora mostra o PromQL gerado para cada expressão, com as variáveis já substituídas. Antes, ela mostrava apenas a primeira expressão. Assim, você pode conferir como cada consulta será resolvida antes de salvar.
+
+O primeiro PR da lista é a refatoração que tornou isso possível. Ela extrai o editor de PromQL e os controles de séries do criador de gráficos para componentes compartilhados, permitindo reutilizá-los em cada expressão.
+
+**PRs relacionados:** [#3145](https://github.com/hyperdxio/hyperdx/pull/3145) Extrai as funções de PromQL, PromqlExpressionEditor e ChartSeriesControls, [#3146](https://github.com/hyperdxio/hyperdx/pull/3146) Plota várias expressões PromQL em um único gráfico
+
+## Gráficos numéricos, de pizza e de tabela com PromQL {#promql-number-pie-and-table-charts}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=241" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+*O áudio deste vídeo está ruim, pedimos desculpas. A descrição abaixo cobre tudo o que foi mostrado.*
+
+O PromQL agora funciona com gráficos numéricos, de pizza, de barras e de tabela, além de séries temporais. A maior mudança está nos gráficos numéricos. Antes, toda consulta PromQL era uma consulta de intervalo, avaliada a cada passo ao longo do intervalo de tempo selecionado, e o gráfico exibia o primeiro resultado por tempo e nome da série. Agora você pode escolher entre uma consulta instantânea, avaliada uma única vez no fim do intervalo, e uma consulta de intervalo. Isso reproduz o funcionamento dos blocos de estatística (stat) do Grafana.
+
+Em uma consulta de intervalo, você também escolhe um redutor: last, min, max, avg, sum ou count. Ele é executado no client-side e reduz as amostras de cada série a um único valor. Se ainda restar mais de um valor, seja por haver várias séries ou amostras não reduzidas, o gráfico exibe um aviso explicando que um bloco numérico mostra um único valor e que a expressão precisa agregar os dados.
+
+Os gráficos numéricos também oferecem suporte a minigráficos em consultas de intervalo, usando os mesmos resultados obtidos para o número. Essas consultas agora seguem o intervalo de tempo e a granularidade do dashboard, assim como as consultas de séries temporais, o que permite que o número e o minigráfico compartilhem os resultados.
+
+Os gráficos de pizza e de barras contam com as mesmas opções instantânea e de intervalo com redutor, além de oferecer suporte ao template de legenda. Os redutores também funcionam com consultas instantâneas que retornam várias amostras por série. Por exemplo, `up[5m]` retorna uma matriz, que é reduzida ao longo do tempo a um vetor instantâneo antes de ser exibida como fatias ou barras. A mesma redução se aplica aos gráficos numéricos.
+
+As tabelas mostram os resultados brutos da consulta. Cada amostra se torna uma linha, com uma coluna para cada rótulo. `__name__` e Timestamp aparecem como as primeiras colunas, quando presentes. Em consultas de intervalo, isso significa uma linha para cada amostra em cada passo, com o timestamp incluído. A formatação numérica é compatível com todos esses tipos de gráfico.
+
+**PRs relacionados:** [#3169](https://github.com/hyperdxio/hyperdx/pull/3169) Suporte a blocos numéricos PromQL instantâneos e baseados em intervalo, [#3178](https://github.com/hyperdxio/hyperdx/pull/3178) Suporte a minigráfico em gráficos numéricos PromQL, [#3238](https://github.com/hyperdxio/hyperdx/pull/3238) Suporte a gráficos de tabela PromQL, [#3253](https://github.com/hyperdxio/hyperdx/pull/3253) Suporte a gráficos de pizza e de barras PromQL
+
+## Variáveis do dashboard em blocos Markdown {#dashboard-variables-in-markdown-tiles}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=345" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, as variáveis do dashboard funcionavam em consultas, mas não em blocos Markdown. Agora é possível referenciá-las em Markdown, inclusive dentro de links. Ao alterar um valor no seletor de variáveis, tanto o texto quanto o destino do link são atualizados. Na demonstração, usamos esse recurso para repassar o valor selecionado para outra página.
+
+Por padrão, os valores usam o novo formato `markdown`, que escapa os caracteres de Markdown. Os blocos Markdown também bloqueiam scripts e HTML bruto. Se precisar de um valor não escapado, por exemplo, dentro de um bloco de código, você pode usar outro formato, como `${var:csv}`.
+
+Referências de variáveis inválidas são sinalizadas no editor, e a validação de dashboards e os prompts do MCP foram atualizados para refletir essa mudança.
+
+**PRs relacionados:** [#3246](https://github.com/hyperdxio/hyperdx/pull/3246) Substituir variáveis em blocos Markdown
+
+## Macros PromQL {#promql-macros}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=376" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+O PromQL agora oferece suporte a três macros compatíveis com o Grafana, baseadas no intervalo de tempo e na granularidade do dashboard. `$__interval` retorna a granularidade do gráfico ou do dashboard, e `$__range` retorna a duração do intervalo de datas do gráfico em segundos. `$__rate_interval` equivale a `max(4 × 15s, $__interval)`, o que dá aos cálculos de taxa uma janela que abrange vários intervalos de scrape. Por enquanto, assume-se um intervalo de scrape de 15 segundos.
+
+As macros são substituídas junto com as variáveis, então você pode ver seus valores resolvidos na prévia do PromQL gerado. Elas também aparecem como sugestões no preenchimento automático do editor. Internamente, a implementação reaproveita a maior parte do mecanismo de macros SQL já existente.
+
+**PRs relacionados:** [#3244](https://github.com/hyperdxio/hyperdx/pull/3244) Support PromQL macros
+
+## Selecionando linhas na página de busca {#selecting-rows-on-the-search-page}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=398" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Esta é uma pequena funcionalidade que surgiu a partir de uma solicitação de usuário. Agora você pode selecionar linhas individuais nos resultados da busca usando uma caixa de seleção ou usar Shift+clique para selecionar um intervalo. Depois de selecionar algumas linhas, você tem acesso às ações **Download CSV**, **Copy CSV** e **Copy JSON**, além de uma opção para limpar a seleção. Essas ações incluem todas as colunas exibidas no momento na tabela, permitindo extrair algumas linhas do ClickStack sem precisar exportar todo o conjunto de resultados.
+
+As caixas de seleção aparecem ao passar o mouse, uma melhoria complementar feita por [@MikeShi42](https://github.com/MikeShi42). Elas ficam ocultas por padrão e surgem gradualmente quando você passa o mouse sobre uma linha. Também aparecem quando recebem o foco do teclado, para que você não acabe navegando com Tab até um controle invisível. Assim que qualquer linha é selecionada, todas as caixas de seleção permanecem visíveis, para que você saiba onde usar Shift+clique. Em dispositivos com tela sensível ao toque, elas ficam sempre visíveis.
+
+A coluna de caixas de seleção mantém a largura ao passar o mouse, evitando que a tabela se mexa. Ela também foi reduzida de 24px para 18px, e a caixa de seleção tem uma dica de ferramenta explicando como selecionar um intervalo com Shift+clique.
+
+**PRs relacionados:** [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) Support search row multi-select download and copy, [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) Reveal search row-selection checkboxes on hover
+
+## Colunas materializadas e alias no painel de detalhes da linha {#materialized-and-alias-columns-in-the-row-details-panel}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=435" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Esta é uma contribuição de código aberto de [@BilalAtique](https://github.com/BilalAtique), em resposta a uma issue que pedia a exibição de colunas computadas no painel de detalhes da linha. O painel obtém cada linha com `SELECT *`, o que exclui colunas `MATERIALIZED` e `ALIAS`, a menos que `asterisk_include_materialized_columns` e `asterisk_include_alias_columns` estejam habilitadas. Com isso, as colunas materializadas adicionadas à sua tabela de logs, assim como os aliases padrão `*AttributeItems` de `otel_logs`, não apareciam.
+
+Agora há a opção **Show materialized and alias columns** no menu de engrenagem da visualização Column Values. Ela vem desativada por padrão e fica salva no armazenamento local, junto com as demais preferências do painel. Quando ativada, ambas as configurações são adicionadas às consultas de linha que usam `*`. Fontes de dados com uma Known Columns List não são afetadas.
+
+As consultas de linha agora também aplicam as configurações de consulta da própria fonte de dados, que têm precedência sobre o botão de alternância. Se ambas as configurações estiverem habilitadas na fonte de dados, as colunas aparecem mesmo com a opção desativada. Se a fonte de dados tiver `asterisk_include_alias_columns = 0`, as colunas alias continuam ocultas mesmo com a opção ativada.
+
+Há alguns pontos de atenção. A consulta de linha falhará se o usuário da conexão não puder alterar essas configurações, por exemplo, com `readonly = 1` ou com um perfil de configurações que as marque como `CONST`. Ela também falhará se um alias não puder ser avaliado para aquela linha. Nesses casos, o painel exibe o erro do ClickHouse e uma ação **Hide materialized and alias columns** para desativar a opção.
+
+As colunas `__hdx_materialized_*` também são obtidas, mas continuam ocultas no visualizador. Esta alteração não inclui um botão de alternância para elas.
+
+**PRs relacionados:** [#3234](https://github.com/hyperdxio/hyperdx/pull/3234) Aplica as configurações de consulta da fonte de dados à consulta de linha do painel lateral, [#3231](https://github.com/hyperdxio/hyperdx/pull/3231) Adiciona uma opção para exibir colunas MATERIALIZED e ALIAS no painel de detalhes da linha
+
+## Colunas de atributos Map identificadas por sua chave {#map-attribute-columns-labelled-by-their-key}
+
+*Demonstração por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=495" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Mais uma contribuição de código aberto, desta vez de [@DevShoaib78](https://github.com/DevShoaib78). Antes, ao adicionar um atributo map, como `host.arch`, como coluna a partir da barra lateral de filtros ou do painel lateral da linha, a coluna recebia na tabela de resultados o nome derivado pelo ClickHouse, por exemplo, `arrayElement(ResourceAttributes, 'host.arch')`.
+
+Agora, as duas ações usam a mesma lógica na página de busca e adicionam a expressão ao `SELECT` com um alias: `ResourceAttributes['host.arch'] AS "host.arch"`. Com isso, o cabeçalho de coluna passa a exibir `host.arch`. Você pode ver e editar o alias no campo `SELECT`. O SQL escrito manualmente nunca é reescrito, portanto buscas salvas, alertas e dashboards existentes não são afetados.
+
+O alias é ignorado quando puder alterar o significado da consulta. Isso inclui chaves que coincidem com uma coluna da tabela, já que o ClickHouse resolve aliases antes das colunas em `WHERE` e `ORDER BY`, e nomes já usados no `SELECT`, como a mesma chave vinda de dois mapas diferentes. O alias também é ignorado se a chave contiver `"` ou `\`.
+
+O painel lateral, a barra lateral de filtros e os grupos de filtros aninhados agora reconhecem uma expressão com ou sem alias ao verificar se uma coluna já está sendo exibida. Assim, eles deixam de sugerir a adição de uma coluna que já está na tabela.
+
+**PRs relacionados:** [#3163](https://github.com/hyperdxio/hyperdx/pull/3163) Label Map attribute columns by their key instead of arrayElement(...)

@@ -56,38 +56,39 @@ doc_type: 'مرجع'
 
 ## اتصال خاص بواجهة Kubernetes API {#k8s-api-private-connection}
 
-بشكل افتراضي، تكون نقطة نهاية خادم Kubernetes API الخاصة بعنقود BYOC لديك متاحة عبر الإنترنت العام. في AWS، يكون الوصول مقيّدًا عبر تصفية عناوين IP بحيث يُسمح فقط بعناوين IP الخاصة ببوابة ClickHouse NAT Gateway؛ أما في GCP وAzure فيُضبط الوصول عبر IAM الخاص بالسحابة بدلًا من ذلك (انظر [تعريض خادم Kubernetes API](/ar/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). ولمزيد من الأمان، يمكنك تقييد خادم Kubernetes API بحيث لا يمكن الوصول إليه إلا عبر اتصالات الشبكة الخاصة.
+بشكل افتراضي، تكون نقطة نهاية خادم Kubernetes API الخاصة بعنقود BYOC لديك متاحة عبر الإنترنت العام. في AWS، يكون الوصول مقيّدًا عبر تصفية عناوين IP بحيث يُسمح فقط بعناوين IP الخاصة ببوابة ClickHouse NAT Gateway؛ أما في GCP وAzure فيُضبط الوصول عبر IAM الخاص بالسحابة بدلًا من ذلك (انظر [تعريض خادم Kubernetes API](/ar/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). ولمزيد من الأمان، يمكنك تقييد خادم Kubernetes API بحيث يقتصر على الوصول الخاص. وعندئذٍ لا يمكن الوصول إليه في AWS وAzure إلا عبر اتصالات الشبكة الخاصة. أما في GCP، فتُعطَّل نقطة النهاية ذات عنوان IP العام، غير أن خدمات الإدارة تستخدم نقطة النهاية المستندة إلى DNS والمصرّح بها عبر IAM، وهي تبقى خارج شبكة VPC الخاصة بك.
 
 تختلف خيارات الاتصال الخاص المتاحة باختلاف مزوّد الخدمة السحابية لديك:
 
-### Tailscale (default) {#k8s-api-private-connection-tailscale}
+### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
-عند تمكين نقطة نهاية خاصة لواجهة برمجة التطبيقات، تتصل خدمات الإدارة في ClickHouse بخادم Kubernetes API عبر شبكة Tailscale عديمة الثقة نفسها المستخدمة لأغراض استكشاف الأخطاء وإصلاحها. راجع [Tailscale Private Network](/ar/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) للاطلاع على تفاصيل آلية عمل هذا الاتصال.
+بالنسبة إلى عمليات النشر على AWS، يمكن الوصول إلى خادم Kubernetes API بشكل خاص عبر [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/)، من دون أي مكونات تابعة لجهة خارجية:
+
+* يوفّر ClickHouse Cloud تلقائيًا VPC Lattice Resource Gateway وResource Configuration تستهدف نقطة النهاية الخاصة بـ خادم API لـ EKS داخل VPC الخاص بـ BYOC لديك، ويشارك Resource Configuration مع حساب إدارة ClickHouse Cloud عبر AWS Resource Access Manager ‏(RAM).
+* تبقى حركة البيانات بين خدمات الإدارة في ClickHouse وخادم Kubernetes API لديك بالكامل داخل private network الخاصة بـ AWS.
+* يتم إنشاء مشاركة RAM من حسابك وتكون محصورة في عنقود واحد من نوع BYOC؛ ويؤدي حذفها إلى إلغاء مسار الوصول الخاص فورًا.
+* ولأن هذا الوصول لا يعتمد على وكيل يعمل داخل عنقود Kubernetes لديك، يحتفظ ClickHouse Support بإمكانية الوصول لأغراض استكشاف الأخطاء وإصلاحها حتى إذا أصبحت المكونات داخل العنقود غير متاحة.
+
+### Tailscale {#k8s-api-private-connection-tailscale}
+
+<Warning>
+  تم إهمال استخدام Tailscale كاتصال خاص بخادم API لـ EKS. على AWS، استخدم [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice) بدلاً منه. إذا كان نشرك على AWS يعتمد حاليًا على Tailscale للوصول الخاص إلى واجهة برمجة تطبيقات Kubernetes، فتواصل مع ClickHouse Support للترحيل إلى VPC Lattice.
+</Warning>
+
+عند تمكين نقطة نهاية API خاصة، تتصل خدمات إدارة ClickHouse بخادم Kubernetes API عبر شبكة Tailscale عديمة الثقة نفسها المستخدمة لأغراض استكشاف الأخطاء وإصلاحها. أما في GCP، فتتولى Tailscale نقل حركة أدوات النشر والمراقبة واستكشاف الأخطاء وإصلاحها، في حين تستخدم خدمات الإدارة نقطة النهاية القائمة على DNS — راجع [نقطة نهاية control-plane الخاصة في GCP](#k8s-api-private-connection-gcp). راجع [Tailscale Private Network](/ar/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) للاطلاع على تفاصيل آلية عمل هذا الاتصال.
 
 <Note>
   إذا كنت تعتمد فقط على Tailscale للاتصال الخاص، فهناك احتمال أن يفقد ClickHouse Support إمكانية الوصول إلى بيئتك إذا أصبح وكيل Tailscale غير متاح. وقد يؤدي ذلك إلى تأخير استكشاف الأخطاء وإصلاحها أو إطالة أوقات استجابة الدعم.
 </Note>
 
-### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
+### نقطة نهاية control-plane الخاصة على GCP {#k8s-api-private-connection-gcp}
 
-<Info>
-  إمكانية الاتصال عبر VPC Lattice متاحة حاليًا ضمن معاينة خاصة. تواصل مع ClickHouse Support لتمكينها لعملية النشر الخاصة بك.
-</Info>
+على GCP، تصل خدمات إدارة ClickHouse افتراضيًا إلى مستوى التحكم في GKE عبر نقطة النهاية العامة القائمة على عنوان IP. ويمكن تعطيل نقطة النهاية هذه بحيث يتعذّر الوصول إلى مستوى التحكم عبر أي عنوان IP عام:
 
-بالنسبة إلى عمليات النشر على AWS، يمكن بدلًا من ذلك الوصول إلى خادم Kubernetes API بشكل خاص عبر [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/)، من دون أي مكونات تابعة لجهة خارجية:
-
-* يوفّر ClickHouse Cloud تلقائيًا VPC Lattice Resource Gateway وResource Configuration تستهدف endpoint الخاص بـ خادم API لـ EKS داخل VPC الخاص بـ BYOC لديك، ويشارك Resource Configuration مع حساب إدارة ClickHouse Cloud عبر AWS Resource Access Manager ‏(RAM).
-* تبقى حركة البيانات بين management services في ClickHouse وخادم Kubernetes API لديك بالكامل داخل private network الخاصة بـ AWS.
-* يتم إنشاء مشاركة RAM من حسابك وتكون محصورة في عنقود واحد من نوع BYOC؛ ويؤدي حذفها إلى إلغاء مسار الوصول الخاص فورًا.
-* ولأن هذا الوصول لا يعتمد على وكيل يعمل داخل عنقود Kubernetes لديك، يحتفظ ClickHouse Support بإمكانية الوصول لأغراض استكشاف الأخطاء وإصلاحها حتى إذا أصبحت المكونات داخل العنقود غير متاحة.
-
-### نقطة النهاية الخاصة لطبقة التحكم في GCP {#k8s-api-private-connection-gcp}
-
-في عمليات النشر على GCP، يمكن تعطيل نقطة نهاية طبقة التحكم المستندة إلى عناوين IP في عنقود GKE، فلا يعود الوصول إليها ممكنًا من الإنترنت العام. وعندئذٍ تصل خدمات إدارة ClickHouse إلى طبقة التحكم عبر نقطة النهاية المستندة إلى DNS ‏(`*.gke.goog`)، ويُصرَّح بهذا الوصول من خلال صلاحية IAM ‏`container.clusters.connect` الممنوحة لحساب الخدمة الذي تنتحل ClickHouse هويته في مشروعك، لا من خلال قائمة سماح قائمة على عناوين IP المصدر.
-
-* يخضع الوصول بالكامل لنظام IAM السحابي في مشروعك، ولذا فإن سحب تلك الصلاحية يُغلق مسار الوصول هذا.
-* ينتهي الطلب عند الواجهة الأمامية لـ Google لا داخل شبكة VPC الخاصة بك، لذا قيِّمه باعتباره مسار وصول إلى طبقة التحكم لديك، لا باعتباره رابطًا شبكيًا خاصًا.
-* يظل مهندسو ClickHouse يعتمدون على Tailscale للوصول لأغراض استكشاف الأخطاء وإصلاحها.
+* يحتفظ مستوى التحكم بنقطة النهاية الداخلية القائمة على عنوان IP، والتي لا يمكن الوصول إليها إلا من داخل شبكة VPC الخاصة بك، إضافةً إلى نقطة النهاية القائمة على DNS (`*.gke.goog`)، وهي مفعّلة دائمًا.
+* تصل خدمات إدارة ClickHouse إلى مستوى التحكم عبر نقطة النهاية القائمة على DNS. ويُمنح التفويض لهذا الوصول بموجب صلاحية IAM ‏`container.clusters.connect` على حساب الخدمة الذي تنتحل ClickHouse هويته في مشروعك، لا بموجب قائمة سماح قائمة على عنوان IP المصدر، ولذا فإن سحب هذه الصلاحية يُلغي هذا المسار. ينتهي الطلب عند الواجهة الأمامية لـ Google لا داخل شبكة VPC الخاصة بك، لذا ينبغي تقييمه بوصفه مسار وصول إلى مستوى التحكم لديك، لا بوصفه اتصالًا شبكيًا خاصًا.
+* تصل أدوات النشر والمراقبة وصلاحية الوصول لاستكشاف الأخطاء وإصلاحها الممنوحة لمهندسي ClickHouse إلى نقطة النهاية الداخلية عبر Tailscale. ويُنشر وكلاء Tailscale داخل العنقود أثناء الإعداد الأولي، لذا لا يمكن تمكين هذا الوضع إلا بعد اكتمال الإعداد.
+* إذا كان لديك محيط VPC Service Controls يقيّد `container.googleapis.com`، فإنه يقيّد أيضًا نقطة النهاية القائمة على DNS. أضف قاعدة دخول تسمح بهويات الإدارة الخاصة بـ ClickHouse؛ ويمكن لفريق ClickHouse تزويدك بها لعملية النشر الخاصة بك.
 
 ### Azure Private Link {#k8s-api-private-connection-azure}
 
