@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 class RabbitMQProducer : public AsynchronousMessageProducer
 {
 public:
@@ -25,6 +28,7 @@ public:
         std::atomic<bool> & shutdown_called_,
         LoggerPtr log_);
 
+    void start(const ContextPtr & context) override;
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
     void cancel() noexcept override;
 
@@ -66,6 +70,9 @@ private:
 
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
     bool producer_ready = false;
+    String channel_error;
+
+    QueryStatusPtr query_status;
 
     /// Channel errors lead to channel closure, need to count number of recreated channels to update channel id
     UInt64 channel_id_counter = 0;

@@ -4137,3 +4137,92 @@ def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
     # waited longer than 5 s.
     assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"
+
+
+def test_rabbitmq_insert_into_missing_exchange(rabbitmq_cluster, db, unique):
+    # With rabbitmq_queue_consume = 1 the table declares nothing, so `never_declared` has no exchange.
+    # `deleted` declares its exchange at CREATE; it is deleted below.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.never_declared (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_never_declared',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{unique}_never_declared',
+                     rabbitmq_queue_consume = 1;
+        CREATE TABLE {db}.deleted (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_deleted',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    connection.channel().exchange_delete(exchange=f"{unique}_deleted")
+    connection.close()
+
+    # The last INSERT has more messages than fit in the producer's queue.
+    for table, source in [
+        ("never_declared", "VALUES (1)"),
+        ("deleted", "VALUES (1)"),
+        ("deleted", "SELECT number FROM numbers(100000)"),
+    ]:
+        error = instance.query_and_get_error(f"INSERT INTO {db}.{table} {source}", timeout=30)
+        assert f"no exchange '{unique}_{table}'" in error, error
+
+
+def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique):
+    # The queue rejects every message, so the producer republishes until the query is killed.
+    exchange = f"{unique}_full"
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    # A queue left by an earlier run with other arguments would fail the declaration below.
+    try:
+        cleanup = connection.channel()
+        cleanup.queue_delete(queue=exchange)
+        cleanup.exchange_delete(exchange=exchange)
+        cleanup.close()
+    except pika.exceptions.ChannelClosedByBroker:
+        pass
+    channel = connection.channel()
+    channel.exchange_declare(exchange=exchange, exchange_type="fanout")
+    channel.queue_declare(queue=exchange, arguments={"x-max-length": 0, "x-overflow": "reject-publish"})
+    channel.queue_bind(exchange=exchange, queue=exchange)
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{unique}_unused',
+                     rabbitmq_queue_consume = 1;
+        """
+    )
+
+    query_id = f"{unique}_{uuid.uuid4().hex}"
+    errors = []
+    insert = threading.Thread(
+        target=lambda: errors.append(
+            instance.query_and_get_error(f"INSERT INTO {db}.rabbitmq VALUES (1)", query_id=query_id, timeout=120)
+        ),
+        daemon=True,
+    )
+    insert.start()
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while instance.query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'").strip() == "0":
+        assert time.monotonic() < deadline, "the INSERT did not start"
+        time.sleep(0.1)
+    instance.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC", timeout=30)
+    insert.join(timeout=30)
+    assert errors and "QUERY_WAS_CANCELLED" in errors[0], errors
+
+    channel.queue_delete(queue=exchange)
+    channel.exchange_delete(exchange=exchange)
+    connection.close()
