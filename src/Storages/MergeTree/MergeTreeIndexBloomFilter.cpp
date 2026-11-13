@@ -40,6 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool in_null_as_unknown;
 }
 
 namespace ErrorCodes
@@ -385,6 +386,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , json_argument_types(std::move(json_argument_types_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+    , in_null_as_unknown(context_->getSettingsRef()[Setting::in_null_as_unknown])
 {
     if (!predicate)
     {
@@ -689,6 +691,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
+
+        /// `in_null_as_unknown` probes both signed-zero representations for floating-point
+        /// membership. A bloom filter hashes only one representation and could prune a match.
+        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(index_type)))
+            return false;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());

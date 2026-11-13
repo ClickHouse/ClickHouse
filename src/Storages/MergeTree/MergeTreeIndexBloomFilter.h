@@ -100,6 +100,7 @@ private:
     /// Argument types of the JSON index functions of this index, by position in `header`.
     const JSONIndexArgumentTypes json_argument_types;
     const bool validate_enum_literals_in_operators;
+    const bool in_null_as_unknown;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;

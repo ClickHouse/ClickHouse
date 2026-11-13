@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -68,6 +69,8 @@ ColumnPtr flipFloatZeroSign(const ColumnPtr & column)
     }
 
     if (auto alternate = flipFloatZeroSign<ColumnFloat32>(column))
+        return alternate;
+    if (auto alternate = flipFloatZeroSign<ColumnBFloat16>(column))
         return alternate;
     return flipFloatZeroSign<ColumnFloat64>(column);
 }
@@ -286,7 +289,7 @@ public:
         const auto left_type_without_wrappers = removeNullable(removeLowCardinality(left_arg.type));
         const auto left_type_id = left_type_without_wrappers->getTypeId();
         if (in_null_as_unknown && columns_of_key_columns.size() == 1
-            && (left_type_id == TypeIndex::Float32 || left_type_id == TypeIndex::Float64))
+            && (left_type_id == TypeIndex::BFloat16 || left_type_id == TypeIndex::Float32 || left_type_id == TypeIndex::Float64))
         {
             /// Prepared sets compare floating keys by their bits. Probe the other signed-zero
             /// representation too, so a match wins over a source `NULL` in this mode.
@@ -300,6 +303,26 @@ public:
                 for (size_t row = 0; row < res->size(); ++row)
                     combined->getData()[row] = res->getBool(row) || alternate_res->getBool(row);
                 res = std::move(combined);
+            }
+
+            /// Set keys compare identical `NaN` bit patterns as equal, while row-wise
+            /// floating-point equality does not. Apply the same nonmatch policy here.
+            bool has_nan_match = false;
+            for (size_t row = 0; row < res->size(); ++row)
+            {
+                if (res->getBool(row) && !left_arg.column->isNullAt(row) && std::isnan(left_arg.column->getFloat64(row)))
+                {
+                    has_nan_match = true;
+                    break;
+                }
+            }
+            if (has_nan_match)
+            {
+                auto without_nan_matches = ColumnUInt8::create(res->size());
+                for (size_t row = 0; row < res->size(); ++row)
+                    without_nan_matches->getData()[row] = res->getBool(row)
+                        && (left_arg.column->isNullAt(row) || !std::isnan(left_arg.column->getFloat64(row)));
+                res = std::move(without_nan_matches);
             }
         }
 
