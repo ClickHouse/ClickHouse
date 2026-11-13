@@ -12,19 +12,18 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="skip_binary_checksum_checks">
-  ## skip_binary_checksum_checks
-</div>
+## skip_binary_checksum_checks {#skip_binary_checksum_checks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Пропускает проверки контрольной суммы бинарного файла ClickHouse
 
-<div id="skip_check_for_incorrect_settings">
-  ## skip_check_for_incorrect_settings
-</div>
+## skip_check_for_incorrect_settings {#skip_check_for_incorrect_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 Если задано значение true, корректность настроек сервера не проверяется.
+
+Также отключается проверка определений дисков в `storage_configuration`: при включённой проверке элемент,
+который не считывается ни одним диском данного типа, не игнорируется, а приводит к ошибке `UNKNOWN_ELEMENT_IN_CONFIG`.
 
 **Пример**
 
