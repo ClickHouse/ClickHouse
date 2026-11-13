@@ -64,6 +64,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -1354,7 +1356,9 @@ static QueryTreeNodePtr buildResolvedFunction(
 
 static bool isCheapInOperand(const QueryTreeNodePtr & argument)
 {
-    if (argument->as<ColumnNode>() || argument->as<ConstantNode>())
+    if (const auto * column = argument->as<ColumnNode>())
+        return !column->hasExpression();
+    if (argument->as<ConstantNode>())
         return true;
 
     const auto * function = argument->as<FunctionNode>();
@@ -1362,7 +1366,7 @@ static bool isCheapInOperand(const QueryTreeNodePtr & argument)
         return false;
 
     const auto & arguments = function->getArguments().getNodes();
-    return arguments.size() == 1 && (arguments[0]->as<ColumnNode>() || arguments[0]->as<ConstantNode>());
+    return arguments.size() == 1 && isCheapInOperand(arguments[0]);
 }
 
 static QueryTreeNodePtr buildNumericScalarInComparison(
@@ -1616,8 +1620,7 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
             return cast_result;
         };
 
-        const auto decimal_type_id = decimal_type->getTypeId();
-        if (!wide_integer && (decimal_type_id == TypeIndex::Decimal32 || decimal_type_id == TypeIndex::Decimal64))
+        if (!wide_integer && !numeric_is_float)
             result = build_cast_comparison();
         else
         {
@@ -1637,30 +1640,53 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
 
             auto raw_decimal = buildResolvedFunction(reinterpret_name, {decimal_argument}, context);
             const auto scale = getDecimalScale(*decimal_type);
-            QueryTreeNodePtr decimal_integer = raw_decimal;
-            QueryTreeNodePtr decimal_is_integral;
-            if (scale)
+            if (!numeric_is_float)
             {
-                auto multiplier = buildResolvedFunction(
-                    integer_cast_name, {std::make_shared<ConstantNode>("1" + String(scale, '0'))}, context);
-                auto remainder = buildResolvedFunction("modulo", {raw_decimal, multiplier}, context);
-                decimal_is_integral = buildResolvedFunction("equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
-                decimal_integer = buildResolvedFunction("intDiv", {raw_decimal, std::move(multiplier)}, context);
+                QueryTreeNodePtr decimal_integer = raw_decimal;
+                QueryTreeNodePtr decimal_is_integral;
+                if (scale)
+                {
+                    auto multiplier = buildResolvedFunction(
+                        integer_cast_name, {std::make_shared<ConstantNode>("1" + String(scale, '0'))}, context);
+                    auto remainder = buildResolvedFunction("modulo", {raw_decimal, multiplier}, context);
+                    decimal_is_integral = buildResolvedFunction(
+                        "equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
+                    decimal_integer = buildResolvedFunction("intDiv", {raw_decimal, std::move(multiplier)}, context);
+                }
+
+                result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
+                if (decimal_is_integral)
+                    result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
             }
-
-            result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
-            if (decimal_is_integral)
-                result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
-
-            if (numeric_is_float)
+            else
             {
-                /// The raw-integer comparison handles integral floats exactly.
-                /// Fractional floats need the cast comparison to avoid matches
-                /// created by rounding the `Decimal` to `Float64`.
+                /// `Float64` multiplication by a power of two is exact. Divide
+                /// the raw `Decimal` units by 5^scale, then compare them with
+                /// the float multiplied by 2^scale. This avoids multiplying a
+                /// float by 10^scale, which can round an exact decimal value.
+                Int256 five_power = 1;
+                for (UInt32 i = 0; i < scale; ++i)
+                    five_power *= 5;
+                auto five_power_node = buildResolvedFunction(
+                    integer_cast_name, {std::make_shared<ConstantNode>(toString(five_power))}, context);
+                auto remainder = buildResolvedFunction("modulo", {raw_decimal, five_power_node}, context);
+                auto divisible = buildResolvedFunction(
+                    "equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
+                auto quotient = buildResolvedFunction("intDiv", {raw_decimal, five_power_node}, context);
                 auto float_value = buildResolvedFunction("toFloat64", {numeric_argument}, context);
-                auto truncated = buildResolvedFunction("trunc", {float_value}, context);
-                auto is_integral = buildResolvedFunction("equals", {float_value, std::move(truncated)}, context);
-                result = buildResolvedFunction("if", {std::move(is_integral), std::move(result), build_cast_comparison()}, context);
+                auto scaled_float = buildResolvedFunction(
+                    "multiply", {float_value, std::make_shared<ConstantNode>(Field{std::ldexp(1.0, static_cast<int>(scale))})}, context);
+                auto exact_equal = buildResolvedFunction("equals", {std::move(quotient), scaled_float}, context);
+                auto exact_match = buildResolvedFunction("and", {std::move(divisible), std::move(exact_equal)}, context);
+                if (!scale)
+                    result = std::move(exact_match);
+                else
+                {
+                    auto truncated = buildResolvedFunction("trunc", {scaled_float}, context);
+                    auto scaled_is_integral = buildResolvedFunction("equals", {scaled_float, std::move(truncated)}, context);
+                    result = buildResolvedFunction(
+                        "if", {std::move(scaled_is_integral), std::move(exact_match), build_cast_comparison()}, context);
+                }
             }
         }
     }
