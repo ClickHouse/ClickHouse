@@ -4,8 +4,8 @@ This directory contains `.xml`-files with performance tests.
 
 ### Which tests run in pull requests
 
-Ordinary PR comparisons against master choose whole XML tests from a recent,
-complete performance coverage run. They use the shared stateless and integration
+Ordinary PR comparisons against master choose whole XML tests from a recent
+performance coverage export. They use the shared stateless and integration
 selection rules independently, with limits of 250 and 100 tests, then combine
 their results without another limit. Only query execution coverage is used:
 setup and teardown still run, but their coverage does not choose tests. Regions
@@ -33,8 +33,8 @@ Full runs retain the existing query sampling settings. Master, release, nightly
 and special Iceberg comparisons keep their existing behavior.
 
 Each job attaches `performance_selection.json` with its tests, selection reasons,
-coverage identities, source mapping gaps and query policy. Missing or incomplete
-coverage is reported rather than silently running all tests. A transient CIDB or
+coverage identities, source mapping gaps and query policy. Tests whose coverage
+failed or was not collected are always selected. A transient CIDB or
 GitHub failure skips the job with a warning and is not cached; rerun it to test.
 Selection reduces work, but does not guarantee that every performance change is
 caught. Coverage collected on AMD is also used for ARM selection.
@@ -257,20 +257,30 @@ timing job's bulk rewrite, which is too expensive with LLVM instrumentation.
 The manifest records `dataset_layout=prebuilt`; test-defined setup and writes
 still run under coverage.
 
-Coverage setup and fill statements have a 30-minute execution limit. The client
-socket timeout is one minute longer than the larger of that limit and the query
-execution limit. The CI wrapper allows 30 minutes per query statement (unless
-the XML test specifies `max_query_seconds`) and twelve hours per shard, including
-a 20-minute export reserve. Each test can use the remaining collection budget;
-there is no separate one-hour limit for an entire XML file.
+Coverage setup, queries and teardown have no separate statement or socket time
+limit. They share the shard's remaining collection budget: twelve hours including
+a 20-minute export reserve. This avoids applying release-query limits to heavily
+instrumented code. Ordinary performance measurements keep their existing limits.
+
+A failed test remains a job failure, but collection continues after restarting
+the server and rerunning that test's teardown. If restart or teardown fails,
+or the shard budget expires, the remaining tests are recorded
+as not run. Completed tests are still exported. PR selection always includes
+every test without completed coverage; a test failure does not invalidate the
+coverage of the other tests.
 
 Shard assignment uses measured instrumented runtimes in
 `ci/jobs/performance_coverage_timings.json`. Whole XML files are sorted from
 longest to shortest, with lexical ties, then placed on the least-loaded shard.
-The weights include test setup and teardown. The load prediction also includes
-measured shard-level fixture and export overhead. The first 808 timings comprise
-478 measured whole-test wall times and 330 measured stage totals with an estimated
-wrapper cost; they are not release-query medians.
+The weights include test setup and teardown, plus measured shard-level fixture
+and export overhead. A test whose runtime is only a timeout lower bound can be
+marked `isolate_until_measured` in the timing table: it gets a dedicated shard
+until a completed run supplies its full wall time. Refreshing that measurement
+removes the isolation flag. The lower bound is not a predicted completion time.
+
+The latest refresh adds 797 whole-test wall measurements from the 2026-11-13
+collection. Older entries without a wall measurement retain measured stage
+totals plus an estimated wrapper cost; they are not release-query medians.
 
 Discovery defines the test universe, so a newly added XML is included without
 editing the timing table. New tests use the table's upper-quartile runtime as an
@@ -382,12 +392,16 @@ on one dedicated server; background work can still contribute to a phase.
 The collector must not use LLVM continuous profiling (`%c`). Each successful
 test exports the integration collector's six-column TSV format. The existing
 exporter aggregates it into `default.checks_coverage_lines`, using the job's
-start time and check name. Only completed test batches reach the coverage upload.
+start time and check name. Only completed XML tests reach the coverage upload;
+partial output from failed tests remains in the diagnostic archive.
 
 Each shard attaches `performance_coverage.tar.gz` and a job manifest. Per-test
 manifests contain full expanded queries, hashes, settings, phase names and row
 counts. The job manifest records the workflow and binary commits, snapshot identity, completed tests,
-skips, failures and tests not reached before a timeout. A missing mapping is not
+skips, failures and tests not reached before a timeout. `coverage_published` is
+set only after successful export, independently of the job's pass/fail status;
+`complete` still means every eligible test completed. The selector validates
+the full shard assignment and all phases of each exported test. A missing mapping is not
 evidence that a query is unaffected. Shell queries are explicitly skipped until
 their subprocesses can be instrumented too; `long` tests are outside this initial
 collection. Any future selector must account for these gaps and stale mappings.
