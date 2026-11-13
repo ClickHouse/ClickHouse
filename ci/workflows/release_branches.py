@@ -1,5 +1,3 @@
-import os
-
 from praktika import Workflow
 
 from ci.defs.defs import (
@@ -21,9 +19,6 @@ builds_for_release_branch = [
 clickhouse_binaries_with_tags = with_long_retention_tags(
     ArtifactConfigs.clickhouse_binaries
 )
-
-# Reports and CIDB are public; a build in ClickHouse-internal, a full fork, must not reveal the fix there.
-public_build_in_internal = os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse-internal"
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -66,10 +61,10 @@ workflow = Workflow.Config(
     ],
     dockers=DOCKERS,
     secrets=SECRETS + LOOM_SECRETS,
-    enable_job_filtering_by_changes=not public_build_in_internal,
+    enable_job_filtering_by_changes=True,
     enable_cache=True,
-    enable_report=not public_build_in_internal,
-    enable_cidb=not public_build_in_internal,
+    enable_report=True,
+    enable_cidb=True,
     enable_commit_status_on_failure=True,
     enable_slack_feed=True,
     pre_hooks=[
