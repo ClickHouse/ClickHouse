@@ -106,22 +106,25 @@ run_low --query "CREATE TABLE ${db}.b_probe_chain (absent_col String) ENGINE = B
 echo -n "two-alias chain denied: "; denied run_low --query "INSERT INTO ${db}.b_probe_chain VALUES ('probe')"
 echo -n "victim after Part E:    "; victim
 
-echo "## Part F: a cross-identity discard does not leak the buffering user to the triggering user"
+echo "## Part F: a cross-identity flush shows the triggering user nothing of the buffering user"
 # low buffers a row while it may write to victim, then loses that grant. ok's synchronous insert then flushes
-# low's now-undeliverable batch (discarded). At information log level the discard diagnostic is forwarded to ok,
-# and it must not reveal low's name or required grants. Synchronous inserts keep the flush on ok's query thread.
+# low's now-undeliverable batch (discarded). Rebuilding low's access logs low's name and grants at trace level;
+# nothing of the flush may reach ok's client, even at trace level. Synchronous inserts keep the flush on ok's
+# query thread. low's grant on secret_05621, which ok lacks, tells low's grants apart from ok's own.
 ${CH} --multiquery <<EOF
+CREATE TABLE ${victim_db}.secret_05621 (x UInt8) ENGINE = Memory;
 CREATE TABLE ${db}.single_hop (s String) ENGINE = Buffer(${victim_db}, victim, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+GRANT SELECT ON ${victim_db}.secret_05621 TO ${low};
 GRANT INSERT ON ${victim_db}.victim TO ${low};
 GRANT INSERT ON ${db}.single_hop TO ${low}, ${ok};
 EOF
 run_low --async-insert 0 --query "INSERT INTO ${db}.single_hop VALUES ('from_low')"
 ${CH} --query "REVOKE INSERT ON ${victim_db}.victim FROM ${low}"
-info_client="${CLICKHOUSE_CLIENT/--send_logs_level=warning/--send_logs_level=information}"
-leak=$(${info_client} --user "${ok}" --async-insert 0 --query "INSERT INTO ${db}.single_hop VALUES ('from_ok')" 2>&1)
-echo -n "discard diagnostic hides the buffering user: "
-if echo "$leak" | grep -q "can no longer be flushed under the identity" \
-    && ! echo "$leak" | grep -qE "${low}|Not enough privileges|INSERT ON ${victim_db}"; then echo "OK"; else echo "UNEXPECTED"; fi
+trace_client="${CLICKHOUSE_CLIENT/--send_logs_level=warning/--send_logs_level=trace}"
+leak=$(${trace_client} --user "${ok}" --async-insert 0 --query "INSERT INTO ${db}.single_hop VALUES ('from_ok')" 2>&1)
+echo -n "flush hidden from the triggering user: "
+if ! echo "$leak" | grep -qE "${low}|secret_05621|Not enough privileges|can no longer be flushed"; then echo "OK"; else echo "UNEXPECTED"; fi
+echo -n "undeliverable batch discarded:         "; ${CH} --query "SELECT countIf(s = 'from_low') FROM ${db}.single_hop"
 
 echo "## Part G: a non-authorization flush failure is retained, and its error is not leaked cross-identity"
 # low buffers a value that violates the destination's CHECK constraint: a non-authorization failure, so (unlike

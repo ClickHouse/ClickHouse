@@ -1519,10 +1519,14 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
 
     /// A flush triggered by a different user's operation (an insert under another identity, `OPTIMIZE`, `DROP`) must
-    /// not surface the buffering identity's exception to that user; it is replaced below.
+    /// show that user nothing of the buffering identity: neither the log records of rebuilding its access (its name,
+    /// roles and grants are logged at trace level) or of the write, nor the exception, which is replaced below.
     const auto triggering_context = CurrentThread::tryGetQueryContext();
     const bool flushed_for_other_user = flushed_under_user_identity && triggering_context
         && triggering_context->getUserID() != buffer.write_identity->user_id;
+    std::optional<CurrentThread::HideLogsFromClientScope> hide_logs_from_client;
+    if (flushed_for_other_user)
+        hide_logs_from_client.emplace();
 
     /// The block is out of `buffer.data` now: put it back on any exit unless it was delivered or deliberately
     /// discarded, so that no failure, including one while classifying a failure, loses an accepted batch.
@@ -1592,9 +1596,8 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
             block_settled = true;
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
-            /// Deliberately omits the exception text and the buffering user name: a different user's insert may
-            /// have triggered this flush, and at `information`/`trace` client log level the message is forwarded
-            /// to them, which would leak the buffering user's identity and required grants.
+            /// Omits the exception text and the buffering user name, which the client of a flush triggered by
+            /// another user does not see anyway.
             LOG_INFO(
                 log,
                 "Discarding {} rows ({} bytes) buffered for destination table {}: it can no longer be flushed "
