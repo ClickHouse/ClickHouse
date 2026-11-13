@@ -142,4 +142,19 @@ FROM (SELECT CAST(timeSeriesRateToGridState(100, 400, 20, 10)(toDateTime64(100, 
 SELECT finalizeAggregation(CAST(substring(s, 1, 10) || unhex('FFFFFFFFFFFFFFFF') || substring(s, 19) AS AggregateFunction(timeSeriesRateToGrid(100, 400, 20, 10), DateTime64(3, 'UTC'), Float64)))
 FROM (SELECT CAST(timeSeriesRateToGridState(100, 400, 20, 10)(toDateTime64(100, 3, 'UTC'), 1.) AS String) AS s); -- { serverError CANNOT_READ_ALL_DATA }
 
+-- A parallel GROUP BY moves the buffers of the merged thread states; more than 64 of them are copied instead.
+SELECT 'parallel GROUP BY (1 1 1 1 1 1):';
+WITH
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 10 AS c, timeSeriesRateToGrid(0, 100000, 100, 300)(toDateTime64(intDiv(number, 10), 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers(1000000) GROUP BY c) SETTINGS max_threads = 1) AS interleaved,
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 3 AS c, timeSeriesDeltaToGrid(0, 5000, 10, 30)(toDateTime64(intDiv(number, 30) % 5000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS r FROM numbers(1000000) GROUP BY c) SETTINGS max_threads = 1) AS shared,
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 10 AS c, timeSeriesIncreaseToGrid(0, 100000, 100, 300)(toDateTime64(cityHash64(number) % 100000, 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers(1000000) GROUP BY c) SETTINGS max_threads = 1) AS unsorted
+SELECT
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 10 AS c, timeSeriesRateToGrid(0, 100000, 100, 300)(toDateTime64(intDiv(number, 10), 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 8, max_block_size = 1000) = interleaved,
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 10 AS c, timeSeriesRateToGrid(0, 100000, 100, 300)(toDateTime64(intDiv(number, 10), 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 70, max_block_size = 1000) = interleaved,
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 3 AS c, timeSeriesDeltaToGrid(0, 5000, 10, 30)(toDateTime64(intDiv(number, 30) % 5000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS r FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 8, max_block_size = 1000) = shared,
+    (SELECT sum(cityHash64(c, r)) FROM (SELECT number % 10 AS c, timeSeriesIncreaseToGrid(0, 100000, 100, 300)(toDateTime64(cityHash64(number) % 100000, 3, 'UTC'), (number % 1000)::Float64) AS r FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 8, max_block_size = 1000) = unsorted,
+    (SELECT sum(cityHash64(c, finalizeAggregation(s))) FROM (SELECT number % 10 AS c, timeSeriesRateToGridState(0, 100000, 100, 300)(toDateTime64(intDiv(number, 10), 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 8, max_block_size = 1000) = interleaved,
+    (SELECT sum(cityHash64(c, hex(CAST(s AS String)))) FROM (SELECT number % 3 AS c, timeSeriesDeltaToGridState(0, 5000, 10, 30)(toDateTime64(intDiv(number, 30) % 5000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS s FROM numbers_mt(1000000) GROUP BY c) SETTINGS max_threads = 8, max_block_size = 1000)
+        = (SELECT sum(cityHash64(c, hex(CAST(s AS String)))) FROM (SELECT number % 3 AS c, timeSeriesDeltaToGridState(0, 5000, 10, 30)(toDateTime64(intDiv(number, 30) % 5000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS s FROM numbers(1000000) GROUP BY c) SETTINGS max_threads = 1);
+
 DROP TABLE ts_flat;
