@@ -827,8 +827,8 @@ void generateManifestFile(
                             && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
                             throw Exception(
                                 ErrorCodes::INCORRECT_DATA,
-                                "Cannot write a partition value that is not valid UTF-8 into Iceberg partition column '{}'",
-                                partition_columns[i]);
+                                "Cannot write a partition value that is not valid UTF-8 into Iceberg partition field '{}'",
+                                partition_field_names[i]);
                         return avro::GenericDatum(value);
                     }
                     case Field::Types::Float64:
