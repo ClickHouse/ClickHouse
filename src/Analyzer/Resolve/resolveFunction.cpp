@@ -1231,6 +1231,41 @@ QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     return if_node;
 }
 
+/// A target that stores a value in fewer bits can turn an unrepresentable source
+/// into an unrelated match. The prepared `Set` path rejects that conversion.
+static bool needsExactInCastCheck(const DataTypePtr & source_type, const DataTypePtr & target_type)
+{
+    const auto source = removeNullable(removeLowCardinality(source_type));
+    const auto target = removeNullable(removeLowCardinality(target_type));
+    return !isStringOrFixedString(source)
+        && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(target) || isBool(target));
+}
+
+static QueryTreeNodePtr makeExactInCast(
+    const QueryTreeNodePtr & source,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type)
+{
+    const auto bare_source_type = removeNullable(removeLowCardinality(source_type));
+    const auto bare_target_type = removeNullable(removeLowCardinality(target_type));
+    auto cast = std::make_shared<FunctionNode>("accurateCastOrNull");
+    cast->getArguments().getNodes() = {
+        source,
+        std::make_shared<ConstantNode>(bare_target_type->getName(), std::make_shared<DataTypeString>())};
+    auto round_trip = std::make_shared<FunctionNode>("accurateCastOrNull");
+    round_trip->getArguments().getNodes() = {
+        cast,
+        std::make_shared<ConstantNode>(bare_source_type->getName(), std::make_shared<DataTypeString>())};
+    auto same_source = std::make_shared<FunctionNode>("equals");
+    same_source->getArguments().getNodes() = {source, std::move(round_trip)};
+    auto exact = std::make_shared<FunctionNode>("if");
+    exact->getArguments().getNodes() = {
+        std::move(same_source),
+        std::move(cast),
+        std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(bare_target_type))};
+    return exact;
+}
+
 /// Builds has() expression with proper null handling and NOT wrapping for IN rewrites
 ProjectionNames QueryAnalyzer::buildHasExpression(
     QueryTreeNodePtr & node,
@@ -1265,16 +1300,26 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             const auto source_element_type = source_array_type->getNestedType();
             const bool both_numeric = isNumber(removeNullable(removeLowCardinality(target_type)))
                 && isNumber(removeNullable(removeLowCardinality(source_element_type)));
+            const bool exact_cast_required = needsExactInCastCheck(source_element_type, target_type);
             if (!target_type->onlyNull()
                 && target_type->canBeInsideNullable()
                 && !both_numeric
-                && !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_element_type}))
+                && ((exact_cast_required && isBool(target_type))
+                    || !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_element_type})))
             {
                 const String lambda_argument_name = "__in_array_element_to_cast";
-                auto cast = std::make_shared<FunctionNode>("accurateCastOrNull");
-                cast->getArguments().getNodes() = {
-                    std::make_shared<IdentifierNode>(Identifier{lambda_argument_name}),
-                    std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>())};
+                auto source_value = std::make_shared<IdentifierNode>(Identifier{lambda_argument_name});
+                QueryTreeNodePtr cast;
+                if (exact_cast_required)
+                    cast = makeExactInCast(source_value, source_element_type, target_type);
+                else
+                {
+                    auto ordinary_cast = std::make_shared<FunctionNode>("accurateCastOrNull");
+                    ordinary_cast->getArguments().getNodes() = {
+                        std::move(source_value),
+                        std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>())};
+                    cast = std::move(ordinary_cast);
+                }
 
                 auto lambda = std::make_shared<LambdaNode>(
                     std::make_shared<LambdaArgumentsNode>(Names{lambda_argument_name}), std::move(cast), false /*is_operator*/);
@@ -1565,6 +1610,10 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     auto array_arguments_list = makeInArrayArgumentsList(array_elements, common_type, rhs_has_null, compare_nulls, scope,
         [this](const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & function_scope)
         {
+            if (function_scope.context->getSettingsRef()[Setting::in_null_as_unknown]
+                && needsExactInCastCheck(node->getResultType(), target_type)
+                && !tryGetLeastSupertype(DataTypes{node->getResultType(), target_type}))
+                return makeExactInCast(node, node->getResultType(), target_type);
             return castNodeToType(node, target_type, function_scope);
         });
     auto array_function_node = std::make_shared<FunctionNode>("array");
@@ -3337,7 +3386,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             DataTypePtr cast_elements_to = left_type;
                             if (canContainNull(*right_type) || !compare_nulls)
                                 cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
-                            right_argument = castNodeToType(right_argument, cast_elements_to, scope);
+                            if (use_standard_null_semantics && needsExactInCastCheck(right_type, cast_elements_to))
+                            {
+                                right_argument = makeExactInCast(right_argument, right_type, cast_elements_to);
+                                resolveFunction(right_argument, scope);
+                            }
+                            else
+                                right_argument = castNodeToType(right_argument, cast_elements_to, scope);
                             right_argument_was_cast = true;
                         }
                     }
