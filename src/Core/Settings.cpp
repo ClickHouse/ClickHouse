@@ -3328,7 +3328,8 @@ A query decides how much text its own plan contains: a large `IN` list, a long a
 A plan that does not fit is not stored truncated, because half a document is not a plan. The column holds the reason instead, as `{"Error": ...}`.
 
 `0` means no limit.
-)", 0) \
+)", 0, \
+        {"26.11", 1048576, 1048576, "New setting to bound the size of the query plan stored in `system.query_log`. The limit is kept under `compatibility` with earlier versions: the column itself is new, so there is no earlier behaviour to restore, and it guards a server resource."}) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
