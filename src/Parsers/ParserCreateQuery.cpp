@@ -1771,8 +1771,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         targets = make_intrusive<ASTViewTargets>();
         if (to_table)
         {
-            if (to_table->as<ASTTableIdentifier>()->is_folded_path)
-                targets->has_folded_table_path = true;
             if (!to_table->as<ASTTableIdentifier>()->isParam())
                 targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
             else
@@ -1780,6 +1778,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 chassert(is_materialized_view);
                 targets->setTableASTWithQueryParams(ViewTarget::To, to_table);
             }
+            if (to_table->as<ASTTableIdentifier>()->is_folded_path)
+                targets->setTableIsFoldedPath(ViewTarget::To);
         }
         if (to_inner_uuid)
         {

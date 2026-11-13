@@ -74,6 +74,9 @@ struct ViewTarget
     /// and thus cannot be stored in `table_id` until those parameters are substituted with actual values.
     /// For example: CREATE MATERIALIZED VIEW mv TO {dst:Identifier} AS SELECT * FROM src
     ASTPtr table_ast; /// points to ASTTableIdentifier
+
+    /// Set by the parser when the target table path was folded (`db.ns.t` into `db`, `ns.t`); not formatted, not hashed, not in JSON.
+    bool table_is_folded_path = false;
 };
 
 /// Information about all target tables (external or inner) of a view.
@@ -86,14 +89,14 @@ class ASTViewTargets : public IAST
 public:
     std::vector<ViewTarget> targets;
 
-    /// Set by the parser when a target table path was folded (`db.ns.t` into `db`, `ns.t`); not formatted, not hashed, not in JSON.
-    bool has_folded_table_path = false;
-
     /// Manipulates AST of the target table which has query parameters in its definition.
     /// Passing nullptr to setTableASTWithQueryParams removes that AST.
     void setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr new_table_ast);
     bool hasTableASTWithQueryParams(ViewTarget::Kind kind) const;
     ASTPtr getTableASTWithQueryParams(ViewTarget::Kind kind);
+
+    /// Records that the target table path was folded by the parser; the target must exist.
+    void setTableIsFoldedPath(ViewTarget::Kind kind);
 
     /// Sets the StorageID of the target table, if it's not inner.
     /// That storage ID can be seen for example after "TO" in a statement like CREATE MATERIALIZED VIEW ... TO ...

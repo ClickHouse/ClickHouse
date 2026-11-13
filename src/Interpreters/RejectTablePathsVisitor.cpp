@@ -88,7 +88,7 @@ std::optional<FoldedPath> getFoldedPath(const IAST & node)
     if (const auto * identifier = node.as<ASTTableIdentifier>())
     {
         if (identifier->is_folded_path)
-            return FoldedPath{identifier->name(), identifier->formatForErrorMessage()};
+            return makePath(identifier->getDatabaseName(), identifier->shortName());
         return {};
     }
     if (const auto * query = dynamic_cast<const ASTQueryWithTableAndOutput *>(&node))
@@ -139,27 +139,15 @@ std::optional<FoldedPath> getFoldedPath(const IAST & node)
     }
     if (const auto * targets = node.as<ASTViewTargets>())
     {
-        if (!targets->has_folded_table_path)
-            return {};
-        const ViewTarget * named = nullptr;
         for (const auto & target : targets->targets)
         {
-            if (target.table_id.table_name.empty())
+            if (!target.table_is_folded_path)
                 continue;
-            if (target.kind == ViewTarget::To)
-            {
-                named = &target;
-                break;
-            }
-            if (!named)
-                named = &target;
-        }
-        if (named)
-            return makePath(named->table_id.database_name, named->table_id.table_name);
-        for (const auto & target : targets->targets)
-        {
+            if (!target.table_id.table_name.empty())
+                return makePath(target.table_id.database_name, target.table_id.table_name);
             if (const auto * table_ast = target.table_ast ? target.table_ast->as<ASTTableIdentifier>() : nullptr)
-                return FoldedPath{table_ast->name(), table_ast->formatForErrorMessage()};
+                return makePath(table_ast->getDatabaseName(), table_ast->shortName());
+            return {};
         }
         return {};
     }

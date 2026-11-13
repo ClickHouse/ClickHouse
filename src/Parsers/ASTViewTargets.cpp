@@ -75,6 +75,18 @@ void ASTViewTargets::setTableID(ViewTarget::Kind kind, const StorageID & table_i
         targets.emplace_back(kind).table_id = table_id_;
 }
 
+void ASTViewTargets::setTableIsFoldedPath(ViewTarget::Kind kind)
+{
+    for (auto & target : targets)
+    {
+        if (target.kind == kind)
+        {
+            target.table_is_folded_path = true;
+            return;
+        }
+    }
+}
+
 StorageID ASTViewTargets::getTableID(ViewTarget::Kind kind) const
 {
     if (const auto * target = tryGetTarget(kind))
