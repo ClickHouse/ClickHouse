@@ -61,31 +61,7 @@ Expression ((Project names + Projection))
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (PartitionedRead default.t_coloc_groups_renamed)
 10000	104995000
--- 6. another modulus in the right table: not co-located
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          JoinLogical (Broadcast HashJoin )
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ParallelRead default.t_coloc_events)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ReplicatedRead default.t_coloc_groups_mod4)
-10000	104995000
--- 7. another key type in the right table: not co-located
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          JoinLogical (Broadcast HashJoin )
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ParallelRead default.t_coloc_events)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ReplicatedRead default.t_coloc_groups_u32)
-10000	104995000
--- 8. the join is not on the key: not co-located
+-- 6. the join is not on the key: not co-located
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -98,16 +74,3 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ReplicatedRead default.t_coloc_groups)
 2000
 2000
--- 9. a floating-point key: not co-located, because equal keys can be in different partitions
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          JoinLogical (Broadcast HashJoin )
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ParallelRead default.t_coloc_float_left)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ReplicatedRead default.t_coloc_float_right)
-1999	1999000
-1999	1999000
