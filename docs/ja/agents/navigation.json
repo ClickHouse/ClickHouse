@@ -1,44 +1,49 @@
 {
-  "groups": [
+  "item": "Agents",
+  "dropdowns": [
     {
-      "group": "Get started",
+      "dropdown": "Agents",
+      "icon": "robot",
       "pages": [
-        "ja/agents/index",
-        "ja/agents/quickstart",
-        "ja/agents/chat"
-      ]
-    },
-    {
-      "group": "Agent Builder",
-      "pages": [
-        "ja/agents/builder/index",
-        "ja/agents/builder/model-parameters",
-        "ja/agents/builder/code-interpreter",
-        "ja/agents/builder/web-search",
-        "ja/agents/builder/image-generation",
-        "ja/agents/builder/vision",
-        "ja/agents/builder/mcp-servers",
-        "ja/agents/builder/skills",
-        "ja/agents/builder/subagents"
-      ]
-    },
-    {
-      "group": "Manage agents",
-      "pages": [
-        "ja/agents/prompts",
-        "ja/agents/memory",
-        "ja/agents/marketplace",
-        "ja/agents/sharing-and-access"
-      ]
-    },
-    {
-      "group": "Assistant",
-      "pages": [
-        "ja/agents/assistant/using-ai-chat",
-        "ja/agents/assistant/customizing-semantic-layer"
+        {
+          "group": "Get started",
+          "pages": [
+            "ja/agents/index",
+            "ja/agents/quickstart",
+            "ja/agents/chat"
+          ]
+        },
+        {
+          "group": "Agent Builder",
+          "pages": [
+            "ja/agents/builder/index",
+            "ja/agents/builder/model-parameters",
+            "ja/agents/builder/code-interpreter",
+            "ja/agents/builder/web-search",
+            "ja/agents/builder/image-generation",
+            "ja/agents/builder/vision",
+            "ja/agents/builder/mcp-servers",
+            "ja/agents/builder/skills",
+            "ja/agents/builder/subagents"
+          ]
+        },
+        {
+          "group": "Manage agents",
+          "pages": [
+            "ja/agents/prompts",
+            "ja/agents/memory",
+            "ja/agents/marketplace",
+            "ja/agents/sharing-and-access"
+          ]
+        },
+        {
+          "group": "Assistant",
+          "pages": [
+            "ja/agents/assistant/using-ai-chat",
+            "ja/agents/assistant/customizing-semantic-layer"
+          ]
+        }
       ]
     }
-  ],
-  "icon": "robot",
-  "item": "Agents"
+  ]
 }
