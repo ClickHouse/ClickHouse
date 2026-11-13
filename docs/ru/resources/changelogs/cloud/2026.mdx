@@ -8,8 +8,6 @@ keywords: ['журнал изменений', 'примечания к выпу�
 rss: true
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Помимо этого журнала изменений ClickHouse Cloud, ознакомьтесь также со страницей [Совместимость Cloud](/ru/products/cloud/guides/cloud-compatibility).
 
 <Update label="19 октября 2026 г.">
@@ -518,7 +516,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * GCP us-east1 (Южная Каролина)
   * Настройки сбора отчётов о сбоях теперь можно задавать на уровне организации. Ранее этот параметр был доступен только на уровне сервиса. Если отключить его на уровне организации, все существующие и будущие сервисы будут автоматически исключены.
 
-  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Сбор отчётов о сбоях" />
+  <div className="ch-image-md">
+
+  <Frame>
+
+  ![Сбор отчётов о сбоях](/images/cloud/reference/crash-reports-collection.webp)
+
+  </Frame>
+
+  </div>
 </Update>
 
 <Update label="23 янв. 2026 г.">
