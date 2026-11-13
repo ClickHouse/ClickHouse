@@ -7,6 +7,7 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <Core/ResultColumnOrigin.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
