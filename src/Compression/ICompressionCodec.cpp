@@ -55,7 +55,7 @@ UInt64 ICompressionCodec::getHash() const
     return hash.get64();
 }
 
-UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
+UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest, CompressionState *) const
 {
     chassert(source != nullptr && dest != nullptr);
 

@@ -22,7 +22,7 @@ ALTER TABLE t_05448 MODIFY COLUMN e Enum8('a' = 1, 'b' = 2, 'c' = 3) STATISTICS(
 
 SELECT 'extended enum';
 SELECT min(e), max(e) FROM t_05448;
-SELECT count() FROM (EXPLAIN SELECT min(e), max(e) FROM t_05448) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(e), max(e) FROM t_05448) WHERE explain LIKE '%_statistics_projection%';
 SELECT count() FROM t_05448 WHERE e = 'c';
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05448 WHERE e = 'c') WHERE explain LIKE '%Parts: 0/1%';
 
@@ -35,7 +35,7 @@ SELECT 'killed narrowing alter';
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_05448' AND NOT is_done;
 SELECT min(x), max(x) FROM t_05448;
 SELECT min(x), max(x) FROM t_05448 SETTINGS use_statistics_for_min_max_aggregation = 0;
-SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05448) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05448) WHERE explain LIKE '%_statistics_projection%';
 SELECT count() FROM t_05448 WHERE x < 0;
 
 DROP TABLE t_05448;

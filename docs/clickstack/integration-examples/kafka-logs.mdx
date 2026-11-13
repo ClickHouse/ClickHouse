@@ -55,7 +55,7 @@ For Docker-based Kafka deployments (e.g., `confluentinc/cp-kafka`), the default 
 </Step>
 <Step title="Create a custom OTel collector configuration for Kafka" id="custom-otel">
 
-ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
+ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by ClickStack UI via OpAMP.
 
 Create a file named `kafka-logs-monitoring.yaml` with the following configuration:
 
@@ -155,9 +155,9 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the Kafka log files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step title="Verify Logs in HyperDX" id="verifying-logs">
+<Step title="Verify Logs in ClickStack UI" id="verifying-logs">
 
-Once configured, log into HyperDX and verify that logs are flowing:
+Once configured, log into ClickStack UI and verify that logs are flowing:
 
 <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Search view"/>
 
@@ -240,11 +240,11 @@ docker run --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 
-## Verify logs in HyperDX {#verify-demo-logs}
+## Verify logs in ClickStack UI {#verify-demo-logs}
 
 Once ClickStack is running:
 
-1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
+1. Open [ClickStack UI](http://localhost:8080/) and log in to your account (you may need to create an account first)
 2. Navigate to the Search view and set the source to `Logs`
 3. Set the time range to include **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
@@ -263,7 +263,7 @@ Once ClickStack is running:
 </Step>
 <Step title="Import pre-built dashboard" id="import-dashboard">
 
-1. Open HyperDX and navigate to the Dashboards section.
+1. Open ClickStack UI and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
 
 <Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>

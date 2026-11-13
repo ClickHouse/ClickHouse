@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/NativeWriterTypeCache.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -24,6 +25,8 @@ protected:
 
 private:
     const CompressionCodecPtr codec;
+    /// What the writer derived from the column types of this transform, for all its packets.
+    NativeWriterTypeCache type_cache;
 };
 
 }
