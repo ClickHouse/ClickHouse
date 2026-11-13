@@ -1,0 +1,24 @@
+routed	1
+left
+1	0	a	1	('','a')
+2	0	a	1	('','a')
+right
+0	a	1	('','a')	10
+0	a	1	('','a')	20
+full
+0	a	10	a
+0	a	20	b
+1	a	0	a
+2	b	0	a
+left anti
+1	0	a
+2	0	a
+right anti
+0	a	10
+0	a	20
+filter on the padded column
+2
+2
+join_use_nulls = 1
+1	\N
+2	\N
