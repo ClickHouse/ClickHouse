@@ -84,6 +84,12 @@ void ITableFunction::checkEngineAccess(ContextPtr context) const
         context->checkAccess(AccessType::TABLE_ENGINE, engine);
 }
 
+void ITableFunction::checkAccessToCreateTableTarget(const ASTPtr & table_function_ast, ContextPtr context)
+{
+    if (table_function_ast)
+        TableFunctionFactory::instance().get(table_function_ast, context)->checkAccessToCreateTable(context);
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.

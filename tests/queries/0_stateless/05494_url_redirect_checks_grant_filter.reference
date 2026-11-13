@@ -15,5 +15,10 @@ Pepyaka
 --- a table created AS url needs the grants of a URL table
 grant TABLE ENGINE ON URL
 grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
+grant TABLE ENGINE ON URL
 grant READ ON URL
 Pepyaka

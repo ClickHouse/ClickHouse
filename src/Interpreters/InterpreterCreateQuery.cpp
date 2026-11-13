@@ -57,6 +57,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
@@ -4129,13 +4130,20 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The worker executes the table function with no user, so the grants to persist its definition
-            /// are checked here. A short `ATTACH` replays stored metadata and is not checked, as in `doCreateTable`.
-            if (create.as_table_function && !create.attach_short_syntax)
+            /// The worker builds the table with no user, so the grants to persist a table function target, given
+            /// `AS f(...)` or to the `Remote` engine, are checked here: for the definition as written, and below
+            /// for one inherited from `AS src`. A short `ATTACH` replays stored metadata and is not checked.
+            auto check_access_to_create_table_target = [&](const ASTCreateQuery & query)
             {
-                auto table_function = TableFunctionFactory::instance().get(create.as_table_function->ptr(), getContext());
-                table_function->checkAccessToCreateTable(getContext());
-            }
+                if (query.as_table_function && !query.attach_short_syntax)
+                    TableFunctionFactory::instance().get(query.as_table_function->ptr(), getContext())->checkAccessToCreateTable(getContext());
+
+                if (query.storage && query.storage->engine && query.storage->engine->arguments
+                    && (query.storage->engine->name == "Remote" || query.storage->engine->name == "RemoteSecure"))
+                    checkAccessToCreateRemoteTableTarget(
+                        query.storage->engine->arguments->children, query.storage->engine->name == "RemoteSecure", getContext());
+            };
+            check_access_to_create_table_target(create);
 
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
@@ -4161,6 +4169,7 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                check_access_to_create_table_target(inherited);
 
                 /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
                 /// its inner engines while normalizing, so add the ones this query does not give itself

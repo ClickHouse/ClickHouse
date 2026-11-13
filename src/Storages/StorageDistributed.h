@@ -336,4 +336,8 @@ private:
 /// The `SecretArgumentsSpec` of the `remote`/`remoteSecure` table functions and the `Remote`/`RemoteSecure` table engines.
 SecretArgumentsSpec remoteSecretArguments();
 
+/// The grants to persist the table function target of a fresh `Remote`/`RemoteSecure` definition, for the
+/// initiator of a legacy `ON CLUSTER` statement, whose workers build the table with no user.
+void checkAccessToCreateRemoteTableTarget(const ASTs & engine_args, bool secure, const ContextPtr & context);
+
 }

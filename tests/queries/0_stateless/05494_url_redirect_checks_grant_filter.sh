@@ -71,6 +71,17 @@ check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied AS url('
 # The legacy `ON CLUSTER` entry format executes the function on the workers with no user.
 ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO $user_filtered"
 check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied ON CLUSTER test_shard_localhost AS url('$redirector', 'LineAsString', 's String')" --distributed_ddl_entry_format_version 2 --distributed_ddl_output_mode throw
+# The shards resolve a target nested in `remote` under the connection's user.
+${CLICKHOUSE_CLIENT} --query "GRANT REMOTE ON *.* TO $user_filtered"
+check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied AS remote('127.0.0.1', url('$redirector', 'LineAsString', 's String'))"
+check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied AS remote('127.0.0.1', loop(url('$redirector', 'LineAsString', 's String')))"
+${CLICKHOUSE_CLIENT} --query "GRANT TABLE ENGINE ON Remote TO $user_filtered"
+check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied (s String) ENGINE = Remote('127.0.0.1', url('$redirector', 'LineAsString', 's String'))"
+check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied ON CLUSTER test_shard_localhost (s String) ENGINE = Remote('127.0.0.1', url('$redirector', 'LineAsString', 's String'))" --distributed_ddl_entry_format_version 2 --distributed_ddl_output_mode throw
+# The same, with the definition inherited from another table.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_remote_src (s String) ENGINE = Remote('127.0.0.1', url('$redirector', 'LineAsString', 's String'))"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS, SELECT ON ${CLICKHOUSE_DATABASE}.t_remote_src TO $user_filtered"
+check_missing_grant "$user_filtered" "CREATE TABLE t_as_function_denied ON CLUSTER test_shard_localhost AS t_remote_src" --distributed_ddl_entry_format_version 2 --distributed_ddl_output_mode throw
 # A column list skips the schema inference, which used to be the only check of READ.
 ${CLICKHOUSE_CLIENT} --query "GRANT WRITE ON URL TO $user_engine"
 check_missing_grant "$user_engine" "CREATE TABLE t_as_function_denied (line String) AS url('$redirector', 'LineAsString')"
@@ -85,5 +96,5 @@ ${CLICKHOUSE_CLIENT} --user "$user_engine" --max_http_get_redirects 1 --query "S
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect_inferred"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect_as_function, t_redirect_as_function_lazy, t_as_function_created"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect_as_function, t_redirect_as_function_lazy, t_as_function_created, t_remote_src"
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user_filtered, $user_full, $user_engine, $user_table"

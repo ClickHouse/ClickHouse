@@ -110,6 +110,10 @@ public:
     /// call in a query. Not called when a stored definition is replayed, see `isReplayedTableDefinition`.
     virtual void checkAccessToCreateTable(ContextPtr /*context*/) const {}
 
+    /// Runs `checkAccessToCreateTable` of the table function in `table_function_ast`, which a carrier (`remote`,
+    /// `loop`, the `Remote` engine) persists as its target. Does nothing for a null AST.
+    static void checkAccessToCreateTableTarget(const ASTPtr & table_function_ast, ContextPtr context);
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:
