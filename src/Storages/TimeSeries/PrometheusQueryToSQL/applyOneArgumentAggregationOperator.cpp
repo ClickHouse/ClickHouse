@@ -147,7 +147,7 @@ namespace
         return &it->second;
     }
 
-    /// Prometheus averages an instant `topk` or `bottomk` result in the order of its values, not of its tags.
+    /// Prometheus averages an instant `topk` or `bottomk` result group by group, each group in the order of its values.
     /// Returns the sort key for that order, or nullptr if `operator_node` is not `avg` over such a result.
     ASTPtr tryMakeValueOrderKey(const PrometheusQueryTree::AggregationOperator * operator_node, const SQLQueryPiece & argument)
     {
@@ -160,27 +160,25 @@ namespace
 
         const auto * inner = static_cast<const PrometheusQueryTree::AggregationOperator *>(child);
         bool is_topk = inner->operator_name == "topk";
-        if ((!is_topk && inner->operator_name != "bottomk") || inner->without)
+        if (!is_topk && inner->operator_name != "bottomk")
             return nullptr;
 
-        /// The values are ordered only within a group of `topk`, so each group of `avg` must be inside one of them.
-        const auto & labels = operator_node->labels;
-        for (const auto & label : inner->labels)
-        {
-            if (!operator_node->by || std::find(labels.begin(), labels.end(), label) == labels.end())
-                return nullptr;
-        }
+        /// The groups of `topk` are ordered by their tags, which is exact when each group of `avg` is inside one of them.
+        bool metric_name_dropped = false;
+        ASTPtr inner_group = transformGroupASTForAggregationOperator(
+            inner, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, metric_name_dropped);
 
-        if (!is_topk)
-            return make_intrusive<ASTIdentifier>(ColumnNames::Values);
+        ASTPtr values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+        if (is_topk)
+            values = makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                    makeASTFunction("negate", make_intrusive<ASTIdentifier>("x"))),
+                std::move(values));
 
-        return makeASTFunction(
-            "arrayMap",
-            makeASTFunction(
-                "lambda",
-                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
-                makeASTFunction("negate", make_intrusive<ASTIdentifier>("x"))),
-            make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        return makeASTFunction("tuple", makeASTFunction("timeSeriesGroupToTags", std::move(inner_group)), std::move(values));
     }
 }
 

@@ -101,6 +101,10 @@ SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (data) - ma
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk(4, data{test="order2"}))', 60);
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg(bottomk(4, data{test="order"}))', 60);
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (topk by (test) (4, data{test=~"order|order2"}))', 60) ORDER BY tags;
+-- The same for `by` and `without` in either operator, and a group of `avg` over several groups of `topk` takes them in the order of their tags.
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (topk without (point) (4, data{test="order2"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg without (point) (topk by (test) (4, data{test="order2"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk by (test) (4, data{test=~"order|order2"}))', 60);
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk(4, data{test="order2"})) / count(topk(4, data{test="order2"}))', 60);
 -- A range query keeps the order of the tags.
 SELECT * FROM prometheusQueryRange('prometheus', 'avg(topk(4, data{test="order2"}))', 60, 120, 60);
