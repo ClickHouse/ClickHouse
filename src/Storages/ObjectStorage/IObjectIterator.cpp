@@ -15,7 +15,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 namespace ProfileEvents
 {
@@ -161,20 +160,29 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             ++objects_being_split;
         }
 
-        SCOPE_EXIT({
+        ObjectInfoPtr object_info;
+        ObjectInfos buckets;
+        try
+        {
+            object_info = iterator->next(id);
+            if (object_info)
+                buckets = splitToBuckets(object_info);
+        }
+        catch (...)
+        {
             std::lock_guard lock(mutex);
             --objects_being_split;
             objects_split_cv.notify_all();
-        });
-
-        auto object_info = iterator->next(id);
-        auto buckets = object_info ? splitToBuckets(object_info) : ObjectInfos{};
+            throw;
+        }
 
         std::lock_guard lock(mutex);
+        --objects_being_split;
         if (!object_info)
             iterator_exhausted = true;
         for (auto & bucket : buckets)
             pending_objects_info.push(std::move(bucket));
+        objects_split_cv.notify_all();
     }
 }
 
