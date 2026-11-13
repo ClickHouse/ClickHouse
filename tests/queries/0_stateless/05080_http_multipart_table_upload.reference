@@ -1,0 +1,37 @@
+-- one CSV file with database URL parameter
+-- JSONEachRow filename format
+-- filename with database prefix
+-- gzip file suffix
+-- rows inserted
+1	one
+1	one
+2	two
+2	two
+3	three
+4	four
+-- a form query after a file still uses external table data
+12
+-- a URL query retains its external table semantics
+12
+-- multiple uploaded files are rejected
+HTTP multipart table uploads require exactly one file
+-- no uploaded files are rejected
+HTTP multipart table uploads require exactly one file
+-- empty uploaded file is rejected
+HTTP multipart table uploads require a non-empty file
+-- missing filename format is rejected
+HTTP multipart table uploads require a known format in the filename
+-- ambiguous dotted filename is rejected
+Ambiguous multipart upload filename
+-- conflicting databases are rejected
+Conflicting database specification
+-- missing table is rejected
+UNKNOWN_TABLE
+-- INSERT privilege is required
+Not enough privileges
+-- readonly setting is enforced
+Cannot execute query in readonly mode
+-- multipart file size limit is enforced
+http_max_multipart_form_data_size
+-- rejected uploads did not add rows
+6

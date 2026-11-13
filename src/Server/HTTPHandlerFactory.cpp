@@ -627,7 +627,8 @@ void addDefaultHandlersFactory(
     {
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
-        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
+        return std::make_unique<DynamicQueryHandler>(
+            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_ */ true, /* allow_path_table_uploads_ */ true);
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
