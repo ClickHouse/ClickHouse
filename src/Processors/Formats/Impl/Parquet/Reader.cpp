@@ -81,6 +81,7 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetColumnChunksPagesLocatedFromHeaders;
     extern const Event ParquetRowsDecodedAsDictionaryIndexes;
     extern const Event ParquetFooterReadMicroseconds;
     extern const Event ParquetDecompressedBytes;
@@ -1985,6 +1986,13 @@ void Reader::initializePrefetches()
                     size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
             }
 
+            /// Page headers of a local file are cheap to read, so the few pages holding `rows_to_read` can be
+            /// located without an offset index.
+            if (format_filter_info->rows_to_read && !column.served_from_cache && !column.offset_index_prefetch
+                && !column.meta->__isset.offset_index_offset && prefetcher.isLocalFile()
+                && primitive_columns[column_idx].levels.back().rep == 0)
+                column.locate_pages_from_headers = true;
+
             /// Column index.
             column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
                 && column.offset_index_prefetch
@@ -3392,6 +3400,110 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
+void Reader::locatePagesFromHeaders(ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info)
+{
+    column.locate_pages_from_headers = false;
+
+    /// Only without repetition does every page start a row, and is `num_values` of a V1 page its number of rows.
+    if (column_info.levels.back().rep != 0)
+        return;
+
+    const auto & meta = column.meta->meta_data;
+    if (meta.data_page_offset < 0)
+        return;
+    const size_t chunk_begin = size_t(meta.data_page_offset);
+    if (column.data_pages_bytes > prefetcher.getFileSize() || chunk_begin > prefetcher.getFileSize() - column.data_pages_bytes)
+        return;
+    const size_t chunk_end = chunk_begin + column.data_pages_bytes;
+    const size_t num_rows = size_t(row_group.meta->num_rows);
+
+    /// A large page costs one small read for its header; small pages are walked within larger reads.
+    PaddedPODArray<char> buf;
+    size_t buf_begin = 0;
+    size_t prev_page_size = 0;
+
+    decltype(column.offset_index.page_locations) locations;
+    size_t pos = chunk_begin;
+    size_t row_idx = 0;
+    while (pos < chunk_end)
+    {
+        std::optional<parq::PageHeader> parsed_header;
+        size_t header_size = 0;
+        size_t read_bytes = (locations.empty() || prev_page_size >= 16384) ? 4096 : 65536;
+        while (true)
+        {
+            if (pos >= buf_begin && pos < buf_begin + buf.size())
+            {
+                size_t available = buf_begin + buf.size() - pos;
+                try
+                {
+                    parsed_header.emplace();
+                    header_size = decodePageHeader(*parsed_header, buf.data() + (pos - buf_begin), available);
+                    break;
+                }
+                catch (const Exception & e)
+                {
+                    /// The header may continue past what was read.
+                    if (e.code() != ErrorCodes::INCORRECT_DATA)
+                        throw;
+                    if (pos + available >= chunk_end)
+                        return;
+                    read_bytes = std::max(read_bytes, available * 16);
+                }
+            }
+            buf.resize(std::min(chunk_end, pos + read_bytes) - pos);
+            prefetcher.readSync(buf.data(), buf.size(), pos);
+            buf_begin = pos;
+            read_bytes *= 16;
+        }
+        const parq::PageHeader & header = *parsed_header;
+
+        if (header.compressed_page_size < 0 || size_t(header.compressed_page_size) > chunk_end - pos - header_size)
+            return;
+        size_t page_size = header_size + size_t(header.compressed_page_size);
+        if (page_size > size_t(std::numeric_limits<Int32>::max()))
+            return;
+
+        size_t rows_in_page = 0;
+        switch (header.type)
+        {
+            case parq::PageType::DATA_PAGE:
+                if (header.data_page_header.num_values <= 0)
+                    return;
+                rows_in_page = size_t(header.data_page_header.num_values);
+                break;
+            case parq::PageType::DATA_PAGE_V2:
+                if (header.data_page_header_v2.num_rows <= 0)
+                    return;
+                rows_in_page = size_t(header.data_page_header_v2.num_rows);
+                break;
+            case parq::PageType::DICTIONARY_PAGE:
+                /// An undeclared dictionary page (see `fixUpColumnChunk`) is registered by `determinePagesToPrefetch`.
+                if (pos != chunk_begin || meta.__isset.dictionary_page_offset)
+                    return;
+                pos += page_size;
+                continue;
+            default:
+                return;
+        }
+
+        if (rows_in_page > num_rows - row_idx)
+            return;
+        auto & location = locations.emplace_back();
+        location.offset = Int64(pos);
+        location.compressed_page_size = Int32(page_size);
+        location.first_row_index = Int64(row_idx);
+        row_idx += rows_in_page;
+        pos += page_size;
+        prev_page_size = page_size;
+    }
+
+    if (row_idx != num_rows || locations.empty())
+        return;
+    column.offset_index.page_locations = std::move(locations);
+    ProfileEvents::increment(ProfileEvents::ParquetColumnChunksPagesLocatedFromHeaders);
+}
+
 void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
 {
     auto data = prefetcher.getRangeData(column.offset_index_prefetch);
@@ -3898,10 +4010,9 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
     }
 }
 
-std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const
+size_t Reader::decodePageHeader(parq::PageHeader & header, const char * data, size_t size) const
 {
-    parq::PageHeader header;
-    data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
+    size_t header_size = deserializeThriftStruct(header, data, size);
 
     /// Validate enum fields before anything loads them (a malformed file can carry out-of-range
     /// values, and loading an unscoped enum out of range is undefined behavior).
@@ -3922,6 +4033,14 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
         default:
             break;
     }
+
+    return header_size;
+}
+
+std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const
+{
+    parq::PageHeader header;
+    data_ptr += decodePageHeader(header, data_ptr, data_end - data_ptr);
 
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
