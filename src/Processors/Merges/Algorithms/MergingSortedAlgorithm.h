@@ -129,6 +129,19 @@ private:
     void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);
 
+    bool prefetch_sources = false;
+    struct SourcePlane
+    {
+        const char * data = nullptr;
+        size_t stride = 0;
+        /// `size() * stride` of the chunk column, the logical end of the plane.
+        size_t bytes = 0;
+    };
+    /// Per source, the `ColumnPlanes::Shape::Fixed` columns of its current chunk.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<SourcePlane>> source_fixed_size_planes;
+    void updateSourcePlanes(size_t source_num);
+    void prefetchSource(size_t source_num, size_t row) const;
+
     /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
     VectorWithMemoryTracking<Columns> virtual_row_boundary;
 };

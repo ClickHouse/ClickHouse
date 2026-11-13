@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 
@@ -56,6 +57,11 @@ public:
     void setMayHaveReplicatedColumns(bool value) { may_have_replicated_columns = value; }
     bool mayHaveReplicatedColumns() const { return may_have_replicated_columns; }
 
+    /// Count the columns whose values have a fixed size (`ColumnPlanes::Shape::Fixed`) in `hasEnoughRows` and
+    /// `rowsToInsertBeforeFlush` from `merged_rows`, instead of asking each of them for its size per row.
+    /// Applies only while `mayHaveReplicatedColumns() == false`.
+    void enableFixedSizeByteCount();
+
     virtual ~MergedData() = default;
 
 protected:
@@ -76,6 +82,17 @@ protected:
 
     /// See `setMayHaveReplicatedColumns`. Conservative default keeps the wrapping check.
     bool may_have_replicated_columns = true;
+
+    /// See `enableFixedSizeByteCount`.
+    bool fixed_size_byte_count_enabled = false;
+    /// Enabled and at least one of `columns` has fixed-size values.
+    bool count_fixed_size_bytes = false;
+    size_t fixed_size_bytes_per_row = 0;
+    size_t fixed_size_base_bytes = 0;
+    /// Positions of the columns without fixed-size values.
+    VectorWithMemoryTracking<size_t> other_columns;
+
+    void classifyFixedSizeColumns();
 };
 
 }
