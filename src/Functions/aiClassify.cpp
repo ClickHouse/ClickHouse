@@ -170,7 +170,7 @@ private:
     /// practice the response parses as an object with a `category` key. Anything else (model ignored the schema,
     /// returned a bare label, or returned truncated/invalid JSON) falls through to `raw_response`. Parse errors are
     /// swallowed on purpose — the user will see the output anyway.
-    String postProcessResponse(const String & raw_response) const override
+    String postProcessResponse(const ColumnsWithTypeAndName & /*arguments*/, const String & raw_response) const override
     {
         if (raw_response.empty() || raw_response.front() != '{')
             return raw_response;

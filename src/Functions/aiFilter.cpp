@@ -131,7 +131,7 @@ private:
     /// returned bare text, or returned truncated/invalid JSON) falls through to `raw_response` unchanged, so
     /// `parseFilterMatch`'s fail-closed handling of unrecognised text still applies. Parse errors are
     /// swallowed on purpose - the fail-closed default takes over.
-    String postProcessResponse(const String & raw_response) const override
+    String postProcessResponse(const ColumnsWithTypeAndName & /*arguments*/, const String & raw_response) const override
     {
         if (raw_response.empty() || raw_response.front() != '{')
             return raw_response;

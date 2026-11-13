@@ -32,6 +32,8 @@ Endpoints:
         same true/false heuristic used for the `aiFilter` fallback below).
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
+  POST /v1/chat/completions_null_fields - like `/v1/chat/completions`, but every field of the structured reply is
+      null, as when the text contains none of them.
   POST /v1/chat/completions_no_structured_output — like `/v1/chat/completions`, but ignores
       `response_format` even when present, simulating a model/gateway that doesn't support
       structured output: for an `aiFilter` boolean-filter system prompt, returns plain `true` or
@@ -398,6 +400,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 content = user_msg
 
             self._send_json(200, make_success_response(content))
+            return
+
+        if parsed.path == "/v1/chat/completions_null_fields":
+            # A structured reply with every field `null`, as a model returns when the text has none of them.
+            properties = (extract_response_format(body) or {}).get("schema", {}).get("properties", {})
+            self._send_json(200, make_success_response(json.dumps({key: None for key in properties})))
             return
 
         if parsed.path == "/v1/chat/completions_no_structured_output":

@@ -196,7 +196,10 @@ protected:
     /// for the response format, while Anthropic does not but it can be approximated with a tool-use pattern, see AnthropicProvider.h/cpp
     virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
-    virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
+    virtual String postProcessResponse(const ColumnsWithTypeAndName & /*arguments*/, const String & raw_response) const
+    {
+        return raw_response;
+    }
 
     /// Insert a post-processed provider response into the result column.
     /// Default appends the string as-is (`ColumnString`); subclasses may parse into other types
