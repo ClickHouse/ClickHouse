@@ -32,6 +32,9 @@ SELECT 'real format: ' || part_type FROM system.projection_parts WHERE database 
 
 -- the merge blocks cut a compact part, the span still has the wide layout
 ALTER TABLE t_est MODIFY SETTING merge_max_block_size = 1200;
+-- a change of the table settings makes the hypothetical projection stale, so create it again
+DROP HYPOTHETICAL PROJECTION p_k ON t_est;
+CREATE HYPOTHETICAL PROJECTION p_k ON t_est (SELECT a, b, v ORDER BY intDiv(b, 10));
 SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE intDiv(b, 10) = 4 AND a < 378)
 WHERE match(line, '^(With |marks:|marks_span:|verdict:)');
