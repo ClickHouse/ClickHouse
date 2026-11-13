@@ -240,6 +240,6 @@ SELECT d IN (materialize(toLowCardinality(x))), d NOT IN (materialize(toLowCardi
 FROM values('d Decimal(18,2), x Float64', (1,1))
 SETTINGS allow_lossy_numeric_supertype = 1;
 
-SELECT x IN (materialize(toLowCardinality(d))), x NOT IN (materialize(toLowCardinality(d)))
+SELECT toLowCardinality(x) IN (materialize(d)), toLowCardinality(x) NOT IN (materialize(d))
 FROM values('d Decimal(18,2), x Float64', (1,1))
 SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
