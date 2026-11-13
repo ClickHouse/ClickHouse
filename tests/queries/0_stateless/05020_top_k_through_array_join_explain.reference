@@ -58,10 +58,10 @@ Limit
    └──Sorting
       │  Sort description: x ASC
       │  Limit 10
-      └──Filter
-         │  Filter column: notEmpty(arr2)
-         └──ArrayJoin
-            │  ARRAY JOIN arr
+      └──ArrayJoin
+         │  ARRAY JOIN arr
+         └──Filter
+            │  Filter column: notEmpty(arr2)
             └──ReadFromMergeTree
                   Read type: Default
                   Parts: 1 | Granules: 1
@@ -192,12 +192,12 @@ Limit
    └──Sorting
       │  Sort description: pk ASC
       │  Limit 10
-      └──Filter
-         │  Filter column: notEmpty(arr)
+      └──Distinct
+         │  Columns: pk, x, arr
          └──Distinct
             │  Columns: pk, x, arr
-            └──Distinct
-               │  Columns: pk, x, arr
+            └──Filter
+               │  Filter column: notEmpty(arr)
                └──ReadFromMergeTree
                      Read type: Default
                      Parts: 1 | Granules: 1

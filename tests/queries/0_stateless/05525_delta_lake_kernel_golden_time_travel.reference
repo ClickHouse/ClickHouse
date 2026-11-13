@@ -1,0 +1,44 @@
+time-travel-start-start20-start40	0	time-travel-start	10	0	0
+time-travel-start-start20-start40	1	time-travel-start-start20	20	0	0
+time-travel-start-start20-start40	2	time-travel-start-start20-start40	30	0	0
+time-travel-start-start20-start40	-1	time-travel-start-start20-start40	30	0	0
+time-travel-schema-changes-b	0	time-travel-schema-changes-a	10	0	0
+time-travel-schema-changes-b	1	time-travel-schema-changes-b	20	0	0
+time-travel-partition-changes-b	0	time-travel-partition-changes-a	10	0	0
+time-travel-partition-changes-b	1	time-travel-partition-changes-b	10	0	0
+snapshot-repartitioned	0	snapshot-data0	10	0	0
+snapshot-repartitioned	1	snapshot-data1	20	0	0
+snapshot-repartitioned	2	snapshot-data2	10	0	0
+snapshot-repartitioned	3	snapshot-data3	30	0	0
+snapshot-repartitioned	4	snapshot-data2-deleted	20	0	0
+snapshot-repartitioned	5	snapshot-repartitioned	20	0	0
+snapshot-vacuumed	5	snapshot-repartitioned	20	0	0
+snapshot-vacuumed	-1	snapshot-vacuumed	20	0	0
+Schemas
+time-travel-schema-changes-b	0
+id	Nullable(Int64)
+time-travel-schema-changes-b	1
+id	Nullable(Int64)
+part	Nullable(Int64)
+time-travel-partition-changes-b	0
+id	Nullable(Int64)
+part5	Nullable(Int64)
+time-travel-partition-changes-b	1
+id	Nullable(Int64)
+part2	Nullable(Int64)
+Values
+0
+1
+2
+0	\N
+1	\N
+2	\N
+19	19
+18	18
+17	17
+3	2	11
+0	5	70
+1	5	75
+1	5	75
+FILE_DOESNT_EXIST
+DELTA_KERNEL_ERROR

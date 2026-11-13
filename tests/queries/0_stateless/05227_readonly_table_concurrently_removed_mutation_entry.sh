@@ -16,6 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 endpoint="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 # `metadata_snapshot_write_delay_ms = 0`: the writer rewrites the snapshot right after every commit, so the readonly disks see the latest state.
 disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1, metadata_snapshot_write_delay_ms = 0"
+# A readonly disk keeps the listing it loaded, so a rerun in the same database must not reuse the disk of an earlier run.
+reader_disk="${CLICKHOUSE_TEST_UNIQUE_NAME}_reader_$(date +%s%N)"
 failpoint="storage_merge_tree_load_mutations_pause_before_read"
 
 function cleanup()
@@ -25,6 +27,7 @@ function cleanup()
 trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -m --query "
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS writer SYNC;
 DROP TABLE IF EXISTS reader SYNC;
 
@@ -44,8 +47,9 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${failpoint}"
 
 reader_log="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_reader.log"
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
-SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args})
+SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${reader_disk}', ${disk_args})
 " > "${reader_log}" 2>&1 &
 reader_pid=$!
 
@@ -65,9 +69,10 @@ grep -q 'S3_ERROR' "${reader_log}" && echo 'S3_ERROR is reported' || echo 'S3_ER
 
 echo '-- the next attempt succeeds once the metadata of the disk, which still lists the entry, is reloaded'
 ${CLICKHOUSE_CLIENT} -m --query "
-SYSTEM DROP DISK METADATA CACHE ${CLICKHOUSE_TEST_UNIQUE_NAME}_reader;
+SET ast_fuzzer_any_query = 0, ignore_drop_queries_probability = 0;
+SYSTEM DROP DISK METADATA CACHE ${reader_disk};
 CREATE TABLE reader (key Int32, value String) ENGINE = MergeTree ORDER BY key
-SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_reader', ${disk_args});
+SETTINGS table_disk = 1, disk = disk(readonly = true, name = '${reader_disk}', ${disk_args});
 SELECT count() FROM reader;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'reader';
 

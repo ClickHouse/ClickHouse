@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーの設定項目であり、ClickHouseのソースコードから自動生成されています。
 
-<div id="encryption_header_cache_policy">
-  ## encryption_header_cache_policy
-</div>
+## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />暗号化ヘッダーキャッシュポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />暗号化ヘッダーキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="encryption_header_cache_size">
-  ## encryption_header_cache_size
-</div>
+## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、変更内容は即座に反映されます。
 </Note>
 
-<div id="encryption_header_cache_size_ratio">
-  ## encryption_header_cache_size_ratio
-</div>
+## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />暗号化ヘッダーキャッシュにおける、保護キュー (SLRU policy の場合) のサイズが、cache 全体のサイズに対して占める割合です。
 

@@ -177,9 +177,16 @@ ALTER COLUMN [IF EXISTS] name
 
 للاطلاع على أمثلة على تعديل CODECS ضغط الأعمدة، راجع [Column Compression Codecs](/ar/reference/statements/create/table/codec).
 
+عند تفعيل الإعداد التجريبي `enable_subcolumn_codecs`، يمكن أن يكون `name` أيضًا عمودًا فرعيًا، مثل `payload.ts`. وفي هذه الحالة، لا يمكن تعديل أو إزالة سوى `CODEC`، راجع [Codecs for subcolumns](/ar/reference/statements/create/table#subcolumn-codecs):
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
 للاطلاع على أمثلة على تعديل TTL للأعمدة، راجع [Column TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
-للاطلاع على أمثلة على تعديل الإعدادات على مستوى العمود، راجع [Column-level Settings](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
+للاطلاع على أمثلة على تعديل الإعدادات على مستوى العمود، راجع [إعدادات على مستوى العمود](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
 
 إذا تم تحديد العبارة `IF EXISTS`، فلن يُرجع الاستعلام خطأً إذا لم يكن العمود موجودًا.
 
