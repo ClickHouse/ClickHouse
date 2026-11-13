@@ -24,6 +24,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <functional>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -112,6 +113,40 @@ public:
         with_expression_aliases = std::move(enclosing_with_expression_aliases);
     }
 
+    /// Prepare a standalone expression, e.g. a filter, to be interpreted with another current database:
+    /// qualify the table names in it and replace `currentDatabase()`, also written without parentheses, with the database.
+    /// `is_column` tells whether the analyzer resolves a name which is not in `column_names` as a column,
+    /// e.g. the subcolumn `tup.arr` written in backquotes.
+    void visitStandaloneExpression(
+        ASTPtr & ast, const NameSet & column_names, const std::function<bool(const String &)> & is_column) const
+    {
+        /// In a select list the aliases defined in the expression are collected, so they are not taken for tables.
+        /// The columns the expression reads are listed there as well: the analyzer resolves them before a table.
+        auto select = make_intrusive<ASTSelectQuery>();
+        select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+        auto & expression_list = *select->select();
+        expression_list.children.push_back(ast);
+        for (const auto & column_name : column_names)
+        {
+            auto column = make_intrusive<ASTIdentifier>(column_name);
+            column->setAlias(column_name);
+            expression_list.children.push_back(std::move(column));
+        }
+        standalone_expression_select = select.get();
+        standalone_expression_is_column = &is_column;
+        visitTableExpressions(*select);
+        standalone_expression_select = nullptr;
+        /// A call of a lambda with the alias of the same name is kept.
+        NameSet lambda_aliases;
+        collectLambdaAliases(*expression_list.children.at(0), lambda_aliases);
+        substituteCurrentDatabase(expression_list.children.at(0), expression_list, lambda_aliases);
+        NameSet names_in_scope = column_names;
+        collectAliasesInScope(*expression_list.children.at(0), names_in_scope);
+        substituteCurrentDatabaseIdentifiers(expression_list.children.at(0), expression_list, names_in_scope);
+        standalone_expression_is_column = nullptr;
+        ast = expression_list.children.at(0);
+    }
+
     void visit(ASTSelectQuery & select) const
     {
         ASTPtr unused;
@@ -175,10 +210,19 @@ private:
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
 
+    mutable const ASTSelectQuery * standalone_expression_select = nullptr;
+    mutable const std::function<bool(const String &)> * standalone_expression_is_column = nullptr;
+    /// Whether the walk is in a select query nested in a standalone expression, whose columns are not known.
+    mutable bool in_select_with_unknown_columns = false;
+
     void visitTableExpressionsImpl(IAST & ast) const
     {
         if (auto * select = ast.as<ASTSelectQuery>())
         {
+            auto enclosing_in_select_with_unknown_columns = in_select_with_unknown_columns;
+            if (standalone_expression_select && select != standalone_expression_select)
+                in_select_with_unknown_columns = true;
+
             /// A name defined by a `WITH` element is a common table expression and not a table,
             /// recursive or not, so a table expression (or the right argument of `IN`) which refers
             /// to it must not be qualified. Unlike the callers of the full traversal, the callers of
@@ -212,6 +256,7 @@ private:
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
             with_expression_aliases = std::move(enclosing_with_expression_aliases);
+            in_select_with_unknown_columns = enclosing_in_select_with_unknown_columns;
             return;
         }
 
@@ -237,7 +282,27 @@ private:
         }
 
         if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
+        {
+            /// The parameters of a lambda are not table names inside it.
+            if (function->name == "lambda" && !function->arguments->children.empty())
+            {
+                auto enclosing_with_expression_aliases = with_expression_aliases;
+                if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+                {
+                    for (const auto & parameter : parameters->arguments->children)
+                        if (const auto * identifier = parameter->as<ASTIdentifier>())
+                            with_expression_aliases.insert(identifier->name());
+                }
+
+                for (auto & child : ast.children)
+                    visitTableExpressionsImpl(*child);
+
+                with_expression_aliases = std::move(enclosing_with_expression_aliases);
+                return;
+            }
+
             visitFunctionTableNameArguments(*function);
+        }
 
         for (auto & child : ast.children)
             visitTableExpressionsImpl(*child);
@@ -328,6 +393,15 @@ private:
                 /// then it is not a table name and must not be qualified with the database,
                 /// like in `visit(ASTFunction &, ASTPtr &)` of the full traversal.
                 if (isExpressionAlias(identifier->name()))
+                    return;
+
+                /// Nor when it may be a column, which the analyzer resolves before a table.
+                if (in_select_with_unknown_columns
+                    || (standalone_expression_is_column && (*standalone_expression_is_column)(identifier->name())))
+                    return;
+
+                /// The analyzer does not resolve an alias of a qualified table name used elsewhere.
+                if (standalone_expression_select && !identifier->alias.empty())
                     return;
 
                 if (auto maybe_table_identifier = identifier->createTable())
@@ -612,35 +686,127 @@ private:
             visitTableFunction(*argument);
     }
 
-    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`),
-    /// which are registered in `FunctionFactory` as case-insensitive.
+    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`,
+    /// `current_schema`), which are registered in `FunctionFactory` as case-insensitive.
     static bool isCurrentDatabaseFunction(const ASTFunction & function)
     {
         if (function.arguments && !function.arguments->children.empty())
             return false;
 
-        if (function.name == "currentDatabase")
-            return true;
-
-        const String lowered_name = Poco::toLower(function.name);
-        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database";
+        return isCurrentDatabaseFunctionName(function.name);
     }
 
-    /// Replace `currentDatabase()` with a literal everywhere in the subtree.
-    void substituteCurrentDatabase(ASTPtr & ast, IAST & parent) const
+    static bool isCurrentDatabaseFunctionName(const String & name)
     {
-        if (const auto * function = ast->as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
+        if (name == "currentDatabase")
+            return true;
+
+        const String lowered_name = Poco::toLower(name);
+        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database"
+            || lowered_name == "current_schema";
+    }
+
+    /// Replace `currentDatabase()` with a literal everywhere in the subtree, except a call of one of `aliases`.
+    void substituteCurrentDatabase(ASTPtr & ast, IAST & parent, const NameSet & aliases = {}) const
+    {
+        if (const auto * function = ast->as<ASTFunction>();
+            function && isCurrentDatabaseFunction(*function) && !aliases.contains(function->name))
         {
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
-            ast = make_intrusive<ASTLiteral>(database_name);
+            auto literal = make_intrusive<ASTLiteral>(database_name);
+            literal->setAlias(function->alias);
+            ast = std::move(literal);
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }
 
         for (auto & child : ast->children)
-            substituteCurrentDatabase(child, *ast);
+            substituteCurrentDatabase(child, *ast, aliases);
+    }
+
+    static bool isSubquery(const IAST & ast)
+    {
+        return ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>();
+    }
+
+    static const ASTFunction * tryGetLambda(const IAST & ast)
+    {
+        const auto * function = ast.as<ASTFunction>();
+        if (function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+            return function;
+        return nullptr;
+    }
+
+    /// Collect the aliases of the scope of `ast`: a subquery and a lambda have their own.
+    /// `x AS x` is not collected: the analyzer resolves `x` there as if it had no alias.
+    static void collectAliasesInScope(const IAST & ast, NameSet & aliases)
+    {
+        if (String alias = ast.tryGetAlias(); !alias.empty())
+        {
+            const auto * identifier = ast.as<ASTIdentifier>();
+            if (!identifier || identifier->name() != alias)
+                aliases.insert(std::move(alias));
+        }
+
+        if (isSubquery(ast) || tryGetLambda(ast))
+            return;
+
+        for (const auto & child : ast.children)
+            collectAliasesInScope(*child, aliases);
+    }
+
+    static void collectLambdaAliases(const IAST & ast, NameSet & aliases)
+    {
+        if (String alias = ast.tryGetAlias(); !alias.empty() && tryGetLambda(ast))
+            aliases.insert(std::move(alias));
+
+        for (const auto & child : ast.children)
+            collectLambdaAliases(*child, aliases);
+    }
+
+    /// Replace `currentDatabase` written without parentheses, e.g. `CURRENT_DATABASE`, with a literal. The analyzer resolves
+    /// such an identifier as the function only when it is not a column, an alias or a lambda parameter (`names_in_scope`).
+    /// The columns of a subquery are not known, so in a subquery it stays as written.
+    void substituteCurrentDatabaseIdentifiers(ASTPtr & ast, IAST & parent, const NameSet & names_in_scope) const
+    {
+        if (isSubquery(*ast))
+            return;
+
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (!identifier->compound() && isCurrentDatabaseFunctionName(identifier->name())
+                && !names_in_scope.contains(identifier->name())
+                && !(standalone_expression_is_column && (*standalone_expression_is_column)(identifier->name())))
+            {
+                ASTPtr old_ast = ast;
+                auto literal = make_intrusive<ASTLiteral>(database_name);
+                literal->setAlias(identifier->alias);
+                ast = std::move(literal);
+                parent.updatePointerToChild(old_ast.get(), ast);
+            }
+            return;
+        }
+
+        if (const auto * function = tryGetLambda(*ast))
+        {
+            NameSet lambda_names_in_scope = names_in_scope;
+            if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+            {
+                for (const auto & parameter : parameters->arguments->children)
+                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                        lambda_names_in_scope.insert(parameter_identifier->name());
+            }
+            collectAliasesInScope(*function->arguments->children[1], lambda_names_in_scope);
+
+            for (auto & child : ast->children)
+                substituteCurrentDatabaseIdentifiers(child, *ast, lambda_names_in_scope);
+            return;
+        }
+
+        for (auto & child : ast->children)
+            substituteCurrentDatabaseIdentifiers(child, *ast, names_in_scope);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
