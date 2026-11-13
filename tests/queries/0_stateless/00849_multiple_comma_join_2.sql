@@ -17,49 +17,49 @@ CREATE TABLE t4 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
 -- {echoOn}
 --- EXPLAIN QUERY TREE
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.a = t2.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.a = t2.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.b = t2.b) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.b = t2.b);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3 WHERE t1.b = t2.b AND t1.b = t3.b) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3 WHERE t1.b = t2.b AND t1.b = t3.b);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.b = t2.b AND t1.b = t3.b AND t1.b = t4.b) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.b = t2.b AND t1.b = t3.b AND t1.b = t4.b);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t2.a = t1.a AND t2.a = t3.a AND t2.a = t4.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t2.a = t1.a AND t2.a = t3.a AND t2.a = t4.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t3.a = t1.a AND t3.a = t2.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t3.a = t1.a AND t3.a = t2.a AND t3.a = t4.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t4.a = t1.a AND t4.a = t2.a AND t4.a = t3.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t4.a = t1.a AND t4.a = t2.a AND t4.a = t3.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 CROSS JOIN t3);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3);
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+    EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3);
 
 -- {echoOff}
 
@@ -67,8 +67,6 @@ INSERT INTO t1 values (1,1), (2,2), (3,3), (4,4);
 INSERT INTO t2 values (1,1), (1, Null);
 INSERT INTO t3 values (1,1), (1, Null);
 INSERT INTO t4 values (1,1), (1, Null);
-
-SET enable_analyzer = 1;
 
 SELECT 'SELECT * FROM t1, t2';
 SELECT * FROM t1, t2

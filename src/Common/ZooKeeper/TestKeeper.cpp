@@ -16,6 +16,11 @@
 #  error "TestKeeper must not use ZooKeeper implementation"
 #endif
 
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace Coordination
 {
 
@@ -31,6 +36,13 @@ static String baseName(const String & path)
 {
     auto rslash_pos = path.rfind('/');
     return path.substr(rslash_pos + 1);
+}
+
+/// Descendants of `path` are exactly the keys starting with this prefix, contiguous in `TestKeeper::Container`.
+/// Siblings like `path-1` sort between `path` and its descendants, so a subtree scan starts at the prefix.
+static String descendantsPrefix(const String & path)
+{
+    return path == "/" ? path : path + "/";
 }
 
 
@@ -121,11 +133,12 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
     void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
     {
         std::vector<std::pair<String, size_t>> deleted;
+        const String prefix = descendantsPrefix(path);
 
         auto add_deleted_watches = [&](TestKeeper::Watches & w)
         {
             for (const auto & [watch_path, _] : w)
-                if (watch_path.starts_with(path))
+                if (watch_path == path || watch_path.starts_with(prefix))
                     deleted.emplace_back(watch_path, std::count(watch_path.begin(), watch_path.end(), '/'));
         };
 
@@ -440,16 +453,11 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
         return { std::make_shared<RemoveRecursiveResponse>(response), undo };
 
     std::vector<std::pair<std::string, Coordination::TestKeeper::Node>> removed_nodes;
+    removed_nodes.emplace_back(root_it->first, root_it->second);
 
-    for (auto it = root_it; it != container.end(); ++it)
-    {
-        const auto & [child_path, child_node] = *it;
-
-        if (child_path.starts_with(path))
-            removed_nodes.emplace_back(child_path, child_node);
-        else
-            break;
-    }
+    const String prefix = descendantsPrefix(path);
+    for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
+        removed_nodes.emplace_back(it->first, it->second);
 
     if (removed_nodes.size() > remove_nodes_limit)
     {
@@ -533,9 +541,9 @@ std::pair<ResponsePtr, Undo> TestKeeperListRecursiveRequest::process(TestKeeper:
         return { std::make_shared<ListRecursiveResponse>(response), {} };
     }
 
-    const auto path_with_slash = (path == "/") ? path : path + "/";
+    const auto path_with_slash = descendantsPrefix(path);
     std::vector<String> children;
-    for (auto child_it = std::next(it); child_it != container.end(); ++child_it)
+    for (auto child_it = container.upper_bound(path_with_slash); child_it != container.end(); ++child_it)
     {
         if (!child_it->first.starts_with(path_with_slash) || children.size() >= children_nodes_limit)
             break;
@@ -568,10 +576,10 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
     }
 
     response.stat = root->second.stat;
-    const String prefix = path == "/" ? "/" : path + "/";
+    const String prefix = descendantsPrefix(path);
     std::vector<TestKeeper::Container::const_iterator> candidates;
     bool limit_reached = false;
-    for (auto it = std::next(root); it != container.end() && it->first.starts_with(prefix); ++it)
+    for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
     {
         if (!options.recursive && parentPath(it->first) != path)
             continue;
@@ -1067,6 +1075,11 @@ void TestKeeper::exprireRequest(RequestInfo && request)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+silk::FiberEvent & TestKeeper::getExpiredEvent()
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "TestKeeper does not support waiting for the session to expire");
 }
 
 void TestKeeper::finalize(const String &)

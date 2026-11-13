@@ -31,6 +31,10 @@ public:
         const std::string update_field;
         const UInt64 update_lag;
         const HTTPHeaderEntries header_entries;
+        /// Whether the dictionary was created via DDL (`CREATE DICTIONARY`). For such dictionaries the
+        /// source URL is untrusted, so every HTTP request (including redirect hops) must be validated
+        /// against `remote_url_allow_hosts`.
+        const bool created_from_ddl = false;
     };
 
     HTTPDictionarySource(
@@ -63,6 +67,8 @@ public:
 
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
+
+    void checkCredentials() const;
 
     // wrap buffer using encoding from made request
     QueryPipeline createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);

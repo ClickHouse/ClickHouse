@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <exception>
@@ -24,15 +25,20 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#if USE_SILK
+#include <silk/util/tsc.h>
+#endif
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -104,6 +110,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -530,12 +537,19 @@ ZooKeeper::ZooKeeper(
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
 
+    /// From now on, one thread writes to the socket and another one reads from it.
+    if (socket.secure())
+        out->setWaitBeforeSend();
+
     /// Initialize progress tracker to "now" so the receive loop does not
     /// immediately trigger a timeout before any responses arrive.
     last_received_timestamp_us.store(
         std::chrono::duration_cast<std::chrono::microseconds>(
             clock::now().time_since_epoch()).count(),
         std::memory_order_relaxed);
+#if USE_SILK
+    last_received_cycles.store(silk::Tsc::getCycles(), std::memory_order_relaxed);
+#endif
 
     try
     {
@@ -589,43 +603,52 @@ void ZooKeeper::connect(
     size_t num_tries = args.num_connection_retries + 1;
 
     bool connected = false;
-    bool dns_error = false;
 
-    size_t resolved_count = 0;
-    for (const auto & node : nodes)
+    /// The nodes are resolved before every try, not once: a failed connection attempt below drops the
+    /// host from the DNS cache, so the next try resolves it again and picks up an address it has moved
+    /// to (a restarted container or pod), while the hosts that did not fail are taken from the cache.
+    /// A node that cannot be resolved on a later try keeps the address of the previous one.
+    auto resolve_nodes = [&]
     {
-        try
+        bool dns_error = false;
+        for (const auto & node : nodes)
         {
-            const Poco::Net::SocketAddress host_socket_addr{node.host};
-            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
-            node.address = host_socket_addr;
-            ++resolved_count;
+            try
+            {
+                /// Resolve through `DNSResolver` so that the lookup is counted in `system.events` and shared
+                /// with the rest of the server through the DNS cache.
+                const Poco::Net::SocketAddress host_socket_addr = DB::DNSResolver::instance().resolveAddress(node.host);
+                LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
+                node.address = host_socket_addr;
+            }
+            catch (const DB::NetException & e)
+            {
+                /// Either DNS is not available now, or there is no such host name
+                dns_error = true;
+                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+            }
+            catch (const DB::Exception & e)
+            {
+                /// Most likely it's misconfiguration and a malformed host and port was specified
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
+            }
         }
-        catch (const Poco::Net::HostNotFoundException & e)
-        {
-            /// Most likely it's misconfiguration and wrong hostname was specified
-            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
-        }
-        catch (const Poco::Net::DNSException & e)
-        {
-            /// Most likely DNS is not available now
-            dns_error = true;
-            LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
-        }
-    }
 
-    if (resolved_count == 0)
-    {
-        /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-        if (dns_error)
-            throw zkutil::KeeperException::fromMessage(
-                Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
-    }
+        if (std::none_of(nodes.begin(), nodes.end(), [](const zkutil::ShuffleHost & node) { return node.address.has_value(); }))
+        {
+            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+            if (dns_error)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+        }
+    };
 
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
+        resolve_nodes();
+
         for (const auto & node : nodes)
         {
             try
@@ -682,7 +705,10 @@ void ZooKeeper::connect(
                 }
                 catch (DB::Exception & e)
                 {
-                    e.addMessage("while receiving handshake from ZooKeeper");
+                    e.addMessage(
+                        "while receiving handshake from ZooKeeper; if the server closed the connection "
+                        "during session negotiation, check server logs for session-id allocation timeouts "
+                        "(keeper_server.coordination_settings.operation_timeout_ms for ClickHouse Keeper)");
                     throw;
                 }
 
@@ -701,6 +727,11 @@ void ZooKeeper::connect(
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
                 cancelWriteBuffer();
+
+                /// Remove this possibly stale entry from the DNS cache, so that the next try (and the next
+                /// connection) resolves this host again instead of retrying a dead address.
+                /// `node.host` is well formed here - otherwise `node.address` would not have been set.
+                DB::DNSResolver::instance().removeHostFromCache(DB::DNSResolver::splitHostAndPort(node.host).first);
             }
         }
 
@@ -814,8 +845,18 @@ void ZooKeeper::receiveHandshake()
 
     read(timeout);
     if (timeout != args.session_timeout_ms)
+    {
+        LOG_INFO(
+            log,
+            "Server adjusted requested session timeout from {} ms to {} ms; the effective value "
+            "is bounded by server-side settings (keeper_server.coordination_settings "
+            "min_session_timeout_ms/session_timeout_ms for ClickHouse Keeper, or "
+            "minSessionTimeout/maxSessionTimeout for Apache ZooKeeper)",
+            args.session_timeout_ms,
+            timeout);
         /// Use timeout from server.
         args.session_timeout_ms = timeout;
+    }
 
     read(session_id);
     read(passwd);
@@ -1107,7 +1148,8 @@ void ZooKeeper::receiveThread()
             {
                 if (now >= idle_deadline)
                     throw Exception(Error::ZOPERATIONTIMEOUT,
-                        "Nothing is received in session timeout of {} ms",
+                        "Nothing is received in session timeout of {} ms; note this is the value negotiated "
+                        "with the server, which may have adjusted the client-requested session_timeout_ms",
                         args.session_timeout_ms);
 
                 chassert(now >= stuck_deadline && stuck_request);
@@ -1137,6 +1179,9 @@ void ZooKeeper::receiveThread()
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         clock::now().time_since_epoch()).count(),
                     std::memory_order_relaxed);
+#if USE_SILK
+                last_received_cycles.store(silk::Tsc::getCycles(), std::memory_order_relaxed);
+#endif
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived,
@@ -1493,6 +1538,15 @@ void ZooKeeper::logDeferredExceptions() noexcept
 }
 
 
+silk::FiberEvent & ZooKeeper::getExpiredEvent()
+{
+#if USE_SILK
+    return expired_event;
+#else
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Waiting for the session to expire requires the silk runtime");
+#endif
+}
+
 void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
@@ -1521,6 +1575,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             active_session_metric_increment.destroy();
             /// Notify all subscribers (ReplicatedMergeTree tables) about expired session
             EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
+#if USE_SILK
+            expired_event.set();
+#endif
         }
     };
 

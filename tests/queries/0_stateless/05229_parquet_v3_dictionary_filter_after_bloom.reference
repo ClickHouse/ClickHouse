@@ -1,0 +1,11 @@
+the bloom filters rule out every row group, so the dictionary filter reads no extra bytes
+OK
+with bloom filters, pruning is unchanged: nothing is read either way
+{"result":[{"count()":0}],"rows_read":0}
+{"result":[{"count()":0}],"rows_read":0}
+without bloom filters, the dictionary filter is still what prunes the file
+{"result":[{"count()":0}],"rows_read":40000}
+{"result":[{"count()":0}],"rows_read":0}
+a value that is in one row group only is still found, and the other row group is still pruned
+{"result":[{"count()":1}],"rows_read":20000}
+{"result":[{"count()":1}],"rows_read":20000}

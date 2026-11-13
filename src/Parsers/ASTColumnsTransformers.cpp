@@ -306,8 +306,8 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     /// `lambda->as<const ASTFunction &>()`). Restoring them through the generic child path
     /// would let a wrong node type reach those downcasts as an internal cast error instead of
     /// a user-facing `BAD_ARGUMENTS`.
-    parameters = r.readChildOfType<ASTExpressionList>("parameters");
-    lambda = r.readChildOfType<ASTFunction>("lambda");
+    parameters = r.readScreenedChildOfType<ASTExpressionList>("parameters");
+    lambda = r.readFunctionChildWithExpressionArguments("lambda");
     lambda_arg = r.getString("lambda_arg");
     column_name_prefix = r.getString("column_name_prefix");
 

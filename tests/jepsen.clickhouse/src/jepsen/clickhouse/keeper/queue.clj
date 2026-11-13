@@ -45,8 +45,10 @@
       :drain
       ; drain via delete is to long, just list all nodes
       (chu/exec-with-retries 30 (fn []
-                              (zk-sync conn)
-                              (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn root-path))))))))
+                                  (with-fresh-conn nodename (:with-auth test)
+                                    (fn [conn]
+                                      (zk-sync conn)
+                                      (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn root-path))))))))))
 
   (teardown! [_ test])
 

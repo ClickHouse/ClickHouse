@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'Kafka Connector Sink on Confluent Platform'
+sidebarTitle: 'Kafka Connector Sink as a Custom Connector'
 slug: /integrations/kafka/cloud/confluent/custom-connector
-description: 'Using ClickHouse Connector Sink with Kafka Connect and ClickHouse'
-title: 'Integrating Confluent platform with ClickHouse'
+description: 'Upload and run the ClickHouse Connector Sink on Confluent Cloud as a Custom Connector'
+title: 'ClickHouse Connector Sink as a Custom Connector on Confluent Cloud'
 keywords: ['Confluent ClickHouse integration', 'ClickHouse Kafka connector', 'Kafka Connect ClickHouse sink', 'Confluent Platform ClickHouse', 'custom connector Confluent']
 doc_type: 'guide'
 ---
@@ -25,16 +25,20 @@ import { Image } from "/snippets/components/Image.jsx";
 ## Prerequisites {#prerequisites}
 We assume you're familiar with:
 * [ClickHouse Connector Sink](/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
-* Confluent Platform and [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html).
+* Confluent Cloud and [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html).
 
-## The official Kafka connector from ClickHouse with Confluent Platform {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
+<Note>
+This page covers uploading the connector to Confluent Cloud yourself. If you don't need a specific connector version or custom settings, the [fully managed connector](/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud) is simpler to set up.
+</Note>
 
-### Installing on Confluent platform {#installing-on-confluent-platform}
-This is meant to be a quick guide to get you started with the ClickHouse Sink Connector on Confluent Platform.
+## The official Kafka connector from ClickHouse as a Custom Connector {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
+
+### Installing as a Custom Connector {#installing-on-confluent-platform}
+This is meant to be a quick guide to get you started with the ClickHouse Sink Connector as a Custom Connector on Confluent Cloud.
 For more details, please refer to the [official Confluent documentation](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 #### Create a Topic {#create-a-topic}
-Creating a topic on Confluent Platform is fairly simple, and there are detailed instructions [here](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
+Creating a topic on Confluent Cloud is fairly simple, and there are detailed instructions [here](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 #### Important notes {#important-notes}
 
@@ -93,6 +97,6 @@ You should be all set!
 
 #### Known limitations {#known-limitations}
 * Custom Connectors must use public internet endpoints. Static IP addresses aren't supported.
-* You can override some Custom Connector properties. See the fill [list in the official documentation.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
+* You can override some Custom Connector properties. See the full [list in the official documentation.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
 * Custom Connectors are available only in [some AWS regions](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)
 * See the list of [Custom Connectors limitations in the official docs](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)

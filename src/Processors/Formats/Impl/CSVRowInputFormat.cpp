@@ -173,13 +173,14 @@ void CSVFormatReader::skipRow()
             if (*pos == '\r')
             {
                 ++istr.position();
-                if (format_settings.csv.allow_cr_end_of_line)
-                    return;
-                if (!istr.eof() && *pos == '\n')
+                /// `\r\n` is a single line ending even if a bare `\r` is allowed, as in `skipEndOfLine`.
+                if (!istr.eof() && *istr.position() == '\n')
                 {
-                    ++pos;
+                    ++istr.position();
                     return;
                 }
+                if (format_settings.csv.allow_cr_end_of_line)
+                    return;
             }
         }
     }
@@ -281,9 +282,9 @@ void CSVFormatReader::skipHeaderRow()
 }
 
 template <bool is_header>
-std::vector<String> CSVFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> CSVFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readCSVFieldIntoString<is_header>());
@@ -358,16 +359,23 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 void CSVFormatReader::setDataTypes(const DataTypes & types)
 {
     skip_whitespaces_before_field.resize(types.size());
+    keep_empty_value_for_field.resize(types.size());
     for (size_t i = 0; i != types.size(); ++i)
+    {
         skip_whitespaces_before_field[i]
             = format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(types[i]));
+
+        /// Same condition as the one `readField` used to compute for every empty field.
+        keep_empty_value_for_field[i] = format_settings.csv.missing_nullable_as_empty_string
+            && isNullableOrLowCardinalityNullable(types[i]) && isString(removeLowCardinalityAndNullable(types[i]));
+    }
 }
 
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
     const SerializationPtr & serialization,
-    bool is_last_file_column,
+    bool /*is_last_file_column*/,
     const String & /*column_name*/,
     size_t column_index)
 {
@@ -375,12 +383,14 @@ bool CSVFormatReader::readField(
     if (skip_whitespaces_before_field[column_index]) [[likely]]
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
-    const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
+    /// A field is empty if it is followed by the field delimiter or the end of the row.
+    /// The row can end before the last file column with `input_format_csv_allow_variable_number_of_columns`.
+    const bool is_empty_field = buf->eof() || *buf->position() == format_settings.csv.delimiter
+        || *buf->position() == '\n' || *buf->position() == '\r';
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
-    if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    if (format_settings.csv.empty_as_default && is_empty_field)
     {
         /// Treat empty unquoted column value as default value, if
         /// specified in the settings. Tuple columns might seem
@@ -394,8 +404,8 @@ bool CSVFormatReader::readField(
         /// `Nullable(String)` (including its low-cardinality form `LowCardinality(Nullable(String))`)
         /// should be read as an empty string instead of NULL, so it must fall through to normal
         /// deserialization.
-        bool keep_empty_value = format_settings.csv.missing_nullable_as_empty_string
-            && isNullableOrLowCardinalityNullable(type) && isString(removeLowCardinalityAndNullable(type));
+        chassert(column_index < keep_empty_value_for_field.size());
+        bool keep_empty_value = keep_empty_value_for_field[column_index];
 
         if (!keep_empty_value)
         {
@@ -503,7 +513,7 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
