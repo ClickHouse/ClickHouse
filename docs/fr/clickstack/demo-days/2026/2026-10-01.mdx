@@ -1,0 +1,150 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-01
+title: 'Demo days - 2026-10-01'
+sidebarTitle: '2026-10-01'
+description: 'Journées de démonstration ClickStack du 2026-10-01'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Indicateurs de chargement des tableaux de bord et plages du live tail {#dashboard-loading-indicators-and-live-tail-ranges}
+
+*Démonstration par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ces deux changements sont des contributions open source : les indicateurs de chargement sont l&#39;œuvre de [@Harshul1484](https://github.com/Harshul1484), et les modifications du live tail celle de [@krishs01](https://github.com/krishs01). Tous deux font suite à des tickets ouverts sur le dépôt ces dernières semaines.
+
+Auparavant, il n&#39;était pas toujours évident de savoir ce qui se passait lors du rafraîchissement d&#39;un tableau de bord. Certaines tuiles disparaissaient derrière un indicateur de chargement, tandis que d&#39;autres continuaient d&#39;afficher les données précédentes sans signaler qu&#39;une requête était en cours. Avec une connexion lente ou une requête volumineuse, impossible de savoir si l&#39;on avait sous les yeux les résultats les plus récents. Les graphiques temporels en lignes et en barres empilées pulsaient déjà pendant une nouvelle récupération, mais les tuiles de type nombre, barres, secteurs et tableau se contentaient de vérifier `isLoading`, qui reste à `false` tant que react-query affiche des données de substitution.
+
+Ces tuiles conservent désormais les données précédentes à l&#39;écran et pulsent jusqu&#39;à la fin de la nouvelle récupération. Ce changement a été introduit au fil de plusieurs petites PR, d&#39;abord pour les tuiles de type nombre, barres et secteurs, puis pour les tableaux, les cartes de chaleur, ainsi que les graphiques list-bar et les histogrammes du tableau de bord Services. Les tableaux ont nécessité un correctif supplémentaire, car `useOffsetPaginatedQuery` ne conservait les lignes précédentes qu&#39;en mode en direct : la tuile entière disparaissait donc pendant un rafraîchissement. Les tuiles de recherche et de motifs d&#39;événements, ainsi que les tableaux Pods, Nodes et Namespaces du tableau de bord Kubernetes, conservent pour l&#39;instant l&#39;ancien comportement. Les PR correspondantes sont en cours.
+
+Pour le live tail, le sélecteur de période grisait auparavant tous les préréglages supérieurs à une heure, sans la moindre explication. De plus, le commutateur contrôlant ces préréglages s&#39;intitulait « Relative Time », alors que le reste de l&#39;application parle de live tail.
+
+Les préréglages 3h et 6h sont désormais disponibles, et le commutateur s&#39;intitule **Live tail ranges**. Les préréglages encore désactivés affichent une infobulle « Not available for Live Tail » au survol. Les plages de 12h et plus restent désactivées, car chaque rafraîchissement réinterroge l&#39;intégralité de la fenêtre temporelle. Avec un intervalle de rafraîchissement par défaut de 10 secondes, cela reviendrait à analyser 12 à 24 heures de données toutes les 10 secondes.
+
+**PR associées :** [#3211](https://github.com/hyperdxio/hyperdx/pull/3211) Faire pulser les tuiles de type nombre, barres et secteurs pendant le rafraîchissement d&#39;un tableau de bord, [#3212](https://github.com/hyperdxio/hyperdx/pull/3212) Conserver les lignes des tuiles de tableau à l&#39;écran pendant le rafraîchissement d&#39;un tableau de bord, [#3221](https://github.com/hyperdxio/hyperdx/pull/3221) Conserver les tuiles de carte de chaleur à l&#39;écran pendant le rafraîchissement d&#39;un tableau de bord, [#3229](https://github.com/hyperdxio/hyperdx/pull/3229) Faire pulser les graphiques list-bar et histogrammes pendant leur rafraîchissement, [#3224](https://github.com/hyperdxio/hyperdx/pull/3224) Conserver les tuiles de recherche et de motifs à l&#39;écran pendant le rafraîchissement d&#39;un tableau de bord (ouverte), [#3228](https://github.com/hyperdxio/hyperdx/pull/3228) Conserver les tableaux du tableau de bord Kubernetes à l&#39;écran pendant le rafraîchissement de la page (ouverte), [#3219](https://github.com/hyperdxio/hyperdx/pull/3219) Activer le live tail pour 3h et 6h, renommer le commutateur, ajouter une infobulle pour les préréglages désactivés
+
+## Modèles de tickets et le processus Needs Feedback {#issue-templates-and-the-needs-feedback-flow}
+
+*Démonstration par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=118" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ce changement concerne le dépôt plutôt que le produit. Auparavant, il était possible d&#39;ouvrir un ticket dans le dépôt HyperDX avec un corps de texte libre. Les nouveaux tickets reposent désormais sur un modèle de rapport de bogue ou de demande de fonctionnalité, et les tickets vierges sont désactivés. Nous pourrons ajouter d&#39;autres modèles au besoin.
+
+Le modèle de rapport de bogue demande d&#39;emblée les informations de débogage. L&#39;application dispose déjà d&#39;une action **Help → Copy debug info** qui copie les versions du frontend et du backend, le mode de déploiement, le navigateur et l&#39;ID de session, en retirant les clés API et les paramètres de requête. Coller ces informations dans le ticket devrait épargner une série d&#39;allers-retours. Pour les tickets concernant le collecteur et la CLI, ce champ est renseigné avec `N/A`.
+
+Les nouveaux tickets reçoivent également automatiquement l&#39;étiquette `Needs Feedback`. Cela signifie que le ticket est encore en discussion et n&#39;est pas prêt pour une PR. Une fois la portée validée, un mainteneur remplace l&#39;étiquette par `Accepting PR`, et le ticket peut alors être pris en charge par un contributeur.
+
+Ce processus est documenté dans `CONTRIBUTING.md`. Il s&#39;agit pour l&#39;instant d&#39;une simple convention, sans aucun mécanisme pour l&#39;imposer côté PR. L&#39;objectif est d&#39;éviter que des contributeurs consacrent du temps à des correctifs avant que nous nous soyons mis d&#39;accord sur le ticket et l&#39;approche. Nous l&#39;ajusterons probablement à l&#39;usage.
+
+**PR associées :** [#3239](https://github.com/hyperdxio/hyperdx/pull/3239) Add debug-info ask and Needs Feedback issue flow
+
+## Plusieurs expressions PromQL sur un même graphique {#multiple-promql-expressions-on-one-chart}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=191" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Jusqu&#39;à présent, PromQL n&#39;était pris en charge que dans les graphiques de séries temporelles, à raison d&#39;une seule expression par tuile. Vous pouvez désormais ajouter plusieurs expressions PromQL à un même graphique de séries temporelles, chacune avec son propre alias. Dans la démonstration, nous nous en servons pour afficher ensemble les latences p50, p95 et p99.
+
+L&#39;aperçu de la requête, sous l&#39;éditeur, affiche désormais le PromQL généré pour chaque expression, variables substituées. Auparavant, seule la première expression y figurait. Vous pouvez ainsi vérifier ce que donne chaque requête avant d&#39;enregistrer.
+
+La première PR de la liste correspond à la refactorisation qui a rendu cette évolution possible. Elle extrait l&#39;éditeur PromQL et les contrôles de séries de l&#39;éditeur de graphiques dans des composants partagés, afin de pouvoir les réutiliser pour chaque expression.
+
+**PR associées :** [#3145](https://github.com/hyperdxio/hyperdx/pull/3145) Extraction des fonctions PromQL, de PromqlExpressionEditor et de ChartSeriesControls, [#3146](https://github.com/hyperdxio/hyperdx/pull/3146) Tracé de plusieurs expressions PromQL sur un même graphique
+
+## Graphiques numériques, en secteurs et tableaux PromQL {#promql-number-pie-and-table-charts}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=241" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+*La qualité audio de cet extrait est médiocre, veuillez nous en excuser. La description ci-dessous reprend tout ce qui a été présenté.*
+
+PromQL fonctionne désormais avec les graphiques numériques, en secteurs, en barres et les tableaux, en plus des séries temporelles. Les graphiques numériques sont ceux qui évoluent le plus. Auparavant, chaque requête PromQL était une requête de plage, évaluée à chaque pas sur l&#39;intervalle de temps sélectionné. Le graphique affichait alors le premier résultat trié par heure et par nom de série. Vous pouvez désormais choisir entre une requête instantanée, évaluée une seule fois à la fin de la plage, et une requête de plage, à l&#39;image des tuiles stat de Grafana.
+
+Pour une requête de plage, vous choisissez également un réducteur : last, min, max, avg, sum ou count. Celui-ci s&#39;exécute côté client et réduit les échantillons de chaque série à une valeur unique. S&#39;il reste plus d&#39;une valeur, qu&#39;il s&#39;agisse de plusieurs séries ou d&#39;échantillons non réduits, le graphique affiche un avertissement indiquant qu&#39;une tuile Number n&#39;affiche qu&#39;une seule valeur et que l&#39;expression doit agréger les données.
+
+Les graphiques numériques prennent aussi en charge les graphiques sparkline pour les requêtes de plage, à partir des mêmes résultats que ceux récupérés pour le nombre. Ces requêtes suivent désormais l&#39;intervalle de temps et la granularité du tableau de bord, comme les requêtes de séries temporelles, ce qui permet au nombre et au graphique sparkline de s&#39;appuyer sur les mêmes résultats.
+
+Les graphiques en secteurs et en barres proposent les mêmes options (requête instantanée ou de plage, avec réducteur) et prennent en charge le modèle de légende. Les réducteurs fonctionnent également avec les requêtes instantanées qui renvoient plusieurs échantillons par série. Par exemple, `up[5m]` renvoie une matrice, réduite dans le temps en un vecteur instantané avant d&#39;être affichée sous forme de secteurs ou de barres. La même réduction s&#39;applique aux graphiques numériques.
+
+Les tableaux affichent les résultats bruts de la requête. Chaque échantillon correspond à une ligne, avec une colonne par étiquette. `__name__` et Timestamp apparaissent en premières colonnes lorsqu&#39;ils sont présents. Pour les requêtes de plage, on obtient donc une ligne par échantillon et par pas, timestamp inclus. La mise en forme des nombres est prise en charge pour tous ces types de graphiques.
+
+**PR associées :** [#3169](https://github.com/hyperdxio/hyperdx/pull/3169) Prise en charge des tuiles Number PromQL instantanées et basées sur une plage, [#3178](https://github.com/hyperdxio/hyperdx/pull/3178) Prise en charge des graphiques sparkline sur les graphiques numériques PromQL, [#3238](https://github.com/hyperdxio/hyperdx/pull/3238) Prise en charge des tableaux PromQL, [#3253](https://github.com/hyperdxio/hyperdx/pull/3253) Prise en charge des graphiques en secteurs et en barres PromQL
+
+## Variables de tableau de bord dans les tuiles Markdown {#dashboard-variables-in-markdown-tiles}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=345" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Jusqu&#39;à présent, les variables de tableau de bord fonctionnaient dans les requêtes, mais pas dans les tuiles Markdown. Vous pouvez désormais y faire référence en Markdown, y compris dans les liens. Lorsque vous modifiez une valeur dans le sélecteur de variables, le texte et la cible du lien sont tous deux mis à jour. Dans la démonstration, nous nous en servons pour transmettre la valeur sélectionnée à une autre page.
+
+Par défaut, les valeurs utilisent le nouveau format `markdown`, qui échappe les caractères Markdown. Les tuiles Markdown bloquent en outre les scripts et le HTML brut. Si vous avez besoin d&#39;une valeur non échappée, par exemple dans un bloc de code, vous pouvez utiliser un autre format, comme `${var:csv}`.
+
+Les références de variables invalides sont signalées dans l&#39;éditeur, et la validation des tableaux de bord ainsi que les prompts du MCP ont été mis à jour en conséquence.
+
+**PR associées :** [#3246](https://github.com/hyperdxio/hyperdx/pull/3246) Substitute variables in markdown tiles
+
+## Macros PromQL {#promql-macros}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=376" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+PromQL prend désormais en charge trois macros compatibles avec Grafana, basées sur l&#39;intervalle de temps et la granularité du tableau de bord. `$__interval` renvoie la granularité du graphique ou du tableau de bord, et `$__range` la durée de la plage de dates du graphique, en secondes. `$__rate_interval` vaut `max(4 × 15s, $__interval)`, ce qui offre aux calculs de taux une fenêtre couvrant plusieurs intervalles de collecte. Pour l&#39;instant, on suppose un intervalle de collecte de 15 secondes.
+
+Les macros sont substituées en même temps que les variables : vous pouvez donc voir leurs valeurs résolues dans l&#39;aperçu du PromQL généré. Elles sont également proposées par la complétion automatique de l&#39;éditeur. En interne, cette fonctionnalité réutilise l&#39;essentiel du mécanisme existant de macros SQL.
+
+**PR associées :** [#3244](https://github.com/hyperdxio/hyperdx/pull/3244) Support PromQL macros
+
+## Sélectionner des lignes sur la page de recherche {#selecting-rows-on-the-search-page}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=398" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Il s&#39;agit d&#39;une petite fonctionnalité née d&#39;une demande d&#39;utilisateur. Vous pouvez désormais sélectionner des lignes individuellement dans les résultats de recherche à l&#39;aide d&#39;une case à cocher, ou sélectionner une plage avec Maj-clic. Une fois des lignes sélectionnées, vous disposez des actions **Download CSV**, **Copy CSV** et **Copy JSON**, ainsi que d&#39;une option pour effacer la sélection. Ces actions incluent toutes les colonnes actuellement affichées dans la table, ce qui vous permet d&#39;extraire quelques lignes de ClickStack sans exporter tout l&#39;ensemble de résultats.
+
+Les cases à cocher apparaissent au survol, une amélioration apportée ensuite par [@MikeShi42](https://github.com/MikeShi42). Masquées par défaut, elles apparaissent en fondu lorsque vous survolez une ligne. Elles s&#39;affichent également lors du focus clavier, pour éviter d&#39;atteindre avec Tab un contrôle invisible. Dès qu&#39;une ligne est sélectionnée, toutes les cases à cocher restent visibles afin que vous voyiez où effectuer un Maj-clic. Sur les appareils tactiles, elles sont toujours visibles.
+
+La colonne des cases à cocher conserve sa largeur au survol, ce qui évite que la table ne se décale. Sa largeur a également été réduite de 24 px à 18 px, et la case à cocher dispose d&#39;une infobulle expliquant comment sélectionner une plage avec Maj-clic.
+
+**PR associées :** [#3140](https://github.com/hyperdxio/hyperdx/pull/3140) Support search row multi-select download and copy, [#3164](https://github.com/hyperdxio/hyperdx/pull/3164) Reveal search row-selection checkboxes on hover
+
+## Colonnes matérialisées et alias dans le panneau de détails de ligne {#materialized-and-alias-columns-in-the-row-details-panel}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=435" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Il s&#39;agit d&#39;une contribution open source de [@BilalAtique](https://github.com/BilalAtique), à la suite d&#39;un ticket demandant l&#39;affichage des colonnes calculées dans le panneau de détails de ligne. Le panneau récupère chaque ligne avec `SELECT *`, ce qui exclut les colonnes `MATERIALIZED` et `ALIAS`, sauf si `asterisk_include_materialized_columns` et `asterisk_include_alias_columns` sont activés. Par conséquent, les colonnes matérialisées que vous aviez ajoutées à votre table de logs, de même que les alias standard `*AttributeItems` de `otel_logs`, n&#39;apparaissaient pas.
+
+Une option **Show materialized and alias columns** est désormais disponible dans le menu en forme d&#39;engrenage de la vue Column Values. Désactivée par défaut, elle est enregistrée dans le stockage local avec les autres préférences du panneau. Lorsqu&#39;elle est activée, les deux paramètres sont ajoutés aux requêtes de ligne qui utilisent `*`. Les sources dotées d&#39;une Known Columns List ne sont pas concernées.
+
+Les lookups de ligne appliquent par ailleurs désormais les paramètres de requête propres à la source, qui ont préséance sur l&#39;interrupteur. Si les deux paramètres sont activés sur la source, les colonnes s&#39;affichent même lorsque l&#39;option est désactivée. À l&#39;inverse, si la source définit `asterisk_include_alias_columns = 0`, les colonnes alias restent masquées même lorsque l&#39;option est activée.
+
+Quelques points méritent votre attention. La requête de ligne échoue si l&#39;utilisateur de la connexion n&#39;est pas autorisé à modifier ces paramètres, par exemple avec `readonly = 1` ou un settings profile qui les marque comme `CONST`. Elle échoue également si un alias ne peut pas être évalué pour la ligne concernée. Le panneau affiche alors l&#39;erreur ClickHouse, ainsi qu&#39;une action **Hide materialized and alias columns** permettant de désactiver l&#39;option.
+
+Les colonnes `__hdx_materialized_*` sont elles aussi récupérées, mais restent masquées dans la visionneuse. Cette modification n&#39;inclut pas d&#39;interrupteur permettant de les afficher.
+
+**PR associées :** [#3234](https://github.com/hyperdxio/hyperdx/pull/3234) Application des paramètres de requête de la source au lookup de ligne du panneau latéral, [#3231](https://github.com/hyperdxio/hyperdx/pull/3231) Ajout d&#39;une option pour afficher les colonnes MATERIALIZED et ALIAS dans le panneau de détails de ligne
+
+## Colonnes d&#39;attributs Map étiquetées par leur clé {#map-attribute-columns-labelled-by-their-key}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/udRMI5JcvLw?start=495" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Voici une autre contribution open source, cette fois de [@DevShoaib78](https://github.com/DevShoaib78). Jusqu&#39;à présent, lorsqu&#39;on ajoutait un attribut de map tel que `host.arch` comme colonne depuis la barre latérale des filtres ou le panneau latéral d&#39;une ligne, celle-ci recevait dans le tableau des résultats le nom dérivé par ClickHouse, par exemple `arrayElement(ResourceAttributes, 'host.arch')`.
+
+Ces deux actions reposent désormais sur la même logique dans la page de recherche : l&#39;expression est ajoutée au `SELECT` avec un alias, `ResourceAttributes['host.arch'] AS "host.arch"`. L&#39;en-tête de colonne affiche alors `host.arch`. Vous pouvez consulter et modifier l&#39;alias dans le champ `SELECT`. Le SQL que vous saisissez manuellement n&#39;est jamais réécrit : les recherches enregistrées, alertes et tableaux de bord existants restent donc inchangés.
+
+L&#39;alias est ignoré lorsqu&#39;il risquerait de modifier le sens de la requête. C&#39;est le cas des clés qui correspondent à une colonne de la table, car ClickHouse résout les alias avant les colonnes dans `WHERE` et `ORDER BY`, ainsi que des noms déjà utilisés dans le `SELECT`, par exemple une même clé provenant de deux maps différentes. Il est également ignoré si la clé contient `"` ou `\`.
+
+Le panneau latéral, la barre latérale des filtres et les groupes de filtres imbriqués reconnaissent désormais une expression, avec ou sans son alias, lorsqu&#39;ils vérifient si une colonne est déjà affichée. Ils ne proposent donc plus d&#39;ajouter une colonne qui figure déjà dans le tableau.
+
+**PR associées :** [#3163](https://github.com/hyperdxio/hyperdx/pull/3163) Label Map attribute columns by their key instead of arrayElement(...)

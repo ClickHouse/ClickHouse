@@ -203,7 +203,7 @@ static Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _, _2] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -525,7 +525,9 @@ static DataFileEntryLineage getEntryLineageForRewrite(const ParsedManifestFileEn
 
 static bool writeConsolidatedManifestFile(
     int metadata_version,
+    const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
+    const String & base_catalog_metadata_location,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
@@ -819,10 +821,10 @@ static bool writeConsolidatedManifestFile(
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
         path_resolver.getTableLocation(),
-        false,
+        /* use_uuid_in_metadata */ catalog != nullptr,
         compression_method,
         write_format);
-    generator.setVersion(metadata_version + 1);
+    generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
@@ -1042,9 +1044,11 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot.snapshot, metadata_object))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(path_resolver, generated_metadata_info, object_storage);
                     cleanup();
                     return false;
                 }
@@ -1509,7 +1513,7 @@ static bool writeMetadataFiles(
 
 static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
-    auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    auto metadata_files = listFilesNonRecursive(*object_storage, table_path, "metadata", "");
     std::erase_if(metadata_files, [](const String & file)
     {
         return file.ends_with("metadata/version-hint.text");
@@ -1550,7 +1554,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        const auto [metadata_version, metadata_file_path, _, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
             catalog,
             table_id.getTableName(),
@@ -1595,7 +1599,9 @@ void compactIcebergManifests(
 
         if (writeConsolidatedManifestFile(
                 metadata_version,
+                metadata_file_path,
                 metadata_object,
+                base_catalog_metadata_location,
                 persistent_table_components,
                 object_storage_,
                 context_,

@@ -457,6 +457,9 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
     "${CMAKE_SOURCE_DIR}/programs/server/play.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/uplot.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/leaflet.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/leaflet.css;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
@@ -849,6 +852,10 @@ if (TARGET ch_contrib::capnp)
     target_link_libraries(dbms PRIVATE ch_contrib::capnp)
 endif ()
 
+if (TARGET ch_contrib::parquet_format)
+    target_link_libraries(dbms PRIVATE ch_contrib::parquet_format)
+endif ()
+
 if (TARGET ch_contrib::parquet)
     target_link_libraries(dbms PRIVATE ch_contrib::parquet)
 endif ()
@@ -1140,6 +1147,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::hdfs)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::hdfs)
+    endif()
+
+    if (TARGET ch_contrib::parquet_format)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet_format)
     endif()
 
     if (TARGET ch_contrib::parquet)

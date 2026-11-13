@@ -1,12 +1,21 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 
+#include <Common/Exception.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/format.h>
+
+#include <filesystem>
 
 #if USE_AVRO
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::string toIcebergMetadataCompressionExtension(CompressionMethod method)
 {
@@ -37,6 +46,7 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
     table_location = other.table_location;
     data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    base_metadata_file_name = other.base_metadata_file_name;
     compression_method = other.compression_method;
     format_name = other.format_name;
 }
@@ -50,10 +60,17 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     table_location = other.table_location;
     data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    base_metadata_file_name = other.base_metadata_file_name;
     compression_method = other.compression_method;
     format_name = other.format_name;
 
     return *this;
+}
+
+void FileNamesGenerator::setBaseMetadataFile(Int32 base_version, const String & base_metadata_path)
+{
+    initial_version = base_version + 1;
+    base_metadata_file_name = std::filesystem::path(base_metadata_path).filename();
 }
 
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateDataFileName()
@@ -98,10 +115,14 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
     }
     else
     {
-        auto uuid_str = uuid_generator.createRandom().toString();
+        if (base_metadata_file_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The base metadata file is not set for a metadata file name with a UUID");
+
+        /// Not random: writers that commit on top of the same base must collide on the name, see the class comment.
+        auto uuid_str = uuid_generator.createFromName(Poco::UUID::oid(), fmt::format("{}/{}", base_metadata_file_name, used_version)).toString();
         return GeneratedMetadataFileWithInfo{
             .path = Iceberg::IcebergPathFromMetadata(
-                fmt::format("{}metadata/v{}-{}{}.metadata.json", table_location, used_version, uuid_str, compression_suffix)),
+                fmt::format("{}metadata/{:05d}-{}{}.metadata.json", table_location, used_version, uuid_str, compression_suffix)),
             .version = used_version,
             .compression_method = compression_method};
     }
