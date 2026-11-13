@@ -211,6 +211,7 @@ namespace Setting
     extern const SettingsLogQueriesType log_queries_min_type;
     extern const SettingsFloat log_queries_probability;
     extern const SettingsBool log_query_settings;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_expanded_ast_elements;
@@ -3040,7 +3041,15 @@ static BlockIO executeQueryImpl(
             /// Not on a bare `SET`, which only changes the session and must be able to clear a conflict;
             /// not on secondary queries, which carry the initiator's already-resolved settings.
             if (!out_ast->as<ASTSetQuery>() && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+            {
+                const bool make_distributed_plan_was_set = settings[Setting::make_distributed_plan].changed;
+
                 applyDistributedPlanSettings(context);
+
+                /// The query tree builder re-applies this clause, and the reset would undo the inferred value.
+                if (!make_distributed_plan_was_set && settings[Setting::make_distributed_plan])
+                    InterpreterSetQuery::removeSettingDefaultFromQuery(out_ast, "make_distributed_plan");
+            }
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.

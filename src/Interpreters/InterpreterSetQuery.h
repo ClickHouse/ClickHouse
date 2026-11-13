@@ -30,6 +30,10 @@ public:
     /// To apply SETTINGS clauses from query as early as possible
     static void applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_);
 
+    /// Drops `setting_name` from the `default_settings` (the `= DEFAULT` names) of every clause
+    /// `applySettingsFromQuery` would visit, without touching anything it applies.
+    static void removeSettingDefaultFromQuery(const ASTPtr & ast, const String & setting_name);
+
 private:
     ASTPtr query_ptr;
 };
