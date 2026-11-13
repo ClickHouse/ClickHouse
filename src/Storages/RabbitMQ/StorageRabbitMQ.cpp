@@ -45,6 +45,7 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -1623,6 +1624,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
+
+        /// MATERIALIZED columns are not part of the sink header, so every INSERT would fail.
+        /// Check only on CREATE so that existing tables still attach.
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.columns.getMaterialized().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ table engine doesn't support MATERIALIZED columns");
 
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
