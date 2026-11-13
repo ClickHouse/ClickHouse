@@ -4966,7 +4966,9 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
-    std::vector<AggregatedChunks> res(max_threads);
+    /// The chunks by bucket number: the threads take the buckets in turn, but the result must be in the order of buckets,
+    /// as the memory-efficient merging (`GroupingAggregatedTransform`) of a remote result relies on it.
+    std::vector<std::optional<AggregatedChunk>> res(Method::Data::NUM_BUCKETS);
 
     auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](size_t thread_id)
     {
@@ -4982,7 +4984,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
+            res[bucket].emplace(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
         }
     };
 
@@ -5008,8 +5010,9 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     runner.waitForAllToFinishAndRethrowFirstError();
 
     AggregatedChunks chunks;
-    for (auto & chunks_list : res)
-        chunks.splice(chunks.end(), std::move(chunks_list));
+    for (auto & chunk : res)
+        if (chunk)
+            chunks.push_back(std::move(*chunk));
     return chunks;
 }
 
