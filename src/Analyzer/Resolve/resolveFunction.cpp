@@ -1705,8 +1705,10 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                     auto within_exact_range = buildResolvedFunction(
                         "less", {std::move(raw_magnitude), std::make_shared<ConstantNode>(Field{UInt64{1} << 51})}, context);
                     auto fast_equal = buildResolvedFunction("equals", {decimal_argument, numeric_argument}, context);
-                    result = buildResolvedFunction(
-                        "if", {std::move(within_exact_range), std::move(fast_equal), std::move(result)}, context);
+                    auto fast_match = buildResolvedFunction("and", {within_exact_range, std::move(fast_equal)}, context);
+                    auto precise_match = buildResolvedFunction(
+                        "and", {buildResolvedFunction("not", {std::move(within_exact_range)}, context), std::move(result)}, context);
+                    result = buildResolvedFunction("or", {std::move(fast_match), std::move(precise_match)}, context);
                 }
             }
         }
