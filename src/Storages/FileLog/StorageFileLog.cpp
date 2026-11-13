@@ -209,7 +209,7 @@ StorageFileLog::StorageFileLog(
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+        if (!isFreshDefinition(mode))
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
@@ -221,7 +221,7 @@ StorageFileLog::StorageFileLog(
     bool created_metadata_directory = false;
     try
     {
-        if (mode < LoadingStrictnessLevel::ATTACH)
+        if (!expectsExistingState(mode))
         {
             if (disk->existsDirectory(metadata_base_path))
             {
@@ -234,7 +234,7 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
-        loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
+        loadMetaFiles(expectsExistingState(mode));
         loadFiles();
 
         chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
@@ -253,7 +253,7 @@ StorageFileLog::StorageFileLog(
     }
     catch (...)
     {
-        if (mode <= LoadingStrictnessLevel::ATTACH)
+        if (!isLoadingFromExistingMetadata(mode))
         {
             if (created_metadata_directory)
                 disk->removeRecursive(metadata_base_path);

@@ -6,22 +6,43 @@
 namespace DB
 {
 
-/// Strictness mode for loading a table or database
+/// Strictness mode for loading a table or database.
+/// Not ordered: use the predicates below or compare with `==`.
 enum class LoadingStrictnessLevel : uint8_t
 {
-    /// Do all possible sanity checks
+    /// Fresh definition, no existing state: do all sanity checks
     CREATE = 0,
-    /// Skip some sanity checks (for internal queries in DatabaseReplicated; for RESTORE)
+    /// Replay of a definition validated elsewhere (internal queries in DatabaseReplicated; RESTORE)
     SECONDARY_CREATE = 1,
-    /// Expect existing paths on FS and in ZK for ATTACH query
-    ATTACH = 2,
+    /// ATTACH stating the whole definition: user input, existing state expected
+    ATTACH_FULL_DEFINITION = 2,
+    /// Replay of a stored definition, existing state expected
+    ATTACH = 3,
     /// We ignore some error on server startup
-    FORCE_ATTACH = 3,
+    FORCE_ATTACH = 4,
     /// Skip all sanity checks (if force_restore_data flag exists)
-    FORCE_RESTORE = 4,
+    FORCE_RESTORE = 5,
 };
 
-LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary);
+bool operator<(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
+bool operator<=(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
+bool operator>(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
+bool operator>=(LoadingStrictnessLevel, LoadingStrictnessLevel) = delete;
+
+LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary, bool full_definition);
+
+/// The definition is user input now, so it gets every check `CREATE` runs.
+inline bool isFreshDefinition(LoadingStrictnessLevel level)
+{
+    return level == LoadingStrictnessLevel::CREATE || level == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION;
+}
+
+/// Data, paths and ZooKeeper nodes of the object are expected to exist already.
+inline bool expectsExistingState(LoadingStrictnessLevel level)
+{
+    return level == LoadingStrictnessLevel::ATTACH_FULL_DEFINITION || level == LoadingStrictnessLevel::ATTACH
+        || level == LoadingStrictnessLevel::FORCE_ATTACH || level == LoadingStrictnessLevel::FORCE_RESTORE;
+}
 
 /// Returns true when a table or database is being loaded from previously-validated metadata
 /// (server startup, force-restore, or UNDROP TABLE) rather than from a fresh user-supplied
@@ -30,15 +51,6 @@ LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach,
 inline bool isLoadingFromExistingMetadata(LoadingStrictnessLevel level)
 {
     return level == LoadingStrictnessLevel::FORCE_ATTACH || level == LoadingStrictnessLevel::FORCE_RESTORE;
-}
-
-/// Whether the definition comes from the user now rather than being replayed. A full-definition
-/// `ATTACH TABLE t UUID '...' (...) ENGINE = ...` is user input and runs under `ATTACH`; a definition
-/// stored on this server is replayed under `attach_short_syntax`, `SECONDARY_CREATE` or above.
-inline bool isFreshTableDefinition(LoadingStrictnessLevel level, bool attach_short_syntax)
-{
-    return level <= LoadingStrictnessLevel::CREATE
-        || (level == LoadingStrictnessLevel::ATTACH && !attach_short_syntax);
 }
 
 }

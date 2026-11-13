@@ -906,7 +906,7 @@ MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const In
     return std::make_shared<MergeTreeIndexSet>(std::move(metadata_snapshot), index, max_rows);
 }
 
-void setIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
+void setIndexValidator(const IndexDescription & index, bool /*is_stored_definition*/, const MergeTreeSettings & /*settings*/)
 {
     if (!index.arguments || index.arguments->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");

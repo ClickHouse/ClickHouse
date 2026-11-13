@@ -334,7 +334,7 @@ StorageStripeLog::StorageStripeLog(
         file_checker.setEmpty(index_file_path);
     }
 
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!expectsExistingState(mode))
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);

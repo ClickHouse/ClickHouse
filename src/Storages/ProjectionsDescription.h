@@ -101,9 +101,7 @@ struct ProjectionDescription
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
         const ContextPtr & query_context,
-        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH,
-        /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
-        bool attach_short_syntax = true);
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,

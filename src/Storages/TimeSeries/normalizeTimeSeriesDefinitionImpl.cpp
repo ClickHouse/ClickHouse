@@ -736,8 +736,11 @@ namespace
         {
             if (new_settings)
             {
-                if (const auto * written_value = new_settings->changes.tryGet(name))
-                    return written_value;
+                /// The last occurrence of a repeated setting is the one the table applies.
+                const auto & changes = new_settings->changes;
+                auto written = std::ranges::find_if(changes.rbegin(), changes.rend(), [&](const SettingChange & change) { return change.name == name; });
+                if (written != changes.rend())
+                    return &written->value;
                 if (std::ranges::find(new_settings->default_settings, name) != new_settings->default_settings.end())
                     return nullptr;
             }
@@ -2539,8 +2542,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     bool is_new_table = params.isNewTable();
 
     /// Whether the create query may come from an older version, so it can be converted to the current form.
-    /// The initial CREATE query is excluded: it must be written in the current form already.
-    bool can_convert = (params.mode != LoadingStrictnessLevel::CREATE) || params.is_restore_from_backup;
+    /// A fresh definition is excluded: it must be written in the current form already.
+    bool can_convert = !isFreshDefinition(params.mode) || params.is_restore_from_backup;
 
     /// Convert the create_query if it was created before the `version` setting was introduced.
     if (can_convert && !hasExplicitTimeSeriesVersion(create_query))

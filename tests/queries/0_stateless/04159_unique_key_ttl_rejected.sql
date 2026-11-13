@@ -5,8 +5,8 @@
 -- until merge-side bitmap reconciliation lands), so it cannot be honored. Every TTL
 -- entry path is rejected with SUPPORT_IS_DISABLED: CREATE-with-TTL (table or column),
 -- ALTER MODIFY TTL, per-column TTL via ALTER ADD/MODIFY COLUMN, and ALTER MATERIALIZE
--- TTL. REMOVE TTL stays allowed and ATTACH is exempt (loads a pre-existing UK+TTL
--- table); non-UNIQUE-KEY tables are unaffected. All keys distinct (dedup is a later PR).
+-- TTL, also by a full-definition ATTACH. Non-UNIQUE-KEY tables are unaffected. All keys
+-- distinct (dedup is a later PR).
 
 SET enable_unique_key = 1;
 
@@ -44,24 +44,14 @@ ALTER TABLE uk_ttl MODIFY COLUMN w String DEFAULT 'w';
 
 DROP TABLE uk_ttl;
 
--- ATTACH is exempt: a pre-existing UNIQUE KEY + TTL table still loads (the guard is
--- CREATE-only). Fixed UUID for the Atomic database engine (cf. 04046).
-DROP TABLE IF EXISTS uk_ttl_attach SYNC;
+-- A full-definition ATTACH is rejected like CREATE. A stored UNIQUE KEY + TTL table still loads,
+-- see `unique_key_ttl_stored_definition`. Fixed UUID for the Atomic database engine (cf. 04046).
 ATTACH TABLE uk_ttl_attach UUID '00000000-0000-0000-0000-000000004159'
 (id UInt64, d Date, v String)
 ENGINE = MergeTree
 UNIQUE KEY (id)
 ORDER BY (id)
-TTL d + INTERVAL 1 DAY;
-
--- MATERIALIZE TTL on the loaded UK+TTL table is rejected (it rewrites parts outside the
--- UNIQUE KEY dedup path, and TTL is unsupported while merges are disabled).
-ALTER TABLE uk_ttl_attach MATERIALIZE TTL; -- { serverError SUPPORT_IS_DISABLED }
-
--- REMOVE TTL is allowed — a distinct AlterCommand type that only clears the expression.
-ALTER TABLE uk_ttl_attach REMOVE TTL;
-
-DROP TABLE uk_ttl_attach SYNC;
+TTL d + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
 
 -- Non-UNIQUE-KEY table with TTL is unaffected by the guard.
 DROP TABLE IF EXISTS plain_ttl;

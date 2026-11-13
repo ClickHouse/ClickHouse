@@ -3526,7 +3526,7 @@ void registerStorageURL(StorageFactory & factory)
                     is_replayed_definition);
             }
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            if (isFreshDefinition(args.mode))
                 checkExperimentalURLWildcardFromIndexPages(context);
 
             /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`

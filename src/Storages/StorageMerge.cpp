@@ -3308,8 +3308,7 @@ void registerStorageMerge(StorageFactory & factory)
         /// replicated-database DDL replay, backup `RESTORE`) stay loadable, so a table created before this check
         /// existed can still be restored or materialized on a new replica. Reading from such a table is denied
         /// anyway, so unlike `StorageDistributed` there is nothing a restoring user could reach through it.
-        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        bool fresh_user_definition = isFreshDefinition(args.mode);
         if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
             && fresh_user_definition)
             throw Exception(

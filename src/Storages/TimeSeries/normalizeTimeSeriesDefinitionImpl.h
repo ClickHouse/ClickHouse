@@ -18,14 +18,15 @@ struct Settings;
 /// (on ATTACH) doesn't use it, so the corresponding fields can be left empty then.
 struct NormalizeTimeSeriesDefinitionParams
 {
-    /// How the table is loaded: `CREATE` or `SECONDARY_CREATE` for a new table, `ATTACH` or stricter for an existing one.
+    /// How the table is loaded: `CREATE` or `SECONDARY_CREATE` for a new table, an `ATTACH` level for an existing one.
     LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
 
     /// Whether the table is restored from a backup: such a table is an existing one whatever `mode` is.
     bool is_restore_from_backup = false;
 
     /// Whether the query creates a new table. It's false on ATTACH and when restoring from a backup.
-    bool isNewTable() const { return (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup; }
+    /// A full-definition ATTACH is accepted only without inner tables, so it is normalized as a new table.
+    bool isNewTable() const { return (isFreshDefinition(mode) || !expectsExistingState(mode)) && !is_restore_from_backup; }
 
     /// The CREATE query of the table from the clause `AS <other_table>`, as it is stored (not normalized).
     /// Required for a new table with that clause.

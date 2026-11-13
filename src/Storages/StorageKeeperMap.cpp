@@ -1963,7 +1963,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
 #endif
 
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, override_metadata);
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, override_metadata); // STYLE_CHECK_ALLOW_ATTACH_FLAG
 }
 
 }

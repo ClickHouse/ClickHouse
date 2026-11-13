@@ -798,7 +798,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         if (sources.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overlay database requires at least one source database");
 
-        if (args.mode <= LoadingStrictnessLevel::CREATE)
+        if (isFreshDefinition(args.mode))
             for (const auto & source : sources)
                 if (!tryGetOverlaySource(source))
                     throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(source));

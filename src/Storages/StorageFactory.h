@@ -45,6 +45,10 @@ public:
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
     using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
+    /// The grants that settings of a new table require of the user who creates it. They are checked before a distributed or
+    /// replicated `CREATE` is queued, because the hosts that run it may not have the user's grants.
+    using GetCreateAccessFn = AccessRightsElements(const SettingsChanges & changes);
+
     struct Arguments
     {
         const String & engine_name;
@@ -99,6 +103,7 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
+        GetCreateAccessFn * get_create_access_fn = nullptr;
 
         /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
         bool stores_data_on_disk = false;
@@ -148,6 +153,7 @@ public:
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
+        .get_create_access_fn = nullptr,
         .stores_data_on_disk = false,
         .supports_temporary = false,
     }, Documentation documentation = {});
@@ -191,11 +197,15 @@ public:
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
     AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// See `GetCreateAccessFn`. For the same engines as `getExportAccess`.
+    AccessRightsElements getCreateAccess(const ASTCreateQuery & create) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
     AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
+    AccessRightsElements collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const;
+
     Storages storages;
 };
 

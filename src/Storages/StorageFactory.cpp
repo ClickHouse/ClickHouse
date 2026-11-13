@@ -60,7 +60,7 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
+    return !isFreshDefinition(mode) || query.attach_short_syntax || isSecondaryDDLReplay(local_context)
         || local_context->isRecoveryFromStoredMetadata();
 }
 
@@ -408,14 +408,24 @@ void StorageFactory::checkTemporaryTableEngine(const String & storage_name, cons
 
 AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
 {
+    return collectAccess(create, &StorageFeatures::get_export_access_fn);
+}
+
+AccessRightsElements StorageFactory::getCreateAccess(const ASTCreateQuery & create) const
+{
+    return collectAccess(create, &StorageFeatures::get_create_access_fn);
+}
+
+AccessRightsElements StorageFactory::collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const
+{
     AccessRightsElements res;
     auto add = [&](const ASTStorage & storage)
     {
         if (!storage.engine || !storage.settings)
             return;
         auto it = storages.find(storage.engine->name);
-        if (it != storages.end() && it->second.features.get_export_access_fn)
-            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes));
+        if (it != storages.end() && it->second.features.*access_fn)
+            res.append_range((it->second.features.*access_fn)(storage.settings->changes));
     };
 
     if (create.storage)
@@ -441,9 +451,10 @@ AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsCh
 
 void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args)
 {
-    /// The condition matches the one in the interpreter (`!create.attach`), so it also covers `SECONDARY_CREATE`,
+    /// The condition matches the one in the interpreter, so it also covers `SECONDARY_CREATE`,
     /// which is used when other replicas of a `Replicated` database replay the query.
-    if (args.query.attach || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
+    if (!(isFreshDefinition(args.mode) || args.mode == LoadingStrictnessLevel::SECONDARY_CREATE)
+        || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
         return;
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);

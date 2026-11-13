@@ -572,7 +572,7 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 {
     auto db_disk = getDisk();
 
-    if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+    if (mode != LoadingStrictnessLevel::FORCE_RESTORE)
         return;
 
     if (!db_disk->isSymlinkSupported())
@@ -610,7 +610,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
         fmt::format("startup Atomic database {}", getDatabaseName()),
         [this, mode, db_disk](AsyncLoader &, const LoadJobPtr &)
         {
-            if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+            if (mode != LoadingStrictnessLevel::FORCE_RESTORE)
                 return;
             NameToPathMap table_names;
             {

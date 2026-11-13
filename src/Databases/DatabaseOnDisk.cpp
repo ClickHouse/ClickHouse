@@ -312,10 +312,10 @@ void DatabaseOnDisk::createTable(
         return;
     }
 
-    if (!create.attach)
+    if (!create.attach) // STYLE_CHECK_ALLOW_ATTACH_FLAG
         checkMetadataFilenameAvailability(table_name);
 
-    const bool metadata_exists = create.attach && db_disk->existsFileOrDirectory(table_metadata_path);
+    const bool metadata_exists = create.attach && db_disk->existsFileOrDirectory(table_metadata_path); // STYLE_CHECK_ALLOW_ATTACH_FLAG
     if (metadata_exists)
     {
         ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);

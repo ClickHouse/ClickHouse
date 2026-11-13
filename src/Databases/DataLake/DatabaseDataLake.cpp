@@ -2073,15 +2073,15 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
-            database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
+            database_settings.loadFromQuery(*database_engine_define, !isFreshDefinition(args.mode));
 
         const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
-        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// Validate `auth_header` on a fresh definition only (matches the `allow_experimental_database_*`
+        /// gates below, which also skip a stored one). An already-persisted database whose
         /// `auth_header` was accepted by an older version must still attach at startup, so a
         /// single misconfigured database cannot block the server from starting. The malformed
         /// header is then reported lazily on first use of the database.
-        if (!args.create_query.attach && !auth_header_str.empty())
+        if (isFreshDefinition(args.mode) && !auth_header_str.empty())
         {
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
@@ -2152,7 +2152,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
-                if (!args.create_query.attach
+                if (isFreshDefinition(args.mode)
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2160,7 +2160,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
-                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
+                if (isFreshDefinition(args.mode) && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
                 {
                     const bool has_credential = !database_settings[DatabaseDataLakeSetting::catalog_credential].value.empty();
                     const bool has_auth_header = !database_settings[DatabaseDataLakeSetting::auth_header].value.empty();
@@ -2191,7 +2191,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     }
                 }
 
-                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+                if (isFreshDefinition(args.mode) && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
                 {
                     /// Require exactly one auth method: a bearer token, a refresh token (needs a client id,
                     /// a secret only for confidential app registrations), or a client id + secret pair.
@@ -2248,7 +2248,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::GLUE:
             {
-                if (!args.create_query.attach
+                if (isFreshDefinition(args.mode)
                     && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2260,7 +2260,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::UNITY:
             {
-                if (!args.create_query.attach
+                if (isFreshDefinition(args.mode)
                     && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2272,7 +2272,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
             {
-                if (!args.create_query.attach
+                if (isFreshDefinition(args.mode)
                     && !args.context->getSettingsRef()[Setting::enable_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2284,7 +2284,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
             {
-                if (!args.create_query.attach
+                if (isFreshDefinition(args.mode)
                     && !args.context->getSettingsRef()[Setting::enable_database_paimon_rest_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2296,7 +2296,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
             {
-                if (!args.create_query.attach
+                if (isFreshDefinition(args.mode)
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2320,7 +2320,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         /// loader's attach (server startup) as a metadata load so a now-restricted catalog is left unavailable
         /// instead of aborting startup. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user `ATTACH DATABASE` stays fail-closed.
-        const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool is_loading_from_existing_metadata = args.is_metadata_replay && expectsExistingState(args.mode);
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -2335,7 +2335,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
             /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup);
+            /*is_existing_definition=*/expectsExistingState(args.mode) || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism

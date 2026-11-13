@@ -95,9 +95,7 @@ DROP TABLE events_dt64_04872;
 DROP TABLE keys_04872;
 
 -- A key expression must be deterministic, so this function is refused for one on every path,
--- including the attach path an upgraded server takes for a table an earlier version accepted.
--- `ATTACH TABLE` with an inline schema is the only shape reaching the storage constructor in
--- attach mode from a query, and only an Ordinary database parses it.
+-- including a full-definition `ATTACH TABLE` (which an Ordinary database accepts without a UUID).
 SET allow_deprecated_database_ordinary = 1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
@@ -109,13 +107,14 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_partition_key
     (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
     PARTITION BY runningConcurrency(s, e) ORDER BY a; -- { serverError BAD_ARGUMENTS }
 
--- Unlike a key, a secondary index is exempt on attach, so a table an earlier version created
--- still loads. The key here is deliberately deterministic, so only the index is under test.
+-- A secondary index in a new definition is refused as well. Unlike a key, it is exempt in a stored
+-- definition, so a table an earlier version created still loads (see the
+-- `05626_running_concurrency_index_stored_definition` test). The key here is deliberately
+-- deterministic, so only the index is under test.
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_index
     (a UInt64, s DateTime, e DateTime,
      INDEX i runningConcurrency(s, e) TYPE minmax GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY a;
-SELECT 'legacy index attaches', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.legacy_index;
+    ENGINE = MergeTree ORDER BY a; -- { serverError BAD_ARGUMENTS }
 
 -- A text index transform is validated on attach, unlike the index expression above, so a table
 -- an earlier version accepted does not come back. The transform is wrapped in `toString` because

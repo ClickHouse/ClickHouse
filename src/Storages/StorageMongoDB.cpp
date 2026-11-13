@@ -951,7 +951,7 @@ void registerStorageMongoDB(StorageFactory & factory)
         /// Allow loading tables with excessive path in host parameter created on older ClickHouse versions
         /// (that used the previous Poco-based MongoDB implementation which allowed it).
         /// TODO: we can remove it after ClickHouse 27.5, it should be enough time for users to migrate.
-        bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
+        bool allow_excessive_path_in_host = !isFreshDefinition(args.mode);
         return std::make_shared<StorageMongoDB>(
             args.table_id,
             getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),

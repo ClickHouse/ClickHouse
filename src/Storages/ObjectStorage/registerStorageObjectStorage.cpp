@@ -1773,7 +1773,7 @@ void registerStoragePaimon(StorageFactory & factory)
 {
     auto check_paimon_storage_engine_enabled = [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        if (isFreshDefinition(args.mode)
             && !args.getLocalContext()->getSettingsRef()[Setting::enable_paimon_storage_engine])
         {
             throw Exception(

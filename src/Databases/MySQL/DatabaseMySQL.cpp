@@ -777,7 +777,7 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
 
     const auto & create = create_query->as<ASTCreateQuery>();
 
-    if (!create->attach)
+    if (!create->attach) // STYLE_CHECK_ALLOW_ATTACH_FLAG
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "MySQL database engine does not support create table. "
                         "for tables that were detach or dropped before, you can use attach "
@@ -857,7 +857,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
 
         /// Same policy as the `PostgreSQL` database engine: skip only the server's own metadata replay.
-        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+        if (!(args.is_metadata_replay && expectsExistingState(args.mode)))
         {
             for (const auto & address : configuration.addresses)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
@@ -879,7 +879,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 configuration.database,
                 std::move(mysql_settings),
                 std::move(mysql_pool),
-                args.create_query.attach,
+                args.create_query.attach, // STYLE_CHECK_ALLOW_ATTACH_FLAG
                 args.uuid);
         }
         catch (...)

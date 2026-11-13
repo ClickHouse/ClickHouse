@@ -104,13 +104,9 @@ CREATE TABLE src_dv (a UInt16) ENGINE = MergeTree ORDER BY tuple();
 CREATE MATERIALIZED VIEW mv_dv (x String MATERIALIZED _table, a UInt16) ENGINE = MergeTree ORDER BY tuple() AS SELECT a FROM src_dv; -- { serverError UNKNOWN_IDENTIFIER }
 DROP TABLE src_dv;
 
--- A table created by an affected version may already have a default over a virtual column. Loading it
--- (full ATTACH) and an unrelated ALTER on it must still work; the stricter check applies only to new
--- and modified columns, not to the whole existing schema.
+-- A full-definition ATTACH is validated like CREATE (a stored definition still loads, see the `_stored` test).
 set allow_deprecated_database_ordinary = 1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy (c0 String MATERIALIZED _table, c1 UInt16) ENGINE = MergeTree ORDER BY tuple();
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy ADD COLUMN c2 UInt8 DEFAULT 0;
-SELECT 'legacy attach and unrelated alter ok';
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy (c0 String MATERIALIZED _table, c1 UInt16) ENGINE = MergeTree ORDER BY tuple(); -- { serverError UNKNOWN_IDENTIFIER }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

@@ -231,19 +231,35 @@ ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compres
 PARTITION BY key;
 " 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
 
-# The check is for new definitions only: metadata that already exists (`ATTACH`, server startup)
-# must still load, and the misspelled codec surfaces when the table is read, `count()` included.
-echo 'invalid compression method on ATTACH:'
+# A full-definition ATTACH is a new definition as well.
+echo 'invalid compression method on a full-definition ATTACH:'
 attach_db="${CLICKHOUSE_DATABASE}_attach"
 attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
-$CLICKHOUSE_CLIENT --send_logs_level=error -q "
+$CLICKHOUSE_CLIENT -q "
 CREATE DATABASE $attach_db ENGINE = Atomic;
 ATTACH TABLE $attach_db.bad_codec UUID '$attach_uuid' (id UInt64, key UInt64)
 ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'not_a_codec', partition_strategy = 'hive')
 PARTITION BY key;
+" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+
+# The check is for new definitions only: stored metadata (short `ATTACH`, server startup) must still
+# load, and the misspelled codec surfaces when the table is read, `count()` included. The table is stored
+# in a clickhouse-local data directory, its stored definition is rewritten to the misspelled codec, and the
+# next start loads it.
+echo 'invalid compression method on ATTACH:'
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05233_data" -q "
+CREATE TABLE bad_codec (id UInt64, key UInt64)
+ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip', partition_strategy = 'hive')
+PARTITION BY key;
 "
-$CLICKHOUSE_CLIENT -q "SELECT id, key FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
-$CLICKHOUSE_CLIENT --use_cache_for_count_from_files=1 -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+$CLICKHOUSE_LOCAL --param_metadata="${CLICKHOUSE_TMP:?}/05233_data/metadata/default/bad_codec.sql" --param_copy="${CLICKHOUSE_TMP:?}/05233_data.sql" -q "
+    SET engine_file_truncate_on_insert = 1;
+    INSERT INTO FUNCTION file({copy:String}, 'RawBLOB')
+        SELECT replaceOne(raw_blob, 'compression_method = \'gzip\'', 'compression_method = \'not_a_codec\'') FROM file({metadata:String}, 'RawBLOB');
+    INSERT INTO FUNCTION file({metadata:String}, 'RawBLOB') SELECT * FROM file({copy:String}, 'RawBLOB')"
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05233_data" -q "SELECT id, key FROM bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+$CLICKHOUSE_LOCAL --path="${CLICKHOUSE_TMP:?}/05233_data" --use_cache_for_count_from_files=1 -q "SELECT count() FROM bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+rm -rf "${CLICKHOUSE_TMP:?}/05233_data" "${CLICKHOUSE_TMP:?}/05233_data.sql"
 
 # `count()` can be answered from a per-file row-count cache without opening the file, and the cache
 # key does not include the compression method. A row count cached through autodetection (here: an

@@ -1030,7 +1030,7 @@ MergeTreeData::MergeTreeData(
 
     const auto settings = getSettings();
 
-    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
+    bool sanity_checks = isFreshDefinition(mode);
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
 
@@ -1046,7 +1046,7 @@ MergeTreeData::MergeTreeData(
         {
             throw;
         }
-        LOG_WARNING(log, "Table settings did not pass the sanity check: {}. Since this is not an initial CREATE (e.g. ATTACH or RESTORE), the table is loaded anyway. Fix the settings with ALTER TABLE ... MODIFY SETTING.", getCurrentExceptionMessage(false));
+        LOG_WARNING(log, "Table settings did not pass the sanity check: {}. Since this is a stored definition (e.g. ATTACH or RESTORE), the table is loaded anyway. Fix the settings with ALTER TABLE ... MODIFY SETTING.", getCurrentExceptionMessage(false));
     }
 
     if (!date_column_name.empty())
@@ -1463,7 +1463,7 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
-    bool attach,
+    bool is_stored_definition,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
@@ -1489,14 +1489,14 @@ void MergeTreeData::checkProperties(
     if (local_context)
         allow_minmax_index_for_json |= local_context->getSettingsRef()[Setting::allow_minmax_index_for_json];
 
-    if (!allow_suspicious_indices && !attach)
+    if (!allow_suspicious_indices && !is_stored_definition)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
 
     /// The sorting key, the partition id and the part minmax index are computed from the block before
     /// compression, so a lossy codec (e.g. SZ3) on a column backing either key leaves them describing values
     /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
-    if (!attach)
+    if (!is_stored_definition)
     {
         Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
         const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
@@ -1622,7 +1622,7 @@ void MergeTreeData::checkProperties(
         {
             try
             {
-                if (!allow_suspicious_indices && !attach)
+                if (!allow_suspicious_indices && !is_stored_definition)
                 {
                     const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
                     ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
@@ -1632,11 +1632,11 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
-                if (!attach && !allow_minmax_index_for_json)
+                if (!is_stored_definition && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+                MergeTreeIndexFactory::instance().validate(index, is_stored_definition, *getSettings());
 
-                if (!attach)
+                if (!is_stored_definition)
                 {
                     /// The create path and the projection recursion pass the same metadata object as both arguments,
                     /// so nothing can be inherited there.
@@ -1652,7 +1652,7 @@ void MergeTreeData::checkProperties(
                 /// An index the server generates from a setting is not the user's declaration, so it
                 /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
                 /// one it cannot validate instead of failing the statement.
-                if (!attach && !index.isImplicitlyCreated())
+                if (!is_stored_definition && !index.isImplicitlyCreated())
                 {
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {
@@ -1716,14 +1716,14 @@ void MergeTreeData::checkProperties(
     /// `checkAlterIsPossible`); ATTACH must still load existing tables. Mirrors the
     /// projection reject below.
     /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
-    if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !attach)
+    if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !is_stored_definition)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "TTL is not supported on tables with UNIQUE KEY");
 
     if (!new_metadata.projections.empty())
     {
         /// TODO(unique-key): support projections; ATTACH must still load.
-        if (new_metadata.hasUniqueKey() && !attach)
+        if (new_metadata.hasUniqueKey() && !is_stored_definition)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Projections are not supported on tables with UNIQUE KEY");
 
@@ -1744,7 +1744,7 @@ void MergeTreeData::checkProperties(
             checkProperties(
                 *projection.metadata,
                 *projection.metadata,
-                attach,
+                is_stored_definition,
                 is_aggregate,
                 true /* allow_nullable_key */,
                 local_context);
@@ -1811,7 +1811,7 @@ void MergeTreeData::checkProperties(
         /// gate under a pre-existing one.
         const auto create_gate_violated = [&](bool effective_enabled, bool live_enabled)
         {
-            if (attach || effective_enabled)
+            if (is_stored_definition || effective_enabled)
                 return false;
             return introduced_now || live_enabled;
         };
@@ -1904,7 +1904,7 @@ void MergeTreeData::checkProperties(
 
         /// Allow deprecated `minmax` only when loading an existing table (attach/startup) or when
         /// the column already carried `minmax` before an unrelated ALTER — never for a fresh introduction.
-        bool allow_deprecated_minmax = attach
+        bool allow_deprecated_minmax = is_stored_definition
             || (is_alter
                 && old_metadata.columns.has(col.name)
                 && old_metadata.columns.get(col.name).statistics.contains("minmax"));
@@ -1923,7 +1923,7 @@ void MergeTreeData::checkMetadataProperties(
     checkProperties(
         new_metadata,
         old_metadata,
-        /*attach=*/false,
+        /*is_stored_definition=*/false,
         /*allow_empty_sorting_key=*/false,
         allow_nullable_key,
         local_context);
@@ -1932,7 +1932,7 @@ void MergeTreeData::checkMetadataProperties(
 void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
-    bool attach,
+    bool is_stored_definition,
     ContextPtr local_context)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
@@ -1944,7 +1944,7 @@ void MergeTreeData::setProperties(
     checkProperties(
         new_metadata,
         old_metadata,
-        attach,
+        is_stored_definition,
         false,
         allow_nullable_key,
         local_context);
@@ -1982,10 +1982,10 @@ void MergeTreeData::setProperties(
     /// changed at all. Schema changes are rare enough that flushing the table's cache
     /// on every one of them is acceptable.
     ///
-    /// This check runs regardless of `attach`: callers that reload the table's own
-    /// current metadata (attach) pass an identical `old_metadata`/`new_metadata`, so
-    /// the loop below finds no identity change for them, but callers that apply a
-    /// genuine schema change while passing `attach = true` to skip unrelated checks
+    /// This check runs regardless of `is_stored_definition`: callers that reload the table's own
+    /// current metadata pass an identical `old_metadata`/`new_metadata`, so the loop below
+    /// finds no identity change for them, but callers that apply a genuine schema change
+    /// while passing `is_stored_definition = true` to skip unrelated checks
     /// still need the cache invalidated.
     {
         const auto & old_columns = old_metadata.columns;

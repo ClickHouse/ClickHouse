@@ -298,7 +298,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path: {}", user_files_path.string());
     }
 
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!expectsExistingState(mode))
     {
         fs::create_directories(rocksdb_dir);
     }

@@ -652,8 +652,8 @@ StorageDistributed::StorageDistributed(
                              "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
     }
 
-    /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (mode <= LoadingStrictnessLevel::CREATE)
+    /// Sanity check. Skip check for a stored definition to allow the server to start.
+    if (isFreshDefinition(mode))
     {
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
@@ -2679,7 +2679,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
+            isFreshDefinition(args.mode));
     },
     SecretArgumentsSpec{},
     {
@@ -3126,7 +3126,7 @@ void registerStorageRemote(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
+            isFreshDefinition(args.mode),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
             /* is_remote_function_ = */ true);

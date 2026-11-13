@@ -16,30 +16,19 @@ DROP TABLE mv SYNC;
 
 SET database_replicated_allow_explicit_uuid=3;
 
-SET show_table_uuid_in_table_create_query_if_not_nil=1;
+-- A view with an inner table can't be attached with a full definition, a lost view is recreated over its inner table with TO
 CREATE TABLE ".inner_id.e15f3ab5-6cae-4df3-b879-f40deafd82c2" (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n;
-ATTACH MATERIALIZED VIEW mv UUID 'e15f3ab5-6cae-4df3-b879-f40deafd82c2' (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n AS SELECT n, n * n AS n2 FROM src;
-SHOW CREATE TABLE mv;
+ATTACH MATERIALIZED VIEW mv UUID 'e15f3ab5-6cae-4df3-b879-f40deafd82c2' (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n AS SELECT n, n * n AS n2 FROM src; -- { serverError BAD_ARGUMENTS }
+ATTACH MATERIALIZED VIEW mv UUID 'e15f3ab5-6cae-4df3-b879-f40deafd82c2' TO INNER UUID '3bd68e3c-2693-4352-ad66-a66eba9e345e' (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n AS SELECT n, n * n AS n2 FROM src; -- { serverError BAD_ARGUMENTS }
+CREATE MATERIALIZED VIEW mv TO ".inner_id.e15f3ab5-6cae-4df3-b879-f40deafd82c2" AS SELECT n, n * n AS n2 FROM src;
 INSERT INTO src VALUES (1), (2);
 SELECT * FROM mv ORDER BY n;
 DETACH TABLE mv;
 ATTACH TABLE mv;
-SHOW CREATE TABLE mv;
 INSERT INTO src VALUES (3), (4);
 SELECT * FROM mv ORDER BY n;
 DROP TABLE mv SYNC;
-
-CREATE TABLE ".inner_id.e15f3ab5-6cae-4df3-b879-f40deafd82c2" UUID '3bd68e3c-2693-4352-ad66-a66eba9e345e' (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n;
-ATTACH MATERIALIZED VIEW mv UUID 'e15f3ab5-6cae-4df3-b879-f40deafd82c2' TO INNER UUID '3bd68e3c-2693-4352-ad66-a66eba9e345e' (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n AS SELECT n, n * n AS n2 FROM src;
-SHOW CREATE TABLE mv;
-INSERT INTO src VALUES (1), (2);
-SELECT * FROM mv ORDER BY n;
-DETACH TABLE mv;
-ATTACH TABLE mv;
-SHOW CREATE TABLE mv;
-INSERT INTO src VALUES (3), (4);
-SELECT * FROM mv ORDER BY n;
-DROP TABLE mv SYNC;
+DROP TABLE ".inner_id.e15f3ab5-6cae-4df3-b879-f40deafd82c2" SYNC;
 
 ATTACH MATERIALIZED VIEW mv UUID '3bd68e3c-2693-4352-ad66-a66eba9e345e' TO INNER UUID '3bd68e3c-2693-4352-ad66-a66eba9e345e' (n Int32, n2 Int64) ENGINE = MergeTree PARTITION BY n % 10 ORDER BY n AS SELECT n, n * n AS n2 FROM src; -- { serverError BAD_ARGUMENTS }
 

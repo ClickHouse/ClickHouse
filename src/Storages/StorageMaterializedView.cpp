@@ -272,7 +272,7 @@ StorageMaterializedView::StorageMaterializedView(
     mv_db_context->setCurrentDatabase(table_id_.database_name);
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
-    if (mode == LoadingStrictnessLevel::CREATE && !query.refresh_strategy && selectReadsView(table_id_, select.select_query, mv_db_context))
+    if (isFreshDefinition(mode) && !query.refresh_strategy && selectReadsView(table_id_, select.select_query, mv_db_context))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id_.getFullTableName());
     if (select.select_table_id)
     {
@@ -284,8 +284,7 @@ StorageMaterializedView::StorageMaterializedView(
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
 
-    const bool is_fresh_definition = mode == LoadingStrictnessLevel::CREATE
-        || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
+    const bool is_fresh_definition = isFreshDefinition(mode);
     if (query.refresh_strategy && query.refresh_strategy->isIncremental() && is_fresh_definition)
     {
         /// A replacement builds a fresh cursor, so the next refresh would replay the source and duplicate rows.
@@ -340,7 +339,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
-        if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !fixed_uuid)
+        if (is_fresh_definition && !fixed_uuid)
         {
             /// Sanity-check the table engine.
             String inner_engine;
@@ -382,19 +381,19 @@ StorageMaterializedView::StorageMaterializedView(
             /// To fix this, we don't check the permissions for the target table for the first time.
             /// If the table is created later when adding a new replica to Replicated database,
             /// we may also not have the definer, so don't check the permissions to avoid the database becoming stuck.
-            if (!is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE)
+            if (!is_restore_from_backup)
             {
                 auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
                 refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
             }
         }
 
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_create_or_replace_temp, is_restore_from_backup);
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, expectsExistingState(mode), refresh_coordinated, query.is_create_empty, is_create_or_replace_temp, is_restore_from_backup);
     }
 
     if (!fixed_uuid)
     {
-        if (mode >= LoadingStrictnessLevel::ATTACH)
+        if (expectsExistingState(mode))
         {
             /// Old versions of ClickHouse (when refreshable MV was experimental) could add useless
             /// UUIDs to attach queries.
@@ -414,7 +413,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         target_table_id = to_table_id;
     }
-    else if (mode >= LoadingStrictnessLevel::ATTACH)
+    else if (expectsExistingState(mode))
     {
         /// If there is an ATTACH request, then the internal table must already be created.
         target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), to_inner_uuid);

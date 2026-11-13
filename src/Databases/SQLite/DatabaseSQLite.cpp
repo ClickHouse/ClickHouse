@@ -291,7 +291,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
-        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
+        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path); // STYLE_CHECK_ALLOW_ATTACH_FLAG
     };
     factory.registerDatabase("SQLite", create_fn, SecretArgumentsSpec{}, {
         .supports_arguments = true,

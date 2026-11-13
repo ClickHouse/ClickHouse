@@ -235,7 +235,7 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool catalog_manages_created_location
         = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
-    const bool is_attach = mode >= LoadingStrictnessLevel::ATTACH;
+    const bool is_attach = expectsExistingState(mode);
     const bool do_lazy_init = (lazy_init || catalog_manages_created_location || is_attach)
         && !need_resolve_columns_or_format && !need_resolve_sample_path;
     LOG_DEBUG(
@@ -275,7 +275,7 @@ StorageObjectStorage::StorageObjectStorage(
     {
         // If we don't have format or schema yet, we can't ignore failed configuration update,
         // because relevant configuration is crucial for format and schema inference
-        if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
+        if (mode == LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
         {
             throw;
         }

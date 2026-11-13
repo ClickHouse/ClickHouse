@@ -1088,7 +1088,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapsh
     return std::make_shared<MergeTreeIndexBloomFilterText>(std::move(metadata_snapshot), index, params, std::move(tokenizer));
 }
 
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*is_stored_definition*/, const MergeTreeSettings & /*settings*/)
 {
     for (const auto & index_data_type : index.data_types)
     {

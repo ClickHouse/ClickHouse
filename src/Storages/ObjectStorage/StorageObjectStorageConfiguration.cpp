@@ -309,9 +309,9 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
 {
     /// An explicit `partition_strategy = 'none'` contradicts a `{_partition_id}` placeholder in
     /// the path: only the `wildcard` strategy substitutes the placeholder, so under `none` it
-    /// would be read and written literally. Reject the definition, but only on `CREATE`: loading
+    /// would be read and written literally. Reject the definition, but only a fresh one: loading
     /// from existing metadata must not throw, since that would abort server startup.
-    if (is_create_query
+    if ((is_create_query || !is_replayed_definition)
         && partition_by
         && partition_strategy_was_set
         && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
@@ -381,9 +381,9 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
 
     /// The `hive` strategy builds its read glob from the compression method (see
     /// `HiveStylePartitionStrategy::getPathForRead`), and table reads set `throw_on_zero_files_match = false`,
-    /// so reject a misspelled codec on `CREATE` rather than let the table look empty. Only on `CREATE`:
+    /// so reject a misspelled codec in a fresh definition rather than let the table look empty. Only there:
     /// loading existing metadata must not throw, since that would abort server startup.
-    if (is_create_query && partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+    if ((is_create_query || !is_replayed_definition) && partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
         chooseCompressionMethod(/* path */ "", compression_method);
 
     partition_strategy = PartitionStrategyFactory::get(

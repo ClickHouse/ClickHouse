@@ -254,16 +254,16 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey() && !support_transaction)
+    if (isFreshDefinition(mode) && metadata_.hasUniqueKey() && !support_transaction)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
             getStorageID().getNameForLogs());
 
-    initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
+    initializeDirectoriesAndFormatVersion(relative_data_path_, expectsExistingState(mode), date_column_name);
 
-    loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
+    loadDataParts(mode == LoadingStrictnessLevel::FORCE_RESTORE, std::nullopt);
 
-    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
+    if (!expectsExistingState(mode) && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "

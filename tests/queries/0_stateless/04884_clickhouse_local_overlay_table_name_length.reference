@@ -15,6 +15,8 @@ escaped ok
 ARGUMENT_OUT_OF_BOUND
 --- short default_database: an existing table still loads in a later run ---
 42
+--- long default_database: a full-definition ATTACH is rejected up front ---
+ARGUMENT_OUT_OF_BOUND
 --- long default_database: an over-limit name already on disk still loads ---
-attach accepted
+table stored
 1	7

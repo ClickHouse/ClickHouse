@@ -755,8 +755,8 @@ void registerStorageAlias(StorageFactory & factory)
 
         // Storage Alias does not support explicit column definitions
         // Columns are always dynamically fetched from the target table
-        // Only check for CREATE, not for ATTACH/RESTORE
-        if (!args.columns.empty() && args.mode == LoadingStrictnessLevel::CREATE)
+        // Only check a fresh definition, not a replay or RESTORE
+        if (!args.columns.empty() && isFreshDefinition(args.mode))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");
@@ -769,8 +769,7 @@ void registerStorageAlias(StorageFactory & factory)
         /// an already accepted definition must stay loadable, because a rejection while loading
         /// metadata fails the whole load rather than the one table. They run after the access check
         /// so that a caller without access to the target cannot learn its engine from the message.
-        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        bool fresh_user_definition = isFreshDefinition(args.mode);
         if (fresh_user_definition)
         {
             StorageID target_id(target_database, target_table);

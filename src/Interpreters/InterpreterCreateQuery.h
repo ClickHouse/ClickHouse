@@ -123,14 +123,14 @@ private:
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
-    void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties, LoadingStrictnessLevel mode) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
-    /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
+    /// The part of `getRequiredAccess` for engine settings (`getExportAccess`, `getCreateAccess`), checked again once
     /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
-    void checkExportAccess(const ASTCreateQuery & create) const;
+    void checkEngineSettingsAccess(const ASTCreateQuery & create) const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);

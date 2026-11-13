@@ -183,7 +183,7 @@ StorageNATS::StorageNATS(
     , event_handler(log)
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-    , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
+    , throw_on_startup_failure(mode == LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
     if (fresh_definition
@@ -1487,7 +1487,7 @@ void registerStorageNATS(StorageFactory & factory)
             std::move(nats_settings),
             args.mode,
             authentication_determined_by_table,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
+            isFreshDefinition(args.mode));
     };
 
     factory.registerStorage(

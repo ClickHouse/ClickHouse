@@ -309,7 +309,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             restoring_database_for_table_dropping_names.insert(name);
     }
 
-    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /* secondary */ false);
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /* secondary */ false, /* full_definition */ false);
     TablesLoader loader{context, std::move(loaded_databases), mode};
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();

@@ -388,7 +388,7 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         /// The loader flag, not `internal`, is the discriminator: an internal query is not necessarily the
         /// server's own replay, because wrappers run user statements as internal ones.
         const bool is_internal_metadata_replay
-            = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+            = args.is_metadata_replay && expectsExistingState(args.mode);
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
     };

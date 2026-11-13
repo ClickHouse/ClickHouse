@@ -907,7 +907,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 
         postgresql_settings.loadFromQuery(*args.storage_def);
 
-        /// Unlike `isFreshTableDefinition`, also on the other replicas of a `Replicated` database, which run the original query
+        /// Unlike `isFreshDefinition`, also on the other replicas of a `Replicated` database, which run the original query
         /// with the initiator's settings. Not on `RESTORE`, which rejects a definition that differs from the backup.
         bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
             && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !args.is_restore_from_backup;

@@ -1,3 +1,6 @@
+--- a new definition with a future version is rejected, and a full-definition ATTACH of a TimeSeries table with inner tables is refused ---
+INVALID_SETTING_VALUE
+BAD_ARGUMENTS
 --- a table with a future version can be attached, even if its definition uses a setting unknown to this server ---
 TimeSeries	1
 --- every PromQL entry point rejects it ---
