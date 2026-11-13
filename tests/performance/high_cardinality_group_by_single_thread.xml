@@ -1,0 +1,23 @@
+<test run_all_queries="1">
+    <!-- The high-cardinality GROUP BY queries of the ClickBench set (Q12-Q16, Q18 and Q30-Q35) on one thread.
+         One thread gives the aggregation a single input stream. Its hash table grows far past the cache, and
+         the adaptive aggregator freezes it at the freeze threshold and stages the rows of new keys, which its
+         merge then aggregates one partition at a time. The 10M-row table keeps every query below a second on
+         one thread, where the 100M-row one takes up to 7 s. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query><![CDATA[SELECT SearchPhrase, COUNT(*) AS c FROM hits_10m_single WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT SearchEngineID, SearchPhrase, COUNT(*) AS c FROM hits_10m_single WHERE SearchPhrase <> '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT UserID, COUNT(*) FROM hits_10m_single GROUP BY UserID ORDER BY COUNT(*) DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT UserID, SearchPhrase, COUNT(*) FROM hits_10m_single GROUP BY UserID, SearchPhrase ORDER BY COUNT(*) DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT UserID, extract(minute FROM EventTime) AS m, SearchPhrase, COUNT(*) FROM hits_10m_single GROUP BY UserID, m, SearchPhrase ORDER BY COUNT(*) DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT SearchEngineID, ClientIP, COUNT(*) AS c, SUM(Refresh), AVG(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase <> '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(Refresh), AVG(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase <> '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(Refresh), AVG(ResolutionWidth) FROM hits_10m_single GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT URL, COUNT(*) AS c FROM hits_10m_single GROUP BY URL ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT 1, URL, COUNT(*) AS c FROM hits_10m_single GROUP BY 1, URL ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+    <query><![CDATA[SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, COUNT(*) AS c FROM hits_10m_single GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY c DESC LIMIT 10 FORMAT Null]]></query>
+</test>
