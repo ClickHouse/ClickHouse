@@ -1,6 +1,7 @@
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Interpreters/Squashing.h>
@@ -454,8 +455,10 @@ void LazyMaterializingTransform::prepareLazyChunk()
         for (size_t column = 0; column < lazy_columns.size(); ++column)
         {
             const auto & type = lazy_header.getByPosition(column).type;
-            /// The rows are inserted into a column the type creates, which is a full one.
-            const auto full_column = recursiveRemoveSparse(lazy_columns[column]->convertToFullColumnIfConst());
+            /// The rows are inserted into a column the type creates, which is a full one. The lazy read can also return
+            /// the dictionary-encoded representation of automatic LowCardinality serialization, which is not a peer of it.
+            const auto full_column = recursiveRemoveNonNativeLowCardinality(
+                recursiveRemoveSparse(lazy_columns[column]->convertToFullColumnIfConst()));
             const auto & lazy_column = *full_column;
 
             auto expanded = type->createColumn();

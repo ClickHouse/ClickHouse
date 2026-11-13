@@ -1,6 +1,7 @@
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -21,6 +22,22 @@ DictionaryPipelineExecutor::DictionaryPipelineExecutor(QueryPipeline & pipeline_
 }
 
 bool DictionaryPipelineExecutor::pull(Block & block)
+{
+    bool has_data = pullImpl(block);
+
+    /// A source reading `MergeTree` parts with automatic `LowCardinality` serialization produces
+    /// non-native `ColumnLowCardinality` columns for `String` and `FixedString` attributes. Dictionaries
+    /// assume that a column matches its data type (e.g. they append blocks with `insertRangeFrom`), so the
+    /// encoding is materialized here, at the common boundary of every dictionary load, instead of in
+    /// each dictionary. Other special representations (e.g. `Sparse`) are left to the consumers.
+    if (has_data)
+        for (auto & column : block)
+            column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+
+    return has_data;
+}
+
+bool DictionaryPipelineExecutor::pullImpl(Block & block)
 {
     if (async_executor)
     {

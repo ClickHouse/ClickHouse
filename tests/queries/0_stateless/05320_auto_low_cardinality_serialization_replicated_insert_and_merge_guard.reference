@@ -1,0 +1,6 @@
+kinds	fs	['LowCardinality']
+kinds	s	['LowCardinality']
+values	4000	10	10	12000
+merge, String rewrite skipped	0
+merge, Array rewrite still fires	1
+merge, values	3	2

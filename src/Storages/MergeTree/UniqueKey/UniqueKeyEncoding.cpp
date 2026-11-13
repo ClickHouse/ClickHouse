@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -48,8 +49,11 @@ void encodeBlock(
     if (num_rows == 0)
         return;
 
-    for (const auto & col_ptr : columns)
+    for (const auto & column : columns)
     {
+        /// A column chosen for automatic LowCardinality serialization can arrive dictionary-encoded, while its
+        /// type is not LowCardinality. Encode its plain values; genuine LowCardinality(T) columns are left as is.
+        const auto col_ptr = recursiveRemoveNonNativeLowCardinality(column);
         col_ptr->batchSerializeAsComparable(num_rows, out, permutation, nullptr);
 
         for (size_t r = 0; r < num_rows; ++r)

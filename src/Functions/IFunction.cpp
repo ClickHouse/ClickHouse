@@ -566,6 +566,18 @@ IExecutableFunction::IExecutableFunction()
     }
 }
 
+/// True if any argument is or contains a non-native LowCardinality column, i.e. the dictionary-encoded
+/// representation of a column whose data type is not LowCardinality (automatic LowCardinality
+/// serialization). It is checked recursively: a `Native` peer can send such a column as an element
+/// of a `Tuple`, which no type-based dispatch would notice.
+static bool hasNonNativeLowCardinality(const ColumnsWithTypeAndName & arguments)
+{
+    for (const auto & column : arguments)
+        if (column.column && hasNonNativeLowCardinality(*column.column))
+            return true;
+    return false;
+}
+
 bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const
 {
     if (!isDeterministicInScopeOfQuery())
@@ -581,6 +593,17 @@ bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTyp
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    /// Functions key on argument data types, and the data type of a non-native LowCardinality column
+    /// is not LowCardinality, so every LowCardinality-aware code path below would misinterpret it.
+    /// Materialize such columns to full columns first; genuine LowCardinality(T) columns are kept intact.
+    if (hasNonNativeLowCardinality(arguments))
+    {
+        ColumnsWithTypeAndName full_arguments = arguments;
+        for (auto & column : full_arguments)
+            column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+        return executeWithoutSparseColumns(full_arguments, result_type, input_rows_count, dry_run);
+    }
+
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
     {

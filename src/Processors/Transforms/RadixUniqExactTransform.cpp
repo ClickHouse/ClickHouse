@@ -1780,7 +1780,8 @@ void RadixUniqExactRouteTransform::work()
         const auto & values = column_sparse->getValuesPtr();
         column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
     }
-    column = column->convertToFullIfWrapped();
+    /// A non-native LowCardinality column (automatic LowCardinality serialization) is routed by its values.
+    column = recursiveRemoveNonNativeLowCardinality(column->convertToFullIfWrapped());
     /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
     /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))

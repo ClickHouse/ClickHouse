@@ -273,7 +273,17 @@ public:
         if (!target)
             return std::nullopt;
 
-        return target->getSerializationHints();
+        return target->tryGetSerializationHints();
+    }
+
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & /*storage_snapshot*/) const override
+    {
+        /// `getStorageSnapshot` returns the snapshot of the target, but `read` ignores the snapshot it is given
+        /// and takes a fresh one of the target. A part that encodes the column can be attached or fetched in
+        /// between, so the snapshot used during analysis does not describe the parts the read will use.
+        /// Do not pass it: without a snapshot the target answers conservatively, as for any other wrapper.
+        auto target = tryGetTargetTable();
+        return target && target->hasAutomaticLowCardinalitySerialization(column_name, nullptr);
     }
 
     ActionLock getActionLock(StorageActionBlockType type) override

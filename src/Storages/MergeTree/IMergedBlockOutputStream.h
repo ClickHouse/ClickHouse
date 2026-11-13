@@ -21,7 +21,8 @@ public:
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
-        bool reset_columns_);
+        bool reset_columns_,
+        const SerializationInfoByName & part_serialization_infos_);
 
     virtual ~IMergedBlockOutputStream() = default;
 
