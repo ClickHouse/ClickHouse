@@ -1,6 +1,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <base/scope_guard.h>
 #include <thread>
 
 namespace DB
@@ -15,8 +16,15 @@ RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_) :
     log(log_),
     connection_running(false),
     loop_running(false),
-    loop_state(Loop::STOP)
+    loop_state(Loop::STOP),
+    wake_timer(new uv_timer_t)
 {
+    uv_timer_init(loop, wake_timer);
+}
+
+RabbitMQHandler::~RabbitMQHandler()
+{
+    uv_close(reinterpret_cast<uv_handle_t *>(wake_timer), [](uv_handle_t * handle) { delete reinterpret_cast<uv_timer_t *>(handle); });
 }
 
 ///Method that is called when the connection ends up in an error state.
@@ -40,11 +48,12 @@ void RabbitMQHandler::startLoop()
     LOG_DEBUG(log, "Background loop started");
     loop_running.store(true);
 
+    /// Block in the poller instead of spinning; the timer wakes it every 10 ms to check for a stop request.
+    uv_update_time(loop);
+    uv_timer_start(wake_timer, [](uv_timer_t *) {}, 10, 10);
+    SCOPE_EXIT(uv_timer_stop(wake_timer));
     while (loop_state.load() == Loop::RUN)
-    {
-        if (!uv_run(loop, UV_RUN_NOWAIT))
-            std::this_thread::yield();
-    }
+        uv_run(loop, UV_RUN_ONCE);
 
     LOG_DEBUG(log, "Background loop ended");
     loop_running.store(false);
