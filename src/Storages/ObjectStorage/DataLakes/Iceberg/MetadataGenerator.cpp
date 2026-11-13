@@ -498,7 +498,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
 void MetadataGenerator::generateAddColumnMetadata(const String & column_name, DataTypePtr type)
 {
-    if (!type->isNullable())
+    if (!type->isNullable() && !Iceberg::isIcebergVariantType(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow to add non-nullable columns");
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
@@ -532,6 +532,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     Int32 new_field_id = getLastAssignedFieldId(metadata_object) + 1;
     Int32 iter = new_field_id;
     auto new_type = Iceberg::getIcebergType(type, iter);
+    Iceberg::checkIcebergTypeSupportedByFormatVersion(new_type.first, metadata_object->getValue<Int32>(Iceberg::f_format_version), column_name);
     metadata_object->set(Iceberg::f_last_column_id, iter);
 
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
@@ -567,6 +568,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
+    Iceberg::checkIcebergTypeSupportedByFormatVersion(new_type.first, metadata_object->getValue<Int32>(Iceberg::f_format_version), column_name);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
     bool found = false;
@@ -580,7 +582,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
             auto old_type = Iceberg::deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
-            if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
+            if (!current_field->getValue<bool>(Iceberg::f_required) && new_type.second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);

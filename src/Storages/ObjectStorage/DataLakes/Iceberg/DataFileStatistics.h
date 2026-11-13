@@ -5,6 +5,8 @@
 #include <Processors/ISimpleTransform.h>
 #include "config.h"
 
+#include <unordered_set>
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -51,6 +53,7 @@ private:
     static Range uniteRanges(const Range & left, const Range & right);
 
     std::vector<Int64> field_ids;
+    std::unordered_set<Int64> required_field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
     std::vector<Int64> nan_counts;

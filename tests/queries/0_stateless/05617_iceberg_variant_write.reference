@@ -1,0 +1,52 @@
+--- Parquet round trip
+0	None	\N
+1	Bool	true
+2	Int8	-5
+3	Int16	300
+4	Int32	70000
+5	Int64	-9000000000
+6	Int16	200
+7	Int64	4000000000
+8	Float32	1.5
+9	Float64	2.25
+10	Decimal(9, 3)	12.345
+11	Decimal(18, 3)	-123456789.123
+12	Decimal(38, 2)	1234567890123456789.12
+13	Date32	2024-02-29
+14	Date32	1900-01-01
+15	DateTime64(6, \'UTC\')	2024-01-02 03:04:05.123456
+16	DateTime64(9, \'UTC\')	2024-01-02 03:04:05.123456789
+17	DateTime64(6, \'UTC\')	2024-01-02 03:04:05.000000
+18	Time64(6)	12:34:56.789000
+19	String	short
+20	String	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+21	String	ab\0
+22	UUID	00112233-4455-6677-8899-aabbccddeeff
+23	Array(Dynamic)	[1,2,3]
+24	JSON	{"a":"b","x":1}
+25	Array(Dynamic)	[1,'b']
+26	JSON	{"k1":1,"k2":2}
+27	JSON	{"a":{"b":1,"c":[true,null]},"d":"e"}
+28	Array(JSON)	['{"x":[1]}','{}']
+29	String	one
+30	String	abc
+31	Array(Dynamic)	[NULL,1]
+32	Int64	42
+--- Iceberg schema
+id int True
+d variant False
+v variant False
+--- Iceberg data
+1	Int64	42	String	a
+2	String	str	Array(Dynamic)	[1,2]
+3	None	\N	None	\N
+4	Array(Dynamic)	[1.5,2.5]	Int64	7
+5	JSON	{"k":[1,2]}	None	\N
+1
+--- Null counts
+1	[(1,0),(2,0),(3,1)]
+4	[(1,0),(2,1),(3,1)]
+--- Errors
+the widest variant integer is a signed 64-bit integer
+the keys of a variant object must be unique
+Cannot write a value of type IPv4 into the Parquet variant column 'v'

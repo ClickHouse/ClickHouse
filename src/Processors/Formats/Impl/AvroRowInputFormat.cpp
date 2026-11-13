@@ -300,7 +300,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::tryCreateVariantDeserializeFn(
     else if (node->nameAt(0) != "metadata" || node->nameAt(1) != "value")
         return {};
 
-    return [variant_decoder = Parquet::VariantValueDecoder(target_type, current_column_name, settings),
+    return [variant_decoder = Parquet::VariantValueDecoder(target_type, current_column_name, Parquet::VariantSettings(settings)),
             metadata_position,
             blobs = std::array<std::string, 2>()](IColumn & column, avro::Decoder & decoder) mutable
     {

@@ -1,12 +1,32 @@
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -20,17 +40,23 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/isValidUTF8.h>
 #include <Common/re2.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <memory>
+#include <numeric>
+#include <optional>
 
 #include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int TOO_DEEP_RECURSION;
     extern const int TYPE_MISMATCH;
@@ -41,6 +67,8 @@ namespace DB::Parquet
 
 namespace
 {
+
+constexpr Int64 microseconds_per_second = 1'000'000;
 
 /// https://github.com/apache/parquet-format/blob/master/VariantEncoding.md
 enum class PrimitiveType : UInt8
@@ -85,11 +113,11 @@ void checkRange(std::string_view data, size_t pos, size_t size)
             size, pos, data.size());
 }
 
-template <typename T>
+template <typename T, std::endian endian = std::endian::little>
 T readFixed(std::string_view data, size_t pos)
 {
     checkRange(data, pos, sizeof(T));
-    return unalignedLoadLittleEndian<T>(data.data() + pos);
+    return unalignedLoadEndian<endian, T>(data.data() + pos);
 }
 
 UInt8 readByte(std::string_view data, size_t pos)
@@ -107,10 +135,45 @@ std::string_view readSlice(std::string_view data, size_t pos, size_t size)
 UInt32 readUnsigned(std::string_view data, size_t pos, UInt8 size)
 {
     checkRange(data, pos, size);
-    UInt32 res = 0;
-    for (UInt8 i = 0; i < size; ++i)
-        res |= UInt32(UInt8(data[pos + i])) << (8 * i);
-    return res;
+    return unalignedLoadLittleEndian<UInt32>(data.data() + pos, size);
+}
+
+UInt8 unsignedSize(size_t value)
+{
+    if (value <= 0xFF)
+        return 1;
+    if (value <= 0xFFFF)
+        return 2;
+    if (value <= 0xFFFFFF)
+        return 3;
+    if (value <= 0xFFFFFFFF)
+        return 4;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot write a Parquet variant: it has a part of {} bytes, more than 4 GiB", value);
+}
+
+void writeUnsigned(String & out, size_t value, UInt8 size)
+{
+    const size_t pos = out.size();
+    out.resize(pos + size);
+    unalignedStoreLittleEndian<size_t>(out.data() + pos, value, size);
+}
+
+void writeContainerHeader(String & out, BasicType basic_type, UInt8 value_header)
+{
+    out.push_back(static_cast<char>(UInt8(value_header << 2) | UInt8(basic_type)));
+}
+
+template <typename T, std::endian endian = std::endian::little>
+void writeFixed(String & out, T value)
+{
+    const size_t pos = out.size();
+    out.resize(pos + sizeof(T));
+    unalignedStoreEndian<endian>(out.data() + pos, value);
+}
+
+void writePrimitiveHeader(String & out, PrimitiveType type)
+{
+    out.push_back(static_cast<char>(UInt8(type) << 2));
 }
 
 struct Metadata
@@ -160,6 +223,7 @@ struct DecodeContext
 {
     const Metadata & metadata;
     size_t max_depth;
+    bool escape_dots_in_json_keys;
 };
 
 void checkDepth(const DecodeContext & context, size_t depth)
@@ -241,21 +305,45 @@ struct ObjectLayout
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
-};
 
-ObjectLayout parseObjectLayout(std::string_view data, size_t pos, UInt8 value_header)
-{
-    const bool is_large = (value_header >> 4) & 0x01;
-    ObjectLayout res;
-    res.id_size = ((value_header >> 2) & 0x03) + 1;
-    res.offset_size = (value_header & 0x03) + 1;
-    res.num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
-    res.ids_pos = pos + (is_large ? 4 : 1);
-    res.offsets_pos = res.ids_pos + size_t(res.num_elements) * res.id_size;
-    res.values_pos = res.offsets_pos + (size_t(res.num_elements) + 1) * res.offset_size;
-    checkRange(data, res.ids_pos, res.values_pos - res.ids_pos);
-    return res;
-}
+    static ObjectLayout deserialize(std::string_view data, size_t pos, UInt8 value_header)
+    {
+        const bool is_large = (value_header >> 4) & 0x01;
+        ObjectLayout res;
+        res.id_size = ((value_header >> 2) & 0x03) + 1;
+        res.offset_size = (value_header & 0x03) + 1;
+        res.num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
+        res.ids_pos = pos + (is_large ? 4 : 1);
+        res.offsets_pos = res.ids_pos + size_t(res.num_elements) * res.id_size;
+        res.values_pos = res.offsets_pos + (size_t(res.num_elements) + 1) * res.offset_size;
+        checkRange(data, res.ids_pos, res.values_pos - res.ids_pos);
+        return res;
+    }
+
+    template <typename WriteValue>
+    static void serialize(const VectorWithMemoryTracking<UInt32> & ids, WriteValue && write_value, String & out)
+    {
+        String values;
+        VectorWithMemoryTracking<size_t> value_offsets(ids.size());
+        for (size_t i = 0; i < ids.size(); ++i)
+        {
+            value_offsets[i] = values.size();
+            write_value(i, values);
+        }
+
+        const bool is_large = ids.size() > 0xFF;
+        const UInt8 id_size = unsignedSize(ids.empty() ? 0 : *std::max_element(ids.begin(), ids.end()));
+        const UInt8 offset_size = unsignedSize(values.size());
+        writeContainerHeader(out, BasicType::Object, static_cast<UInt8>((is_large << 4) | ((id_size - 1) << 2) | (offset_size - 1)));
+        writeUnsigned(out, ids.size(), is_large ? 4 : 1);
+        for (UInt32 id : ids)
+            writeUnsigned(out, id, id_size);
+        for (size_t offset : value_offsets)
+            writeUnsigned(out, offset, offset_size);
+        writeUnsigned(out, values.size(), offset_size);
+        out.append(values);
+    }
+};
 
 struct ArrayLayout
 {
@@ -268,19 +356,162 @@ struct ArrayLayout
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
+
+    static ArrayLayout deserialize(std::string_view data, size_t pos, UInt8 value_header)
+    {
+        const bool is_large = (value_header >> 2) & 0x01;
+        ArrayLayout res;
+        res.offset_size = (value_header & 0x03) + 1;
+        res.num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
+        res.offsets_pos = pos + (is_large ? 4 : 1);
+        res.values_pos = res.offsets_pos + (size_t(res.num_elements) + 1) * res.offset_size;
+        checkRange(data, res.offsets_pos, res.values_pos - res.offsets_pos);
+        return res;
+    }
+
+    template <typename WriteElement>
+    static void serialize(size_t num_elements, WriteElement && write_element, String & out)
+    {
+        String values;
+        VectorWithMemoryTracking<size_t> value_offsets(num_elements);
+        for (size_t i = 0; i < num_elements; ++i)
+        {
+            value_offsets[i] = values.size();
+            write_element(i, values);
+        }
+
+        const bool is_large = num_elements > 0xFF;
+        const UInt8 offset_size = unsignedSize(values.size());
+        writeContainerHeader(out, BasicType::Array, static_cast<UInt8>((is_large << 2) | (offset_size - 1)));
+        writeUnsigned(out, value_offsets.size(), is_large ? 4 : 1);
+        for (size_t offset : value_offsets)
+            writeUnsigned(out, offset, offset_size);
+        writeUnsigned(out, values.size(), offset_size);
+        out.append(values);
+    }
 };
 
-ArrayLayout parseArrayLayout(std::string_view data, size_t pos, UInt8 value_header)
+template <PrimitiveType type_id, typename T>
+struct FixedSizePrimitive
 {
-    const bool is_large = (value_header >> 2) & 0x01;
-    ArrayLayout res;
-    res.offset_size = (value_header & 0x03) + 1;
-    res.num_elements = readUnsigned(data, pos, is_large ? 4 : 1);
-    res.offsets_pos = pos + (is_large ? 4 : 1);
-    res.values_pos = res.offsets_pos + (size_t(res.num_elements) + 1) * res.offset_size;
-    checkRange(data, res.offsets_pos, res.values_pos - res.offsets_pos);
-    return res;
-}
+    static void encode(String & out, T value)
+    {
+        writePrimitiveHeader(out, type_id);
+        writeFixed<T>(out, value);
+    }
+
+    static T decode(std::string_view data, size_t pos)
+    {
+        return readFixed<T>(data, pos);
+    }
+};
+
+using Int8Primitive = FixedSizePrimitive<PrimitiveType::Int8, Int8>;
+using Int16Primitive = FixedSizePrimitive<PrimitiveType::Int16, Int16>;
+using Int32Primitive = FixedSizePrimitive<PrimitiveType::Int32, Int32>;
+using Int64Primitive = FixedSizePrimitive<PrimitiveType::Int64, Int64>;
+using FloatPrimitive = FixedSizePrimitive<PrimitiveType::Float, Float32>;
+using DoublePrimitive = FixedSizePrimitive<PrimitiveType::Double, Float64>;
+using DatePrimitive = FixedSizePrimitive<PrimitiveType::Date, Int32>;
+using TimestampPrimitive = FixedSizePrimitive<PrimitiveType::TimestampTZ, Int64>;
+using TimestampNanosPrimitive = FixedSizePrimitive<PrimitiveType::TimestampNanosTZ, Int64>;
+using TimePrimitive = FixedSizePrimitive<PrimitiveType::TimeNTZ, Int64>;
+
+struct BooleanPrimitive
+{
+    static void encode(String & out, bool value)
+    {
+        writePrimitiveHeader(out, value ? PrimitiveType::True : PrimitiveType::False);
+    }
+
+    static bool decode(PrimitiveType type_id)
+    {
+        return type_id == PrimitiveType::True;
+    }
+};
+
+template <PrimitiveType type_id, typename T>
+struct DecimalPrimitive
+{
+    static void encode(String & out, T unscaled_value, UInt8 scale)
+    {
+        writePrimitiveHeader(out, type_id);
+        out.push_back(static_cast<char>(scale));
+        writeFixed<T>(out, unscaled_value);
+    }
+
+    static UInt8 decodeScale(std::string_view data, size_t pos)
+    {
+        return readByte(data, pos);
+    }
+
+    static T decode(std::string_view data, size_t pos)
+    {
+        return readFixed<T>(data, pos + 1);
+    }
+};
+
+using Decimal4Primitive = DecimalPrimitive<PrimitiveType::Decimal4, Int32>;
+using Decimal8Primitive = DecimalPrimitive<PrimitiveType::Decimal8, Int64>;
+using Decimal16Primitive = DecimalPrimitive<PrimitiveType::Decimal16, Int128>;
+
+struct UUIDPrimitive
+{
+    static void encode(String & out, const UUID & value)
+    {
+        writePrimitiveHeader(out, PrimitiveType::UUID);
+        writeFixed<UInt64, std::endian::big>(out, UUIDHelpers::getHighBytes(value));
+        writeFixed<UInt64, std::endian::big>(out, UUIDHelpers::getLowBytes(value));
+    }
+
+    static UUID decode(std::string_view data, size_t pos)
+    {
+        const std::string_view bytes = readSlice(data, pos, sizeof(UUID));
+        UUID res;
+        UUIDHelpers::getHighBytes(res) = unalignedLoadBigEndian<UInt64>(bytes.data());
+        UUIDHelpers::getLowBytes(res) = unalignedLoadBigEndian<UInt64>(bytes.data() + sizeof(UInt64));
+        return res;
+    }
+};
+
+template <PrimitiveType type_id>
+struct LongStringPrimitive
+{
+    static void encode(String & out, std::string_view value)
+    {
+        if (value.size() > std::numeric_limits<UInt32>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Cannot write a Parquet variant: it has a string of {} bytes, more than 4 GiB", value.size());
+        writePrimitiveHeader(out, type_id);
+        writeFixed<UInt32>(out, static_cast<UInt32>(value.size()));
+        out.append(value);
+    }
+
+    static std::string_view decode(std::string_view data, size_t pos)
+    {
+        const UInt32 length = readFixed<UInt32>(data, pos);
+        return readSlice(data, pos + sizeof(UInt32), length);
+    }
+};
+
+using StringPrimitive = LongStringPrimitive<PrimitiveType::String>;
+using BinaryPrimitive = LongStringPrimitive<PrimitiveType::Binary>;
+
+struct ShortString
+{
+    static constexpr size_t max_size = 63;
+
+    static void encode(String & out, std::string_view value)
+    {
+        writeContainerHeader(out, BasicType::ShortString, static_cast<UInt8>(value.size()));
+        out.append(value);
+    }
+
+    static std::string_view decode(std::string_view data, size_t pos, UInt8 value_header)
+    {
+        return readSlice(data, pos, value_header);
+    }
+};
 
 bool isObject(std::string_view data, size_t pos)
 {
@@ -289,7 +520,7 @@ bool isObject(std::string_view data, size_t pos)
 
 bool isArrayOfObjects(std::string_view data, size_t pos, UInt8 value_header)
 {
-    const ArrayLayout layout = parseArrayLayout(data, pos, value_header);
+    const ArrayLayout layout = ArrayLayout::deserialize(data, pos, value_header);
     if (layout.num_elements == 0)
         return false;
     for (UInt32 i = 0; i < layout.num_elements; ++i)
@@ -302,7 +533,7 @@ bool isArrayOfObjects(std::string_view data, size_t pos, UInt8 value_header)
 
 String decimalTypeName(std::string_view data, size_t pos, UInt8 precision)
 {
-    const UInt8 scale = readByte(data, pos + 1);
+    const UInt8 scale = Decimal4Primitive::decodeScale(data, pos + 1);
     if (scale > precision)
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Malformed Parquet variant: decimal with precision {} has invalid scale {}", UInt16(precision), UInt16(scale));
@@ -389,73 +620,62 @@ void decodePrimitiveIntoColumn(std::string_view data, size_t pos, PrimitiveType 
     switch (type_id)
     {
         case PrimitiveType::True:
-            assert_cast<ColumnUInt8 &>(target).insertValue(1);
-            return;
         case PrimitiveType::False:
-            assert_cast<ColumnUInt8 &>(target).insertValue(0);
+            assert_cast<ColumnUInt8 &>(target).insertValue(BooleanPrimitive::decode(type_id));
             return;
         case PrimitiveType::Int8:
-            assert_cast<ColumnInt8 &>(target).insertValue(readFixed<Int8>(data, pos));
+            assert_cast<ColumnInt8 &>(target).insertValue(Int8Primitive::decode(data, pos));
             return;
         case PrimitiveType::Int16:
-            assert_cast<ColumnInt16 &>(target).insertValue(readFixed<Int16>(data, pos));
+            assert_cast<ColumnInt16 &>(target).insertValue(Int16Primitive::decode(data, pos));
             return;
         case PrimitiveType::Int32:
-            assert_cast<ColumnInt32 &>(target).insertValue(readFixed<Int32>(data, pos));
+            assert_cast<ColumnInt32 &>(target).insertValue(Int32Primitive::decode(data, pos));
             return;
         case PrimitiveType::Int64:
-            assert_cast<ColumnInt64 &>(target).insertValue(readFixed<Int64>(data, pos));
+            assert_cast<ColumnInt64 &>(target).insertValue(Int64Primitive::decode(data, pos));
             return;
         case PrimitiveType::Float:
-            assert_cast<ColumnFloat32 &>(target).insertValue(readFixed<Float32>(data, pos));
+            assert_cast<ColumnFloat32 &>(target).insertValue(FloatPrimitive::decode(data, pos));
             return;
         case PrimitiveType::Double:
-            assert_cast<ColumnFloat64 &>(target).insertValue(readFixed<Float64>(data, pos));
+            assert_cast<ColumnFloat64 &>(target).insertValue(DoublePrimitive::decode(data, pos));
             return;
         case PrimitiveType::Decimal4:
-            assert_cast<ColumnDecimal<Decimal32> &>(target).insertValue(Decimal32(readFixed<Int32>(data, pos + 1)));
+            assert_cast<ColumnDecimal<Decimal32> &>(target).insertValue(Decimal32(Decimal4Primitive::decode(data, pos)));
             return;
         case PrimitiveType::Decimal8:
-            assert_cast<ColumnDecimal<Decimal64> &>(target).insertValue(Decimal64(readFixed<Int64>(data, pos + 1)));
+            assert_cast<ColumnDecimal<Decimal64> &>(target).insertValue(Decimal64(Decimal8Primitive::decode(data, pos)));
             return;
         case PrimitiveType::Decimal16:
-            assert_cast<ColumnDecimal<Decimal128> &>(target).insertValue(Decimal128(readFixed<Int128>(data, pos + 1)));
+            assert_cast<ColumnDecimal<Decimal128> &>(target).insertValue(Decimal128(Decimal16Primitive::decode(data, pos)));
             return;
         case PrimitiveType::Date:
-            assert_cast<ColumnDate32 &>(target).insertValue(readFixed<Int32>(data, pos));
+            assert_cast<ColumnDate32 &>(target).insertValue(DatePrimitive::decode(data, pos));
             return;
         case PrimitiveType::TimestampTZ:
         case PrimitiveType::TimestampNTZ:
+            assert_cast<ColumnDecimal<DateTime64> &>(target).insertValue(DateTime64(TimestampPrimitive::decode(data, pos)));
+            return;
         case PrimitiveType::TimestampNanosTZ:
         case PrimitiveType::TimestampNanosNTZ:
-            assert_cast<ColumnDecimal<DateTime64> &>(target).insertValue(DateTime64(readFixed<Int64>(data, pos)));
+            assert_cast<ColumnDecimal<DateTime64> &>(target).insertValue(DateTime64(TimestampNanosPrimitive::decode(data, pos)));
             return;
         case PrimitiveType::TimeNTZ:
-            assert_cast<ColumnDecimal<Time64> &>(target).insertValue(Time64(readFixed<Int64>(data, pos)));
+            assert_cast<ColumnDecimal<Time64> &>(target).insertValue(Time64(TimePrimitive::decode(data, pos)));
             return;
         case PrimitiveType::UUID:
+            assert_cast<ColumnUUID &>(target).insertValue(UUIDPrimitive::decode(data, pos));
+            return;
+        case PrimitiveType::Binary:
         {
-            const std::string_view bytes = readSlice(data, pos, sizeof(UUID));
-            UUID uuid;
-            memcpy(&uuid, bytes.data(), sizeof(UUID));
-            auto * halves = reinterpret_cast<UInt8 *>(&uuid);
-            if constexpr (std::endian::native == std::endian::little)
-            {
-                std::reverse(halves, halves + 8);
-                std::reverse(halves + 8, halves + 16);
-            }
-            else
-            {
-                std::swap_ranges(halves, halves + 8, halves + 8);
-            }
-            assert_cast<ColumnUUID &>(target).insertValue(uuid);
+            const std::string_view value = BinaryPrimitive::decode(data, pos);
+            assert_cast<ColumnString &>(target).insertData(value.data(), value.size());
             return;
         }
-        case PrimitiveType::Binary:
         case PrimitiveType::String:
         {
-            const UInt32 length = readFixed<UInt32>(data, pos);
-            const std::string_view value = readSlice(data, pos + 4, length);
+            const std::string_view value = StringPrimitive::decode(data, pos);
             assert_cast<ColumnString &>(target).insertData(value.data(), value.size());
             return;
         }
@@ -508,12 +728,14 @@ void insertObjectPaths(
     size_t prev_size,
     VectorWithMemoryTracking<SharedDataValue> & shared_data_values)
 {
-    const ObjectLayout layout = parseObjectLayout(data, pos, value_header);
+    const ObjectLayout layout = ObjectLayout::deserialize(data, pos, value_header);
 
     for (UInt32 i = 0; i < layout.num_elements; ++i)
     {
-        const std::string_view name = context.metadata.getName(layout.fieldId(data, i));
-        String path = is_root ? String(name) : prefix + "." + String(name);
+        String name(context.metadata.getName(layout.fieldId(data, i)));
+        if (context.escape_dots_in_json_keys)
+            name = escapeDotInJSONKey(name);
+        String path = is_root ? std::move(name) : prefix + "." + name;
         if (filter && filter->shouldSkip(path))
             continue;
 
@@ -624,7 +846,7 @@ void decodeObjectIntoJSON(
 void decodeArrayIntoColumn(
     std::string_view data, size_t pos, UInt8 value_header, const DecodeContext & context, size_t depth, IColumn & target)
 {
-    const ArrayLayout layout = parseArrayLayout(data, pos, value_header);
+    const ArrayLayout layout = ArrayLayout::deserialize(data, pos, value_header);
 
     auto & array_column = assert_cast<ColumnArray &>(target);
     auto & elements = array_column.getData();
@@ -661,7 +883,7 @@ void decodeValueIntoColumn(
             return;
         case BasicType::ShortString:
         {
-            const std::string_view value = readSlice(data, pos + 1, value_header);
+            const std::string_view value = ShortString::decode(data, pos + 1, value_header);
             assert_cast<ColumnString &>(target).insertData(value.data(), value.size());
             return;
         }
@@ -721,16 +943,469 @@ const ColumnString & unwrapLeaf(const IColumn & column, const NullMap *& out_nul
     return assert_cast<const ColumnString &>(*inner);
 }
 
+struct JSONNode
+{
+    MapWithMemoryTracking<String, size_t> children;
+    std::optional<String> value;
+};
+
+class ValueEncoder
+{
+public:
+    ValueEncoder(
+        const String & column_name_,
+        const VariantSettings & settings_,
+        UnorderedMapWithMemoryTracking<String, UInt32> & key_ids_,
+        VectorWithMemoryTracking<std::string_view> & keys_)
+        : column_name(column_name_), settings(settings_), key_ids(key_ids_), keys(keys_)
+    {
+    }
+
+    void reset()
+    {
+        key_ids.clear();
+        keys.clear();
+    }
+
+    void writeMetadata(String & out) const
+    {
+        size_t names_size = 0;
+        for (const auto & key : keys)
+            names_size += key.size();
+
+        const UInt8 offset_size = unsignedSize(std::max(keys.size(), names_size));
+        out.push_back(static_cast<char>(1 | ((offset_size - 1) << 6)));
+        writeUnsigned(out, keys.size(), offset_size);
+        size_t offset = 0;
+        writeUnsigned(out, offset, offset_size);
+        for (const auto & key : keys)
+        {
+            offset += key.size();
+            writeUnsigned(out, offset, offset_size);
+        }
+        for (const auto & key : keys)
+            out.append(key);
+    }
+
+    void encode(const IColumn & column, const IDataType & type, size_t row, String & out)
+    {
+        checkStackSize();
+
+        switch (type.getTypeId())
+        {
+            case TypeIndex::Nullable:
+            {
+                const auto & nullable = assert_cast<const ColumnNullable &>(column);
+                if (nullable.isNullAt(row))
+                    writePrimitiveHeader(out, PrimitiveType::Null);
+                else
+                    encode(nullable.getNestedColumn(), *assert_cast<const DataTypeNullable &>(type).getNestedType(), row, out);
+                return;
+            }
+            case TypeIndex::LowCardinality:
+            {
+                const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(column);
+                encode(
+                    *low_cardinality.getDictionary().getNestedColumn(),
+                    *assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType(),
+                    low_cardinality.getIndexAt(row),
+                    out);
+                return;
+            }
+            case TypeIndex::UInt8:
+                if (type.getName() == "Bool")
+                {
+                    BooleanPrimitive::encode(out, assert_cast<const ColumnUInt8 &>(column).getData()[row] != 0);
+                    return;
+                }
+                Int16Primitive::encode(out, assert_cast<const ColumnUInt8 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int8:
+                Int8Primitive::encode(out, assert_cast<const ColumnInt8 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int16:
+                Int16Primitive::encode(out, assert_cast<const ColumnInt16 &>(column).getData()[row]);
+                return;
+            case TypeIndex::UInt16:
+                Int32Primitive::encode(out, assert_cast<const ColumnUInt16 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int32:
+                Int32Primitive::encode(out, assert_cast<const ColumnInt32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::UInt32:
+                Int64Primitive::encode(out, assert_cast<const ColumnUInt32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Int64:
+                Int64Primitive::encode(out, assert_cast<const ColumnInt64 &>(column).getData()[row]);
+                return;
+            case TypeIndex::UInt64:
+            {
+                const UInt64 value = assert_cast<const ColumnUInt64 &>(column).getData()[row];
+                if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot write the value {} of type UInt64 into the Parquet variant column '{}': the widest variant "
+                        "integer is a signed 64-bit integer",
+                        value, column_name);
+                Int64Primitive::encode(out, static_cast<Int64>(value));
+                return;
+            }
+            case TypeIndex::Float32:
+                FloatPrimitive::encode(out, assert_cast<const ColumnFloat32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Float64:
+                DoublePrimitive::encode(out, assert_cast<const ColumnFloat64 &>(column).getData()[row]);
+                return;
+            case TypeIndex::Decimal32:
+                encodeDecimal<Decimal4Primitive, Decimal32>(column, type, row, out);
+                return;
+            case TypeIndex::Decimal64:
+                encodeDecimal<Decimal8Primitive, Decimal64>(column, type, row, out);
+                return;
+            case TypeIndex::Decimal128:
+                encodeDecimal<Decimal16Primitive, Decimal128>(column, type, row, out);
+                return;
+            case TypeIndex::Date:
+                DatePrimitive::encode(out, assert_cast<const ColumnDate &>(column).getData()[row]);
+                return;
+            case TypeIndex::Date32:
+                DatePrimitive::encode(out, assert_cast<const ColumnDate32 &>(column).getData()[row]);
+                return;
+            case TypeIndex::DateTime:
+                TimestampPrimitive::encode(out, Int64(assert_cast<const ColumnDateTime &>(column).getData()[row]) * microseconds_per_second);
+                return;
+            case TypeIndex::DateTime64:
+            {
+                const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(type).getScale();
+                const Int64 value = assert_cast<const ColumnDateTime64 &>(column).getData()[row].value;
+                const UInt32 target_scale = scale <= 6 ? 6 : 9;
+                Int64 scaled = 0;
+                if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int64>(target_scale - scale), scaled))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot write the value {} of type {} into the Parquet variant column '{}': it is out of the range of a "
+                        "variant timestamp with {} digits of fractional seconds",
+                        value, type.getName(), column_name, target_scale);
+                if (scale <= 6)
+                    TimestampPrimitive::encode(out, scaled);
+                else
+                    TimestampNanosPrimitive::encode(out, scaled);
+                return;
+            }
+            case TypeIndex::Time:
+                encodeTime(Int64(assert_cast<const ColumnTime &>(column).getData()[row]) * microseconds_per_second, type, out);
+                return;
+            case TypeIndex::Time64:
+            {
+                const UInt32 scale = assert_cast<const DataTypeTime64 &>(type).getScale();
+                if (scale > 6)
+                    throwUnsupported(type);
+                encodeTime(assert_cast<const ColumnTime64 &>(column).getData()[row].value * DecimalUtils::scaleMultiplier<Int64>(6 - scale), type, out);
+                return;
+            }
+            case TypeIndex::String:
+                encodeString(column.getDataAt(row), out);
+                return;
+            case TypeIndex::FixedString:
+                BinaryPrimitive::encode(out, column.getDataAt(row));
+                return;
+            case TypeIndex::Enum8:
+                encodeString(assert_cast<const DataTypeEnum8 &>(type).getNameForValue(assert_cast<const ColumnInt8 &>(column).getData()[row]), out);
+                return;
+            case TypeIndex::Enum16:
+                encodeString(assert_cast<const DataTypeEnum16 &>(type).getNameForValue(assert_cast<const ColumnInt16 &>(column).getData()[row]), out);
+                return;
+            case TypeIndex::UUID:
+            {
+                UUIDPrimitive::encode(out, assert_cast<const ColumnUUID &>(column).getData()[row]);
+                return;
+            }
+            case TypeIndex::Array:
+            {
+                const auto & array = assert_cast<const ColumnArray &>(column);
+                const auto & nested_type = *assert_cast<const DataTypeArray &>(type).getNestedType();
+                const size_t begin = array.getOffsets()[row - 1];
+                ArrayLayout::serialize(
+                    array.getOffsets()[row] - begin,
+                    [&](size_t i, String & values) { encode(array.getData(), nested_type, begin + i, values); },
+                    out);
+                return;
+            }
+            case TypeIndex::Tuple:
+            {
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
+                const auto & tuple = assert_cast<const ColumnTuple &>(column);
+                const auto & element_types = tuple_type.getElements();
+                auto write_element = [&](size_t i, String & values) { encode(tuple.getColumn(i), *element_types[i], row, values); };
+                if (tuple_type.hasExplicitNames())
+                {
+                    const auto & names = tuple_type.getElementNames();
+                    encodeObject(VectorWithMemoryTracking<std::string_view>(names.begin(), names.end()), write_element, out);
+                }
+                else
+                {
+                    ArrayLayout::serialize(element_types.size(), write_element, out);
+                }
+                return;
+            }
+            case TypeIndex::Map:
+            {
+                const auto & map_type = assert_cast<const DataTypeMap &>(type);
+                if (!isStringOrFixedString(removeLowCardinality(map_type.getKeyType())))
+                    throwUnsupported(type);
+
+                const auto & nested = assert_cast<const ColumnMap &>(column).getNestedColumn();
+                const auto & map_keys = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(0);
+                const auto & map_values = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(1);
+                const size_t begin = nested.getOffsets()[row - 1];
+
+                VectorWithMemoryTracking<std::string_view> row_keys(nested.getOffsets()[row] - begin);
+                for (size_t i = 0; i < row_keys.size(); ++i)
+                    row_keys[i] = map_keys.getDataAt(begin + i);
+                encodeObject(
+                    row_keys, [&](size_t i, String & values) { encode(map_values, *map_type.getValueType(), begin + i, values); }, out);
+                return;
+            }
+            case TypeIndex::Variant:
+            {
+                if (type.getCustomName())
+                    throwUnsupported(type);
+                const auto & variant = assert_cast<const ColumnVariant &>(column);
+                const auto discriminator = variant.globalDiscriminatorAt(row);
+                if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    writePrimitiveHeader(out, PrimitiveType::Null);
+                    return;
+                }
+                encode(
+                    variant.getVariantByGlobalDiscriminator(discriminator),
+                    *assert_cast<const DataTypeVariant &>(type).getVariant(discriminator),
+                    variant.offsetAt(row),
+                    out);
+                return;
+            }
+            case TypeIndex::Dynamic:
+                encodeDynamic(assert_cast<const ColumnDynamic &>(column), row, out);
+                return;
+            case TypeIndex::Object:
+                encodeJSON(assert_cast<const ColumnObject &>(column), assert_cast<const DataTypeObject &>(type), row, out);
+                return;
+            default:
+                throwUnsupported(type);
+        }
+    }
+
+private:
+    [[noreturn]] void throwUnsupported(const IDataType & type) const
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Cannot write a value of type {} into the Parquet variant column '{}'", type.getName(), column_name);
+    }
+
+    UInt32 keyId(std::string_view key)
+    {
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(key.data()), key.size()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write the object key '{}' into the Parquet variant column '{}': the keys of a variant object must be "
+                "valid UTF-8",
+                key, column_name);
+        auto [it, inserted] = key_ids.try_emplace(String(key), static_cast<UInt32>(keys.size()));
+        if (inserted)
+            keys.push_back(it->first);
+        return it->second;
+    }
+
+    template <typename Primitive, typename DecimalType>
+    static void encodeDecimal(const IColumn & column, const IDataType & type, size_t row, String & out)
+    {
+        Primitive::encode(
+            out, assert_cast<const ColumnDecimal<DecimalType> &>(column).getData()[row].value, static_cast<UInt8>(getDecimalScale(type)));
+    }
+
+    void encodeTime(Int64 micros, const IDataType & type, String & out) const
+    {
+        if (micros < 0 || micros >= 86'400'000'000LL)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write a value of type {} into the Parquet variant column '{}': a variant time is a time of day, "
+                "but the value is {} microseconds",
+                type.getName(), column_name, micros);
+        TimePrimitive::encode(out, micros);
+    }
+
+    static void encodeString(std::string_view value, String & out)
+    {
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+            BinaryPrimitive::encode(out, value);
+        else if (value.size() <= ShortString::max_size)
+            ShortString::encode(out, value);
+        else
+            StringPrimitive::encode(out, value);
+    }
+
+    void encodeDynamic(const ColumnDynamic & dynamic, size_t row, String & out)
+    {
+        const auto & variant = dynamic.getVariantColumn();
+        const auto discriminator = variant.globalDiscriminatorAt(row);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            writePrimitiveHeader(out, PrimitiveType::Null);
+            return;
+        }
+
+        if (discriminator == dynamic.getSharedVariantDiscriminator())
+        {
+            ReadBufferFromMemory buf(dynamic.getSharedVariant().getDataAt(variant.offsetAt(row)));
+            const DataTypePtr value_type = decodeDataType(buf);
+            auto value_column = value_type->createColumn();
+            value_type->getDefaultSerialization()->deserializeBinary(*value_column, buf, FormatSettings{});
+            encode(*value_column, *value_type, 0, out);
+            return;
+        }
+
+        encode(
+            variant.getVariantByGlobalDiscriminator(discriminator),
+            *assert_cast<const DataTypeVariant &>(*dynamic.getVariantInfo().variant_type).getVariant(discriminator),
+            variant.offsetAt(row),
+            out);
+    }
+
+    void encodeJSON(const ColumnObject & object, const DataTypeObject & type, size_t row, String & out)
+    {
+        VectorWithMemoryTracking<JSONNode> nodes(1);
+        for (auto it = ColumnObject::SortedPathsIterator(object, row, /*skip_typed_nulls_=*/true); !it.end(); it.next())
+        {
+            const auto path_info = it.getCurrentPathInfo();
+            if (path_info.column->isNullAt(path_info.row))
+                continue;
+
+            if (settings.max_depth != 0
+                && static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= settings.max_depth)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is nested deeper than {} levels",
+                    column_name, path_info.path, settings.max_depth);
+
+            size_t node = 0;
+            size_t begin = 0;
+            while (true)
+            {
+                if (nodes[node].value)
+                    throwJSONPathConflict(path_info.path);
+                const size_t end = path_info.path.find('.', begin);
+                String key(path_info.path.substr(begin, end == std::string_view::npos ? end : end - begin));
+                if (settings.escape_dots_in_json_keys)
+                    key = unescapeDotInJSONKey(key);
+                const auto [child_it, inserted] = nodes[node].children.try_emplace(std::move(key), nodes.size());
+                const size_t child = child_it->second;
+                if (inserted)
+                    nodes.emplace_back();
+                node = child;
+                if (end == std::string_view::npos)
+                    break;
+                begin = end + 1;
+            }
+            if (nodes[node].value || !nodes[node].children.empty())
+                throwJSONPathConflict(path_info.path);
+
+            auto & value = nodes[node].value.emplace();
+            if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
+                encode(*path_info.column, *type.getTypedPaths().at(String(path_info.path)), path_info.row, value);
+            else
+                encodeDynamic(assert_cast<const ColumnDynamic &>(*path_info.column), path_info.row, value);
+        }
+        writeJSONNode(nodes, 0, out);
+    }
+
+    void writeJSONNode(const VectorWithMemoryTracking<JSONNode> & nodes, size_t node_index, String & out)
+    {
+        checkStackSize();
+        const JSONNode & node = nodes[node_index];
+        if (node.value)
+        {
+            out.append(*node.value);
+            return;
+        }
+
+        VectorWithMemoryTracking<std::string_view> names;
+        VectorWithMemoryTracking<size_t> children;
+        names.reserve(node.children.size());
+        children.reserve(node.children.size());
+        for (const auto & [name, child] : node.children)
+        {
+            names.push_back(name);
+            children.push_back(child);
+        }
+        encodeObject(names, [&](size_t i, String & values) { writeJSONNode(nodes, children[i], values); }, out);
+    }
+
+    template <typename WriteValue>
+    void encodeObject(const VectorWithMemoryTracking<std::string_view> & names, WriteValue && write_value, String & out)
+    {
+        VectorWithMemoryTracking<size_t> order(names.size());
+        std::iota(order.begin(), order.end(), 0);
+        std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return names[left] < names[right]; });
+
+        VectorWithMemoryTracking<UInt32> ids(order.size());
+        for (size_t i = 0; i < order.size(); ++i)
+        {
+            if (i != 0 && names[order[i]] == names[order[i - 1]])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot write an object with the duplicate key '{}' into the Parquet variant column '{}': the keys of a "
+                    "variant object must be unique",
+                    names[order[i]], column_name);
+            ids[i] = keyId(names[order[i]]);
+        }
+        ObjectLayout::serialize(ids, [&](size_t i, String & values) { write_value(order[i], values); }, out);
+    }
+
+    [[noreturn]] void throwJSONPathConflict(std::string_view path) const
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is both a value and a prefix of another path",
+            column_name, path);
+    }
+
+    const String & column_name;
+    const VariantSettings & settings;
+    UnorderedMapWithMemoryTracking<String, UInt32> & key_ids;
+    VectorWithMemoryTracking<std::string_view> & keys;
+};
+
 }
 
-VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const FormatSettings & format_settings)
+VariantSettings::VariantSettings(const FormatSettings & format_settings)
+    : max_depth(format_settings.max_parser_depth)
+    , escape_dots_in_json_keys(format_settings.json.json_type_escape_dots_in_keys)
+    , use_partial_match_to_skip_paths_by_regexp(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
+{
+}
+
+VariantValueEncoder::VariantValueEncoder(String column_name_, const VariantSettings & settings_)
+    : column_name(std::move(column_name_))
+    , settings(settings_)
+{
+}
+
+void VariantValueEncoder::encode(const IColumn & column, const IDataType & type, size_t row, String & metadata, String & value)
+{
+    ValueEncoder encoder(column_name, settings, key_ids, keys);
+    encoder.reset();
+    encoder.encode(column, type, row, value);
+    encoder.writeMetadata(metadata);
+}
+
+VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column_name_, const VariantSettings & settings_)
     : output_type(std::move(output_type_))
     , column_name(std::move(column_name_))
-    , max_depth(format_settings.max_parser_depth)
+    , settings(settings_)
 {
     const DataTypePtr inner_type = removeNullable(output_type);
     if (const auto * object_type = typeid_cast<const DataTypeObject *>(inner_type.get()))
-        filter = std::make_shared<const JSONPathsFilter>(*object_type, format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+        filter = std::make_shared<const JSONPathsFilter>(*object_type, settings.use_partial_match_to_skip_paths_by_regexp);
     else
         chassert(isDynamic(inner_type));
 }
@@ -738,7 +1413,8 @@ VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column
 void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_view value_blob, IColumn & output) const
 {
     const Metadata parsed_metadata = parseMetadata(metadata_blob);
-    const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_depth};
+    const DecodeContext context{
+        .metadata = parsed_metadata, .max_depth = settings.max_depth, .escape_dots_in_json_keys = settings.escape_dots_in_json_keys};
 
     /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
     /// null) go through `output.insertDefault()`, which inserts NULL into a nullable column.
@@ -781,7 +1457,7 @@ void decodeVariantColumn(
     const DataTypePtr & output_type,
     const String & column_name,
     size_t num_rows,
-    const FormatSettings & format_settings)
+    const VariantSettings & settings)
 {
     const NullMap * metadata_nulls = nullptr;
     const ColumnString & metadata_strings = unwrapLeaf(metadata, metadata_nulls);
@@ -789,7 +1465,7 @@ void decodeVariantColumn(
     const NullMap * value_nulls = nullptr;
     const ColumnString & value_strings = unwrapLeaf(value, value_nulls);
 
-    const VariantValueDecoder decoder(output_type, column_name, format_settings);
+    const VariantValueDecoder decoder(output_type, column_name, settings);
 
     for (size_t row = 0; row < num_rows; ++row)
     {
@@ -815,6 +1491,43 @@ void decodeVariantColumn(
                 column_name, metadata_missing ? "`value`" : "`metadata`", metadata_missing ? "`metadata`" : "`value`");
 
         decoder.decode(metadata_blob, value_blob, output);
+    }
+}
+
+void encodeVariantColumn(
+    const IColumn & column,
+    const DataTypePtr & type,
+    const String & column_name,
+    const VariantSettings & settings,
+    ColumnString & metadata,
+    ColumnString & value,
+    PaddedPODArray<UInt8> * null_map)
+{
+    const size_t num_rows = column.size();
+    const bool nullable_root = null_map && (type->getTypeId() == TypeIndex::Dynamic || type->getTypeId() == TypeIndex::Variant);
+    if (null_map)
+        null_map->resize_fill(num_rows, 0);
+    metadata.reserve(num_rows);
+    value.reserve(num_rows);
+
+    VariantValueEncoder encoder(column_name, settings);
+    String metadata_blob;
+    String value_blob;
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        if (nullable_root && column.isNullAt(row))
+        {
+            (*null_map)[row] = 1;
+            metadata.insertDefault();
+            value.insertDefault();
+            continue;
+        }
+
+        metadata_blob.clear();
+        value_blob.clear();
+        encoder.encode(column, *type, row, metadata_blob, value_blob);
+        metadata.insertData(metadata_blob.data(), metadata_blob.size());
+        value.insertData(value_blob.data(), value_blob.size());
     }
 }
 

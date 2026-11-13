@@ -914,12 +914,13 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
 
     const DataTypePtr type_hint = node.type_hint ? removeNullable(node.type_hint) : nullptr;
     const bool read_as_json = type_hint && isObject(type_hint);
-    if (type_hint && !read_as_json && !isDynamic(type_hint))
+    const bool read_as_variant = type_hint && isVariant(type_hint) && !type_hint->getCustomName();
+    if (type_hint && !read_as_json && !read_as_variant && !isDynamic(type_hint))
         return false;
 
     /// Spark 4.0 writes variant columns without the `VARIANT` logical type, so they can only be
     /// recognized by structure. Before this was supported, such groups were read as `Tuple`, hence
-    /// the setting. An explicit `Dynamic`/`JSON` request is not ambiguous and bypasses it.
+    /// the setting. An explicit `Dynamic`/`JSON`/`Variant` request is not ambiguous and bypasses it.
     if (!group_annotated_variant && !node.type_hint && !options.format.parquet.detect_variant_by_structure)
         return false;
 
@@ -971,7 +972,8 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     output.primitive_start = primitive_start;
     output.primitive_end = primitive_columns.size();
     output.input_type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
-    output.output_type = output.input_type;
+    output.output_type = read_as_variant ? node.type_hint : output.input_type;
+    output.needs_cast = read_as_variant;
     output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
     return true;
 }

@@ -130,6 +130,8 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+bool isIcebergVariantType(const DataTypePtr & type);
+void checkIcebergTypeSupportedByFormatVersion(const Poco::Dynamic::Var & type, Int64 format_version, const String & column_name);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields

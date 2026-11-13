@@ -1,7 +1,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -26,6 +28,8 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
         auto field = schema_->getObject(i);
         size_t field_id = field->getValue<size_t>(Iceberg::f_id);
         field_ids[i] =  field_id;
+        if (field->getValue<bool>(Iceberg::f_required))
+            required_field_ids.insert(field_id);
     }
 }
 
@@ -34,6 +38,13 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vect
 {
     if (!written_field_ids.empty())
         field_ids = std::move(written_field_ids);
+}
+
+static const ColumnVariant * getVariantColumn(const IColumn & column)
+{
+    if (const auto * dynamic_col = checkAndGetColumn<ColumnDynamic>(&column))
+        return &dynamic_col->getVariantColumn();
+    return checkAndGetColumn<ColumnVariant>(&column);
 }
 
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
@@ -131,6 +142,11 @@ void DataFileStatistics::update(const Chunk & chunk)
         ConstNullMapPtr null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
         if (null_map)
             null_counts[i] += countBytesInFilter(*null_map);
+        else if (const auto * variant_col = getVariantColumn(*col); variant_col && !required_field_ids.contains(field_ids[i]))
+        {
+            for (auto discriminator : variant_col->getLocalDiscriminators())
+                null_counts[i] += discriminator == ColumnVariant::NULL_DISCRIMINATOR;
+        }
         const IColumn & nested_col = nullable_col ? nullable_col->getNestedColumn() : *col;
         if (auto nans = countNaNs(nested_col, null_map))
             nan_counts[i] += *nans;
