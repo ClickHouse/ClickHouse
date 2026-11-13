@@ -5,6 +5,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -19,7 +20,7 @@ using PartitionMap = HashMap<UInt128, size_t, UInt128TrivialHash>;
 /// Row indices into the live chunk, arranged as a heap whose front is the worst of the best `top_k`.
 struct PartitionHeap
 {
-    std::vector<size_t> rows;
+    VectorWithMemoryTracking<size_t> rows;
     /// The row that created the bucket; every later row is verified against it with `compareAt`.
     size_t first_row = 0;
 };
@@ -101,7 +102,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
     };
 
     PartitionMap partition_to_heap;
-    std::vector<PartitionHeap> heaps;
+    VectorWithMemoryTracking<PartitionHeap> heaps;
 
     filter.resize(num_rows);
     size_t kept_rows = 0;
