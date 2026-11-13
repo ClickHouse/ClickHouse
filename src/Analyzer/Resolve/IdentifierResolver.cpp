@@ -1163,14 +1163,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             prefix_matches_cte_name
                 = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
         }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        /// An alias or a CTE name is a single qualifier part and takes priority over a table path (`ns.t`)
+        if (prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
-                prefix_matches_table_name ? table_name_parts : 1 /*identifier_column_qualifier_parts*/,
-                true /*can_be_not_found*/);
+                1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
             if (alias_prefix_result.resolved_identifier)
                 return alias_prefix_result;
+        }
+
+        if (prefix_matches_table_name)
+        {
+            auto table_prefix_result = tryResolveIdentifierFromStorage(
+                identifier_lookup, table_expression_node, table_expression_data, scope,
+                table_name_parts /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+            if (table_prefix_result.resolved_identifier)
+                return table_prefix_result;
         }
     }
 
