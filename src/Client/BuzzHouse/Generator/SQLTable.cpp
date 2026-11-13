@@ -390,31 +390,6 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats)
-{
-    const size_t nstats = (rg.nextMediumNumber() % static_cast<uint32_t>(ColumnStat_MAX)) + 1;
-
-    for (uint32_t i = 1; i <= ColumnStat_MAX; i++)
-    {
-        ids.emplace_back(i);
-    }
-    std::shuffle(ids.begin(), ids.end(), rg.generator);
-    for (size_t i = 0; i < nstats; i++)
-    {
-        const ColumnStat nstat = static_cast<ColumnStat>(ids[i]);
-
-        if (i == 0)
-        {
-            cstats->set_stat(nstat);
-        }
-        else
-        {
-            cstats->add_other_stats(nstat);
-        }
-    }
-    ids.clear();
-}
-
 void StatementGenerator::generateTableExpression(
     RandomGenerator & rg, std::optional<SQLRelation> & rel, const bool use_global_agg, const bool pred, Expr * expr)
 {
@@ -1919,10 +1894,6 @@ void StatementGenerator::addTableColumnInternal(
         {
             cd->set_nullable(rg.nextBool());
             col.nullable = std::optional<bool>(cd->nullable());
-        }
-        if (rg.nextMediumNumber() < 16)
-        {
-            generateNextStatistics(rg, cd->mutable_stats());
         }
         if (rg.nextMediumNumber() < 16)
         {

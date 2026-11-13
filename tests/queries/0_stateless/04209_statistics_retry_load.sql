@@ -13,22 +13,24 @@ SYSTEM DISABLE FAILPOINT merge_tree_load_statistics_throw;
 DROP TABLE IF EXISTS t_full;
 DROP TABLE IF EXISTS t_packed;
 
-CREATE TABLE t_full (a UInt64 STATISTICS(basic), b UInt64)
+CREATE TABLE t_full (a UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1,
+         auto_statistics_types = 'basic';
 
-CREATE TABLE t_packed (a UInt64 STATISTICS(basic), b UInt64)
+CREATE TABLE t_packed (a UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = '1G',
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1,
+         auto_statistics_types = 'basic';
 
-INSERT INTO t_full SELECT number, number FROM numbers(1000);
-INSERT INTO t_full SELECT number + 1000000, number FROM numbers(1000);
-INSERT INTO t_packed SELECT number, number FROM numbers(1000);
-INSERT INTO t_packed SELECT number + 1000000, number FROM numbers(1000);
+INSERT INTO t_full SELECT number FROM numbers(1000);
+INSERT INTO t_full SELECT number + 1000000 FROM numbers(1000);
+INSERT INTO t_packed SELECT number FROM numbers(1000);
+INSERT INTO t_packed SELECT number + 1000000 FROM numbers(1000);
 
 DETACH TABLE t_full;
 ATTACH TABLE t_full;

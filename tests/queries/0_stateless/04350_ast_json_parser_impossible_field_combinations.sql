@@ -32,8 +32,6 @@ SELECT formatQueryFromJSON(parseQueryToJSON('WITH RECURSIVE x AS (SELECT 1) SELE
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a CROSS JOIN b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a NATURAL LEFT JOIN b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a LEFT SEMI JOIN b ON a.x = b.y'));
-SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t ADD STATISTICS a TYPE tdigest'));
-SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS a IN PARTITION 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR COLUMN x IN PARTITION 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY x ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)'));
@@ -187,15 +185,6 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a LEFT SEMI J
 SELECT formatQueryFromJSON('{"type":"WithElement","name":"x","subquery":{"type":"Identifier","name":"y"}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- ALTER ... STATISTICS: `ParserAlterCommand` produces a `TYPE` list only for `ADD`/`MODIFY STATISTICS`,
--- and never for `DROP`/`CLEAR`/`MATERIALIZE STATISTICS` (which carry only column names). `formatImpl`
--- prints the `TYPE` list for the add/modify forms and omits it otherwise, so an `ADD` without `types`
--- (formats `ADD STATISTICS a` with no `TYPE`) or a `DROP` carrying `types` is parser-impossible.
--- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ADD STATISTICS a TYPE tdigest'), '"types":{"type":"ExpressionList"', '"renamed":{"type":"ExpressionList"')); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns":', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"Function","name":"tdigest","no_empty_args":true}]},"columns":')); -- { serverError BAD_ARGUMENTS }
-
--- ---------------------------------------------------------------------------
 -- ALTER ... STATISTICS ALL: `ParserAlterCommand` reads `IF EXISTS` and `IN PARTITION` only in the
 -- branch that also requires a column-list declaration, so the `ALL` forms (null `statistics_decl`)
 -- never carry either. `MATERIALIZE STATISTICS` has nowhere to print them, so both are silently
@@ -215,7 +204,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR STATIST
 
 -- ---------------------------------------------------------------------------
 -- ALTER ... IN PARTITION: `partition` is parser-produced only for the `CLEAR`/`MATERIALIZE` forms of
--- `DROP COLUMN`/`DROP INDEX`/`DROP STATISTICS`/`DROP PROJECTION` (where the corresponding `clear_*` flag
+-- `DROP COLUMN`/`DROP INDEX`/`DROP PROJECTION` (where the corresponding `clear_*` flag
 -- is set). A plain `DROP COLUMN` carrying a `partition` would format `DROP COLUMN x IN PARTITION p`,
 -- which `ParserAlterCommand` never produces.
 -- ---------------------------------------------------------------------------

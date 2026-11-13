@@ -244,8 +244,7 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_STATISTICS)
     {
         res.type = MutationCommand::Type::DROP_STATISTICS;
-        if (command.clear_statistics)
-            res.clear = true;
+        res.clear = true;
         if (command.statistics_decl)
             res.statistics_columns = command.statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;

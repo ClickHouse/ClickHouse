@@ -12,8 +12,8 @@ SET materialize_statistics_on_insert = 1;
 SELECT '-- MATERIALIZE COLUMN';
 
 DROP TABLE IF EXISTS t_stats_materialize_column;
-CREATE TABLE t_stats_materialize_column (id Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a' STATISTICS(uniq, basic))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
+CREATE TABLE t_stats_materialize_column (id Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a')
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1, auto_statistics_types = 'uniq, basic';
 
 INSERT INTO t_stats_materialize_column (id) VALUES (1), (2);
 SELECT part_type, type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_stats_materialize_column' AND active AND column = 'e';
@@ -33,8 +33,8 @@ DROP TABLE t_stats_materialize_column;
 SELECT '-- UPDATE recalculating a dependent MATERIALIZED column';
 
 DROP TABLE IF EXISTS t_stats_affected_materialized;
-CREATE TABLE t_stats_affected_materialized (id Int64, src Int8, m Enum8('a' = 1, 'b' = 2) MATERIALIZED CAST(src, 'Enum8(\'a\' = 1, \'b\' = 2)') STATISTICS(uniq, basic))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
+CREATE TABLE t_stats_affected_materialized (id Int64, src Int8, m Enum8('a' = 1, 'b' = 2) MATERIALIZED CAST(src, 'Enum8(\'a\' = 1, \'b\' = 2)'))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1, auto_statistics_types = 'uniq, basic';
 
 INSERT INTO t_stats_affected_materialized (id, src) VALUES (1, 1), (2, 2);
 ALTER TABLE t_stats_affected_materialized MODIFY COLUMN m Int8 MATERIALIZED src;
@@ -51,8 +51,8 @@ SELECT '-- CLEAR COLUMN recalculating MATERIALIZED columns';
 -- change of unrelated e remains unapplied to existing rows and its statistics
 -- stay aligned with the stored value.
 DROP TABLE IF EXISTS t_stats_clear_column;
-CREATE TABLE t_stats_clear_column (id Int64, c Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a' STATISTICS(uniq, basic), d Int64 MATERIALIZED c + 1)
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
+CREATE TABLE t_stats_clear_column (id Int64, c Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a', d Int64 MATERIALIZED c + 1)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1, auto_statistics_types = 'uniq, basic';
 
 INSERT INTO t_stats_clear_column (id, c) VALUES (1, 10), (2, 20);
 ALTER TABLE t_stats_clear_column MODIFY COLUMN e Int8 MATERIALIZED 2;
@@ -68,8 +68,8 @@ SELECT '-- CLEAR COLUMN of the column carrying statistics';
 -- A cleared column is dropped from the new part together with its statistics, and the remaining
 -- columns keep usable statistics.
 DROP TABLE IF EXISTS t_stats_cleared_target;
-CREATE TABLE t_stats_cleared_target (id Int64, c Int64 STATISTICS(uniq, basic), v Int64 MATERIALIZED c * 2 STATISTICS(uniq, basic))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
+CREATE TABLE t_stats_cleared_target (id Int64, c Int64, v Int64 MATERIALIZED c * 2)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1, auto_statistics_types = 'uniq, basic';
 
 INSERT INTO t_stats_cleared_target (id, c) SELECT number, number % 7 FROM numbers(100);
 ALTER TABLE t_stats_cleared_target CLEAR COLUMN v;
@@ -84,8 +84,8 @@ SELECT '-- MATERIALIZE INDEX carries statistics of columns it does not rewrite';
 -- A pure index materialization writes no data column, so the new part keeps the source column type
 -- and its statistics must be carried over untouched instead of being rebuilt from the block.
 DROP TABLE IF EXISTS t_stats_materialize_index;
-CREATE TABLE t_stats_materialize_index (id Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a' STATISTICS(uniq, basic))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
+CREATE TABLE t_stats_materialize_index (id Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a')
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1, auto_statistics_types = 'uniq, basic';
 
 INSERT INTO t_stats_materialize_index (id) VALUES (1), (2);
 ALTER TABLE t_stats_materialize_index MODIFY COLUMN e Int8 MATERIALIZED 2;
@@ -101,8 +101,8 @@ DROP TABLE t_stats_materialize_index;
 SELECT '-- statistics stay prunable after MATERIALIZE STATISTICS and after DELETE';
 
 DROP TABLE IF EXISTS t_stats_not_emptied;
-CREATE TABLE t_stats_not_emptied (id Int64, v Int64 STATISTICS(uniq, basic))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
+CREATE TABLE t_stats_not_emptied (id Int64, v Int64)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1, auto_statistics_types = 'uniq, basic';
 
 INSERT INTO t_stats_not_emptied SELECT number, number % 7 FROM numbers(1000);
 

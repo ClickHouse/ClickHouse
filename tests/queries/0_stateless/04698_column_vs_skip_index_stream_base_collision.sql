@@ -389,13 +389,12 @@ CHECK TABLE t_proj_carry SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_proj_carry;
 
 -- Statistics drops reach the rename planning with an empty destination.
-SET allow_experimental_statistics = 1;
-CREATE TABLE t_stats (k UInt64, s String, v UInt64 STATISTICS(tdigest),
+CREATE TABLE t_stats (k UInt64, s String, v UInt64,
     INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, auto_statistics_types = 'tdigest';
 INSERT INTO t_stats SELECT number, toString(number), number FROM numbers(10);
-ALTER TABLE t_stats MODIFY COLUMN v UInt64;
+ALTER TABLE t_stats CLEAR STATISTICS v;
 SELECT 'statistics-drop-legal', count(), sum(v) FROM t_stats;
 CHECK TABLE t_stats SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_stats;

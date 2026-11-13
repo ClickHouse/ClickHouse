@@ -14,9 +14,9 @@ $CLICKHOUSE_CLIENT -n -q "
     SET materialize_statistics_on_insert = 1;
 
     DROP TABLE IF EXISTS t_hypo_stat_mc;
-    CREATE TABLE t_hypo_stat_mc (a UInt64, b UInt64 STATISTICS(tdigest, uniq), c UInt64 STATISTICS(tdigest, uniq))
+    CREATE TABLE t_hypo_stat_mc (a UInt64, b UInt64, c UInt64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, auto_statistics_types = 'tdigest, uniq';
     INSERT INTO t_hypo_stat_mc SELECT number, number % 100, number % 50 FROM numbers(10000);
 "
 

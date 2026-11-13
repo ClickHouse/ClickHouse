@@ -17,9 +17,9 @@ DROP TABLE IF EXISTS t_prewhere_stats_compact;
 CREATE TABLE t_prewhere_stats_compact
 (
     id UInt64,
-    x Int64 STATISTICS(tdigest),
-    y Int64 STATISTICS(tdigest)
-) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
+    x Int64,
+    y Int64
+) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'tdigest';
 
 INSERT INTO t_prewhere_stats_compact SELECT number, number, number FROM numbers(100000);
 

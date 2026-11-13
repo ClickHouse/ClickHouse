@@ -239,11 +239,7 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    /// `allow_deprecated_minmax` grandfathers an explicitly-declared `minmax` statistics type that
-    /// already exists in the table's metadata (e.g. a table created by an older version). It is set
-    /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
-    /// such old tables are not rejected.
-    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
+    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
     ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
@@ -270,6 +266,8 @@ private:
     Creators creators;
 };
 
+/// Statistics are never declared explicitly: they are added to every column of a supported type
+/// according to the `auto_statistics_types` MergeTree setting, and removed before the metadata is stored.
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 

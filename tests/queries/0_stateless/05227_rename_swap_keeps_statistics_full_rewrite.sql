@@ -14,10 +14,10 @@ DROP TABLE IF EXISTS t_swap_types_statistics SYNC;
 
 -- The two columns have different types: same-typed halves of a swap happen to land on a column of
 -- the type they were built for, which hides the problem.
-CREATE TABLE t_swap_types_statistics (a UInt64 STATISTICS(tdigest), b Float64 STATISTICS(tdigest), c UInt64)
+CREATE TABLE t_swap_types_statistics (a UInt64, b Float64, c UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_types_statistics', 'r1')
 ORDER BY tuple() PARTITION BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
+SETTINGS auto_statistics_types = 'tdigest, basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
 
 INSERT INTO t_swap_types_statistics VALUES (1, 2.5, 3);
 
@@ -42,10 +42,10 @@ SELECT 'a drop and a rename onto the dropped name';
 
 DROP TABLE IF EXISTS t_drop_rename_statistics SYNC;
 
-CREATE TABLE t_drop_rename_statistics (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest), c UInt64)
+CREATE TABLE t_drop_rename_statistics (a UInt64, b UInt64, c UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_drop_rename_statistics', 'r1')
 ORDER BY tuple() PARTITION BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
+SETTINGS auto_statistics_types = 'tdigest, basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
 
 INSERT INTO t_drop_rename_statistics VALUES (1, 2, 3);
 

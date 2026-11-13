@@ -12,14 +12,14 @@ SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS ttl_stats_orphan_partial;
 -- wide parts in full storage: otherwise MATERIALIZE TTL rewrites every column
-CREATE TABLE ttl_stats_orphan_partial (k UInt64, d DateTime, v UInt32 DEFAULT 7 STATISTICS(basic) TTL d + INTERVAL 1 SECOND)
+CREATE TABLE ttl_stats_orphan_partial (k UInt64, d DateTime, v UInt32 DEFAULT 7 TTL d + INTERVAL 1 SECOND)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, auto_statistics_types = 'basic';
 SYSTEM STOP TTL MERGES ttl_stats_orphan_partial;
 
 INSERT INTO ttl_stats_orphan_partial SELECT number, toDateTime('2000-01-01 00:00:00'), 5 FROM numbers(4);
 ALTER TABLE ttl_stats_orphan_partial MATERIALIZE TTL;
-ALTER TABLE ttl_stats_orphan_partial MODIFY COLUMN v UInt32 DEFAULT 99 STATISTICS(basic) TTL d + INTERVAL 1 SECOND;
+ALTER TABLE ttl_stats_orphan_partial MODIFY COLUMN v UInt32 DEFAULT 99 TTL d + INTERVAL 1 SECOND;
 SYSTEM STOP MERGES ttl_stats_orphan_partial;
 INSERT INTO ttl_stats_orphan_partial SELECT number + 4, toDateTime('2100-01-01 00:00:00'), 4242 FROM numbers(2);
 

@@ -8,13 +8,13 @@ SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS t_rename_swap_statistics SYNC;
 
-CREATE TABLE t_rename_swap_statistics (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest), c UInt64)
+CREATE TABLE t_rename_swap_statistics (a UInt64, b UInt64, c UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rename_swap_statistics', 'r1')
 ORDER BY tuple() PARTITION BY tuple()
 -- The statistics set is pinned so it does not depend on the default of the day, and the part type is
 -- pinned to compact: the same swap on a wide part fails the mutation with a separate, pre-existing
 -- error ("Stream ... is not found" out of `MergeTreeReaderWide`), which this test is not about.
-SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
+SETTINGS auto_statistics_types = 'tdigest, basic, uniq_v2', min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 1000000;
 
 INSERT INTO t_rename_swap_statistics VALUES (1, 2, 3);
 

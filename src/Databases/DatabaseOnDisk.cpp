@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -998,6 +999,15 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
+
+    /// Older versions could store a per-column `STATISTICS(...)` clause. Statistics can no longer be declared
+    /// explicitly, they follow the `auto_statistics_types` MergeTree setting, so the clause is dropped here,
+    /// and neither the loaded table nor `SHOW CREATE TABLE` sees it.
+    if (create.columns_list && create.columns_list->columns)
+        for (const auto & column : create.columns_list->columns->children)
+            if (auto * column_declaration = column->as<ASTColumnDeclaration>())
+                column_declaration->resetStatisticsDesc();
+
     if (create.table && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());

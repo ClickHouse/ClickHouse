@@ -1,15 +1,14 @@
-Statistics declared in CREATE TABLE
+Statistics from auto_statistics_types in CREATE TABLE
 lnu	LowCardinality(Nullable(UUID))	1	1
 lu	LowCardinality(UUID)	1	1
 nu	Nullable(UUID)	1	1
 u	UUID	1	1
 u2	UUID	1	1
-Column without statistics
-plain	1
-ALTER ADD / MATERIALIZE / DROP statistics
+ALTER MODIFY SETTING / MATERIALIZE / CLEAR statistics
 u	1	1
 u	1
-Other statistics types are still rejected for UUID
+Other statistics types are not collected for UUID
+u	1
 Queries that use the statistics return correct results
 100
 85

@@ -29,9 +29,9 @@ DROP TABLE IF EXISTS t_rc_dim;
 -- broadcasting the filtered result of `t_rc_dim`.
 CREATE TABLE t_rc_probe (k UInt32, x String) ENGINE = MergeTree ORDER BY k
   SETTINGS auto_statistics_types = '';
-CREATE TABLE t_rc_dim (k UInt32 STATISTICS(uniq), v UInt32 STATISTICS(uniq), p UInt64)
+CREATE TABLE t_rc_dim (k UInt32, v UInt32, p UInt64)
   ENGINE = MergeTree ORDER BY k
-  SETTINGS auto_statistics_types = '';
+  SETTINGS auto_statistics_types = 'uniq';
 INSERT INTO t_rc_probe SELECT number, repeat('x', 100) FROM numbers(100000);
 INSERT INTO t_rc_dim SELECT number, number % 1000, number FROM numbers(100000);
 

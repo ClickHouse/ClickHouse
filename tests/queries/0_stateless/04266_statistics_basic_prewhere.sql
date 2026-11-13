@@ -27,12 +27,12 @@ CREATE TABLE test_basic_prewhere
     id UInt64,
     col_low_null Nullable(Int64),
     col_high_null Nullable(Int64),
-    c Int64 STATISTICS(tdigest),
-    range_probe Int64 STATISTICS(tdigest)
+    c Int64,
+    range_probe Int64
 ) ENGINE = MergeTree()
 ORDER BY id
 -- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+SETTINGS auto_statistics_types = 'basic, tdigest', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
 
 INSERT INTO test_basic_prewhere SELECT
     number,
@@ -42,11 +42,9 @@ INSERT INTO test_basic_prewhere SELECT
     number
 FROM numbers(100);
 
--- Add basic statistics for prewhere ordering tests. `basic` on a Nullable
+-- `basic` statistics for prewhere ordering tests. `basic` on a Nullable
 -- numeric column tracks both numeric min/max and the null count in a single
--- declaration.
-ALTER TABLE test_basic_prewhere ADD STATISTICS col_low_null TYPE basic;
-ALTER TABLE test_basic_prewhere ADD STATISTICS col_high_null TYPE basic;
+-- statistic.
 ALTER TABLE test_basic_prewhere MATERIALIZE STATISTICS col_low_null, col_high_null;
 
 -- Test 1: IS NULL with basic — col_low_null (10 NULLs) is more selective than
@@ -120,10 +118,10 @@ DROP TABLE test_basic_prewhere;
 DROP TABLE IF EXISTS test_fallback_no_basic;
 
 CREATE TABLE test_fallback_no_basic (
-    a Int64 STATISTICS(tdigest),
-    b Nullable(Int64) STATISTICS(tdigest)  -- only tdigest, NO basic
+    a Int64,
+    b Nullable(Int64)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'tdigest'; -- only tdigest, NO basic
 
 INSERT INTO test_fallback_no_basic
 SELECT number, if(number % 2 = 0, NULL, number)
@@ -175,8 +173,7 @@ SELECT
     if(number % 10 != 0, NULL, number)
 FROM numbers(10000);
 
-ALTER TABLE test_fallback_selectivity ADD STATISTICS a TYPE basic;
-ALTER TABLE test_fallback_selectivity ADD STATISTICS b TYPE basic;
+ALTER TABLE test_fallback_selectivity MODIFY SETTING auto_statistics_types = 'basic';
 ALTER TABLE test_fallback_selectivity MATERIALIZE STATISTICS a, b SETTINGS mutations_sync = 1;
 
 SELECT 'Fallback selectivity uses non-null row count (b before a)';
@@ -198,10 +195,7 @@ CREATE TABLE test_const_null (
     a Nullable(Int64),
     b Nullable(Int64)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
-
-ALTER TABLE test_const_null ADD STATISTICS a TYPE basic;
-ALTER TABLE test_const_null ADD STATISTICS b TYPE basic;
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic';
 
 -- a: all NULL via constant expression; b: 50% NULL via per-row expression.
 INSERT INTO test_const_null

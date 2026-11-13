@@ -6658,7 +6658,7 @@ scheduling a mutation (see `system.mutations`). This covers:
   `ALTER TABLE ... DROP COLUMN` or `... CLEAR COLUMN` of a physical column,
   `ALTER TABLE ... RENAME COLUMN` of any column including an `ALIAS`,
   `ALTER TABLE ... DROP INDEX`, `... CLEAR INDEX`, `... DROP PROJECTION`,
-  `... CLEAR PROJECTION`, `... DROP STATISTICS`, `... CLEAR STATISTICS`, and
+  `... CLEAR PROJECTION`, `... CLEAR STATISTICS`, and
   `ALTER TABLE ... MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
 - `ALTER TABLE ... UPDATE` whenever it runs as a heavyweight mutation, which is the default
   `alter_update_mode = 'heavy'` and every case the other modes fall back to,
@@ -11061,7 +11061,7 @@ Allows using statistics to optimize queries
 )", 0, allow_statistic_optimize, \
         {"26.1", true, true, "Enable this optimization by default."}) \
     DECLARE_WITH_ALIAS(Bool, allow_statistics, true, R"(
-Allows defining columns with [statistics](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) and [manipulate statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+Allows to [manipulate statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) with `ALTER TABLE ... CLEAR STATISTICS` and `ALTER TABLE ... MATERIALIZE STATISTICS`.
 )", 0, allow_experimental_statistics, \
         {"26.3", false, true, "Column statistics are now GA. This also applies to the alias `allow_experimental_statistics`."}, \
         {"24.6", false, false, "The setting was renamed. The previous name is `allow_experimental_statistic`. At the time the setting was named `allow_experimental_statistics`, which is now an alias of it."}) \

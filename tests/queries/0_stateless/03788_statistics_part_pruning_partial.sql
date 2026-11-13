@@ -25,8 +25,8 @@ INSERT INTO test_stats_pruning_partial SELECT number, number FROM numbers(100);
 -- Part 2 (OLD): id [100, 199], value [1000, 1099] - Partition 1
 INSERT INTO test_stats_pruning_partial SELECT number + 100, number + 1000 FROM numbers(100);
 
--- ADD STATISTICS basic
-ALTER TABLE test_stats_pruning_partial ADD STATISTICS value TYPE basic;
+-- Enable basic statistics for new parts
+ALTER TABLE test_stats_pruning_partial MODIFY SETTING auto_statistics_types = 'basic';
 
 -- Part 3 (NEW with statistics): id [200, 299], value [2000, 2099] - Partition 2
 INSERT INTO test_stats_pruning_partial SELECT number + 200, number + 2000 FROM numbers(100);

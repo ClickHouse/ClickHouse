@@ -11,11 +11,11 @@ SET query_plan_merge_filter_into_join_condition = 1;
 SET cross_to_inner_join_rewrite = 0;
 SET explain_query_plan_default = 'legacy';
 
-CREATE TABLE dpsub_state_a (k UInt32, x UInt32 STATISTICS(uniq), one UInt8 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE dpsub_state_b (k UInt32, x UInt32 STATISTICS(uniq), one UInt8 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE dpsub_state_c (k UInt32, x UInt32 STATISTICS(uniq), one UInt8 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE dpsub_state_d (k UInt32, x UInt32 STATISTICS(uniq), one UInt8 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE dpsub_state_e (k UInt32, x UInt32 STATISTICS(uniq), one UInt8 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE dpsub_state_a (k UInt32, x UInt32, one UInt8) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE dpsub_state_b (k UInt32, x UInt32, one UInt8) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE dpsub_state_c (k UInt32, x UInt32, one UInt8) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE dpsub_state_d (k UInt32, x UInt32, one UInt8) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE dpsub_state_e (k UInt32, x UInt32, one UInt8) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
 
 INSERT INTO dpsub_state_a SELECT number, number % 100, 0 FROM numbers(1000);
 INSERT INTO dpsub_state_b SELECT number, number % 10, 0 FROM numbers(100);

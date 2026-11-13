@@ -58,8 +58,6 @@ ALTER TABLE non_metadata_alters MODIFY SETTING enable_block_number_column = 1, e
 
 ALTER TABLE non_metadata_alters ADD INDEX idx_value3 value3 TYPE minmax GRANULARITY 1;
 
-ALTER TABLE non_metadata_alters ADD STATISTICS key TYPE tdigest;
-
 ALTER TABLE non_metadata_alters ADD PROJECTION proj_key (SELECT key ORDER BY key);
 
 ALTER TABLE non_metadata_alters ADD COLUMN value7 UInt64 DEFAULT key + 100;

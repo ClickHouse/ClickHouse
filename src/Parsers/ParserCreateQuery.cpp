@@ -209,6 +209,22 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
 bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    ASTPtr columns;
+
+    if (!columns_p.parse(pos, columns, expected))
+        return false;
+
+    auto stat = make_intrusive<ASTStatisticsDeclaration>();
+    stat->set(stat->columns, columns);
+    node = stat;
+
+    return true;
+}
+
+bool ParserObsoleteStatisticsDeclarationWithTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
     ParserKeyword s_type(Keyword::TYPE);
 
     ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
@@ -229,23 +245,6 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     auto stat = make_intrusive<ASTStatisticsDeclaration>();
     stat->set(stat->columns, columns);
     stat->set(stat->types, types);
-    node = stat;
-
-    return true;
-}
-
-bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-
-    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-
-    ASTPtr columns;
-
-    if (!columns_p.parse(pos, columns, expected))
-        return false;
-
-    auto stat = make_intrusive<ASTStatisticsDeclaration>();
-    stat->set(stat->columns, columns);
     node = stat;
 
     return true;
@@ -2150,7 +2149,7 @@ The structure of the table is a list of column descriptions, secondary indexes, 
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
-The modifiers that follow the type - `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` and per-column `SETTINGS` - can be written in any order, and each of them at most once. For example, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` and `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` are the same. Note that `SHOW CREATE TABLE` normalizes the column declaration: the modifiers that remain in it are always printed in the canonical order `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, while a per-column `PRIMARY KEY` is moved out of the column declaration into the table-level `PRIMARY KEY` clause.
+The modifiers that follow the type - `COMMENT`, `compression_codec`, `TTL`, `COLLATE`, `PRIMARY KEY` and per-column `SETTINGS` - can be written in any order, and each of them at most once. For example, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` and `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` are the same. Note that `SHOW CREATE TABLE` normalizes the column declaration: the modifiers that remain in it are always printed in the canonical order `COMMENT`, `CODEC`, `TTL`, `COLLATE`, `SETTINGS`, while a per-column `PRIMARY KEY` is moved out of the column declaration into the table-level `PRIMARY KEY` clause.
 
 Expressions can also be defined for default values (see below).
 

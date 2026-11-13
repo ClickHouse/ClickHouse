@@ -18,10 +18,10 @@ SET allow_reorder_prewhere_conditions = 1; -- CI may inject False; statistics-ba
 
 CREATE TABLE tab
 (
-    a Int64 STATISTICS(tdigest),
-    b Int16 STATISTICS(tdigest),
+    a Int64,
+    b Int16,
 ) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0, default_compression_codec = 'LZ4'; -- TODO: there is a bug in vertical merge with statistics. (codec pinned: randomized server-side, affects statistics-based prewhere cost)
+SETTINGS auto_statistics_types = 'tdigest', min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0, default_compression_codec = 'LZ4'; -- TODO: there is a bug in vertical merge with statistics. (codec pinned: randomized server-side, affects statistics-based prewhere cost)
 
 INSERT INTO tab SELECT number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
@@ -53,7 +53,7 @@ SETTINGS auto_statistics_types = '', default_compression_codec = 'LZ4';
 
 SET materialize_statistics_on_insert = 0;
 INSERT INTO tab_basic SELECT number, if(number % 2 = 0, NULL, number) FROM numbers(100);
-ALTER TABLE tab_basic ADD STATISTICS value TYPE basic;
+ALTER TABLE tab_basic MODIFY SETTING auto_statistics_types = 'basic';
 ALTER TABLE tab_basic MATERIALIZE STATISTICS value;
 INSERT INTO tab_basic SELECT number + 100, if(number % 3 = 0, NULL, number + 100) FROM numbers(100);
 

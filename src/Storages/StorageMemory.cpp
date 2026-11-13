@@ -327,7 +327,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     /// executes normally.
     ///
     /// Only the kinds that can actually reach this method are filtered:
-    ///   - `DROP INDEX` / `DROP PROJECTION` / `DROP STATISTICS` are rejected earlier by
+    ///   - `DROP INDEX` / `DROP PROJECTION` / `CLEAR STATISTICS` are rejected earlier by
     ///     `StorageMemory::checkAlterIsPossible`, never reach `mutate`.
     ///   - `MATERIALIZE TTL` is rejected by `MutationsInterpreter::prepare` during
     ///     pre-mutation validation when there is no TTL on the table, never reaches `mutate`.

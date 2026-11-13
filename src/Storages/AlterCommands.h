@@ -50,9 +50,7 @@ struct AlterCommand
         ADD_PROJECTION,
         DROP_PROJECTION,
         MODIFY_PROJECTION,
-        ADD_STATISTICS,
-        DROP_STATISTICS,
-        MODIFY_STATISTICS,
+        DROP_STATISTICS, /// `CLEAR STATISTICS`: statistics are not declared in the metadata, only their files in parts are removed.
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -142,12 +140,8 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistics_decl = nullptr;
+    /// For CLEAR STATISTICS
     std::vector<String> statistics_columns;
-    std::vector<String> statistics_types;
-
-    /// For ADD COLUMN and MODIFY COLUMN: the column-level `STATISTICS(...)` clause of the column declaration
-    ASTPtr column_statistics_decl = nullptr;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;

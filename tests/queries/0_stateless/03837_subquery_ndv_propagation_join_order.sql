@@ -11,26 +11,26 @@ SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE test_sales (
     sale_id UInt64,
-    product_id UInt64 STATISTICS(uniq),
-    region_id UInt32 STATISTICS(uniq),
+    product_id UInt64,
+    region_id UInt32,
     amount Float64
-) ENGINE = MergeTree ORDER BY sale_id;
+) ENGINE = MergeTree ORDER BY sale_id SETTINGS auto_statistics_types = 'uniq';
 
 CREATE TABLE test_partners (
-    product_id UInt64 STATISTICS(uniq),
+    product_id UInt64,
     partner_name String
-) ENGINE = MergeTree ORDER BY product_id;
+) ENGINE = MergeTree ORDER BY product_id SETTINGS auto_statistics_types = 'uniq';
 
 CREATE TABLE test_region_subsidies (
-    region_id UInt32 STATISTICS(uniq),
+    region_id UInt32,
     subsidy_type String,
     subsidy_amount Float64
-) ENGINE = MergeTree ORDER BY region_id;
+) ENGINE = MergeTree ORDER BY region_id SETTINGS auto_statistics_types = 'uniq';
 
 CREATE TABLE test_product_catalog (
-    product_id UInt64 STATISTICS(uniq),
+    product_id UInt64,
     catalog_info String
-) ENGINE = MergeTree ORDER BY product_id;
+) ENGINE = MergeTree ORDER BY product_id SETTINGS auto_statistics_types = 'uniq';
 
 -- sales: 50K rows, region_id NDV=5, product_id NDV=10K
 INSERT INTO test_sales

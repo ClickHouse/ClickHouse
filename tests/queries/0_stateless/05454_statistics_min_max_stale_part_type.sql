@@ -15,7 +15,7 @@ SET mutations_sync = 0, alter_sync = 0;
 
 SELECT 'UInt64 to UInt8, 260 reads as 4';
 DROP TABLE IF EXISTS t_05454_narrowing;
-CREATE TABLE t_05454_narrowing (x UInt64 STATISTICS(basic)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_05454_narrowing (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 SYSTEM STOP MERGES t_05454_narrowing;
 INSERT INTO t_05454_narrowing SETTINGS materialize_statistics_on_insert = 1 VALUES (250), (260);
 ALTER TABLE t_05454_narrowing MODIFY COLUMN x UInt8;
@@ -33,7 +33,7 @@ DROP TABLE t_05454_narrowing;
 -- A change of the scale keeps the type of `Field`, so the old statistics would pass a check of the `Field` type.
 SELECT 'Decimal64(2) to Decimal64(1)';
 DROP TABLE IF EXISTS t_05454_decimal;
-CREATE TABLE t_05454_decimal (d Decimal64(2) STATISTICS(basic)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_05454_decimal (d Decimal64(2)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 SYSTEM STOP MERGES t_05454_decimal;
 INSERT INTO t_05454_decimal SETTINGS materialize_statistics_on_insert = 1 VALUES (1.21), (5.61);
 ALTER TABLE t_05454_decimal MODIFY COLUMN d Decimal64(1);

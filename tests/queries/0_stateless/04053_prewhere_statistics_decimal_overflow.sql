@@ -34,7 +34,8 @@ INSERT INTO test_prewhere_decimal_overflow VALUES
        toDecimal128('-90000000000000000000000000000', 9),
        toDecimal128( '90000000000000000000000000000', 9))]);
 
-ALTER TABLE test_prewhere_decimal_overflow ADD STATISTICS ts TYPE basic;
+-- Materialize `basic` statistics only for `ts`; the other columns stay without statistics.
+ALTER TABLE test_prewhere_decimal_overflow MODIFY SETTING auto_statistics_types = 'basic';
 ALTER TABLE test_prewhere_decimal_overflow MATERIALIZE STATISTICS ts SETTINGS mutations_sync = 1;
 
 SET optimize_move_to_prewhere = 1;

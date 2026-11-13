@@ -10,8 +10,8 @@ SET materialize_statistics_on_insert = 1;
 CREATE TABLE test_table
 (
     id UInt64,
-    v1 String STATISTICS(uniq),
-    v2 UInt64 STATISTICS(tdigest),
+    v1 String,
+    v2 UInt64,
     v3 String
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_table', '1')

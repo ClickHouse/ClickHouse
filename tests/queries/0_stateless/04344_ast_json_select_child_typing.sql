@@ -9,7 +9,7 @@
 SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO t SELECT 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM a INNER JOIN b ON a.x = b.y'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x FROM t ARRAY JOIN arr AS x'));
-SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (ADD STATISTICS a TYPE tdigest)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t (CLEAR STATISTICS a)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 GROUP BY 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 ORDER BY 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('WITH x AS (SELECT 1) SELECT 1'));
@@ -56,7 +56,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM a INNER JOIN 
 -- ---------------------------------------------------------------------------
 -- `ASTStatisticsDeclaration.columns` children are `ASTIdentifier` (`getColumnNames` downcasts them).
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (ADD STATISTICS a TYPE tdigest)'), '"columns":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}', '"columns":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t (CLEAR STATISTICS a)'), '"columns":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}', '"columns":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- `ASTSelectQuery` list slots (`group_by`/`order_by`/...) are `ASTExpressionList`s, and ORDER BY

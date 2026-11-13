@@ -100,7 +100,6 @@ namespace ErrorCodes
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ILLEGAL_STATISTICS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -716,21 +715,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
     const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
 
-    /// Statistics of a column that is not physically stored can never be built: the column is absent
-    /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
-    /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
-    {
-        for (const auto & column : columns)
-        {
-            if (!columns.hasPhysical(column.name) && column.statistics.hasExplicitStatistics())
-                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
-                    "Cannot add statistics to column '{}': it is not physically stored",
-                    column.name);
-        }
-    }
-
-    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
+    /// A full-definition `ATTACH` is exempt, so an existing table with such a column stays loadable.
     if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkLossyCodecOnLowCardinality(columns);
 
@@ -1351,8 +1336,8 @@ Despite a similar name, the [Merge](/reference/engines/table-engines/special/mer
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTICS(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -2554,49 +2539,48 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
-The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family:
+Tables of the `*MergeTree*` family collect statistics automatically for every physically stored column.
+The statistics types are specified by the [`auto_statistics_types`](/reference/settings/merge-tree-settings#auto_statistics_types) MergeTree setting
+(`basic, uniq_v2` by default). Each type is collected only for the columns whose data type it supports, see [Supported data types](#supported-data-types).
+Statistics cannot be declared for individual columns.
 
 ```sql
 CREATE TABLE tab
 (
-    a Int64 STATISTICS(tdigest, uniq),
+    a Int64,
     b Float64
 )
 ENGINE = MergeTree
 ORDER BY a
+SETTINGS auto_statistics_types = 'basic, tdigest, uniq_v2';
 ```
 
-Statistics require a physically stored column. An `ALIAS` or `EPHEMERAL` column is not written to any part, so declaring statistics on one is rejected.
-
-We can also manipulate statistics with `ALTER` statements:
-
-```sql
-ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
-ALTER TABLE tab DROP STATISTICS a;
-```
+The setting can be changed with `ALTER TABLE tab MODIFY SETTING auto_statistics_types = '...'`. The statistics of existing parts can be rebuilt with
+[`ALTER TABLE ... MATERIALIZE STATISTICS`](/reference/statements/alter/statistics) and deleted with `ALTER TABLE ... CLEAR STATISTICS`.
 
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
-They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
+They are used for query optimization (e.g. moving conditions to `PREWHERE` and choosing the order of `JOIN`s) when the setting `use_statistics` is enabled.
 
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
 Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning.
-On numeric and temporal columns, `basic` (and explicit `minmax`) track the minimum and maximum values in each part, so range predicates can skip parts whose bounds cannot match.
+On numeric and temporal columns, `basic` (and `minmax`) track the minimum and maximum values in each part, so range predicates can skip parts whose bounds cannot match.
 For `Nullable` columns of any type, `basic` also tracks the number of `NULL` values in each part. That enables pruning based on `IS NULL` / `IS NOT NULL` predicates. On numeric and temporal columns it also tightens range bounds for parts that contain no `NULL` values.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
 
 ```sql
--- Create a table with basic statistics on the 'value' column
+-- Create a table with basic statistics on all columns
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(basic)
+    value Int64
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS auto_statistics_types = 'basic';
 
 SYSTEM STOP MERGES test_stats;
 
@@ -2624,7 +2608,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
   - for integer and `Decimal` columns that are not `Nullable` or `LowCardinality`: the exact sum of values, from which `sum`, `avg` and `sumCount` without `GROUP BY` and filters are answered (see the `use_statistics_for_sum_avg_aggregation` setting).
 
-    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
+    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` is collected for any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
 - `minmax` (deprecated)
 
@@ -2667,7 +2651,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | uniq     | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 | uniq_v2  | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 
-All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` is additionally collected for any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
 ### Supported operations {#supported-operations}
 

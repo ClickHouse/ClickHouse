@@ -17,9 +17,6 @@ SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_106533_stats;
 
--- `minmax` is requested through `auto_statistics_types` rather than a column `STATISTICS(minmax)`
--- clause: both build the same StatisticsMinMax, but an explicit clause is deprecated and logs a
--- warning that the Fast test harness treats as a failure (it runs with send_logs_level=warning).
 CREATE TABLE t_106533_stats (id UInt64, val Float64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS auto_statistics_types = 'minmax', index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
@@ -59,9 +56,9 @@ DROP TABLE t_106533_stats;
 -- Basic statistics aggregate a numeric min/max the same way, so they hide a NaN the same way.
 DROP TABLE IF EXISTS t_106533_stats_basic;
 
-CREATE TABLE t_106533_stats_basic (id UInt64, val Float32 STATISTICS(basic))
+CREATE TABLE t_106533_stats_basic (id UInt64, val Float32)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS auto_statistics_types = 'basic', index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 -- Two parts are what make the pruning unsafe: a merged part's finite bound is kept by the unfixed code too.
 SYSTEM STOP MERGES t_106533_stats_basic;

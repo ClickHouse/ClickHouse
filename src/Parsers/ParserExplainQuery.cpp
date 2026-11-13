@@ -1569,11 +1569,11 @@ The hypothetical `minmax` would prune from 100 marks down to 1 — `skip_ratio: 
 
 **Statistical example**
 
-Column [statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) are off by default. To exercise the `statistical` path, define them on the relevant columns first and wait for the materialize mutation to finish:
+Column [statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) of type `tdigest` are not collected by default. To exercise the `statistical` path, enable them with the `auto_statistics_types` MergeTree setting and wait for the materialize mutation to finish:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE tdigest;
-ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+ALTER TABLE t MODIFY SETTING auto_statistics_types = 'basic, uniq_v2, tdigest';
+ALTER TABLE t MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1;
 ```
 
 Then disable the empirical path so the estimator falls back to column statistics:

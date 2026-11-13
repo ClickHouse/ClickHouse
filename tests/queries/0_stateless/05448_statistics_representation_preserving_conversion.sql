@@ -12,13 +12,14 @@ SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
 
 DROP TABLE IF EXISTS t_05448;
-CREATE TABLE t_05448 (e Enum8('a' = 1, 'b' = 2) STATISTICS(basic), x Int64 STATISTICS(basic))
-ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_05448 (e Enum8('a' = 1, 'b' = 2), x Int64)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO t_05448 SELECT if(number % 2, 'a', 'b'), number * 100 FROM numbers(10) SETTINGS materialize_statistics_on_insert = 1;
 
 -- Extending the enum does not rewrite the part, which keeps the old enum type.
-ALTER TABLE t_05448 MODIFY COLUMN e Enum8('a' = 1, 'b' = 2, 'c' = 3) STATISTICS(basic) SETTINGS mutations_sync = 2;
+ALTER TABLE t_05448 MODIFY COLUMN e Enum8('a' = 1, 'b' = 2, 'c' = 3) SETTINGS mutations_sync = 2;
 
 SELECT 'extended enum';
 SELECT min(e), max(e) FROM t_05448;
@@ -28,7 +29,7 @@ SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_05448 WHERE e = '
 
 -- A narrowing alter converts the values on read even after its mutation is killed.
 SYSTEM STOP MERGES t_05448;
-ALTER TABLE t_05448 MODIFY COLUMN x Int8 STATISTICS(basic) SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05448 MODIFY COLUMN x Int8 SETTINGS mutations_sync = 0, alter_sync = 0;
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_05448' SYNC FORMAT Null;
 
 SELECT 'killed narrowing alter';

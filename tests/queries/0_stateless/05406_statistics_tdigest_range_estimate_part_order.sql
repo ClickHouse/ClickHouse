@@ -3,8 +3,8 @@
 
 -- A range condition on a column with `tdigest` statistics is estimated from the statistics of all parts, whatever the order of the parts.
 
-CREATE TABLE t_low_first (v UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
-CREATE TABLE t_high_first (v UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+CREATE TABLE t_low_first (v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'tdigest';
+CREATE TABLE t_high_first (v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'tdigest';
 CREATE TABLE t_dim (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
 SYSTEM STOP MERGES t_low_first;
 SYSTEM STOP MERGES t_high_first;

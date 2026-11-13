@@ -15,12 +15,12 @@ CREATE TABLE test_json_null_path_pruning
 (
     bucket UInt8,
     id UInt64,
-    json Nullable(JSON) STATISTICS(basic)
+    json Nullable(JSON)
 )
 ENGINE = MergeTree()
 PARTITION BY bucket
 ORDER BY id
-SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
+SETTINGS auto_statistics_types = 'basic', nullable_serialization_version = 'basic';
 
 -- Parts with the nested "null" path present and no outer NULLs: the NULL count is 0.
 INSERT INTO test_json_null_path_pruning VALUES (0, 0, '{"null": 1}'), (0, 1, '{"null": 2}');

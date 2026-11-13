@@ -88,14 +88,17 @@ def check_stats_in_part(
         assert len(output) == 0
 
 
-def run_test_single_node(started_cluster):
+def run_test_single_node(started_cluster, wide):
+    # A mutation of a compact part rewrites all of its columns, so it rebuilds the statistics of every
+    # column (according to `auto_statistics_types`) except the ones being cleared. A mutation of a wide part
+    # touches only the statistics of the columns it names.
     node1.query("INSERT INTO test_stat VALUES (1,2,3), (4,5,6)")
 
     check_stats_in_part(node1, "test_stat", "all_1_1_0", "a", True, True)
     check_stats_in_part(node1, "test_stat", "all_1_1_0", "b", True, True)
     check_stats_in_part(node1, "test_stat", "all_1_1_0", "c", True, True)
 
-    node1.query("ALTER TABLE test_stat DROP STATISTICS a")
+    node1.query("ALTER TABLE test_stat CLEAR STATISTICS a")
 
     check_stats_in_part(node1, "test_stat", "all_1_1_0_2", "a", False, True)
     check_stats_in_part(node1, "test_stat", "all_1_1_0_2", "b", True, True)
@@ -103,17 +106,16 @@ def run_test_single_node(started_cluster):
 
     node1.query("ALTER TABLE test_stat CLEAR STATISTICS b, c")
 
-    check_stats_in_part(node1, "test_stat", "all_1_1_0_3", "a", False, False)
-    check_stats_in_part(node1, "test_stat", "all_1_1_0_3", "b", False, False)
-    check_stats_in_part(node1, "test_stat", "all_1_1_0_3", "c", False, False)
+    check_stats_in_part(node1, "test_stat", "all_1_1_0_3", "a", not wide, not wide)
+    check_stats_in_part(node1, "test_stat", "all_1_1_0_3", "b", False, not wide)
+    check_stats_in_part(node1, "test_stat", "all_1_1_0_3", "c", False, not wide)
 
     node1.query("ALTER TABLE test_stat MATERIALIZE STATISTICS b, c")
 
-    check_stats_in_part(node1, "test_stat", "all_1_1_0_4", "a", False, True)
+    check_stats_in_part(node1, "test_stat", "all_1_1_0_4", "a", not wide, True)
     check_stats_in_part(node1, "test_stat", "all_1_1_0_4", "b", True, True)
     check_stats_in_part(node1, "test_stat", "all_1_1_0_4", "c", True, True)
 
-    node1.query("ALTER TABLE test_stat ADD STATISTICS a type tdigest")
     node1.query("ALTER TABLE test_stat MATERIALIZE STATISTICS a")
 
     check_stats_in_part(node1, "test_stat", "all_1_1_0_5", "a", True, True)
@@ -143,12 +145,12 @@ def test_single_node_wide(started_cluster):
 
     node1.query(
         """
-        CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
+        CREATE TABLE test_stat(a Int64, b Int64, c Int64)
         ENGINE = MergeTree() ORDER BY a
-        SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+        SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'tdigest';
     """
     )
-    run_test_single_node(started_cluster)
+    run_test_single_node(started_cluster, wide=True)
 
 
 def test_single_node_normal(started_cluster):
@@ -156,12 +158,12 @@ def test_single_node_normal(started_cluster):
 
     node1.query(
         """
-        CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
+        CREATE TABLE test_stat(a Int64, b Int64, c Int64)
         ENGINE = MergeTree() ORDER BY a
-        SETTINGS auto_statistics_types = '';
+        SETTINGS min_bytes_for_wide_part = '10M', auto_statistics_types = 'tdigest';
     """
     )
-    run_test_single_node(started_cluster)
+    run_test_single_node(started_cluster, wide=False)
 
 
 def test_replicated_table_ddl(started_cluster):
@@ -170,28 +172,28 @@ def test_replicated_table_ddl(started_cluster):
 
     node1.query(
         """
-        CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
+        CREATE TABLE test_stat(a Int64, b Int64, c Int64)
         ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a
-        SETTINGS auto_statistics_types = '';
+        SETTINGS auto_statistics_types = 'tdigest';
     """
     )
     node2.query(
         """
-        CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
+        CREATE TABLE test_stat(a Int64, b Int64, c Int64)
         ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '2') ORDER BY a
-        SETTINGS auto_statistics_types = '';
+        SETTINGS auto_statistics_types = 'tdigest';
     """
     )
 
-    node1.query(
-        "ALTER TABLE test_stat MODIFY STATISTICS c TYPE tdigest, uniq",
-        settings={"alter_sync": "2"},
-    )
-    node1.query("ALTER TABLE test_stat DROP STATISTICS b", settings={"alter_sync": "2"})
+    # MergeTree settings are not replicated, so the setting is changed on each replica.
+    for node in [node1, node2]:
+        node.query(
+            "ALTER TABLE test_stat MODIFY SETTING auto_statistics_types = 'tdigest, uniq'"
+        )
 
     assert (
         node2.query("SHOW CREATE TABLE test_stat")
-        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS auto_statistics_types = \\\'\\\', index_granularity = 8192\n"
+        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64,\\n    `b` Int64,\\n    `c` Int64\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS auto_statistics_types = \\'tdigest, uniq\\', index_granularity = 8192\n"
     )
 
     node2.query("insert into test_stat values(1,2,3), (2,3,4)")
@@ -205,12 +207,8 @@ def test_replicated_table_ddl(started_cluster):
     check_stats_in_part(node2, "test_stat", "all_0_0_0_1", "c", False, True)
     check_stats_in_part(node2, "test_stat", "all_0_0_0_1", "d", True, True)
     node1.query(
-        "ALTER TABLE test_stat CLEAR STATISTICS d",
+        "ALTER TABLE test_stat CLEAR STATISTICS b, d",
         settings={"alter_sync": "2", "mutations_sync": 2},
-    )
-    node1.query(
-        "ALTER TABLE test_stat ADD STATISTICS b type tdigest",
-        settings={"alter_sync": "2"},
     )
     check_stats_in_part(node2, "test_stat", "all_0_0_0_2", "a", True, True)
     check_stats_in_part(node2, "test_stat", "all_0_0_0_2", "b", False, True)
@@ -239,13 +237,15 @@ def test_replicated_db(started_cluster):
         "CREATE TABLE test.test_stats (a Int64, b Int64) ENGINE = ReplicatedMergeTree() ORDER BY() SETTINGS auto_statistics_types = ''"
     )
     node2.query("ALTER TABLE test.test_stats MODIFY COLUMN b Float64")
-    node2.query("ALTER TABLE test.test_stats MODIFY STATISTICS b TYPE tdigest")
+    node2.query(
+        "ALTER TABLE test.test_stats MODIFY SETTING auto_statistics_types = 'tdigest'"
+    )
 
 
 def test_setting_materialize_statistics_on_merge(started_cluster):
     node3.query("DROP TABLE IF EXISTS test_stats SYNC")
     node3.query(
-        "CREATE TABLE test_stats (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY() SETTINGS materialize_statistics_on_merge = 0, auto_statistics_types = ''"
+        "CREATE TABLE test_stats (a Int64, b Int64) ENGINE = MergeTree() ORDER BY() SETTINGS materialize_statistics_on_merge = 0, auto_statistics_types = 'tdigest'"
     )
     node3.query("SYSTEM STOP MERGES")
     node3.query("insert into test_stats values(1,2)")

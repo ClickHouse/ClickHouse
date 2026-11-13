@@ -4,7 +4,7 @@
 -- leaves it absent outside one, so `ASTFunction::readJSON` cannot require it and each expression slot
 -- rejects the parser-impossible node itself. The rejections live in 05231, which reaches those analysers;
 -- this test pins what must keep round-tripping, argument-less functions included.
-SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt8, b UInt8 CODEC(LZ4), c UInt8 STATISTICS(tdigest), d DateTime TTL d + toIntervalDay(1), INDEX i arrayJoin([a]) TYPE minmax GRANULARITY 1) ENGINE = MergeTree PARTITION BY a % 8 PRIMARY KEY a ORDER BY (a, b) SAMPLE BY a TTL d + toIntervalDay(2) DELETE WHERE a > 0'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt8, b UInt8 CODEC(LZ4), d DateTime TTL d + toIntervalDay(1), INDEX i arrayJoin([a]) TYPE minmax GRANULARITY 1) ENGINE = MergeTree PARTITION BY a % 8 PRIMARY KEY a ORDER BY (a, b) SAMPLE BY a TTL d + toIntervalDay(2) DELETE WHERE a > 0'));
 
 -- `setNoEmptyArgs` erases the empty argument list of `MergeTree()`, `tuple()` keeps its own, and the
 -- deprecated positional arguments become key expressions, so the engine slot is screened through its

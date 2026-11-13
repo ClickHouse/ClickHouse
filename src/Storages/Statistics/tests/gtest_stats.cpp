@@ -162,7 +162,7 @@ TEST(Statistics, Estimator)
         std::vector<StatisticsType> stats_type_to_create({StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
         for (auto stats_type : stats_type_to_create)
         {
-            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr, false));
+            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr));
         }
         ColumnDescription column_desc;
         column_desc.name = column_name;
@@ -275,7 +275,7 @@ ColumnStatisticsPtr createTestStats(
     ColumnStatisticsDescription desc;
     desc.data_type = data_type;
     for (auto type : types)
-        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr));
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
@@ -414,7 +414,7 @@ TEST(Statistics, LikeSelectivity)
 
     ColumnStatisticsDescription mock_description;
     mock_description.data_type = data_type;
-    mock_description.types_to_desc.emplace(StatisticsType::Basic, SingleStatisticsDescription(StatisticsType::Basic, nullptr, false));
+    mock_description.types_to_desc.emplace(StatisticsType::Basic, SingleStatisticsDescription(StatisticsType::Basic, nullptr));
 
     ColumnDescription column_desc;
     column_desc.name = "a";
@@ -486,7 +486,7 @@ TEST(Statistics, BuildTypeMismatchThrows)
     {
         ColumnStatisticsDescription desc;
         desc.data_type = declared_type;
-        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr));
         ColumnsStatistics result;
         result.emplace(column_name, MergeTreeStatisticsFactory::instance().get(desc));
         return result;
@@ -623,7 +623,7 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     {
         ColumnStatisticsDescription desc;
         desc.data_type = declared_type;
-        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr));
         return MergeTreeStatisticsFactory::instance().get(desc);
     };
 
@@ -1017,7 +1017,7 @@ TEST(Statistics, BasicWithoutDefaultCountCloneEmpty)
 TEST(Statistics, BasicDefaultCountArray)
 {
     auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
-    EXPECT_TRUE(basicStatisticsValidator(SingleStatisticsDescription(StatisticsType::Basic, nullptr, false), data_type));
+    EXPECT_TRUE(basicStatisticsValidator(SingleStatisticsDescription(StatisticsType::Basic, nullptr), data_type));
 
     MutableColumnPtr col = data_type->createColumn();
     col->insert(Field(Array{}));                                     /// empty (default)

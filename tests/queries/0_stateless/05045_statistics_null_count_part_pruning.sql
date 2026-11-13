@@ -14,10 +14,10 @@ CREATE TABLE test_nullcount_pruning
 (
     bucket UInt8,
     id UInt64,
-    value Nullable(Int64) STATISTICS(basic),
-    value_for_range Nullable(Int64) STATISTICS(basic),
-    value_lc LowCardinality(Nullable(String)) STATISTICS(basic),
-    value_lc_num LowCardinality(Nullable(Int64)) STATISTICS(basic)
+    value Nullable(Int64),
+    value_for_range Nullable(Int64),
+    value_lc LowCardinality(Nullable(String)),
+    value_lc_num LowCardinality(Nullable(Int64))
 )
 ENGINE = MergeTree()
 PARTITION BY bucket
@@ -25,7 +25,7 @@ ORDER BY id
 -- `nullable_serialization_version` is pinned: randomized `allow_sparse` enables the
 -- sparsity-filter trivial count rewrite for `count() ... WHERE col IS NULL`, which
 -- replaces ReadFromMergeTree in EXPLAIN and hides the `Statistics` index section.
-SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
+SETTINGS auto_statistics_types = 'basic', nullable_serialization_version = 'basic';
 
 -- Part 0: all NULL values.
 INSERT INTO test_nullcount_pruning VALUES (0, 0, NULL, NULL, NULL, NULL), (0, 1, NULL, NULL, NULL, NULL);
@@ -153,12 +153,12 @@ DROP TABLE test_nullcount_pruning;
 DROP TABLE IF EXISTS test_nullable_only_keys;
 CREATE TABLE test_nullable_only_keys
 (
-    a Nullable(String) STATISTICS(basic),
-    b Nullable(String) STATISTICS(basic)
+    a Nullable(String),
+    b Nullable(String)
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO test_nullable_only_keys VALUES (NULL, NULL);
 INSERT INTO test_nullable_only_keys VALUES ('z', 'z');
@@ -177,14 +177,14 @@ DROP TABLE IF EXISTS test_float_inf_pruning;
 CREATE TABLE test_float_inf_pruning
 (
     bucket UInt8,
-    f Nullable(Float64) STATISTICS(basic)
+    f Nullable(Float64)
 )
 ENGINE = MergeTree()
 PARTITION BY bucket
 ORDER BY bucket
 -- Pinned for the same reason as above: keep `count() ... WHERE f IS NULL` on the
 -- ReadFromMergeTree path so that the `Statistics` index section stays in EXPLAIN.
-SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
+SETTINGS auto_statistics_types = 'basic', nullable_serialization_version = 'basic';
 
 -- Part 0: no NULLs, huge finite value and a real +Inf (NOT the +infinity NULL sentinel).
 INSERT INTO test_float_inf_pruning VALUES (0, 1e308), (0, inf);
@@ -208,12 +208,12 @@ DROP TABLE IF EXISTS test_dot_null_column;
 CREATE TABLE test_dot_null_column
 (
     bucket UInt8,
-    `foo.null` Nullable(Int64) STATISTICS(basic)
+    `foo.null` Nullable(Int64)
 )
 ENGINE = MergeTree()
 PARTITION BY bucket
 ORDER BY bucket
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO test_dot_null_column VALUES (0, NULL), (0, 5);
 INSERT INTO test_dot_null_column VALUES (1, 10), (1, 20);
@@ -238,7 +238,7 @@ SETTINGS auto_statistics_types = '', nullable_serialization_version = 'basic';
 INSERT INTO test_no_basic_stats_is_null VALUES (0, NULL), (0, NULL);
 INSERT INTO test_no_basic_stats_is_null VALUES (1, 100), (1, 101);
 
-SELECT 'Test 17: `IS NULL` without `STATISTICS(basic)` does not activate statistics pruning';
+SELECT 'Test 17: `IS NULL` without `basic` statistics does not activate statistics pruning';
 SELECT countIf(explain LIKE '%Statistics%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_no_basic_stats_is_null WHERE value IS NULL);
 SELECT count() FROM test_no_basic_stats_is_null WHERE value IS NULL;

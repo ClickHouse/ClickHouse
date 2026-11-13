@@ -28,18 +28,18 @@ DROP TABLE IF EXISTS t_stored;
 
 -- The test runner randomizes every MergeTree setting a table does not set itself, so spell out the
 -- ones the fixture needs: a wide part is what leaves a late-added column unmaterialized, the block
--- columns decide which mutation path runs, and the statistics are declared per column so the result
--- does not depend on the randomized `auto_statistics_types`.
+-- columns decide which mutation path runs, and `auto_statistics_types` is set so the result does not
+-- depend on its randomized value.
 -- `s` is stored by the part and `v` is not, and one mutation materializes the statistics of both, so
 -- the same mutation that must skip `v` has to keep `s`. That makes the two checks below a pair: `s`
 -- having a statistic is only possible if the mutation ran, which is what lets the absence of one for
 -- `v` mean the mutation declined it rather than that nothing happened.
-CREATE TABLE t_carried_over (id UInt64, s UInt32 STATISTICS(basic)) ENGINE = MergeTree ORDER BY id
+CREATE TABLE t_carried_over (id UInt64, s UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-         auto_statistics_types = '', enable_block_number_column = 0, enable_block_offset_column = 0;
+         auto_statistics_types = 'basic', enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_carried_over SELECT number, 10 FROM numbers(4);
-ALTER TABLE t_carried_over ADD COLUMN v UInt32 DEFAULT 7 STATISTICS(basic);
+ALTER TABLE t_carried_over ADD COLUMN v UInt32 DEFAULT 7;
 ALTER TABLE t_carried_over MATERIALIZE STATISTICS v, s;
 ALTER TABLE t_carried_over MODIFY COLUMN v UInt32 DEFAULT 99;
 
@@ -57,10 +57,10 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_carried_over WHERE s > 1000);
 
 CREATE TABLE t_rewritten (id UInt64) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-         auto_statistics_types = '', enable_block_number_column = 1, enable_block_offset_column = 0;
+         auto_statistics_types = 'basic', enable_block_number_column = 1, enable_block_offset_column = 0;
 
 INSERT INTO t_rewritten SELECT number FROM numbers(4);
-ALTER TABLE t_rewritten ADD COLUMN v UInt32 DEFAULT 7 STATISTICS(basic);
+ALTER TABLE t_rewritten ADD COLUMN v UInt32 DEFAULT 7;
 ALTER TABLE t_rewritten ADD PROJECTION p (SELECT id, v ORDER BY v);
 ALTER TABLE t_rewritten MATERIALIZE PROJECTION p;
 ALTER TABLE t_rewritten MODIFY COLUMN v UInt32 DEFAULT 99;
@@ -74,9 +74,9 @@ SELECT count() FROM t_rewritten WHERE v < 50 SETTINGS optimize_use_projections =
 SELECT countIf(explain ILIKE '%Statistics%')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rewritten WHERE v > 50 SETTINGS optimize_use_projections = 0);
 
-CREATE TABLE t_stored (id UInt64, w UInt32 STATISTICS(basic)) ENGINE = MergeTree ORDER BY id
+CREATE TABLE t_stored (id UInt64, w UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-         auto_statistics_types = '', enable_block_number_column = 0, enable_block_offset_column = 0;
+         auto_statistics_types = 'basic', enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_stored SELECT number, 10 FROM numbers(4);
 ALTER TABLE t_stored MATERIALIZE STATISTICS w;

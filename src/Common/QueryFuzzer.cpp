@@ -2801,12 +2801,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
-static const Strings & statTypes()
-{
-    static const Strings stat_types = {"tdigest", "countmin", "basic", "uniq", "uniq_v2", "nullcount"};
-    return stat_types;
-}
-
 void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
 {
     if (codec_fn.name != "CODEC" || !codec_fn.arguments || fuzz_rand() % 5 != 0)
@@ -2966,19 +2960,6 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
         ParserDataType parser;
         column.setType(parseQuery(
             parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
-    }
-
-    if (auto stats = column.getStatisticsDesc())
-    {
-        auto * stats_decl = stats->as<ASTStatisticsDeclaration>();
-        if (stats_decl && stats_decl->types)
-        {
-            for (auto & type_ast : stats_decl->types->children)
-            {
-                if (auto * fn = type_ast->as<ASTFunction>(); fn && fuzz_rand() % 5 == 0)
-                    fn->name = pickRandomly(fuzz_rand, statTypes());
-            }
-        }
     }
 
     if (auto codec = column.getCodec())
@@ -8491,13 +8472,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->if_exists = !alter_cmd->if_exists;
                 break;
-            case ASTAlterCommand::ADD_STATISTICS:
-            case ASTAlterCommand::MODIFY_STATISTICS:
-                /// Stat type fuzzing is handled by the ASTStatisticsDeclaration dispatch in fuzz().
-                break;
             case ASTAlterCommand::DROP_STATISTICS:
-                if (fuzz_rand() % 20 == 0)
-                    alter_cmd->clear_statistics = !alter_cmd->clear_statistics;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->if_exists = !alter_cmd->if_exists;
                 break;
@@ -9343,11 +9318,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * stats_decl = typeid_cast<ASTStatisticsDeclaration *>(ast.get()))
     {
-        /// Mutate statistic type names with low probability.
-        if (stats_decl->types)
-            for (auto & type_ast : stats_decl->types->children)
-                if (auto * afn = type_ast->as<ASTFunction>(); afn && fuzz_rand() % 5 == 0)
-                    afn->name = pickRandomly(fuzz_rand, statTypes());
         fuzz(stats_decl->children);
     }
     else if (auto * constraint = typeid_cast<ASTConstraintDeclaration *>(ast.get()))

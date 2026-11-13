@@ -741,16 +741,6 @@ SELECT 'ProjectionDeclaration' AS t,
 FROM (SELECT parseQueryToJSON('CREATE TABLE t (a UInt64, b UInt64, PROJECTION p (SELECT a, sum(b) GROUP BY a)) ENGINE = MergeTree ORDER BY a') AS j);
 
 -- ==========================================================================
--- 39. ASTStatisticsDeclaration
--- Fields: columns(child), types(child)
--- ==========================================================================
-
-SELECT 'StatisticsDeclaration' AS t,
-    JSONHas(j, 'columns_list', 'columns', 'children', 1, 'statistics_desc', 'columns') AS has_cols,
-    JSONHas(j, 'columns_list', 'columns', 'children', 1, 'statistics_desc', 'types') AS has_types
-FROM (SELECT parseQueryToJSON('CREATE TABLE t (a UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY a') AS j);
-
--- ==========================================================================
 -- 40. ASTStorage
 -- Fields: engine(child), partition_by(child), primary_key(child), order_by(child),
 --         sample_by(child), ttl_table(child), settings(child)

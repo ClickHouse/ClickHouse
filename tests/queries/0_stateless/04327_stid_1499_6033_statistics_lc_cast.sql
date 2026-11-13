@@ -14,12 +14,12 @@ DROP TABLE IF EXISTS stid_1499_6033;
 CREATE TABLE stid_1499_6033
 (
     id Nullable(UInt32),
-    b  LowCardinality(Bool) STATISTICS(basic),
-    v  LowCardinality(UInt8) STATISTICS(basic)
+    b  LowCardinality(Bool),
+    v  LowCardinality(UInt8)
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, allow_nullable_key = 1;
+SETTINGS index_granularity = 8, allow_nullable_key = 1, auto_statistics_types = 'basic';
 
 -- Two non-overlapping parts so statistics basic can prune one of them.
 -- Part 1: b = true,  v in [1, 8]

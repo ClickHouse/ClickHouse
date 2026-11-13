@@ -2,6 +2,8 @@
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
 -- Tests the cross product of all predicates with all right-hand sides on all data types and all statistics types.
+-- Statistics are collected for all columns according to `auto_statistics_types`, so each column has all statistics types
+-- supported by its data type; the column name suffixes are kept for history.
 
 SET allow_statistics = 1;
 SET use_statistics = 1;
@@ -11,37 +13,37 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     u64                 UInt64,
-    u64_tdigest         UInt64 STATISTICS(tdigest),
-    u64_basic           UInt64 STATISTICS(basic),
-    u64_countmin        UInt64 STATISTICS(countmin),
-    u64_uniq            UInt64 STATISTICS(uniq),
-    u64_uniq_v2         UInt64 STATISTICS(uniq_v2),
+    u64_tdigest         UInt64,
+    u64_basic           UInt64,
+    u64_countmin        UInt64,
+    u64_uniq            UInt64,
+    u64_uniq_v2         UInt64,
     f64                 Float64,
-    f64_tdigest         Float64 STATISTICS(tdigest),
-    f64_basic           Float64 STATISTICS(basic),
-    f64_countmin        Float64 STATISTICS(countmin),
-    f64_uniq            Float64 STATISTICS(uniq),
-    f64_uniq_v2         Float64 STATISTICS(uniq_v2),
+    f64_tdigest         Float64,
+    f64_basic           Float64,
+    f64_countmin        Float64,
+    f64_uniq            Float64,
+    f64_uniq_v2         Float64,
     dt                  DateTime,
-    dt_tdigest          DateTime STATISTICS(tdigest),
-    dt_basic            DateTime STATISTICS(basic),
-    dt_countmin         DateTime STATISTICS(countmin),
-    dt_uniq             DateTime STATISTICS(uniq),
-    dt_uniq_v2          DateTime STATISTICS(uniq_v2),
+    dt_tdigest          DateTime,
+    dt_basic            DateTime,
+    dt_countmin         DateTime,
+    dt_uniq             DateTime,
+    dt_uniq_v2          DateTime,
     b                   Bool,
-    b_tdigest           Bool STATISTICS(tdigest),
-    b_basic             Bool STATISTICS(basic),
-    b_countmin          Bool STATISTICS(countmin),
-    b_uniq              Bool STATISTICS(uniq),
-    b_uniq_v2           Bool STATISTICS(uniq_v2),
+    b_tdigest           Bool,
+    b_basic             Bool,
+    b_countmin          Bool,
+    b_uniq              Bool,
+    b_uniq_v2           Bool,
     s                   String,
- -- s_tdigest           String STATISTICS(tdigest), -- not supported by tdigest
- -- s_basic             String STATISTICS(basic), -- not supported by basic
-    s_countmin          String STATISTICS(countmin),
-    s_uniq              String STATISTICS(uniq),
-    s_uniq_v2           String STATISTICS(uniq_v2)
+ -- s_tdigest           String, -- not supported by tdigest
+ -- s_basic             String, -- not supported by basic
+    s_countmin          String,
+    s_uniq              String,
+    s_uniq_v2           String
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'tdigest, basic, countmin, uniq, uniq_v2';
 
 INSERT INTO tab
 SELECT number % 1000, -- u64

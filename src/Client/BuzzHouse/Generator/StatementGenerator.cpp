@@ -2097,21 +2097,6 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
              }},
             /// Statistics
-            {3,
-             [&]
-             {
-                 AddStatistics * ads = ati->mutable_add_stats();
-                 pickUpNextCols(rg, t, ads->mutable_cols());
-                 generateNextStatistics(rg, ads->mutable_stats());
-             }},
-            {3 * static_cast<uint32_t>(can_merge),
-             [&]
-             {
-                 AddStatistics * ads = ati->mutable_mod_stats();
-                 pickUpNextCols(rg, t, ads->mutable_cols());
-                 generateNextStatistics(rg, ads->mutable_stats());
-             }},
-            {3 * static_cast<uint32_t>(can_merge), [&] { pickUpNextCols(rg, t, ati->mutable_drop_stats()); }},
             {3 * static_cast<uint32_t>(can_merge), [&] { pickUpNextCols(rg, t, ati->mutable_clear_stats()); }},
             {3 * static_cast<uint32_t>(can_merge),
              [&]

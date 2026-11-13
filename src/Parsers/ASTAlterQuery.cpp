@@ -55,7 +55,6 @@ void ASTAlterCommand::updateTreeHashImpl(SipHash & hash_state, bool ignore_alias
     hash_state.update(part);
     hash_state.update(clear_column);
     hash_state.update(clear_index);
-    hash_state.update(clear_statistics);
     hash_state.update(clear_projection);
     hash_state.update(if_not_exists);
     hash_state.update(if_exists);
@@ -144,7 +143,6 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeBool("part", part);
     w.writeBool("clear_column", clear_column);
     w.writeBool("clear_index", clear_index);
-    w.writeBool("clear_statistics", clear_statistics);
     w.writeBool("clear_projection", clear_projection);
     w.writeBool("if_not_exists", if_not_exists);
     w.writeBool("if_exists", if_exists);
@@ -226,7 +224,6 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     part = r.getBool("part");
     clear_column = r.getBool("clear_column");
     clear_index = r.getBool("clear_index");
-    clear_statistics = r.getBool("clear_statistics");
     clear_projection = r.getBool("clear_projection");
     if_not_exists = r.getBool("if_not_exists");
     if_exists = r.getBool("if_exists");
@@ -499,21 +496,16 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::ADD_STATISTICS:
         case ASTAlterCommand::MODIFY_STATISTICS:
             require(statistics_decl, "statistics_decl");
-            /// `ADD`/`MODIFY STATISTICS` are parsed with `ParserStatisticsDeclaration` (a `TYPE` list);
-            /// `AlterCommand::parse` unconditionally calls `ASTStatisticsDeclaration::getTypeNames`, which
-            /// asserts `types != nullptr`. Reject the no-types declaration shape here.
             if (!statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ADD/MODIFY STATISTICS requires a TYPE list ('statistics_decl' must have 'types') during AST JSON deserialization");
             break;
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
-            /// `MATERIALIZE STATISTICS ALL` is parser-produced with a null declaration (`writeJSON` omits
-            /// it and `formatImpl` emits `ALL`); the column-list form carries one. Allow the null form, but
-            /// reject a `TYPE` list when a declaration is present (parser-impossible:
-            /// `ParserStatisticsDeclarationWithoutTypes`).
             if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            /// `MATERIALIZE STATISTICS ALL` is parser-produced with a null declaration (`writeJSON` omits
+            /// it and `formatImpl` emits `ALL`); the column-list form carries one.
             /// `IF EXISTS` and `IN PARTITION` are parsed only in the column-list branch, so the `ALL` form
             /// (null declaration) never carries either, and `formatImpl` has nowhere to print them.
             if (if_exists && !statistics_decl)
@@ -524,14 +516,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                     "MATERIALIZE STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::DROP_STATISTICS:
-            /// `CLEAR STATISTICS ALL` (`clear_statistics`) is parser-produced with a null declaration; plain
-            /// `DROP STATISTICS` and the non-`ALL` `CLEAR STATISTICS <cols>` form always carry a column-list
-            /// declaration. A `TYPE` list is parser-impossible for any of them.
-            if (!clear_statistics)
-                require(statistics_decl, "statistics_decl");
             if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "DROP/CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+                    "CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            /// `CLEAR STATISTICS ALL` is parser-produced with a null declaration; the
+            /// `CLEAR STATISTICS <cols>` form always carries a column-list declaration.
             /// `IF EXISTS` and `IN PARTITION` are parsed only where a column-list declaration is also
             /// required, so the `CLEAR STATISTICS ALL` form (null declaration) never carries either:
             /// `IF EXISTS ALL` reparses as a column named `ALL`, `ALL IN PARTITION p` not at all.
@@ -679,7 +668,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     }
 
     /// `IN PARTITION` is parser-produced only for the `CLEAR` forms (and the materialize forms), never for
-    /// the metadata-only `DROP COLUMN/INDEX/STATISTICS/PROJECTION` variants. `formatImpl` would emit a
+    /// the metadata-only `DROP COLUMN/INDEX/PROJECTION` variants. `formatImpl` would emit a
     /// parser-impossible `DROP ... IN PARTITION`, and `AlterCommand::apply` skips metadata removal whenever
     /// a partition is present (and `tryConvertToMutationCommand` reparses the formatted text). Reject a
     /// `partition` on the drop variants (`clear_*` flag false); `CLEAR`/materialize forms keep it.
@@ -687,7 +676,6 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     {
         if ((type == ASTAlterCommand::DROP_COLUMN && !clear_column)
             || (type == ASTAlterCommand::DROP_INDEX && !clear_index)
-            || (type == ASTAlterCommand::DROP_STATISTICS && !clear_statistics)
             || (type == ASTAlterCommand::DROP_PROJECTION && !clear_projection))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'partition' (IN PARTITION) is only valid for the CLEAR/MATERIALIZE forms, not a metadata DROP, during AST JSON deserialization");
@@ -839,19 +827,17 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::ADD_STATISTICS)
     {
-        ostr << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "")
-                     ;
+        ostr << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "");
         statistics_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_STATISTICS)
     {
-        ostr << "MODIFY STATISTICS "
-                     ;
+        ostr << "MODIFY STATISTICS ";
         statistics_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_STATISTICS)
     {
-        ostr << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
+        ostr << "CLEAR STATISTICS "
                       << (if_exists ? "IF EXISTS " : "");
 
         if (statistics_decl)
@@ -1334,8 +1320,8 @@ namespace
 /// True only for a pure comment-only `MODIFY COLUMN c COMMENT 'x'`, mirroring the
 /// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
 /// routing and the storage fast path agree. Placement (FIRST/AFTER), per-column
-/// SETTINGS and STATISTICS are excluded: they alter the replicated /columns and
-/// must take the full replicated path. COLLATE and PRIMARY KEY are excluded too:
+/// SETTINGS are excluded: they alter the replicated /columns and
+/// must take the full replicated path. STATISTICS, COLLATE and PRIMARY KEY are excluded too:
 /// they parse but are rejected by `AlterCommand::parse`, and the rejection must not
 /// happen after the query has already been routed as a comment-only alter.
 bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)

@@ -246,6 +246,11 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot specify PRIMARY KEY in ALTER TABLE ... {}. The primary key can only be defined when the table is created",
             alter_name);
+    if (ast_col_decl.getStatisticsDesc())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Explicit declaration of statistics in ALTER TABLE ... {} is not supported. "
+            "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+            alter_name);
 }
 
 }
@@ -299,9 +304,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getSettings())
             command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
-
-        if (ast_col_decl.getStatisticsDesc())
-            command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
 
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
@@ -371,9 +373,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getSettings())
             parseSettingsChangesAndResets(
                 ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
-
-        if (ast_col_decl.getStatisticsDesc())
-            command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
 
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
@@ -474,36 +473,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    if (command_ast->type == ASTAlterCommand::ADD_STATISTICS)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.statistics_decl = command_ast->statistics_decl->clone();
-        command.type = AlterCommand::ADD_STATISTICS;
-
-        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
-
-        command.statistics_columns = ast_stat_decl.getColumnNames();
-        command.statistics_types = ast_stat_decl.getTypeNames();
-        command.if_not_exists = command_ast->if_not_exists;
-
-        return command;
-    }
-    if (command_ast->type == ASTAlterCommand::MODIFY_STATISTICS)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.statistics_decl = command_ast->statistics_decl->clone();
-        command.type = AlterCommand::MODIFY_STATISTICS;
-
-        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
-
-        command.statistics_columns = ast_stat_decl.getColumnNames();
-        command.statistics_types = ast_stat_decl.getTypeNames();
-        command.if_not_exists = command_ast->if_not_exists;
-
-        return command;
-    }
     if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         AlterCommand command;
@@ -599,15 +568,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::DROP_STATISTICS;
 
         if (command_ast->statistics_decl)
-        {
-            command.statistics_decl = command_ast->statistics_decl->clone();
-
-            const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
-            command.statistics_columns = ast_stat_decl.getColumnNames();
-        }
+            command.statistics_columns = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
 
         command.if_exists = command_ast->if_exists;
-        command.clear = command_ast->clear_statistics;
+        command.clear = true;
 
         if (command_ast->partition)
             command.partition = command_ast->partition->clone();
@@ -841,11 +805,6 @@ void AlterCommand::apply(
             column.settings = settings_changes;
         }
 
-        /// The declared statistics are transferred like in CREATE (the types are validated against the
-        /// column data type by the storage in `checkAlterIsPossible`).
-        if (column_statistics_decl)
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, data_type);
-
         /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
         /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
         /// apply() and validate() never disagree on what a (nested) ADD introduces.
@@ -954,12 +913,6 @@ void AlterCommand::apply(
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
                 }
-
-                /// The declared statistics replace the explicit statistics of the column, like the other
-                /// declared properties (implicit statistics from `auto_statistics_types` are re-added by
-                /// the storage). The types are validated by the storage in `checkAlterIsPossible`.
-                if (column_statistics_decl)
-                    column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, column.type);
 
                 if (!settings_changes.empty())
                 {
@@ -1123,55 +1076,17 @@ void AlterCommand::apply(
             metadata.secondary_indices.erase(erase_it);
         }
     }
-    else if (type == ADD_STATISTICS)
-    {
-        for (const auto & statistics_column_name : statistics_columns)
-        {
-            if (!metadata.columns.has(statistics_column_name))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot add statistics for column {}: this column is not found", statistics_column_name);
-            }
-        }
-
-        auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & [stats_column_name, stats] : stats_vec)
-        {
-            metadata.columns.modify(stats_column_name,
-                [&](ColumnDescription & column) { column.statistics.merge(stats, column.name, column.type, if_not_exists); });
-        }
-    }
     else if (type == DROP_STATISTICS)
     {
+        /// Only `CLEAR STATISTICS`: the statistics are not a part of the metadata, the mutation deletes them from the parts.
         for (const auto & statistics_column_name : statistics_columns)
         {
-            if (!metadata.columns.has(statistics_column_name)
-                || metadata.columns.get(statistics_column_name).statistics.empty())
+            if (!metadata.columns.hasPhysical(statistics_column_name))
             {
                 if (if_exists)
                     return;
-                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Wrong statistics name. Cannot find statistics {} to drop", backQuote(statistics_column_name));
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot clear statistics of column {}: there is no such physical column", backQuote(statistics_column_name));
             }
-
-            if (!clear && !partition)
-                metadata.columns.modify(statistics_column_name,
-                    [&](ColumnDescription & column) { column.statistics.clear(); });
-        }
-    }
-    else if (type == MODIFY_STATISTICS)
-    {
-        for (const auto & statistics_column_name : statistics_columns)
-        {
-            if (!metadata.columns.has(statistics_column_name))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot modify statistics for column {}: this column is not found", statistics_column_name);
-            }
-        }
-
-        auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & [stats_column_name, stats] : stats_vec)
-        {
-            metadata.columns.modify(stats_column_name,
-                [&](ColumnDescription & column) { column.statistics.assign(stats); });
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -1730,7 +1645,7 @@ bool AlterCommand::isCommentAlter() const
         /// /columns (ColumnsDescription::operator== compares column order and
         /// settings, ignoring only the comment), so they are not comment-only.
         return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr
-            && settings_changes.empty() && settings_resets.empty() && column_statistics_decl == nullptr && after_column.empty() && !first;
+            && settings_changes.empty() && settings_resets.empty() && after_column.empty() && !first;
     }
     return false;
 }
@@ -2255,7 +2170,7 @@ void validateSubcolumnCodecCommand(
     const AlterCommand & command, const NameAndTypePair & subcolumn, const ColumnsDescription & columns, const StoragePtr & table, const ContextPtr & context)
 {
     const bool only_codec = !command.data_type && !command.default_expression && !command.comment && !command.ttl
-        && command.settings_changes.empty() && command.settings_resets.empty() && !command.column_statistics_decl
+        && command.settings_changes.empty() && command.settings_resets.empty()
         && !command.add_enum_values && command.after_column.empty() && !command.first
         && (command.to_remove == AlterCommand::RemoveProperty::NO_PROPERTY || command.to_remove == AlterCommand::RemoveProperty::CODEC)
         && (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC);
@@ -2323,19 +2238,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             && command.constraint_decl)
             ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
 
-        /// `column_statistics_decl` covers the column-declaration spelling
-        /// `ALTER TABLE t ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which must honor the same
-        /// gate as the dedicated `ADD/DROP/MODIFY STATISTICS` commands.
-        if ((command.type == AlterCommand::ADD_STATISTICS || command.type == AlterCommand::DROP_STATISTICS
-             || command.type == AlterCommand::MODIFY_STATISTICS || command.column_statistics_decl != nullptr)
-            && !context->getSettingsRef()[Setting::allow_statistics])
+        if (command.type == AlterCommand::DROP_STATISTICS && !context->getSettingsRef()[Setting::allow_statistics])
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
-
-        /// Storages that reject the dedicated `ADD/DROP/MODIFY STATISTICS` commands in `checkAlterIsPossible`
-        /// must not accept statistics through the column-declaration spelling either, so that engine support
-        /// doesn't depend on how the same logical alter is spelled.
-        if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -2794,10 +2698,8 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     /// making it impossible to detect TTL changes afterwards.
     const StorageInMemoryMetadata original_metadata = metadata;
 
-    /// Remove implicit statistics before applying commands to the metadata copy.
-    /// This is needed because `getMutationCommands` may be called before `removeImplicitStatistics`
-    /// in the ALTER flow (e.g. in StorageMergeTree::alter), and applying ADD_STATISTICS
-    /// to metadata that already contains auto-added statistics would throw a duplicate error.
+    /// Remove implicit statistics before applying commands to the metadata copy, like the ALTER flow
+    /// (e.g. `StorageMergeTree::alter`) does before applying the commands to the stored metadata.
     removeImplicitStatistics(metadata.columns);
 
     const auto & settings = context->getSettingsRef();

@@ -12,7 +12,7 @@ SET explain_query_plan_default = 'legacy';
 SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS ttl_stats_orphan;
-CREATE TABLE ttl_stats_orphan (d DateTime, v UInt32 DEFAULT 7 STATISTICS(basic) TTL d + INTERVAL 1 SECOND)
+CREATE TABLE ttl_stats_orphan (d DateTime, v UInt32 DEFAULT 7 TTL d + INTERVAL 1 SECOND)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic';
 -- A background merge rebuilds the statistic from live data and would hide the bug. A single-part
@@ -24,7 +24,7 @@ SYSTEM STOP TTL MERGES ttl_stats_orphan;
 INSERT INTO ttl_stats_orphan SELECT now() - INTERVAL 1 DAY, 5 FROM numbers(4);
 ALTER TABLE ttl_stats_orphan MATERIALIZE TTL;
 -- changing the default makes a stale statistic distinguishable from a correct read
-ALTER TABLE ttl_stats_orphan MODIFY COLUMN v UInt32 DEFAULT 99 STATISTICS(basic) TTL d + INTERVAL 1 SECOND;
+ALTER TABLE ttl_stats_orphan MODIFY COLUMN v UInt32 DEFAULT 99 TTL d + INTERVAL 1 SECOND;
 SYSTEM STOP MERGES ttl_stats_orphan;
 -- a second part that really stores a large value
 INSERT INTO ttl_stats_orphan SELECT now() + INTERVAL 10 YEAR, 4242 FROM numbers(2);

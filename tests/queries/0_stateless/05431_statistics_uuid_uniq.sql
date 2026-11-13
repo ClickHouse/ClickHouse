@@ -14,21 +14,20 @@ SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS t_uuid_stats SYNC;
 DROP TABLE IF EXISTS t_uuid_stats_alter SYNC;
 
-SELECT 'Statistics declared in CREATE TABLE';
+SELECT 'Statistics from auto_statistics_types in CREATE TABLE';
 
 CREATE TABLE t_uuid_stats
 (
     id UInt64,
-    u UUID STATISTICS(uniq),
-    u2 UUID STATISTICS(uniq_v2),
-    nu Nullable(UUID) STATISTICS(uniq),
-    lu LowCardinality(UUID) STATISTICS(uniq_v2),
-    lnu LowCardinality(Nullable(UUID)) STATISTICS(uniq, uniq_v2),
-    plain UUID
+    u UUID,
+    u2 UUID,
+    nu Nullable(UUID),
+    lu LowCardinality(UUID),
+    lnu LowCardinality(Nullable(UUID))
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0, auto_statistics_types = '';
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0, auto_statistics_types = 'uniq, uniq_v2';
 
 -- 100 distinct UUIDs, 100 rows each.
 INSERT INTO t_uuid_stats
@@ -38,8 +37,7 @@ SELECT
     v,
     if(number % 7 = 0, NULL, v),
     v,
-    if(number % 7 = 0, NULL, v),
-    v
+    if(number % 7 = 0, NULL, v)
 FROM numbers(10000);
 
 SELECT column, type, notEmpty(statistics) AS has_statistics, ifNull(estimates.cardinality, 0) BETWEEN 90 AND 110 AS ndv_is_about_100
@@ -47,12 +45,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_uuid_stats' AND active AND column IN ('u', 'u2', 'nu', 'lu', 'lnu')
 ORDER BY column;
 
-SELECT 'Column without statistics';
-SELECT column, empty(statistics) AS no_statistics
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_uuid_stats' AND active AND column = 'plain';
-
-SELECT 'ALTER ADD / MATERIALIZE / DROP statistics';
+SELECT 'ALTER MODIFY SETTING / MATERIALIZE / CLEAR statistics';
 
 CREATE TABLE t_uuid_stats_alter (id UInt64, u UUID)
 ENGINE = MergeTree
@@ -61,26 +54,29 @@ SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0, auto_st
 
 INSERT INTO t_uuid_stats_alter SELECT number, toUUID(concat('00000000-0000-0000-0000-', lpad(hex(number % 100), 12, '0'))) FROM numbers(10000);
 
-ALTER TABLE t_uuid_stats_alter ADD STATISTICS u TYPE uniq, uniq_v2;
+ALTER TABLE t_uuid_stats_alter MODIFY SETTING auto_statistics_types = 'uniq, uniq_v2';
 ALTER TABLE t_uuid_stats_alter MATERIALIZE STATISTICS u;
 
 SELECT column, notEmpty(statistics) AS has_statistics, ifNull(estimates.cardinality, 0) BETWEEN 90 AND 110 AS ndv_is_about_100
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_uuid_stats_alter' AND active AND column = 'u';
 
-ALTER TABLE t_uuid_stats_alter DROP STATISTICS u;
+ALTER TABLE t_uuid_stats_alter CLEAR STATISTICS u;
 
 SELECT column, empty(statistics) AS no_statistics
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_uuid_stats_alter' AND active AND column = 'u';
 
-SELECT 'Other statistics types are still rejected for UUID';
-ALTER TABLE t_uuid_stats_alter ADD STATISTICS u TYPE tdigest; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE t_uuid_stats_alter ADD STATISTICS u TYPE countmin; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE t_uuid_stats_alter ADD STATISTICS u TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
+SELECT 'Other statistics types are not collected for UUID';
+ALTER TABLE t_uuid_stats_alter MODIFY SETTING auto_statistics_types = 'tdigest, countmin, minmax';
+ALTER TABLE t_uuid_stats_alter MATERIALIZE STATISTICS ALL;
+
+SELECT column, empty(statistics) AS no_statistics
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_uuid_stats_alter' AND active AND column = 'u';
 
 SELECT 'Queries that use the statistics return correct results';
-ALTER TABLE t_uuid_stats_alter ADD STATISTICS u TYPE uniq;
+ALTER TABLE t_uuid_stats_alter MODIFY SETTING auto_statistics_types = 'uniq';
 ALTER TABLE t_uuid_stats_alter MATERIALIZE STATISTICS u;
 
 SELECT count() FROM t_uuid_stats WHERE u = toUUID('00000000-0000-0000-0000-000000000005');

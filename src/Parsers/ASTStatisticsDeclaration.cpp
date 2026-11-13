@@ -40,19 +40,6 @@ std::vector<String> ASTStatisticsDeclaration::getColumnNames() const
 
 }
 
-std::vector<String> ASTStatisticsDeclaration::getTypeNames() const
-{
-    chassert(types != nullptr);
-    std::vector<String> result;
-    result.reserve(types->children.size());
-    for (const ASTPtr & column_ast : types->children)
-    {
-        result.push_back(column_ast->as<ASTFunction &>().name);
-    }
-    return result;
-
-}
-
 void ASTStatisticsDeclaration::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StatisticsDeclaration");
@@ -64,10 +51,8 @@ void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    /// `columns` is an `ASTExpressionList` of `ASTIdentifier` and `types` (when present) an
-    /// `ASTExpressionList` of `ASTFunction`: `getColumnNames` does `column_ast->as<ASTIdentifier &>()`
-    /// and `getTypeNames` does `column_ast->as<ASTFunction &>()`. Validate both layers so malformed
-    /// `clickhouse_json` fails with `BAD_ARGUMENTS` instead of reaching those internal casts.
+    /// `columns` is an `ASTExpressionList` of `ASTIdentifier`: `getColumnNames` does `column_ast->as<ASTIdentifier &>()`.
+    /// Validate both layers so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of reaching this internal cast.
     auto child = r.readChildOfType<ASTExpressionList>("columns");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'columns' field in `StatisticsDeclaration` during AST JSON deserialization");

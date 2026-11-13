@@ -635,7 +635,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
 std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
     const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
 {
-    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr);
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
     stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
@@ -739,7 +739,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         stat_size);
 
                 auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-                result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
+                result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast));
                 result->stats[type] = std::move(stat_ptr);
             }
             else
@@ -920,15 +920,10 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
 }
 
 void MergeTreeStatisticsFactory::validate(
-    const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax) const
+    const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {
-        if (type == StatisticsType::MinMax && !desc.is_implicit && !allow_deprecated_minmax)
-            LOG_WARNING(
-                getLogger("MergeTreeStatisticsFactory"),
-                "Statistics type 'minmax' is deprecated. Use 'basic' instead, which is a superset of 'minmax'.");
-
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
@@ -997,7 +992,7 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
                 type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-        SingleStatisticsDescription desc(type, ast, false);
+        SingleStatisticsDescription desc(type, ast);
 
         if (!it->second(desc, data_type))
             throw Exception(
@@ -1015,7 +1010,7 @@ StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, c
         return nullptr;
 
     auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-    SingleStatisticsDescription desc(type, ast, false);
+    SingleStatisticsDescription desc(type, ast);
 
     if (!vit->second(desc, data_type))
         return nullptr;
@@ -1041,7 +1036,7 @@ static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsF
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function for statistic type, got: {}", arg->formatForLogging());
 
         auto stat_type = stringToStatisticsType(arg_func->name);
-        result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg, true));
+        result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg));
     }
 
     return result;
@@ -1051,23 +1046,8 @@ void removeImplicitStatistics(ColumnsDescription & columns)
 {
     for (const auto & column : columns)
     {
-        auto default_kind = column.default_desc.kind;
-        if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
-            continue;
-
-        columns.modify(
-            column.name,
-            [&](ColumnDescription & column_desc)
-            {
-                auto & stats = column_desc.statistics.types_to_desc;
-                for (auto it = stats.begin(); it != stats.end();)
-                {
-                    if (it->second.is_implicit)
-                        it = stats.erase(it);
-                    else
-                        ++it;
-                }
-            });
+        if (!column.statistics.empty())
+            columns.modify(column.name, [](ColumnDescription & column_desc) { column_desc.statistics.clear(); });
     }
 }
 

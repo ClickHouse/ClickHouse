@@ -451,11 +451,51 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
-/// `allow_statistics` gates the statistics DDL - whether statistics may be declared on a table -
-/// so only the submitting session's value is meaningful for it, and the gate must be applied
-/// exactly once, here at submission time.
+/// Statistics can no longer be declared explicitly: they are collected for all columns according to the
+/// `auto_statistics_types` MergeTree setting. New submissions of `ADD/MODIFY STATISTICS` and of a `STATISTICS`
+/// clause in `ADD/MODIFY COLUMN` are rejected. Such entries stored by older versions (in the DDL log of a
+/// `Replicated` database or in the distributed DDL queue) are still replayed: the obsolete declarations are
+/// removed and the rest of the query is executed, so that the replay of the log is not blocked.
+/// Returns false if no commands remain.
+bool removeObsoleteStatisticsDeclarations(ASTAlterQuery & alter, bool is_ddl_replay)
+{
+    auto & commands = alter.command_list->children;
+    for (auto it = commands.begin(); it != commands.end();)
+    {
+        auto & command = (*it)->as<ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::ADD_STATISTICS || command.type == ASTAlterCommand::MODIFY_STATISTICS)
+        {
+            if (!is_ddl_replay)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "ALTER TABLE ... {} STATISTICS is not supported. "
+                    "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+                    command.type == ASTAlterCommand::ADD_STATISTICS ? "ADD" : "MODIFY");
+            it = commands.erase(it);
+            continue;
+        }
+
+        if (command.col_decl)
+        {
+            auto & column_declaration = command.col_decl->as<ASTColumnDeclaration &>();
+            if (column_declaration.getStatisticsDesc())
+            {
+                if (!is_ddl_replay)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Explicit declaration of statistics for column {} is not supported. "
+                        "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+                        backQuoteIfNeed(column_declaration.name));
+                column_declaration.resetStatisticsDesc();
+            }
+        }
+        ++it;
+    }
+    return !commands.empty();
+}
+
+/// `allow_statistics` gates the statistics DDL, so only the submitting session's value is
+/// meaningful for it, and the gate must be applied exactly once, here at submission time.
 ///
-/// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` carries an `AlterCommand` and is gated by
+/// `ALTER TABLE ... CLEAR STATISTICS` carries an `AlterCommand` and is gated by
 /// `AlterCommands::validate`, but `MATERIALIZE STATISTICS` parses into a `MutationCommands`
 /// segment only, so it is checked here, next to the other submission-time mutation validation.
 /// `MutationsInterpreter` does not check it: it also runs in the background with a context that
@@ -609,6 +649,9 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
+    if (!removeObsoleteStatisticsDeclarations(query_ptr->as<ASTAlterQuery &>(), getContext()->isDDLOrOnClusterInternal()))
+        return {};
+
     ASTSelectWithUnionQuery * modify_query = nullptr;
 
     for (auto & child : alter.command_list->children)
@@ -1017,10 +1060,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
-            /// so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -1034,10 +1073,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
-            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:

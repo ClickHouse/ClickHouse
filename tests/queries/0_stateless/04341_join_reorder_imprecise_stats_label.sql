@@ -22,8 +22,8 @@ DROP TABLE IF EXISTS t_stats_b;
 CREATE TABLE t_no_stats_a (id UInt64, x UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 CREATE TABLE t_no_stats_b (id UInt64, y UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 
-CREATE TABLE t_stats_a (id UInt64 STATISTICS(uniq), x UInt64) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t_stats_b (id UInt64 STATISTICS(uniq), y UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_stats_a (id UInt64, x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE t_stats_b (id UInt64, y UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
 
 INSERT INTO t_no_stats_a SELECT number, number FROM numbers(1000);
 INSERT INTO t_no_stats_b SELECT number, number FROM numbers(100);

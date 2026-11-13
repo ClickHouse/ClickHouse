@@ -14,17 +14,17 @@ SET query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
--- Wide parts give the physical columns a real size; the tdigest on `v` activates the estimator.
+-- Wide parts give the physical columns a real size; the tdigest on `v` (and `id`, `text` is not supported) activates the estimator.
 CREATE TABLE tab
 (
     id UInt64,
-    v UInt64 STATISTICS(tdigest),
+    v UInt64,
     text String,
     INDEX idx_text text TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, auto_statistics_types = '';
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, auto_statistics_types = 'tdigest';
 
 INSERT INTO tab
 SELECT

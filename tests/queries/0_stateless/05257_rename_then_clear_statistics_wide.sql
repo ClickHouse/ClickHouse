@@ -10,10 +10,10 @@ SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS t_rename_clear_statistics SYNC;
 
-CREATE TABLE t_rename_clear_statistics (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest), c UInt64)
+CREATE TABLE t_rename_clear_statistics (a UInt64, b UInt64, c UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rename_clear_statistics', 'r1')
 ORDER BY tuple() PARTITION BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS auto_statistics_types = 'tdigest, basic, uniq_v2', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 INSERT INTO t_rename_clear_statistics VALUES (1, 2, 3);
 

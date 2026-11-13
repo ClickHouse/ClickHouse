@@ -219,11 +219,11 @@ Estimation:
 
 `est_bytes` is an estimate from the table's average row size, so the exact figure varies with storage and compression.
 
-To skip the in-memory empirical scan and estimate from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), wait for the materialize mutation to finish, then disable the empirical path:
+To skip the in-memory empirical scan and estimate from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, enable `tdigest` statistics (they are not collected by default) with the `auto_statistics_types` MergeTree setting, wait for the materialize mutation to finish, then disable the empirical path:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE tdigest;
-ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+ALTER TABLE t MODIFY SETTING auto_statistics_types = 'basic, uniq_v2, tdigest';
+ALTER TABLE t MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
 ```

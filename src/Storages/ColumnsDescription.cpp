@@ -201,12 +201,6 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
-    if (statistics.hasExplicitStatistics())
-    {
-        writeChar('\t', buf);
-        writeEscapedString(formatASTStateAware(*statistics.getAST(), state), buf);
-    }
-
     if (ttl)
     {
         writeChar('\t', buf);
@@ -267,8 +261,8 @@ void ColumnDescription::readText(ReadBuffer & buf)
             if (auto col_settings = col_ast->getSettings())
                 settings = col_settings->as<ASTSetQuery &>().changes;
 
-            if (auto col_statistics_desc = col_ast->getStatisticsDesc())
-                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_statistics_desc, name, type);
+            /// A `STATISTICS` clause, which could be stored by older versions, is ignored:
+            /// statistics are derived from the `auto_statistics_types` MergeTree setting.
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

@@ -5,8 +5,9 @@
         A CountMinSketch has a fixed size (7 hashes x 2718 buckets x 8 bytes, ~150 KB) regardless
         of how many rows it summarizes, so the cost of serializing it is paid once per part and
         column. To make that cost visible, every measured INSERT writes 200 small parts
-        (PARTITION BY k, one part per partition) with 20 CountMinSketch columns each, i.e.
-        4000 sketches per query. With few rows per part, building the sketch is cheap, and writing
+        (PARTITION BY k, one part per partition) with 21 CountMinSketch columns each (c1..c20 and
+        the partition key k, as `auto_statistics_types` applies to every column), i.e. 4200
+        sketches per query. With few rows per part, building the sketch is cheap, and writing
         the part is dominated by serializing and compressing the sketches.
 
         rows_per_part = 100 is the serialization-dominated case, rows_per_part = 1000 shows how the
@@ -54,16 +55,16 @@
         CREATE TABLE t_countmin_on_{rows_per_part}
         (
             k UInt8,
-            c1 UInt64 STATISTICS(countmin), c2 UInt64 STATISTICS(countmin), c3 UInt64 STATISTICS(countmin),
-            c4 UInt64 STATISTICS(countmin), c5 UInt64 STATISTICS(countmin), c6 UInt64 STATISTICS(countmin),
-            c7 UInt64 STATISTICS(countmin), c8 UInt64 STATISTICS(countmin), c9 UInt64 STATISTICS(countmin),
-            c10 UInt64 STATISTICS(countmin), c11 UInt64 STATISTICS(countmin), c12 UInt64 STATISTICS(countmin),
-            c13 UInt64 STATISTICS(countmin), c14 UInt64 STATISTICS(countmin), c15 UInt64 STATISTICS(countmin),
-            c16 UInt64 STATISTICS(countmin), c17 UInt64 STATISTICS(countmin), c18 UInt64 STATISTICS(countmin),
-            c19 UInt64 STATISTICS(countmin), c20 UInt64 STATISTICS(countmin)
+            c1 UInt64, c2 UInt64, c3 UInt64,
+            c4 UInt64, c5 UInt64, c6 UInt64,
+            c7 UInt64, c8 UInt64, c9 UInt64,
+            c10 UInt64, c11 UInt64, c12 UInt64,
+            c13 UInt64, c14 UInt64, c15 UInt64,
+            c16 UInt64, c17 UInt64, c18 UInt64,
+            c19 UInt64, c20 UInt64
         )
         ENGINE = MergeTree PARTITION BY k ORDER BY tuple()
-        SETTINGS auto_statistics_types = ''
+        SETTINGS auto_statistics_types = 'countmin'
     </create_query>
 
     <create_query>CREATE TABLE t_countmin_off_{rows_per_part} AS t_countmin_on_{rows_per_part}</create_query>

@@ -8,11 +8,12 @@ SET optimize_move_to_prewhere = 0;
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
-    category String STATISTICS(uniq),
+    category String,
     val      UInt64
 )
 ENGINE = MergeTree
-ORDER BY val;
+ORDER BY val
+SETTINGS auto_statistics_types = 'uniq';
 
 INSERT INTO tab SELECT if(number % 2 = 0, 'alice', 'bob'), number FROM numbers(100);
 OPTIMIZE TABLE tab FINAL;

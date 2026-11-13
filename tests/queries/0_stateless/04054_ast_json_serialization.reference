@@ -96,7 +96,6 @@ IndexDeclaration	idx	4	1	1
 ConstraintDeclaration	c	CHECK	1
 ConstraintDeclaration_assume	ASSUME
 ProjectionDeclaration	p	1
-StatisticsDeclaration	0	0
 Storage_full	1	1	1	1	1	1	1
 Columns_definition	Columns definition	1	1	1	1
 CreateQuery_basic	CreateQuery	db	t	1

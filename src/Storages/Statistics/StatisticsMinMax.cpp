@@ -21,7 +21,7 @@ StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & descripti
 }
 
 StatisticsMinMax::StatisticsMinMax(Field min_, Field max_, UInt64 row_count_)
-    : IStatistics(SingleStatisticsDescription(StatisticsType::MinMax, nullptr, false))
+    : IStatistics(SingleStatisticsDescription(StatisticsType::MinMax, nullptr))
     , min(std::move(min_))
     , max(std::move(max_))
     , row_count(row_count_)

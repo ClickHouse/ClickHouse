@@ -16,9 +16,9 @@ SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_05394;
 
-CREATE TABLE t_05394 (id UInt64 STATISTICS(uniq_v2), c UInt8 STATISTICS(uniq_v2))
+CREATE TABLE t_05394 (id UInt64, c UInt8)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = 'uniq_v2';
 
 SYSTEM STOP MERGES t_05394;
 INSERT INTO t_05394 SELECT number, 1 FROM numbers(10) SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 0;
@@ -34,9 +34,9 @@ SELECT
 
 DROP TABLE t_05394;
 
-CREATE TABLE t_05394 (id UInt64 STATISTICS(basic), c UInt8 STATISTICS(basic))
+CREATE TABLE t_05394 (id UInt64, c UInt8)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = 'basic';
 
 SYSTEM STOP MERGES t_05394;
 INSERT INTO t_05394 SELECT number, 1 FROM numbers(10) SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 0;

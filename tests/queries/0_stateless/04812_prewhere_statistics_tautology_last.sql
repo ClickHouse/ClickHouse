@@ -14,13 +14,13 @@ SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_prewhere_tautology;
 
 -- Wide parts so per-column sizes feed the cost score. tdigest on `cheap` lets the optimizer see
--- `cheap < 255` as a tautology (matches all rows); `expensive = 'absent'` has no statistic, so its
+-- `cheap < 255` as a tautology (matches all rows); `expensive = 'absent'` has no statistic (tdigest does not support String), so its
 -- default equality selectivity makes it the selective but expensive (large incompressible values) predicate.
 CREATE TABLE t_prewhere_tautology (
-    cheap UInt8 STATISTICS(tdigest),
+    cheap UInt8,
     expensive String
 ) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'tdigest';
 
 INSERT INTO t_prewhere_tautology SELECT 1, randomPrintableASCII(4000) FROM numbers(20000);
 

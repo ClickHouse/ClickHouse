@@ -1388,7 +1388,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// `allow_statistics` gates the statistics DDL. Only
             /// the submitting session's value is meaningful for that, so the gate lives at submission
             /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
             /// asked the background context that executes the mutation, which reads the server-default
@@ -1415,6 +1415,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (!dry_run && columns_desc.has(stat_column_name) && !columns_desc.hasPhysical(stat_column_name))
                 {
                     LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
+                    continue;
+                }
+
+                /// The same for a column without statistics: a mutation queued by an older version for a column
+                /// with explicitly declared statistics, which are ignored now, must not block the queue.
+                if (!dry_run && columns_desc.has(stat_column_name) && columns_desc.get(stat_column_name).statistics.empty())
+                {
+                    LOG_WARNING(logger, "Column {} has no statistics, skipping statistics materialization", stat_column_name);
                     continue;
                 }
 

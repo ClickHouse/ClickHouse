@@ -127,9 +127,9 @@ DROP TABLE IF EXISTS t_str3;
 CREATE TABLE t_u32  (x UInt32) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE t_u64  (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE t_i32  (x Int32)  ENGINE = MergeTree ORDER BY x;
-CREATE TABLE t_str  (x String STATISTICS(uniq)) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE t_str2 (x String STATISTICS(uniq)) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE t_str3 (x String STATISTICS(uniq)) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_str  (x String) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE t_str2 (x String) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE t_str3 (x String) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'uniq';
 
 INSERT INTO t_u32  SELECT number FROM numbers(5);
 INSERT INTO t_u64  SELECT number FROM numbers(5);
@@ -211,9 +211,9 @@ DROP TABLE IF EXISTS nu2;
 DROP TABLE IF EXISTS nlc3;
 
 -- 14a: Nullable(UInt32) all same — transitivity works
-CREATE TABLE n1 (x Nullable(UInt32) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE n2 (x Nullable(UInt32) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE n3 (x Nullable(UInt32) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE n1 (x Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE n2 (x Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE n3 (x Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
 INSERT INTO n1 SELECT if(number % 3 = 0, NULL, number) FROM numbers(6);
 INSERT INTO n2 SELECT if(number % 4 = 0, NULL, number) FROM numbers(6);
 INSERT INTO n3 SELECT number FROM numbers(6);
@@ -266,9 +266,9 @@ SELECT explain FROM (
 DROP TABLE nlc1; DROP TABLE nu2; DROP TABLE nlc3;
 
 -- 14c: LowCardinality(String) all same — transitivity works
-CREATE TABLE lc1 (x LowCardinality(String) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE lc2 (x LowCardinality(String) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE lc3 (x LowCardinality(String) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE lc1 (x LowCardinality(String)) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE lc2 (x LowCardinality(String)) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE lc3 (x LowCardinality(String)) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'uniq';
 INSERT INTO lc1 SELECT toString(number) FROM numbers(5);
 INSERT INTO lc2 SELECT toString(number) FROM numbers(5);
 INSERT INTO lc3 SELECT toString(number) FROM numbers(5);

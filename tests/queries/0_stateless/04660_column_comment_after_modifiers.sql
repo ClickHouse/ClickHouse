@@ -1,8 +1,6 @@
 -- The modifiers of a column declaration can be written in any order, and each of them at most once.
--- In particular, `COMMENT` is accepted after `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY`
+-- In particular, `COMMENT` is accepted after `CODEC`, `TTL`, `COLLATE`, `PRIMARY KEY`
 -- and per-column `SETTINGS`, not only before them.
-
-SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS t_column_comment_order;
 
@@ -14,7 +12,7 @@ CREATE TABLE t_column_comment_order
     d DateTime,
     e UInt64 CODEC(ZSTD) TTL d + INTERVAL 1 DAY COMMENT 'e comment',
     f UInt64 SETTINGS (max_compress_block_size = 1024) COMMENT 'f comment',
-    g UInt64 STATISTICS(tdigest) COMMENT 'g comment',
+    g UInt64 COMMENT 'g comment',
     h String EPHEMERAL COMMENT 'h comment'
 )
 ENGINE = MergeTree ORDER BY a;
@@ -42,25 +40,14 @@ ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_
 -- Both `ADD COLUMN` and `MODIFY COLUMN` carry per-column `SETTINGS` into the column description.
 SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
 
--- A declared `STATISTICS` is applied by `ADD COLUMN` and `MODIFY COLUMN`, like in `CREATE`
--- (and like the other declared column properties), rather than being silently dropped.
-ALTER TABLE t_column_comment_order ADD COLUMN s UInt64 STATISTICS(tdigest) COMMENT 's comment';
-ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 STATISTICS(uniq) COMMENT 'g new comment';
-
-SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
-
 -- `ALTER` cannot apply `COLLATE` and `PRIMARY KEY`, so they are rejected rather than silently dropped.
 ALTER TABLE t_column_comment_order ADD COLUMN z String COLLATE utf8_bin COMMENT 'z comment'; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_column_comment_order ADD COLUMN z UInt64 PRIMARY KEY COMMENT 'z comment'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 COLLATE utf8_bin COMMENT 'g new comment'; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 PRIMARY KEY COMMENT 'g new comment'; -- { serverError BAD_ARGUMENTS }
 
--- In a type-less `MODIFY COLUMN`, a leading `STATISTICS` is a modifier, not a data type,
--- so both orderings are equivalent. A leading `COLLATE` is still read as the type name and
+-- In a type-less `MODIFY COLUMN`, a leading `COLLATE` is read as the type name and
 -- rejected, because `ALTER` cannot apply it regardless of where it is read.
-ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g newer comment';
-ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g newest comment' STATISTICS(uniq);
-SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
 ALTER TABLE t_column_comment_order MODIFY COLUMN g COLLATE utf8_bin COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
 
 -- A trailing `COLLATE` or `PRIMARY KEY` after `COMMENT` in a type-less `MODIFY COLUMN` parses,
@@ -89,14 +76,11 @@ DROP TABLE t_column_comment_order_pk;
 
 -- Formatting normalizes the order, and the result is parsed back.
 SELECT formatQuery('CREATE TABLE t (a UInt64 CODEC(ZSTD) COMMENT \'a comment\') ENGINE = Memory');
-SELECT formatQuery('CREATE TABLE t (a UInt64 STATISTICS(tdigest) COMMENT \'a comment\') ENGINE = MergeTree ORDER BY a');
 SELECT formatQuery('CREATE TABLE t (a DateTime TTL a + toIntervalDay(1) COMMENT \'a comment\') ENGINE = MergeTree ORDER BY a');
 SELECT formatQuery('CREATE TABLE t (a String COLLATE utf8_bin COMMENT \'a comment\') ENGINE = Memory');
 SELECT formatQuery('CREATE TABLE t (a String TTL now() COLLATE utf8_bin) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a UInt64 CODEC(ZSTD) COMMENT \'a comment\'');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a SETTINGS (max_compress_block_size = 1024) COMMENT \'a comment\'');
--- Here `STATISTICS(tdigest)` is a modifier, and formatting normalizes it after the comment.
-SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a STATISTICS(tdigest) COMMENT \'a comment\'');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a COLLATE utf8_bin COMMENT \'a comment\''); -- { serverError SYNTAX_ERROR }
 
 -- Formatting is idempotent: the canonical order prints `COLLATE` last, and it is parsed back.

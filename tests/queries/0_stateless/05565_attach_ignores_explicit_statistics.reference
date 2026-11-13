@@ -1,0 +1,10 @@
+CREATE TABLE default.t_attach_explicit_statistics\n(\n    `a` UInt64,\n    `b` String\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS auto_statistics_types = \'basic\', index_granularity = 8192
+a	basic
+b	basic
+a	['Basic']
+b	['Basic']
+(CLEAR STATISTICS a)
+a	[]
+b	['Basic']
+a	['Basic']
+b	['Basic']

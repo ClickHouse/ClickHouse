@@ -4,7 +4,8 @@
 -- rows silently until the mutation materialized.
 
 DROP TABLE IF EXISTS t_05200;
-CREATE TABLE t_05200 (x Float64 STATISTICS(basic), s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_05200 (x Float64, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic';
 
 -- Keep the alter mutation pending: mutations are executed by the merge scheduler.
 SYSTEM STOP MERGES t_05200;
@@ -41,14 +42,14 @@ DROP TABLE t_05200;
 -- of the dropped column under that name.
 
 DROP TABLE IF EXISTS t_05200_drop;
-CREATE TABLE t_05200_drop (a UInt64, b UInt64 STATISTICS(basic), s String) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_05200_drop (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic';
 
 SYSTEM STOP MERGES t_05200_drop;
 INSERT INTO t_05200_drop SELECT number, number + 1000, 'x' FROM numbers(100);
 
 ALTER TABLE t_05200_drop DROP COLUMN b SETTINGS mutations_sync = 0, alter_sync = 0;
-ALTER TABLE t_05200_drop ADD COLUMN b UInt64 DEFAULT 7 STATISTICS(basic);
+ALTER TABLE t_05200_drop ADD COLUMN b UInt64 DEFAULT 7;
 
 SELECT 'the drop is pending', count() FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_05200_drop' AND NOT is_done;
@@ -164,7 +165,8 @@ DROP TABLE t_05200_read;
 -- part still stores the old type, so its statistics must not be used.
 
 DROP TABLE IF EXISTS t_05200_type;
-CREATE TABLE t_05200_type (x Float64 STATISTICS(basic), s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_05200_type (x Float64, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic';
 
 SYSTEM STOP MERGES t_05200_type;
 INSERT INTO t_05200_type VALUES (10.5, 'a'), (11.5, 'b');
@@ -190,8 +192,8 @@ DROP TABLE t_05200_type;
 -- cache for the parts it was already applied to.
 
 DROP TABLE IF EXISTS t_05200_done;
-CREATE TABLE t_05200_done (x UInt64 STATISTICS(basic), spare UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 10;
+CREATE TABLE t_05200_done (x UInt64, spare UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 10, auto_statistics_types = 'basic';
 
 INSERT INTO t_05200_done SELECT number, number FROM numbers(10000) SETTINGS materialize_statistics_on_insert = 1;
 

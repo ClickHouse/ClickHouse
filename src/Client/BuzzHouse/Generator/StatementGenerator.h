@@ -570,7 +570,6 @@ private:
     void generateTableExpression(RandomGenerator & rg, std::optional<SQLRelation> & rel, bool use_global_agg, bool pred, Expr * expr);
     void generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);
     void generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr);
-    void generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
     void pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist);
     void addTableColumnInternal(
         RandomGenerator & rg, SQLTable & t, bool modify, bool is_pk, ColumnSpecial special, SQLColumn & col, ColumnDef * cd);

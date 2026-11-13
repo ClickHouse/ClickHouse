@@ -10,7 +10,7 @@ INSERT INTO t_unconvertible_pk VALUES ('2026-07-16 12:30:45.123', 1), ('2026-07-
 SELECT count() FROM t_unconvertible_pk WHERE t = '2026-07-16T12:30:45.123Z';
 SELECT count() FROM t_unconvertible_pk WHERE t < '2026-07-16T12:30:46Z';
 
-CREATE TABLE t_unconvertible_stats (id UInt32, t DateTime64(3, 'UTC') STATISTICS(basic)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_unconvertible_stats (id UInt32, t DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'basic';
 INSERT INTO t_unconvertible_stats VALUES (1, '2026-07-16 12:30:45.123');
 INSERT INTO t_unconvertible_stats VALUES (2, '2026-07-17 00:00:00');
 

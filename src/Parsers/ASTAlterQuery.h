@@ -59,9 +59,11 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
+        /// The obsolete `ADD/MODIFY STATISTICS` are only parsed, to replay the entries stored by older versions,
+        /// see `InterpreterAlterQuery`.
         ADD_STATISTICS,
-        DROP_STATISTICS,
         MODIFY_STATISTICS,
+        DROP_STATISTICS, /// `CLEAR STATISTICS`, also parsed from the obsolete `DROP STATISTICS`
         MATERIALIZE_STATISTICS,
 
         DROP_PARTITION,
@@ -200,7 +202,6 @@ public:
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
-    bool clear_statistics = false;   /// for CLEAR STATISTICS (do not drop statistics from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
