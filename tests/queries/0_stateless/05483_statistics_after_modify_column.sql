@@ -41,11 +41,14 @@ SELECT e, count() FROM t_metadata_only GROUP BY e ORDER BY e;
 -- `DateTime` -> `Date` changes the values. The part is detached during the `ALTER`, so it keeps the `DateTime`
 -- column and its statistics, which count 10000 distinct seconds, all of them on one day. They are rejected, and
 -- the key without a known number of distinct values falls back to 10% of the rows.
+-- With this many distinct values the `uniq_v2` sketch only approximates their number (9826 here), so the estimate
+-- before the `ALTER` is checked to be close to 10000, which still tells it from the fallback.
 CREATE TABLE t_converted (k UInt64, d DateTime('UTC')) ENGINE = MergeTree ORDER BY k
 SETTINGS auto_statistics_types = 'basic, uniq_v2';
 INSERT INTO t_converted SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10000);
 
-SELECT 'converted, before the alter:', countIf(explain LIKE '%Aggregating%(rows: ~10000.0,%') > 0 FROM (
+SELECT 'converted, before the alter:', countIf(explain LIKE '%Aggregating%'
+    AND toFloat64OrZero(extract(explain, 'rows: ~([0-9.]+),')) BETWEEN 9000 AND 10000) > 0 FROM (
     EXPLAIN estimates = 1 SELECT d, count() FROM t_converted GROUP BY d
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
