@@ -64,8 +64,6 @@ def clone_submodules():
         "contrib/xxHash",
         "contrib/simdjson",
         "contrib/liburing",
-        "contrib/librseq",
-        "contrib/silk",
         "contrib/libfiu",
         "contrib/yaml-cpp",
         "contrib/corrosion",
@@ -315,7 +313,7 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_SILK=0 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
                 -DENABLE_PARQUET=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
