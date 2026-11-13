@@ -83,10 +83,16 @@ bool hasWildcard(const std::string & component)
 class Collector
 {
 public:
-    Collector(const Poco::Util::AbstractConfiguration & config_, const std::string & config_path, const std::string & working_directory_)
+    Collector(
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::string & config_path,
+        const std::string & working_directory_,
+        const std::string & startup_directory_)
         : config(config_)
         , working_directory(working_directory_)
-        , config_file(absolute(config_path, working_directory_))
+        , startup_directory(startup_directory_)
+        , is_daemon(config.getBool("application.runAsDaemon", false))
+        , config_file(absolute(config_path, startup_directory))
         , config_directory(config_file.parent_path())
         , data_path(absolute(config.getString("path", DBMS_DEFAULT_PATH), working_directory))
     {
@@ -126,6 +132,10 @@ public:
 private:
     const Poco::Util::AbstractConfiguration & config;
     const fs::path working_directory;
+    /// The working directory when the filesystem is isolated: the directory of the executable with `--daemon`, where
+    /// `BaseDaemon::initialize` changes to before loading the configuration, and `working_directory` otherwise.
+    const fs::path startup_directory;
+    const bool is_daemon;
     const fs::path config_file;
     const fs::path config_directory;
     const fs::path data_path;
@@ -422,7 +432,7 @@ private:
 
         addKeyLocation("path_to_regions_hierarchy_file", Access::ReadOnly, working_directory);
         addKeyLocation("path_to_regions_names_files", Access::ReadOnly, working_directory);
-        addKeyLocation("hdfs.libhdfs3_conf", Access::ReadOnly, config_directory);
+        addHdfsConfig();
         addKeyLocation("nats.credential_file", Access::ReadOnly, working_directory);
 
         for (const auto & key : getMultipleKeys("backups", "allowed_path"))
@@ -506,12 +516,49 @@ private:
     }
 
     /// With the targets of the links, as a log file can be a link to another directory.
+    /// Relative to the directories that `BaseDaemon::initialize` resolves them against: the logs against
+    /// `startup_directory`, and the pid file against the directory it changes to before creating it, which is the one
+    /// of the log with `--daemon`.
     void addLogs()
     {
-        for (const auto * key : {"logger.log", "logger.errorlog", "logger.stderr", "logger.stdout", "pid"})
+        for (const auto * key : {"logger.log", "logger.errorlog", "logger.stderr", "logger.stdout"})
             if (config.has(key))
                 if (const auto value = config.getString(key); !value.empty())
-                    addLocation(absolute(value, working_directory), Access::ReadWrite, fmt::format("`{}`", key));
+                    addLocation(absolute(value, startup_directory), Access::ReadWrite, fmt::format("`{}`", key));
+
+        fs::path pid_base = startup_directory;
+        if (is_daemon)
+        {
+            const std::string log = config.getString("logger.log", "");
+            pid_base = log.empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
+        }
+        addKeyLocation("pid", Access::ReadWrite, pid_base);
+    }
+
+    /// The working directory of `Server::main`: with `--daemon`, `BaseDaemon::initialize` changes to the directory of
+    /// the core dumps at its end.
+    fs::path runtimeDirectory() const
+    {
+        if (!is_daemon)
+            return working_directory;
+        const std::string core_path = config.getString("core_path", "");
+        return core_path.empty() ? data_path / "cores" : absolute(core_path, startup_directory);
+    }
+
+    /// The same lookup as in `Server::main`: a relative path is relative to the working directory, or, if there is no
+    /// such file, to the directory of the main configuration, if the file is there.
+    void addHdfsConfig()
+    {
+        const std::string key = "hdfs.libhdfs3_conf";
+        const std::string value = config.getString(key, "");
+        if (value.empty())
+            return;
+        fs::path file = absolute(value, runtimeDirectory());
+        std::error_code error;
+        if (fs::path(value).is_relative() && !fs::exists(file, error))
+            if (const fs::path next_to_config = absolute(value, config_directory); fs::exists(next_to_config, error))
+                file = next_to_config;
+        addLocation(file, Access::ReadOnly, fmt::format("`{}`", key));
     }
 
     void addCertificates()
@@ -622,9 +669,12 @@ private:
 }
 
 std::vector<FilesystemIsolationPath> collectFilesystemIsolationPaths(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_path, const std::string & working_directory)
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & working_directory,
+    const std::string & startup_directory)
 {
-    return Collector(config, config_path, working_directory).collect();
+    return Collector(config, config_path, working_directory, startup_directory).collect();
 }
 
 }

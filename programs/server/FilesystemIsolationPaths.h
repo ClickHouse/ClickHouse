@@ -16,9 +16,14 @@ namespace DB
 /// The paths the server needs according to its configuration, and the system paths every server needs, to keep
 /// visible when it isolates its filesystem. See the `filesystem_isolation` server setting.
 ///
-/// `config_path` is the path of the main configuration file, and `working_directory` is the directory against
-/// which the server resolves the relative paths in the configuration.
+/// `config_path` is the path of the main configuration file, `working_directory` is the directory against which the
+/// server resolves the relative paths in the configuration, and `startup_directory` is the current directory of the
+/// process, against which `config_path` and the logs are resolved. They differ with `--daemon`, which changes to the
+/// directory of the executable.
 std::vector<FilesystemIsolationPath> collectFilesystemIsolationPaths(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_path, const std::string & working_directory);
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & working_directory,
+    const std::string & startup_directory);
 
 }

@@ -877,7 +877,7 @@ void Server::beforeStartingThreads()
     /// right after this, starts them again.
     Jemalloc::setBackgroundThreads(false);
 #endif
-    isolateFilesystem(mode, [&] { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory); });
+    isolateFilesystem(mode, [&] { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, fs::current_path().string()); });
 }
 
 void Server::uninitialize()
