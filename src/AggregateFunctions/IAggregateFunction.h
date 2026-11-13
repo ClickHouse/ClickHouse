@@ -676,7 +676,7 @@ public:
 
 protected:
     /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
-    bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+    [[nodiscard]] bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
 
     DataTypes argument_types;
     Array parameters;

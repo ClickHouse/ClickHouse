@@ -2118,7 +2118,7 @@ public:
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
-    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
     void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;

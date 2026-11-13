@@ -1584,7 +1584,7 @@ private:
     /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
     /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
     /// plan optimization admits.
-    std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
+    [[nodiscard]] std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
 
     /// `merged_group_count`, when non-null, receives the number of groups merged for the bucket:
     /// every group of the bucket (see `convertOneBucketToChunk`), or, with the top-K threshold

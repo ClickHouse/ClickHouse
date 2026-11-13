@@ -385,7 +385,7 @@ public:
         /// filtering is still deferred (an incomplete trailing granule, or a block not yet shrunk), this is
         /// always the post-filter survivor count, taken from `final_filter`. A granule is fully dropped by
         /// PREWHERE iff its entry here is 0.
-        NumRows survivingRowsPerGranule() const;
+        [[nodiscard]] NumRows survivingRowsPerGranule() const;
 
         /// Calls `callback(mark, surviving_rows)` once for every granule that PREWHERE actually read, where
         /// `mark` is the granule's mark number in the part and `surviving_rows` is
