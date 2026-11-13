@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
+#include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
 
 #include <cmath>
 #include <unordered_set>
@@ -90,8 +91,8 @@ namespace
         {
             case MatcherType::EQ: return makeASTFunction("equals", value, lit(matcher.label_value));
             case MatcherType::NE: return makeASTFunction("notEquals", value, lit(matcher.label_value));
-            case MatcherType::RE: return makeASTFunction("match", value, lit("^(?:" + matcher.label_value + ")$"));
-            case MatcherType::NRE: return makeASTFunction("not", makeASTFunction("match", value, lit("^(?:" + matcher.label_value + ")$")));
+            case MatcherType::RE: return makeASTFunction("match", value, lit(toFullMatchRegex(matcher.label_value)));
+            case MatcherType::NRE: return makeASTFunction("not", makeASTFunction("match", value, lit(toFullMatchRegex(matcher.label_value))));
         }
         UNREACHABLE();
     }
