@@ -1440,10 +1440,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
-    const bool previous_defer_matcher_alias_correlation = defer_matcher_alias_correlation;
-    defer_matcher_alias_correlation |= identifier_resolve_context.defer_matcher_correlation;
-    SCOPE_EXIT({ defer_matcher_alias_correlation = previous_defer_matcher_alias_correlation; });
-
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
     /// Table aliases are single-part names, so a compound table identifier can only be `database.table`.
@@ -1465,6 +1461,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             hidden_lambda_arguments,
             identifier_resolve_context.allow_to_resolve_niladic_functions);
     }
+
+    const auto * previous_defer_matcher_alias_query_scope = defer_matcher_alias_query_scope;
+    if (identifier_resolve_context.defer_matcher_correlation)
+        defer_matcher_alias_query_scope = scope_to_resolve_alias_expression->getNearestQueryScope();
+    SCOPE_EXIT({ defer_matcher_alias_query_scope = previous_defer_matcher_alias_query_scope; });
 
     QueryTreeNodePtr alias_node = *it;
 
@@ -1752,7 +1753,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    if (!identifier_resolve_context.defer_matcher_correlation && !defer_matcher_alias_correlation)
+    if (!identifier_resolve_context.defer_matcher_correlation)
     {
         CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
         if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
@@ -1821,6 +1822,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
+    if (defer_matcher_alias_query_scope && defer_matcher_alias_query_scope == scope.getNearestQueryScope())
+        identifier_resolve_context.defer_matcher_correlation = true;
+
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
     bool already_in_resolve_process = false;
@@ -3660,6 +3664,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     /// The qualifier lookup deferred correlation: only transformed output expressions may
     /// register outer columns. This also covers a tuple assembled from several scopes.
+    if (!defer_matcher_alias_query_scope || defer_matcher_alias_query_scope != scope.getNearestQueryScope())
     {
         CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map};
         if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
