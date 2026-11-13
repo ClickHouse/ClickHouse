@@ -509,8 +509,43 @@ std::vector<MountInfo> readMountInfo()
     return mounts;
 }
 
-/// The mount that is visible at the mount point `path` and the mounts reachable inside it, a mount before the mounts
-/// on it. Not the mounts at the same paths that it covers, as the ones that a bind mount of a directory over itself
+/// The ID of the mount that a lookup of `path` ends in, or nothing if the path does not exist or the process cannot
+/// search a directory on the way, as for a mount covered by another one, or inside a directory that only root can
+/// search. From `/proc/self/fdinfo` of a descriptor opened with `O_PATH`, which works with any kernel since 3.15, unlike
+/// `STATX_MNT_ID`.
+std::optional<uint64_t> getMountIdOfPath(const std::string & path)
+{
+    const int fd = ::open(path.c_str(), O_PATH | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0)
+    {
+        if (errno == ENOENT || errno == EACCES || errno == ENOTDIR)
+            return {};
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open {}", path);
+    }
+    SCOPE_EXIT(closeDescriptor(fd));
+    const std::string fd_info = readFile(fmt::format("/proc/self/fdinfo/{}", fd));
+    constexpr std::string_view key = "mnt_id:";
+    for (size_t line_begin = 0; line_begin < fd_info.size();)
+    {
+        size_t line_end = fd_info.find('\n', line_begin);
+        if (line_end == std::string::npos)
+            line_end = fd_info.size();
+        const std::string_view line(fd_info.data() + line_begin, line_end - line_begin);
+        line_begin = line_end + 1;
+        if (line.starts_with(key))
+        {
+            std::string_view value = line.substr(key.size());
+            while (!value.empty() && (value.front() == ' ' || value.front() == '\t'))
+                value.remove_prefix(1);
+            return parseFromString<uint64_t>(value);
+        }
+    }
+    throw Exception(ErrorCodes::SYSTEM_ERROR, "There is no `mnt_id` in /proc/self/fdinfo/{}", fd);
+}
+
+/// The mounts that are visible at the mount point `path` and inside it, a mount before the mounts on it, except an
+/// `autofs`: a lookup of it with nothing mounted on it would trigger the automount, which the service outside of this
+/// mount namespace never completes here, and the filesystem mounted on it, if any, is in the result on its own. Not the mounts at the same paths that it covers, as the ones that a bind mount of a directory over itself
 /// hides, which are not mount roots for a lookup of their paths. The visible mount at `path` is the one that no other
 /// mount at `path` is mounted on: a mount on top of another one at the same mount point has it as its parent.
 std::vector<MountInfo> getMountsInside(const std::string & path)
@@ -530,17 +565,24 @@ std::vector<MountInfo> getMountsInside(const std::string & path)
     if (!top)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no mount at {} in the isolated filesystem", path);
 
-    std::vector<MountInfo> result = {*top};
-    std::set<uint64_t> reachable = {top->id};
-    /// The children of the reachable mounts, until there are no new ones.
-    for (size_t checked = 0; checked < result.size(); ++checked)
+    std::vector<MountInfo> connected = {*top};
+    std::set<uint64_t> seen = {top->id};
+    /// The children of the connected mounts, until there are no new ones.
+    for (size_t checked = 0; checked < connected.size(); ++checked)
     {
-        const uint64_t parent_id = result[checked].id;
+        const uint64_t parent_id = connected[checked].id;
         for (const auto & mount : all)
             if (mount.parent_id == parent_id && mount.id != parent_id && isSameOrInside(mount.mount_point, path)
-                && reachable.insert(mount.id).second)
-                result.push_back(mount);
+                && seen.insert(mount.id).second)
+                connected.push_back(mount);
     }
+
+    /// A connected mount can still be covered by another one in the same subtree, mounted on it or on a directory on
+    /// the way to it, with the mounts on it: it is visible only if a lookup of its mount point ends in it.
+    std::vector<MountInfo> result;
+    for (auto & mount : connected)
+        if (mount.filesystem_type != "autofs" && getMountIdOfPath(mount.mount_point) == mount.id)
+            result.push_back(std::move(mount));
     return result;
 }
 
@@ -653,8 +695,6 @@ void remountReadOnly(const std::string & path)
     /// of the access time are kept by a remount without them.
     for (const auto & mount : getMountsInside(path))
     {
-        if (mount.filesystem_type == "autofs")
-            continue;
         if (0 != ::mount(nullptr, mount.mount_point.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} read-only", mount.mount_point);
     }
