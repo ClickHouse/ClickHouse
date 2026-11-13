@@ -2002,8 +2002,7 @@ void Reader::initializePrefetches()
                     size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
             }
 
-            /// Page headers of a local file are cheap to read, so the few pages holding `rows_to_read` can be
-            /// located without an offset index. A chunk with one data page has none to skip.
+            /// Locate the pages holding `rows_to_read` from page headers: cheap in a local file, nothing to skip in one data page.
             if (format_filter_info->rows_to_read && !column.served_from_cache && !column.offset_index_prefetch
                 && !column.meta->__isset.offset_index_offset && prefetcher.isLocalFile()
                 && primitive_columns[column_idx].levels.back().rep == 0 && !hasOneDataPage(column.meta->meta_data))
