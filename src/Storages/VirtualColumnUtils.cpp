@@ -1,4 +1,5 @@
 #include <memory>
+#include <base/arithmeticOverflow.h>
 #include <stack>
 #include <unordered_set>
 
@@ -611,7 +612,8 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 {
                     if (row >= row_positions.size())
                         return std::nullopt;
-                    return *virtual_values.first_row_id + row_positions[row];
+                    /// Row ids are modulo 2^64: `first_row_id` is a writer-declared signed long read as unsigned.
+                    return common::addIgnoreOverflow(*virtual_values.first_row_id, static_cast<UInt64>(row_positions[row]));
                 }));
         }
         else if (virtual_column.name == "_table")

@@ -563,7 +563,9 @@ ManifestFileIterator::ManifestFileIterator(
             continue;
 
         entry_first_row_ids[row_index] = next_row_id;
-        next_row_id += static_cast<UInt64>(parsed_entry->record_count);
+        /// Row ids are modulo 2^64, like the inherited ones of `_row_id`: the declared `first_row_id` and `record_count`
+        /// need not keep the block representable.
+        next_row_id = common::addIgnoreOverflow(next_row_id, static_cast<UInt64>(parsed_entry->record_count));
     }
 }
 
