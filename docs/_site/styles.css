@@ -54,8 +54,11 @@ html.dark .ch-goal-icon {
 }
 
 .ch-hero-card .ch-card-external-icon {
-    color: #FCFF74;
+    color: #2563eb;
     opacity: 0;
+}
+.dark .ch-hero-card .ch-card-external-icon {
+    color: #FCFF74;
 }
 .ch-hero-card:hover .ch-card-external-icon,
 .ch-hero-card:focus-visible .ch-card-external-icon,
