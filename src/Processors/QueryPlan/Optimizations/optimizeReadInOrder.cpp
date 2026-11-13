@@ -1420,13 +1420,39 @@ InputOrderInfoPtr buildInputOrderInfo(
     if (!reading_node)
         return nullptr;
 
-    const auto & description = sorting.getSortDescription();
+    SortDescription description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
     const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
+
+    /// A function of the query is matched with a function of the sorting key by its name, arguments and type, which
+    /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
+    /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
+    /// A window sorting is read in order only by default (`query_plan_reuse_storage_ordering_for_window_functions`),
+    /// so it matches only the columns of the table: the description stops at the first column computed by the query,
+    /// and only columns of the table fixed by the filter are taken into account.
+    if (sorting.hasPartitions() && dag)
+    {
+        auto is_table_column = [](const ActionsDAG::Node * column_node)
+        {
+            while (column_node && column_node->type == ActionsDAG::ActionType::ALIAS)
+                column_node = column_node->children.front();
+            return column_node && column_node->type == ActionsDAG::ActionType::INPUT;
+        };
+
+        size_t table_columns_prefix = 0;
+        while (table_columns_prefix < description.size()
+               && is_table_column(dag->tryFindInOutputs(description[table_columns_prefix].column_name)))
+            ++table_columns_prefix;
+        description.resize(table_columns_prefix);
+        if (description.empty())
+            return nullptr;
+
+        std::erase_if(fixed_columns, [](const ActionsDAG::Node * fixed_node) { return fixed_node->type != ActionsDAG::ActionType::INPUT; });
+    }
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
