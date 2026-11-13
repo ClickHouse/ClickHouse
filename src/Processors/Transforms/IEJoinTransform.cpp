@@ -1195,8 +1195,12 @@ void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) 
     {
         /// The default of the column type: NULL when it is Nullable (with `join_use_nulls`
         /// the planner made the padded side's columns Nullable in the pre-join actions).
-        auto column = column_with_type.type->createColumn();
-        column->insertManyDefaults(num_rows);
+        const auto & type = column_with_type.type;
+        auto column = type->createColumn();
+        if (type->isDefaultInsertTrivial())
+            column->insertManyDefaults(num_rows);
+        else
+            type->insertManyDefaultsInto(*column, num_rows);
         chunk.addColumn(std::move(column));
     }
 }
