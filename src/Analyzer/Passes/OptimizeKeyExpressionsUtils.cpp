@@ -554,8 +554,7 @@ bool canBeCalculatedFromKeys(const QueryTreeNodePtr & node, const QueryTreeNodes
 {
     checkStackSize();
 
-    const auto is_key = [&](const QueryTreeNodePtr & key)
-    { return key->isEqual(*node, {.compare_aliases = false}) && areConstantsWrittenAlike(key, node); };
+    const auto is_key = [&](const QueryTreeNodePtr & key) { return compareGroupByKeys(node, key) && areConstantsWrittenAlike(key, node); };
     if (std::ranges::any_of(group_by_keys, is_key))
         return true;
 

@@ -8,6 +8,7 @@
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -86,7 +87,7 @@ private:
         bool equal_keys_are_different = false;
         for (const auto & key : keys)
         {
-            if (!key->isEqual(*node, {.compare_aliases = false}) || !areConstantsEqual(key, node))
+            if (!compareGroupByKeys(node, key) || !areConstantsEqual(key, node))
                 continue;
 
             /// This is another value.

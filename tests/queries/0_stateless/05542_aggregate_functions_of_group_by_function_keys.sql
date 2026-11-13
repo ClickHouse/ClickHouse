@@ -43,6 +43,9 @@ SELECT arrayMap(a -> rand(a) % 2, [number]) AS x, arrayMap(a -> rand(a) % toUInt
 SELECT arrayJoin([1, 2]) + 2 AS x, count() AS c FROM numbers(3) GROUP BY x ORDER BY x, arrayJoin([1, 2]) + toUInt8(2);
 SELECT arrayJoin([1, 2]) + 2 AS x, max(arrayJoin([1, 2])) AS m FROM numbers(3) GROUP BY x ORDER BY x LIMIT 10 BY x, arrayJoin([1, 2]) + toUInt8(2);
 SELECT arrayJoin([number, 2]) AS x, arrayJoin([3, 4]) AS y FROM numbers(3) GROUP BY x ORDER BY x, arrayJoin([number, toUInt8(2)]) - y;
+SELECT intDiv(a.number, 4) AS x, intDiv(b.number, toUInt8(4)) AS y, count() AS c FROM numbers(8) AS a CROSS JOIN numbers(8) AS b GROUP BY intDiv(a.number, 4), intDiv(b.number, 4) ORDER BY x, y;
+SELECT intDiv(a.number, 4) AS x, intDiv(b.number, toUInt8(4)) AS y, max(intDiv(b.number, intDiv(8, 2))) AS m FROM numbers(8) AS a CROSS JOIN numbers(8) AS b GROUP BY GROUPING SETS ((intDiv(a.number, 4), intDiv(b.number, 4)), (intDiv(a.number, 4))) ORDER BY x, y, m;
+SELECT a.number + 1 AS x, b.number + 1 AS y, count() AS c FROM remote('127.0.0.{2,3}', numbers(2)) AS a CROSS JOIN numbers(2) AS b GROUP BY a.number + 1, b.number + 1 HAVING b.number + toUInt8(1) = 2 ORDER BY x, y;
 SELECT number AS x, arrayMap(a -> a + toUInt8(2), [x]) AS y FROM numbers(2) GROUP BY x, arrayMap(a -> a + 2, [x]) WITH ROLLUP ORDER BY ALL;
 SELECT arrayMap(a -> a + toUInt8(2), [number]) AS x, count() AS c FROM numbers(2) GROUP BY arrayMap(a -> a + 2, [number]) ORDER BY ALL;
 DROP TABLE IF EXISTS t;

@@ -6,6 +6,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/ValidationUtils.h>
 #include <Common/checkStackSize.h>
 
 namespace DB
@@ -16,7 +17,7 @@ namespace
 
 bool areWrittenAlike(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
 {
-    return lhs->isEqual(*rhs, {.compare_aliases = false}) && areConstantsWrittenAlike(lhs, rhs);
+    return compareGroupByKeys(lhs, rhs) && areConstantsWrittenAlike(lhs, rhs);
 }
 
 bool isKey(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys)
