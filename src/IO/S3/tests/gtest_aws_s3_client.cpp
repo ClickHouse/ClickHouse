@@ -2225,6 +2225,70 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
     EXPECT_EQ(requests_without_token, 0);
 }
 
+/// The local copy of the SDK profile file provider, as `S3CredentialsProviderChain` uses it, on a thread and in a fiber:
+/// a missing file gives no credentials, and a file created later is read after an invalidation, not before the refresh
+/// interval of the SDK has passed. SSO refresh is not covered: it needs an SSO portal.
+TEST(IOTestAwsS3Client, ProfileFileCredentialsOnThreadAndInFiber)
+{
+    initializeFiberSchedulerForTests();
+
+    const std::filesystem::path directory = std::filesystem::temp_directory_path() / "clickhouse_profile_credentials_for_gtest";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    SCOPE_EXIT({ std::filesystem::remove_all(directory); });
+    const std::filesystem::path credentials_file = directory / "credentials";
+
+    /// Only the profile file can provide credentials to the chain.
+    ScopedEnvVarForAwsS3ClientTests credentials_file_env("AWS_SHARED_CREDENTIALS_FILE", credentials_file.string());
+    ScopedEnvVarForAwsS3ClientTests config_file_env("AWS_CONFIG_FILE", (directory / "config").string());
+    ScopedEnvVarForAwsS3ClientTests imds_disabled_env("AWS_EC2_METADATA_DISABLED", "true");
+    ScopedEnvVarForAwsS3ClientTests access_key_env("AWS_ACCESS_KEY_ID", "");
+    ScopedEnvVarForAwsS3ClientTests secret_key_env("AWS_SECRET_ACCESS_KEY", "");
+    ScopedEnvVarForAwsS3ClientTests profile_env("AWS_PROFILE", "");
+    ScopedEnvVarForAwsS3ClientTests default_profile_env("AWS_DEFAULT_PROFILE", "");
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "");
+    ScopedEnvVarForAwsS3ClientTests token_file_env("AWS_WEB_IDENTITY_TOKEN_FILE", "");
+    ScopedEnvVarForAwsS3ClientTests ecs_relative_uri_env("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "");
+    ScopedEnvVarForAwsS3ClientTests ecs_full_uri_env("AWS_CONTAINER_CREDENTIALS_FULL_URI", "");
+
+    const auto client_configuration = createFiberTestClientConfiguration("eu-west-1");
+    const DB::S3::CredentialsConfiguration credentials_configuration{
+        .use_environment_credentials = true,
+        .use_insecure_imds_request = false,
+        .forbid_implicit_credentials = false,
+    };
+
+    const auto check_profile_file_credentials = [&](const std::string & access_key)
+    {
+        std::filesystem::remove(credentials_file);
+        DB::S3::S3CredentialsProviderChain chain(client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
+        EXPECT_TRUE(chain.GetAWSCredentials().IsEmpty());
+
+        {
+            std::ofstream out(credentials_file);
+            out << "[default]\naws_access_key_id = " << access_key << "\naws_secret_access_key = profile_secret_key\n";
+        }
+        /// The missing file was loaded just now, so the next load waits for the refresh interval.
+        EXPECT_TRUE(chain.GetAWSCredentials().IsEmpty());
+
+        chain.SetNeedRefresh();
+        const auto credentials = chain.GetAWSCredentials();
+        EXPECT_EQ(credentials.GetAWSAccessKeyId(), access_key);
+        EXPECT_EQ(credentials.GetAWSSecretKey(), "profile_secret_key");
+    };
+
+    check_profile_file_credentials("thread_profile_access_key");
+
+    bool inside_fiber = false;
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        inside_fiber = Silk::isInsideFiber();
+        check_profile_file_credentials("fiber_profile_access_key");
+        return 0;
+    }), 0);
+    EXPECT_TRUE(inside_fiber);
+}
+
 #endif
 
 #endif
