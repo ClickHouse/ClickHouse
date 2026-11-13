@@ -355,7 +355,7 @@ void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query)
     removeSettingsFromQuery(query, names);
 }
 
-static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
@@ -1801,7 +1801,11 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             Scalars{},
             Tables{},
             QueryProcessingStage::Complete,
-            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = *coordinator, .replica_info = replica_info});
+            RemoteQueryExecutor::Extension{
+                .parallel_reading_coordinator = *coordinator,
+                .replica_info = replica_info,
+                .distributed_top_k_coordinator = nullptr,
+                .distributed_top_k_participant = std::nullopt});
         remote_query_executor->setLogger(logger);
         // TODO: check if source table is present on remote, similar to reading with PR
 

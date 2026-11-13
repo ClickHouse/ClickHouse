@@ -132,9 +132,9 @@ void RemoteSource::work()
         return;
     }
 
-    if (preprocessed_packet)
+    if (preprocessed_control_packet)
     {
-        preprocessed_packet = false;
+        preprocessed_control_packet = false;
         return;
     }
 
@@ -148,9 +148,9 @@ void RemoteSource::onAsyncJobReady()
     if (!was_query_sent)
         return;
 
-    chassert(!preprocessed_packet);
-    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
-    if (preprocessed_packet)
+    chassert(!preprocessed_control_packet);
+    preprocessed_control_packet = query_executor->processAsyncControlPacketIfAny();
+    if (preprocessed_control_packet)
         is_async_state = false;
 }
 
@@ -198,7 +198,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
             return Chunk();
         }
 
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
+        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::AsyncControlPacket)
         {
             is_async_state = false;
             return Chunk();

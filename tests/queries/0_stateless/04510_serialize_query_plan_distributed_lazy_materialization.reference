@@ -1,0 +1,14 @@
+default setting: disabled
+eligible: enabled
+serialized plan: disabled
+lazy materialization: disabled
+limit pushdown: disabled
+unavailable shards: disabled
+zero limit: disabled
+with ties: disabled
+read till end: disabled
+overflow: disabled
+coordination row limit: enabled
+maximum limit: disabled
+parallel replicas: disabled
+interleaved winners: correct

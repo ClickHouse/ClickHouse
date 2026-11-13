@@ -1,0 +1,10 @@
+-- Filter and Expression pushed into the per-shard plan
+ReadFromRemote (Read from remote replica)
+  Expression ((Project names + Projection))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromTable
+  Expression ((Project names + Projection))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromTable
+-- Initiator plan keeps only ReadFromRemote
+ReadFromRemote (Read from remote replica)

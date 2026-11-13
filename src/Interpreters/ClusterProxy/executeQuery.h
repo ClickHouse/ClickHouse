@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Common/Logger.h>
 #include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
@@ -15,6 +16,9 @@
 
 namespace DB
 {
+
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 struct Settings;
 struct DistributedSettings;
@@ -109,6 +113,15 @@ void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query);
 ///
 /// @return new Context with adjusted settings
 ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table);
+
+ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+    bool is_remote_function,
+    ContextPtr context,
+    const Settings & settings,
+    const StorageID & main_table,
+    ASTPtr additional_filter_ast,
+    LoggerPtr log,
+    const DistributedSettings * distributed_settings);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 AdditionalShardFilterGenerator

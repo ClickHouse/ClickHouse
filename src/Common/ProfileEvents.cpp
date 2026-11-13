@@ -1571,6 +1571,14 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanRemoteTasks, "Number of tasks dispatched to remote workers when executing a query with make_distributed_plan. A non-zero value means the query was actually executed distributedly.", ValueType::Number) \
     M(DistributedPlanLocalExecution, "Set to 1 when a make_distributed_plan query was executed in-process via the local executor (distributed_plan_execute_locally) instead of being dispatched to remote workers.", ValueType::Number) \
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
+    M(DistributedTopKCandidateRows, "Number of distributed Top-K candidate rows received by coordinators.", ValueType::Number) \
+    M(DistributedTopKCandidateBytes, "Allocated bytes in distributed Top-K candidate blocks received by coordinators.", ValueType::Bytes) \
+    M(DistributedTopKSelectedRows, "Number of distributed Top-K candidate rows selected for materialization.", ValueType::Number) \
+    M(DistributedTopKBarrierMicroseconds, "Time from the first candidate submission until distributed Top-K selection or fallback.", ValueType::Microseconds) \
+    M(DistributedTopKFallbacks, "Number of distributed Top-K coordinators that fell back to all local candidates.", ValueType::Number) \
+    M(DistributedTopKFallbackShards, "Number of logical shards covered by distributed Top-K fallback.", ValueType::Number) \
+    M(DistributedTopKFallbackRows, "Number of local candidate rows emitted by distributed Top-K gates after fallback.", ValueType::Number) \
+    M(LazyMaterializationRows, "Number of physical rows read during second-phase lazy materialization.", ValueType::Number) \
     M(DistributedPlanWorkerPartsReceived, "Number of data parts the coordinator assigned to a worker of a distributed query plan, summed over the bucketed reads a query runs on that worker. A part assigned to several buckets counts once per read.", ValueType::Number) \
     M(DistributedPlanWorkerPartsScanned, "Number of the assigned data parts the worker keeps to read.", ValueType::Number) \
     M(DistributedPlanWorkerPartsPruned, "Number of the assigned data parts the worker's own index analysis pruned, so the worker does not read them. The coordinator selects parts without that analysis, so it can assign a part no row of the query can match. `DistributedPlanWorkerPartsReceived` is the sum of this and `DistributedPlanWorkerPartsScanned`.", ValueType::Number) \

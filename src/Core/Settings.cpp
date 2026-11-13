@@ -8343,6 +8343,12 @@ again is computed twice, cheaply, above the `LIMIT`, instead of becoming a colum
 in between. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
         {"26.11", false, true, "New setting to use lazy materialization for `LIMIT n` queries over joins."}) \
+    DECLARE(Bool, query_plan_optimize_distributed_lazy_materialization, false, R"(
+Enable experimental lazy materialization across shards for eligible distributed `ORDER BY ... LIMIT` queries.
+It takes effect only with `serialize_query_plan`. Then a plain read from a `Distributed` table of a local `MergeTree`
+table sends a single serialized plan to all shards and finishes the query on the initiator.
+)", 0, \
+        {"26.11", false, false, "New setting for experimental two-phase lazy materialization of `ORDER BY ... LIMIT` queries over `Distributed` tables."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
         {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
@@ -8395,7 +8401,7 @@ work across the two versions, with the old meaning on both sides.
 )", 0, \
         {"26.10", true, false, "`max_rows_in_join` / `max_bytes_in_join` are now hard caps for every hash join, including the ones that spill to disk, where they used to act as the spill trigger. Spilling is driven by `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` alone."}) \
     DECLARE(Bool, serialize_query_plan, false, R"(
-Serialize query plan for distributed processing
+Serialize query plan for distributed processing. Over a `Distributed` table the initiator sends a serialized per-shard query plan instead of a query text (requires the analyzer). Subqueries over `Distributed` tables in `IN`/`JOIN` are evaluated once on the initiator with `GLOBAL IN`-like semantics; `distributed_product_mode = 'local'` falls back to the classic execution path. Under `distributed_product_mode = 'deny'` such subqueries succeed on this path (initiator-side evaluation) where the classic path throws.
 )", 0, \
         {"25.4", false, false, "NewSetting"}) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(

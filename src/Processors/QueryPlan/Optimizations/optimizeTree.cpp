@@ -378,15 +378,23 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
+    /// A plan that reads a `Distributed` table through `ReadFromRemotePlanStep` is distributed by that
+    /// step, so it is not converted into a distributed plan here.
+    const bool plan_reads_from_remote = optimization_settings.make_distributed_plan && planReadsFromRemote(root);
+
+    QueryPlanOptimizationSettings join_optimization_settings = optimization_settings;
+    if (plan_reads_from_remote)
+        join_optimization_settings.make_distributed_plan = false;
+
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            optimizeJoinLogical(frame_node, nodes, optimization_settings);
-            optimizeJoinLegacy(frame_node, nodes, optimization_settings);
-            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
+            optimizeJoinLogical(frame_node, nodes, join_optimization_settings);
+            optimizeJoinLegacy(frame_node, nodes, join_optimization_settings);
+            useMemoryBufferForCommonSubplanResult(frame_node, join_optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -394,7 +402,7 @@ void optimizeTreeSecondPass(
             /// (reordered, runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical`
             /// supports, and lazy materialization for joins reads the join expressions from it.
             if (add_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, join_optimization_settings);
         });
 
     /// `JoinStepLogical::preCalculateKeys` computes an expression key below the join, after which the join no longer
@@ -484,6 +492,7 @@ void optimizeTreeSecondPass(
     /// tryMakeDistributed* transforms are not idempotent - a second pass would wrap the same steps
     /// into exchanges again - so run them only on a plan that has no exchanges yet.
     const bool make_distributed_plan = optimization_settings.make_distributed_plan
+        && !plan_reads_from_remote
         && !planContainsLogicalExchange(root);
 
 
@@ -548,6 +557,9 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedSorting(stack, frame_node, nodes, optimization_settings);
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
+
+            if (optimization_settings.serialize_query_plan)
+                tryPushDownToRemotePlan(frame_node, nodes, optimization_settings);
         });
 
     /// Distributed joins now live inside fragments and are converted by each fragment's own
@@ -555,7 +567,7 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed).
     traverseQueryPlan(stack, root,
         [&](auto &) {},
-        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, join_optimization_settings); });
 
     /// the conversion makes the pre-join expressions, also without plan optimizations
     lowerArrayJoinFunctions(root, nodes, extra_settings);
@@ -1057,6 +1069,10 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Finalize unconditionally because a subquery may have created a placeholder with different settings.
+    /// A placeholder must not reach pipeline initialization.
+    finalizeReadFromRemotePlan(root, optimization_settings.serialize_query_plan);
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);

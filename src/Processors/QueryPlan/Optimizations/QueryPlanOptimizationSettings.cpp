@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsBool optimize_uniq_exact_radix_partitioning;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 distributed_push_down_limit;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_plan_partial_aggregation_before_shuffle;
     extern const SettingsBool exact_rows_before_limit;
@@ -90,6 +91,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_replace_always_true_filter;
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool query_plan_optimize_distributed_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
@@ -112,6 +114,7 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
@@ -378,6 +381,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     make_distributed_plan = from[Setting::make_distributed_plan];
     serialize_query_plan = from[Setting::serialize_query_plan];
 
+    /// `distributed_push_down_limit` is historically a `UInt64`; any nonzero value enables it.
+    distributed_push_down_limit = from[Setting::distributed_push_down_limit] != 0;
+
     /// make_distributed_plan is incompatible with parallel replicas, including the automatic
     /// heuristic: its plan switching and statistics collection interfere with the distributed plan.
     if (make_distributed_plan
@@ -424,6 +430,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
     optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
     lazy_materialization_for_join = from[Setting::query_plan_lazy_materialization_for_join];
+    optimize_distributed_lazy_materialization = from[Setting::query_plan_optimize_distributed_lazy_materialization];
+    skip_unavailable_shards = from[Setting::skip_unavailable_shards];
+    parallel_replicas_enabled
+        = from[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        || from[Setting::automatic_parallel_replicas_mode] != 0;
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final];

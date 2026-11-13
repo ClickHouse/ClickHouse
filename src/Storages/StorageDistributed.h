@@ -157,6 +157,17 @@ public:
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
+    bool useDistributedPlanForReading(const ContextPtr & local_context, const SelectQueryInfo & query_info) const;
+    bool sourceTableAllowsDistributedPlan(const ContextPtr & local_context) const;
+
+    void readWithDistributedPlan(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        const ClusterPtr & cluster);
+
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
     void checkShardingKeySetsAreBuilt() const;

@@ -1318,6 +1318,14 @@ void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRang
     out->next();
 }
 
+void Connection::sendQueryCoordinationResponse(const QueryCoordinationResponse & response)
+{
+    writeVarUInt(Protocol::Client::QueryCoordinationResponse, *out);
+    response.serialize(*out);
+    out->finishChunk();
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -1639,6 +1647,10 @@ Packet Connection::receivePacket()
                 res.request = receiveParallelReadRequest();
                 return res;
 
+            case Protocol::Server::QueryCoordinationRequest:
+                res.query_coordination_request = receiveQueryCoordinationRequest();
+                return res;
+
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
                 return res;
@@ -1855,6 +1867,16 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
     auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
     announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
     return announcement;
+}
+
+QueryCoordinationRequest Connection::receiveQueryCoordinationRequest() const
+{
+    /// The candidate block carries table data (the sort keys), so it counts against the network limits.
+    size_t prev_bytes = in->count();
+    auto request = QueryCoordinationRequest::deserialize(*in, server_revision);
+    if (throttler)
+        throttler->throttle(in->count() - prev_bytes);
+    return request;
 }
 
 

@@ -3,6 +3,8 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/Common/RowPolicyDefs.h>
 
 #include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -71,6 +73,9 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Planner/CollectSets.h>
@@ -115,6 +120,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemotePlanStep.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -155,6 +162,7 @@ namespace ProfileEvents
     extern const Event DistributedRejectedInserts;
     extern const Event DistributedDelayedInserts;
     extern const Event DistributedDelayedInsertsMilliseconds;
+    extern const Event Shards;
 }
 
 namespace CurrentMetrics
@@ -179,6 +187,7 @@ namespace Setting
     extern const SettingsBool distributed_background_insert_split_batch_on_failure;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool distributed_foreground_insert;
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 distributed_push_down_limit;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
@@ -190,10 +199,15 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool optimize_distributed_group_by_sharding_key;
     extern const SettingsBool optimize_skip_unused_shards;
+    extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool exact_rows_before_limit;
+    extern const SettingsBool query_plan_optimize_distributed_lazy_materialization;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsMap additional_table_filters;
@@ -667,6 +681,166 @@ StorageDistributed::StorageDistributed(
 }
 
 
+namespace
+{
+
+/// `shardNum` and `shardCount` return zero on the initiator, so evaluate them through the legacy path.
+bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
+{
+    if (!root)
+        return false;
+
+    std::vector<const IQueryTreeNode *> stack = {root.get()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            const auto & name = function_node->getFunctionName();
+            if (name == "shardNum" || name == "shardCount")
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                stack.push_back(child.get());
+        }
+    }
+    return false;
+}
+
+/// The plan-level read pushes only expressions, filters, sorting and limits to the shards and finishes the rest
+/// of the query on the initiator. An aggregation or a window function would then receive every row of
+/// every shard instead of the partially aggregated states, so such queries keep the legacy path that
+/// runs them on the shards up to `WithMergeableState`. The same holds for a JOIN or ARRAY JOIN, which the
+/// legacy path also handles by its own rules.
+bool queryTreeIsPlainRead(const QueryTreeNodePtr & root)
+{
+    const auto * query_node = root ? root->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return false;
+
+    if (query_node->hasGroupBy() || query_node->isGroupByAll() || query_node->hasWindow())
+        return false;
+
+    /// The legacy path also applies DISTINCT and LIMIT BY on each shard before sending the rows,
+    /// while the plan-level read would send every row of every shard to the initiator.
+    if (query_node->isDistinct() || query_node->hasLimitBy())
+        return false;
+
+    const auto & join_tree = query_node->getJoinTree();
+    if (!join_tree.as<TableNode>() && !join_tree.as<TableFunctionNode>())
+        return false;
+
+    return !hasAggregateFunctionNodes(root) && !hasWindowFunctionNodes(root);
+}
+
+bool isNonNegativeConstant(const QueryTreeNodePtr & node)
+{
+    const auto * constant = node ? node->as<ConstantNode>() : nullptr;
+    if (!constant)
+        return false;
+    const auto & value = constant->getValue();
+    return value.getType() != Field::Types::Int64 || value.safeGet<Int64>() >= 0;
+}
+
+/// The legacy path sorts on each shard and merges the sorted streams on the initiator. The plan-level read
+/// sorts on the shards only when it can also copy the limit there (see `tryCopySortingAndLimitToRemotePlan`),
+/// otherwise the whole sort would move to the initiator. Such queries keep the legacy path.
+bool queryTreeSortingCanBePushedDown(const QueryTreeNodePtr & root, const Settings & settings)
+{
+    const auto & query_node = root->as<const QueryNode &>();
+
+    if (query_node.hasLimit() && !isNonNegativeConstant(query_node.getLimit()))
+        return false;
+    if (query_node.hasOffset() && !isNonNegativeConstant(query_node.getOffset()))
+        return false;
+
+    if (!query_node.hasOrderBy())
+        return true;
+
+    if (!query_node.hasLimit()
+        || query_node.isLimitWithTies()
+        || !settings[Setting::distributed_push_down_limit]
+        || settings[Setting::exact_rows_before_limit])
+        return false;
+
+    for (const auto & sort_node : query_node.getOrderBy().getNodes())
+    {
+        if (sort_node->as<const SortNode &>().withFill())
+            return false;
+    }
+
+    return true;
+}
+
+}
+
+/// The shards resolve a bare `ReadFromTableStep` directly against their local table, which skips the planning
+/// that the legacy path does for the source table on the initiator: row policies, `additional_table_filters`
+/// and `ALIAS` columns. If the initiator has the source table, use the plan-level read only for a `MergeTree`
+/// source for which none of them applies. If it does not have it, the legacy path cannot plan the source table
+/// on the initiator either, and each shard resolves it by itself.
+bool StorageDistributed::sourceTableAllowsDistributedPlan(const ContextPtr & local_context) const
+{
+    if (!local_context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+        return false;
+
+    /// The table is resolved in the default database of each shard.
+    if (remote_database.empty())
+        return true;
+
+    auto source = DatabaseCatalog::instance().tryGetTable(StorageID{remote_database, remote_table}, local_context);
+    if (!source)
+        return true;
+
+    if (!source->isMergeTree())
+        return false;
+
+    auto row_policy_filter = local_context->getRowPolicyFilter(remote_database, remote_table, RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return false;
+
+    const auto source_metadata = source->getInMemoryMetadataPtr(local_context, false);
+    const auto metadata = getInMemoryMetadataPtr(local_context, false);
+    for (const auto & column : metadata->getColumns().getAllPhysical())
+    {
+        if (!source_metadata->getColumns().hasPhysical(column.name))
+            return false;
+    }
+
+    return true;
+}
+
+bool StorageDistributed::useDistributedPlanForReading(const ContextPtr & local_context, const SelectQueryInfo & query_info) const
+{
+    const auto & settings = local_context->getSettingsRef();
+
+    return settings[Setting::serialize_query_plan]
+        /// The plan-level read exists for the coordinated Top-K of distributed lazy materialization.
+        /// Without it, the legacy path, which also sends a serialized plan to each shard, is used.
+        && settings[Setting::query_plan_optimize_distributed_lazy_materialization]
+        /// `make_distributed_plan` distributes a plain `ReadFromRemote` itself.
+        && !settings[Setting::make_distributed_plan]
+        && !settings[Setting::distributed_group_by_no_merge]
+        /// `distributed_product_mode = 'local'` requires per-shard subquery rewriting.
+        && settings[Setting::distributed_product_mode] != DistributedProductMode::LOCAL
+        /// The shared per-shard plan carries no replica slice, so with offset-based parallel replicas
+        /// (`sampling_key`, `custom_key_sampling`, `custom_key_range`) every replica would read the whole shard.
+        && !local_context->canUseOffsetParallelReplicas()
+        && !local_context->canUseTaskBasedParallelReplicas()
+        && !remote_table_function_ptr
+        /// The per-shard rewrite of `IN` by the sharding key is done only by the legacy path.
+        && !(settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_skip_unused_shards_rewrite_in] && has_sharding_key)
+        && queryTreeIsPlainRead(query_info.query_tree)
+        && queryTreeSortingCanBePushedDown(query_info.query_tree, settings)
+        && !queryTreeContainsShardDependentFunctions(query_info.query_tree)
+        && sourceTableAllowsDistributedPlan(local_context);
+}
+
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -705,7 +879,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
-    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+    /// The plan-level read sends a serialized per-shard plan and finishes the query on the initiator.
+    /// It is used only for plain reads without aggregation, see `queryTreeIsPlainRead`.
+    const auto stage = nodes > 1 && useDistributedPlanForReading(local_context, query_info)
+        ? QueryProcessingStage::FetchColumns
+        : chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
 
     /// The query was analyzed against the columns declared here, but a shard resolves the remote
     /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
@@ -1146,6 +1324,67 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+void StorageDistributed::readWithDistributedPlan(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    const ClusterPtr & cluster)
+{
+    const auto & settings = local_context->getSettingsRef();
+
+    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    auto remote_context = ClusterProxy::updateSettingsAndClientInfoForCluster(
+        *cluster,
+        is_remote_function,
+        local_context,
+        settings,
+        remote_storage,
+        /// The serialized `FilterStep` must not also be sent through `additional_table_filters`.
+        /* additional_filter_ast= */ nullptr,
+        log,
+        distributed_settings.get());
+    remote_context->increaseDistributedDepth();
+
+    ProfileEvents::increment(ProfileEvents::Shards, cluster->getShardCount());
+
+    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+
+    /// A bare table name resolves against each shard connection's default database.
+    String remote_table_name;
+    if (remote_database.empty())
+        remote_table_name = backQuoteIfNeed(remote_table);
+    else
+        remote_table_name = backQuoteIfNeed(remote_database) + "." + backQuoteIfNeed(remote_table);
+
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+    if (const auto * query_info_table_node = query_info.table_expression->as<TableNode>())
+        table_expression_modifiers = query_info_table_node->getTableExpressionModifiers();
+    else if (const auto * query_info_table_function_node = query_info.table_expression->as<TableFunctionNode>())
+        table_expression_modifiers = query_info_table_function_node->getTableExpressionModifiers();
+
+    auto inner_plan = std::make_unique<QueryPlan>();
+    inner_plan->addStep(std::make_unique<ReadFromTableStep>(
+        sample_block,
+        remote_table_name,
+        table_expression_modifiers.value_or(TableExpressionModifiers{})));
+
+    query_plan.addStep(std::make_unique<ReadFromRemotePlanStep>(
+        std::move(inner_plan),
+        cluster,
+        query_info.cluster->getName(),
+        remote_context,
+        remote_storage,
+        remote_table_function_ptr,
+        /* query_for_logging_= */ query_info.query,
+        query_info.storage_limits,
+        log));
+    query_plan.addInterpreterContext(remote_context);
+}
+
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
 {
     if (!is_remote_database_proxy)
@@ -1163,7 +1402,7 @@ void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const
 
 void StorageDistributed::read(
     QueryPlan & query_plan,
-    const Names &,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
@@ -1176,6 +1415,15 @@ void StorageDistributed::read(
     SharedHeader header;
 
     SelectQueryInfo modified_query_info = query_info;
+
+    if (ClusterPtr query_cluster = query_info.getCluster();
+        processed_stage == QueryProcessingStage::FetchColumns
+        && getClusterQueriedNodes(local_context, query_cluster) > 1
+        && useDistributedPlanForReading(local_context, query_info))
+    {
+        readWithDistributedPlan(query_plan, column_names, storage_snapshot, query_info, local_context, query_cluster);
+        return;
+    }
 
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
@@ -1671,7 +1919,11 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Tables{},
                 QueryProcessingStage::Complete,
                 nullptr,
-                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)},
+                RemoteQueryExecutor::Extension{
+                    .task_iterator = extension.task_iterator,
+                    .replica_info = std::move(replica_info),
+                    .distributed_top_k_coordinator = nullptr,
+                    .distributed_top_k_participant = std::nullopt},
                 replicas.pool);
 
             Pipe pipe{std::make_shared<RemoteSource>(

@@ -186,6 +186,7 @@ struct QueryPlanOptimizationSettings
     /// query context's, read by the fallback decision. Null outside a query.
     std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
+    bool distributed_push_down_limit = true;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     bool distributed_plan_fallback_to_local_execution
@@ -236,6 +237,9 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
     bool lazy_materialization_for_join = false;
+    bool optimize_distributed_lazy_materialization = false;
+    bool skip_unavailable_shards = false;
+    bool parallel_replicas_enabled = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled

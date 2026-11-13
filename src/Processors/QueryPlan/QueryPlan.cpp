@@ -252,7 +252,8 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (do_optimize)
         optimize(effective_settings);
 
-    if (effective_settings.make_distributed_plan)
+    /// A plan that reads a `Distributed` table through `ReadFromRemotePlanStep` is distributed by that step.
+    if (effective_settings.make_distributed_plan && !QueryPlanOptimizations::planReadsFromRemote(*root))
         convertToDistributed(effective_settings);
 
     struct Frame

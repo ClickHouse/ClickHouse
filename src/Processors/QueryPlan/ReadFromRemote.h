@@ -8,6 +8,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/UUID.h>
+#include <QueryPipeline/DistributedTopKCoordinator.h>
 
 namespace DB
 {
@@ -57,6 +58,8 @@ public:
 
     bool hasTotals() const;
 
+    void setDistributedTopKCoordination(UInt64 limit_, SortDescription sort_description);
+
     void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
 
 private:
@@ -77,6 +80,8 @@ private:
     const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    std::optional<DistributedTopKCoordinator::Settings> distributed_top_k_settings;
+    DistributedTopKCoordinatorPtr distributed_top_k_coordinator;
     bool allow_reading_shard_from_several_replicas = false;
 
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
@@ -90,14 +95,16 @@ private:
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
         size_t parallel_marshalling_threads,
-        const UnavailableShardTrackerPtr & tracker);
+        const UnavailableShardTrackerPtr & tracker,
+        size_t participant);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
         size_t parallel_marshalling_threads,
-        const UnavailableShardTrackerPtr & tracker);
+        const UnavailableShardTrackerPtr & tracker,
+        size_t participant);
 };
 
 

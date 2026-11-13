@@ -122,6 +122,7 @@ public:
                           UInt64 & revision) override;
 
     UInt64 getServerRevision(const ConnectionTimeouts & timeouts) override;
+    UInt64 getServerQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
@@ -159,6 +160,8 @@ public:
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
+
+    void sendQueryCoordinationResponse(const QueryCoordinationResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -389,6 +392,7 @@ private:
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
     InitialAllRangesAnnouncement receiveInitialParallelReadAnnouncement() const;
+    QueryCoordinationRequest receiveQueryCoordinationRequest() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

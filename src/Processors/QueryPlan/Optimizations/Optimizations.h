@@ -449,6 +449,12 @@ void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization
 /// in case it was enabled for local plan
 void enableMemoryBoundMerging(QueryPlan::Node & node);
 
+bool planReadsFromRemote(QueryPlan::Node & root);
+
+void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
+void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans);
+
 }
 
 }
