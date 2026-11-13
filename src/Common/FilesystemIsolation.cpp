@@ -453,10 +453,17 @@ std::string decodeMountInfoPath(std::string_view encoded)
     return decoded;
 }
 
-/// The mount points at `path` and inside it.
-std::vector<std::string> getMountPointsInside(const std::string & path)
+struct MountInfo
 {
-    std::vector<std::string> mount_points;
+    std::string mount_point;
+    std::string filesystem_type;
+};
+
+/// The mounts at `path` and inside it, in the order of `/proc/self/mountinfo`, in which a mount comes after the one it
+/// is mounted on.
+std::vector<MountInfo> getMountsInside(const std::string & path)
+{
+    std::vector<MountInfo> mounts;
     const std::string mount_info = readFile("/proc/self/mountinfo");
     size_t line_begin = 0;
     while (line_begin < mount_info.size())
@@ -478,10 +485,28 @@ std::vector<std::string> getMountPointsInside(const std::string & path)
         if (field_begin == std::string_view::npos)
             continue;
         const size_t field_end = line.find(' ', field_begin);
-        const std::string mount_point = decodeMountInfoPath(line.substr(field_begin, field_end - field_begin));
-        if (isSameOrInside(mount_point, path))
-            mount_points.push_back(mount_point);
+        std::string mount_point = decodeMountInfoPath(line.substr(field_begin, field_end - field_begin));
+        if (!isSameOrInside(mount_point, path))
+            continue;
+
+        /// The type of the filesystem is the field after the separator ` - `, which follows the optional fields.
+        std::string filesystem_type;
+        if (const size_t separator = line.find(" - ", field_end); separator != std::string_view::npos)
+        {
+            const size_t type_begin = separator + 3;
+            filesystem_type = std::string(line.substr(type_begin, line.find(' ', type_begin) - type_begin));
+        }
+        mounts.push_back({std::move(mount_point), std::move(filesystem_type)});
     }
+    return mounts;
+}
+
+/// The mount points at `path` and inside it.
+std::vector<std::string> getMountPointsInside(const std::string & path)
+{
+    std::vector<std::string> mount_points;
+    for (auto & mount : getMountsInside(path))
+        mount_points.push_back(std::move(mount.mount_point));
     return mount_points;
 }
 
@@ -567,10 +592,12 @@ void bindMount(const std::string & path, unsigned long add_flags) // NOLINT(goog
 /// `/proc/sysrq-trigger`: they are made read-only, as in the containers of Docker. The server only reads them.
 constexpr std::array proc_global_controls = {"/proc/sys", "/proc/sysrq-trigger", "/proc/bus", "/proc/fs", "/proc/irq"};
 
-/// Bind-mounts `path` over itself, read-only. A path that does not exist is skipped. Recursively, because a user
-/// namespace cannot bind a mount without its locked children, but only the new top mount is made read-only: a
-/// mount inside, such as the `autofs` of `/proc/sys/fs/binfmt_misc`, is not touched, because `statvfs` of it would
-/// trigger the automount, which the service outside of this mount namespace never completes here.
+/// Bind-mounts `path` over itself, read-only, with every mount inside it. A path that does not exist is skipped.
+/// Recursively, because a user namespace cannot bind a mount without its locked children, and the mounts inside are
+/// remounted read-only as well, as a `binfmt_misc` at `/proc/sys/fs/binfmt_misc`, whose `register` changes how the
+/// programs of the host are executed. An `autofs` is skipped: a lookup of it with nothing mounted on it would trigger
+/// the automount, which the service outside of this mount namespace never completes here, and a filesystem that is
+/// mounted on it is in the list on its own, after it, and is reached without triggering anything.
 void remountReadOnly(const std::string & path)
 {
     struct stat st{};
@@ -581,8 +608,13 @@ void remountReadOnly(const std::string & path)
 
     /// Every flag that a mount of a more privileged user namespace can lock is set, so none is cleared, and the flags
     /// of the access time are kept by a remount without them.
-    if (0 != ::mount(nullptr, path.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr))
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} read-only", path);
+    for (const auto & mount : getMountsInside(path))
+    {
+        if (mount.filesystem_type == "autofs")
+            continue;
+        if (0 != ::mount(nullptr, mount.mount_point.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr))
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} read-only", mount.mount_point);
+    }
 }
 
 void mountTmpfs(const std::string & path, unsigned long flags, const char * options) // NOLINT(google-runtime-int)
