@@ -122,16 +122,6 @@ $CLICKHOUSE_LOCAL -q "
 SELECT referenced_data_file, deleted_rows FROM file('$OUT/{uint8,int64}.puffin', Puffin) ORDER BY referenced_data_file
 "
 
-echo "--- blob metadata settings ---"
-$CLICKHOUSE_LOCAL -q "
-INSERT INTO FUNCTION file('$OUT/settings.puffin', Puffin)
-SELECT arrayJoin([1, 2])::UInt64 AS position
-SETTINGS output_format_puffin_referenced_data_file = 'data/g.parquet', output_format_puffin_snapshot_id = 8143950620832403401, output_format_puffin_sequence_number = 7, output_format_puffin_field_ids = '2147483645, 2147483546'
-"
-$CLICKHOUSE_LOCAL -q "
-SELECT blob_type, snapshot_id, sequence_number, fields, properties FROM file('$OUT/settings.puffin', PuffinMetadata)
-"
-
 echo "--- written to stdout, read from stdin ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT arrayJoin([10, 20, 30])::UInt64 AS position FORMAT Puffin
@@ -155,9 +145,5 @@ $CLICKHOUSE_LOCAL -q "SELECT 9223372030412324865::UInt64 AS position FORMAT Puff
     | grep -o "Deleted row position 9223372030412324865 exceeds the maximum deletion vector position" | head -1
 $CLICKHOUSE_LOCAL -q "SELECT 9223372036854775807::Int64 AS position FORMAT Puffin SETTINGS output_format_puffin_referenced_data_file = 'data/x.parquet'" 2>&1 >/dev/null \
     | grep -o "Deleted row position 9223372036854775807 exceeds the maximum deletion vector position" | head -1
-$CLICKHOUSE_LOCAL -q "SELECT 1::UInt64 AS position FORMAT Puffin SETTINGS output_format_puffin_referenced_data_file = 'data/x.parquet', output_format_puffin_field_ids = ''" 2>&1 >/dev/null \
-    | grep -o "Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids" | head -1
-$CLICKHOUSE_LOCAL -q "SELECT 1::UInt64 AS position FORMAT Puffin SETTINGS output_format_puffin_referenced_data_file = 'data/x.parquet', output_format_puffin_field_ids = '1,x'" 2>&1 >/dev/null \
-    | grep -o "Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids" | head -1
 
 rm -rf "${OUT:?}"

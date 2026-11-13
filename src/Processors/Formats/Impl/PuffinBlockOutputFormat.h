@@ -26,9 +26,6 @@ private:
     void addPositions(const IColumn & positions, size_t begin, size_t end);
 
     String referenced_data_file;
-    Int64 snapshot_id;
-    Int64 sequence_number;
-    std::vector<Int32> field_ids;
     bool positions_are_arrays = false;
     bool positions_are_unsigned = false;
     std::map<UInt32, roaring::Roaring> bitmaps;

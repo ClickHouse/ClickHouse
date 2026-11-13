@@ -388,9 +388,6 @@ struct FormatSettings : FormatSettingsEnums
     struct Puffin
     {
         String referenced_data_file;
-        Int64 snapshot_id = -1;
-        Int64 sequence_number = -1;
-        String field_ids = "2147483645";
     } puffin{};
 
     struct Pretty
