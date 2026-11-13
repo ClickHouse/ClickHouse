@@ -526,7 +526,7 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 void FileSegment::write(char * from, size_t size, size_t offset_in_file, bool keep_temporary)
 {
     if (!keep_temporary)
-        markUsed();
+        is_temporary.store(false, std::memory_order_relaxed);
 
     /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
     FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
@@ -1616,7 +1616,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
-    markUsed();
+    is_temporary.store(false, std::memory_order_relaxed);
 
     if (!cache)
     {

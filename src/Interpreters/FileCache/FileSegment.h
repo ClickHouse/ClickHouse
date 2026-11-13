@@ -51,7 +51,7 @@ struct CreateFileSegmentSettings
 {
     FileSegmentKind kind = FileSegmentKind::Regular;
     bool unbounded = false;
-    /// Removed at its last release, unless a reader or writer outside the temporary-cache mode used it.
+    /// Removed at its last release, unless it was written outside the temporary-cache mode or had a hit (`increasePriority`).
     bool temporary = false;
 
     CreateFileSegmentSettings() = default;
@@ -204,9 +204,6 @@ public:
 
     void increasePriority();
 
-    /// A reader or writer outside the temporary-cache mode used the segment: it stays after its last release.
-    void markUsed() { is_temporary.store(false, std::memory_order_relaxed); }
-
     /**
      * ========== Methods used by `cache` ========================
      */
@@ -264,7 +261,7 @@ public:
         FileCacheReserveAhead * reserve_ahead = nullptr);
 
     /// Write data into reserved space.
-    /// Marks the segment used, unless `keep_temporary`.
+    /// Clears the temporary mark, unless `keep_temporary`.
     void write(char * from, size_t size, size_t offset_in_file, bool keep_temporary = false);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's

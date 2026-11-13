@@ -327,8 +327,6 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// unthrottled, unanchored).
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
-    if (!cache_settings.cache_temporarily && !result.empty())
-        segment().markUsed();
     return result;
 }
 
@@ -481,7 +479,6 @@ DiskCacheReader::~DiskCacheReader()
     try
     {
         FileSegment & seg = segment();
-        seg.markUsed();
         const auto state = seg.state();
         if (state == FileSegmentState::DOWNLOADED
             || state == FileSegmentState::PARTIALLY_DOWNLOADED
@@ -544,8 +541,8 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         ICacheProvider::CacheResolution hit;
         hit.kind = ICacheProvider::CacheResolution::Kind::Hit;
         hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
-        /// In the temporary-cache mode the reader counts no hit, does not mark the segment used, and keeps
-        /// no open fd: a segment it reads can be removed at its last release.
+        /// In the temporary-cache mode the reader counts no hit and keeps no open fd: a segment it reads can be
+        /// removed at its last release.
         hit.reader = std::make_unique<DiskCacheReader>(
             seg_holder, hit.range, object_file_offset, local_throttler,
             cache_settings.cache_temporarily ? nullptr : &reader_anchors, !cache_settings.cache_temporarily);
