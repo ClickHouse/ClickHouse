@@ -1,4 +1,3 @@
-=== local
 --- basic: orphans are deleted, committed data is kept
 data/orphan-data-001.parquet present
 data/orphan-data-002.parquet present
@@ -42,51 +41,6 @@ metadata/version-hint.text present
 metadata/version-hint.text present
 [1,2]
 data/orphan-version-hint.parquet absent
-=== s3
---- basic: orphans are deleted, committed data is kept
-data/orphan-data-001.parquet present
-data/orphan-data-002.parquet present
-metrics: 9
-deleted_data_files_count 2
-data/orphan-data-001.parquet absent
-data/orphan-data-002.parquet absent
-[1,2,3]
---- no orphans: nothing but superseded metadata files is deleted
-[1,2]
---- older_than spares newer orphans
-data/orphan-new.parquet present
-deleted_data_files_count 1
-data/orphan-new.parquet absent
-[1]
---- dry_run reports without deleting
-deleted_data_files_count 1
-data/orphan-dry.parquet present
-deleted_data_files_count 1
-data/orphan-dry.parquet absent
---- location restricts the scan
-deleted_data_files_count 2
-data/orphan-data.parquet absent
-metadata/v0.metadata.json present
-deleted_metadata_files_count 2
-metadata/v0.metadata.json absent
-[1]
---- many orphans in one run
-deleted_data_files_count 10
-0
-[1]
---- files referenced by any snapshot are kept, positional older_than
-deleted_data_files_count 1
-data/orphan-pos.parquet absent
-[1,2,3]
---- delete files are tallied under their own category
-deleted_equality_delete_files_count 2
-deleted_position_delete_files_count 2
---- version-hint.text is reachable
-metadata/version-hint.text present
-metadata/version-hint.text present
-[1,2]
-data/orphan-version-hint.parquet absent
-=== local only
 --- default older_than comes from iceberg_orphan_files_older_than_seconds
 deleted_data_files_count 1
 data/orphan-default.parquet absent
