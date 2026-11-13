@@ -1174,6 +1174,9 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     if (header.has(current_path))
     {
         auto target_column_idx = header.getPositionByName(current_path);
+        /// Read from the first field that matches it.
+        if (column_found[target_column_idx])
+            return AvroDeserializer::Action(createSkipFn(node));
         const auto & column = header.getByPosition(target_column_idx);
         try
         {
@@ -1191,23 +1194,37 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_RECORD)
     {
         VectorWithMemoryTracking<AvroDeserializer::Action> field_actions(node->leaves());
-        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+        /// A top-level field named like a column is read for it, not a nested path of the same name: a column shadows a subcolumn.
+        auto shadows_nested_paths = [&](int i) { return current_path.empty() && header.has(node->nameAt(i)); };
+        for (bool shadowing_fields : {true, false})
         {
-            const auto & field_node = node->leafAt(i);
-            const auto & field_name = node->nameAt(i);
-            field_actions[i] = createAction(header, field_node, concatPath(current_path, field_name));
+            for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+            {
+                if (shadows_nested_paths(i) != shadowing_fields)
+                    continue;
+                const auto & field_node = node->leafAt(i);
+                const auto & field_name = node->nameAt(i);
+                field_actions[i] = createAction(header, field_node, concatPath(current_path, field_name));
+            }
         }
         return AvroDeserializer::Action::recordAction(field_actions);
     }
     else if (node->type() == avro::AVRO_UNION)
     {
+        /// Only one branch is read per row, so each one starts from the columns found before the union.
+        const auto found_before_union = column_found;
+        auto found_in_any_branch = column_found;
         VectorWithMemoryTracking<AvroDeserializer::Action> branch_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
+            column_found = found_before_union;
             const auto & branch_node = node->leafAt(i);
             const auto & branch_name = nodeName(branch_node);
             branch_actions[i] = createAction(header, branch_node, concatPath(current_path, branch_name));
+            for (size_t j = 0; j < column_found.size(); ++j)
+                found_in_any_branch[j] = found_in_any_branch[j] || column_found[j];
         }
+        column_found = std::move(found_in_any_branch);
         return AvroDeserializer::Action::unionAction(branch_actions);
     }
     else if (node->type() == avro::AVRO_ARRAY)
@@ -1215,6 +1232,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         /// If header doesn't have column with current_path name and node is Array(Record),
         /// check if we have a flattened Nested table with such name.
         Names nested_names = Nested::getAllNestedColumnsForTable(header, current_path);
+        std::erase_if(nested_names, [&](const String & name) { return column_found[header.getPositionByName(name)]; });
         auto nested_avro_node = node->leafAt(0);
         if (nested_names.empty() || nested_avro_node->type() != avro::AVRO_RECORD)
             return AvroDeserializer::Action(createSkipFn(node));
