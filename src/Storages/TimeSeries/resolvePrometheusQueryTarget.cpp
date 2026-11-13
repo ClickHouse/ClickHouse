@@ -28,6 +28,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace DistributedSetting
@@ -76,6 +78,13 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
     const auto & declared = distributed->getDistributedSettingsRef();
     target.skip_unavailable_shards = declared[DistributedSetting::skip_unavailable_shards].value;
     target.skip_unavailable_shards_mode = declared[DistributedSetting::skip_unavailable_shards_mode].toString();
+
+    /// The query's own setting wins over the declared one.
+    const auto & query_settings = context->getSettingsRef();
+    if (query_settings[Setting::skip_unavailable_shards].changed)
+        target.skip_unavailable_shards = query_settings[Setting::skip_unavailable_shards].value;
+    if (query_settings[Setting::skip_unavailable_shards_mode].changed)
+        target.skip_unavailable_shards_mode = query_settings[Setting::skip_unavailable_shards_mode].toString();
     return target;
 }
 
@@ -161,15 +170,6 @@ void checkTimeSeriesSelectorSource(const StorageID & storage_id, const ContextPt
             "Selecting time series is not supported from TimeSeries table {} with an additional_table_filters entry for it: "
             "the selector reads its inner tables and the filter would not be applied",
             storage_id.getNameForLogs());
-}
-
-void applyPrometheusQueryDistributedSettings(Context & query_context, const PrometheusQueryDistributedTarget & target)
-{
-    query_context.setSetting("serialize_query_plan", false);
-    if (!query_context.getSettingsRef().isChanged("skip_unavailable_shards"))
-        query_context.setSetting("skip_unavailable_shards", target.skip_unavailable_shards);
-    if (!query_context.getSettingsRef().isChanged("skip_unavailable_shards_mode"))
-        query_context.setSetting("skip_unavailable_shards_mode", target.skip_unavailable_shards_mode);
 }
 
 }

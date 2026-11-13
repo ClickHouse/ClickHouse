@@ -9,7 +9,6 @@
 
 namespace DB
 {
-class Context;
 class IStorage;
 struct StorageInMemoryMetadata;
 
@@ -18,7 +17,7 @@ struct PrometheusQueryDistributedTarget
 {
     String cluster_name;
     StorageID remote_time_series_storage_id = StorageID::createEmpty();
-    /// The table's declared shard-skip settings, see applyPrometheusQueryDistributedSettings().
+    /// The shard-skip settings in effect: the table's declared ones, unless the query sets them.
     bool skip_unavailable_shards = false;
     String skip_unavailable_shards_mode;
 };
@@ -37,8 +36,5 @@ void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const Con
 
 /// The selector reads the inner tables, so it refuses a row policy or an additional_table_filters entry on the table.
 void checkTimeSeriesSelectorSource(const StorageID & storage_id, const ContextPtr & context);
-
-/// Sends the shards the query text, and applies the table's shard-skip settings unless the query sets them.
-void applyPrometheusQueryDistributedSettings(Context & query_context, const PrometheusQueryDistributedTarget & target);
 
 }
