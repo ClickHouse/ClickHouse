@@ -493,8 +493,8 @@ def main():
         finally:
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    # A release that keeps a fix secret pushes the changelog to public master after the embargo.
-    if GITHUB_REPOSITORY != "ClickHouse/ClickHouse-internal":
+    # A private repository releases during an embargo; the changelog goes to public master after it.
+    if GITHUB_REPOSITORY == "ClickHouse/ClickHouse":
         step(
             name="Bump Changelog and Push to master",
             command=_push_changelog_to_master,
