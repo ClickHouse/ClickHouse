@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 As implantações do ClickHouse para observabilidade invariavelmente envolvem grandes volumes de dados, que precisam ser gerenciados. O ClickHouse oferece vários recursos para auxiliar no gerenciamento desses dados.
 
 <Tip>
@@ -28,7 +26,15 @@ No ClickHouse, o particionamento permite separar logicamente os dados no disco d
 
 O particionamento é especificado na tabela quando ela é definida inicialmente, por meio da cláusula `PARTITION BY`. Essa cláusula pode conter uma expressão SQL sobre qualquer coluna, e o resultado dessa expressão define para qual partição uma linha será enviada.
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partições" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Partições](/images/use-cases/observability/observability-14.webp)
+
+</Frame>
+
+</div>
 
 As partes de dados são associadas logicamente (por meio de um prefixo comum no nome da pasta) a cada partição no disco e podem ser consultadas isoladamente. No exemplo abaixo, o esquema padrão `otel_logs` particiona por dia usando a expressão `toDate(Timestamp)`. À medida que as linhas são inseridas no ClickHouse, essa expressão é avaliada para cada linha, que é direcionada à partição resultante, caso ela exista (se a linha for a primeira de um dia, a partição será criada).
 

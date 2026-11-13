@@ -7,8 +7,6 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Aunque la [inferencia de esquemas](/es/guides/clickhouse/data-formats/json/inference) puede utilizarse para definir un esquema inicial para datos JSON y consultar archivos de datos JSON directamente en su ubicación, por ejemplo en S3, conviene definir una versión optimizada y con control de versiones del esquema para tus datos. A continuación, explicamos el enfoque recomendado para modelar estructuras JSON.
 
 <div id="static-vs-dynamic-json">
@@ -989,19 +987,43 @@ Como resultado, en conjuntos de datos que son mayoritariamente consistentes pero
 
 ClickHouse almacena cada ruta JSON como una subcolumna en un diseño realmente columnar, lo que permite obtener las mismas ventajas de rendimiento que con las columnas tradicionales, como la compresión, el procesamiento acelerado por SIMD y una mínima E/S de disco. Cada combinación única de ruta y tipo en sus datos JSON puede convertirse en su propio archivo de columna en disco.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Columna por ruta JSON" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Columna por ruta JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+
+</Frame>
+
+</div>
 
 Por ejemplo, cuando se insertan dos rutas JSON con tipos distintos, ClickHouse almacena los valores de cada [tipo concreto en subcolumnas independientes](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Se puede acceder a estas subcolumnas de forma independiente, lo que minimiza la E/S innecesaria. Tenga en cuenta que, al consultar una columna con varios tipos, sus valores se siguen devolviendo como una única respuesta columnar.
 
 Además, al aprovechar los offsets, ClickHouse garantiza que estas subcolumnas sigan siendo densas, sin almacenar valores predeterminados para las rutas JSON ausentes. Este enfoque maximiza la compresión y reduce aún más la E/S.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="Offsets JSON" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Offsets JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+
+</Frame>
+
+</div>
 
 Sin embargo, en escenarios con estructuras JSON de alta cardinalidad o muy variables, como pipelines de telemetría, logs o feature stores de aprendizaje automático, este comportamiento puede provocar una proliferación de archivos de columna. Cada nueva ruta JSON única da lugar a un nuevo archivo de columna, y cada variante de tipo en esa ruta genera un archivo de columna adicional. Aunque esto es óptimo para el rendimiento de lectura, introduce retos operativos: agotamiento de descriptores de archivo, mayor uso de memoria y merges más lentos debido al gran número de archivos pequeños.
 
 Para mitigar esto, ClickHouse introduce el concepto de subcolumna de desbordamiento: una vez que el número de rutas JSON distintas supera un umbral, las rutas adicionales se almacenan en un único archivo compartido mediante un formato codificado compacto. Este archivo sigue siendo consultable, pero no se beneficia de las mismas características de rendimiento que las subcolumnas dedicadas.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Columna JSON compartida" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Columna JSON compartida](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+
+</Frame>
+
+</div>
 
 Este umbral se controla mediante el parámetro [`max_dynamic_paths`](/es/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) en la declaración del tipo JSON.
 

@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'trace sampling', 'tail sampling', 'sample rate', 'weighted aggregations', 'OpenTelemetry', 'SampleRate']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
 This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
@@ -51,6 +50,14 @@ Open your trace source in **Source Settings** and enter the ClickHouse expressio
 
 For example, if your OpenTelemetry tail-sampling processor writes the rate into `SpanAttributes['SampleRate']`:
 
-<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Sample Rate Expression field in Source Settings" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Sample Rate Expression field in Source Settings](/images/clickstack/trace-sampling-source-settings.webp)
+
+</Frame>
+
+</div>
 
 Once configured, all charts, dashboards, alerts, and service dashboard panels automatically apply sample-weighted aggregations. No changes to individual queries are needed.

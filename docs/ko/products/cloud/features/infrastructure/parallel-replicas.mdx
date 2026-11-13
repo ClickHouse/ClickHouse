@@ -6,8 +6,6 @@ description: '이 가이드에서는 먼저 ClickHouse가 분산 테이블을 �
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="introduction">
   ## 소개
 </div>
@@ -31,7 +29,15 @@ shared-nothing 아키텍처에서는 일반적으로 클러스터를
 각 세그먼트가 해당 쿼리를 실행합니다. 분산 테이블에 쿼리가 수행된 서버는
 데이터를 집계한 뒤 클라이언트에 응답합니다:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="세그먼트 아키텍처" />
+<div className="ch-image-md">
+
+<Frame>
+
+![세그먼트 아키텍처](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 위 그림은 클라이언트가 분산 테이블에 쿼리를 실행할 때 어떤 일이 일어나는지 보여줍니다:
 
@@ -72,7 +78,15 @@ ClickHouse Cloud는 위에서 설명한 아키텍처와는 매우 다른 구조�
 
 아래 그림은 ClickHouse Cloud 아키텍처를 보여줍니다.
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="세그먼트 분할이 없는 아키텍처" />
+<div className="ch-image-md">
+
+<Frame>
+
+![세그먼트 분할이 없는 아키텍처](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 이 아키텍처에서는 레플리카를 거의 즉시 추가하거나 제거할 수
 있으므로 클러스터 확장성이 매우 뛰어납니다. 오른쪽에 표시된 ClickHouse
@@ -91,7 +105,15 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 
 이제 아래 그림을 통해 실제로 어떻게 동작하는지 살펴보겠습니다.
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="병렬 레플리카" />
+<div className="ch-image-md">
+
+<Frame>
+
+![병렬 레플리카](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 병렬 레플리카는 다음과 같이 동작합니다.
 
@@ -144,7 +166,15 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 
 위 목록의 (1)과 (2)를 해결하기 위해 announcement라는 개념을 도입했습니다. 아래 그림을 통해 이것이 어떻게 동작하는지 살펴보겠습니다:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Announcements" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Announcements](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -177,7 +207,15 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 
 아래 그림은 동적 조정이 작동하는 방식을 보여줍니다:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="동적 조정 - 파트 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![동적 조정 - 파트 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -190,7 +228,15 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="동적 조정 - 파트 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![동적 조정 - 파트 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -203,7 +249,15 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="동적 조정 - 파트 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![동적 조정 - 파트 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -474,7 +528,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="parallel_replica 없이 EXPLAIN" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![parallel_replica 없이 EXPLAIN](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 이제 병렬 레플리카를 사용한 경우입니다:
 
@@ -489,4 +551,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="parallel_replica를 사용한 EXPLAIN" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![parallel_replica를 사용한 EXPLAIN](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

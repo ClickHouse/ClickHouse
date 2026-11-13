@@ -71,11 +71,13 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
             return fmt::format("hash({})", fmt::join(keys, ", "));
         }
         case FragmentExchange::Kind::Broadcast:
-            return "broadcast";
+        case FragmentExchange::Kind::Any:
+        case FragmentExchange::Kind::SetValues:
+            return toString(exchange.kind);
         case FragmentExchange::Kind::Gather:
         {
             if (!exchange.merge_sort)
-                return "gather";
+                return toString(exchange.kind);
             if (!column_names)
                 return "gather sorted by " + dumpSortDescription(*exchange.merge_sort);
             WriteBufferFromOwnString out;
@@ -84,10 +86,6 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
             dumpSortDescription(*exchange.merge_sort, settings);
             return "gather sorted by " + out.str();
         }
-        case FragmentExchange::Kind::Any:
-            return "any";
-        case FragmentExchange::Kind::SetValues:
-            return "set values";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.name);
 }
