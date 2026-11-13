@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
@@ -227,6 +228,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    ASTFormattingGroup formatting_group(ostr, state);
     ostr << "INSERT INTO" << " ";
     if (table_function)
     {
@@ -234,7 +236,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         table_function->format(ostr, settings, state, frame);
         if (partition_by)
         {
-            ostr << " " << "PARTITION BY" << " ";
+            writeASTFormattingBreak(ostr, state, 4 * frame.indent);
+            ostr << "PARTITION BY ";
             partition_by->format(ostr, settings, state, frame);
         }
     }
@@ -266,9 +269,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (columns)
     {
-        ostr << " (";
+        ASTFormattingGroup columns_group(ostr, state);
+        writeASTFormattingBreak(ostr, state, 4 * frame.indent);
+        ostr << '(';
+        writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1), '\0');
         columns->format(ostr, settings, state, frame);
-        ostr << ")";
+        writeASTFormattingBreak(ostr, state, 4 * frame.indent, '\0');
+        ostr << ')';
     }
 
     if (returning)
