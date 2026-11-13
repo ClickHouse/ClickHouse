@@ -8,14 +8,9 @@
 #include <cerrno>
 
 #if USE_SSL
-#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#endif
-
-#if USE_SILK && USE_SSL
-#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB

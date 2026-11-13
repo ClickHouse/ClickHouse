@@ -660,8 +660,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
-            std::unique_ptr<HTTPResponseReadBuffer> response_body;
-
             if (request.GetContentBody())
             {
                 if (enable_s3_requests_logging)
@@ -675,24 +673,20 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
                 auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
-                request_body->finalize();
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
-            if (!response_body)
-            {
-                request_body->finalize();
+            request_body->finalize();
 
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
 
-                /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
-                fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
+            /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
+            fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
 
-                if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Receiving response...");
-                response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
-            }
+            if (enable_s3_requests_logging)
+                LOG_TEST(log, "Receiving response...");
+            auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
 
             watch.stop();
             addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());
