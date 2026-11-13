@@ -5,7 +5,9 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
+#include <Access/User.h>
 #include <Columns/IColumn.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -147,7 +149,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     AsynchronousInsertQueueDataKind data_kind_,
     const String & quota_client_address_,
     const String & quota_forwarded_address_,
-    std::optional<UInt64> quota_normalized_query_hash_)
+    std::optional<UInt64> quota_normalized_query_hash_,
+    const String & auth_initial_address_)
     : query(query_->clone())
     , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -162,6 +165,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , quota_client_address(quota_client_address_)
     , quota_forwarded_address(quota_forwarded_address_)
     , quota_normalized_query_hash(quota_normalized_query_hash_)
+    , auth_initial_address(auth_initial_address_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -213,6 +217,14 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     if (quota_normalized_query_hash)
         siphash.update(*quota_normalized_query_hash);
 
+    /// Empty (a user not restricted to specific hosts, the common case) contributes nothing, so it does not change the
+    /// hash of existing keys; otherwise it is length-prefixed like the identity fields above.
+    if (!auth_initial_address.empty())
+    {
+        siphash.update(auth_initial_address.size());
+        siphash.update(auth_initial_address);
+    }
+
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
     {
@@ -247,6 +259,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     quota_client_address = other.quota_client_address;
     quota_forwarded_address = other.quota_forwarded_address;
     quota_normalized_query_hash = other.quota_normalized_query_hash;
+    auth_initial_address = other.auth_initial_address;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -272,6 +285,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         quota_client_address = other.quota_client_address;
         quota_forwarded_address = other.quota_forwarded_address;
         quota_normalized_query_hash = other.quota_normalized_query_hash;
+        auth_initial_address = other.auth_initial_address;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -760,6 +774,14 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             quota_normalized_query_hash = query_context->getNormalizedQueryHash();
     }
 
+    /// A remote shard reached by the flush (a `Distributed` over an interserver secret, directly or behind a `Buffer`)
+    /// re-authenticates the initial user against the initial address, so keep it for a user restricted to specific
+    /// hosts; the flush context would otherwise carry an unspecified address that such a user is never allowed from.
+    String auth_initial_address;
+    if (const auto user = query_context->getAccess()->tryGetUser();
+        user && !user->allowed_client_hosts.containsAnyHost() && client_info.initial_address)
+        auth_initial_address = client_info.initial_address->host().toString();
+
     InsertQuery key{
         query,
         query_context->getUserID(),
@@ -775,7 +797,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         data_kind,
         quota_client_address,
         quota_forwarded_address,
-        quota_normalized_query_hash};
+        quota_normalized_query_hash,
+        auth_initial_address};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -1347,6 +1370,10 @@ try
         insert_context->setCurrentAddress(Poco::Net::SocketAddress(key.quota_client_address, 0));
     if (!key.quota_forwarded_address.empty())
         insert_context->setForwardedFor(key.quota_forwarded_address);
+    /// Restore the initial address of a user restricted to specific hosts, so a remote shard reached by the flush
+    /// re-authenticates the initial user from the address the insert came from.
+    if (!key.auth_initial_address.empty())
+        insert_context->setInitialAddress(Poco::Net::SocketAddress(key.auth_initial_address, 0));
 
     insert_context->setSettings(*key.settings);
 
