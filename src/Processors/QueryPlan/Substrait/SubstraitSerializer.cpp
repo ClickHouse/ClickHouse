@@ -272,6 +272,27 @@ bool sortReachesOutput(const IQueryPlanStep & step, bool any_child_sorted)
     return any_child_sorted;
 }
 
+/// The header is ClickHouse's list of the step's output columns, the schema is the list we wrote for Substrait. They must agree.
+void checkSchemaMirrorsHeader(const SubstraitSchema & schema, const IQueryPlanStep & step)
+{
+    const auto & header = *step.getOutputHeader();
+    if (!std::ranges::equal(schema.columns, header, {}, &SubstraitColumn::name, &ColumnWithTypeAndName::name))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Step {} converted to Substrait with columns {}, but its header has {}",
+            step.getName(),
+            fmt::join(schema.columns | std::views::transform(&SubstraitColumn::name), ", "),
+            header.dumpNames());
+
+    for (size_t i = 0; i < schema.size(); ++i)
+        if (isNullableOrLowCardinalityNullable(header.getByPosition(i).type) && !isSubstraitTypeNullable(schema.columns[i].type))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Step {} converted to Substrait with a required column {}, but it is Nullable in ClickHouse",
+                step.getName(),
+                schema.columns[i].name);
+}
+
 }
 
 const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const QueryPlan::Node & root)
@@ -326,6 +347,7 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
         auto converted = convertStep(node, std::move(children));
         if (converted)
         {
+            checkSchemaMirrorsHeader(converted->schema, *node.step);
             state = std::move(*converted);
             state.verdict.subtree_eligible = true;
             state.sort_reaches_output = sortReachesOutput(*node.step, any_child_sorted);
