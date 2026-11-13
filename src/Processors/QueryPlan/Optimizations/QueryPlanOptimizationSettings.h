@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 
 namespace DB
 {
@@ -26,6 +27,8 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 class QueryPlan;
 
 struct DistributedPlanLocalObject;
+
+struct TableOccurrences;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -43,6 +46,10 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
+    /// The tables of the single-node query tree and of the tree `plan` was built from (`collectTableOccurrences`),
+    /// which tell apart the reads of a table read more than once.
+    std::shared_ptr<const TableOccurrences> single_node_table_occurrences;
+    std::shared_ptr<const TableOccurrences> replicas_table_occurrences;
 };
 
 using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;

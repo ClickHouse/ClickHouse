@@ -181,6 +181,12 @@ SelectQueryOptions buildSelectQueryOptions(const SelectQueryOptions & select_que
     return result;
 }
 
+PlanWithParallelReplicas skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason reason)
+{
+    return PlanWithParallelReplicas{
+        .plan = nullptr, .skip_reason = reason, .single_node_table_occurrences = nullptr, .replicas_table_occurrences = nullptr};
+}
+
 template <typename... Args>
 PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast,
@@ -198,18 +204,18 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        return skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason::Settings);
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
         LOG_TRACE(logger, "Setting 'cluster_for_parallel_replicas' is empty. Skipping building query plan with parallel replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        return skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason::Settings);
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         LOG_TRACE(logger, "The query is a secondary query. Skipping building query plan with parallel replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
+        return skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason::QueryShape);
     }
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
@@ -239,13 +245,13 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         if (!eligibility_context->canUseParallelReplicasOnInitiator())
         {
             LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
-            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+            return skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason::Settings);
         }
 
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
         {
             LOG_TRACE(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");
-            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
+            return skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason::QueryShape);
         }
     }
 
@@ -290,8 +296,13 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
         LOG_TRACE(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
+        return skippedPlanWithParallelReplicas(PlanWithParallelReplicas::SkipReason::QueryShape);
     }
+    /// Taken from the trees rather than from the plans' reads: a plan may prune one of two occurrences that share
+    /// an identity, and the survivor would look unique.
+    auto single_node_table_occurrences = std::make_shared<TableOccurrences>(collectTableOccurrences(single_node_query_tree));
+    auto replicas_table_occurrences = std::make_shared<TableOccurrences>(collectTableOccurrences(interpreter.getQueryTree()));
+
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,
@@ -311,7 +322,10 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return PlanWithParallelReplicas{
-        .plan = std::make_unique<QueryPlan>(std::move(plan)), .skip_reason = PlanWithParallelReplicas::SkipReason::None};
+        .plan = std::make_unique<QueryPlan>(std::move(plan)),
+        .skip_reason = PlanWithParallelReplicas::SkipReason::None,
+        .single_node_table_occurrences = std::move(single_node_table_occurrences),
+        .replicas_table_occurrences = std::move(replicas_table_occurrences)};
 }
 }
 

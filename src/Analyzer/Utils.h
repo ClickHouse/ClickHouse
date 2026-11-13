@@ -13,6 +13,8 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -116,6 +118,26 @@ const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_
 
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
+
+/** The tables of a query tree, identified by where each was written: a hash of the `SELECT` it is in, together with
+  * the path to it under that `SELECT`'s `FROM`, both taken from the AST the tree was built from. Two builds of one
+  * query agree on it although the analyzer's `__tableN` names and the join order may differ between them, so it can
+  * pair their reads of one table. The `SELECT`'s own `SETTINGS` are left out: a build may drop some of them.
+  *
+  * A table is found by the AST it was built from, which every clone of the tree keeps. One that is not in the tree's
+  * join trees, such as a table read inside a view that is not inlined or inside a table function, is not found, and
+  * neither is one that has no AST. Occurrences can share an identity - a CTE or a view expanded twice - and
+  * `counts` shows that.
+  */
+struct TableOccurrences
+{
+    std::unordered_map<const IAST *, UInt128> identity_by_ast;
+    std::unordered_map<UInt128, size_t> counts;
+    /// Keeps the keys of `identity_by_ast` from being freed and their addresses reused while they are compared.
+    std::vector<ASTPtr> asts;
+};
+
+TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree);
 
 /// Extract table, table function, query, union from join tree.
 TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);

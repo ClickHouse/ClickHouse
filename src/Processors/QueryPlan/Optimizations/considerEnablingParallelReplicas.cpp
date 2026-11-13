@@ -4,6 +4,7 @@
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Core/Joins.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -606,22 +607,26 @@ std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 /// An analysis carries the mark ranges selected for one read's predicates, so a pairing that lines the
 /// two plans up wrongly does not merely misestimate - it reads the wrong rows. Reads are therefore paired
 /// by the table they read, and a table read once by each plan leaves only one possible pairing. Only a
-/// table read more than once needs telling its occurrences apart, and for that the name the analyzer gave
-/// the table expression is used.
+/// table read more than once needs telling its occurrences apart.
 ///
-/// That name cannot carry the pairing on its own: the two plans do not agree on it. The replicas plan's
-/// local plan is built from the tree `buildQueryTreeForShard` produces, which re-runs
-/// `createUniqueAliasesIfNecessary` and renumbers `__tableN` from 1 over a tree `inlineAliasColumns` and
-/// `rewriteJoinToGlobalJoin` have already rewritten. Where that rewrite changes the traversal order the
-/// numbers land on different tables than the initiator gave them - a three-table join with the big table
-/// written last is enough - and every read pairs wrongly or not at all. Position cannot be trusted
-/// either: the two plans are optimized differently and may order a join's sides differently.
+/// Neither the analyzer's name for the table expression nor the position in the plan can do that. The
+/// replicas plan's local plan is built from the tree `buildQueryTreeForShard` produces, which re-runs
+/// `createUniqueAliasesIfNecessary` and renumbers `__tableN` from 1 over a tree that passes such as
+/// `CrossToInnerJoinPass` may have reordered, so two reads of one table can swap names while every name
+/// still finds exactly one counterpart. The two plans are also optimized differently and may order a
+/// join's sides differently. Occurrences are told apart by where they were written in the query instead
+/// (`collectTableOccurrences`), and only by an identity that exactly one table has in each plan's tree;
+/// anything less certain declines.
 ///
 /// Returns whether every read was paired. A read left unpaired keeps no analysis of its own either - the
 /// replicas plan is built with `query_plan_optimize_primary_key` off - so it would read every mark, which
 /// is the state this exists to avoid and which measured worse than not using replicas at all (TPC-H q22
 /// at sf=100 was +96% against a single node). The caller declines the candidate instead.
-bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
+bool transplantAnalysisToAllReads(
+    QueryPlan::Node & single_node_root,
+    QueryPlan::Node & replicas_root,
+    const TableOccurrences & single_node_table_occurrences,
+    const TableOccurrences & replicas_table_occurrences)
 {
     auto single_node_reads = collectReadingSteps(single_node_root);
     auto replicas_reads = collectReadingSteps(replicas_root);
@@ -636,12 +641,22 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return false;
     }
 
-    /// The name the analyzer gave the table expression, used only to tell apart several reads of one
-    /// table. Empty when there is no table expression to take it from.
-    auto table_expression_name = [](const ReadFromMergeTree * read) -> String
+    /// Where the read's table was written in the query, if that is certain to be the same occurrence in both plans:
+    /// the read's table was found in its plan's tree, and exactly one table in each tree has that identity.
+    auto occurrence = [&](const ReadFromMergeTree * read, const TableOccurrences & own) -> std::optional<UInt128>
     {
         const auto & table_expression = read->getQueryInfo().table_expression;
-        return table_expression ? table_expression->getAlias() : String{};
+        if (!table_expression || !table_expression->getOriginalAST())
+            return {};
+        auto it = own.identity_by_ast.find(table_expression->getOriginalAST().get());
+        if (it == own.identity_by_ast.end())
+            return {};
+        auto single_node_count = single_node_table_occurrences.counts.find(it->second);
+        auto replicas_count = replicas_table_occurrences.counts.find(it->second);
+        if (single_node_count == single_node_table_occurrences.counts.end() || single_node_count->second != 1
+            || replicas_count == replicas_table_occurrences.counts.end() || replicas_count->second != 1)
+            return {};
+        return it->second;
     };
 
     std::unordered_map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> single_node_reads_by_table;
@@ -678,21 +693,19 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
             continue;
         }
 
-        /// Several reads of one table. Tell them apart by the analyzer's name, which the two plans agree
-        /// on only when the shard rewrite preserved the numbering - pair one to one or not at all.
-        std::unordered_map<String, ReadFromMergeTree *> single_node_by_name;
+        /// Several reads of one table: pair them by where they were written, one to one or not at all.
+        std::unordered_map<UInt128, ReadFromMergeTree *> single_node_by_occurrence;
         for (auto * read : single_node_reads_of_table)
         {
-            auto name = table_expression_name(read);
-            if (name.empty() || !single_node_by_name.emplace(name, read).second)
+            auto identity = occurrence(read, single_node_table_occurrences);
+            if (!identity || !single_node_by_occurrence.emplace(*identity, read).second)
             {
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
-                    "The single-node plan reads {} {} times and read '{}' has no name to tell it apart, or shares "
-                    "one with another read; not transplanting index analysis. Skipping optimization",
+                    "The single-node plan reads {} {} times and cannot tell this read apart from the others with "
+                    "certainty; not transplanting index analysis. Skipping optimization",
                     read->getStorageID().getNameForLogs(),
-                    single_node_reads_of_table.size(),
-                    name);
+                    single_node_reads_of_table.size());
                 return false;
             }
         }
@@ -700,17 +713,16 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         std::unordered_set<const ReadFromMergeTree *> claimed;
         for (auto * read : reads_of_table)
         {
-            auto name = table_expression_name(read);
-            auto it = single_node_by_name.find(name);
-            if (it == single_node_by_name.end() || !claimed.insert(it->second).second)
+            auto identity = occurrence(read, replicas_table_occurrences);
+            auto it = identity ? single_node_by_occurrence.find(*identity) : single_node_by_occurrence.end();
+            if (it == single_node_by_occurrence.end() || !claimed.insert(it->second).second)
             {
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
-                    "The replicas plan reads {} {} times and read '{}' has no counterpart of that name left in the "
+                    "The replicas plan reads {} {} times and this read has no certain counterpart left in the "
                     "single-node plan; not transplanting index analysis. Skipping optimization",
                     read->getStorageID().getNameForLogs(),
-                    reads_of_table.size(),
-                    name);
+                    reads_of_table.size());
                 return false;
             }
             paired_by_replicas_read.emplace(read, it->second);
@@ -841,7 +853,9 @@ static bool decideAtBoundary(
     ReadFromMergeTree * source_reading_step,
     const CoordinatedReads * reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
-    const QueryPlan::Node * replicas_plan_boundary);
+    const QueryPlan::Node * replicas_plan_boundary,
+    const TableOccurrences * single_node_table_occurrences,
+    const TableOccurrences * replicas_table_occurrences);
 
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
@@ -1071,7 +1085,9 @@ void considerEnablingParallelReplicas(
             remembered_coordinated_read,
             /*reads=*/nullptr,
             /*plan_with_parallel_replicas=*/nullptr,
-            /*replicas_plan_boundary=*/nullptr))
+            /*replicas_plan_boundary=*/nullptr,
+            /*single_node_table_occurrences=*/nullptr,
+            /*replicas_table_occurrences=*/nullptr))
     {
         /// Counted here rather than at each decline in `decideAtBoundary`, so that none of them is missed.
         ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
@@ -1188,7 +1204,9 @@ void considerEnablingParallelReplicas(
         reads.to_instrument,
         &reads,
         plan_with_parallel_replicas,
-        replicas_plan_boundary);
+        replicas_plan_boundary,
+        build_result.single_node_table_occurrences.get(),
+        build_result.replicas_table_occurrences.get());
     chassert(!needs_replicas_plan);
 }
 
@@ -1196,7 +1214,8 @@ void considerEnablingParallelReplicas(
 /// instruments it to collect statistics. `source_reading_step` is the read parallel replicas coordinate, as
 /// it stands in this plan. Returns true only when the verdict is to parallelize or to collect but there is no
 /// replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and call
-/// again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is.
+/// again with the boundary it matches. `reads` and the table occurrences come with the replicas plan, and are null
+/// when that is.
 static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
@@ -1205,7 +1224,9 @@ static bool decideAtBoundary(
     ReadFromMergeTree * const source_reading_step,
     const CoordinatedReads * const reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
-    const QueryPlan::Node * const replicas_plan_boundary)
+    const QueryPlan::Node * const replicas_plan_boundary,
+    const TableOccurrences * const single_node_table_occurrences,
+    const TableOccurrences * const replicas_table_occurrences)
 {
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
@@ -1384,14 +1405,18 @@ static bool decideAtBoundary(
 
                 /// Every read of the candidate has to be given its analysis. One that is not would read
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
-                if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
+                if (!transplantAnalysisToAllReads(
+                        *query_plan.getRootNode(),
+                        *plan_with_parallel_replicas->getRootNode(),
+                        *single_node_table_occurrences,
+                        *replicas_table_occurrences))
                 {
                     /// `transplantAnalysisToAllReads` has logged which read could not be paired and why.
                     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
                     return false;
                 }
-                /// The transplant pairs reads by name, while the read the decision stands on was found by
-                /// walking down from the node matched by hash. Identical subtrees hash alike, so that node
+                /// The transplant pairs reads by table and occurrence, while the read the decision stands on was found
+                /// by walking down from the node matched by hash. Identical subtrees hash alike, so that node
                 /// can be in another subtree than the one the replicas plan ships, and then the coordinated
                 /// read was given the analysis of another read than the one the decision priced.
                 if (reads->in_replicas_plan->getAnalyzedResult() != analysis)
