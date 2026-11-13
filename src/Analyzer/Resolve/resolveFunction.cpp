@@ -3072,6 +3072,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// of the constant path.
                     QueryTreeNodePtr right_argument = fn_args[1];
                     const auto & left_type = in_first_argument->getResultType();
+                    const bool use_standard_null_semantics = scope.context->getSettingsRef()[Setting::in_null_as_unknown];
                     bool right_argument_was_cast = false;
                     if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
                     {
@@ -3093,7 +3094,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         right_argument,
                         is_not_in,
                         compare_nulls,
-                        scope.context->getSettingsRef()[Setting::in_null_as_unknown]);
+                        use_standard_null_semantics);
 
                     if (right_argument_was_cast && use_standard_null_semantics)
                     {
