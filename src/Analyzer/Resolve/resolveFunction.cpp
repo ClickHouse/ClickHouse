@@ -1275,7 +1275,7 @@ QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
 }
 
 /// Builds the row-wise comparison for a one-element IN set: the compare-nulls functions
-/// (`nullIn`, `notNullIn`) map to isDistinctFrom/isNotDistinctFrom, the others map to
+/// (`nullIn`, `notNullIn`) map to `isNotDistinctFrom` and its negation, the others map to
 /// ifNull(equals/notEquals(...), default), with a NULL result for a NULL LHS value.
 /// The caller must resolve the returned node.
 static QueryTreeNodePtr buildScalarInComparison(
@@ -1286,8 +1286,14 @@ static QueryTreeNodePtr buildScalarInComparison(
 {
     if (compare_nulls)
     {
-        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
+        auto comparison_fn = std::make_shared<FunctionNode>("isNotDistinctFrom");
         comparison_fn->getArguments().getNodes() = {left_argument, right_argument};
+        if (is_not_in)
+        {
+            auto not_fn = std::make_shared<FunctionNode>("not");
+            not_fn->getArguments().getNodes().push_back(std::move(comparison_fn));
+            return not_fn;
+        }
         return comparison_fn;
     }
 
@@ -1417,8 +1423,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     }
     else if (compare_nulls)
     {
-        return buildResolvedFunction(
-            is_not_in ? "isDistinctFrom" : "isNotDistinctFrom", {left_argument, right_argument}, context);
+        result = buildResolvedFunction("isNotDistinctFrom", {left_argument, right_argument}, context);
+        return is_not_in ? buildResolvedFunction("not", {std::move(result)}, context) : result;
     }
     else
     {
