@@ -8,6 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Without the metadata files cache the replicas fetch the metadata of the Iceberg metadata files, which this test
+# does not count; the table takes the cache when it is created, so it is on for every query.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=1"
+
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 trap 'rm -rf "${TABLE_PATH:?}"' EXIT
@@ -22,11 +26,13 @@ for i in 0 1; do
         --query "INSERT INTO ${TABLE} SELECT number + ${i} * 50000, toString(number) FROM numbers(50000)"
 done
 
+# `parallel_replicas_for_object_storage_tables` lets the replicas read the `IcebergLocal` table; without it no task is sent.
 for granularity in file bucket; do
     echo "--- ${granularity}"
     ${CLICKHOUSE_CLIENT} --log_comment="${CLICKHOUSE_TEST_UNIQUE_NAME}_${granularity}" \
         --enable_parallel_replicas=1 --max_parallel_replicas=2 --cluster_for_parallel_replicas='test_cluster_two_shards_localhost' \
-        --parallel_replicas_for_cluster_engines=1 --cluster_table_function_split_granularity="${granularity}" --cluster_table_function_buckets_batch_size=0 \
+        --parallel_replicas_for_cluster_engines=1 --parallel_replicas_for_object_storage_tables=1 \
+        --cluster_table_function_split_granularity="${granularity}" --cluster_table_function_buckets_batch_size=0 \
         --query "SELECT count(), sum(id) FROM ${TABLE}"
 done
 

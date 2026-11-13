@@ -6,6 +6,8 @@
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
+-- Pinned (randomized in CI): the checks below assert that the join columns are materialized lazily.
+SET query_plan_lazy_materialization_for_join = 1;
 -- Pinned so that the joins keep the order they are written in.
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 0;

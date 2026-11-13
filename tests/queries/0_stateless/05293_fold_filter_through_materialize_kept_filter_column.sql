@@ -2,6 +2,9 @@
 -- the filter reads the folded constant, and the kept column keeps its value and its representation.
 
 SET explain_query_plan_default = 'pretty';
+-- Pin to default: CI randomizes query_plan_replace_always_true_filter off, which changes the plan
+-- this test asserts.
+SET query_plan_replace_always_true_filter = 1;
 
 -- The kept column is read above the filter.
 SELECT 'kept filter column folded', countIf(explain LIKE '%Filter column%') = 0

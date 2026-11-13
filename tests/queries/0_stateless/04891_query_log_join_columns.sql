@@ -8,6 +8,9 @@
 -- allowed by `join_algorithm` is made at run time and depends on the number of threads.
 
 SET log_queries = 1;
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which changes which
+-- operators spill and so the `spilled_to_disk` list this test asserts on.
+SET min_bytes_before_external_group_by = 0;
 -- The reported kind is the executed one, and the optimizer may execute a join with its sides swapped,
 -- which reverses LEFT and RIGHT. Disable that here so the kinds are the ones the queries are written
 -- with; the block that covers the swap turns it back on for its own queries.

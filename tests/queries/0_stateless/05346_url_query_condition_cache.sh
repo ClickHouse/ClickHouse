@@ -137,7 +137,8 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346 (k Int64, s String) ENGINE = 
 
 # The reader learns which row groups have no matching row only from a filter pushed into it as `PREWHERE`;
 # a filter left above the read counts every row group as matched, and no entry is written.
-SETTINGS="use_query_condition_cache = 1, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 0,
+# The top-K reads below need `use_query_condition_cache_for_top_k`, which CI randomizes off.
+SETTINGS="use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 0,
     optimize_move_to_prewhere = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000"
 
 function run()

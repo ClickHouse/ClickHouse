@@ -1,4 +1,6 @@
 SET max_threads = 1, optimize_distinct_in_order = 0, max_memory_usage_for_user = 536870912;
+-- The adaptive spill scheduler installs `ExternalDistinctTransform` whatever the thresholds.
+SET enable_adaptive_memory_spill_scheduler = 0;
 
 -- Zero thresholds disable external `DISTINCT`.
 SELECT count() FROM

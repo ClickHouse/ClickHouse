@@ -2,6 +2,10 @@
 -- view aggregates and is joined on its grouping key, so the join is a distributed Shuffle join
 -- and the view's scan runs in parallel, not funnelled onto a single node.
 
+-- Pin to default: CI randomizes distributed_plan_partial_aggregation_before_shuffle off, which changes
+-- the distributed plan this test asserts.
+SET distributed_plan_partial_aggregation_before_shuffle = 1;
+
 DROP TABLE IF EXISTS facts;
 DROP TABLE IF EXISTS dims;
 DROP VIEW IF EXISTS agg_view;

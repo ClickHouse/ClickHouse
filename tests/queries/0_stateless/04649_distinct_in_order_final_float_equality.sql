@@ -7,6 +7,9 @@
 
 -- The sorting key differs from the DISTINCT columns, so the pre-distinct is hash-based in any case and
 -- the final distinct above the ORDER BY f sort is the only processor that sees a sorted stream.
+-- The adaptive spill scheduler swaps the in-memory `DISTINCT` for `ExternalDistinctTransform`.
+SET enable_adaptive_memory_spill_scheduler = 0;
+
 CREATE TABLE t_distinct_float (k UInt64, f Float64, b UInt8) ENGINE = MergeTree ORDER BY k;
 
 -- 0.0 and -0.0; two NaNs with different payloads (0x7FF8000000000001 and 0x7FF8000000000002)

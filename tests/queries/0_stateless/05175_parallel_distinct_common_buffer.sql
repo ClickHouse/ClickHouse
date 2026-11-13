@@ -1,6 +1,9 @@
 -- Scattering above a buffered common subplan requests data only when the consumer needs it, allowing
 -- the decorrelation join to finish writing its shared buffer before the probe side reads it.
 
+-- Pinned (randomized in CI): inside `FROM (EXPLAIN PIPELINE ...)` the query's own `SETTINGS` do not shape the pipeline.
+SET allow_parallel_distinct = 1;
+
 SELECT * % 1000 FROM numbers_mt(100000)
 UNION DISTINCT
 SELECT (SELECT number % 1000) FROM numbers_mt(100000)

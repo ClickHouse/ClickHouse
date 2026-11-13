@@ -64,6 +64,8 @@ SET query_plan_join_swap_table = false;
 -- These two decide whether the rewrite that carries the condition runs.
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
+-- CI may inject 0, which keeps the condition above the initiator's read: the plans differ, the answer does not.
+SET parallel_replicas_filter_pushdown = 1;
 
 SELECT 'join: the condition stays above the fragment, and nothing is ordered';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step

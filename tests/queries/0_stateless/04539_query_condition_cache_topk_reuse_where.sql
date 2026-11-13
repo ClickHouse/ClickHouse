@@ -15,6 +15,9 @@
 -- green even if the `topk_reuse_predicate_only_hash` lookup is removed.
 
 SET use_query_condition_cache = 1;
+-- The TopK gate defaults to 1 in 26.8, but it is randomized in CI, and these
+-- assertions are about the TopK path of the cache specifically.
+SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;

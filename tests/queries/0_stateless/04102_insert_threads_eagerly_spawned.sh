@@ -13,6 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Without concurrency control the insert spawns every thread it asks for, which is what this test counts.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --use_concurrency_control=1"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_insert_threads"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_insert_threads_mv"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_insert_threads (x UInt64) ENGINE = MergeTree ORDER BY x"
