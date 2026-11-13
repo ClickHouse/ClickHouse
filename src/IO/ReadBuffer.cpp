@@ -103,6 +103,11 @@ void ReadBuffer::cancel()
 
 bool ReadBuffer::next()
 {
+    /// Diagnostic replay can reach EOF many times. Never let those probes
+    /// invalidate the source storage or change the original byte counters.
+    if (diagnostic_replay_active)
+        return false;
+
     chassert(!hasPendingData());
     chassert(position() <= working_buffer.end());
     chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");

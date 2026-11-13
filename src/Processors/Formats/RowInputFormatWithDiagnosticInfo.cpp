@@ -1,7 +1,9 @@
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Formats/verbosePrintString.h>
 #include <IO/Operators.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include <base/scope_guard.h>
 #include <DataTypes/IDataType.h>
 
 
@@ -32,6 +34,8 @@ void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 
     offset_of_prev_row = offset_of_current_row;
     offset_of_current_row = in->offset();
+    buffer_begin_on_current_row = in->buffer().begin();
+    buffer_size_on_current_row = in->buffer().size();
 }
 
 std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawDataImpl(bool is_errors_record)
@@ -39,17 +43,65 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     WriteBufferFromOwnString out_diag;
     WriteBufferFromOwnString out_data;
 
-    if (in->eof())
+    /// A failed EOF probe empties the working buffer and increments count(), although
+    /// the last buffer's contents may still be retained for diagnostics.
+    const bool at_eof = in->eof();
+    const size_t expected_buffer_start =
+        offset_of_prev_row == std::numeric_limits<size_t>::max()
+        ? bytes_read_at_start_of_buffer_on_current_row
+        : bytes_read_at_start_of_buffer_on_prev_row;
+    bool restore_after_eof =
+        at_eof
+        && in->buffer().empty()
+        && buffer_begin_on_current_row
+        && in->internalBuffer().begin() == buffer_begin_on_current_row
+        && in->internalBuffer().size() >= buffer_size_on_current_row
+        && in->position() == buffer_begin_on_current_row + buffer_size_on_current_row
+        && bytes_read_at_start_of_buffer_on_current_row == expected_buffer_start
+        && in->count() == bytes_read_at_start_of_buffer_on_current_row + buffer_size_on_current_row;
+
+    const auto saved_buffer = in->buffer();
+    auto * const saved_position = in->position();
+    auto * peekable = restore_after_eof ? dynamic_cast<PeekableReadBuffer *>(in) : nullptr;
+    if (peekable && !peekable->beginDiagnosticReplay(buffer_begin_on_current_row, buffer_size_on_current_row))
+        restore_after_eof = false;
+
+    if (at_eof && !restore_after_eof)
         return std::make_pair(
             "Buffer has gone, cannot extract information about what has been parsed.",
             "Buffer has gone, cannot extract information about what has been parsed.");
+
+    /// TSV/CSV use PeekableReadBuffer, but JSONCompact formats use a plain
+    /// ReadBuffer. Protect their retained post-EOF windows from repeated probes too.
+    if (restore_after_eof && !peekable)
+        in->setDiagnosticReplayActive(true);
+
+    SCOPE_EXIT({
+        if (restore_after_eof)
+        {
+            if (peekable)
+                peekable->endDiagnosticReplay();
+            else
+                in->setDiagnosticReplayActive(false);
+            in->buffer() = saved_buffer;
+            in->position() = saved_position;
+        }
+    });
+
+    if (restore_after_eof)
+    {
+        auto * replay_begin = in->internalBuffer().begin();
+        in->buffer() = ReadBuffer::Buffer(replay_begin, replay_begin + buffer_size_on_current_row);
+    }
 
     const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns(serializations);
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
-    size_t bytes_read_at_start_of_buffer = in->count() - in->offset();
-    if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
+    size_t bytes_read_at_start_of_buffer = restore_after_eof
+        ? expected_buffer_start
+        : in->count() - in->offset();
+    if (bytes_read_at_start_of_buffer != expected_buffer_start)
     {
         out_diag << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
         out_data << "Could not collect raw data because two last rows aren't in buffer (rare case)\n";
@@ -194,6 +246,8 @@ void RowInputFormatWithDiagnosticInfo::resetParser()
     bytes_read_at_start_of_buffer_on_prev_row = 0;
     offset_of_current_row = std::numeric_limits<size_t>::max();
     offset_of_prev_row = std::numeric_limits<size_t>::max();
+    buffer_begin_on_current_row = nullptr;
+    buffer_size_on_current_row = 0;
     max_length_of_column_name = 0;
     max_length_of_data_type_name = 0;
 }

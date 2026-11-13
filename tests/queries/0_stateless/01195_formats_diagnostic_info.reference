@@ -36,5 +36,8 @@ ERROR: There is no closing parenthesis (']') at the end of the row. "," found in
 Column 1,   name: s, type: String,          parsed text: <EMPTY>ERROR
 ERROR: There is no '[' before the row.
 ERROR: garbage after Decimal(18, 10): ";<LINE FEED>"
+ERROR: garbage after Decimal(18, 10): "<LINE FEED>"
+ERROR: garbage after Decimal(18, 10): "<LINE FEED><LINE FEED>"
 ERROR: There is no comma. ";" found instead.
+ERROR: Unexpected end of file. ',' expected between columns.
 ERROR: Closing parenthesis (']') found where comma is expected. It's like your file has less columns than expected.

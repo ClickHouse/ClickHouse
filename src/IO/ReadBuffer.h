@@ -68,6 +68,11 @@ public:
 
     void cancel();
 
+    /// While replaying a retained EOF window for diagnostics, never ask the
+    /// source for more data: another EOF probe may release that window.
+    void setDiagnosticReplayActive(bool active) { diagnostic_replay_active = active; }
+    bool isDiagnosticReplayActive() const { return diagnostic_replay_active; }
+
     bool isCanceled() const
     {
         return canceled;
@@ -258,6 +263,8 @@ protected:
     size_t nextimpl_working_buffer_offset = 0;
 
 private:
+    bool diagnostic_replay_active = false;
+
     /** Read the next data and fill a buffer with it. It should also account for `nextimpl_working_buffer_offset` out parameter if set
       * so that after this value is applied to `pos` (see next() method) buffer still contains available data.
       * Return `false` in case of the end, `true` otherwise.
