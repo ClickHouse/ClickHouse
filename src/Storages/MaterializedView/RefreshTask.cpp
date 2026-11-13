@@ -547,6 +547,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         refresh_settings = {};
         if (new_strategy.settings != nullptr)
             refresh_settings.applyChanges(new_strategy.settings->changes);
+        /// Redraw a pending `refresh_coordination_jitter_ms` delay with the new settings.
+        scheduling.jitter_drawn_for_version = -1;
 
         if (view)
             view_storage_id = view->getStorageID();
@@ -756,17 +758,16 @@ void RefreshTask::wait(const ContextPtr & context)
         if (!view)
             /// Table was dropped, or server shutdown. Stop waiting.
             return true;
+        if (coordination.root_znode.last_success_end_time > seen_success_end_time)
+            /// Refresh completed. Another one may have started already, or be about to start after
+            /// its `refresh_coordination_jitter_ms` delay; don't wait for it.
+            return true;
         if (state == RefreshState::Scheduling)
             /// We're not sure whether refresh is running. Keep waiting.
             return false;
         if (state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)
-        {
-            if (coordination.root_znode.last_success_end_time > seen_success_end_time)
-                /// Refresh completed, and immediately another one started.
-                return true;
             /// Wait for refresh to complete.
             return false;
-        }
         /// No refresh running.
         return true;
     });

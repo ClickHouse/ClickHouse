@@ -1242,3 +1242,20 @@ def test_coordinated_refresh_is_spread_across_replicas(module_setup_tables):
 
     node.query("DROP TABLE jitter_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE jitter_tgt ON CLUSTER default SYNC")
+
+
+def test_wait_view_does_not_wait_for_next_refresh_delay(module_setup_tables):
+    """A refresh that takes longer than its period leaves the next one due when it completes. SYSTEM WAIT VIEW
+    must return when the refresh it waited for completes, not wait through the next refresh's random delay."""
+    node.query("DROP TABLE IF EXISTS jitter_slow_rmv ON CLUSTER default SYNC")
+    node.query(
+        "CREATE MATERIALIZED VIEW jitter_slow_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 SECOND SETTINGS refresh_coordination_jitter_ms = 3600000 "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT sleep(3) AS x"
+    )
+
+    # SYSTEM REFRESH VIEW isn't delayed. Without the fix, the wait would hang in the next refresh's delay of up to an hour.
+    node.query("SYSTEM REFRESH VIEW jitter_slow_rmv")
+    node.query("SYSTEM WAIT VIEW jitter_slow_rmv", timeout=60)
+
+    node.query("DROP TABLE jitter_slow_rmv ON CLUSTER default SYNC")
