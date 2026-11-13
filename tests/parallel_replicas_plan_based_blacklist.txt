@@ -14,6 +14,8 @@
 03401_normal_projection_with_part_offset
 03401_normal_projection_with_part_offset_no_sorting
 03785_rebuild_projection_with_part_offset
+05339_projection_rebuild_by_mutation_after_lightweight_delete
+05401_lwd_rebuild_projection_part_offset_multi_block
 05569_projection_calculation_subquery_names
 
     A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
