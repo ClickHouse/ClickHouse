@@ -307,7 +307,9 @@ private:
     /// pass a `min_unit` below `Seconds`, so the result is always in the range 3..9.
     static size_t subSecondDigits(Unit min_unit)
     {
-        return static_cast<size_t>((Seconds - min_unit) * 3);
+        /// `Seconds - min_unit` is 1..3 here (the caller only passes a `min_unit` below `Seconds`).
+        const int units_below_seconds = Seconds - min_unit;
+        return static_cast<size_t>(units_below_seconds) * 3;
     }
 
     /// Whether the current unit is the last one that will be printed, i.e. the value remaining after it
