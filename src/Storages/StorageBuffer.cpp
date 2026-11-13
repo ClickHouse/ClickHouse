@@ -1494,53 +1494,33 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
 
-    /// Validate the captured identity locally before attempting the write. A failure to restore it - the
-    /// buffering user was dropped, or its authentication expired - is local and persistent whether or not the
-    /// destination is remote, so discard the block (fail closed) rather than retaining it and wedging the shard.
-    /// Doing it before any destination write keeps it from being misread as a downstream (remote) failure.
-    if (flushed_under_user_identity)
-    {
-        try
-        {
-            auto probe_context = Context::createCopy(getContext());
-            probe_context->makeQueryContext();
-            restoreWriteIdentity(probe_context, *buffer.write_identity);
-        }
-        catch (...)
-        {
-            total_writes.rows -= block_rows;
-            total_writes.bytes -= block_allocated_bytes_delta;
-            ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
-            LOG_INFO(
-                log,
-                "Discarding {} rows ({} bytes) buffered for destination table {}: the buffering user no longer "
-                "exists or its authentication has expired.",
-                block_rows, block_bytes, destination_id.getNameForLogs());
-            return true;
-        }
-    }
-
     Stopwatch watch;
+    /// Set once writeBlockToDestination has restored the captured identity, to classify a failure below: before
+    /// restoration it means the identity could not be restored (the user was dropped, or the credential expired);
+    /// after it, the failure is from the destination pipeline.
+    bool identity_restored = false;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity);
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.write_identity, &identity_restored);
     }
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-        /// The captured identity was validated above, so a failure here is from the destination pipeline. For a
-        /// LOCAL destination, ACCESS_DENIED / ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at this or
-        /// a deeper local hop (persistent) - discard, to avoid wedging the shard and to stop a user with INSERT
-        /// on the buffer but not its destination from wedging a single-shard buffer with one row. For a REMOTE
-        /// (`Distributed`) destination those access codes can come from the remote shard with a valid local
-        /// identity (local access was already checked when the rows were buffered), so retain them for retry
-        /// after the remote RBAC/secret is corrected rather than losing an already-accepted batch.
+        /// Discard a block that can never be delivered under its captured identity rather than retaining it (which
+        /// would wedge the shard for every other identity, background flush, OPTIMIZE and shutdown, and let a user
+        /// with INSERT on the buffer but not its destination wedge a single-shard buffer with one row). A failure
+        /// to restore the identity (dropped user, expired credential) is local and permanent whether or not the
+        /// destination is remote. After restoration the failure is from the pipeline: for a LOCAL destination
+        /// ACCESS_DENIED / ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at this or a deeper local hop
+        /// (permanent) - discard; for a REMOTE (`Distributed`) destination they can come from the remote shard
+        /// with a valid local identity (local access was already checked when the rows were buffered), so retain
+        /// for retry after the remote RBAC/secret is corrected rather than losing an already-accepted batch.
         const int code = getCurrentExceptionCode();
         const auto destination = getDestinationTable();
         const bool destination_is_remote = destination && destination->isRemote();
-        const bool undeliverable = !destination_is_remote
-            && (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+        const bool undeliverable = (flushed_under_user_identity && !identity_restored)
+            || (!destination_is_remote && (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND));
         if (flushed_under_user_identity && undeliverable)
         {
             total_writes.rows -= block_rows;
@@ -1592,7 +1572,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, bool * identity_restored)
 {
     if (!destination_id || block.empty())
         return;
@@ -1614,6 +1594,10 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /// destination is re-authorized as that user instead of the full-access buffer context. Done before the
     /// destination schema is read so an `Alias` is resolved under that identity rather than the buffer context.
     restoreWriteIdentity(insert_context, *write_identity);
+    /// The identity has been restored; a later failure is from the destination pipeline, not an unrestorable
+    /// (dropped or expired) identity. The caller uses this to decide whether to discard or retain on failure.
+    if (identity_restored)
+        *identity_restored = true;
 
     /// Authorize the forwarding chain under the restored identity before the destination schema is read,
     /// intersected, or used to emit a "columns discarded" warning. Reading an `Alias`'s metadata follows it

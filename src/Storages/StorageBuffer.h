@@ -215,7 +215,7 @@ private:
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     /// `write_identity` carries the originating user so the forwarded INSERT is authorized as them.
-    void writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity);
+    void writeBlockToDestination(const Block & block, StoragePtr table, const std::shared_ptr<const BufferWriteIdentity> & write_identity, bool * identity_restored = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
