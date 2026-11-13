@@ -875,9 +875,10 @@ buildField(
         }
     }
 
-    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata.
+    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata,
+    /// unless `output_format_arrow_uuid_as_fixed_byte_array` asks for the plain storage type.
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
-    if (isUUID(t))
+    if (isUUID(t) && !settings.arrow.output_uuid_as_fixed_byte_array)
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));

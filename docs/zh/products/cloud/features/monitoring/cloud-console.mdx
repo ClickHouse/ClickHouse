@@ -7,8 +7,6 @@ sidebarTitle: 'Cloud 控制台'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse Cloud 中的服务开箱即用，内置监控组件，可为用户提供仪表板和通知。默认情况下，Cloud 控制台中的所有用户都可以访问这些仪表板。
 
 <div id="dashboards">
@@ -68,7 +66,15 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 
 此仪表板基于[内置高级可观测性仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard)修改而来，其中每个序列表示各个副本的指标。它可用于监控和排查 ClickHouse 特有的问题。
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="ClickHouse Cloud 中的高级仪表板" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Cloud 中的高级仪表板](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   ClickHouse Cloud 会从系统表中抓取并存储此仪表板显示的指标，因此即使服务处于休眠状态，也仍然可以查看这些指标。访问这些指标不会向底层服务发起查询，也不会唤醒休眠中的服务。
@@ -115,7 +121,15 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 
 选择某个服务后，左侧边栏中的 **Monitoring** 导航项会展开，并显示 **Query insights** 子项：
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Query Insights UI 概览" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Query Insights UI 概览](/images/cloud/sqlconsole/insights_overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="top-level-metrics">
   ### 顶层指标
@@ -123,7 +137,15 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 
 顶部的统计卡片显示的是所选时间范围内的基础查询指标。下方的时间序列图表则按查询类型 (select、insert、other) 分类展示查询量、延迟和错误率。延迟图表可切换为显示 p50、p90 和 p99 延迟：
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="Query Insights 延迟图表" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Query Insights 延迟图表](/images/cloud/sqlconsole/insights_latency.webp)
+
+</Frame>
+
+</div>
 
 <div id="recent-queries">
   ### 最近查询
@@ -131,7 +153,15 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 
 表格会显示所选时间窗口内按归一化查询哈希和用户分组的查询日志条目。最近查询可按任何可用字段进行过滤和排序，还可将表格配置为显示或隐藏其他字段，例如表、p90 和 p99 延迟：
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Query Insights 最近查询表" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Query Insights 最近查询表](/images/cloud/sqlconsole/insights_recent.webp)
+
+</Frame>
+
+</div>
 
 <div id="query-drill-down">
   ### 查询下钻
@@ -139,11 +169,27 @@ Infrastructure 仪表板可详细查看 ClickHouse 进程使用的资源。Click
 
 在 最近查询 表中选择某个查询后，会打开一个弹出面板，其中包含该查询的相关指标和信息：
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Query Insights UI 查询下钻" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Query Insights UI 查询下钻](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</Frame>
+
+</div>
 
 **Query info** 选项卡中的所有指标都是聚合后的指标；如果选择 **Query history** 选项卡，还可以查看每次单独运行的指标：
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Query Insights UI 查询信息" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Query Insights UI 查询信息](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</Frame>
+
+</div>
 
 在此面板中，可以展开每次查询运行对应的 `Settings` 和 `Profile Events` 项，以查看更多信息。
 

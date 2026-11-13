@@ -38,6 +38,8 @@ FIXED_TESTS = Path(__file__).with_name("performance_fixed_tests.json")
 COVERAGE_CHECK = "Performance Comparison%per_query_coverage%"
 QUERY_ID = r"^(.+)\.query([0-9]+)\.([0-9a-f]+)\.(first|warm)$"
 HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".hxx", ".inc")
+# Selection costs two GitHub API requests per changed file in each of the shards; above this the run uses the full suite.
+MAX_SELECTION_CHANGED_FILES = 200
 # The compiler images; the other build inputs come from `filter_job.py`.
 BUILD_PATHS = ("ci/docker/cctools/", "ci/docker/fasttest/", "ci/docker/binary-builder/")
 # The runner, fixtures and server configuration of every test: no covered source line changes.
@@ -70,13 +72,17 @@ def full_suite_reason(info, build_type):
         return "Not a pull request"
     if "ci-force-all" in info.pr_labels:
         return "Requested by ci-force-all"
+    # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
+    changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
+    # `PerformanceSelection.source` reads every changed file at two revisions through the GitHub API, in every
+    # shard, so a wider change exhausts the API rate limit and no test runs at all.
+    if len(changed) > MAX_SELECTION_CHANGED_FILES:
+        return f"Too many changed files for test selection: {len(changed)} > {MAX_SELECTION_CHANGED_FILES}"
     # Labels and automatic full-suite requests use ARM; AMD keeps query coverage selection.
     if build_type != "arm_release":
         return ""
     if "pr-performance" in info.pr_labels:
         return "Requested by pr-performance"
-    # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
-    changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
     if (
         _has_submodule_changes(changed)
         or _has_uncounted_build_changes(changed)

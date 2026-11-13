@@ -6,8 +6,6 @@ title: 'عميل ClickHouse'
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوفّر ClickHouse عميل سطر أوامر أصليًا لتنفيذ استعلامات SQL مباشرةً على خادم ClickHouse.
 ويدعم كلًا من الوضع التفاعلي (لتنفيذ الاستعلامات مباشرةً) ووضع الدُفعات (للبرامج النصية والأتمتة).
 يمكن عرض نتائج الاستعلام في الطرفية أو تصديرها إلى ملف، مع دعم جميع [تنسيقات](/ar/reference/formats/index) إخراج ClickHouse، مثل Pretty وCSV وJSON وغيرها.
@@ -68,7 +66,15 @@ Connected to ClickHouse server version 24.12.2.
 
 تتوفر تفاصيل خدمة ClickHouse Cloud الخاصة بك في وحدة تحكم ClickHouse Cloud. حدِّد الخدمة التي تريد الاتصال بها ثم انقر على **Connect**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر Connect لخدمة ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![زر Connect لخدمة ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -76,7 +82,15 @@ Connected to ClickHouse server version 24.12.2.
 
 اختر **Native**، وستظهر التفاصيل مع مثال لأمر `clickhouse-client`:
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="تفاصيل اتصال Native TCP لخدمة ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تفاصيل اتصال Native TCP لخدمة ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
+
+</Frame>
+
+</div>
 
 ### تخزين تفاصيل الاتصال في ملف تهيئة {#connection-credentials}
 

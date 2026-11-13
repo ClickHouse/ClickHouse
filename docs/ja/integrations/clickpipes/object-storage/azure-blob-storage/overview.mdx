@@ -6,8 +6,6 @@ title: 'Azure Blob StorageをClickHouse Cloudに統合する'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ABS ClickPipe は、Azure Blob Storage から ClickHouse Cloud にデータを取り込むための、フルマネージドで高い耐障害性を備えたソリューションです。**一回限り**と**継続的インジェスト**の両方を、exactly-once セマンティクスでサポートしています。
 
 ABS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。
@@ -179,7 +177,15 @@ ClickPipes には、ほとんどのユースケースの要件を満たす適切
 | `Parallel view processing`           | false         | アタッチされたビューへのプッシュを[順次ではなく同時実行で](/ja/reference/settings/session-settings/parallel#parallel_view_processing)行うかどうか。              |
 | `Use cluster function`               | true          | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                              |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes の高度な設定](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### スケーリング

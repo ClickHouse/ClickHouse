@@ -1711,6 +1711,11 @@ Write `Variant` values as a nullable Arrow `Utf8` column holding each value as J
 Use it for Arrow readers that do not support unions. A `NULL` value is written as an Arrow null.
 )", 0, \
         {"26.11", false, false, "New setting to write Variant as JSON text in a Utf8 column instead of an Arrow dense union."}) \
+    DECLARE(Bool, output_format_arrow_uuid_as_fixed_byte_array, false, R"(
+Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
+Use it for Arrow readers that do not support the `arrow.uuid` extension type.
+)", 0, \
+        {"26.11", false, false, "New setting to write UUID as plain FixedSizeBinary(16) without the `arrow.uuid` extension type."}) \
     DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
