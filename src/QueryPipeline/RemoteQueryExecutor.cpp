@@ -39,6 +39,7 @@
 
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
+#include <Common/quoteString.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 
@@ -77,6 +78,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -678,22 +680,31 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     {
         /// The next node may be connected with an interserver secret, which is used only if the initial user is
         /// the current user (see `Connection::sendQuery`), and then it enables the forwarded roles without checking
-        /// their grants. Roles received on a connection without a secret come from the client, so pass on only
-        /// the ones granted to the user here, as `SET ROLE` does. Otherwise they are used only to find row policies.
+        /// their grants. Roles received on a connection without a secret come from the client, so they must be granted
+        /// to the user here, as `SET ROLE` requires. Otherwise they are used only to find row policies.
         if (modified_client_info.initial_user == modified_client_info.current_user
             && context->getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         {
-            const auto & access_control = context->getAccessControl();
-            /// A context may have no user (e.g. it has full access), then no role is granted.
+            /// A context may have no user (`SQL SECURITY NONE`, full access): the query does not run with the roles of
+            /// the initial user then, so they are not passed on.
             const auto user = context->getAccess()->tryGetUser();
-            Strings granted_role_names;
-            for (const auto & role_name : *received_roles_of_initial_user)
+            if (!user)
             {
-                auto role_id = access_control.find<Role>(role_name);
-                if (role_id && user && user->granted_roles.isGranted(*role_id))
-                    granted_role_names.push_back(role_name);
+                received_roles_of_initial_user.reset();
             }
-            received_roles_of_initial_user = std::move(granted_role_names);
+            else
+            {
+                /// Fail closed: dropping a role could drop a restrictive row policy on the next node.
+                const auto & access_control = context->getAccessControl();
+                for (const auto & role_name : *received_roles_of_initial_user)
+                {
+                    auto role_id = access_control.find<Role>(role_name);
+                    if (!role_id || !user->granted_roles.isGranted(*role_id))
+                        throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "The current role {} of the initial user is not granted to the user {} on this node",
+                            backQuote(role_name), backQuote(user->getName()));
+                }
+            }
         }
         modified_client_info.current_roles = std::move(received_roles_of_initial_user);
     }
