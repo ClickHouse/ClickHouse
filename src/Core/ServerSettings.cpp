@@ -35,6 +35,9 @@
 #if USE_PARQUET
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #endif
+#if USE_DELTA_KERNEL_RS
+#    include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeMetadataCache.h>
+#endif
 #include <Storages/System/ServerSettingColumnsParams.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
@@ -696,6 +699,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, paimon_metadata_files_cache_size, DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE, "Maximum size of paimon metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, paimon_metadata_files_cache_max_entries, DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES, "Maximum size of paimon metadata files cache in entries. Zero means no entry-count limit.", 0) \
     DECLARE(Double, paimon_metadata_files_cache_size_ratio, DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the paimon metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, delta_lake_metadata_cache_policy, DEFAULT_DELTA_LAKE_METADATA_CACHE_POLICY, "Delta Lake metadata cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(UInt64, delta_lake_metadata_cache_size, DEFAULT_DELTA_LAKE_METADATA_CACHE_MAX_SIZE, "Maximum size of the Delta Lake metadata cache in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, delta_lake_metadata_cache_max_entries, DEFAULT_DELTA_LAKE_METADATA_CACHE_MAX_ENTRIES, "Maximum number of Delta Lake snapshots in the Delta Lake metadata cache. Zero means no limit.", 0) \
+    DECLARE(Double, delta_lake_metadata_cache_size_ratio, DEFAULT_DELTA_LAKE_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the Delta Lake metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
@@ -4061,6 +4068,17 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         changeable_settings.insert(
             {"paimon_metadata_files_cache_max_entries",
              {std::to_string(context->getPaimonMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
+#endif
+#if USE_DELTA_KERNEL_RS
+    if (context->getDeltaLakeMetadataCache())
+    {
+        changeable_settings.insert(
+            {"delta_lake_metadata_cache_size",
+             {std::to_string(context->getDeltaLakeMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"delta_lake_metadata_cache_max_entries",
+             {std::to_string(context->getDeltaLakeMetadataCache()->maxCount()), ChangeableWithoutRestart::Yes}});
     }
 #endif
 #if USE_PARQUET

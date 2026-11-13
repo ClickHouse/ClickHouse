@@ -389,6 +389,8 @@
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
+    M(DeltaLakeMetadataCacheBytes, "Size of the Delta Lake metadata cache in bytes") \
+    M(DeltaLakeMetadataCacheEntries, "Number of Delta Lake snapshots in the Delta Lake metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
     M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \

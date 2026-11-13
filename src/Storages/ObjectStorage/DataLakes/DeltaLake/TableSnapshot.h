@@ -92,6 +92,7 @@ private:
         KernelSnapshot snapshot;
         KernelScan scan;
         size_t snapshot_version;
+        std::string table_id;
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
