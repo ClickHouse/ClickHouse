@@ -465,10 +465,31 @@ ASTPtr makeNumericNonConstantInReplacement(
             continue;
 
         ASTPtr candidate = elements[i]->clone();
-        if (isStringOrFixedString(removeNullable(removeLowCardinality(element_type))))
+        const auto left_bare_type = removeNullable(removeLowCardinality(left_operand_type));
+        const auto element_bare_type = removeNullable(removeLowCardinality(element_type));
+        const bool decimal_float_pair = (isDecimal(left_bare_type) && isFloat(element_bare_type))
+            || (isFloat(left_bare_type) && isDecimal(element_bare_type));
+        if (decimal_float_pair)
+        {
+            const ASTPtr & decimal = isDecimal(left_bare_type) ? left_operand : candidate;
+            const ASTPtr & floating = isFloat(left_bare_type) ? left_operand : candidate;
+            const auto & decimal_type = isDecimal(left_bare_type) ? left_bare_type : element_bare_type;
+            auto converted = makeASTFunction(
+                "accurateCastOrNull", makeASTFunction("toFloat64", floating->clone()),
+                make_intrusive<ASTLiteral>(decimal_type->getName()));
+            auto decimal_matches = makeASTFunction("equals", decimal->clone(), converted->clone());
+            auto float_matches = makeASTFunction("equals", floating->clone(), makeASTFunction("toFloat64", std::move(converted)));
+            auto match = makeASTFunction(
+                "ifNull", makeASTFunction("and", std::move(decimal_matches), std::move(float_matches)),
+                make_intrusive<ASTLiteral>(0u));
+            any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
+            continue;
+        }
+        if (isStringOrFixedString(element_bare_type)
+            || ((isDate(left_bare_type) || isDate32(left_bare_type)) && isNumber(element_bare_type)))
             candidate = makeASTFunction(
                 "accurateCastOrNull", std::move(candidate),
-                make_intrusive<ASTLiteral>(removeNullable(removeLowCardinality(left_operand_type))->getName()));
+                make_intrusive<ASTLiteral>(left_bare_type->getName()));
         auto equals = makeASTFunction("equals", left_operand->clone(), std::move(candidate));
         auto match = makeASTFunction("ifNull", std::move(equals), make_intrusive<ASTLiteral>(0u));
         any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
@@ -1341,8 +1362,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     && isNumber(removeNullable(removeLowCardinality(left_argument_type)))
                     && isNumber(removeNullable(removeLowCardinality(right_argument_type)))
                     && !tryGetLeastSupertype(DataTypes{left_argument_type, right_argument_type});
+                const bool decimal_float_comparison = right_argument_is_scalar
+                    && left_argument_type && right_argument_type
+                    && ((isDecimal(removeNullable(removeLowCardinality(left_argument_type)))
+                            && isFloat(removeNullable(removeLowCardinality(right_argument_type))))
+                        || (isFloat(removeNullable(removeLowCardinality(left_argument_type)))
+                            && isDecimal(removeNullable(removeLowCardinality(right_argument_type)))));
 
-                if (right_argument_is_scalar && (left_argument_is_tuple || number_comparison_without_supertype))
+                if (right_argument_is_scalar && (left_argument_is_tuple || (number_comparison_without_supertype && !decimal_float_comparison)))
                 {
                     replacement = makeScalarNonConstantInReplacement(
                         node,
@@ -1434,8 +1461,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
-                        && isNumber(removeNullable(removeLowCardinality(left_argument_type)))
-                        && !isDecimal(removeNullable(removeLowCardinality(left_argument_type)))
+                        && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isDate(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isDate32(removeNullable(removeLowCardinality(left_argument_type))))
                         && element_types_known
                         && !element_types.empty()
                         && std::all_of(element_types.begin(), element_types.end(), [](const auto & type)

@@ -19,6 +19,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 
 
@@ -69,7 +70,7 @@ public:
         const auto & map_type = assert_cast<const DataTypeMap &>(*removeNullable(removeLowCardinality(arguments[0].type)));
         auto maps = arguments[0].column->convertToFullColumnIfConst();
         auto strings = arguments[1].column->convertToFullColumnIfConst();
-        auto result = ColumnUInt8::create(input_rows_count);
+        auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto & values = result->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -336,16 +337,28 @@ public:
 
         const auto left_type_without_wrappers = removeNullable(removeLowCardinality(left_arg.type));
         const auto left_type_id = left_type_without_wrappers->getTypeId();
-        if (in_null_as_unknown && columns_of_key_columns.size() == 1
-            && (left_type_id == TypeIndex::BFloat16 || left_type_id == TypeIndex::Float32 || left_type_id == TypeIndex::Float64))
+        const bool left_is_float = left_type_id == TypeIndex::BFloat16
+            || left_type_id == TypeIndex::Float32 || left_type_id == TypeIndex::Float64;
+        const auto set_key_type_id = set_types.empty()
+            ? TypeIndex::Nothing : removeNullable(removeLowCardinality(set_types[0]))->getTypeId();
+        const bool set_key_is_float = set_key_type_id == TypeIndex::BFloat16
+            || set_key_type_id == TypeIndex::Float32 || set_key_type_id == TypeIndex::Float64;
+        if (in_null_as_unknown && columns_of_key_columns.size() == 1 && (left_is_float || set_key_is_float))
         {
             /// Prepared sets compare floating keys by their bits. Probe the other signed-zero
             /// representation too, so a match wins over a source `NULL` in this mode.
             auto full_column = recursiveRemoveLowCardinality(left_arg.column->convertToFullIfWrapped());
+            DataTypePtr probe_type = removeLowCardinality(left_arg.type);
+            if (!left_is_float)
+            {
+                probe_type = makeNullable(removeNullable(removeLowCardinality(set_types[0])));
+                full_column = castColumnAccurateOrNull(
+                    ColumnWithTypeAndName(full_column, removeLowCardinality(left_arg.type), left_arg.name), probe_type);
+            }
             if (auto alternate = flipFloatZeroSign(full_column))
             {
                 ColumnsWithTypeAndName alternate_key;
-                alternate_key.emplace_back(alternate, removeLowCardinality(left_arg.type), left_arg.name);
+                alternate_key.emplace_back(alternate, probe_type, left_arg.name);
                 auto alternate_res = set->execute(alternate_key, false);
                 auto combined = ColumnUInt8::create(res->size());
                 for (size_t row = 0; row < res->size(); ++row)
@@ -356,7 +369,7 @@ public:
             /// Row-wise floating equality rejects `NaN`, while prepared sets compare
             /// raw bits. Keep the two representations consistent in this mode.
             bool has_nan_match = false;
-            for (size_t row = 0; row < res->size(); ++row)
+            for (size_t row = 0; left_is_float && row < res->size(); ++row)
             {
                 if (res->getBool(row) && !left_arg.column->isNullAt(row) && std::isnan(left_arg.column->getFloat64(row)))
                 {

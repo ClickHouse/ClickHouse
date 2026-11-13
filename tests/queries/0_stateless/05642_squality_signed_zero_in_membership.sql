@@ -9,6 +9,9 @@ SELECT toBFloat16(0) IN (toBFloat16(-0.), NULL), toBFloat16(0) IN (materialize(t
 SELECT count() FROM values('x Float64', (0.)) WHERE x IN (toFloat64(-0.), NULL);
 SELECT count() FROM values('x Float64', (0.)) WHERE x IN (materialize(toFloat64(-0.)), NULL);
 SELECT toFloat64(0) IN (SELECT toFloat64(-0.));
+SELECT toInt64(0) IN (SELECT toFloat64(-0.)), toInt64(0) IN materialize(toFloat64(-0.));
+SELECT toInt64(0) IN (SELECT arrayJoin([toNullable(toFloat64(-0.)), NULL])),
+       toInt64(0) IN (materialize(toFloat64(-0.)), NULL);
 
 SET in_null_as_unknown = 0;
 SELECT toFloat64(0) IN (toFloat64(-0.));

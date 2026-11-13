@@ -1348,6 +1348,22 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
         QueryTreeNodePtr match_result;
         if (source_array_type
+            && isMap(removeNullable(removeLowCardinality(element_arg->getResultType())))
+            && isStringOrFixedString(removeNullable(removeLowCardinality(source_array_type->getNestedType()))))
+        {
+            const String candidate_name = "__in_map_string_array_candidate";
+            auto comparison = std::make_shared<FunctionNode>("__mapStringEqualsForIn");
+            comparison->getArguments().getNodes() = {
+                element_arg, std::make_shared<IdentifierNode>(Identifier{candidate_name})};
+            auto non_null_match = std::make_shared<FunctionNode>("ifNull");
+            non_null_match->getArguments().getNodes() = {std::move(comparison), std::make_shared<ConstantNode>(Field{0u})};
+            auto lambda = std::make_shared<LambdaNode>(
+                std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(non_null_match), false /*is_operator*/);
+            auto any_match = std::make_shared<FunctionNode>("arrayExists");
+            any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+            match_result = std::move(any_match);
+        }
+        else if (source_array_type
             && isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
             && isNumber(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
             && !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_array_type->getNestedType()}))

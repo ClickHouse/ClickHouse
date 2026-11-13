@@ -45,3 +45,15 @@ WHERE m IN (s);
 SELECT m IN (s), m NOT IN (s)
 FROM (SELECT map('a', toUInt8(1)) AS m,
              materialize(toNullable(replaceAll(toString(m), ':', ' : '))) AS s);
+
+SELECT m IN (s), m NOT IN (s), m IN (s, NULL)
+FROM (SELECT map('a', toUInt8(0)) AS m,
+             materialize(toNullable(toString(map('a', toUInt16(256))))) AS s);
+
+SELECT map('a', toUInt8(1)) IN [toString(map('a', toUInt8(1)))];
+SELECT map('a', toUInt8(1)) IN materialize([toString(map('a', toUInt8(1)))]);
+SELECT map('a', toUInt8(1)) IN materialize([toNullable(toString(map('a', toUInt8(1)))), NULL]);
+SELECT m IN a, m NOT IN a
+FROM values('m Map(String, UInt8), a Array(Nullable(String))',
+    (map('a', 1), [toString(map('a', 1))]),
+    (map('a', 1), [NULL]));
