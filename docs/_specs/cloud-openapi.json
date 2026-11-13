@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1422312",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1422629",
       "email": "support@clickhouse.com"
     }
   },
@@ -45995,6 +45995,12 @@
         "scheme": "basic",
         "description": "Use key ID and key secret obtained in ClickHouse Cloud console: https://clickhouse.com/docs/cloud/manage/openapi",
         "x-permission-scopes": "The scope list of a `security` requirement holds ClickHouse Cloud API key permission ids (for example `control-plane:organization:view`), not OAuth scopes. OpenAPI has no field for API key permissions, so this is the closest available place. A key must hold every permission listed on an operation to call it; an operation with no scopes needs none beyond a valid key. Every operation declares at most one requirement object, always for this scheme, so the list is only ever conjunctive — alternative sets of permissions are never expressed."
+      },
+      "bearerJwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "ClickHouse Cloud user access token, sent as `Authorization: Bearer <JWT>`. API keys are rejected. The token audience must be one of the `x-jwt-audiences` listed on the operation."
       }
     }
   },
